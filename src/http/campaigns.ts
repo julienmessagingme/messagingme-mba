@@ -5,6 +5,7 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
+import { forbidNonAdmin } from '../auth/middleware';
 import type { PreHandler } from '../auth/middleware';
 
 export interface CampaignRouteDeps {
@@ -66,6 +67,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     if (effectiveTenant === null) {
       return reply.code(403).send({ error: 'tenant interdit' });
     }
+    if (forbidNonAdmin(req, reply)) return;
 
     const b = (req.body ?? {}) as Partial<{
       phoneNumberId: string;
@@ -108,6 +110,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   });
 
   app.post('/campaigns/:campaignId/run', guard, async (req, reply) => {
+    if (forbidNonAdmin(req, reply)) return;
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
     // Scope tenant : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR cross-tenant).

@@ -9,11 +9,14 @@ import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 
 const SECRET = 'test-secret';
 let token = '';
+let agentToken = '';
 beforeAll(async () => {
   token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+  agentToken = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
+const asAgent = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${agentToken}` } });
 
 class FakeRepo implements CampaignRepoLike {
   readonly created: CreateCampaignInput[] = [];
@@ -97,6 +100,15 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     await app.close();
   });
 
+  it('role agent -> 403 sur la création (action admin)', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo);
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...asAgent(), payload: validBody });
+    expect(res.statusCode).toBe(403);
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
   it('phoneNumberId non détenu par le tenant -> 400', async () => {
     const repo = new FakeRepo(contacts);
     const app = appWith(repo, { ownsNumber: false });
@@ -152,6 +164,15 @@ describe('POST /campaigns/:campaignId/run', () => {
     const app = appWith(new FakeRepo(contacts));
     const res = await app.inject({ method: 'POST', url: '/campaigns/known/run' });
     expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('role agent -> 403 sur le run', async () => {
+    const q = new FakeQueue();
+    const app = appWith(new FakeRepo(contacts), { queue: q });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...asAgent() });
+    expect(res.statusCode).toBe(403);
+    expect(q.enqueued).toEqual([]);
     await app.close();
   });
 });

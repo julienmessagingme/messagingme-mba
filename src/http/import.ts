@@ -5,6 +5,7 @@ import { importContacts } from '../crm/import';
 import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow } from '../crm/contact-store.pg';
+import { forbidNonAdmin } from '../auth/middleware';
 import type { PreHandler } from '../auth/middleware';
 
 export interface ImportRouteDeps extends ImportDeps {
@@ -49,6 +50,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   app.post('/tenants/:tenantId/contacts/import', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
     const body = (req.body ?? {}) as { csv?: unknown; optIn?: unknown; mapping?: ColumnMapping };
 
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {
