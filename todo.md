@@ -2,13 +2,16 @@
 
 ## Plan des boucles feature-loop (ordre)
 
-1. **Loop 1 — Webhook receiver + file + idempotence** (le socle que tout consomme).
-2. **Loop 2 — Wrapper Cloud API + MM Lite** (mocks des contrats : send text/template, statuts,
-   marketing_messages, gestion erreurs + retries + throttling).
-3. **Loop 3 — Contacts BSUID-native + import CSV + opt-out** (parsing, dédup, merge CTA).
-4. **Loop 4 — Moteur de campagne + garde-fous** (pacing, fréquence max, coupure quality rating).
+1. ✅ **Loop 1 — Webhook receiver + file + idempotence** (le socle que tout consomme).
+2. ✅ **Loop 2 — Wrapper Cloud API + MM Lite** (send text/template, statuts, marketing_messages,
+   erreurs + retries + throttling).
+3. ✅ **Loop 3 — Contacts BSUID-native + import CSV + user fields** (parsing, dédup, merge CTA).
+4. ✅ **Loop 4 — Moteur de campagne + garde-fous** (pacing, fréquence max, coupure quality rating).
+5. ✅ **Loop 5 — Adaptateurs Postgres + run E2E** (stores PG, services create/run, routes HTTP
+   import/campagne/run, worker campaign-run ; E2E CSV->campagne->envoi prouvé contre Supabase).
 
-Après les boucles backend : UI (inbox minimal + 2 rôles, dashboard) en direct (hors feature-loop).
+Prochaine étape : **UI** (inbox minimal + 2 rôles, dashboard campagnes/CRM) en direct (hors
+feature-loop, visuel). Puis onboarding OTP / embedded signup (R&D d'intégration).
 
 ## Décisions ouvertes
 
@@ -48,6 +51,17 @@ Après les boucles backend : UI (inbox minimal + 2 rôles, dashboard) en direct 
   ne rejouer que des erreurs réseau connues (fetch failed / ECONNRESET / ETIMEDOUT).
 - **Loop 2 / `MetaClient`** : le `rateLimiter.acquire()` par tentative est correct mais non
   couvert par un test au niveau client (ajouter « rateLimiter appelé N fois »).
+
+- **Loop 5 / `campaignExists`** (`src/index.ts`) : fait un `getCampaign` complet (SELECT toutes
+  colonnes) juste pour un test d'existence -> un `select 1 from campaigns where id=$1` suffirait.
+- **Loop 5 / état `queued`** : la route `run` enqueue sans transition d'état visible (campagne
+  reste `draft` jusqu'à ce que le worker la passe `running`). Une future UI voudra peut-être un
+  état `queued` intermédiaire.
+- **Loop 5 / `insertRecipients`** : boucle un INSERT par destinataire (N allers-retours). Correct
+  et idempotent ; passer en bulk insert si forte volumétrie.
+- **Loop 5 / quality rating** : `PgQualityProvider` lit `phone_numbers.quality_rating` (défaut
+  UNKNOWN). Câbler l'alimentation par webhook (account/phone_number_quality_update) pour que le
+  garde-fou qualité protège au-delà du seul taux d'échec.
 
 ## Bugs connus
 

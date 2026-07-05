@@ -1,0 +1,113 @@
+import 'dotenv/config';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Pool } from 'pg';
+import { pgSsl } from '../../src/db/ssl';
+import { PgContactStore } from '../../src/crm/contact-store.pg';
+import { PgUserFieldStore } from '../../src/crm/field-store.pg';
+import {
+  PgCampaignRepo,
+  PgCampaignStore,
+  PgRecipientStore,
+  PgFrequencyStore,
+  PgQualityProvider,
+} from '../../src/campaign/store.pg';
+
+const url = process.env.DATABASE_URL ?? '';
+
+describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
+  let pool: Pool;
+  let tenantId: string;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    const res = await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-stores') returning id`,
+    );
+    tenantId = res.rows[0]!.id;
+  });
+
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    await pool.end();
+  });
+
+  it('PgContactStore.upsertByPhone : create puis update fusionne fields, opt-in ne régresse pas', async () => {
+    const store = new PgContactStore(pool);
+    const phone = '+33600000001';
+    const c1 = await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: 'Julie', fields: { ville: 'Lyon' }, optInStatus: 'unknown' });
+    expect(c1).toBe('created');
+    const c2 = await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: null, fields: { age: '30' }, optInStatus: 'opted_in', optInSource: 'csv_import' });
+    expect(c2).toBe('updated');
+
+    const row = (await pool.query<{ fields: Record<string, unknown>; profile_name: string; opt_in_status: string }>(
+      `select fields, profile_name, opt_in_status from contacts where tenant_id = $1 and phone_e164 = $2`,
+      [tenantId, phone],
+    )).rows[0]!;
+    expect(row.fields).toMatchObject({ ville: 'Lyon', age: '30' }); // MERGE, pas replace
+    expect(row.profile_name).toBe('Julie'); // coalesce : non écrasé par null
+    expect(row.opt_in_status).toBe('opted_in'); // promu, ne régresse pas
+  });
+
+  it('PgUserFieldStore : upsert idempotent + list', async () => {
+    const store = new PgUserFieldStore(pool);
+    await store.upsert(tenantId, { key: 'ville', label: 'Ville', type: 'text' });
+    await store.upsert(tenantId, { key: 'ville', label: 'AUTRE', type: 'text' }); // do nothing
+    const list = await store.list(tenantId);
+    const ville = list.filter((f) => f.key === 'ville');
+    expect(ville).toHaveLength(1);
+    expect(ville[0]?.label).toBe('Ville');
+  });
+
+  it('PgCampaignRepo + stores : insert, listPending, markResult, setStatus, lastSentAt', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const campaignsStore = new PgCampaignStore(pool);
+    const frequency = new PgFrequencyStore(pool);
+
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`,
+      [tenantId, '+33600000002'],
+    )).rows[0]!.id;
+
+    const campaignId = await repo.insertCampaign({
+      tenantId, phoneNumberId: 'pn-itest', name: 'c', category: 'marketing',
+      templateName: 't', templateLanguage: 'fr', paramMapping: [],
+    });
+    const n = await repo.insertRecipients(campaignId, [{ contactId, toE164: '+33600000002', resolvedParams: ['X'] }]);
+    expect(n).toBe(1);
+
+    const pending = await recipients.listPending(campaignId);
+    expect(pending).toHaveLength(1);
+    const rid = pending[0]!.id;
+
+    const at = 1_700_000_000_000;
+    await recipients.markResult(rid, { status: 'sent', messageId: 'm-1', sentAt: at });
+    const rrow = (await pool.query<{ status: string; message_id: string; sent_at: Date }>(
+      `select status, message_id, sent_at from campaign_recipients where id = $1`, [rid],
+    )).rows[0]!;
+    expect(rrow.status).toBe('sent');
+    expect(rrow.message_id).toBe('m-1');
+    expect(rrow.sent_at).not.toBeNull();
+
+    await campaignsStore.setStatus(campaignId, 'completed');
+    const status = (await pool.query<{ status: string }>(`select status from campaigns where id = $1`, [campaignId])).rows[0]!.status;
+    expect(status).toBe('completed');
+
+    // lastSentAt cross-campagne lit max(sent_at) du numéro.
+    const last = await frequency.lastSentAt(tenantId, '+33600000002');
+    expect(last).toBe(at);
+    expect(await frequency.lastSentAt(tenantId, '+33699999999')).toBeNull();
+  });
+
+  it('PgQualityProvider : UNKNOWN si numéro absent, lit le rating sinon', async () => {
+    const quality = new PgQualityProvider(pool);
+    expect(await quality.getRating('pn-absent')).toBe('UNKNOWN');
+
+    await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w')`, ['waba-itest', tenantId]);
+    await pool.query(
+      `insert into phone_numbers (id, waba_id, tenant_id, quality_rating) values ($1, 'waba-itest', $2, 'RED')`,
+      ['pn-red', tenantId],
+    );
+    expect(await quality.getRating('pn-red')).toBe('RED');
+  });
+});

@@ -1,0 +1,75 @@
+import { describe, it, expect } from 'vitest';
+import { buildServer } from '../src/server';
+import { FakeQueue } from '../src/queue/fake';
+import type { ContactStore, ContactUpsert } from '../src/crm/import';
+import type { UserFieldStore } from '../src/crm/fields';
+import type { UserFieldDef } from '../src/crm/types';
+
+class FakeContacts implements ContactStore {
+  readonly upserts: ContactUpsert[] = [];
+  async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> {
+    this.upserts.push(c);
+    return 'created';
+  }
+}
+class FakeFields implements UserFieldStore {
+  readonly defs: UserFieldDef[] = [];
+  async list(): Promise<UserFieldDef[]> {
+    return this.defs;
+  }
+  async upsert(_tenantId: string, def: UserFieldDef): Promise<void> {
+    this.defs.push(def);
+  }
+}
+
+function inject(contacts: ContactStore, userFields: UserFieldStore) {
+  return buildServer({ queue: new FakeQueue(), import: { contacts, userFields } });
+}
+
+describe('POST /tenants/:tenantId/contacts/import', () => {
+  it('parse le CSV, reconnaît les colonnes, upsert les contacts opt-in', async () => {
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      headers: { 'content-type': 'application/json' },
+      payload: { csv: 'Nom,Téléphone,Ville\nJulie,+33611111111,Lyon\nMarc,0622222222,Paris', optIn: true },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ created: number; skipped: number }>();
+    expect(body.created).toBe(2);
+    expect(contacts.upserts).toHaveLength(2);
+    expect(contacts.upserts[0]?.optInStatus).toBe('opted_in');
+    expect(contacts.upserts[0]?.phoneE164).toBe('+33611111111');
+    expect(contacts.upserts[1]?.phoneE164).toBe('+33622222222'); // normalisé FR
+    expect(contacts.upserts[0]?.fields).toMatchObject({ ville: 'Lyon' }); // colonne custom
+    await app.close();
+  });
+
+  it('csv absent -> 400', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      headers: { 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('sans optIn -> statut unknown', async () => {
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      headers: { 'content-type': 'application/json' },
+      payload: { csv: 'Téléphone\n+33611111111' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(contacts.upserts[0]?.optInStatus).toBe('unknown');
+    await app.close();
+  });
+});
