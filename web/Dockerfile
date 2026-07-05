@@ -4,7 +4,10 @@ WORKDIR /app
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-ENV NEXT_TELEMETRY_DISABLED=1
+# Les rewrites Next sont figées au BUILD : BACKEND_URL doit être défini ici (pas au runtime)
+# pour que /api/backend/* pointe vers l'API dans le réseau Docker.
+ARG BACKEND_URL=http://mba-api:8095
+ENV NEXT_TELEMETRY_DISABLED=1 BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 FROM node:22-alpine
