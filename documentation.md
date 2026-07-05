@@ -22,8 +22,12 @@ dégradation du quality rating, fréquence max par contact. C'est là que vivent
 - **API/Receiver** : Fastify 5.
 - **Validation** : zod.
 - **File** : pg-boss (Loop 1).
-- **DB** : Postgres. Local (Docker) pour tests/CI ; **Supabase** en prod (connection string
-  fournie au déploiement). Migrations SQL versionnées dans `db/migrations/`.
+- **DB** : Postgres = **Supabase** (projet `messagingme-MBA`, ref `npdqnrirxhqsyyvtvtjz`,
+  org distincte de leadgen/EDH → invisible au MCP Supabase, connexion directe uniquement).
+  Migrations SQL versionnées dans `db/migrations/`, appliquées via `npm run migrate`
+  (`db/migrate.ts`, suivi `schema_migrations`). Connexion directe `db.<ref>` en IPv6-only ;
+  fallback pooler IPv4 (session mode) documenté dans `.env`. Un Postgres local (Docker) peut
+  servir pour des tests isolés si on veut éviter de taper la prod.
 - **Frontend** (à venir) : Next.js (control plane, inbox minimal, 2 rôles admin/agent).
 - **Tests** : vitest.
 - **Hosting** : VPS OVH + Docker en V1 ; décision PaaS (Fly.io/Railway EU) à l'entrée Phase 3.

@@ -7,6 +7,11 @@
   passe.
 - Migration DB initiale `0001_init.sql` (tenants, users, waba, phone_numbers, contacts,
   webhook_events).
+- **Supabase branché** : projet `messagingme-MBA` (ref `npdqnrirxhqsyyvtvtjz`), migration
+  0001 appliquée et vérifiée (7 tables live). Runner `npm run migrate` (`db/migrate.ts`,
+  suivi via `schema_migrations`). Connexion directe IPv6 OK depuis le poste ; fallback pooler
+  IPv4 documenté dans `.env` (region à confirmer si besoin). ⚠️ le MCP Supabase ne voit PAS
+  ce projet (autre org) → connexion directe uniquement. Creds en `.env` (gitignoré) + brain.
 
 ## En cours / prochaine étape
 
