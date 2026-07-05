@@ -11,6 +11,12 @@ export interface MessageSender {
 
 export interface RecipientStore {
   listPending(campaignId: string): Promise<Recipient[]>;
+  /**
+   * Claim atomique d'un destinataire (pending -> sending). Retourne true si CE run l'a
+   * réservé, false si un autre run/worker l'a déjà pris. Garantit qu'un destinataire n'est
+   * envoyé qu'une fois malgré runs concurrents et replays pg-boss.
+   */
+  claim(id: string): Promise<boolean>;
   markResult(
     id: string,
     r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number },
@@ -53,9 +59,13 @@ const DEFAULT_THRESHOLDS: GuardrailThresholds = {
 
 /**
  * Exécute une campagne : parcourt les destinataires `pending` avec pacing + garde-fous
- * (quality gate, fréquence), envoie le template personnalisé, enregistre le résultat.
- * Idempotent (un destinataire déjà `sent` est sauté). Pause et arrête si le quality gate
- * déclenche.
+ * (quality gate, fréquence marketing), et pour chaque destinataire éligible le CLAIM
+ * atomiquement (pending -> sending) AVANT l'appel Meta, puis envoie et enregistre le
+ * résultat. Le claim garantit qu'un destinataire n'est envoyé qu'une fois même en cas de
+ * runs concurrents ou de replay pg-boss (un envoi réussi dont la persistance échoue reste
+ * en `sending`, jamais re-listé donc jamais ré-envoyé). Pause et arrête si le quality gate
+ * déclenche. Le skip de fréquence est TRANSITOIRE : non persisté, le destinataire reste
+ * `pending` et sera ré-évalué au prochain run (fenêtre expirée -> envoyé).
  */
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {
   const now = deps.now ?? (() => Date.now());
@@ -77,12 +87,18 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       return report;
     }
 
-    const last = await deps.frequency.lastSentAt(campaign.tenantId, r.toE164);
-    if (!frequencyAllows(last, now(), t.frequencyWindowMs)) {
-      await deps.recipients.markResult(r.id, { status: 'skipped', error: 'fréquence' });
-      report.skipped += 1;
-      continue;
+    // Fréquence : garde-fou MARKETING uniquement. Les messages utility relèvent de la
+    // fenêtre de service et ne doivent pas être supprimés par un plafond marketing.
+    if (campaign.category === 'marketing') {
+      const last = await deps.frequency.lastSentAt(campaign.tenantId, r.toE164);
+      if (!frequencyAllows(last, now(), t.frequencyWindowMs)) {
+        report.skipped += 1;
+        continue; // transitoire : reste `pending`, ré-évalué au prochain run
+      }
     }
+
+    // Claim atomique : si un autre run/worker a déjà pris ce destinataire, on passe.
+    if (!(await deps.recipients.claim(r.id))) continue;
 
     if (deps.rateLimiter) await deps.rateLimiter.acquire();
     const tpl: TemplateSpec = {
@@ -106,10 +122,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
 
     // Message livré. On persiste le succès HORS du catch d'envoi : une erreur de
-    // persistance ne doit JAMAIS relabelliser un message livré en `failed` (ça
-    // fausserait le dénominateur du quality gate et pourrait déclencher une pause
-    // fantôme). On la laisse remonter comme erreur dure (le worker rejouera le job,
-    // l'idempotence `sent` évitant le double-envoi des destinataires déjà persistés).
+    // persistance ne relabellise pas un message livré en `failed` (ça fausserait le
+    // dénominateur du quality gate). Le destinataire est déjà en `sending` (claimé), donc
+    // même si markResult échoue et que le job est rejoué, il ne sera pas ré-envoyé.
     const at = now();
     report.sent += 1;
     await deps.recipients.markResult(r.id, { status: 'sent', messageId: res.messageId, sentAt: at });

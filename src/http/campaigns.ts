@@ -4,7 +4,7 @@ import { createCampaignWithRecipients } from '../campaign/create';
 import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
-import type { TemplateParam } from '../crm/template';
+import { validateParamMapping } from '../crm/template';
 
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
@@ -32,7 +32,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
       category: CampaignCategory;
       templateName: string;
       templateLanguage: string;
-      paramMapping: TemplateParam[];
+      paramMapping: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
@@ -41,6 +41,13 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
     if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName requis' });
     if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
 
+    // Valider paramMapping AVANT toute écriture : positions 1..N contiguës + sources bien
+    // formées. Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
+    const paramMapping = validateParamMapping(b.paramMapping ?? []);
+    if (paramMapping === null) {
+      return reply.code(400).send({ error: 'paramMapping invalide (positions 1..N contiguës, sources valides)' });
+    }
+
     const input: CreateCampaignInput = {
       tenantId,
       phoneNumberId: b.phoneNumberId,
@@ -48,7 +55,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
       category: b.category,
       templateName: b.templateName,
       templateLanguage: b.templateLanguage,
-      paramMapping: Array.isArray(b.paramMapping) ? b.paramMapping : [],
+      paramMapping,
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     return reply.code(201).send(result);
@@ -59,7 +66,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
     if (!(await deps.campaignExists(campaignId))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
-    await deps.queue.enqueue('campaign-run', { campaignId });
+    // singletonKey = campaignId : deux POST /run concurrents n'empilent pas deux jobs pour
+    // la même campagne (le claim par destinataire est le garde-fou primaire, ceci le double).
+    await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId });
     return reply.code(202).send({ enqueued: true, campaignId });
   });
 }

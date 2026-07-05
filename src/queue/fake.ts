@@ -11,7 +11,7 @@ export class FakeQueue implements Queue {
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
 
-  async enqueue(name: string, data: unknown): Promise<void> {
+  async enqueue(name: string, data: unknown, _opts?: { singletonKey?: string }): Promise<void> {
     this.enqueued.push({ name, data });
   }
 

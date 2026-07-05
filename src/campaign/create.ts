@@ -18,9 +18,11 @@ export async function createCampaignWithRecipients(
   input: CreateCampaignInput,
   repo: CampaignRepoLike,
 ): Promise<{ campaignId: string; recipientCount: number }> {
-  const campaignId = await repo.insertCampaign(input);
+  // Construire (et donc valider les params) AVANT d'insérer la campagne : si buildRecipients
+  // throw, on n'a pas persisté de campagne draft orpheline.
   const contacts = await repo.listContactsForBuild(input.tenantId);
   const recipients = buildRecipients(input.category, input.paramMapping, contacts);
+  const campaignId = await repo.insertCampaign(input);
   const recipientCount = await repo.insertRecipients(campaignId, recipients);
   return { campaignId, recipientCount };
 }

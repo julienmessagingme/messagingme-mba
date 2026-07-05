@@ -80,6 +80,11 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(pending).toHaveLength(1);
     const rid = pending[0]!.id;
 
+    // Claim atomique : le 1er réserve (pending -> sending), le 2e échoue (déjà pris).
+    expect(await recipients.claim(rid)).toBe(true);
+    expect(await recipients.claim(rid)).toBe(false);
+    expect(await recipients.listPending(campaignId)).toHaveLength(0); // 'sending' exclu
+
     const at = 1_700_000_000_000;
     await recipients.markResult(rid, { status: 'sent', messageId: 'm-1', sentAt: at });
     const rrow = (await pool.query<{ status: string; message_id: string; sent_at: Date }>(

@@ -13,6 +13,37 @@
 Prochaine étape : **UI** (inbox minimal + 2 rôles, dashboard campagnes/CRM) en direct (hors
 feature-loop, visuel). Puis onboarding OTP / embedded signup (R&D d'intégration).
 
+## 🔴 Sécurité / auth — BLOQUANT avant toute exposition publique (revue Loops 3-5)
+
+La couche HTTP n'a **aucune authentification ni autorisation**. À traiter comme une brique
+dédiée (elle a besoin d'une décision produit + du login de l'UI), pas comme un patch :
+
+- **Aucune auth** : tenantId vient de `req.params` (URL), la table `users`/rôles n'est jamais
+  consultée. Un inconnu qui fournit l'UUID d'un tenant injecte contacts + campagnes chez autrui,
+  et `POST /campaigns/:id/run` (non scopé tenant) déclenche des envois WhatsApp **payants** depuis
+  le numéro d'un autre client. IDOR complet sur toute la surface.
+- **phoneNumberId non validé** : la route campagne accepte n'importe quel `phoneNumberId` (aucune
+  FK, aucun check d'appartenance) → envoi depuis le numéro Meta d'un autre tenant via le token
+  partagé. À valider `SELECT 1 FROM phone_numbers WHERE id=$1 AND tenant_id=$2` une fois l'auth en place.
+- **Décision produit requise** : mécanisme d'auth (clé API par tenant ? Supabase Auth ? JWT ?).
+  Puis preHandler global dans `buildServer`, tenantId DÉRIVÉ de l'identité (jamais de l'URL), et
+  flux de provisioning des numéros. Va de pair avec le login de l'UI.
+
+## Suites de la revue Loops 3-5 (non bloquant)
+
+- **Réconciliation `sending`** : le claim atomique (fix double-envoi) laisse un destinataire en
+  `sending` si l'envoi réussit mais la persistance `sent` échoue (sous-livraison, sens sûr). Ajouter
+  un sweeper (reset `sending` → `pending` au-delà d'un timeout) ou une réconciliation via le
+  `message_id` du webhook de statut. Aujourd'hui : jamais re-livré (pas de double-envoi), OK.
+- **createCampaign transactionnel** : le build se fait désormais AVANT l'insert (plus d'orphelin
+  draft si le mapping est invalide), mais insertCampaign + insertRecipients ne sont pas dans une
+  transaction unique → un crash entre les deux laisse une campagne draft à destinataires partiels
+  (borné : draft inerte). Envelopper dans BEGIN/COMMIT + INSERT multi-lignes si besoin.
+- **quality getRating** : lu à chaque destinataire (point-query PK). Mémoïser avec un TTL court côté
+  PgQualityProvider si la volumétrie l'exige (dominé par l'appel Meta aujourd'hui).
+- **Stress-test concurrence** : ajouter un test qui lance 2 runs concurrents de la même campagne et
+  prouve zéro double-envoi (le claim + singletonKey sont en place, mais non testés sous vraie course).
+
 ## Décisions ouvertes
 
 - **OTP post-octobre** : espérer un équivalent WABA-only en ES v4 ; sinon construire le

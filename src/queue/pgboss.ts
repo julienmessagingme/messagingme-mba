@@ -43,9 +43,9 @@ export class PgBossQueue implements Queue {
     this.ensured.add(name);
   }
 
-  async enqueue(name: string, data: unknown): Promise<void> {
+  async enqueue(name: string, data: unknown, opts?: { singletonKey?: string }): Promise<void> {
     await this.ensure(name);
-    await this.boss.send(name, data as object);
+    await this.boss.send(name, data as object, opts?.singletonKey ? { singletonKey: opts.singletonKey } : {});
   }
 
   async work(name: string, handler: (data: unknown) => Promise<void>): Promise<void> {

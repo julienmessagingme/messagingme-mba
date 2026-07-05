@@ -17,6 +17,42 @@ export interface ResolvableContact {
   fields?: Record<string, unknown>;
 }
 
+function isValidSource(s: unknown): s is ParamSource {
+  if (typeof s !== 'object' || s === null) return false;
+  const src = s as { type?: unknown; key?: unknown; value?: unknown };
+  if (src.type === 'literal') return typeof src.value === 'string';
+  if (src.type === 'field') return typeof src.key === 'string' && src.key !== '';
+  if (src.type === 'attribute') return src.key === 'name' || src.key === 'phone';
+  return false;
+}
+
+/**
+ * Valide un paramMapping non fiable (issu d'un body HTTP) : chaque entrée doit avoir une
+ * position entière et une source bien formée, et l'ensemble des positions doit être 1..N
+ * contigu et unique (même invariant que resolveTemplateParams, mais SANS throw). Retourne
+ * le tableau typé si valide, sinon null -> la route répond 400 plutôt que de laisser
+ * resolveTemplateParams throw en 500.
+ */
+export function validateParamMapping(raw: unknown): TemplateParam[] | null {
+  if (!Array.isArray(raw)) return null;
+  const params: TemplateParam[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) return null;
+    const p = item as { position?: unknown; source?: unknown; fallback?: unknown };
+    if (typeof p.position !== 'number' || !Number.isInteger(p.position)) return null;
+    if (!isValidSource(p.source)) return null;
+    if (p.fallback !== undefined && typeof p.fallback !== 'string') return null;
+    const tp: TemplateParam = { position: p.position, source: p.source };
+    if (typeof p.fallback === 'string') tp.fallback = p.fallback;
+    params.push(tp);
+  }
+  const sorted = [...params].sort((a, b) => a.position - b.position);
+  for (let i = 0; i < sorted.length; i += 1) {
+    if (sorted[i]!.position !== i + 1) return null; // positions non 1..N contiguës/uniques
+  }
+  return params;
+}
+
 function valueOf(source: ParamSource, c: ResolvableContact): unknown {
   switch (source.type) {
     case 'literal':

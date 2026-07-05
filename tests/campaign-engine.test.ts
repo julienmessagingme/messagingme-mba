@@ -33,11 +33,19 @@ class FakeSender implements MessageSender {
 }
 class FakeRecipients implements RecipientStore {
   readonly results = new Map<string, { status: string; messageId?: string; error?: string; sentAt?: number }>();
+  readonly claimed: string[] = [];
   /** ids pour lesquels l'écriture `sent` throw (panne de persistance après envoi réussi). */
   throwSentFor: Set<string> = new Set();
+  /** ids déjà pris par un autre run (claim -> false). */
+  claimFails: Set<string> = new Set();
   constructor(private readonly pending: Recipient[]) {}
   async listPending(): Promise<Recipient[]> {
     return this.pending;
+  }
+  async claim(id: string): Promise<boolean> {
+    if (this.claimFails.has(id)) return false;
+    this.claimed.push(id);
+    return true;
   }
   async markResult(
     id: string,
@@ -107,7 +115,29 @@ describe('runCampaign', () => {
     const report = await runCampaign(campaign, deps({ recipients, sender, frequency }));
     expect(report).toMatchObject({ sent: 1, skipped: 1 });
     expect(sender.calls).toEqual(['+33622']);
-    expect(recipients.results.get('r1')).toMatchObject({ status: 'skipped' });
+    // Skip fréquence TRANSITOIRE : non persisté (reste 'pending' pour un futur run).
+    expect(recipients.results.has('r1')).toBe(false);
+    expect(recipients.claimed).toEqual(['r2']); // r1 non claimé (skippé avant le claim)
+  });
+
+  it('claim échoue (run concurrent) : le destinataire est sauté, aucun envoi', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    recipients.claimFails = new Set(['r1']); // r1 déjà pris par un autre run
+    const report = await runCampaign(campaign, deps({ recipients, sender }));
+    expect(sender.calls).toEqual(['+33622']); // r1 jamais envoyé
+    expect(report.sent).toBe(1);
+  });
+
+  it('utility : la fréquence ne s applique pas (message de service)', async () => {
+    const sender = new FakeSender();
+    const frequency = new FakeFreq();
+    frequency.map.set('+33611', 1_000_000_000 - 1000); // envoi marketing récent
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const util: Campaign = { ...campaign, category: 'utility' };
+    const report = await runCampaign(util, deps({ recipients, sender, frequency }));
+    expect(report).toMatchObject({ sent: 1, skipped: 0 }); // envoyé malgré la fréquence
+    expect(sender.templateCalls).toEqual(['+33611']);
   });
 
   it('idempotent : un recipient déjà sent est sauté', async () => {

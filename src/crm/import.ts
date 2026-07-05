@@ -46,13 +46,22 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
   const report: ImportReport = { created: 0, updated: 0, skipped: 0, errors: [] };
   const cols = Object.entries(input.mapping.columns);
 
-  // 1) Enregistrer une fois les champs perso mappés qui n'existent pas encore.
-  const wantedKeys = new Set<string>();
+  // 1) Enregistrer une fois les champs perso mappés qui n'existent pas encore, et repérer
+  //    les collisions (plusieurs en-têtes -> même clé) pour les signaler (perte silencieuse).
+  const keyToHeaders = new Map<string, string[]>();
   for (const [header, m] of cols) {
-    if (m.target === 'custom') wantedKeys.add(m.key ?? slugify(header));
+    if (m.target === 'custom') {
+      const key = m.key ?? slugify(header);
+      keyToHeaders.set(key, [...(keyToHeaders.get(key) ?? []), header]);
+    }
+  }
+  for (const [key, headers] of keyToHeaders) {
+    if (headers.length > 1) {
+      report.errors.push({ line: 1, reason: `colonnes fusionnées sur la clé "${key}": ${headers.join(', ')}` });
+    }
   }
   const existing = new Set((await deps.userFields.list(input.tenantId)).map((f) => f.key));
-  for (const key of wantedKeys) {
+  for (const key of keyToHeaders.keys()) {
     if (!existing.has(key)) await deps.userFields.upsert(input.tenantId, { key, label: key, type: 'text' });
   }
 
@@ -65,11 +74,15 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
 
     for (const [header, m] of cols) {
       const val = (row[header] ?? '').trim();
-      if (m.target === 'phone') phoneRaw = val;
-      else if (m.target === 'name') profileName = val || null;
-      else if (m.target === 'custom') {
+      // Garder la PREMIÈRE valeur non vide : une 2e colonne mappée (ex. Mobile vide après
+      // Telephone) ne doit pas écraser un numéro/nom déjà trouvé.
+      if (m.target === 'phone') {
+        if (val && !phoneRaw) phoneRaw = val;
+      } else if (m.target === 'name') {
+        if (val && profileName === null) profileName = val;
+      } else if (m.target === 'custom') {
         const key = m.key ?? slugify(header);
-        if (val) fields[key] = val;
+        if (val && fields[key] === undefined) fields[key] = val;
       }
       // 'ignore' -> rien
     }

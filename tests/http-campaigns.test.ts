@@ -87,6 +87,23 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     expect(res.statusCode).toBe(400);
     await app.close();
   });
+
+  it('paramMapping invalide (positions non contiguës) -> 400, rien inséré', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = buildServer({
+      queue: new FakeQueue(),
+      campaigns: { repo, queue: new FakeQueue(), campaignExists: async () => true },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/campaigns',
+      headers: { 'content-type': 'application/json' },
+      payload: { ...validBody, paramMapping: [{ position: 5, source: { type: 'literal', value: 'x' } }] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toHaveLength(0); // pas de campagne orpheline
+    await app.close();
+  });
 });
 
 describe('POST /campaigns/:campaignId/run', () => {

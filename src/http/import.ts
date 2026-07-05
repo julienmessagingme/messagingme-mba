@@ -29,6 +29,13 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps): voi
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {
       return reply.code(400).send({ error: 'csv requis (texte brut)' });
     }
+    // mapping fourni mais malformé (sans `columns` objet) -> 400, sinon Object.entries throw en 500.
+    if (body.mapping !== undefined) {
+      const cols = (body.mapping as { columns?: unknown }).columns;
+      if (typeof cols !== 'object' || cols === null || Array.isArray(cols)) {
+        return reply.code(400).send({ error: 'mapping invalide (columns requis)' });
+      }
+    }
 
     const parsed = parseCsv(body.csv);
     const mapping = body.mapping ?? mappingFromHeaders(parsed.headers);

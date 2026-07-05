@@ -140,18 +140,32 @@ export class PgRecipientStore implements RecipientStore {
     }));
   }
 
+  /** Claim atomique pending -> sending (rowCount=1 si CE run réserve, 0 si déjà pris). */
+  async claim(id: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaign_recipients set status = 'sending'
+       where id = $1 and status = 'pending'`,
+      [id],
+    );
+    return (res.rowCount ?? 0) === 1;
+  }
+
   async markResult(
     id: string,
     r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number },
   ): Promise<void> {
+    // Invariant sent_at <-> status='sent' : hors 'sent', sent_at est remis à null.
     await this.pool.query(
       `update campaign_recipients
        set status = $2,
            message_id = $3,
            error = $4,
-           sent_at = case when $2 = 'sent' and $5::double precision is not null
-                          then to_timestamp($5::double precision / 1000.0)
-                          else sent_at end
+           sent_at = case
+             when $2 = 'sent' and $5::double precision is not null
+               then to_timestamp($5::double precision / 1000.0)
+             when $2 = 'sent' then sent_at
+             else null
+           end
        where id = $1`,
       [id, r.status, r.messageId ?? null, r.error ?? null, r.sentAt ?? null],
     );
@@ -166,11 +180,15 @@ export class PgFrequencyStore implements FrequencyStore {
   constructor(private readonly pool: Pool) {}
 
   async lastSentAt(tenantId: string, toE164: string): Promise<number | null> {
+    // Seuls les envois MARKETING comptent pour la fréquence : un utility récent ne doit
+    // pas bloquer un marketing, et le moteur n'applique de toute façon la fréquence qu'au
+    // marketing (cohérence de la sémantique de catégorie).
     const res = await this.pool.query<{ ms: string | null }>(
       `select (extract(epoch from max(r.sent_at)) * 1000)::bigint as ms
        from campaign_recipients r
        join campaigns c on c.id = r.campaign_id
-       where c.tenant_id = $1 and r.to_e164 = $2 and r.status = 'sent'`,
+       where c.tenant_id = $1 and r.to_e164 = $2 and r.status = 'sent'
+         and c.category = 'marketing'`,
       [tenantId, toE164],
     );
     const ms = res.rows[0]?.ms;

@@ -4,8 +4,12 @@ export interface OptInContact {
   optInStatus: 'opted_in' | 'opted_out' | 'unknown';
 }
 
-/** Marketing exige un opt-in explicite ; utility passe (fenêtre de service). */
+/**
+ * Un opt-out explicite bloque TOUT (marketing comme utility). Sinon : marketing exige un
+ * opt-in explicite ; utility passe (fenêtre de service).
+ */
 export function optInAllows(category: CampaignCategory, contact: OptInContact): boolean {
+  if (contact.optInStatus === 'opted_out') return false;
   if (category === 'utility') return true;
   return contact.optInStatus === 'opted_in';
 }

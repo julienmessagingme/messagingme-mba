@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
 import { registerImport } from './http/import';
@@ -25,7 +25,13 @@ export interface ServerDeps {
  * rester testable sans DB (fakes en unit, adaptateurs Postgres en prod).
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
+
+  // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
+  app.setErrorHandler((err: FastifyError, _req: FastifyRequest, reply: FastifyReply) => {
+    const code = err.statusCode ?? 500;
+    reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });
+  });
 
   app.get('/health', async () => ({
     ok: true,

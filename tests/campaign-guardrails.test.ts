@@ -10,8 +10,10 @@ describe('optInAllows', () => {
     expect(optInAllows('marketing', { optInStatus: 'unknown' })).toBe(false);
     expect(optInAllows('marketing', { optInStatus: 'opted_out' })).toBe(false);
   });
-  it('utility passe toujours', () => {
+  it('utility passe pour unknown/opted_in mais PAS pour opted_out', () => {
     expect(optInAllows('utility', { optInStatus: 'unknown' })).toBe(true);
+    expect(optInAllows('utility', { optInStatus: 'opted_in' })).toBe(true);
+    expect(optInAllows('utility', { optInStatus: 'opted_out' })).toBe(false); // opt-out dur bloque tout
   });
 });
 

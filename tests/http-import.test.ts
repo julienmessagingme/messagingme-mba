@@ -59,6 +59,18 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     await app.close();
   });
 
+  it('mapping malformé (sans columns) -> 400, pas de 500', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      headers: { 'content-type': 'application/json' },
+      payload: { csv: 'Tel\n+33611111111', mapping: { foo: 'bar' } },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
   it('sans optIn -> statut unknown', async () => {
     const contacts = new FakeContacts();
     const app = inject(contacts, new FakeFields());
