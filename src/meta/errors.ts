@@ -31,8 +31,10 @@ export class MetaApiError extends Error {
   readonly subcode: number | undefined;
   readonly type: string | undefined;
   readonly retryable: boolean;
+  /** Délai (ms) issu d'un header Retry-After, si présent. */
+  readonly retryAfterMs: number | undefined;
 
-  constructor(httpStatus: number, body: MetaErrorBody | null) {
+  constructor(httpStatus: number, body: MetaErrorBody | null, retryAfterMs?: number) {
     super(body?.message ?? `Meta API error (HTTP ${httpStatus})`);
     this.name = 'MetaApiError';
     this.httpStatus = httpStatus;
@@ -40,5 +42,6 @@ export class MetaApiError extends Error {
     this.subcode = body?.error_subcode;
     this.type = body?.type;
     this.retryable = classify(httpStatus, body);
+    this.retryAfterMs = retryAfterMs;
   }
 }

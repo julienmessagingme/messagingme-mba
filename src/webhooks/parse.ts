@@ -76,10 +76,12 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
       for (const stRaw of asArray(value['statuses'])) {
         const st = asRecord(stRaw);
         const id = typeof st['id'] === 'string' ? (st['id'] as string) : undefined;
-        const status = typeof st['status'] === 'string' ? (st['status'] as string) : 'unknown';
+        const status = typeof st['status'] === 'string' ? (st['status'] as string) : undefined;
+        // Si id ET status présents -> clé sémantique ; sinon hash canonique (deux
+        // statuts réellement différents sans champ `status` ne collapsent pas).
         events.push({
           source: 'statuses',
-          dedupKey: id ? `status:${id}:${status}` : hash('statuses', st),
+          dedupKey: id && status ? `status:${id}:${status}` : hash('statuses', st),
           data: st,
         });
       }

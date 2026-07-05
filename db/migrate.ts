@@ -8,6 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
+import { pgSsl } from '../src/db/ssl';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, 'migrations');
@@ -18,7 +19,7 @@ async function main(): Promise<void> {
 
   const client = new Client({
     connectionString: url,
-    ssl: { rejectUnauthorized: false },
+    ssl: pgSsl(),
   });
   await client.connect();
 

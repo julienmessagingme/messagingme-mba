@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { PgBossQueue } from '../../src/queue/pgboss';
 import { PgEventStore } from '../../src/webhooks/store';
 import { handleWebhookJob } from '../../src/webhooks/handler';
+import { pgSsl } from '../../src/db/ssl';
 
 const url = process.env.DATABASE_URL ?? '';
 const KEY = 'msg:wamid.INTEG';
@@ -17,7 +18,7 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
   const queue = new PgBossQueue(url, 'pgboss_test');
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
     await pool.query('delete from webhook_events where meta_message_id = $1', [KEY]);
     await queue.start();
   });

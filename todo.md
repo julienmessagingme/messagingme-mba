@@ -18,6 +18,24 @@ Après les boucles backend : UI (inbox minimal + 2 rôles, dashboard) en direct 
   post-ToS.
 - **PaaS** : point de décision à l'entrée Phase 3 (Fly.io Paris / Railway EU, critère RGPD).
 
+## Dette identifiée par la revue Loops 1-2 (différée, non bloquante)
+
+- **TLS Supabase** : aujourd'hui `DB_SSL_INSECURE=true` (fallback dev, endpoint direct = CA
+  auto-signée). Upgrade : télécharger la CA Supabase (dashboard) et pointer `DB_SSL_CA_FILE`
+  pour la vérif complète, OU basculer sur le pooler (cert AWS publiquement approuvé).
+- **Test DLQ** : ajouter un test d'intégration qui prouve qu'un job qui throw finit en
+  `<name>-dlq` après épuisement des retries (rendre retryLimit configurable dans PgBossQueue
+  pour un test rapide).
+- **CI intégration** : job GitHub Actions avec service Postgres qui lance `test:integration`
+  (le job unitaire existe déjà).
+- **`webhook_events`** : colonne nommée `meta_message_id` porte en fait une dedup key
+  synthétique -> renommer en `dedup_key` (migration additive) ; et ajouter `tenant_id`/`waba_id`
+  + index pour les jointures analytiques des Loops à venir.
+- **`processed_at`/`error`** de `webhook_events` : sémantique à trancher (log brut d'ingestion
+  vs statut de traitement réel).
+- **parse.ts** : uniformiser le routage des sous-événements (messages/statuses par tableau,
+  handovers par `field`) pour éviter tout double-comptage sur un payload composite.
+
 ## Raffinements notés (non bloquants)
 
 - **Loop 2 / `withRetry`** : toute erreur non-`MetaApiError` est rejouée (conforme au plan

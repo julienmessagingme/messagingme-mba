@@ -48,7 +48,7 @@ describe('withRetry', () => {
     expect(calls).toBe(1);
   });
 
-  it('erreur réseau (non-Meta) est traitée comme retryable', async () => {
+  it('erreur réseau reconnaissable (fetch failed) est retryable', async () => {
     let calls = 0;
     await expect(
       withRetry(
@@ -60,6 +60,35 @@ describe('withRetry', () => {
       ),
     ).rejects.toBeInstanceOf(TypeError);
     expect(calls).toBe(2);
+  });
+
+  it('erreur applicative quelconque (bug) N EST PAS rejouée', async () => {
+    let calls = 0;
+    await expect(
+      withRetry(
+        async () => {
+          calls += 1;
+          throw new Error('bug de programmation');
+        },
+        { maxRetries: 5, sleep: noSleep, random: noJitter },
+      ),
+    ).rejects.toThrow('bug de programmation');
+    expect(calls).toBe(1);
+  });
+
+  it('honore Retry-After (délai du header) au lieu du backoff', async () => {
+    const waits: number[] = [];
+    let calls = 0;
+    const res = await withRetry(
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new MetaApiError(429, null, 5000); // retryAfterMs=5000
+        return 'ok';
+      },
+      { maxRetries: 2, sleep: async (ms) => void waits.push(ms), random: noJitter },
+    );
+    expect(res).toBe('ok');
+    expect(waits).toEqual([5000]);
   });
 });
 

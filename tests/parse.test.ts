@@ -33,6 +33,17 @@ describe('parseWebhook', () => {
     expect(keys).toContain('status:wamid.X:sent');
   });
 
+  it('statuts sans champ `status` -> clés distinctes (pas de collapse sur :unknown)', () => {
+    const ev = parseWebhook({
+      entry: [{ changes: [{ field: 'statuses', value: { statuses: [
+        { id: 'wamid.Y', errors: [{ code: 1 }] },
+        { id: 'wamid.Y', errors: [{ code: 2 }] },
+      ] } }] }],
+    });
+    expect(ev).toHaveLength(2);
+    expect(ev[0]?.dedupKey).not.toBe(ev[1]?.dedupKey);
+  });
+
   it('standby (message_echoes) -> source standby', () => {
     const ev = parseWebhook({
       entry: [{ changes: [{ field: 'standby', value: { message_echoes: [{ id: 'wamid.E' }] } }] }],

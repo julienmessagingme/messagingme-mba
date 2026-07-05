@@ -3,6 +3,7 @@ import { MetaApiError } from './errors';
 export interface HttpResponse {
   status: number;
   json: unknown;
+  headers?: Record<string, string>;
 }
 
 /** Transport HTTP injectable (fetch en prod, fake en test). */
@@ -23,8 +24,45 @@ export class FetchTransport implements HttpTransport {
     } catch {
       json = null;
     }
-    return { status: res.status, json };
+    const respHeaders: Record<string, string> = {};
+    res.headers.forEach((v, k) => {
+      respHeaders[k.toLowerCase()] = v;
+    });
+    return { status: res.status, json, headers: respHeaders };
   }
+}
+
+/** Extrait un délai (ms) d'un header Retry-After (secondes ou date HTTP). */
+export function parseRetryAfter(headers: Record<string, string> | undefined): number | undefined {
+  const v = headers?.['retry-after'];
+  if (!v) return undefined;
+  const secs = Number(v);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const date = Date.parse(v);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return undefined;
+}
+
+const NETWORK_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'EPIPE',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+/** Rejouable ? MetaApiError.retryable, OU erreur réseau RECONNAISSABLE uniquement
+ * (on ne rejoue pas un bug de programmation qui se déguiserait en throw). */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof MetaApiError) return err.retryable;
+  const code =
+    (err as { cause?: { code?: string } })?.cause?.code ?? (err as { code?: string })?.code;
+  if (code && NETWORK_CODES.has(code)) return true;
+  if (err instanceof TypeError && /fetch failed|network/i.test(err.message)) return true;
+  return false;
 }
 
 const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -32,18 +70,20 @@ const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r
 export interface RetryOpts {
   maxRetries?: number;
   baseDelayMs?: number;
+  maxDelayMs?: number;
   factor?: number;
   random?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
 
 /**
- * Rejoue `fn` sur erreur rejouable (MetaApiError.retryable, ou erreur réseau non-Meta)
- * avec backoff exponentiel + jitter, jusqu'à `maxRetries`. Erreur terminale -> throw immédiat.
+ * Rejoue `fn` sur erreur rejouable avec backoff exponentiel BORNÉ + jitter.
+ * Respecte `Retry-After` si l'erreur Meta en porte un. Erreur terminale -> throw immédiat.
  */
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise<T> {
   const maxRetries = opts.maxRetries ?? 4;
   const base = opts.baseDelayMs ?? 300;
+  const cap = opts.maxDelayMs ?? 30000;
   const factor = opts.factor ?? 2;
   const random = opts.random ?? Math.random;
   const sleep = opts.sleep ?? realSleep;
@@ -53,10 +93,11 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): 
     try {
       return await fn();
     } catch (err) {
-      const retryable = err instanceof MetaApiError ? err.retryable : true; // non-Meta = réseau
-      if (!retryable || attempt >= maxRetries) throw err;
-      const delay = Math.round(base * factor ** attempt * (1 + random() * 0.1));
-      await sleep(delay);
+      if (!isRetryable(err) || attempt >= maxRetries) throw err;
+      const retryAfter = err instanceof MetaApiError ? err.retryAfterMs : undefined;
+      const capped = Math.min(cap, base * factor ** attempt);
+      const backoff = Math.round(capped * (0.5 + random() * 0.5)); // jitter 50-100%
+      await sleep(retryAfter ?? backoff);
       attempt += 1;
     }
   }

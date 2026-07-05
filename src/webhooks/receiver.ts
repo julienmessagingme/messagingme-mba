@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { verifyMetaSignature } from '../lib/signature';
+import { parse as secureJsonParse } from 'secure-json-parse';
+import { verifyMetaSignature, timingSafeEqualStr } from '../lib/signature';
 import type { Queue } from '../queue/queue';
 
 export interface ReceiverOptions {
@@ -25,7 +26,14 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
       const buf = body as Buffer;
       (req as WithRawBody).rawBody = buf;
       try {
-        done(null, buf.length ? JSON.parse(buf.toString('utf8')) : {});
+        // secure-json-parse : neutralise __proto__/constructor (anti prototype-poisoning),
+        // garde comme le parser Fastify par défaut qu'on remplace pour capturer rawBody.
+        done(
+          null,
+          buf.length
+            ? secureJsonParse(buf.toString('utf8'), { protoAction: 'remove', constructorAction: 'remove' })
+            : {},
+        );
       } catch {
         // JSON invalide : ne PAS renvoyer 500 (Meta retenterait). On garde rawBody ;
         // la validation de signature (sur rawBody) rejette tout corps forgé en 403.
@@ -38,10 +46,12 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
   // Handshake de vérification du webhook.
   app.get('/webhooks/meta', async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
+    const token = q['hub.verify_token'];
     if (
       q['hub.mode'] === 'subscribe' &&
       opts.verifyToken !== '' &&
-      q['hub.verify_token'] === opts.verifyToken
+      token !== undefined &&
+      timingSafeEqualStr(token, opts.verifyToken)
     ) {
       return reply.code(200).send(q['hub.challenge'] ?? '');
     }

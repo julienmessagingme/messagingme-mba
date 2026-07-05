@@ -1,5 +1,6 @@
 import { PgBoss } from 'pg-boss';
 import type { Queue } from './queue';
+import { pgSsl } from '../db/ssl';
 
 /**
  * Implémentation durable via pg-boss (Postgres/Supabase).
@@ -14,7 +15,7 @@ export class PgBossQueue implements Queue {
     this.boss = new PgBoss({
       connectionString,
       schema,
-      ssl: { rejectUnauthorized: false },
+      ssl: pgSsl(),
     });
   }
 
@@ -49,7 +50,9 @@ export class PgBossQueue implements Queue {
 
   async work(name: string, handler: (data: unknown) => Promise<void>): Promise<void> {
     await this.ensure(name);
-    await this.boss.work<unknown>(name, async (jobs) => {
+    // batchSize:1 verrouille l'invariant per-job de l'abstraction (un throw ne fait
+    // pas échouer un lot entier / ne rejoue pas des jobs déjà réussis).
+    await this.boss.work<unknown>(name, { batchSize: 1 }, async (jobs) => {
       for (const job of jobs) {
         await handler(job.data);
       }

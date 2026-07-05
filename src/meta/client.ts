@@ -1,5 +1,5 @@
 import type { HttpTransport, RetryOpts } from './http';
-import { withRetry, RateLimiter } from './http';
+import { withRetry, RateLimiter, parseRetryAfter } from './http';
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import type { SendResult, TemplateSpec, MarketingParams } from './types';
@@ -57,7 +57,7 @@ export class MetaClient {
       });
       if (res.status < 200 || res.status >= 300) {
         const errBody = (res.json as { error?: MetaErrorBody } | null)?.error ?? null;
-        throw new MetaApiError(res.status, errBody);
+        throw new MetaApiError(res.status, errBody, parseRetryAfter(res.headers));
       }
       return res.json;
     }, this.retry);
