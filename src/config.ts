@@ -14,6 +14,10 @@ const schema = z.object({
   AUTH_SECRET: z.string().default('dev-insecure-change-me'),
   /** Mode démo : le worker n'appelle PAS Meta, il marque les envois `sent` (message-id synthétique). */
   DRY_RUN: z.string().default('false'),
+  /** Un destinataire `sending` plus vieux que ça est ramené à `pending` par le sweeper (ms). */
+  STALE_SENDING_MS: z.coerce.number().default(15 * 60 * 1000),
+  /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
+  RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
 }).superRefine((c, ctx) => {

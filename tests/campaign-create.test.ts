@@ -7,15 +7,12 @@ import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 class FakeRepo implements CampaignRepoLike {
   lastRecipients: BuiltRecipient[] = [];
   constructor(private readonly contacts: BuildContact[]) {}
-  async insertCampaign(_input: CreateCampaignInput): Promise<string> {
-    return 'camp-x';
-  }
   async listContactsForBuild(): Promise<BuildContact[]> {
     return this.contacts;
   }
-  async insertRecipients(_id: string, recipients: BuiltRecipient[]): Promise<number> {
+  async createWithRecipients(_input: CreateCampaignInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }> {
     this.lastRecipients = recipients;
-    return recipients.length;
+    return { campaignId: 'camp-x', recipientCount: recipients.length };
   }
 }
 

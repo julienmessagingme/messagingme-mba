@@ -19,16 +19,13 @@ class FakeRepo implements CampaignRepoLike {
   readonly created: CreateCampaignInput[] = [];
   lastRecipients: BuiltRecipient[] = [];
   constructor(private readonly contacts: BuildContact[]) {}
-  async insertCampaign(input: CreateCampaignInput): Promise<string> {
-    this.created.push(input);
-    return 'camp-1';
-  }
   async listContactsForBuild(): Promise<BuildContact[]> {
     return this.contacts;
   }
-  async insertRecipients(_campaignId: string, recipients: BuiltRecipient[]): Promise<number> {
+  async createWithRecipients(input: CreateCampaignInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }> {
+    this.created.push(input);
     this.lastRecipients = recipients;
-    return recipients.length;
+    return { campaignId: 'camp-1', recipientCount: recipients.length };
   }
 }
 

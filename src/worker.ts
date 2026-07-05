@@ -56,7 +56,23 @@ async function main(): Promise<void> {
     });
   });
 
+  // Sweeper : récupère périodiquement les destinataires bloqués en 'sending'.
+  const sweep = async (): Promise<void> => {
+    try {
+      const n = await recipientStore.reclaimStale(config.STALE_SENDING_MS);
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`sweeper: ${n} destinataire(s) 'sending' bloqué(s) -> 'pending'`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('sweeper erreur:', err instanceof Error ? err.message : err);
+    }
+  };
+  void sweep();
+  const sweeper = setInterval(() => void sweep(), config.RECLAIM_INTERVAL_MS);
+  sweeper.unref();
+
   installGracefulShutdown(async () => {
+    clearInterval(sweeper);
     await queue.stop();
     await pool.end();
   });

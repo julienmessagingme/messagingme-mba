@@ -123,4 +123,36 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     );
     expect(await quality.getRating('pn-red')).toBe('RED');
   });
+
+  it('reclaimStale : un `sending` trop vieux est ramené à `pending`', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`,
+      [tenantId, '+33600000004'],
+    )).rows[0]!.id;
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: 'pn', name: 'Sweep', category: 'marketing', templateName: 't', templateLanguage: 'fr', paramMapping: [] },
+      [{ contactId, toE164: '+33600000004', resolvedParams: [] }],
+    );
+    const rid = (await recipients.listPending(campaignId))[0]!.id;
+    expect(await recipients.claim(rid)).toBe(true); // pending -> sending (claimed_at=now)
+    expect(await recipients.reclaimStale(60_000)).toBe(0); // pas vieux de 60s
+    // Vieillir CE claim d'1h, puis récupérer (n'affecte pas les sending récents d'ailleurs).
+    await pool.query(`update campaign_recipients set claimed_at = now() - interval '1 hour' where id = $1`, [rid]);
+    expect(await recipients.reclaimStale(60_000)).toBeGreaterThanOrEqual(1);
+    expect(await recipients.listPending(campaignId)).toHaveLength(1); // de retour pending
+  });
+
+  it('createWithRecipients : rollback si un destinataire échoue (pas de campagne orpheline)', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const before = (await repo.listCampaignSummaries(tenantId)).length;
+    await expect(
+      repo.createWithRecipients(
+        { tenantId, phoneNumberId: 'pn', name: 'RollbackTest', category: 'marketing', templateName: 't', templateLanguage: 'fr', paramMapping: [] },
+        [{ contactId: '00000000-0000-0000-0000-000000000000', toE164: '+33600000005', resolvedParams: [] }], // FK contact inexistant
+      ),
+    ).rejects.toThrow();
+    expect((await repo.listCampaignSummaries(tenantId)).length).toBe(before); // aucune campagne persistée
+  });
 });

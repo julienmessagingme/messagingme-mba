@@ -252,6 +252,49 @@ export class PgCampaignRepo {
     }));
   }
 
+  /**
+   * Crée la campagne ET ses destinataires dans UNE transaction : un échec en cours de route
+   * ne laisse pas de campagne draft orpheline avec des destinataires partiels.
+   */
+  async createWithRecipients(
+    input: CreateCampaignInput,
+    recipients: BuiltRecipient[],
+  ): Promise<{ campaignId: string; recipientCount: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const cRes = await client.query<{ id: string }>(
+        `insert into campaigns
+           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb)
+         returning id`,
+        [
+          input.tenantId, input.phoneNumberId, input.name, input.category,
+          input.templateName, input.templateLanguage, JSON.stringify(input.paramMapping),
+        ],
+      );
+      const campaignId = cRes.rows[0]?.id;
+      if (!campaignId) throw new Error('createWithRecipients : aucun id retourné');
+      let inserted = 0;
+      for (const rcp of recipients) {
+        const r = await client.query(
+          `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params)
+           values ($1, $2, $3, $4::jsonb)
+           on conflict (campaign_id, contact_id) do nothing`,
+          [campaignId, rcp.contactId, rcp.toE164, JSON.stringify(rcp.resolvedParams)],
+        );
+        inserted += r.rowCount ?? 0;
+      }
+      await client.query('commit');
+      return { campaignId, recipientCount: inserted };
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Insère les destinataires (idempotent par (campaign_id, contact_id)). Retourne le nb inséré. */
   async insertRecipients(campaignId: string, recipients: BuiltRecipient[]): Promise<number> {
     let inserted = 0;
@@ -323,11 +366,27 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
   /** Claim atomique pending -> sending (rowCount=1 si CE run réserve, 0 si déjà pris). */
   async claim(id: string): Promise<boolean> {
     const res = await this.pool.query(
-      `update campaign_recipients set status = 'sending'
+      `update campaign_recipients set status = 'sending', claimed_at = now()
        where id = $1 and status = 'pending'`,
       [id],
     );
     return (res.rowCount ?? 0) === 1;
+  }
+
+  /**
+   * Sweeper : ramène à `pending` les destinataires bloqués en `sending` depuis plus de
+   * `olderThanMs` (crash entre le claim et l'envoi). Retourne le nb récupéré.
+   * NB : si l'envoi avait réussi mais que la persistance `sent` avait échoué, ce reclaim
+   * peut re-envoyer (rare) ; c'est le compromis assumé face à un destinataire figé à vie.
+   */
+  async reclaimStale(olderThanMs: number): Promise<number> {
+    const res = await this.pool.query(
+      `update campaign_recipients set status = 'pending', claimed_at = null
+       where status = 'sending' and claimed_at is not null
+         and claimed_at < now() - ($1::double precision * interval '1 millisecond')`,
+      [olderThanMs],
+    );
+    return res.rowCount ?? 0;
   }
 
   async markResult(
