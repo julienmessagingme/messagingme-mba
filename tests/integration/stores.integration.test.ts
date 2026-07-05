@@ -102,6 +102,14 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const last = await frequency.lastSentAt(tenantId, '+33600000002');
     expect(last).toBe(at);
     expect(await frequency.lastSentAt(tenantId, '+33699999999')).toBeNull();
+
+    // Suivi de livraison (par message_id 'm-1'), monotone.
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'read', null)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'delivered', null)).toBe(0); // read ne régresse pas
+    const dstatus = (await pool.query<{ delivery_status: string }>(`select delivery_status from campaign_recipients where id = $1`, [rid])).rows[0]?.delivery_status;
+    expect(dstatus).toBe('read');
+    expect(await recipients.updateDeliveryByMessageId('m-inconnu', 'sent', null)).toBe(0); // wamid pas à nous
   });
 
   it('PgQualityProvider : UNKNOWN si numéro absent, lit le rating sinon', async () => {

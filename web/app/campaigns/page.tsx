@@ -27,8 +27,11 @@ const STATUS: Record<string, { text: string; cls: string }> = {
   failed: { text: 'échec', cls: 'bg-red-50 text-red-700' },
   pending: { text: 'en attente', cls: 'bg-slate-100 text-slate-600' },
   sending: { text: 'envoi', cls: 'bg-blue-50 text-blue-700' },
-  sent: { text: 'envoyé', cls: 'bg-emerald-50 text-emerald-700' },
+  sent: { text: 'envoyé', cls: 'bg-slate-100 text-slate-700' },
   skipped: { text: 'ignoré', cls: 'bg-amber-50 text-amber-700' },
+  // Statuts de livraison Meta
+  delivered: { text: 'délivré', cls: 'bg-blue-50 text-blue-700' },
+  read: { text: 'lu', cls: 'bg-emerald-50 text-emerald-700' },
 };
 function Badge({ status }: { status: string }) {
   const s = STATUS[status] ?? { text: status, cls: 'bg-slate-100 text-slate-600' };
@@ -155,7 +158,8 @@ function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () 
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Téléphone</th>
-              <th className="px-4 py-2 font-medium">Statut</th>
+              <th className="px-4 py-2 font-medium">Envoi</th>
+              <th className="px-4 py-2 font-medium">Livraison</th>
               <th className="px-4 py-2 font-medium">Détail</th>
             </tr>
           </thead>
@@ -164,7 +168,8 @@ function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () 
               <tr key={r.id}>
                 <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
                 <td className="px-4 py-2"><Badge status={r.status} /></td>
-                <td className="px-4 py-2 text-xs text-slate-500">{r.error ?? r.messageId ?? '-'}</td>
+                <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-slate-400">-</span>}</td>
+                <td className="px-4 py-2 text-xs text-slate-500">{r.deliveryError ?? r.error ?? r.messageId ?? '-'}</td>
               </tr>
             ))}
           </tbody>

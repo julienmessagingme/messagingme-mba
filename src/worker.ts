@@ -23,10 +23,11 @@ async function main(): Promise<void> {
   const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA);
   await queue.start();
 
-  // File webhook (Loop 1).
+  // File webhook (Loop 1). Le PgRecipientStore applique aussi les statuts de livraison Meta.
   const eventStore = new PgEventStore(pool);
+  const recipientStore = new PgRecipientStore(pool);
   await queue.work('webhook', async (data) => {
-    await handleWebhookJob(data, eventStore);
+    await handleWebhookJob(data, eventStore, recipientStore);
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).

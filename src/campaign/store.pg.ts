@@ -3,6 +3,7 @@ import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRati
 import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
 import type { BuildContact, BuiltRecipient } from './build';
 import type { TemplateParam } from '../crm/template';
+import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
   tenantId: string;
@@ -41,6 +42,8 @@ export interface CampaignDetail extends CampaignSummary {
     messageId: string | null;
     error: string | null;
     sentAt: string | null;
+    deliveryStatus: string | null;
+    deliveryError: string | null;
   }>;
 }
 export interface PhoneNumberRow {
@@ -171,9 +174,10 @@ export class PgCampaignRepo {
     const h = head.rows[0];
     if (!h) return null;
     const recs = await this.pool.query<{
-      id: string; to_e164: string; status: string; message_id: string | null; error: string | null; sent_at: Date | null;
+      id: string; to_e164: string; status: string; message_id: string | null; error: string | null;
+      sent_at: Date | null; delivery_status: string | null; delivery_error: string | null;
     }>(
-      `select id, to_e164, status, message_id, error, sent_at
+      `select id, to_e164, status, message_id, error, sent_at, delivery_status, delivery_error
        from campaign_recipients where campaign_id = $1 order by status, id limit 500`,
       [campaignId],
     );
@@ -186,6 +190,8 @@ export class PgCampaignRepo {
         messageId: r.message_id,
         error: r.error,
         sentAt: r.sent_at ? r.sent_at.toISOString() : null,
+        deliveryStatus: r.delivery_status,
+        deliveryError: r.delivery_error,
       })),
     };
   }
@@ -269,8 +275,27 @@ export class PgCampaignStore implements CampaignStore {
   }
 }
 
-export class PgRecipientStore implements RecipientStore {
+export class PgRecipientStore implements RecipientStore, DeliveryStore {
   constructor(private readonly pool: Pool) {}
+
+  /**
+   * Applique un statut de livraison Meta (par message_id), en MONOTONE : sent -> delivered
+   * -> read ne régresse jamais (un `delivered` tardif n'écrase pas un `read`). `failed`
+   * s'applique toujours. Retourne le nb de lignes touchées (0 si le wamid n'est pas à nous).
+   */
+  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null): Promise<number> {
+    const res = await this.pool.query(
+      `update campaign_recipients
+       set delivery_status = $2, delivery_error = $3, delivery_updated_at = now()
+       where message_id = $1 and (
+         $2 = 'failed'
+         or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+            > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+       )`,
+      [messageId, status, error],
+    );
+    return res.rowCount ?? 0;
+  }
 
   async listPending(campaignId: string): Promise<Recipient[]> {
     const res = await this.pool.query<{

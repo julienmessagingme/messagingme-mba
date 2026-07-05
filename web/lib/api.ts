@@ -94,6 +94,8 @@ export interface CampaignRecipient {
   messageId: string | null;
   error: string | null;
   sentAt: string | null;
+  deliveryStatus: string | null;
+  deliveryError: string | null;
 }
 export interface CampaignDetail extends CampaignSummary {
   recipients: CampaignRecipient[];
