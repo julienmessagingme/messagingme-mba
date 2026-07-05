@@ -6,3 +6,6 @@ dist/
 coverage/
 .DS_Store
 .vitest/
+
+# feature-loop (artefacts de travail)
+.loop/
