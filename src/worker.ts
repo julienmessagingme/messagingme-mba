@@ -14,6 +14,9 @@ import {
 import { campaignRunJob } from './campaign/run-job';
 import { MetaClient } from './meta/client';
 import { FetchTransport } from './meta/http';
+import { DryRunSender } from './campaign/dry-run-sender';
+import type { MessageSender } from './campaign/engine';
+import type { Campaign } from './campaign/types';
 import { installGracefulShutdown } from './shutdown';
 
 async function main(): Promise<void> {
@@ -26,19 +29,25 @@ async function main(): Promise<void> {
     await handleWebhookJob(data, eventStore);
   });
 
-  // File campaign-run (Loop 5) : sender MetaClient construit par campagne.
+  // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).
   const repo = new PgCampaignRepo(pool);
   const transport = new FetchTransport();
-  await queue.work('campaign-run', async (data) => {
-    await campaignRunJob(data, {
-      getCampaign: (id) => repo.getCampaign(id),
-      senderFor: (campaign) =>
-        new MetaClient({
+  const dryRun = config.DRY_RUN === 'true';
+  const dryRunSender = new DryRunSender();
+  const senderFor = (campaign: Campaign): MessageSender =>
+    dryRun
+      ? dryRunSender
+      : new MetaClient({
           transport,
           token: config.META_ACCESS_TOKEN,
           phoneNumberId: campaign.phoneNumberId,
           version: config.META_GRAPH_VERSION,
-        }),
+        });
+
+  await queue.work('campaign-run', async (data) => {
+    await campaignRunJob(data, {
+      getCampaign: (id) => repo.getCampaign(id),
+      senderFor,
       recipients: new PgRecipientStore(pool),
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
@@ -52,7 +61,7 @@ async function main(): Promise<void> {
   });
 
   // eslint-disable-next-line no-console
-  console.log('messagingme-mba worker démarré (files: webhook, campaign-run)');
+  console.log(`messagingme-mba worker démarré (files: webhook, campaign-run)${dryRun ? ' [DRY_RUN]' : ''}`);
 }
 
 main().catch((err) => {

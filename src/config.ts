@@ -12,6 +12,8 @@ const schema = z.object({
   DEFAULT_COUNTRY: z.string().default('FR'),
   /** Secret HMAC de signature des JWT de session (login console). */
   AUTH_SECRET: z.string().default('dev-insecure-change-me'),
+  /** Mode démo : le worker n'appelle PAS Meta, il marque les envois `sent` (message-id synthétique). */
+  DRY_RUN: z.string().default('false'),
   DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
 }).superRefine((c, ctx) => {

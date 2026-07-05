@@ -1,0 +1,36 @@
+# Déploiement VPS : API + worker + frontend, tous sur le réseau NPM (mcp-robot_default).
+# NPM atteint mba-web par nom de conteneur -> aucun port hôte exposé (pas d'accès public direct).
+# Secrets/config dans .env.prod (NON commité, créé sur le VPS).
+services:
+  mba-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mba-api
+    env_file: .env.prod
+    restart: unless-stopped
+    networks: [mcp-robot_default]
+
+  mba-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mba-worker
+    command: ["npx", "tsx", "src/worker.ts"]
+    env_file: .env.prod
+    restart: unless-stopped
+    networks: [mcp-robot_default]
+
+  mba-web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: mba-web
+    environment:
+      - BACKEND_URL=http://mba-api:8095
+    restart: unless-stopped
+    networks: [mcp-robot_default]
+
+networks:
+  mcp-robot_default:
+    external: true
