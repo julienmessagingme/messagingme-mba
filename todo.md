@@ -29,6 +29,19 @@ dédiée (elle a besoin d'une décision produit + du login de l'UI), pas comme u
   Puis preHandler global dans `buildServer`, tenantId DÉRIVÉ de l'identité (jamais de l'URL), et
   flux de provisioning des numéros. Va de pair avec le login de l'UI.
 
+## Suites de la revue sécurité auth (non bloquant)
+
+- **Contrôle de rôle (RBAC)** : le claim `role` (admin/agent) du JWT n'est appliqué par aucune
+  route (un `agent` a tous les droits d'un `admin`). Pas exploitable aujourd'hui (aucune création
+  d'agent self-service, seed ne crée que des admin), mais câbler `requireRole('admin')` sur les
+  actions à impact (créer/lancer campagne, import) AVANT d'ouvrir une création d'utilisateurs.
+  Décision produit : quelle matrice admin/agent.
+- **Unicité email** : `findByEmail` est maintenant déterministe (ORDER BY + LIMIT 1), mais décider
+  si un email est global (ajouter `unique (email)` en migration) ou par-tenant (login avec sélection
+  de tenant). Tant que le login ne prend qu'un email, un `unique (email)` global lève l'ambiguïté.
+- **AUTH_SECRET en prod** : le boot échoue désormais si absent/faible en `NODE_ENV=production`.
+  Penser à poser un vrai `AUTH_SECRET` (>= 32 octets) dans l'env du déploiement VPS.
+
 ## Suites de la revue Loops 3-5 (non bloquant)
 
 - **Réconciliation `sending`** : le claim atomique (fix double-envoi) laisse un destinataire en

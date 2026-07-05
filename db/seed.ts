@@ -7,6 +7,14 @@ import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
 import { hashPassword } from '../src/auth/password';
 
+// Garde-fou anti footgun de prod : pas de creds démo par défaut. Il faut SOIT fournir
+// SEED_PASSWORD explicitement, SOIT opter pour les défauts démo via SEED_DEMO=true.
+if (!process.env.SEED_PASSWORD && process.env.SEED_DEMO !== 'true') {
+  // eslint-disable-next-line no-console
+  console.error('Refus : fournis SEED_PASSWORD (recommandé) ou SEED_DEMO=true pour les creds démo (admin@demo.test/demo1234).');
+  process.exit(1);
+}
+
 const TENANT_NAME = process.env.SEED_TENANT_NAME ?? 'Demo';
 const EMAIL = (process.env.SEED_EMAIL ?? 'admin@demo.test').trim().toLowerCase();
 const PASSWORD = process.env.SEED_PASSWORD ?? 'demo1234';

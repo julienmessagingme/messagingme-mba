@@ -8,15 +8,15 @@ import type { UserAuthStore, AuthUser } from '../src/auth/store';
 const SECRET = 'test-secret-please-change';
 
 describe('password', () => {
-  it('hash puis vérifie le bon mot de passe', () => {
+  it('hash puis vérifie le bon mot de passe', async () => {
     const h = hashPassword('s3cret!');
     expect(h.startsWith('scrypt$')).toBe(true);
-    expect(verifyPassword('s3cret!', h)).toBe(true);
+    expect(await verifyPassword('s3cret!', h)).toBe(true);
   });
-  it('rejette un mauvais mot de passe ou un hash malformé', () => {
+  it('rejette un mauvais mot de passe ou un hash malformé', async () => {
     const h = hashPassword('s3cret!');
-    expect(verifyPassword('wrong', h)).toBe(false);
-    expect(verifyPassword('x', 'pas-un-hash')).toBe(false);
+    expect(await verifyPassword('wrong', h)).toBe(false);
+    expect(await verifyPassword('x', 'pas-un-hash')).toBe(false);
   });
   it('deux hash du même mot de passe diffèrent (sel aléatoire)', () => {
     expect(hashPassword('a')).not.toBe(hashPassword('a'));
@@ -79,6 +79,20 @@ describe('POST /auth/login', () => {
     const app = appWith([admin]);
     const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co' } });
     expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('rate-limit : trop de tentatives -> 429', async () => {
+    const app = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: new FakeUsers([admin]), secret: SECRET, loginRateLimit: { max: 3, windowMs: 60_000 } },
+    });
+    const attempt = () =>
+      app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'nope' } });
+    expect((await attempt()).statusCode).toBe(401);
+    expect((await attempt()).statusCode).toBe(401);
+    expect((await attempt()).statusCode).toBe(401);
+    expect((await attempt()).statusCode).toBe(429); // 4e tentative bloquée
     await app.close();
   });
 });
