@@ -14,11 +14,13 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "worker": "tsx src/worker.ts",
-    "migrate": "tsx db/migrate.ts"
+    "migrate": "tsx db/migrate.ts",
+    "seed": "tsx db/seed.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
     "fastify": "^5.2.0",
+    "jose": "^6.2.3",
     "libphonenumber-js": "^1.13.8",
     "papaparse": "^5.5.4",
     "pg": "^8.22.0",

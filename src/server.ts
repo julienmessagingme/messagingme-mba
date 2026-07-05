@@ -4,6 +4,9 @@ import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
 import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
+import { registerAuth } from './auth/routes';
+import { makeRequireAuth } from './auth/middleware';
+import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
 import type { Queue } from './queue/queue';
@@ -14,6 +17,8 @@ export interface ServerDeps {
   verifyToken?: string;
   /** Défaut : config.META_APP_SECRET. Injectable en test. */
   appSecret?: string;
+  /** Auth (login + secret JWT). OBLIGATOIRE si `import` ou `campaigns` sont exposés. */
+  auth?: AuthRouteDeps;
   /** Routes CRM/import (enregistrées seulement si fournies -> tests DB-free du receiver). */
   import?: ImportRouteDeps;
   /** Routes campagnes (enregistrées seulement si fournies). */
@@ -22,9 +27,14 @@ export interface ServerDeps {
 
 /**
  * Construit l'instance Fastify (le bouclier). La file et les stores sont injectés pour
- * rester testable sans DB (fakes en unit, adaptateurs Postgres en prod).
+ * rester testable sans DB. Les routes tenant (import/campaigns) EXIGENT l'auth : le tenant
+ * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
+  if ((deps.import || deps.campaigns) && !deps.auth) {
+    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns sont exposées');
+  }
+
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
 
   // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
@@ -44,8 +54,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     appSecret: deps.appSecret ?? config.META_APP_SECRET,
   });
 
-  if (deps.import) registerImport(app, deps.import);
-  if (deps.campaigns) registerCampaigns(app, deps.campaigns);
+  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret) : undefined;
+  if (deps.auth) registerAuth(app, deps.auth);
+  if (deps.import) registerImport(app, deps.import, requireAuth);
+  if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAuth);
 
   return app;
 }

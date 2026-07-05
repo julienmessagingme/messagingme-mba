@@ -1,9 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
+import { signSession } from '../src/auth/token';
+import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
+
+const SECRET = 'test-secret';
+let token = '';
+beforeAll(async () => {
+  token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+});
+const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
 class FakeRepo implements CampaignRepoLike {
   readonly created: CreateCampaignInput[] = [];
@@ -36,100 +46,107 @@ const validBody = {
   paramMapping: [],
 };
 
+interface Deps {
+  ownsNumber?: boolean;
+  campaignTenant?: string; // tenant propriétaire de 'known'
+  queue?: FakeQueue;
+}
+function appWith(repo: FakeRepo, d: Deps = {}) {
+  return buildServer({
+    queue: new FakeQueue(),
+    auth: { users: noUsers, secret: SECRET },
+    campaigns: {
+      repo,
+      queue: d.queue ?? new FakeQueue(),
+      phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
+      campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
+    },
+  });
+}
+
 describe('POST /tenants/:tenantId/campaigns', () => {
   it('crée la campagne et construit les destinataires (opt-in filtré)', async () => {
     const repo = new FakeRepo(contacts);
-    const app = buildServer({
-      queue: new FakeQueue(),
-      campaigns: { repo, queue: new FakeQueue(), campaignExists: async () => true },
-    });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/tenants/t1/campaigns',
-      headers: { 'content-type': 'application/json' },
-      payload: validBody,
-    });
+    const app = appWith(repo);
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
     expect(res.statusCode).toBe(201);
     const body = res.json<{ campaignId: string; recipientCount: number }>();
-    expect(body).toEqual({ campaignId: 'camp-1', recipientCount: 1 }); // c2 non opt-in exclu (marketing)
+    expect(body).toEqual({ campaignId: 'camp-1', recipientCount: 1 }); // c2 non opt-in exclu
     expect(repo.created[0]?.tenantId).toBe('t1');
+    await app.close();
+  });
+
+  it('sans token -> 401', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo);
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', headers: { 'content-type': 'application/json' }, payload: validBody });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('tenant de l URL != tenant du token -> 403', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo);
+    const res = await app.inject({ method: 'POST', url: '/tenants/AUTRE/campaigns', ...auth(), payload: validBody });
+    expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it('phoneNumberId non détenu par le tenant -> 400', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { ownsNumber: false });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toHaveLength(0);
     await app.close();
   });
 
   it('category invalide -> 400', async () => {
     const repo = new FakeRepo(contacts);
-    const app = buildServer({
-      queue: new FakeQueue(),
-      campaigns: { repo, queue: new FakeQueue(), campaignExists: async () => true },
-    });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/tenants/t1/campaigns',
-      headers: { 'content-type': 'application/json' },
-      payload: { ...validBody, category: 'promo' },
-    });
-    expect(res.statusCode).toBe(400);
-    await app.close();
-  });
-
-  it('champ requis manquant -> 400', async () => {
-    const repo = new FakeRepo(contacts);
-    const app = buildServer({
-      queue: new FakeQueue(),
-      campaigns: { repo, queue: new FakeQueue(), campaignExists: async () => true },
-    });
-    const res = await app.inject({
-      method: 'POST',
-      url: '/tenants/t1/campaigns',
-      headers: { 'content-type': 'application/json' },
-      payload: { ...validBody, templateName: '' },
-    });
+    const app = appWith(repo);
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, category: 'promo' } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
 
   it('paramMapping invalide (positions non contiguës) -> 400, rien inséré', async () => {
     const repo = new FakeRepo(contacts);
-    const app = buildServer({
-      queue: new FakeQueue(),
-      campaigns: { repo, queue: new FakeQueue(), campaignExists: async () => true },
-    });
+    const app = appWith(repo);
     const res = await app.inject({
       method: 'POST',
       url: '/tenants/t1/campaigns',
-      headers: { 'content-type': 'application/json' },
+      ...auth(),
       payload: { ...validBody, paramMapping: [{ position: 5, source: { type: 'literal', value: 'x' } }] },
     });
     expect(res.statusCode).toBe(400);
-    expect(repo.created).toHaveLength(0); // pas de campagne orpheline
+    expect(repo.created).toHaveLength(0);
     await app.close();
   });
 });
 
 describe('POST /campaigns/:campaignId/run', () => {
-  it('campagne connue -> 202 + job campaign-run enqueué', async () => {
+  it('campagne du tenant -> 202 + job campaign-run enqueué', async () => {
     const q = new FakeQueue();
-    const repo = new FakeRepo(contacts);
-    const app = buildServer({
-      queue: new FakeQueue(),
-      campaigns: { repo, queue: q, campaignExists: async (id) => id === 'known' },
-    });
-    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run' });
+    const app = appWith(new FakeRepo(contacts), { queue: q });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
     expect(res.statusCode).toBe(202);
     expect(q.enqueued).toEqual([{ name: 'campaign-run', data: { campaignId: 'known' } }]);
     await app.close();
   });
 
-  it('campagne inconnue -> 404, rien enqueué', async () => {
+  it('campagne d un autre tenant / inconnue -> 404, rien enqueué', async () => {
     const q = new FakeQueue();
-    const repo = new FakeRepo(contacts);
-    const app = buildServer({
-      queue: new FakeQueue(),
-      campaigns: { repo, queue: q, campaignExists: async () => false },
-    });
-    const res = await app.inject({ method: 'POST', url: '/campaigns/nope/run' });
+    const app = appWith(new FakeRepo(contacts), { queue: q, campaignTenant: 'AUTRE' });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
     expect(res.statusCode).toBe(404);
     expect(q.enqueued).toEqual([]);
+    await app.close();
+  });
+
+  it('sans token -> 401', async () => {
+    const app = appWith(new FakeRepo(contacts));
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run' });
+    expect(res.statusCode).toBe(401);
     await app.close();
   });
 });

@@ -1,9 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
+import { signSession } from '../src/auth/token';
+import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { ContactStore, ContactUpsert } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
+
+const SECRET = 'test-secret';
+let token = '';
+beforeAll(async () => {
+  token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+});
+const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
 class FakeContacts implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
@@ -23,7 +33,11 @@ class FakeFields implements UserFieldStore {
 }
 
 function inject(contacts: ContactStore, userFields: UserFieldStore) {
-  return buildServer({ queue: new FakeQueue(), import: { contacts, userFields } });
+  return buildServer({
+    queue: new FakeQueue(),
+    auth: { users: noUsers, secret: SECRET },
+    import: { contacts, userFields },
+  });
 }
 
 describe('POST /tenants/:tenantId/contacts/import', () => {
@@ -33,7 +47,7 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/tenants/t1/contacts/import',
-      headers: { 'content-type': 'application/json' },
+      ...auth(),
       payload: { csv: 'Nom,Téléphone,Ville\nJulie,+33611111111,Lyon\nMarc,0622222222,Paris', optIn: true },
     });
     expect(res.statusCode).toBe(200);
@@ -47,14 +61,35 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     await app.close();
   });
 
-  it('csv absent -> 400', async () => {
+  it('sans token -> 401', async () => {
     const app = inject(new FakeContacts(), new FakeFields());
     const res = await app.inject({
       method: 'POST',
       url: '/tenants/t1/contacts/import',
       headers: { 'content-type': 'application/json' },
-      payload: {},
+      payload: { csv: 'Tel\n+33611111111' },
     });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('token d un autre tenant -> 403', async () => {
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/AUTRE/contacts/import',
+      ...auth(),
+      payload: { csv: 'Tel\n+33611111111' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(contacts.upserts).toHaveLength(0);
+    await app.close();
+  });
+
+  it('csv absent -> 400', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: {} });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
@@ -64,7 +99,7 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/tenants/t1/contacts/import',
-      headers: { 'content-type': 'application/json' },
+      ...auth(),
       payload: { csv: 'Tel\n+33611111111', mapping: { foo: 'bar' } },
     });
     expect(res.statusCode).toBe(400);
@@ -77,7 +112,7 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/tenants/t1/contacts/import',
-      headers: { 'content-type': 'application/json' },
+      ...auth(),
       payload: { csv: 'Téléphone\n+33611111111' },
     });
     expect(res.statusCode).toBe(200);

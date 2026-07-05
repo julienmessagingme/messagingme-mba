@@ -5,12 +5,15 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
+import type { PreHandler } from '../auth/middleware';
 
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
   queue: Queue;
-  /** true si la campagne existe (pour le 404 du run). */
-  campaignExists(id: string): Promise<boolean>;
+  /** Le numéro appartient-il au tenant ? (empêche d'envoyer depuis le numéro d'autrui.) */
+  phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
+  campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
 }
 
 const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
@@ -23,9 +26,17 @@ function nonEmpty(v: unknown): v is string {
 }
 
 /** Routes de campagne : création (+ construction des destinataires) et déclenchement du run. */
-export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps): void {
-  app.post('/tenants/:tenantId/campaigns', async (req, reply) => {
+export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: PreHandler): void {
+  const guard = requireAuth ? { preHandler: requireAuth } : {};
+
+  app.post('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
     const { tenantId } = req.params as { tenantId: string };
+    const authTenant = req.auth?.tenantId;
+    if (authTenant !== undefined && authTenant !== tenantId) {
+      return reply.code(403).send({ error: 'tenant interdit' });
+    }
+    const effectiveTenant = authTenant ?? tenantId;
+
     const b = (req.body ?? {}) as Partial<{
       phoneNumberId: string;
       name: string;
@@ -41,6 +52,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
     if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName requis' });
     if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
 
+    // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client).
+    if (!(await deps.phoneNumberBelongsToTenant(b.phoneNumberId, effectiveTenant))) {
+      return reply.code(400).send({ error: 'phoneNumberId inconnu pour ce tenant' });
+    }
+
     // Valider paramMapping AVANT toute écriture : positions 1..N contiguës + sources bien
     // formées. Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
     const paramMapping = validateParamMapping(b.paramMapping ?? []);
@@ -49,7 +65,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
     }
 
     const input: CreateCampaignInput = {
-      tenantId,
+      tenantId: effectiveTenant,
       phoneNumberId: b.phoneNumberId,
       name: b.name,
       category: b.category,
@@ -61,9 +77,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps)
     return reply.code(201).send(result);
   });
 
-  app.post('/campaigns/:campaignId/run', async (req, reply) => {
+  app.post('/campaigns/:campaignId/run', guard, async (req, reply) => {
     const { campaignId } = req.params as { campaignId: string };
-    if (!(await deps.campaignExists(campaignId))) {
+    const authTenant = req.auth?.tenantId ?? '';
+    // Scope tenant : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR cross-tenant).
+    if (!(await deps.campaignBelongsTo(campaignId, authTenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
     // singletonKey = campaignId : deux POST /run concurrents n'empilent pas deux jobs pour

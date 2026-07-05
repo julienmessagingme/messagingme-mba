@@ -10,6 +10,8 @@ const schema = z.object({
   META_GRAPH_VERSION: z.string().default('v25.0'),
   /** Pays par défaut pour normaliser les numéros à l'import CSV. */
   DEFAULT_COUNTRY: z.string().default('FR'),
+  /** Secret HMAC de signature des JWT de session (login console). */
+  AUTH_SECRET: z.string().default('dev-insecure-change-me'),
   DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
 });

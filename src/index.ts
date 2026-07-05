@@ -5,6 +5,7 @@ import { pool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgCampaignRepo } from './campaign/store.pg';
+import { PgUserAuthStore } from './auth/store';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -15,6 +16,7 @@ async function main(): Promise<void> {
   const repo = new PgCampaignRepo(pool);
   const app = buildServer({
     queue,
+    auth: { users: new PgUserAuthStore(pool), secret: config.AUTH_SECRET },
     import: {
       contacts: new PgContactStore(pool),
       userFields: new PgUserFieldStore(pool),
@@ -23,7 +25,8 @@ async function main(): Promise<void> {
     campaigns: {
       repo,
       queue,
-      campaignExists: async (id) => (await repo.getCampaign(id)) !== null,
+      phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+      campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
     },
   });
 

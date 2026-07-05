@@ -69,6 +69,24 @@ export class PgCampaignRepo {
     };
   }
 
+  /** Le numéro appartient-il au tenant ? (garde-fou anti envoi depuis le numéro d'autrui.) */
+  async phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `select 1 from phone_numbers where id = $1 and tenant_id = $2`,
+      [phoneNumberId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** La campagne appartient-elle au tenant ? (scope le run.) */
+  async campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `select 1 from campaigns where id = $1 and tenant_id = $2`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Contacts du tenant prêts pour buildRecipients (id, phone, name, fields, opt-in). */
   async listContactsForBuild(tenantId: string): Promise<BuildContact[]> {
     const res = await this.pool.query<{

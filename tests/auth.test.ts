@@ -1,0 +1,84 @@
+import { describe, it, expect } from 'vitest';
+import { hashPassword, verifyPassword } from '../src/auth/password';
+import { signSession, verifySession } from '../src/auth/token';
+import { buildServer } from '../src/server';
+import { FakeQueue } from '../src/queue/fake';
+import type { UserAuthStore, AuthUser } from '../src/auth/store';
+
+const SECRET = 'test-secret-please-change';
+
+describe('password', () => {
+  it('hash puis vérifie le bon mot de passe', () => {
+    const h = hashPassword('s3cret!');
+    expect(h.startsWith('scrypt$')).toBe(true);
+    expect(verifyPassword('s3cret!', h)).toBe(true);
+  });
+  it('rejette un mauvais mot de passe ou un hash malformé', () => {
+    const h = hashPassword('s3cret!');
+    expect(verifyPassword('wrong', h)).toBe(false);
+    expect(verifyPassword('x', 'pas-un-hash')).toBe(false);
+  });
+  it('deux hash du même mot de passe diffèrent (sel aléatoire)', () => {
+    expect(hashPassword('a')).not.toBe(hashPassword('a'));
+  });
+});
+
+describe('token', () => {
+  it('signe puis vérifie une session', async () => {
+    const token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+    const s = await verifySession(token, SECRET);
+    expect(s).toEqual({ userId: 'u1', tenantId: 't1', role: 'admin' });
+  });
+  it('rejette un token signé avec un autre secret', async () => {
+    const token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+    expect(await verifySession(token, 'autre-secret')).toBeNull();
+  });
+  it('rejette un token malformé', async () => {
+    expect(await verifySession('pas.un.jwt', SECRET)).toBeNull();
+  });
+});
+
+class FakeUsers implements UserAuthStore {
+  constructor(private readonly users: AuthUser[]) {}
+  async findByEmail(email: string): Promise<AuthUser | null> {
+    return this.users.find((u) => u.email === email) ?? null;
+  }
+}
+
+describe('POST /auth/login', () => {
+  function appWith(users: AuthUser[]) {
+    return buildServer({ queue: new FakeQueue(), auth: { users: new FakeUsers(users), secret: SECRET } });
+  }
+  const admin: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPassword('pw') };
+
+  it('identifiants valides -> 200 + token exploitable', async () => {
+    const app = appWith([admin]);
+    const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'pw' } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ token: string; user: { tenantId: string } }>();
+    expect(body.user.tenantId).toBe('t1');
+    expect(await verifySession(body.token, SECRET)).toMatchObject({ tenantId: 't1', userId: 'u1' });
+    await app.close();
+  });
+
+  it('mauvais mot de passe -> 401', async () => {
+    const app = appWith([admin]);
+    const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co', password: 'nope' } });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('email inconnu -> 401 (pas de fuite d existence)', async () => {
+    const app = appWith([admin]);
+    const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'x@y.co', password: 'pw' } });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('champs manquants -> 400', async () => {
+    const app = appWith([admin]);
+    const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email: 'a@b.co' } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+});
