@@ -44,6 +44,7 @@ function CampaignsInner({ session }: { session: Session }) {
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [polling, setPolling] = useState(false);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -74,10 +75,18 @@ function CampaignsInner({ session }: { session: Session }) {
     setError(null);
     try {
       await runCampaign(id);
-      await reload();
-      if (detail?.id === id) await openDetail(id);
+      await openDetail(id); // ouvre le détail de la campagne lancée
+      // Le worker traite en ~1-2s : on rafraîchit quelques fois pour voir les statuts évoluer.
+      setPolling(true);
+      for (let i = 0; i < 6; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        await reload();
+        await openDetail(id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lancement impossible');
+    } finally {
+      setPolling(false);
     }
   }
 
@@ -87,7 +96,14 @@ function CampaignsInner({ session }: { session: Session }) {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Campagnes ({campaigns.length})</h2>
-          <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+          {polling ? (
+            <span className="flex items-center gap-1.5 text-xs text-slate-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
+              actualisation...
+            </span>
+          ) : (
+            <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+          )}
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -123,7 +139,8 @@ function CampaignsInner({ session }: { session: Session }) {
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <button
                       onClick={() => run(c.id)}
-                      className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600"
+                      disabled={polling}
+                      className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                     >
                       Lancer
                     </button>
