@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Queue } from '../queue/queue';
 import { createCampaignWithRecipients } from '../campaign/create';
 import type { CampaignRepoLike } from '../campaign/create';
-import type { CreateCampaignInput } from '../campaign/store.pg';
+import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
 import type { PreHandler } from '../auth/middleware';
@@ -14,6 +14,9 @@ export interface CampaignRouteDeps {
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
+  listCampaigns(tenantId: string): Promise<CampaignSummary[]>;
+  getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
+  listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
 }
 
 const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
@@ -25,17 +28,44 @@ function nonEmpty(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== '';
 }
 
-/** Routes de campagne : création (+ construction des destinataires) et déclenchement du run. */
+/** Tenant effectif = celui du JWT ; l'URL doit correspondre. null si interdit. */
+function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
+  const { tenantId } = req.params as { tenantId: string };
+  const authTenant = req.auth?.tenantId;
+  if (authTenant !== undefined && authTenant !== tenantId) return null;
+  return authTenant ?? tenantId;
+}
+
+/** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
 export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: PreHandler): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
+  app.get('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    return reply.code(200).send({ campaigns: await deps.listCampaigns(tenant) });
+  });
+
+  app.get('/tenants/:tenantId/campaigns/:campaignId', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { campaignId } = req.params as { campaignId: string };
+    const detail = await deps.getCampaignDetail(campaignId, tenant);
+    if (!detail) return reply.code(404).send({ error: 'campagne inconnue' });
+    return reply.code(200).send(detail);
+  });
+
+  app.get('/tenants/:tenantId/phone-numbers', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    return reply.code(200).send({ phoneNumbers: await deps.listPhoneNumbers(tenant) });
+  });
+
   app.post('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
-    const { tenantId } = req.params as { tenantId: string };
-    const authTenant = req.auth?.tenantId;
-    if (authTenant !== undefined && authTenant !== tenantId) {
+    const effectiveTenant = scopeTenant(req);
+    if (effectiveTenant === null) {
       return reply.code(403).send({ error: 'tenant interdit' });
     }
-    const effectiveTenant = authTenant ?? tenantId;
 
     const b = (req.body ?? {}) as Partial<{
       phoneNumberId: string;

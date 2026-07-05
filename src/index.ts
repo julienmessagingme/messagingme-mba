@@ -30,6 +30,9 @@ async function main(): Promise<void> {
       queue,
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
+      listCampaigns: (tenant) => repo.listCampaignSummaries(tenant),
+      getCampaignDetail: (id, tenant) => repo.getCampaignDetail(id, tenant),
+      listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
     },
   });
 

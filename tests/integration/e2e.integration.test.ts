@@ -91,6 +91,15 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
       expect(r.sent_at).not.toBeNull();
     }
 
+    // 4b) Lecture pour l'UI : résumé (compteurs agrégés) + détail (destinataires).
+    const summaries = await repo.listCampaignSummaries(tenantId);
+    const summary = summaries.find((s) => s.id === campaignId);
+    expect(summary?.counts).toMatchObject({ total: 2, sent: 2, pending: 0, failed: 0 });
+    const detail = await repo.getCampaignDetail(campaignId, tenantId);
+    expect(detail?.recipients).toHaveLength(2);
+    expect(detail?.recipients.every((r) => r.status === 'sent')).toBe(true);
+    expect(await repo.getCampaignDetail(campaignId, '00000000-0000-0000-0000-000000000000')).toBeNull(); // scope tenant
+
     // 5) Re-run idempotent : plus aucun pending -> 0 envoi.
     const run2 = await campaignRunJob({ campaignId }, runDeps);
     expect(run2).toMatchObject({ sent: 0, skipped: 0, failed: 0 });

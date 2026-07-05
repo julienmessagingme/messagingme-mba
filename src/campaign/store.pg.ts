@@ -14,6 +14,41 @@ export interface CreateCampaignInput {
   paramMapping: TemplateParam[];
 }
 
+export interface RecipientCounts {
+  total: number;
+  pending: number;
+  sending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+}
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  category: CampaignCategory;
+  status: CampaignStatus;
+  phoneNumberId: string;
+  templateName: string;
+  templateLanguage: string;
+  createdAt: string;
+  counts: RecipientCounts;
+}
+export interface CampaignDetail extends CampaignSummary {
+  recipients: Array<{
+    id: string;
+    toE164: string;
+    status: string;
+    messageId: string | null;
+    error: string | null;
+    sentAt: string | null;
+  }>;
+}
+export interface PhoneNumberRow {
+  id: string;
+  displayPhoneNumber: string | null;
+  verifiedName: string | null;
+}
+
 /** Lecture/écriture des campagnes et de leurs destinataires (assemblage). */
 export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
@@ -85,6 +120,108 @@ export class PgCampaignRepo {
       [campaignId, tenantId],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Résumé des campagnes du tenant avec le décompte des destinataires par statut. */
+  async listCampaignSummaries(tenantId: string): Promise<CampaignSummary[]> {
+    const res = await this.pool.query<{
+      id: string; name: string; category: CampaignCategory; status: CampaignStatus;
+      phone_number_id: string; template_name: string; template_language: string; created_at: Date;
+      total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
+    }>(
+      `select c.id, c.name, c.category, c.status, c.phone_number_id,
+              c.template_name, c.template_language, c.created_at,
+              count(r.id) as total,
+              count(r.id) filter (where r.status = 'pending') as pending,
+              count(r.id) filter (where r.status = 'sending') as sending,
+              count(r.id) filter (where r.status = 'sent') as sent,
+              count(r.id) filter (where r.status = 'failed') as failed,
+              count(r.id) filter (where r.status = 'skipped') as skipped
+       from campaigns c
+       left join campaign_recipients r on r.campaign_id = c.id
+       where c.tenant_id = $1
+       group by c.id
+       order by c.created_at desc`,
+      [tenantId],
+    );
+    return res.rows.map((r) => this.toSummary(r));
+  }
+
+  /** Détail d'une campagne (scopée tenant) + ses destinataires. null si absente/autre tenant. */
+  async getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null> {
+    const head = await this.pool.query<{
+      id: string; name: string; category: CampaignCategory; status: CampaignStatus;
+      phone_number_id: string; template_name: string; template_language: string; created_at: Date;
+      total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
+    }>(
+      `select c.id, c.name, c.category, c.status, c.phone_number_id,
+              c.template_name, c.template_language, c.created_at,
+              count(r.id) as total,
+              count(r.id) filter (where r.status = 'pending') as pending,
+              count(r.id) filter (where r.status = 'sending') as sending,
+              count(r.id) filter (where r.status = 'sent') as sent,
+              count(r.id) filter (where r.status = 'failed') as failed,
+              count(r.id) filter (where r.status = 'skipped') as skipped
+       from campaigns c
+       left join campaign_recipients r on r.campaign_id = c.id
+       where c.id = $1 and c.tenant_id = $2
+       group by c.id`,
+      [campaignId, tenantId],
+    );
+    const h = head.rows[0];
+    if (!h) return null;
+    const recs = await this.pool.query<{
+      id: string; to_e164: string; status: string; message_id: string | null; error: string | null; sent_at: Date | null;
+    }>(
+      `select id, to_e164, status, message_id, error, sent_at
+       from campaign_recipients where campaign_id = $1 order by status, id limit 500`,
+      [campaignId],
+    );
+    return {
+      ...this.toSummary(h),
+      recipients: recs.rows.map((r) => ({
+        id: r.id,
+        toE164: r.to_e164,
+        status: r.status,
+        messageId: r.message_id,
+        error: r.error,
+        sentAt: r.sent_at ? r.sent_at.toISOString() : null,
+      })),
+    };
+  }
+
+  /** Numéros WhatsApp du tenant (pour choisir l'expéditeur d'une campagne). */
+  async listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]> {
+    const res = await this.pool.query<{ id: string; display_phone_number: string | null; verified_name: string | null }>(
+      `select id, display_phone_number, verified_name from phone_numbers where tenant_id = $1 order by created_at`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({ id: r.id, displayPhoneNumber: r.display_phone_number, verifiedName: r.verified_name }));
+  }
+
+  private toSummary(r: {
+    id: string; name: string; category: CampaignCategory; status: CampaignStatus;
+    phone_number_id: string; template_name: string; template_language: string; created_at: Date;
+    total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
+  }): CampaignSummary {
+    return {
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      status: r.status,
+      phoneNumberId: r.phone_number_id,
+      templateName: r.template_name,
+      templateLanguage: r.template_language,
+      createdAt: r.created_at.toISOString(),
+      counts: {
+        total: Number(r.total),
+        pending: Number(r.pending),
+        sending: Number(r.sending),
+        sent: Number(r.sent),
+        failed: Number(r.failed),
+        skipped: Number(r.skipped),
+      },
+    };
   }
 
   /** Contacts du tenant prêts pour buildRecipients (id, phone, name, fields, opt-in). */
