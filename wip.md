@@ -1,59 +1,47 @@
 # wip.md — travail en cours
 
-## Fait (2026-07-05)
+## État (2026-07-05) : V1 construite et déployée en DRY_RUN
 
-- Scaffold du repo : structure, docs (5 fichiers), config TS/Fastify/vitest.
-- Baseline verte : `GET /health` + stubs `/webhooks/meta` (POST + handshake GET), 1 test qui
-  passe.
-- Migration DB initiale `0001_init.sql` (tenants, users, waba, phone_numbers, contacts,
-  webhook_events).
-- **Supabase branché** : projet `messagingme-MBA` (ref `npdqnrirxhqsyyvtvtjz`), migration
-  0001 appliquée et vérifiée (7 tables live). Runner `npm run migrate` (`db/migrate.ts`,
-  suivi via `schema_migrations`). Connexion directe IPv6 OK depuis le poste ; fallback pooler
-  IPv4 documenté dans `.env` (region à confirmer si besoin). ⚠️ le MCP Supabase ne voit PAS
-  ce projet (autre org) → connexion directe uniquement. Creds en `.env` (gitignoré) + brain.
+Tout le backend + l'UI + le déploiement sont faits. `mba.messagingme.app` tourne en
+**DRY_RUN** (le worker marque `sent` sans appeler Meta). Il ne manque que le vrai numéro pour
+l'envoi live.
 
-## Fait — Loop 1 (feature-loop, reviewer PASS, commit 44a73f0)
+**Backend (feature-loop, chaque brique reviewée par un agent séparé) :**
+- Loop 1 — webhook receiver async (signature timing-safe, ACK bouclier, file pg-boss durable,
+  dédup idempotente, DLQ, BSUID-native).
+- Loop 2 — wrapper Meta typé (`MetaClient`, retries/backoff, rate limiter, transport injectable).
+- Loop 3 — mini-CRM + import CSV (user fields, reconnaissance colonnes, E.164, variables template).
+- Loop 4 — moteur de campagne + garde-fous (opt-in, fréquence marketing-only, quality gate,
+  **claim atomique** anti double-envoi, idempotent, report).
+- Loop 5 — adaptateurs Postgres + services + routes HTTP + run bout-en-bout (prouvé E2E Supabase).
 
-Webhook receiver async : signature `X-Hub-Signature-256` timing-safe, ACK bouclier (enqueue
-pg-boss durable, zéro parse/DB dans la route), dédup idempotente par clé d'événement, worker
-+ `PgEventStore` (insert `ON CONFLICT` sur l'index partiel), DLQ pg-boss, BSUID-native.
-`src/{lib/signature,webhooks/*,queue/*,db/pool,worker}.ts`. **23 tests unitaires + 2
-intégration** (Supabase `pgboss_test`), typecheck clean. Le test d'intégration a attrapé un
-bug réel (ON CONFLICT sur index partiel).
+**Depuis (revues + corrections) :**
+- Revue multi-agent Loops 3-5 (23 constats corrigés) + revue sécurité auth (12 constats).
+- **Auth** : login JWT (scrypt async, rate-limit, hash leurre anti-énumération), isolation
+  tenant sur toutes les routes, **RBAC** (écritures admin-only), `AUTH_SECRET` fail-fast en prod.
+- **Suivi de livraison** : webhooks statut Meta -> `delivery_status` par message_id (monotone).
+- **Robustesse** : création de campagne transactionnelle + sweeper des `sending` bloqués.
+- **UI Next.js** (`web/`) : login, contacts + import CSV, campagnes (création + lancement +
+  détail des statuts, auto-refresh).
+- **Déploiement** : `mba.messagingme.app` (Docker VPS, NPM + Let's Encrypt). Cf `DEPLOY.md`.
 
-## Fait — Loop 2 (feature-loop, reviewer PASS, à committer)
+Tests : ~148 unitaires + 10 intégration verts.
 
-Wrapper Meta typé : `src/meta/{errors,http,client,types}.ts`. `classify` (retryable/terminal,
-+429/408/425/5xx), `MetaApiError`, `withRetry` (backoff + sleep injectable), `RateLimiter`,
-`FetchTransport` + `HttpTransport` injectable, `MetaClient` (sendText/sendTemplate/sendMarketing
-avec `to` E.164 | `recipient` BSUID, `to` prime). **43 tests** (transport mocké, zéro réseau).
+## Prochaine étape : passage au LIVE (dépend du vrai numéro)
 
-## Fait — Loop 3 (feature-loop, reviewer PASS tour 2, à committer)
-
-Mini-CRM end-to-end : migration 0002 (user_fields + contacts.fields jsonb) ;
-`src/crm/{types,fields,csv,recognize,phone,template,import}.ts` — slugify + ensureField,
-parseCsv (papaparse), recognizeColumns (alias FR+EN, `numéro` exact -> phone), normalizePhone
-(libphonenumber E.164), resolveTemplateParams (field/attribute/literal + validation positions),
-importContacts (dédup téléphone, fields merge documenté, opt-in, rapport avec ligne fichier).
-**75 tests**. Chaîne CSV -> user fields -> variables de template livrée (l'envoi = Loop 4).
-
-## Prochaine étape
-
-- **Loop 4 (feature-loop) : Moteur de campagne + garde-fous** (sélection audience, pacing,
-  fréquence max/contact, coupure sur dégradation du quality rating ; envoi via MetaClient
-  MM Lite/Cloud API + résolution des variables par contact).
+1. Provisionner le numéro Meta dans `phone_numbers` (+ `waba`, bon `tenant_id`).
+2. `.env.prod` sur le VPS : `DRY_RUN=false` + `META_ACCESS_TOKEN`.
+3. `docker compose up -d`, vérifier que les templates sont approuvés côté Meta.
+4. Petite campagne test -> statuts `sent` puis `delivered`/`read` via vrais webhooks Meta.
 
 ## En attente (dépendances externes)
 
-- **Numéro sandbox** : commandé, activation attendue (prochain jour ouvré) → validation
-  end-to-end (premier envoi réel + webhooks sur NOTRE receiver).
-- **MBA** : bloqué par les ToS (403 « Meta Business AI Terms »), l'onglet WhatsApp Manager
-  n'est pas encore apparu (gating vertical). Parqué.
-- **Supabase prod** : à créer au déploiement (pas bloquant, tests sur Postgres local).
-- **Pilote OTP Zadarma** : gaté sur le KYC Zadarma (jours), indépendant du numéro sandbox.
+- **Numéro Meta réel** : attendu (Julien le branche). Bloque le seul envoi live.
+- **MBA** : bloqué par les ToS (403 « Meta Business AI Terms »), gating vertical. Parqué.
+- **Pilote OTP Zadarma** : gaté sur le KYC Zadarma.
 
-## Faits vérifiés utiles (2026-07-05)
+## Reste (non bloquant) — voir `todo.md`
 
-- Notre WABA démo (`586049727914883`) : `verified` + `APPROVED` + MM Lite `ONBOARDED`.
-  → la brique campagnes est testable sur l'existant sans attendre le numéro sandbox.
+- TLS pooler en vérif complète (pinner la CA Supabase).
+- Unicité email globale (décision produit).
+- Pagination contacts UI, quality rating alimenté par webhook, tests DLQ/CI intégration.
