@@ -4,45 +4,36 @@ Trois conteneurs sur le réseau `mcp-robot_default` : `mba-api` (Fastify :8095),
 (pg-boss), `mba-web` (Next.js :3000). NPM expose `mba.messagingme.app` -> `mba-web:3000` ;
 le front proxifie `/api/backend/*` -> `mba-api:8095` (interne, pas de CORS, backend non public).
 
-## 0. Prérequis (2 entrées humaines)
+## 0. Déjà fait (pré-staging sur le VPS)
 
-1. **DNS Cloudflare** : créer `mba.messagingme.app` -> A `146.59.233.252`, **Proxied** (orange).
-2. **DATABASE_URL pooler** : le host direct `db.<ref>.supabase.co` est IPv6-only, injoignable
-   depuis un conteneur Docker. Récupérer dans le dashboard Supabase la chaîne **pooler**
-   (Connect -> Session mode, port **5432**) :
-   `postgres://postgres.npdqnrirxhqsyyvtvtjz:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`
-   (session mode requis par pg-boss ; PAS le transaction mode 6543).
+- Repo cloné dans `/home/ubuntu/mba`, les 3 images Docker **buildées et validées** sur le VPS.
+- `/home/ubuntu/mba/.env.prod` **créé et rempli** : `AUTH_SECRET` généré (openssl), `DATABASE_URL`
+  = pooler Supabase **session mode** `aws-1-eu-west-2` (IPv4, joignable des conteneurs ;
+  le host direct `db.<ref>.supabase.co` est IPv6-only et injoignable), `DRY_RUN=true`.
+- Migrations déjà appliquées (base partagée). pg-boss créera son schéma au 1er démarrage.
 
-## 1. Sur le VPS
+## 1. La SEULE entrée humaine restante : DNS
+
+Créer dans Cloudflare `mba.messagingme.app` -> A `146.59.233.252`, **Proxied** (orange).
+
+## 2. Démarrer (une commande)
 
 ```bash
 ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252
-cd /home/ubuntu
-git clone https://github.com/julienmessagingme/messagingme-mba.git mba
-cd mba
-cp .env.prod.example .env.prod
-# éditer .env.prod :
-#   AUTH_SECRET=$(openssl rand -base64 48)
-#   DATABASE_URL=<pooler session mode>
-#   DRY_RUN=true   (démo ; false pour le live)
-nano .env.prod
+cd /home/ubuntu/mba
+git pull            # si nouveau code
+sudo docker compose up -d --build
+sudo docker compose ps                    # mba-api, mba-worker, mba-web up
+sudo docker compose logs --tail=20 mba-api mba-worker mba-web
+# attendu : api "en écoute :8095", worker "démarré ... [DRY_RUN]", web "Ready"
 ```
 
-## 2. Migrations (une fois ; déjà appliquées sur la base actuelle)
+## 2bis. Seed d'un compte admin (choisir un vrai mot de passe)
 
 ```bash
-# depuis le repo, avec le .env.prod chargé :
-docker compose run --rm -e DATABASE_URL="$(grep ^DATABASE_URL .env.prod | cut -d= -f2-)" mba-api npx tsx db/migrate.ts
-# seed d'un compte admin (choisir un vrai mot de passe) :
-docker compose run --rm --env-file .env.prod -e SEED_EMAIL=julien@messagingme.fr -e SEED_PASSWORD='<motdepasse>' -e SEED_PHONE_NUMBER_ID=<phone_number_id_reel> mba-api npx tsx db/seed.ts
-```
-
-## 3. Build + run
-
-```bash
-docker compose up -d --build
-docker compose ps          # mba-api, mba-worker, mba-web up
-docker compose logs -f mba-api mba-web   # verifier "en écoute" + Next ready
+sudo docker compose run --rm --env-file .env.prod \
+  -e SEED_EMAIL=julien@messagingme.fr -e SEED_PASSWORD='<motdepasse>' \
+  -e SEED_PHONE_NUMBER_ID=demo-pn mba-api npx tsx db/seed.ts
 ```
 
 ## 4. NPM (proxy host + HTTPS)
