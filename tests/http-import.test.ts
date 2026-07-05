@@ -36,7 +36,13 @@ function inject(contacts: ContactStore, userFields: UserFieldStore) {
   return buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
-    import: { contacts, userFields },
+    import: {
+      contacts,
+      userFields,
+      listContacts: async () => [
+        { id: 'c1', phoneE164: '+33611111111', profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, createdAt: '2026-07-05T00:00:00.000Z' },
+      ],
+    },
   });
 }
 
@@ -69,6 +75,22 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
       headers: { 'content-type': 'application/json' },
       payload: { csv: 'Tel\n+33611111111' },
     });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('GET liste des contacts du tenant -> 200', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ contacts: Array<{ profileName: string }> }>();
+    expect(body.contacts[0]?.profileName).toBe('Julie');
+    await app.close();
+  });
+
+  it('GET contacts sans token -> 401', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts' });
     expect(res.statusCode).toBe(401);
     await app.close();
   });

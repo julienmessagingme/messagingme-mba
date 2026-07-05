@@ -4,9 +4,12 @@ import { recognizeColumns } from '../crm/recognize';
 import { importContacts } from '../crm/import';
 import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
+import type { ContactRow } from '../crm/contact-store.pg';
 import type { PreHandler } from '../auth/middleware';
 
-export type ImportRouteDeps = ImportDeps;
+export interface ImportRouteDeps extends ImportDeps {
+  listContacts(tenantId: string, limit?: number, offset?: number): Promise<ContactRow[]>;
+}
 
 /** Construit un mapping par défaut depuis la reconnaissance de colonnes. */
 export function mappingFromHeaders(headers: string[]): ColumnMapping {
@@ -23,14 +26,29 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
  * colonnes (si pas de mapping fourni), upsert les contacts. Retourne un ImportReport.
  */
 export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: PreHandler): void {
-  app.post('/tenants/:tenantId/contacts/import', requireAuth ? { preHandler: requireAuth } : {}, async (req, reply) => {
+  const guard = requireAuth ? { preHandler: requireAuth } : {};
+
+  /** Tenant effectif = celui du JWT ; l'URL doit correspondre. Renvoie null si interdit. */
+  function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
     const { tenantId } = req.params as { tenantId: string };
-    // Tenant EFFECTIF = celui du JWT ; l'URL doit correspondre (sinon accès à un autre tenant).
     const authTenant = req.auth?.tenantId;
-    if (authTenant !== undefined && authTenant !== tenantId) {
-      return reply.code(403).send({ error: 'tenant interdit' });
-    }
-    const effectiveTenant = authTenant ?? tenantId;
+    if (authTenant !== undefined && authTenant !== tenantId) return null;
+    return authTenant ?? tenantId;
+  }
+
+  app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
+    const effectiveTenant = scopeTenant(req);
+    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const q = req.query as { limit?: string; offset?: string };
+    const limit = q.limit ? Number(q.limit) : undefined;
+    const offset = q.offset ? Number(q.offset) : undefined;
+    const contacts = await deps.listContacts(effectiveTenant, limit, offset);
+    return reply.code(200).send({ contacts });
+  });
+
+  app.post('/tenants/:tenantId/contacts/import', guard, async (req, reply) => {
+    const effectiveTenant = scopeTenant(req);
+    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const body = (req.body ?? {}) as { csv?: unknown; optIn?: unknown; mapping?: ColumnMapping };
 
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {

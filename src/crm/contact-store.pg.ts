@@ -1,6 +1,15 @@
 import type { Pool } from 'pg';
 import type { ContactStore, ContactUpsert } from './import';
 
+export interface ContactRow {
+  id: string;
+  phoneE164: string | null;
+  profileName: string | null;
+  optInStatus: string;
+  fields: Record<string, unknown>;
+  createdAt: string;
+}
+
 /**
  * Store Postgres des contacts. Upsert par (tenant, téléphone) avec MERGE jsonb des
  * champs perso (jamais d'écrasement des clés absentes du CSV courant) et opt-in qui
@@ -36,5 +45,32 @@ export class PgContactStore implements ContactStore {
       ],
     );
     return res.rows[0]?.created ? 'created' : 'updated';
+  }
+
+  /** Liste paginée des contacts d'un tenant (les plus récents d'abord). */
+  async list(tenantId: string, limit = 100, offset = 0): Promise<ContactRow[]> {
+    const capped = Math.min(Math.max(limit, 1), 500);
+    const res = await this.pool.query<{
+      id: string;
+      phone_e164: string | null;
+      profile_name: string | null;
+      opt_in_status: string;
+      fields: Record<string, unknown>;
+      created_at: Date;
+    }>(
+      `select id, phone_e164, profile_name, opt_in_status, fields, created_at
+       from contacts where tenant_id = $1
+       order by created_at desc
+       limit $2 offset $3`,
+      [tenantId, capped, Math.max(offset, 0)],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      phoneE164: r.phone_e164,
+      profileName: r.profile_name,
+      optInStatus: r.opt_in_status,
+      fields: r.fields,
+      createdAt: r.created_at.toISOString(),
+    }));
   }
 }

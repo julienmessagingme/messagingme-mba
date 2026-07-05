@@ -14,13 +14,15 @@ async function main(): Promise<void> {
   await queue.start();
 
   const repo = new PgCampaignRepo(pool);
+  const contactStore = new PgContactStore(pool);
   const app = buildServer({
     queue,
     auth: { users: new PgUserAuthStore(pool), secret: config.AUTH_SECRET },
     import: {
-      contacts: new PgContactStore(pool),
+      contacts: contactStore,
       userFields: new PgUserFieldStore(pool),
       defaultCountry: config.DEFAULT_COUNTRY as CountryCode,
+      listContacts: (tenantId, limit, offset) => contactStore.list(tenantId, limit, offset),
     },
     campaigns: {
       repo,
