@@ -64,3 +64,75 @@ export function importCsv(tenantId: string, csv: string, optIn: boolean): Promis
     body: JSON.stringify({ csv, optIn }),
   });
 }
+
+// --- Campagnes ---
+
+export type CampaignCategory = 'marketing' | 'utility';
+export interface RecipientCounts {
+  total: number;
+  pending: number;
+  sending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+}
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  category: CampaignCategory;
+  status: string;
+  phoneNumberId: string;
+  templateName: string;
+  templateLanguage: string;
+  createdAt: string;
+  counts: RecipientCounts;
+}
+export interface CampaignRecipient {
+  id: string;
+  toE164: string;
+  status: string;
+  messageId: string | null;
+  error: string | null;
+  sentAt: string | null;
+}
+export interface CampaignDetail extends CampaignSummary {
+  recipients: CampaignRecipient[];
+}
+export interface PhoneNumber {
+  id: string;
+  displayPhoneNumber: string | null;
+  verifiedName: string | null;
+}
+export interface ParamSource {
+  type: 'attribute' | 'field' | 'literal';
+  key?: string;
+  value?: string;
+}
+export interface TemplateParam {
+  position: number;
+  source: ParamSource;
+}
+export interface CreateCampaignInput {
+  phoneNumberId: string;
+  name: string;
+  category: CampaignCategory;
+  templateName: string;
+  templateLanguage: string;
+  paramMapping: TemplateParam[];
+}
+
+export function listCampaigns(tenantId: string): Promise<{ campaigns: CampaignSummary[] }> {
+  return request<{ campaigns: CampaignSummary[] }>(`/tenants/${tenantId}/campaigns`);
+}
+export function getCampaign(tenantId: string, campaignId: string): Promise<CampaignDetail> {
+  return request<CampaignDetail>(`/tenants/${tenantId}/campaigns/${campaignId}`);
+}
+export function listPhoneNumbers(tenantId: string): Promise<{ phoneNumbers: PhoneNumber[] }> {
+  return request<{ phoneNumbers: PhoneNumber[] }>(`/tenants/${tenantId}/phone-numbers`);
+}
+export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<{ campaignId: string; recipientCount: number }> {
+  return request(`/tenants/${tenantId}/campaigns`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function runCampaign(campaignId: string): Promise<{ enqueued: boolean }> {
+  return request(`/campaigns/${campaignId}/run`, { method: 'POST' });
+}

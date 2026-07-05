@@ -1,88 +1,46 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { getSession, clearSession, type Session } from '@/lib/session';
+import { AppShell } from '@/components/AppShell';
+import type { Session } from '@/lib/session';
 import { listContacts, importCsv, type Contact, type ImportReport } from '@/lib/api';
 
 export default function ContactsPage() {
-  const router = useRouter();
-  const [session, setSession] = useState<Session | null>(null);
+  return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
+}
+
+function ContactsInner({ session }: { session: Session }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(async (tenantId: string) => {
+  const reload = useCallback(async () => {
     setError(null);
     try {
-      const { contacts } = await listContacts(tenantId);
+      const { contacts } = await listContacts(session.tenantId);
       setContacts(contacts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session.tenantId]);
 
   useEffect(() => {
-    const s = getSession();
-    if (!s) {
-      router.replace('/login');
-      return;
-    }
-    setSession(s);
-    void reload(s.tenantId);
-  }, [router, reload]);
-
-  function logout() {
-    clearSession();
-    router.replace('/login');
-  }
-
-  if (!session) return null;
+    void reload();
+  }, [reload]);
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">m</div>
-            <span className="text-sm font-semibold">Console MBA</span>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-slate-500">
-            <span>{session.email}</span>
-            <button onClick={logout} className="rounded-lg border border-slate-300 px-2.5 py-1 text-slate-700 hover:bg-slate-50">
-              Déconnexion
-            </button>
-          </div>
+    <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <ImportPanel tenantId={session.tenantId} onImported={reload} />
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">Contacts ({contacts.length})</h2>
+          <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <nav className="mb-6 flex gap-1 text-sm">
-          <span className="rounded-lg bg-brand-50 px-3 py-1.5 font-medium text-brand-700">Contacts</span>
-          <span className="cursor-not-allowed rounded-lg px-3 py-1.5 text-slate-400" title="Bientôt">
-            Campagnes
-          </span>
-        </nav>
-
-        <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-          <ImportPanel tenantId={session.tenantId} onImported={() => reload(session.tenantId)} />
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-700">Contacts ({contacts.length})</h2>
-              <button
-                onClick={() => reload(session.tenantId)}
-                className="text-xs text-brand-600 hover:underline"
-              >
-                Rafraîchir
-              </button>
-            </div>
-            {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-            <ContactsTable contacts={contacts} loading={loading} />
-          </section>
-        </div>
-      </main>
+        {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        <ContactsTable contacts={contacts} loading={loading} />
+      </section>
     </div>
   );
 }
