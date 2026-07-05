@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { buildServer } from './server';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';

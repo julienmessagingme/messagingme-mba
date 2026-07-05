@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
