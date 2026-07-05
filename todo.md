@@ -18,6 +18,14 @@ Après les boucles backend : UI (inbox minimal + 2 rôles, dashboard) en direct 
   post-ToS.
 - **PaaS** : point de décision à l'entrée Phase 3 (Fly.io Paris / Railway EU, critère RGPD).
 
+## Raffinements notés (non bloquants)
+
+- **Loop 2 / `withRetry`** : toute erreur non-`MetaApiError` est rejouée (conforme au plan
+  « réseau = retryable »), ce qui masque un bug de programmation sous des retries. À terme :
+  ne rejouer que des erreurs réseau connues (fetch failed / ECONNRESET / ETIMEDOUT).
+- **Loop 2 / `MetaClient`** : le `rateLimiter.acquire()` par tentative est correct mais non
+  couvert par un test au niveau client (ajouter « rateLimiter appelé N fois »).
+
 ## Bugs connus
 
 (aucun pour l'instant)
