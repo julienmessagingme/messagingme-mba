@@ -38,6 +38,11 @@ Après les boucles backend : UI (inbox minimal + 2 rôles, dashboard) en direct 
 
 ## Raffinements notés (non bloquants)
 
+- **Loop 3 / import** : si deux colonnes CSV mappent la même custom key, la dernière écrase
+  silencieusement (responsabilité du mapping UI). Ajouter un warning/validation à l'étape mapping.
+- **Loop 3 / slugify** : collision de labels distincts -> même key (dedup, 1er gagne). Si on
+  veut de la disambiguation (`ville`, `ville_2`), à implémenter dans ensureField.
+
 - **Loop 2 / `withRetry`** : toute erreur non-`MetaApiError` est rejouée (conforme au plan
   « réseau = retryable »), ce qui masque un bug de programmation sous des retries. À terme :
   ne rejouer que des erreurs réseau connues (fetch failed / ECONNRESET / ETIMEDOUT).

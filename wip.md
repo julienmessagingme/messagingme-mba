@@ -29,10 +29,20 @@ Wrapper Meta typé : `src/meta/{errors,http,client,types}.ts`. `classify` (retry
 `FetchTransport` + `HttpTransport` injectable, `MetaClient` (sendText/sendTemplate/sendMarketing
 avec `to` E.164 | `recipient` BSUID, `to` prime). **43 tests** (transport mocké, zéro réseau).
 
+## Fait — Loop 3 (feature-loop, reviewer PASS tour 2, à committer)
+
+Mini-CRM end-to-end : migration 0002 (user_fields + contacts.fields jsonb) ;
+`src/crm/{types,fields,csv,recognize,phone,template,import}.ts` — slugify + ensureField,
+parseCsv (papaparse), recognizeColumns (alias FR+EN, `numéro` exact -> phone), normalizePhone
+(libphonenumber E.164), resolveTemplateParams (field/attribute/literal + validation positions),
+importContacts (dédup téléphone, fields merge documenté, opt-in, rapport avec ligne fichier).
+**75 tests**. Chaîne CSV -> user fields -> variables de template livrée (l'envoi = Loop 4).
+
 ## Prochaine étape
 
-- **Loop 3 (feature-loop) : Contacts BSUID-native + import CSV + opt-out** (parsing, dédup,
-  merge via Phone Number Request CTA).
+- **Loop 4 (feature-loop) : Moteur de campagne + garde-fous** (sélection audience, pacing,
+  fréquence max/contact, coupure sur dégradation du quality rating ; envoi via MetaClient
+  MM Lite/Cloud API + résolution des variables par contact).
 
 ## En attente (dépendances externes)
 
