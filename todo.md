@@ -10,24 +10,30 @@
 5. ✅ **Loop 5 — Adaptateurs Postgres + run E2E** (stores PG, services create/run, routes HTTP
    import/campagne/run, worker campaign-run ; E2E CSV->campagne->envoi prouvé contre Supabase).
 
-Prochaine étape : **UI** (inbox minimal + 2 rôles, dashboard campagnes/CRM) en direct (hors
-feature-loop, visuel). Puis onboarding OTP / embedded signup (R&D d'intégration).
+Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **LIVE** sur
+`mba.messagingme.app` (1er envoi WhatsApp réel le 2026-07-06, numéro Zadarma).
 
-## 🔴 Sécurité / auth — BLOQUANT avant toute exposition publique (revue Loops 3-5)
+## Post-live — prochaines actions
 
-La couche HTTP n'a **aucune authentification ni autorisation**. À traiter comme une brique
-dédiée (elle a besoin d'une décision produit + du login de l'UI), pas comme un patch :
+- ⚠️ **URGENT : token permanent.** Le `META_ACCESS_TOKEN` en prod est temporaire (24 h). Générer
+  un token System User permanent (Business Settings → System Users → assigner le WABA → scopes
+  `whatsapp_business_messaging` + `_management`), `sed` dans `.env.prod`, `up -d --force-recreate`.
+- **Template `promo_test`** (Marketing, FR, variable {{1}}=nom) à faire approuver par Meta pour de
+  vraies campagnes marketing (pour le 1er test on a utilisé `hello_world`, pré-approuvé).
+- **Onboarding client (Embedded Signup)** : Facebook Login for Business (config_id) → bouton ES +
+  échange de token BISU côté backend → **Access Verification (Tech Provider)** + **App Review**
+  (Advanced Access sur les perms WhatsApp, screencast par permission). Ni l'un ni l'autre requis
+  pour NOTRE propre numéro (rôle sur l'app), mais requis pour brancher les WABA de clients.
+- **Veille MBA** : cron qui poll `GET api.facebook.com/{phone_number_id}/agent_eligibility`
+  (baseline = 403 « Meta Business AI Terms »), alerte au changement. **NON posé** (service de
+  triggers KO + creds Telegram non accessibles) — à recâbler (cron VPS + canal d'alerte fourni par Julien).
 
-- **Aucune auth** : tenantId vient de `req.params` (URL), la table `users`/rôles n'est jamais
-  consultée. Un inconnu qui fournit l'UUID d'un tenant injecte contacts + campagnes chez autrui,
-  et `POST /campaigns/:id/run` (non scopé tenant) déclenche des envois WhatsApp **payants** depuis
-  le numéro d'un autre client. IDOR complet sur toute la surface.
-- **phoneNumberId non validé** : la route campagne accepte n'importe quel `phoneNumberId` (aucune
-  FK, aucun check d'appartenance) → envoi depuis le numéro Meta d'un autre tenant via le token
-  partagé. À valider `SELECT 1 FROM phone_numbers WHERE id=$1 AND tenant_id=$2` une fois l'auth en place.
-- **Décision produit requise** : mécanisme d'auth (clé API par tenant ? Supabase Auth ? JWT ?).
-  Puis preHandler global dans `buildServer`, tenantId DÉRIVÉ de l'identité (jamais de l'URL), et
-  flux de provisioning des numéros. Va de pair avec le login de l'UI.
+## ✅ Sécurité / auth — RÉSOLU (était BLOQUANT à la revue Loops 3-5)
+
+Auth construite et déployée : login JWT (scrypt async, rate-limit, hash leurre anti-énumération),
+isolation tenant sur toutes les routes (tenant DÉRIVÉ du JWT, 403 si mismatch), RBAC (écritures
+admin-only via `forbidNonAdmin`), ownership `phoneNumberId` validée, `AUTH_SECRET` fail-fast en
+prod. Résidus non bloquants ci-dessous.
 
 ## Suites de la revue sécurité auth
 

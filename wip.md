@@ -1,10 +1,12 @@
 # wip.md — travail en cours
 
-## État (2026-07-05) : V1 construite et déployée en DRY_RUN
+## État (2026-07-06) : V1 LIVE — 1er envoi WhatsApp réel fait ✅
 
-Tout le backend + l'UI + le déploiement sont faits. `mba.messagingme.app` tourne en
-**DRY_RUN** (le worker marque `sent` sans appeler Meta). Il ne manque que le vrai numéro pour
-l'envoi live.
+`mba.messagingme.app` est en **prod LIVE** (`DRY_RUN=false`). Un numéro **Zadarma**
+(WABA neuf hors UChat) est branché sur l'app Meta dédiée « Messaging Me MBA »,
+webhook actif (statuts de livraison), et le **premier message WhatsApp réel a été envoyé depuis
+la console** (template `hello_world`, wamid Meta, livraison remontée). Assets/secrets Meta :
+`brain/PROJECTS.md` §Meta/WhatsApp.
 
 **Backend (feature-loop, chaque brique reviewée par un agent séparé) :**
 - Loop 1 — webhook receiver async (signature timing-safe, ACK bouclier, file pg-boss durable,
@@ -27,18 +29,21 @@ l'envoi live.
 
 Tests : ~148 unitaires + 10 intégration verts.
 
-## Prochaine étape : passage au LIVE (dépend du vrai numéro)
+## Prochaine étape
 
-1. Provisionner le numéro Meta dans `phone_numbers` (+ `waba`, bon `tenant_id`).
-2. `.env.prod` sur le VPS : `DRY_RUN=false` + `META_ACCESS_TOKEN`.
-3. `docker compose up -d`, vérifier que les templates sont approuvés côté Meta.
-4. Petite campagne test -> statuts `sent` puis `delivered`/`read` via vrais webhooks Meta.
+1. ⚠️ **URGENT — remplacer le token temporaire (24 h)** par un token System User permanent
+   (Business Settings → System Users → assigner le WABA → scopes `whatsapp_business_messaging`
+   + `whatsapp_business_management`), sinon l'envoi casse à expiration. Puis `sed` dans
+   `.env.prod` + `docker compose up -d --force-recreate`.
+2. Faire approuver le template `promo_test` (Marketing, FR, 1 variable) pour de vraies campagnes.
+3. **Onboarding client (Embedded Signup)** : configurer Facebook Login for Business (config_id),
+   coder le bouton ES + l'échange de token, puis Access Verification (Tech Provider) + App Review
+   (screencast). Voir `todo.md`.
 
 ## En attente (dépendances externes)
 
-- **Numéro Meta réel** : attendu (Julien le branche). Bloque le seul envoi live.
-- **MBA** : bloqué par les ToS (403 « Meta Business AI Terms »), gating vertical. Parqué.
-- **Pilote OTP Zadarma** : gaté sur le KYC Zadarma.
+- **MBA (agent auto-réponse)** : bloqué par les ToS (403 « Meta Business AI Terms »), gating
+  vertical. Veille à mettre en place (cron `agent_eligibility`). Parqué.
 
 ## Reste (non bloquant) — voir `todo.md`
 
