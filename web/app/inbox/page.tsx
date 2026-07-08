@@ -34,7 +34,7 @@ function InboxInner({ session }: { session: Session }) {
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Conversations ({conversations.length})</h2>
+          <h2 className="text-base font-semibold text-slate-900">Conversations ({conversations.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

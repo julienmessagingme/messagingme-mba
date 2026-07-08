@@ -35,7 +35,7 @@ function ContactsInner({ session }: { session: Session }) {
       <ImportPanel tenantId={session.tenantId} onImported={reload} />
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Contacts ({contacts.length})</h2>
+          <h2 className="text-base font-semibold text-slate-900">Contacts ({contacts.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -76,7 +76,7 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
 
   return (
     <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-semibold text-slate-700">Importer un CSV</h2>
+      <h2 className="text-base font-semibold text-slate-900">Importer un CSV</h2>
       <p className="mt-1 text-xs text-slate-500">
         1re ligne = en-têtes. Les colonnes téléphone/nom sont reconnues, le reste devient des champs perso.
       </p>

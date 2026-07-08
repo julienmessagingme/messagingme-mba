@@ -117,7 +117,7 @@ function CampaignsInner({ session }: { session: Session }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">Campagnes ({campaigns.length})</h2>
+        <h2 className="text-base font-semibold text-slate-900">Campagnes ({campaigns.length})</h2>
         <div className="flex items-center gap-3">
           {polling ? (
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -380,7 +380,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
 
   return (
     <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-semibold text-slate-700">Nouvelle campagne</h2>
+      <h2 className="text-base font-semibold text-slate-900">Nouvelle campagne</h2>
       <p className="mt-1 text-xs text-slate-500">Choisis un template approuvé et les contacts, puis lance l&apos;envoi.</p>
 
       <Field label="Numéro expéditeur">

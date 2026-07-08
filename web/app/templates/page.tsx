@@ -50,7 +50,7 @@ function TemplatesInner({ session }: { session: Session }) {
       <CreateForm tenantId={session.tenantId} onCreated={reload} />
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Templates ({templates.length})</h2>
+          <h2 className="text-base font-semibold text-slate-900">Templates ({templates.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -173,7 +173,7 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-semibold text-slate-700">Nouveau template</h2>
+      <h2 className="text-base font-semibold text-slate-900">Nouveau template</h2>
       <p className="mt-1 text-xs text-slate-500">Soumis à Meta pour validation (quelques minutes à quelques heures).</p>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
