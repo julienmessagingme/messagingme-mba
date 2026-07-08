@@ -63,7 +63,8 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
       : typeof body.tags === 'string'
         ? body.tags.split(',')
         : [];
-    const tags = [...new Set(rawTags.map((t) => t.trim()).filter((t) => t !== ''))];
+    // Normalise + borne : 64 car. max par tag, 50 tags max (évite un stockage aberrant).
+    const tags = [...new Set(rawTags.map((t) => t.trim().slice(0, 64)).filter((t) => t !== ''))].slice(0, 50);
     // mapping fourni mais malformé (sans `columns` objet) -> 400, sinon Object.entries throw en 500.
     if (body.mapping !== undefined) {
       const cols = (body.mapping as { columns?: unknown }).columns;

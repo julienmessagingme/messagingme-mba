@@ -48,6 +48,21 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(row.opt_in_status).toBe('opted_in'); // promu, ne régresse pas
   });
 
+  it('PgContactStore.upsertByPhone : tags fusionnés (union dédup), jamais écrasés', async () => {
+    const store = new PgContactStore(pool);
+    const phone = '+33600000009';
+    await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: 'Léa', fields: {}, optInStatus: 'opted_in', tags: ['salon-2026', 'prospect'] });
+    // Ré-import avec un tag en commun + un nouveau -> union dédupliquée.
+    await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown', tags: ['prospect', 'vip'] });
+    // Ré-import SANS tags -> les tags existants sont préservés (pas d'écrasement).
+    await store.upsertByPhone({ tenantId, phoneE164: phone, profileName: null, fields: { ville: 'Nice' }, optInStatus: 'unknown' });
+
+    const rows = await store.list(tenantId);
+    const lea = rows.find((r) => r.phoneE164 === phone)!;
+    expect([...lea.tags].sort()).toEqual(['prospect', 'salon-2026', 'vip']); // union, aucun doublon, rien perdu
+    expect(lea.fields).toMatchObject({ ville: 'Nice' }); // le 3e import a bien mergé les fields
+  });
+
   it('PgUserFieldStore : upsert idempotent + list', async () => {
     const store = new PgUserFieldStore(pool);
     await store.upsert(tenantId, { key: 'ville', label: 'Ville', type: 'text' });

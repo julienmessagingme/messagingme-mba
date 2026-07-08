@@ -284,6 +284,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   });
   // « Tout » agit sur ce qui est AFFICHÉ (filtre/recherche), pour sélectionner un segment entier.
   const filteredAllSelected = filteredContacts.length > 0 && filteredContacts.every((c) => selected.has(c.id));
+  // Combien de sélectionnés sont MASQUÉS par le filtre courant (ils partiront quand même).
+  const filteredIds = new Set(filteredContacts.map((c) => c.id));
+  const selectedOutside = [...selected].filter((id) => !filteredIds.has(id)).length;
+  const filterActive = tagFilter.size > 0 || search.trim() !== '';
 
   function toggleContact(id: string) {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -463,6 +467,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
               <button type="button" onClick={toggleAllFiltered} className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-2 text-xs text-slate-600 hover:bg-slate-50">
                 {filteredAllSelected ? 'Vider' : 'Tout'}
               </button>
+              {(tagFilter.size > 0 || search.trim() !== '') && (
+                <button type="button" onClick={() => setSelected(new Set(filteredContacts.map((c) => c.id)))} className="shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-2 text-xs font-medium text-brand-700 hover:bg-brand-100">
+                  Uniquement ceux-ci
+                </button>
+              )}
             </div>
             <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
               {filteredContacts.map((c) => (
@@ -479,6 +488,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
               {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">Aucun contact ne correspond.</p>}
             </div>
             <p className="mt-1 text-[11px] text-slate-400">{filteredContacts.length} affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
+            {filterActive && selectedOutside > 0 && (
+              <p className="mt-1 text-[11px] text-amber-600">
+                ⚠️ {selectedOutside} sélectionné(s) hors du filtre partiront aussi. « Uniquement ceux-ci » pour ne cibler que le segment affiché.
+              </p>
+            )}
           </div>
         )}
       </div>
