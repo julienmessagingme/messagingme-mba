@@ -48,12 +48,13 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
   app.setErrorHandler((err: FastifyError, _req: FastifyRequest, reply: FastifyReply) => {
-    // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 502 + message clair,
-    // au lieu d'un « Internal Server Error » opaque.
+    // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 422 + message clair.
+    // 422 (4xx) et non 502 : Cloudflare/NPM remplacent les 5xx de l'origine par leur propre page
+    // « error code: 502 », ce qui masque le message Meta utile. Un 4xx passe tel quel avec le body.
     if (err instanceof MetaApiError) {
       // Message Meta tronqué (évite d'exposer un blob verbeux / des détails de trace).
       const detail = err.message.replace(/\s+/g, ' ').trim().slice(0, 200);
-      return reply.code(502).send({ error: `Meta: ${detail}` });
+      return reply.code(422).send({ error: `Meta: ${detail}` });
     }
     const code = err.statusCode ?? 500;
     reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });
