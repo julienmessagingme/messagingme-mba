@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import {
@@ -50,6 +51,7 @@ function CampaignsInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
+  const [mode, setMode] = useState<'list' | 'create'>('list');
 
   const reload = useCallback(async () => {
     setError(null);
@@ -95,12 +97,28 @@ function CampaignsInner({ session }: { session: Session }) {
     }
   }
 
+  // Écran de création (ouvert via « Ajouter une campagne »).
+  if (mode === 'create') {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <button onClick={() => setMode('list')} className="mb-4 flex items-center gap-1 text-sm text-brand-600 hover:underline">
+          ← Retour aux campagnes
+        </button>
+        <CreateForm
+          tenantId={session.tenantId}
+          numbers={numbers}
+          onCreated={() => { void reload(); setMode('list'); }}
+        />
+      </div>
+    );
+  }
+
+  // Écran par défaut : dashboard de suivi des campagnes.
   return (
-    <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-      <CreateForm tenantId={session.tenantId} numbers={numbers} onCreated={reload} />
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Campagnes ({campaigns.length})</h2>
+    <section>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-slate-700">Campagnes ({campaigns.length})</h2>
+        <div className="flex items-center gap-3">
           {polling ? (
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
@@ -109,16 +127,23 @@ function CampaignsInner({ session }: { session: Session }) {
           ) : (
             <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
           )}
+          <button
+            onClick={() => { setDetail(null); setMode('create'); }}
+            className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
+          >
+            + Ajouter une campagne
+          </button>
         </div>
-        {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      </div>
+      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-        {loading ? (
-          <p className="text-sm text-slate-500">Chargement...</p>
-        ) : campaigns.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
-            Aucune campagne. Crée-en une à gauche.
-          </div>
-        ) : (
+      {loading ? (
+        <p className="text-sm text-slate-500">Chargement...</p>
+      ) : campaigns.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+          Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.
+        </div>
+      ) : (
           <ul className="space-y-2">
             {campaigns.map((c) => (
               <li key={c.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -164,8 +189,7 @@ function CampaignsInner({ session }: { session: Session }) {
             ))}
           </ul>
         )}
-      </section>
-    </div>
+    </section>
   );
 }
 
@@ -258,6 +282,14 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   }, [tenantId]);
 
   const selectedTemplate = templates.find((t) => t.name === templateName);
+  // Valeurs d'aperçu par variable (échantillon lisible selon le mapping) pour la miniature WhatsApp.
+  const previewExamples = vars.map((v) =>
+    v.source === 'literal' ? (v.value.trim() || '…')
+      : v.source === 'name' ? 'Julie'
+      : v.source === 'phone' ? '+33 6 12 34 56 78'
+      : v.source === 'field' ? `[${v.key || 'champ'}]`
+      : '',
+  );
 
   function chooseTemplate(nm: string) {
     setTemplateName(nm);
@@ -382,7 +414,9 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
           </select>
         )}
         {selectedTemplate?.body && (
-          <div className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{selectedTemplate.body}</div>
+          <div className="mt-3">
+            <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
+          </div>
         )}
       </Field>
 
