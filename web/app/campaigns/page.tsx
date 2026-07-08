@@ -10,7 +10,7 @@ import {
   createCampaign,
   runCampaign,
   listTemplates,
-  listContacts,
+  listAllContacts,
   type CampaignSummary,
   type CampaignDetail,
   type PhoneNumber,
@@ -232,10 +232,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     let alive = true;
     (async () => {
       try {
-        const [t, c] = await Promise.all([listTemplates(tenantId), listContacts(tenantId)]);
+        const [t, c] = await Promise.all([listTemplates(tenantId), listAllContacts(tenantId)]);
         if (!alive) return;
         setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
-        const withPhone = c.contacts.filter((x) => x.phoneE164);
+        const withPhone = c.filter((x) => x.phoneE164);
         setContacts(withPhone);
         setSelected(new Set(withPhone.map((x) => x.id))); // tout coché par défaut
       } catch {
@@ -310,7 +310,12 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     }
   }
 
-  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName !== '' && selected.size > 0 && !busy;
+  // Une variable « champ perso » sans clé ou « texte fixe » vide serait rejetée en 400 par le
+  // backend : on bloque en amont pour un message clair plutôt qu'une erreur technique.
+  const varsComplete = vars.every((v) =>
+    v.source === 'field' ? v.key.trim() !== '' : v.source === 'literal' ? v.value.trim() !== '' : true,
+  );
+  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName !== '' && selected.size > 0 && varsComplete && !busy;
 
   return (
     <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -433,6 +438,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Promo été" />
       </Field>
 
+      {!varsComplete && <p className="mt-3 text-xs text-amber-600">Complète les valeurs des variables (champ perso / texte fixe).</p>}
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
 

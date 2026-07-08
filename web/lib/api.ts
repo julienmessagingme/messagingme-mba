@@ -48,8 +48,25 @@ export interface Contact {
   fields: Record<string, unknown>;
   createdAt: string;
 }
-export function listContacts(tenantId: string): Promise<{ contacts: Contact[] }> {
-  return request<{ contacts: Contact[] }>(`/tenants/${tenantId}/contacts`);
+export function listContacts(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<{ contacts: Contact[] }> {
+  const qs = new URLSearchParams();
+  if (opts?.limit != null) qs.set('limit', String(opts.limit));
+  if (opts?.offset != null) qs.set('offset', String(opts.offset));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return request<{ contacts: Contact[] }>(`/tenants/${tenantId}/contacts${suffix}`);
+}
+
+/** Récupère TOUS les contacts d'un tenant (pagination par pages de 500). Pour la sélection de
+ *  campagne : ne jamais tronquer silencieusement (sinon on enverrait à un sous-ensemble). */
+export async function listAllContacts(tenantId: string): Promise<Contact[]> {
+  const page = 500;
+  const all: Contact[] = [];
+  for (let offset = 0; offset < 100_000; offset += page) {
+    const { contacts } = await listContacts(tenantId, { limit: page, offset });
+    all.push(...contacts);
+    if (contacts.length < page) break;
+  }
+  return all;
 }
 
 export interface ImportReport {
