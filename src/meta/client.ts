@@ -12,6 +12,14 @@ export interface MetaClientOpts {
   baseUrl?: string;
   rateLimiter?: RateLimiter;
   retry?: RetryOpts;
+  /**
+   * Router les envois marketing par l'endpoint MM Lite `/marketing_messages` (true) ou par
+   * l'endpoint standard `/messages` (false, défaut). MM Lite exige un onboarding au niveau
+   * Business Manager (ToS dédiée) ; sans lui, `/marketing_messages` échoue en 131042
+   * (« business eligibility payment issue »). Un template marketing s'envoie très bien par
+   * `/messages`, facturé au tarif marketing. Activer une fois le BM onboardé MM Lite.
+   */
+  marketingViaLite?: boolean;
 }
 
 function templatePayload(tpl: TemplateSpec): Record<string, unknown> {
@@ -34,6 +42,7 @@ export class MetaClient {
   private readonly version: string;
   private readonly rateLimiter: RateLimiter | undefined;
   private readonly retry: RetryOpts | undefined;
+  private readonly marketingViaLite: boolean;
 
   constructor(opts: MetaClientOpts) {
     this.transport = opts.transport;
@@ -43,6 +52,7 @@ export class MetaClient {
     this.version = opts.version ?? 'v25.0';
     this.rateLimiter = opts.rateLimiter;
     this.retry = opts.retry;
+    this.marketingViaLite = opts.marketingViaLite ?? false;
   }
 
   private url(path: string): string {
@@ -97,7 +107,10 @@ export class MetaClient {
     }
     // `to` prime si les deux sont fournis (spec Meta).
     const target = params.to ? { to: params.to } : { recipient: params.recipient };
-    const json = await this.call('marketing_messages', {
+    // MM Lite (`/marketing_messages`) seulement si le BM est onboardé, sinon endpoint standard
+    // `/messages` (un template marketing s'envoie très bien par là, facturé au tarif marketing).
+    const endpoint = this.marketingViaLite ? 'marketing_messages' : 'messages';
+    const json = await this.call(endpoint, {
       messaging_product: 'whatsapp',
       ...target,
       type: 'template',

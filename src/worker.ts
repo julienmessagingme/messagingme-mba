@@ -46,6 +46,7 @@ async function main(): Promise<void> {
           token: config.META_ACCESS_TOKEN,
           phoneNumberId: campaign.phoneNumberId,
           version: config.META_GRAPH_VERSION,
+          marketingViaLite: config.META_MM_LITE === 'true',
         });
 
   await queue.work('campaign-run', async (data) => {

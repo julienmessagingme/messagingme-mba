@@ -8,6 +8,12 @@ const schema = z.object({
   META_ACCESS_TOKEN: z.string().default(''),
   /** Version Graph API pour les appels d'envoi. */
   META_GRAPH_VERSION: z.string().default('v25.0'),
+  /**
+   * Router le marketing par MM Lite (`/marketing_messages`). Défaut 'false' -> endpoint standard
+   * `/messages`. MM Lite exige un onboarding Business Manager ; sans lui -> erreur 131042. Passer
+   * à 'true' seulement une fois le BM onboardé MM Lite.
+   */
+  META_MM_LITE: z.string().default('false'),
   /** Pays par défaut pour normaliser les numéros à l'import CSV. */
   DEFAULT_COUNTRY: z.string().default('FR'),
   /** Secret HMAC de signature des JWT de session (login console). */

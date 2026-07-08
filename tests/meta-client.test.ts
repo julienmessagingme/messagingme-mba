@@ -43,10 +43,20 @@ describe('MetaClient.sendTemplate', () => {
   });
 });
 
+const liteClient = (transport: HttpTransport) =>
+  new MetaClient({ transport, token: 'TOK', phoneNumberId: '123', version: 'v25.0', marketingViaLite: true });
+
 describe('MetaClient.sendMarketing', () => {
-  it('vers un recipient (BSUID) -> /marketing_messages avec recipient', async () => {
+  it('par défaut -> endpoint standard /messages (MM Lite désactivé)', async () => {
+    const t = new FakeTransport([okBody('wamid.3a')]);
+    await client(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } });
+    expect(t.requests[0]!.url).toBe('https://graph.facebook.com/v25.0/123/messages');
+    expect(t.requests[0]!.body).toMatchObject({ to: '33600000000', type: 'template' });
+  });
+
+  it('marketingViaLite=true -> /marketing_messages avec recipient (BSUID)', async () => {
     const t = new FakeTransport([okBody('wamid.3')]);
-    await client(t).sendMarketing({ recipient: 'US.123', template: { name: 'promo', language: 'fr' } });
+    await liteClient(t).sendMarketing({ recipient: 'US.123', template: { name: 'promo', language: 'fr' } });
     const req = t.requests[0]!;
     expect(req.url).toBe('https://graph.facebook.com/v25.0/123/marketing_messages');
     expect(req.body).toMatchObject({ recipient: 'US.123', type: 'template' });
@@ -55,7 +65,7 @@ describe('MetaClient.sendMarketing', () => {
 
   it('vers un to (E.164) -> body avec to', async () => {
     const t = new FakeTransport([okBody('wamid.4')]);
-    await client(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } });
+    await liteClient(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } });
     expect(t.requests[0]!.body).toMatchObject({ to: '33600000000' });
   });
 
