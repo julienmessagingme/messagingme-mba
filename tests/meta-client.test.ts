@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MetaClient } from '../src/meta/client';
+import { RateLimiter } from '../src/meta/http';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 
 class FakeTransport implements HttpTransport {
@@ -82,5 +83,32 @@ describe('MetaClient erreurs', () => {
   it('réponse 200 sans message id -> throw', async () => {
     const t = new FakeTransport([{ status: 200, json: { messages: [] } }]);
     await expect(client(t).sendText('33600000000', 'x')).rejects.toThrow(/message id/);
+  });
+});
+
+describe('MetaClient throttling', () => {
+  it('acquire() du rateLimiter est appelé à CHAQUE tentative (retries compris)', async () => {
+    class CountingLimiter extends RateLimiter {
+      count = 0;
+      override async acquire(): Promise<void> {
+        this.count += 1;
+        return super.acquire();
+      }
+    }
+    const limiter = new CountingLimiter(0);
+    // 503 (retryable) deux fois puis succès -> 3 tentatives -> 3 acquire().
+    const t = new FakeTransport([
+      { status: 503, json: { error: { code: 1, message: 'busy' } } },
+      { status: 503, json: { error: { code: 1, message: 'busy' } } },
+      okBody('wamid.ok'),
+    ]);
+    const c = new MetaClient({
+      transport: t, token: 'TOK', phoneNumberId: '123', version: 'v25.0',
+      rateLimiter: limiter, retry: { baseDelayMs: 0, sleep: async () => {} },
+    });
+    const res = await c.sendText('33600000000', 'x');
+    expect(res.messageId).toBe('wamid.ok');
+    expect(limiter.count).toBe(3);
+    expect(t.requests).toHaveLength(3);
   });
 });

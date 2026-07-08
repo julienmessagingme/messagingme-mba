@@ -17,5 +17,34 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-    # NB : les tests d'intégration (npm run test:integration) tapent Supabase et sont
-    # exécutés localement pour l'instant. Job d'intégration CI (service Postgres) = à ajouter.
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Postgres LOCAL sans TLS -> SSL désactivé (sinon « server does not support SSL »).
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DB_SSL: 'off'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Migrations (crée le schéma applicatif)
+        run: npm run migrate
+      - name: Tests d'intégration (pg-boss + stores + e2e contre Postgres éphémère)
+        run: npm run test:integration

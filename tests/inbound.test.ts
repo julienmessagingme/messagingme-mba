@@ -25,6 +25,38 @@ describe('extractInbound', () => {
     expect(r[0]).toMatchObject({ body: 'Intéressé', buttonPayload: 'opt_1' });
   });
 
+  it('liste interactive (list_reply)', () => {
+    const r = extractInbound(payload([{ id: 'wamid.3b', from: '33611', type: 'interactive', interactive: { list_reply: { id: 'row_2', title: 'Option B' } } }]));
+    expect(r[0]).toMatchObject({ body: 'Option B', buttonPayload: 'row_2' });
+  });
+
+  it('fin de WhatsApp Flow (nfm_reply) -> corps + réponse structurée en payload', () => {
+    const r = extractInbound(payload([{ id: 'wamid.5', from: '33611', type: 'interactive', interactive: { type: 'nfm_reply', nfm_reply: { name: 'flow_rdv', body: 'Formulaire envoyé', response_json: '{"date":"2026-08-01"}' } } }]));
+    expect(r[0]).toMatchObject({ type: 'interactive', body: 'Formulaire envoyé', buttonPayload: '{"date":"2026-08-01"}' });
+  });
+
+  it('sous-type interactif inconnu -> [interactif] (pas de perte silencieuse)', () => {
+    const r = extractInbound(payload([{ id: 'wamid.6', from: '33611', type: 'interactive', interactive: { type: 'mystery' } }]));
+    expect(r[0]).toMatchObject({ body: '[interactif]', buttonPayload: null });
+  });
+
+  it('réaction -> emoji', () => {
+    const r = extractInbound(payload([{ id: 'wamid.7', from: '33611', type: 'reaction', reaction: { emoji: '👍', message_id: 'wamid.orig' } }]));
+    expect(r[0]).toMatchObject({ type: 'reaction', body: '👍', buttonPayload: 'wamid.orig' });
+  });
+
+  it('image avec légende -> légende ; sans légende -> [image]', () => {
+    const withCap = extractInbound(payload([{ id: 'wamid.8', from: '33611', type: 'image', image: { caption: 'Ma photo' } }]));
+    expect(withCap[0]).toMatchObject({ type: 'image', body: 'Ma photo' });
+    const noCap = extractInbound(payload([{ id: 'wamid.9', from: '33611', type: 'image', image: {} }]));
+    expect(noCap[0]).toMatchObject({ type: 'image', body: '[image]' });
+  });
+
+  it('localisation -> nom/adresse', () => {
+    const r = extractInbound(payload([{ id: 'wamid.10', from: '33611', type: 'location', location: { latitude: 48.8, longitude: 2.3, name: 'Tour Eiffel' } }]));
+    expect(r[0]).toMatchObject({ type: 'location', body: 'Tour Eiffel' });
+  });
+
   it('BSUID-native : from absent -> fallback contacts[].wa_id', () => {
     const r = extractInbound(payload([{ id: 'wamid.4', type: 'text', text: { body: 'x' } }], 'pn1', [{ wa_id: '33622', profile: { name: 'Marc' } }]));
     expect(r[0]).toMatchObject({ waId: '33622', profileName: 'Marc' });

@@ -51,7 +51,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 502 + message clair,
     // au lieu d'un « Internal Server Error » opaque.
     if (err instanceof MetaApiError) {
-      return reply.code(502).send({ error: `Meta: ${err.message}` });
+      // Message Meta tronqué (évite d'exposer un blob verbeux / des détails de trace).
+      const detail = err.message.replace(/\s+/g, ' ').trim().slice(0, 200);
+      return reply.code(502).send({ error: `Meta: ${detail}` });
     }
     const code = err.statusCode ?? 500;
     reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });

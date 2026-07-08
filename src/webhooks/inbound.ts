@@ -43,8 +43,31 @@ function contentOf(msg: Record<string, unknown>): { body: string | null; buttonP
     const it = asRecord(msg['interactive']);
     const br = asRecord(it['button_reply']);
     const lr = asRecord(it['list_reply']);
+    const nfm = asRecord(it['nfm_reply']);
     if (br['id'] || br['title']) return { body: str(br['title']), buttonPayload: str(br['id']) };
     if (lr['id'] || lr['title']) return { body: str(lr['title']), buttonPayload: str(lr['id']) };
+    // Fin de WhatsApp Flow (nfm_reply) : garder le libellé + la réponse structurée en payload.
+    if (nfm['name'] || nfm['body'] || nfm['response_json']) {
+      const rj = nfm['response_json'];
+      return {
+        body: str(nfm['body']) ?? str(nfm['name']) ?? '[formulaire]',
+        buttonPayload: typeof rj === 'string' ? rj.slice(0, 2000) : str(nfm['name']),
+      };
+    }
+    // Sous-type interactif inconnu : ne pas perdre le fait qu'il y a eu une interaction.
+    return { body: '[interactif]', buttonPayload: null };
+  }
+  if (type === 'reaction') {
+    const r = asRecord(msg['reaction']);
+    return { body: str(r['emoji']), buttonPayload: str(r['message_id']) };
+  }
+  // Médias : garder la légende si présente, sinon un libellé de type (aperçu non vide).
+  if (type === 'image' || type === 'video' || type === 'document' || type === 'audio' || type === 'sticker') {
+    return { body: str(asRecord(msg[type])['caption']) ?? `[${type}]`, buttonPayload: null };
+  }
+  if (type === 'location') {
+    const loc = asRecord(msg['location']);
+    return { body: str(loc['name']) ?? str(loc['address']) ?? '[localisation]', buttonPayload: null };
   }
   return { body: null, buttonPayload: null };
 }

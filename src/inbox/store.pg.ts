@@ -31,10 +31,14 @@ export class PgInboxStore implements InboxStore {
 
   async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
-    // Upsert la conversation ; lie le contact si un numéro correspond (wa_id sans '+').
+    // Upsert la conversation ; lie le contact si un numéro correspond. Le wa_id est en chiffres
+    // nus : on tente '+wa_id' (E.164 exact) PUIS une comparaison sur les seuls chiffres (tolère
+    // les contacts stockés avec un formatage différent).
     const conv = await this.pool.query<{ id: string }>(
       `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview)
-       values ($1, $2, (select id from contacts where tenant_id = $1 and phone_e164 = '+' || $2 limit 1), now(), $3)
+       values ($1, $2, (select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1), now(), $3)
        on conflict (tenant_id, wa_id) do update set
          last_message_at = now(),
          last_preview = excluded.last_preview,

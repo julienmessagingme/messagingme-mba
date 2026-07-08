@@ -24,10 +24,10 @@ export class PgUserAuthStore implements UserAuthStore {
       role: string;
       password_hash: string | null;
     }>(
-      // ORDER BY + LIMIT 1 : résolution déterministe si un email existe dans plusieurs tenants
-      // (l'unicité en base est (tenant_id, email), pas globale).
+      // Unicité globale insensible à la casse (index users_email_lower_unique, migration 0010) :
+      // un email = un compte. LIMIT 1 par prudence ; lower() pour matcher l'index.
       `select id, tenant_id, email, role, password_hash from users
-       where email = $1 order by created_at, id limit 1`,
+       where lower(email) = lower($1) limit 1`,
       [email],
     );
     const r = res.rows[0];

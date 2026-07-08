@@ -10,12 +10,15 @@ export class PgBossQueue implements Queue {
   private readonly boss: PgBoss;
   private started = false;
   private readonly ensured = new Set<string>();
+  private readonly retryLimit: number;
 
-  constructor(connectionString: string, schema = 'pgboss') {
+  constructor(connectionString: string, schema = 'pgboss', opts: { retryLimit?: number; max?: number } = {}) {
+    this.retryLimit = opts.retryLimit ?? 5;
     this.boss = new PgBoss({
       connectionString,
       schema,
       ssl: pgSsl(),
+      ...(opts.max ? { max: opts.max } : {}),
     });
   }
 
@@ -37,10 +40,19 @@ export class PgBossQueue implements Queue {
     await this.boss.createQueue(dlq);
     await this.boss.createQueue(name, {
       deadLetter: dlq,
-      retryLimit: 5,
+      retryLimit: this.retryLimit,
       retryBackoff: true,
     });
     this.ensured.add(name);
+  }
+
+  /**
+   * Test-only : retire (fetch) et compte les jobs disponibles sur une file. Sert à vérifier
+   * qu'un job a bien atterri en DLQ. Effet de bord : marque les jobs récupérés `active`.
+   */
+  async pullPending(name: string): Promise<number> {
+    const jobs = await this.boss.fetch(name, { batchSize: 100 });
+    return jobs?.length ?? 0;
   }
 
   async enqueue(name: string, data: unknown, opts?: { singletonKey?: string }): Promise<void> {

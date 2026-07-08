@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
 import type { BuildContact, BuiltRecipient } from './build';
@@ -293,16 +293,7 @@ export class PgCampaignRepo {
       );
       const campaignId = cRes.rows[0]?.id;
       if (!campaignId) throw new Error('createWithRecipients : aucun id retourné');
-      let inserted = 0;
-      for (const rcp of recipients) {
-        const r = await client.query(
-          `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params)
-           values ($1, $2, $3, $4::jsonb)
-           on conflict (campaign_id, contact_id) do nothing`,
-          [campaignId, rcp.contactId, rcp.toE164, JSON.stringify(rcp.resolvedParams)],
-        );
-        inserted += r.rowCount ?? 0;
-      }
+      const inserted = await bulkInsertRecipients(client, campaignId, recipients);
       await client.query('commit');
       return { campaignId, recipientCount: inserted };
     } catch (err) {
@@ -315,18 +306,32 @@ export class PgCampaignRepo {
 
   /** Insère les destinataires (idempotent par (campaign_id, contact_id)). Retourne le nb inséré. */
   async insertRecipients(campaignId: string, recipients: BuiltRecipient[]): Promise<number> {
-    let inserted = 0;
-    for (const rcp of recipients) {
-      const res = await this.pool.query(
-        `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params)
-         values ($1, $2, $3, $4::jsonb)
-         on conflict (campaign_id, contact_id) do nothing`,
-        [campaignId, rcp.contactId, rcp.toE164, JSON.stringify(rcp.resolvedParams)],
-      );
-      inserted += res.rowCount ?? 0;
-    }
-    return inserted;
+    return bulkInsertRecipients(this.pool, campaignId, recipients);
   }
+}
+
+/**
+ * Insert bulk des destinataires en UNE requête (`unnest`) au lieu de N allers-retours.
+ * Idempotent par (campaign_id, contact_id) ; retourne le nombre réellement inséré. Fonctionne
+ * avec un client transactionnel (createWithRecipients) comme avec le pool.
+ */
+async function bulkInsertRecipients(
+  q: Pool | PoolClient,
+  campaignId: string,
+  recipients: BuiltRecipient[],
+): Promise<number> {
+  if (recipients.length === 0) return 0;
+  const contactIds = recipients.map((r) => r.contactId);
+  const toE164s = recipients.map((r) => r.toE164);
+  const params = recipients.map((r) => JSON.stringify(r.resolvedParams));
+  const res = await q.query(
+    `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params)
+     select $1, c, t, p::jsonb
+     from unnest($2::uuid[], $3::text[], $4::text[]) as u(c, t, p)
+     on conflict (campaign_id, contact_id) do nothing`,
+    [campaignId, contactIds, toE164s, params],
+  );
+  return res.rowCount ?? 0;
 }
 
 export class PgCampaignStore implements CampaignStore {

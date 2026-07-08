@@ -55,6 +55,30 @@ describe('MetaTemplateClient.create (payload)', () => {
       { type: 'URL', text: 'Voir', url: 'https://x.fr' },
     ]);
   });
+
+  it('bouton URL dynamique ({{1}}) -> émet un example (exigé par Meta)', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', {
+      name: 'promo', category: 'MARKETING', language: 'fr', body: 'Voir',
+      buttons: [{ type: 'URL', text: 'Suivre', url: 'https://x.fr/{{1}}' }],
+    });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.components[1].buttons[0]).toEqual({ type: 'URL', text: 'Suivre', url: 'https://x.fr/{{1}}', example: ['https://x.fr/exemple'] });
+  });
+});
+
+describe('MetaTemplateClient.list (pagination)', () => {
+  it('suit paging.next et concatène toutes les pages', async () => {
+    const { fn, calls } = makeFetch([
+      { ok: true, status: 200, json: { data: [{ name: 'a', status: 'APPROVED', category: 'MARKETING', language: 'fr' }], paging: { next: 'https://graph.facebook.com/next?cursor=2' } } },
+      { ok: true, status: 200, json: { data: [{ name: 'b', status: 'PENDING', category: 'UTILITY', language: 'fr' }] } },
+    ]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    const all = await client.list('waba1');
+    expect(all.map((t) => t.name)).toEqual(['a', 'b']);
+    expect(calls[1]!.url).toBe('https://graph.facebook.com/next?cursor=2'); // 2e appel = curseur suivant
+  });
 });
 
 describe('routes templates', () => {

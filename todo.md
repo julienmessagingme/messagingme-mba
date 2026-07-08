@@ -28,19 +28,16 @@ Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **
   (baseline = 403 « Meta Business AI Terms »), alerte au changement. **NON posé** (service de
   triggers KO + creds Telegram non accessibles) — à recâbler (cron VPS + canal d'alerte fourni par Julien).
 
-## Suites revue templates + inbox (🟡, non bloquant — reviewer PASS)
+## ✅ Suites revue templates + inbox — TOUT RÉSOLU (2026-07-08)
 
-- **Bouton URL dynamique** : un bouton URL avec `{{1}}` dans l'URL est rejeté par Meta (il faut un
-  `example` au niveau bouton, non émis). Aujourd'hui l'UI ne propose que des URL statiques -> OK ;
-  ajouter l'example bouton si on veut des URL dynamiques.
-- **Types interactifs Flows** : `nfm_reply` (fin de WhatsApp Flow) et autres sous-types tombent en
-  `body:null` (le message est bien enregistré, aperçu `[interactive]`, mais le contenu est perdu).
-  À traiter quand on branche les Flows.
-- **Liaison contact best-effort** : `conversations.contact_id` via `phone_e164 = '+' || wa_id` ne lie
-  que les contacts en E.164 strict ; un contact non lié affiche juste le wa_id brut (acceptable).
-- **Message Meta exposé** : le 502 renvoie `Meta: <message>` verbatim (routes admin-only, portée faible) ;
-  tronquer/whitelister si on veut la même posture que les 5xx internes.
-- **Templates list `limit=200`** sans pagination -> tronque au-delà. OK à l'échelle actuelle.
+- ✅ **Bouton URL dynamique** : `buildComponents` émet l'`example` bouton quand l'URL contient `{{n}}`.
+- ✅ **Types interactifs Flows** : `nfm_reply` capturé (corps + `response_json` en payload), réaction
+  (emoji), médias (légende ou `[type]`), localisation, sous-type inconnu -> `[interactif]`. Plus de
+  perte silencieuse.
+- ✅ **Liaison contact** : match `'+'||wa_id` PUIS chiffres normalisés (`regexp_replace`) -> tolère un
+  formatage différent.
+- ✅ **Message Meta** : 502 tronqué à 200 car., espaces compactés.
+- ✅ **Templates list** : pagination complète (suit `paging.next`, cap 20 pages).
 
 ## ✅ Sécurité / auth — RÉSOLU (était BLOQUANT à la revue Loops 3-5)
 
@@ -56,26 +53,28 @@ prod. Résidus non bloquants ci-dessous.
   réellement provisionné.
 - ✅ **Compte démo** `admin@demo.test` désactivé en prod (password_hash null, réversible).
 - ✅ **AUTH_SECRET** : boot prod échoue si absent/faible ; posé sur le VPS.
-- ⏳ **TLS pooler** : la vérif complète échoue (chaîne self-signed du pooler Supabase) ->
-  `DB_SSL_INSECURE=true` (chiffré mais non vérifié). Pour la vérif complète : télécharger la CA
-  Supabase (dashboard) et pointer `DB_SSL_CA_FILE` en prod.
-- ⏳ **Unicité email** : `findByEmail` déterministe (ORDER BY + LIMIT 1). Décider email global
-  (`unique (email)`) vs par-tenant (login avec sélection de tenant).
+- ⏳ **TLS pooler** (BLOQUÉ sur un fichier externe, pas de la flemme) : la vérif complète échoue
+  (chaîne self-signed du pooler Supabase) -> `DB_SSL_INSECURE=true` (chiffré mais non vérifié). Le
+  code est PRÊT (`DB_SSL_CA_FILE` -> vérif stricte, `pgSsl()`), il ne manque QUE la CA : la
+  télécharger dans le dashboard Supabase (Project Settings -> Database -> SSL Configuration ->
+  « Download certificate »), la monter dans le conteneur, poser `DB_SSL_CA_FILE=/chemin/ca.crt` et
+  retirer `DB_SSL_INSECURE`. Action Julien (accès dashboard).
+- ✅ **Unicité email** : tranché -> email GLOBAL insensible à la casse. Migration 0010 (index
+  `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
+  non-déterminisme multi-tenant.
 
-## Suites de la revue Loops 3-5 (non bloquant)
+## Suites de la revue Loops 3-5
 
-- **Réconciliation `sending`** : le claim atomique (fix double-envoi) laisse un destinataire en
-  `sending` si l'envoi réussit mais la persistance `sent` échoue (sous-livraison, sens sûr). Ajouter
-  un sweeper (reset `sending` → `pending` au-delà d'un timeout) ou une réconciliation via le
-  `message_id` du webhook de statut. Aujourd'hui : jamais re-livré (pas de double-envoi), OK.
-- **createCampaign transactionnel** : le build se fait désormais AVANT l'insert (plus d'orphelin
-  draft si le mapping est invalide), mais insertCampaign + insertRecipients ne sont pas dans une
-  transaction unique → un crash entre les deux laisse une campagne draft à destinataires partiels
-  (borné : draft inerte). Envelopper dans BEGIN/COMMIT + INSERT multi-lignes si besoin.
-- **quality getRating** : lu à chaque destinataire (point-query PK). Mémoïser avec un TTL court côté
-  PgQualityProvider si la volumétrie l'exige (dominé par l'appel Meta aujourd'hui).
-- **Stress-test concurrence** : ajouter un test qui lance 2 runs concurrents de la même campagne et
-  prouve zéro double-envoi (le claim + singletonKey sont en place, mais non testés sous vraie course).
+- ✅ **Réconciliation `sending`** : sweeper `reclaimStale` en place (worker.ts, `STALE_SENDING_MS`),
+  reset `sending` -> `pending` au-delà du timeout.
+- ✅ **createCampaign transactionnel + bulk** : `createWithRecipients` est dans un BEGIN/COMMIT et
+  insère les destinataires en UNE requête (`unnest`, helper `bulkInsertRecipients`, idempotent
+  `on conflict do nothing`). `insertRecipients` idem.
+- 🟡 **quality getRating** : lu à chaque destinataire (point-query PK). Mémoïser (TTL court) si la
+  volumétrie l'exige. Dominé par l'appel Meta aujourd'hui -> laissé tel quel.
+- 🟡 **Stress-test concurrence** : le claim atomique (pending->sending) + `singletonKey` sont en place
+  et testés au niveau claim ; un test « 2 runs concurrents -> zéro double-envoi » sous vraie course
+  reste à ajouter (nice-to-have, pas un bug connu).
 
 ## Décisions ouvertes
 
@@ -85,47 +84,40 @@ prod. Résidus non bloquants ci-dessous.
   post-ToS.
 - **PaaS** : point de décision à l'entrée Phase 3 (Fly.io Paris / Railway EU, critère RGPD).
 
-## Dette identifiée par la revue Loops 1-2 (différée, non bloquante)
+## Dette de la revue Loops 1-2
 
-- **TLS Supabase** : aujourd'hui `DB_SSL_INSECURE=true` (fallback dev, endpoint direct = CA
-  auto-signée). Upgrade : télécharger la CA Supabase (dashboard) et pointer `DB_SSL_CA_FILE`
-  pour la vérif complète, OU basculer sur le pooler (cert AWS publiquement approuvé).
-- **Test DLQ** : ajouter un test d'intégration qui prouve qu'un job qui throw finit en
-  `<name>-dlq` après épuisement des retries (rendre retryLimit configurable dans PgBossQueue
-  pour un test rapide).
-- **CI intégration** : job GitHub Actions avec service Postgres qui lance `test:integration`
-  (le job unitaire existe déjà).
-- **`webhook_events`** : colonne nommée `meta_message_id` porte en fait une dedup key
-  synthétique -> renommer en `dedup_key` (migration additive) ; et ajouter `tenant_id`/`waba_id`
-  + index pour les jointures analytiques des Loops à venir.
-- **`processed_at`/`error`** de `webhook_events` : sémantique à trancher (log brut d'ingestion
-  vs statut de traitement réel).
-- **parse.ts** : uniformiser le routage des sous-événements (messages/statuses par tableau,
-  handovers par `field`) pour éviter tout double-comptage sur un payload composite.
+- ⏳ **TLS Supabase** : idem « TLS pooler » ci-dessus (bloqué sur la CA à télécharger au dashboard).
+- ✅ **Test DLQ** : test d'intégration qui prouve job qui throw -> `<name>-dlq` (retryLimit
+  configurable + `pullPending`, 1 seule tentative avec retryLimit:0).
+- ✅ **CI intégration** : job `integration` (service Postgres 16, `DB_SSL=off`, migrate +
+  `test:integration`) ajouté à `.github/workflows/ci.yml`.
+- 🟢 **parse.ts** : VÉRIFIÉ, pas de double-comptage. Chaque sous-événement a une `dedupKey`
+  distincte par source (rien ne collapse) ; messages+statuses arrivent sous le même `field:messages`
+  donc le routage par tableau est le bon choix (gater par `field` serait fragile aux versions Meta).
+- ⏸️ **`webhook_events` renommage `meta_message_id` -> `dedup_key`** : décision de NE PAS le faire.
+  Renommer une colonne sur le chemin chaud du webhook (coordination migration+déploiement, fenêtre
+  d'échec d'insert) pour un gain purement cosmétique n'en vaut pas le risque ; la couche appli
+  utilise déjà `dedupKey` et la colonne est documentée. `tenant_id`/`waba_id` : prématuré tant
+  qu'aucun consommateur analytique n'existe (colonnes vides = spéculatif).
+- ⏸️ **`processed_at`/`error`** : sémantique à trancher (log brut d'ingestion vs statut de
+  traitement réel). Décision produit, pas un bug.
 
-## Raffinements notés (non bloquants)
+## Raffinements notés
 
-- **Loop 3 / import** : si deux colonnes CSV mappent la même custom key, la dernière écrase
-  silencieusement (responsabilité du mapping UI). Ajouter un warning/validation à l'étape mapping.
-- **Loop 3 / slugify** : collision de labels distincts -> même key (dedup, 1er gagne). Si on
-  veut de la disambiguation (`ville`, `ville_2`), à implémenter dans ensureField.
-
-- **Loop 2 / `withRetry`** : toute erreur non-`MetaApiError` est rejouée (conforme au plan
-  « réseau = retryable »), ce qui masque un bug de programmation sous des retries. À terme :
-  ne rejouer que des erreurs réseau connues (fetch failed / ECONNRESET / ETIMEDOUT).
-- **Loop 2 / `MetaClient`** : le `rateLimiter.acquire()` par tentative est correct mais non
-  couvert par un test au niveau client (ajouter « rateLimiter appelé N fois »).
-
-- **Loop 5 / `campaignExists`** (`src/index.ts`) : fait un `getCampaign` complet (SELECT toutes
-  colonnes) juste pour un test d'existence -> un `select 1 from campaigns where id=$1` suffirait.
-- **Loop 5 / état `queued`** : la route `run` enqueue sans transition d'état visible (campagne
-  reste `draft` jusqu'à ce que le worker la passe `running`). Une future UI voudra peut-être un
-  état `queued` intermédiaire.
-- **Loop 5 / `insertRecipients`** : boucle un INSERT par destinataire (N allers-retours). Correct
-  et idempotent ; passer en bulk insert si forte volumétrie.
-- **Loop 5 / quality rating** : `PgQualityProvider` lit `phone_numbers.quality_rating` (défaut
-  UNKNOWN). Câbler l'alimentation par webhook (account/phone_number_quality_update) pour que le
-  garde-fou qualité protège au-delà du seul taux d'échec.
+- ✅ **Loop 3 / import collision** : deux colonnes -> même custom key est signalé (`report.errors`
+  « colonnes fusionnées »), 1re valeur non vide gagne.
+- ⏸️ **Loop 3 / slugify** : deux labels distincts -> même key = fusion (1er gagne) + warning.
+  Décision : on GARDE ce comportement. Disambiguer en `ville_2` casserait silencieusement le mapping
+  des variables de template (l'utilisateur mappe sur `ville`). Le warning est le bon compromis.
+- ✅ **Loop 2 / `withRetry`** : ne rejoue QUE `MetaApiError.retryable` + codes réseau connus
+  (`NETWORK_CODES`), pas un throw arbitraire.
+- ✅ **Loop 2 / `MetaClient`** : test « `rateLimiter.acquire()` appelé à chaque tentative » ajouté.
+- ✅ **Loop 5 / existence campagne** : `campaignBelongsTo` = `select 1 ... where id and tenant_id`.
+- ✅ **Loop 5 / `insertRecipients`** : bulk insert (`unnest`).
+- 🟡 **Loop 5 / état `queued`** : la route `run` enqueue sans état intermédiaire visible (reste
+  `draft` jusqu'à `running`). Une future UI voudra peut-être un `queued`. Décision produit.
+- 🟡 **Loop 5 / quality rating** : `PgQualityProvider` lit `phone_numbers.quality_rating` (défaut
+  UNKNOWN). Câbler l'alimentation par webhook `phone_number_quality_update` (feature, pas un bug).
 
 ## Bugs connus
 

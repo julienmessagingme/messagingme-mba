@@ -15,10 +15,12 @@ const payload = {
 // N'exécute que si une DB est configurée. Schéma pg-boss isolé : pgboss_test.
 describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
   let pool: Pool;
-  const queue = new PgBossQueue(url, 'pgboss_test');
+  // Pools bornés : le pooler Supabase en session mode plafonne à 15 connexions ; ce test
+  // ouvre plusieurs instances pg-boss (dont la DLQ) -> garder la somme sous la limite.
+  const queue = new PgBossQueue(url, 'pgboss_test', { max: 4 });
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 3 });
     await pool.query('delete from webhook_events where meta_message_id = $1', [KEY]);
     await queue.start();
   });
@@ -47,5 +49,30 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000)),
     ])) as { ping?: string };
     expect(data.ping).toBe('pong');
+  });
+
+  it('pg-boss : un job qui throw finit en DLQ après épuisement des retries', async () => {
+    // retryLimit:0 -> une seule tentative, puis dead-letter immédiat vers itest-dlq-src-dlq.
+    const dlqQueue = new PgBossQueue(url, 'pgboss_test', { retryLimit: 0, max: 3 });
+    await dlqQueue.start();
+    try {
+      let attempts = 0;
+      await dlqQueue.work('itest-dlq-src', async () => {
+        attempts += 1;
+        throw new Error('échec volontaire');
+      });
+      await dlqQueue.enqueue('itest-dlq-src', { boom: true });
+
+      // Attendre que le job atterrisse dans la DLQ (poll, max 20s).
+      let inDlq = 0;
+      for (let i = 0; i < 40 && inDlq === 0; i += 1) {
+        await new Promise((r) => setTimeout(r, 500));
+        inDlq = await dlqQueue.pullPending('itest-dlq-src-dlq');
+      }
+      expect(inDlq).toBeGreaterThanOrEqual(1);
+      expect(attempts).toBe(1); // une seule tentative (retryLimit:0), pas de rejeu infini
+    } finally {
+      await dlqQueue.stop();
+    }
   });
 });

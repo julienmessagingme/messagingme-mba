@@ -9,6 +9,9 @@ export interface PgSslConfig {
  * Config SSL Postgres partagée (pool, pg-boss, migrate). Sécurisée par défaut.
  *
  * Priorité :
+ *  0. `DB_SSL=off` -> SSL désactivé (`ssl: false`). Pour un Postgres LOCAL sans TLS
+ *     (CI avec service Postgres, dev local) : forcer un objet SSL ferait échouer la
+ *     connexion (« server does not support SSL »).
  *  1. `DB_SSL_CA_FILE` (chemin vers la CA, ex. la CA Supabase téléchargée depuis
  *     le dashboard) -> vérification COMPLÈTE du certificat (rejectUnauthorized:true + ca).
  *     C'est la cible prod : anti-MITM réel.
@@ -19,7 +22,8 @@ export interface PgSslConfig {
  *     le pooler, dont le cert AWS est publiquement approuvé).
  *  3. sinon -> vérification via le trust store système (rejectUnauthorized:true).
  */
-export function pgSsl(): PgSslConfig {
+export function pgSsl(): PgSslConfig | false {
+  if (process.env['DB_SSL'] === 'off') return false;
   const caFile = process.env['DB_SSL_CA_FILE'];
   if (caFile && caFile.trim()) {
     return { ca: readFileSync(caFile, 'utf8'), rejectUnauthorized: true };

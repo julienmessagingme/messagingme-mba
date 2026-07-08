@@ -42,11 +42,15 @@ function buildComponents(input: CreateTemplateInput): unknown[] {
   if (input.buttons && input.buttons.length > 0) {
     components.push({
       type: 'BUTTONS',
-      buttons: input.buttons.map((b) =>
-        b.type === 'URL'
-          ? { type: 'URL', text: b.text, url: b.url }
-          : { type: 'QUICK_REPLY', text: b.text },
-      ),
+      buttons: input.buttons.map((b) => {
+        if (b.type !== 'URL') return { type: 'QUICK_REPLY', text: b.text };
+        const btn: Record<string, unknown> = { type: 'URL', text: b.text, url: b.url };
+        // URL dynamique ({{1}}) : Meta EXIGE un exemple d'URL complète au niveau du bouton.
+        if (b.url && /\{\{\s*\d+\s*\}\}/.test(b.url)) {
+          btn.example = [b.url.replace(/\{\{\s*\d+\s*\}\}/g, 'exemple')];
+        }
+        return btn;
+      }),
     });
   }
   return components;
@@ -92,16 +96,28 @@ export class MetaTemplateClient {
     return { id: json.id ?? '', status: json.status ?? 'PENDING' };
   }
 
-  /** Liste les templates du WABA avec leur statut (APPROVED/PENDING/REJECTED). */
+  /**
+   * Liste TOUS les templates du WABA avec leur statut (APPROVED/PENDING/REJECTED).
+   * Suit le curseur `paging.next` pour ne rien tronquer (cap de sécurité à 20 pages).
+   */
   async list(wabaId: string): Promise<TemplateSummary[]> {
-    const json = (await this.call(this.url(wabaId, '?fields=name,status,category,language&limit=200'), {
-      method: 'GET',
-    })) as { data?: Array<{ name?: string; status?: string; category?: string; language?: string }> };
-    return (json.data ?? []).map((t) => ({
-      name: t.name ?? '',
-      status: t.status ?? '',
-      category: t.category ?? '',
-      language: t.language ?? '',
-    }));
+    const out: TemplateSummary[] = [];
+    let next: string | null = this.url(wabaId, '?fields=name,status,category,language&limit=100');
+    for (let page = 0; page < 20 && next; page++) {
+      const json = (await this.call(next, { method: 'GET' })) as {
+        data?: Array<{ name?: string; status?: string; category?: string; language?: string }>;
+        paging?: { next?: string };
+      };
+      for (const t of json.data ?? []) {
+        out.push({
+          name: t.name ?? '',
+          status: t.status ?? '',
+          category: t.category ?? '',
+          language: t.language ?? '',
+        });
+      }
+      next = json.paging?.next ?? null;
+    }
+    return out;
   }
 }
