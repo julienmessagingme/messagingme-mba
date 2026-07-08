@@ -15,11 +15,17 @@ Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **
 
 ## Post-live — prochaines actions
 
-- ⚠️ **URGENT : token permanent.** Le `META_ACCESS_TOKEN` en prod est temporaire (24 h). Générer
-  un token System User permanent (Business Settings → System Users → assigner le WABA → scopes
-  `whatsapp_business_messaging` + `_management`), `sed` dans `.env.prod`, `up -d --force-recreate`.
-- **Template `promo_test`** (Marketing, FR, variable {{1}}=nom) à faire approuver par Meta pour de
-  vraies campagnes marketing (pour le 1er test on a utilisé `hello_world`, pré-approuvé).
+- ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent
+  (`expires_at:0`, scopes messaging+management), dans `.env.prod` du VPS. Templates create+list
+  validés en live via l'app. Détails : `brain/PROJECTS.md` §Meta/WhatsApp.
+- ✅ **Placeholders demo supprimés (2026-07-08).** `demo-pn`/`demo-waba` (seed) traînaient sous le
+  tenant réel et gagnaient le `order by created_at limit 1` -> 502 templates. DELETE des 2 lignes.
+- 🟡 **Robustesse `getTenantWabaId`/`getTenantPhoneNumberId`** : sélectionnent par
+  `order by created_at limit 1`. OK aujourd'hui (une seule vraie ligne), mais fragile si un 2e numéro
+  réel est onboardé (choix arbitraire) ou si un placeholder de seed réapparaît. À terme : filtrer sur
+  un critère de validité (id numérique / flag actif) plutôt que l'ordre d'insertion. Cf. LEARNINGS 2026-07-08.
+- **Template `mba_console_test`** (id `1507311428074574`, PENDING) : template de test créé pour prouver
+  la feature. Supprimable depuis l'onglet Templates quand tu veux.
 - **Onboarding client (Embedded Signup)** : Facebook Login for Business (config_id) → bouton ES +
   échange de token BISU côté backend → **Access Verification (Tech Provider)** + **App Review**
   (Advanced Access sur les perms WhatsApp, screencast par permission). Ni l'un ni l'autre requis
