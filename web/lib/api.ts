@@ -138,3 +138,31 @@ export function createCampaign(tenantId: string, input: CreateCampaignInput): Pr
 export function runCampaign(campaignId: string): Promise<{ enqueued: boolean }> {
   return request(`/campaigns/${campaignId}/run`, { method: 'POST' });
 }
+
+// --- Templates ---
+
+export interface TemplateSummary {
+  name: string;
+  status: string;
+  category: string;
+  language: string;
+}
+export interface TemplateButtonInput {
+  type: 'QUICK_REPLY' | 'URL';
+  text: string;
+  url?: string;
+}
+export interface CreateTemplateInput {
+  name: string;
+  category: 'MARKETING' | 'UTILITY';
+  language: string;
+  body: string;
+  example?: string[];
+  buttons?: TemplateButtonInput[];
+}
+export function listTemplates(tenantId: string): Promise<{ templates: TemplateSummary[] }> {
+  return request<{ templates: TemplateSummary[] }>(`/tenants/${tenantId}/templates`);
+}
+export function createTemplate(tenantId: string, input: CreateTemplateInput): Promise<{ id: string; status: string }> {
+  return request(`/tenants/${tenantId}/templates`, { method: 'POST', body: JSON.stringify(input) });
+}

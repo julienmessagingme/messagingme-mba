@@ -196,6 +196,15 @@ export class PgCampaignRepo {
     };
   }
 
+  /** WABA du tenant (pour les opérations de templates, qui sont au niveau WABA). null si aucun. */
+  async getTenantWabaId(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from waba where tenant_id = $1 order by created_at limit 1`,
+      [tenantId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   /** Numéros WhatsApp du tenant (pour choisir l'expéditeur d'une campagne). */
   async listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]> {
     const res = await this.pool.query<{ id: string; display_phone_number: string | null; verified_name: string | null }>(

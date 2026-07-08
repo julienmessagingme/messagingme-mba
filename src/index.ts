@@ -7,6 +7,7 @@ import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgUserAuthStore } from './auth/store';
+import { MetaTemplateClient } from './meta/templates';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -33,6 +34,10 @@ async function main(): Promise<void> {
       listCampaigns: (tenant) => repo.listCampaignSummaries(tenant),
       getCampaignDetail: (id, tenant) => repo.getCampaignDetail(id, tenant),
       listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
+    },
+    templates: {
+      templates: new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION),
+      getWabaId: (tenant) => repo.getTenantWabaId(tenant),
     },
   });
 
