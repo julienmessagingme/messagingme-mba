@@ -28,6 +28,20 @@ Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **
   (baseline = 403 « Meta Business AI Terms »), alerte au changement. **NON posé** (service de
   triggers KO + creds Telegram non accessibles) — à recâbler (cron VPS + canal d'alerte fourni par Julien).
 
+## Suites revue templates + inbox (🟡, non bloquant — reviewer PASS)
+
+- **Bouton URL dynamique** : un bouton URL avec `{{1}}` dans l'URL est rejeté par Meta (il faut un
+  `example` au niveau bouton, non émis). Aujourd'hui l'UI ne propose que des URL statiques -> OK ;
+  ajouter l'example bouton si on veut des URL dynamiques.
+- **Types interactifs Flows** : `nfm_reply` (fin de WhatsApp Flow) et autres sous-types tombent en
+  `body:null` (le message est bien enregistré, aperçu `[interactive]`, mais le contenu est perdu).
+  À traiter quand on branche les Flows.
+- **Liaison contact best-effort** : `conversations.contact_id` via `phone_e164 = '+' || wa_id` ne lie
+  que les contacts en E.164 strict ; un contact non lié affiche juste le wa_id brut (acceptable).
+- **Message Meta exposé** : le 502 renvoie `Meta: <message>` verbatim (routes admin-only, portée faible) ;
+  tronquer/whitelister si on veut la même posture que les 5xx internes.
+- **Templates list `limit=200`** sans pagination -> tronque au-delà. OK à l'échelle actuelle.
+
 ## ✅ Sécurité / auth — RÉSOLU (était BLOQUANT à la revue Loops 3-5)
 
 Auth construite et déployée : login JWT (scrypt async, rate-limit, hash leurre anti-énumération),
