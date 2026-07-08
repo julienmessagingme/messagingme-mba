@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listTemplates, createTemplate, type TemplateSummary, type TemplateButtonInput } from '@/lib/api';
@@ -14,6 +14,15 @@ const STATUS: Record<string, string> = {
   PENDING: 'bg-amber-50 text-amber-700',
   REJECTED: 'bg-red-50 text-red-700',
 };
+
+// Emojis courants pour messages business (insérés au curseur dans le corps).
+const EMOJIS = [
+  '😀','😊','😉','😍','🥳','🤩','😎','🙌','👋','👍','🙏','🤝','💪','👏','🔥','✨',
+  '⭐','🌟','💯','✅','✔️','☑️','❌','⚡','🎉','🎊','🎁','🎈','🥂','🍾','❤️','🧡',
+  '💛','💚','💙','💜','💖','💥','💡','📣','📢','🔔','📅','⏰','🕐','⌛','📍','📌',
+  '🏷️','🛍️','🛒','💳','💰','🤑','📦','🚚','🚀','🎯','📈','📊','💬','💭','📞','📲',
+  '✉️','📧','📝','🔗','➡️','👉','👀','🤗',
+];
 
 function TemplatesInner({ session }: { session: Session }) {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -36,7 +45,7 @@ function TemplatesInner({ session }: { session: Session }) {
   }, [reload]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
+    <div className="space-y-6">
       <CreateForm tenantId={session.tenantId} onCreated={reload} />
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -48,7 +57,7 @@ function TemplatesInner({ session }: { session: Session }) {
           <p className="text-sm text-slate-500">Chargement...</p>
         ) : templates.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
-            Aucun template. Crée-en un à gauche (il passe en revue Meta avant d&apos;être utilisable).
+            Aucun template. Crée-en un ci-dessus (il passe en revue Meta avant d&apos;être utilisable).
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -86,6 +95,101 @@ function TemplatesInner({ session }: { session: Session }) {
 const inputCls =
   'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
+/** Rendu du formatage WhatsApp (*gras*, _italique_, ~barré~, `mono`) en noeuds React. */
+function formatInline(text: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const regex = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    const tok = m[0];
+    const inner = tok.slice(1, -1);
+    if (tok.startsWith('*')) nodes.push(<strong key={key++}>{inner}</strong>);
+    else if (tok.startsWith('_')) nodes.push(<em key={key++}>{inner}</em>);
+    else if (tok.startsWith('~')) nodes.push(<s key={key++}>{inner}</s>);
+    else nodes.push(<code key={key++} className="font-mono text-[12px]">{inner}</code>);
+    last = m.index + tok.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+const UrlIcon = () => (
+  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 5h5v5M19 5l-8 8M12 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-6" />
+  </svg>
+);
+const ReplyIcon = () => (
+  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 17l-5-5 5-5M4 12h11a5 5 0 015 5v1" />
+  </svg>
+);
+
+/** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). */
+function WhatsAppPreview({ body, examples, buttons }: { body: string; examples: string[]; buttons: TemplateButtonInput[] }) {
+  const text = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n: string) => {
+    const v = examples[Number(n) - 1];
+    return v && v.trim() ? v : `{{${n}}}`;
+  });
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-slate-500">Aperçu WhatsApp</p>
+      <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
+          <div className="leading-tight">
+            <div className="text-sm font-medium">Votre entreprise</div>
+            <div className="text-[10px] text-white/70">en ligne</div>
+          </div>
+        </div>
+        <div className="min-h-[220px] px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
+          <div className="max-w-[88%]">
+            <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
+              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-slate-800">
+                {body.trim() ? formatInline(text) : <span className="text-slate-400">Ton message apparaîtra ici…</span>}
+              </div>
+              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-slate-400">
+                12:30 <span className="text-[#53bdeb]">✓✓</span>
+              </div>
+              {buttons.length > 0 && (
+                <div className="-mx-2.5 -mb-1.5 mt-1.5">
+                  {buttons.map((b, i) => (
+                    <div key={i} className="flex items-center justify-center gap-1.5 border-t border-slate-100 py-2 text-[13px] font-medium text-[#00a5f4]">
+                      {b.type === 'URL' ? <UrlIcon /> : <ReplyIcon />}
+                      {b.text?.trim() || (b.type === 'URL' ? 'Lien' : 'Réponse')}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] text-slate-400">Le rendu réel peut varier légèrement selon l&apos;appareil. *gras*, _italique_, ~barré~ sont supportés.</p>
+    </div>
+  );
+}
+
+/** Sélecteur d'emojis : insère au curseur, se ferme au clic extérieur. */
+function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
+  return (
+    <>
+      <button type="button" aria-label="Fermer" className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
+      <div className="absolute bottom-11 right-0 z-50 w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+        <div className="grid grid-cols-8 gap-0.5">
+          {EMOJIS.map((e) => (
+            <button type="button" key={e} onClick={() => onPick(e)} className="rounded p-1 text-lg leading-none hover:bg-slate-100" aria-label={e}>
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>('MARKETING');
@@ -96,9 +200,24 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   // Nombre de variables {{n}} distinctes dans le corps.
   const varCount = useMemo(() => new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size, [body]);
+
+  function insertEmoji(emoji: string) {
+    const ta = bodyRef.current;
+    const start = ta?.selectionStart ?? body.length;
+    const end = ta?.selectionEnd ?? body.length;
+    setBody(body.slice(0, start) + emoji + body.slice(end));
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      const pos = start + emoji.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  }
 
   async function submit() {
     setBusy(true);
@@ -129,97 +248,121 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
   const canSubmit = name.trim() !== '' && body.trim() !== '' && !busy;
 
   return (
-    <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="text-sm font-semibold text-slate-700">Nouveau template</h2>
       <p className="mt-1 text-xs text-slate-500">Soumis à Meta pour validation (quelques minutes à quelques heures).</p>
 
-      <Field label="Nom (minuscules, sans espaces)">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="promo_ete" />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Catégorie">
-          <select value={category} onChange={(e) => setCategory(e.target.value as 'MARKETING' | 'UTILITY')} className={inputCls}>
-            <option value="MARKETING">marketing</option>
-            <option value="UTILITY">utility</option>
-          </select>
-        </Field>
-        <Field label="Langue">
-          <input value={language} onChange={(e) => setLanguage(e.target.value)} className={inputCls} placeholder="fr" />
-        </Field>
-      </div>
-
-      <Field label="Corps du message">
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={4}
-          className={inputCls}
-          placeholder={'Bonjour {{1}}, voici notre offre 🎉'}
-        />
-        <p className="mt-1 text-xs text-slate-400">Utilise {'{{1}}'}, {'{{2}}'}... pour les variables (mappées sur les champs contact à la campagne).</p>
-      </Field>
-
-      {varCount > 0 && (
-        <div className="mt-2">
-          <label className="mb-1 block text-sm font-medium text-slate-700">Exemples de variables (requis par Meta)</label>
-          <div className="space-y-2">
-            {Array.from({ length: varCount }).map((_, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-8 text-xs text-slate-400">{`{{${i + 1}}}`}</span>
-                <input
-                  value={examples[i] ?? ''}
-                  onChange={(e) => setExamples((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
-                  className={`${inputCls} flex-1`}
-                  placeholder="ex. Julie"
-                />
-              </div>
-            ))}
+      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+        {/* Colonne formulaire */}
+        <div>
+          <Field label="Nom (minuscules, sans espaces)">
+            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="promo_ete" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Catégorie">
+              <select value={category} onChange={(e) => setCategory(e.target.value as 'MARKETING' | 'UTILITY')} className={inputCls}>
+                <option value="MARKETING">marketing</option>
+                <option value="UTILITY">utility</option>
+              </select>
+            </Field>
+            <Field label="Langue">
+              <input value={language} onChange={(e) => setLanguage(e.target.value)} className={inputCls} placeholder="fr" />
+            </Field>
           </div>
-        </div>
-      )}
 
-      <div className="mt-3">
-        <div className="mb-1 flex items-center justify-between">
-          <label className="text-sm font-medium text-slate-700">Boutons</label>
-          <div className="flex gap-2 text-xs">
-            <button onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
-            <button onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
-          </div>
-        </div>
-        <div className="space-y-2">
-          {buttons.map((b, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <span className="w-16 shrink-0 text-xs text-slate-400">{b.type === 'URL' ? 'lien' : 'réponse'}</span>
-              <input
-                value={b.text}
-                onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                className={`${inputCls} flex-1`}
-                placeholder="Texte du bouton"
+          <div className="mt-3">
+            <label className="mb-1 block text-sm font-medium text-slate-700">Corps du message</label>
+            <div className="relative">
+              <textarea
+                ref={bodyRef}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={5}
+                className={`${inputCls} pr-10`}
+                placeholder={'Bonjour {{1}}, voici notre offre 🎉'}
               />
-              {b.type === 'URL' && (
-                <input
-                  value={b.url ?? ''}
-                  onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
-                  className={`${inputCls} w-28`}
-                  placeholder="https://..."
-                />
-              )}
-              <button onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-slate-400 hover:text-red-600" aria-label="Retirer">×</button>
+              <button
+                type="button"
+                onClick={() => setEmojiOpen((o) => !o)}
+                className="absolute bottom-2 right-2 rounded-md p-1 text-lg leading-none hover:bg-slate-100"
+                aria-label="Insérer un emoji"
+              >
+                😊
+              </button>
+              {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
             </div>
-          ))}
+            <p className="mt-1 text-xs text-slate-400">Utilise {'{{1}}'}, {'{{2}}'}... pour les variables (mappées sur les champs contact à la campagne).</p>
+          </div>
+
+          {varCount > 0 && (
+            <div className="mt-2">
+              <label className="mb-1 block text-sm font-medium text-slate-700">Exemples de variables (requis par Meta)</label>
+              <div className="space-y-2">
+                {Array.from({ length: varCount }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-8 text-xs text-slate-400">{`{{${i + 1}}}`}</span>
+                    <input
+                      value={examples[i] ?? ''}
+                      onChange={(e) => setExamples((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
+                      className={`${inputCls} flex-1`}
+                      placeholder="ex. Julie"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-700">Boutons</label>
+              <div className="flex gap-2 text-xs">
+                <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
+                <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {buttons.map((b, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="w-16 shrink-0 text-xs text-slate-400">{b.type === 'URL' ? 'lien' : 'réponse'}</span>
+                  <input
+                    value={b.text}
+                    onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                    className={`${inputCls} flex-1`}
+                    placeholder="Texte du bouton"
+                  />
+                  {b.type === 'URL' && (
+                    <input
+                      value={b.url ?? ''}
+                      onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
+                      className={`${inputCls} w-28`}
+                      placeholder="https://..."
+                    />
+                  )}
+                  <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-slate-400 hover:text-red-600" aria-label="Retirer">×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
+
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!canSubmit}
+            className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+          >
+            {busy ? 'Soumission...' : 'Créer le template'}
+          </button>
+        </div>
+
+        {/* Colonne aperçu (collante) */}
+        <div className="lg:sticky lg:top-4 lg:h-fit">
+          <WhatsAppPreview body={body} examples={examples} buttons={buttons} />
         </div>
       </div>
-
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
-
-      <button
-        onClick={submit}
-        disabled={!canSubmit}
-        className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-      >
-        {busy ? 'Soumission...' : 'Créer le template'}
-      </button>
     </section>
   );
 }
