@@ -448,11 +448,14 @@ export class PgFrequencyStore implements FrequencyStore {
     // pas bloquer un marketing, et le moteur n'applique de toute façon la fréquence qu'au
     // marketing (cohérence de la sémantique de catégorie).
     const res = await this.pool.query<{ ms: string | null }>(
+      // Un envoi dont la LIVRAISON a échoué (delivery_status = 'failed', ex. 131042) n'a jamais
+      // atteint l'utilisateur : il ne doit pas bloquer un renvoi. On l'exclut du plafond.
       `select (extract(epoch from max(r.sent_at)) * 1000)::bigint as ms
        from campaign_recipients r
        join campaigns c on c.id = r.campaign_id
        where c.tenant_id = $1 and r.to_e164 = $2 and r.status = 'sent'
-         and c.category = 'marketing'`,
+         and c.category = 'marketing'
+         and (r.delivery_status is null or r.delivery_status <> 'failed')`,
       [tenantId, toE164],
     );
     const ms = res.rows[0]?.ms;
