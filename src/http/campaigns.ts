@@ -76,6 +76,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       templateName: string;
       templateLanguage: string;
       paramMapping: unknown;
+      contactIds: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
@@ -83,6 +84,15 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName requis' });
     if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
+
+    // Sélection de contacts optionnelle : tableau de chaînes non vides. Absent -> tous les contacts.
+    let contactIds: string[] | undefined;
+    if (b.contactIds !== undefined) {
+      if (!Array.isArray(b.contactIds) || !b.contactIds.every((x) => nonEmpty(x))) {
+        return reply.code(400).send({ error: 'contactIds invalide (tableau d\'ids)' });
+      }
+      contactIds = b.contactIds as string[];
+    }
 
     // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client).
     if (!(await deps.phoneNumberBelongsToTenant(b.phoneNumberId, effectiveTenant))) {
@@ -104,6 +114,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       templateName: b.templateName,
       templateLanguage: b.templateLanguage,
       paramMapping,
+      ...(contactIds ? { contactIds } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     return reply.code(201).send(result);

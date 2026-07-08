@@ -121,6 +121,8 @@ export interface CreateCampaignInput {
   templateName: string;
   templateLanguage: string;
   paramMapping: TemplateParam[];
+  /** Contacts choisis. Absent -> tous les contacts éligibles. */
+  contactIds?: string[];
 }
 
 export function listCampaigns(tenantId: string): Promise<{ campaigns: CampaignSummary[] }> {
@@ -146,6 +148,8 @@ export interface TemplateSummary {
   status: string;
   category: string;
   language: string;
+  /** Corps du template : déduit les variables + aperçu côté campagne. Peut être '' (anciens). */
+  body?: string;
 }
 export interface TemplateButtonInput {
   type: 'QUICK_REPLY' | 'URL';

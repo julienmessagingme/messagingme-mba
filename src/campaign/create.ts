@@ -21,7 +21,11 @@ export async function createCampaignWithRecipients(
   input: CreateCampaignInput,
   repo: CampaignRepoLike,
 ): Promise<{ campaignId: string; recipientCount: number }> {
-  const contacts = await repo.listContactsForBuild(input.tenantId);
+  const all = await repo.listContactsForBuild(input.tenantId);
+  // Restreindre aux contacts choisis si une sélection est fournie (sinon tous). L'opt-in + le
+  // numéro requis restent appliqués par buildRecipients : choisir un contact ne force pas l'envoi.
+  const ids = input.contactIds && input.contactIds.length > 0 ? new Set(input.contactIds) : null;
+  const contacts = ids ? all.filter((c) => ids.has(c.id)) : all;
   const recipients = buildRecipients(input.category, input.paramMapping, contacts);
   return repo.createWithRecipients(input, recipients);
 }

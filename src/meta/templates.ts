@@ -30,6 +30,18 @@ export interface TemplateSummary {
   status: string;
   category: string;
   language: string;
+  /** Corps du template (composant BODY) : sert à déduire les variables + l'aperçu côté campagne. */
+  body: string;
+}
+
+/** Texte du composant BODY parmi les components d'un template. */
+function bodyOf(components: unknown): string {
+  if (!Array.isArray(components)) return '';
+  for (const c of components) {
+    const comp = c as { type?: string; text?: string };
+    if (comp?.type === 'BODY' && typeof comp.text === 'string') return comp.text;
+  }
+  return '';
 }
 
 function buildComponents(input: CreateTemplateInput): unknown[] {
@@ -102,10 +114,10 @@ export class MetaTemplateClient {
    */
   async list(wabaId: string): Promise<TemplateSummary[]> {
     const out: TemplateSummary[] = [];
-    let next: string | null = this.url(wabaId, '?fields=name,status,category,language&limit=100');
+    let next: string | null = this.url(wabaId, '?fields=name,status,category,language,components&limit=100');
     for (let page = 0; page < 20 && next; page++) {
       const json = (await this.call(next, { method: 'GET' })) as {
-        data?: Array<{ name?: string; status?: string; category?: string; language?: string }>;
+        data?: Array<{ name?: string; status?: string; category?: string; language?: string; components?: unknown }>;
         paging?: { next?: string };
       };
       for (const t of json.data ?? []) {
@@ -114,6 +126,7 @@ export class MetaTemplateClient {
           status: t.status ?? '',
           category: t.category ?? '',
           language: t.language ?? '',
+          body: bodyOf(t.components),
         });
       }
       next = json.paging?.next ?? null;

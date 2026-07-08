@@ -9,10 +9,14 @@ import {
   listPhoneNumbers,
   createCampaign,
   runCampaign,
+  listTemplates,
+  listContacts,
   type CampaignSummary,
   type CampaignDetail,
   type PhoneNumber,
   type TemplateParam,
+  type TemplateSummary,
+  type Contact,
 } from '@/lib/api';
 
 export default function CampaignsPage() {
@@ -213,9 +217,62 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
+  // Templates approuvés + contacts (chargés une fois, indépendamment du polling des campagnes).
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loadingRefs, setLoadingRefs] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+
   useEffect(() => {
     if (!phoneNumberId && numbers[0]) setPhoneNumberId(numbers[0].id);
   }, [numbers, phoneNumberId]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [t, c] = await Promise.all([listTemplates(tenantId), listContacts(tenantId)]);
+        if (!alive) return;
+        setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
+        const withPhone = c.contacts.filter((x) => x.phoneE164);
+        setContacts(withPhone);
+        setSelected(new Set(withPhone.map((x) => x.id))); // tout coché par défaut
+      } catch {
+        // silencieux : l'erreur de création reste affichée si l'envoi échoue
+      } finally {
+        if (alive) setLoadingRefs(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [tenantId]);
+
+  const selectedTemplate = templates.find((t) => t.name === templateName);
+
+  function chooseTemplate(nm: string) {
+    setTemplateName(nm);
+    const t = templates.find((x) => x.name === nm);
+    if (!t) { setVars([]); return; }
+    setTemplateLanguage(t.language);
+    setCategory((t.category ?? '').toUpperCase() === 'MARKETING' ? 'marketing' : 'utility');
+    const n = new Set((t.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+    setVars(Array.from({ length: n }, () => ({ source: 'name', key: '', value: '' })));
+    if (name.trim() === '') setName(nm);
+  }
+
+  const filteredContacts = contacts.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (c.profileName ?? '').toLowerCase().includes(q) || (c.phoneE164 ?? '').includes(q);
+  });
+  const allSelected = contacts.length > 0 && selected.size === contacts.length;
+
+  function toggleContact(id: string) {
+    setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(contacts.map((c) => c.id)));
+  }
 
   function toParamMapping(): TemplateParam[] {
     return vars.map((v, i) => {
@@ -239,8 +296,9 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         templateName,
         templateLanguage,
         paramMapping: toParamMapping(),
+        contactIds: [...selected],
       });
-      setOk(`Campagne créée : ${res.recipientCount} destinataires.`);
+      setOk(`Campagne créée : ${res.recipientCount} destinataires. Clique « Lancer » pour envoyer.`);
       setName('');
       setTemplateName('');
       setVars([]);
@@ -252,11 +310,12 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     }
   }
 
-  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName.trim() !== '' && !busy;
+  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName !== '' && selected.size > 0 && !busy;
 
   return (
     <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="text-sm font-semibold text-slate-700">Nouvelle campagne</h2>
+      <p className="mt-1 text-xs text-slate-500">Choisis un template approuvé et les contacts, puis lance l&apos;envoi.</p>
 
       <Field label="Numéro expéditeur">
         {numbers.length === 0 ? (
@@ -272,76 +331,113 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         )}
       </Field>
 
-      <Field label="Nom de la campagne">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Promo été" />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Catégorie">
-          <select value={category} onChange={(e) => setCategory(e.target.value as 'marketing' | 'utility')} className={inputCls}>
-            <option value="marketing">marketing</option>
-            <option value="utility">utility</option>
+      {/* 1. Choix du template (approuvés uniquement) */}
+      <Field label="Template">
+        {loadingRefs ? (
+          <p className="text-xs text-slate-400">Chargement des templates...</p>
+        ) : templates.length === 0 ? (
+          <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans l&apos;onglet Templates et attends la validation Meta.</p>
+        ) : (
+          <select value={templateName} onChange={(e) => chooseTemplate(e.target.value)} className={inputCls}>
+            <option value="">Choisir un template...</option>
+            {templates.map((t) => (
+              <option key={`${t.name}-${t.language}`} value={t.name}>
+                {t.name} ({t.language}, {t.category?.toLowerCase()})
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="Langue">
-          <input value={templateLanguage} onChange={(e) => setTemplateLanguage(e.target.value)} className={inputCls} placeholder="fr" />
-        </Field>
-      </div>
-
-      <Field label="Nom du template">
-        <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} className={inputCls} placeholder="promo_ete" />
+        )}
+        {selectedTemplate?.body && (
+          <div className="mt-2 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{selectedTemplate.body}</div>
+        )}
       </Field>
 
+      {/* 2. Variables du template (auto-déduites du corps) */}
+      {vars.length > 0 && (
+        <div className="mt-3">
+          <label className="mb-1 block text-sm font-medium text-slate-700">Variables ({vars.length})</label>
+          <div className="space-y-2">
+            {vars.map((v, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="w-8 shrink-0 text-xs text-slate-400">{`{{${i + 1}}}`}</span>
+                <select
+                  value={v.source}
+                  onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
+                  className={`${inputCls} flex-1`}
+                >
+                  <option value="name">Nom du contact</option>
+                  <option value="phone">Téléphone</option>
+                  <option value="field">Champ perso</option>
+                  <option value="literal">Texte fixe</option>
+                </select>
+                {v.source === 'field' && (
+                  <input
+                    value={v.key}
+                    onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
+                    className={`${inputCls} w-24`}
+                    placeholder="clé (ex ville)"
+                  />
+                )}
+                {v.source === 'literal' && (
+                  <input
+                    value={v.value}
+                    onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+                    className={`${inputCls} w-24`}
+                    placeholder="valeur"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Choix des contacts */}
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between">
-          <label className="text-sm font-medium text-slate-700">Variables du template</label>
-          <button onClick={() => setVars([...vars, { source: 'name', key: '', value: '' }])} className="text-xs text-brand-600 hover:underline">
-            + variable
-          </button>
+          <label className="text-sm font-medium text-slate-700">Destinataires</label>
+          {contacts.length > 0 && (
+            <span className="text-xs text-slate-400">{selected.size} / {contacts.length} sélectionnés</span>
+          )}
         </div>
-        {vars.length === 0 && <p className="text-xs text-slate-400">Aucune variable. {'{{1}}'}, {'{{2}}'}... dans l&apos;ordre.</p>}
-        <div className="space-y-2">
-          {vars.map((v, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <span className="w-8 shrink-0 text-xs text-slate-400">{`{{${i + 1}}}`}</span>
-              <select
-                value={v.source}
-                onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
-                className={`${inputCls} flex-1`}
-              >
-                <option value="name">Nom du contact</option>
-                <option value="phone">Téléphone</option>
-                <option value="field">Champ perso</option>
-                <option value="literal">Texte fixe</option>
-              </select>
-              {v.source === 'field' && (
-                <input
-                  value={v.key}
-                  onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
-                  className={`${inputCls} w-24`}
-                  placeholder="clé (ex ville)"
-                />
-              )}
-              {v.source === 'literal' && (
-                <input
-                  value={v.value}
-                  onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
-                  className={`${inputCls} w-24`}
-                  placeholder="valeur"
-                />
-              )}
-              <button onClick={() => setVars(vars.filter((_, j) => j !== i))} className="shrink-0 text-slate-400 hover:text-red-600" aria-label="Retirer">
-                ×
+        {loadingRefs ? (
+          <p className="text-xs text-slate-400">Chargement des contacts...</p>
+        ) : contacts.length === 0 ? (
+          <p className="text-xs text-amber-700">Aucun contact avec numéro. Importe des contacts dans l&apos;onglet Contacts.</p>
+        ) : (
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder="Rechercher (nom, numéro)" />
+              <button type="button" onClick={toggleAll} className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-2 text-xs text-slate-600 hover:bg-slate-50">
+                {allSelected ? 'Vider' : 'Tout'}
               </button>
             </div>
-          ))}
-        </div>
+            <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+              {filteredContacts.map((c) => (
+                <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50">
+                  <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
+                  <span className="truncate text-sm">{c.profileName ?? c.phoneE164}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11px] text-slate-400">{c.phoneE164}</span>
+                  {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
+                </label>
+              ))}
+              {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">Aucun contact ne correspond.</p>}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">Les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
+          </div>
+        )}
       </div>
+
+      {/* 4. Libellé de la campagne */}
+      <Field label="Nom de la campagne (interne)">
+        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Promo été" />
+      </Field>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
 
       <button
+        type="button"
         onClick={submit}
         disabled={!canSubmit}
         className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"

@@ -13,6 +13,8 @@ export interface CreateCampaignInput {
   templateName: string;
   templateLanguage: string;
   paramMapping: TemplateParam[];
+  /** Restreint les destinataires à ces contacts. Absent/vide -> tous les contacts éligibles. */
+  contactIds?: string[];
 }
 
 export interface RecipientCounts {

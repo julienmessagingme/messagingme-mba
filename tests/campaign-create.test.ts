@@ -45,4 +45,32 @@ describe('createCampaignWithRecipients', () => {
     const out = await createCampaignWithRecipients({ ...input, category: 'utility' }, repo);
     expect(out.recipientCount).toBe(1);
   });
+
+  it('contactIds : restreint aux contacts choisis', async () => {
+    const repo = new FakeRepo([
+      { id: 'c1', phone_e164: '+33611', profile_name: 'Julie', fields: {}, optInStatus: 'opted_in' },
+      { id: 'c2', phone_e164: '+33622', profile_name: 'Marc', fields: {}, optInStatus: 'opted_in' },
+      { id: 'c3', phone_e164: '+33633', profile_name: 'Lea', fields: {}, optInStatus: 'opted_in' },
+    ]);
+    const out = await createCampaignWithRecipients({ ...input, contactIds: ['c1', 'c3'] }, repo);
+    expect(out.recipientCount).toBe(2);
+    expect(repo.lastRecipients.map((r) => r.contactId)).toEqual(['c1', 'c3']);
+  });
+
+  it('contactIds vide : retombe sur tous les contacts', async () => {
+    const repo = new FakeRepo([
+      { id: 'c1', phone_e164: '+33611', profile_name: 'Julie', fields: {}, optInStatus: 'opted_in' },
+      { id: 'c2', phone_e164: '+33622', profile_name: 'Marc', fields: {}, optInStatus: 'opted_in' },
+    ]);
+    const out = await createCampaignWithRecipients({ ...input, contactIds: [] }, repo);
+    expect(out.recipientCount).toBe(2);
+  });
+
+  it('contactIds : l\'opt-in reste appliqué (choisir un opted_out ne force pas l\'envoi)', async () => {
+    const repo = new FakeRepo([
+      { id: 'c1', phone_e164: '+33611', profile_name: 'Julie', fields: {}, optInStatus: 'opted_out' },
+    ]);
+    const out = await createCampaignWithRecipients({ ...input, contactIds: ['c1'] }, repo);
+    expect(out.recipientCount).toBe(0);
+  });
 });
