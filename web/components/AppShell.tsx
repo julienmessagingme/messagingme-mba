@@ -44,13 +44,18 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+          <div className="flex shrink-0 items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">m</div>
             <span className="text-sm font-semibold">Console MBA</span>
           </div>
-          <div className="flex items-center gap-3 text-sm text-slate-500">
-            <span>{session.email}</span>
+          <nav className="flex gap-1 text-sm">
+            {tab('/inbox', 'inbox', 'Inbox')}
+            {tab('/contacts', 'contacts', 'Contacts')}
+            {tab('/campaigns', 'campagnes', 'Campagnes')}
+          </nav>
+          <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-slate-500">
+            <span className="hidden max-w-[200px] truncate sm:inline">{session.email}</span>
             <button onClick={logout} className="rounded-lg border border-slate-300 px-2.5 py-1 text-slate-700 hover:bg-slate-50">
               Déconnexion
             </button>
@@ -58,11 +63,6 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <nav className="mb-4 flex gap-1 text-sm">
-          {tab('/inbox', 'inbox', 'Inbox')}
-          {tab('/contacts', 'contacts', 'Contacts')}
-          {tab('/campaigns', 'campagnes', 'Campagnes')}
-        </nav>
         {topActive === 'campagnes' && (
           <nav className="mb-6 inline-flex gap-1 rounded-lg bg-slate-100 p-1 text-xs">
             {subTab('/campaigns', 'campagnes', 'Campagnes')}
