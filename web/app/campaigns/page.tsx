@@ -112,8 +112,6 @@ function CampaignsInner({ session }: { session: Session }) {
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-        {detail && <DetailPanel detail={detail} onClose={() => setDetail(null)} />}
-
         {loading ? (
           <p className="text-sm text-slate-500">Chargement...</p>
         ) : campaigns.length === 0 ? (
@@ -149,11 +147,19 @@ function CampaignsInner({ session }: { session: Session }) {
                     >
                       Lancer
                     </button>
-                    <button onClick={() => openDetail(c.id)} className="text-xs text-brand-600 hover:underline">
-                      Détails
+                    <button
+                      onClick={() => (detail?.id === c.id ? setDetail(null) : openDetail(c.id))}
+                      className="text-xs text-brand-600 hover:underline"
+                    >
+                      {detail?.id === c.id ? 'Masquer' : 'Détails'}
                     </button>
                   </div>
                 </div>
+                {detail?.id === c.id && (
+                  <div className="mt-3">
+                    <DetailPanel detail={detail} onClose={() => setDetail(null)} />
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -226,6 +232,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const [loadingRefs, setLoadingRefs] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!phoneNumberId && numbers[0]) setPhoneNumberId(numbers[0].id);
@@ -263,18 +270,33 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     if (name.trim() === '') setName(nm);
   }
 
+  // Tous les tags présents (pour les filtres). Requête = filtre par tag(s) + recherche texte
+  // élargie (nom, numéro, tags ET valeurs des champs perso).
+  const allTags = [...new Set(contacts.flatMap((c) => c.tags ?? []))].sort();
   const filteredContacts = contacts.filter((c) => {
+    if (tagFilter.size > 0 && !(c.tags ?? []).some((t) => tagFilter.has(t))) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    return (c.profileName ?? '').toLowerCase().includes(q) || (c.phoneE164 ?? '').includes(q);
+    const hay = [c.profileName ?? '', c.phoneE164 ?? '', ...(c.tags ?? []), ...Object.values(c.fields ?? {}).map(String)]
+      .join(' ')
+      .toLowerCase();
+    return hay.includes(q);
   });
-  const allSelected = contacts.length > 0 && selected.size === contacts.length;
+  // « Tout » agit sur ce qui est AFFICHÉ (filtre/recherche), pour sélectionner un segment entier.
+  const filteredAllSelected = filteredContacts.length > 0 && filteredContacts.every((c) => selected.has(c.id));
 
   function toggleContact(id: string) {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
-  function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(contacts.map((c) => c.id)));
+  function toggleAllFiltered() {
+    setSelected((s) => {
+      const n = new Set(s);
+      for (const c of filteredContacts) { if (filteredAllSelected) n.delete(c.id); else n.add(c.id); }
+      return n;
+    });
+  }
+  function toggleTag(t: string) {
+    setTagFilter((s) => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n; });
   }
 
   function toParamMapping(): TemplateParam[] {
@@ -414,10 +436,32 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
           <p className="text-xs text-amber-700">Aucun contact avec numéro. Importe des contacts dans l&apos;onglet Contacts.</p>
         ) : (
           <div>
+            {allTags.length > 0 && (
+              <div className="mb-2 flex flex-wrap items-center gap-1">
+                <span className="text-[11px] text-slate-400">Tags :</span>
+                {allTags.map((t) => (
+                  <button
+                    type="button"
+                    key={t}
+                    onClick={() => toggleTag(t)}
+                    className={`rounded-full px-2 py-0.5 text-xs transition ${
+                      tagFilter.has(t) ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+                {tagFilter.size > 0 && (
+                  <button type="button" onClick={() => setTagFilter(new Set())} className="text-[11px] text-brand-600 hover:underline">
+                    réinitialiser
+                  </button>
+                )}
+              </div>
+            )}
             <div className="mb-2 flex items-center gap-2">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder="Rechercher (nom, numéro)" />
-              <button type="button" onClick={toggleAll} className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-2 text-xs text-slate-600 hover:bg-slate-50">
-                {allSelected ? 'Vider' : 'Tout'}
+              <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder="Rechercher (nom, numéro, tag, champ)" />
+              <button type="button" onClick={toggleAllFiltered} className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-2 text-xs text-slate-600 hover:bg-slate-50">
+                {filteredAllSelected ? 'Vider' : 'Tout'}
               </button>
             </div>
             <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
@@ -425,13 +469,16 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50">
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
                   <span className="truncate text-sm">{c.profileName ?? c.phoneE164}</span>
+                  {(c.tags ?? []).slice(0, 3).map((t) => (
+                    <span key={t} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{t}</span>
+                  ))}
                   <span className="ml-auto shrink-0 font-mono text-[11px] text-slate-400">{c.phoneE164}</span>
                   {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
                 </label>
               ))}
               {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">Aucun contact ne correspond.</p>}
             </div>
-            <p className="mt-1 text-[11px] text-slate-400">Les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
+            <p className="mt-1 text-[11px] text-slate-400">{filteredContacts.length} affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
           </div>
         )}
       </div>

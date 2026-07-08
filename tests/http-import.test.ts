@@ -40,7 +40,7 @@ function inject(contacts: ContactStore, userFields: UserFieldStore) {
       contacts,
       userFields,
       listContacts: async () => [
-        { id: 'c1', phoneE164: '+33611111111', profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, createdAt: '2026-07-05T00:00:00.000Z' },
+        { id: 'c1', phoneE164: '+33611111111', profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z' },
       ],
     },
   });

@@ -7,6 +7,7 @@ export interface ContactRow {
   profileName: string | null;
   optInStatus: string;
   fields: Record<string, unknown>;
+  tags: string[];
   createdAt: string;
 }
 
@@ -22,8 +23,8 @@ export class PgContactStore implements ContactStore {
     // Index unique PARTIEL contacts_tenant_phone_uidx (where phone_e164 is not null) :
     // le ON CONFLICT doit répéter le prédicat pour cibler cet index.
     const res = await this.pool.query<{ created: boolean }>(
-      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source)
-       values ($1, $2, $3, $4::jsonb, $5, $6)
+      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags)
+       values ($1, $2, $3, $4::jsonb, $5, $6, $7::text[])
        on conflict (tenant_id, phone_e164) where phone_e164 is not null
        do update set
          fields = contacts.fields || excluded.fields,
@@ -33,6 +34,8 @@ export class PgContactStore implements ContactStore {
            else contacts.opt_in_status
          end,
          opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
+         -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
+         tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          updated_at = now()
        returning (xmax = 0) as created`,
       [
@@ -42,6 +45,7 @@ export class PgContactStore implements ContactStore {
         JSON.stringify(c.fields),
         c.optInStatus,
         c.optInSource ?? null,
+        c.tags ?? [],
       ],
     );
     return res.rows[0]?.created ? 'created' : 'updated';
@@ -56,9 +60,10 @@ export class PgContactStore implements ContactStore {
       profile_name: string | null;
       opt_in_status: string;
       fields: Record<string, unknown>;
+      tags: string[] | null;
       created_at: Date;
     }>(
-      `select id, phone_e164, profile_name, opt_in_status, fields, created_at
+      `select id, phone_e164, profile_name, opt_in_status, fields, tags, created_at
        from contacts where tenant_id = $1
        order by created_at desc
        limit $2 offset $3`,
@@ -70,6 +75,7 @@ export class PgContactStore implements ContactStore {
       profileName: r.profile_name,
       optInStatus: r.opt_in_status,
       fields: r.fields,
+      tags: r.tags ?? [],
       createdAt: r.created_at.toISOString(),
     }));
   }

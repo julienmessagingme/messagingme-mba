@@ -11,6 +11,8 @@ export interface ContactUpsert {
   fields: Record<string, string>;
   optInStatus: 'opted_in' | 'unknown';
   optInSource?: string;
+  /** Tags à ajouter (union avec les tags existants côté store, jamais d'écrasement). */
+  tags?: string[];
 }
 
 export interface ContactStore {
@@ -29,6 +31,8 @@ export interface ImportInput {
   tenantId: string;
   /** Ces contacts sont-ils opt-in (la preuve est gérée en amont) ? */
   optIn: boolean;
+  /** Tags appliqués à TOUS les contacts de cet import (union avec l'existant). */
+  tags?: string[];
 }
 
 export interface ImportDeps {
@@ -107,6 +111,7 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
       fields,
       optInStatus: input.optIn ? 'opted_in' : 'unknown',
       ...(input.optIn ? { optInSource: 'csv_import' } : {}),
+      ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
     });
     if (res === 'created') report.created += 1;
     else report.updated += 1;

@@ -139,8 +139,8 @@ export class PgCampaignRepo {
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
-              count(r.id) filter (where r.status = 'sent') as sent,
-              count(r.id) filter (where r.status = 'failed') as failed,
+              count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed') as sent,
+              count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed') as failed,
               count(r.id) filter (where r.status = 'skipped') as skipped
        from campaigns c
        left join campaign_recipients r on r.campaign_id = c.id
@@ -164,8 +164,8 @@ export class PgCampaignRepo {
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
-              count(r.id) filter (where r.status = 'sent') as sent,
-              count(r.id) filter (where r.status = 'failed') as failed,
+              count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed') as sent,
+              count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed') as failed,
               count(r.id) filter (where r.status = 'skipped') as skipped
        from campaigns c
        left join campaign_recipients r on r.campaign_id = c.id

@@ -51,11 +51,19 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
-    const body = (req.body ?? {}) as { csv?: unknown; optIn?: unknown; mapping?: ColumnMapping };
+    const body = (req.body ?? {}) as { csv?: unknown; optIn?: unknown; mapping?: ColumnMapping; tags?: unknown };
 
     if (typeof body.csv !== 'string' || body.csv.trim() === '') {
       return reply.code(400).send({ error: 'csv requis (texte brut)' });
     }
+
+    // Tags : accepte une chaîne "a, b, c" ou un tableau ; normalisés (trim, non vides, dédup).
+    const rawTags = Array.isArray(body.tags)
+      ? (body.tags as unknown[]).map(String)
+      : typeof body.tags === 'string'
+        ? body.tags.split(',')
+        : [];
+    const tags = [...new Set(rawTags.map((t) => t.trim()).filter((t) => t !== ''))];
     // mapping fourni mais malformé (sans `columns` objet) -> 400, sinon Object.entries throw en 500.
     if (body.mapping !== undefined) {
       const cols = (body.mapping as { columns?: unknown }).columns;
@@ -67,7 +75,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
     const parsed = parseCsv(body.csv);
     const mapping = body.mapping ?? mappingFromHeaders(parsed.headers);
     const report = await importContacts(
-      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn: body.optIn === true },
+      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn: body.optIn === true, tags },
       deps,
     );
     return reply.code(200).send(report);

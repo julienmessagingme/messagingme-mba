@@ -48,6 +48,7 @@ function ContactsInner({ session }: { session: Session }) {
 function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: () => void }) {
   const [csv, setCsv] = useState('');
   const [optIn, setOptIn] = useState(true);
+  const [tagsInput, setTagsInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +63,8 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
     setError(null);
     setReport(null);
     try {
-      const r = await importCsv(tenantId, csv, optIn);
+      const tags = tagsInput.split(',').map((t) => t.trim()).filter((t) => t !== '');
+      const r = await importCsv(tenantId, csv, optIn, tags);
       setReport(r);
       onImported();
     } catch (err) {
@@ -91,6 +93,17 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
         placeholder={'Nom,Téléphone,Ville\nJulie,+33612345678,Lyon'}
         className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
       />
+
+      <div className="mt-3">
+        <label className="mb-1 block text-sm font-medium text-slate-700">Tags (séparés par des virgules)</label>
+        <input
+          value={tagsInput}
+          onChange={(e) => setTagsInput(e.target.value)}
+          placeholder="salon-2026, prospect"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        />
+        <p className="mt-1 text-xs text-slate-400">Appliqués à tous les contacts de cet import (pour filtrer tes campagnes ensuite).</p>
+      </div>
 
       <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
@@ -146,6 +159,7 @@ function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: bo
             <th className="px-4 py-2.5 font-medium">Nom</th>
             <th className="px-4 py-2.5 font-medium">Téléphone</th>
             <th className="px-4 py-2.5 font-medium">Consentement</th>
+            <th className="px-4 py-2.5 font-medium">Tags</th>
             <th className="px-4 py-2.5 font-medium">Champs</th>
           </tr>
         </thead>
@@ -159,6 +173,17 @@ function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: bo
                 <td className="px-4 py-2.5 font-mono text-xs">{c.phoneE164 ?? '-'}</td>
                 <td className="px-4 py-2.5">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span>
+                </td>
+                <td className="px-4 py-2.5">
+                  {(c.tags ?? []).length === 0 ? (
+                    <span className="text-slate-400">-</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {c.tags.map((t) => (
+                        <span key={t} className="rounded bg-brand-50 px-1.5 py-0.5 text-[11px] text-brand-700">{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-xs text-slate-500">
                   {fieldKeys.length === 0 ? '-' : fieldKeys.map((k) => `${k}: ${String(c.fields[k])}`).join(', ')}

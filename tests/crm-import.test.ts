@@ -51,6 +51,14 @@ describe('importContacts', () => {
     expect(userFields.defs.map((d) => d.key)).toContain('ville'); // user field créé
   });
 
+  it('tags : appliqués à tous les contacts importés', async () => {
+    const contacts = new FakeContactStore();
+    const userFields = new FakeFieldStore();
+    const rows = [{ tel: '0612345678', nom: 'Julie', ville: 'Lyon', interne: '' }];
+    await importContacts({ rows, mapping, tenantId: 't1', optIn: true, tags: ['salon-2026', 'prospect'] }, { contacts, userFields });
+    expect(contacts.byPhone.get('t1|+33612345678')?.tags).toEqual(['salon-2026', 'prospect']);
+  });
+
   it('téléphone invalide ou absent -> skip + erreur dans le rapport', async () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();

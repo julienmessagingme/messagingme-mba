@@ -46,6 +46,7 @@ export interface Contact {
   profileName: string | null;
   optInStatus: string;
   fields: Record<string, unknown>;
+  tags: string[];
   createdAt: string;
 }
 export function listContacts(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<{ contacts: Contact[] }> {
@@ -75,10 +76,10 @@ export interface ImportReport {
   skipped: number;
   errors: Array<{ line: number; reason: string }>;
 }
-export function importCsv(tenantId: string, csv: string, optIn: boolean): Promise<ImportReport> {
+export function importCsv(tenantId: string, csv: string, optIn: boolean, tags?: string[]): Promise<ImportReport> {
   return request<ImportReport>(`/tenants/${tenantId}/contacts/import`, {
     method: 'POST',
-    body: JSON.stringify({ csv, optIn }),
+    body: JSON.stringify({ csv, optIn, ...(tags && tags.length > 0 ? { tags } : {}) }),
   });
 }
 
