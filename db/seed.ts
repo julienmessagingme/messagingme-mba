@@ -48,8 +48,10 @@ async function main(): Promise<void> {
       [PHONE_NUMBER_ID, WABA_ID, tenantId, '+33000000000', TENANT_NAME],
     );
     await client.query(
+      // Conflit sur l'index email GLOBAL (migration 0010, users_email_lower_unique) : re-seed
+      // idempotent même à la casse près, cohérent avec « un email = un compte ».
       `insert into users (tenant_id, email, role, password_hash) values ($1, $2, 'admin', $3)
-       on conflict (tenant_id, email) do update set password_hash = excluded.password_hash`,
+       on conflict (lower(email)) do update set password_hash = excluded.password_hash, tenant_id = excluded.tenant_id`,
       [tenantId, EMAIL, hashPassword(PASSWORD)],
     );
 
