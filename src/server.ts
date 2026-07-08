@@ -7,6 +7,7 @@ import { registerCampaigns } from './http/campaigns';
 import { registerTemplates } from './http/templates';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth } from './auth/middleware';
+import { MetaApiError } from './meta/errors';
 import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
@@ -43,6 +44,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
   app.setErrorHandler((err: FastifyError, _req: FastifyRequest, reply: FastifyReply) => {
+    // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 502 + message clair,
+    // au lieu d'un « Internal Server Error » opaque.
+    if (err instanceof MetaApiError) {
+      return reply.code(502).send({ error: `Meta: ${err.message}` });
+    }
     const code = err.statusCode ?? 500;
     reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });
   });
