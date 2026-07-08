@@ -12,6 +12,7 @@ import {
   PgQualityProvider,
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
+import { PgInboxStore } from './inbox/store.pg';
 import { MetaClient } from './meta/client';
 import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
@@ -23,11 +24,13 @@ async function main(): Promise<void> {
   const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA);
   await queue.start();
 
-  // File webhook (Loop 1). Le PgRecipientStore applique aussi les statuts de livraison Meta.
+  // File webhook (Loop 1). Le PgRecipientStore applique les statuts de livraison ; le
+  // PgInboxStore enregistre les messages entrants (réponses / taps de boutons) en conversations.
   const eventStore = new PgEventStore(pool);
   const recipientStore = new PgRecipientStore(pool);
+  const inboxStore = new PgInboxStore(pool);
   await queue.work('webhook', async (data) => {
-    await handleWebhookJob(data, eventStore, recipientStore);
+    await handleWebhookJob(data, eventStore, recipientStore, inboxStore);
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).
