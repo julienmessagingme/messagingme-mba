@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
 
 /** Coquille commune : garde d'auth, header (logo, email, logout) et navigation. */
-export function AppShell({ active, children }: { active: 'contacts' | 'campagnes' | 'templates'; children: (session: Session) => React.ReactNode }) {
+export function AppShell({ active, children }: { active: 'contacts' | 'campagnes' | 'templates' | 'inbox'; children: (session: Session) => React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
 
@@ -48,6 +48,7 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
         <nav className="mb-6 flex gap-1 text-sm">
+          {tab('/inbox', 'inbox', 'Inbox')}
           {tab('/contacts', 'contacts', 'Contacts')}
           {tab('/campaigns', 'campagnes', 'Campagnes')}
           {tab('/templates', 'templates', 'Templates')}

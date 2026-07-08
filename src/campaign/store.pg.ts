@@ -205,6 +205,15 @@ export class PgCampaignRepo {
     return res.rows[0]?.id ?? null;
   }
 
+  /** Numéro (phone_number_id) du tenant, pour répondre depuis l'inbox. null si aucun. */
+  async getTenantPhoneNumberId(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from phone_numbers where tenant_id = $1 order by created_at limit 1`,
+      [tenantId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   /** Numéros WhatsApp du tenant (pour choisir l'expéditeur d'une campagne). */
   async listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]> {
     const res = await this.pool.query<{ id: string; display_phone_number: string | null; verified_name: string | null }>(

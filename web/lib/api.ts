@@ -166,3 +166,30 @@ export function listTemplates(tenantId: string): Promise<{ templates: TemplateSu
 export function createTemplate(tenantId: string, input: CreateTemplateInput): Promise<{ id: string; status: string }> {
   return request(`/tenants/${tenantId}/templates`, { method: 'POST', body: JSON.stringify(input) });
 }
+
+// --- Inbox ---
+
+export interface Conversation {
+  id: string;
+  waId: string;
+  profileName: string | null;
+  lastPreview: string | null;
+  lastMessageAt: string;
+}
+export interface InboxMessage {
+  id: string;
+  direction: 'in' | 'out';
+  type: string | null;
+  body: string | null;
+  buttonPayload: string | null;
+  createdAt: string;
+}
+export function listConversations(tenantId: string): Promise<{ conversations: Conversation[] }> {
+  return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations`);
+}
+export function getConversationMessages(tenantId: string, conversationId: string): Promise<{ waId: string; messages: InboxMessage[] }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages`);
+}
+export function replyConversation(tenantId: string, conversationId: string, text: string): Promise<{ messageId: string }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+}

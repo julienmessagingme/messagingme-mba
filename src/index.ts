@@ -6,8 +6,11 @@ import { pool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgCampaignRepo } from './campaign/store.pg';
+import { PgInboxStore } from './inbox/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { MetaTemplateClient } from './meta/templates';
+import { MetaClient } from './meta/client';
+import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -17,6 +20,8 @@ async function main(): Promise<void> {
 
   const repo = new PgCampaignRepo(pool);
   const contactStore = new PgContactStore(pool);
+  const inboxStore = new PgInboxStore(pool);
+  const transport = new FetchTransport();
   const app = buildServer({
     queue,
     auth: { users: new PgUserAuthStore(pool), secret: config.AUTH_SECRET },
@@ -38,6 +43,17 @@ async function main(): Promise<void> {
     templates: {
       templates: new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION),
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
+    },
+    inbox: {
+      listConversations: (tenant) => inboxStore.listConversations(tenant),
+      getConversationWaId: (id, tenant) => inboxStore.getConversationWaId(id, tenant),
+      getMessages: (id) => inboxStore.getMessages(id),
+      recordOutbound: (id, body, msgId) => inboxStore.recordOutbound(id, body, msgId),
+      getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+      sendReply: async (phoneNumberId, to, text) => {
+        const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
+        return (await client.sendText(to, text)).messageId;
+      },
     },
   });
 

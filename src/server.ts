@@ -5,6 +5,7 @@ import { registerReceiver } from './webhooks/receiver';
 import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerTemplates } from './http/templates';
+import { registerInbox } from './http/inbox';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -12,6 +13,7 @@ import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
 import type { TemplateRouteDeps } from './http/templates';
+import type { InboxRouteDeps } from './http/inbox';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -28,6 +30,8 @@ export interface ServerDeps {
   campaigns?: CampaignRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
   templates?: TemplateRouteDeps;
+  /** Routes inbox (conversations + réponse). */
+  inbox?: InboxRouteDeps;
 }
 
 /**
@@ -69,6 +73,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.import) registerImport(app, deps.import, requireAuth);
   if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAuth);
   if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
+  if (deps.inbox) registerInbox(app, deps.inbox, requireAuth);
 
   return app;
 }
