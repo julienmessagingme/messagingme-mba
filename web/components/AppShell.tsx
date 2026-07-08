@@ -23,11 +23,22 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
     router.replace('/login');
   }
 
+  // Templates est un sous-onglet de Campagnes -> l'onglet principal actif est « campagnes »
+  // quand on est sur Templates.
+  const topActive = active === 'templates' ? 'campagnes' : active;
+
   const tab = (href: string, key: string, label: string) =>
-    key === active ? (
+    key === topActive ? (
       <span key={key} className="rounded-lg bg-brand-50 px-3 py-1.5 font-medium text-brand-700">{label}</span>
     ) : (
       <Link key={key} href={href} className="rounded-lg px-3 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800">{label}</Link>
+    );
+
+  const subTab = (href: string, key: string, label: string) =>
+    key === active ? (
+      <span key={key} className="rounded-md bg-white px-3 py-1 font-medium text-brand-700 shadow-sm">{label}</span>
+    ) : (
+      <Link key={key} href={href} className="rounded-md px-3 py-1 text-slate-500 hover:text-slate-800">{label}</Link>
     );
 
   return (
@@ -47,12 +58,17 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
-        <nav className="mb-6 flex gap-1 text-sm">
+        <nav className="mb-4 flex gap-1 text-sm">
           {tab('/inbox', 'inbox', 'Inbox')}
           {tab('/contacts', 'contacts', 'Contacts')}
           {tab('/campaigns', 'campagnes', 'Campagnes')}
-          {tab('/templates', 'templates', 'Templates')}
         </nav>
+        {topActive === 'campagnes' && (
+          <nav className="mb-6 inline-flex gap-1 rounded-lg bg-slate-100 p-1 text-xs">
+            {subTab('/campaigns', 'campagnes', 'Campagnes')}
+            {subTab('/templates', 'templates', 'Templates')}
+          </nav>
+        )}
         {children(session)}
       </main>
     </div>
