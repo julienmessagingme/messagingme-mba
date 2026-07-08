@@ -37,14 +37,14 @@ export interface WhatsAppPreviewProps {
   /** Valeurs des variables {{n}} ; si absent/vide, la variable reste affichée `{{n}}`. */
   examples: string[];
   buttons: TemplateButtonInput[];
-  /** Nom affiché dans l'en-tête (défaut « Votre entreprise »). */
+  /** Nom affiché dans l'en-tête (défaut = le nom vérifié du WABA). */
   senderName?: string;
   /** Masque la petite note sous l'aperçu (formatage supporté). */
   hideNote?: boolean;
 }
 
 /** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). Partagé Templates + Campagnes. */
-export function WhatsAppPreview({ body, examples, buttons, senderName = 'Votre entreprise', hideNote = false }: WhatsAppPreviewProps) {
+export function WhatsAppPreview({ body, examples, buttons, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
   const text = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n: string) => {
     const v = examples[Number(n) - 1];
     return v && v.trim() ? v : `{{${n}}}`;

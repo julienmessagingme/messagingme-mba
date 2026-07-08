@@ -62,7 +62,7 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-5xl px-4 py-10">
         {topActive === 'campagnes' && (
           <nav className="mb-6 inline-flex gap-1 rounded-lg bg-slate-100 p-1 text-xs">
             {subTab('/campaigns', 'campagnes', 'Campagnes')}

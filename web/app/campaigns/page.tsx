@@ -117,7 +117,7 @@ function CampaignsInner({ session }: { session: Session }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-900">Campagnes ({campaigns.length})</h2>
+        <h2 className="text-base font-semibold tracking-tight text-slate-900">Campagnes ({campaigns.length})</h2>
         <div className="flex items-center gap-3">
           {polling ? (
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -206,7 +206,8 @@ function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () 
       {detail.recipients.length === 0 ? (
         <p className="px-4 py-4 text-sm text-slate-500">Aucun destinataire.</p>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-2 font-medium">Téléphone</th>
@@ -228,6 +229,7 @@ function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () 
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );
@@ -379,8 +381,8 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName !== '' && selected.size > 0 && varsComplete && !busy;
 
   return (
-    <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900">Nouvelle campagne</h2>
+    <section className="h-fit rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-base font-semibold tracking-tight text-slate-900">Nouvelle campagne</h2>
       <p className="mt-1 text-xs text-slate-500">Choisis un template approuvé et les contacts, puis lance l&apos;envoi.</p>
 
       <Field label="Numéro expéditeur">

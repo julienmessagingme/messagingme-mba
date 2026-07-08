@@ -50,7 +50,7 @@ function TemplatesInner({ session }: { session: Session }) {
       <CreateForm tenantId={session.tenantId} onCreated={reload} />
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">Templates ({templates.length})</h2>
+          <h2 className="text-base font-semibold tracking-tight text-slate-900">Templates ({templates.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -61,8 +61,8 @@ function TemplatesInner({ session }: { session: Session }) {
             Aucun template. Crée-en un ci-dessus (il passe en revue Meta avant d&apos;être utilisable).
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Nom</th>
@@ -172,8 +172,8 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
   const canSubmit = name.trim() !== '' && body.trim() !== '' && !busy;
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900">Nouveau template</h2>
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-base font-semibold tracking-tight text-slate-900">Nouveau template</h2>
       <p className="mt-1 text-xs text-slate-500">Soumis à Meta pour validation (quelques minutes à quelques heures).</p>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
