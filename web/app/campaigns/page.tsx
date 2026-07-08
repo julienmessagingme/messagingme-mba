@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
+import { explainMetaError } from '@/lib/meta-errors';
 import {
   listCampaigns,
   getCampaign,
@@ -190,7 +191,9 @@ function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () 
                 <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
                 <td className="px-4 py-2"><Badge status={r.status} /></td>
                 <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-slate-400">-</span>}</td>
-                <td className="px-4 py-2 text-xs text-slate-500">{r.deliveryError ?? r.error ?? r.messageId ?? '-'}</td>
+                <td className="px-4 py-2 text-xs text-slate-500" title={r.deliveryError ?? r.error ?? undefined}>
+                  {explainMetaError(r.deliveryError ?? r.error) ?? r.messageId ?? '-'}
+                </td>
               </tr>
             ))}
           </tbody>
