@@ -35,7 +35,7 @@ function ContactsInner({ session }: { session: Session }) {
       <ImportPanel tenantId={session.tenantId} onImported={reload} />
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-slate-900">Contacts ({contacts.length})</h2>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">Contacts ({contacts.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -75,13 +75,13 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
   }
 
   return (
-    <section className="h-fit rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold tracking-tight text-slate-900">Importer un CSV</h2>
-      <p className="mt-1 text-xs text-slate-500">
+    <section className="h-fit rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+      <h2 className="text-base font-semibold tracking-tight text-ink-900">Importer un CSV</h2>
+      <p className="mt-1 text-xs text-ink-500">
         1re ligne = en-têtes. Les colonnes téléphone/nom sont reconnues, le reste devient des champs perso.
       </p>
 
-      <label className="mt-4 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600 hover:border-brand-500 hover:text-brand-600">
+      <label className="mt-4 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-3 py-2 text-sm text-ink-600 hover:border-brand-500 hover:text-brand-600">
         Choisir un fichier .csv
         <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
       </label>
@@ -91,21 +91,21 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
         onChange={(e) => setCsv(e.target.value)}
         rows={7}
         placeholder={'Nom,Téléphone,Ville\nJulie,+33612345678,Lyon'}
-        className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        className="mt-3 w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
       />
 
       <div className="mt-3">
-        <label className="mb-1 block text-sm font-medium text-slate-700">Tags (séparés par des virgules)</label>
+        <label className="mb-1 block text-sm font-medium text-ink-700">Tags (séparés par des virgules)</label>
         <input
           value={tagsInput}
           onChange={(e) => setTagsInput(e.target.value)}
           placeholder="salon-2026, prospect"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <p className="mt-1 text-xs text-slate-400">Appliqués à tous les contacts de cet import (pour filtrer tes campagnes ensuite).</p>
+        <p className="mt-1 text-xs text-ink-400">Appliqués à tous les contacts de cet import (pour filtrer tes campagnes ensuite).</p>
       </div>
 
-      <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+      <label className="mt-3 flex items-center gap-2 text-sm text-ink-700">
         <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
         Ces contacts ont donné leur consentement (opt-in)
       </label>
@@ -140,21 +140,21 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
 const OPT_IN_LABEL: Record<string, { text: string; cls: string }> = {
   opted_in: { text: 'opt-in', cls: 'bg-emerald-50 text-emerald-700' },
   opted_out: { text: 'opt-out', cls: 'bg-red-50 text-red-700' },
-  unknown: { text: 'inconnu', cls: 'bg-slate-100 text-slate-600' },
+  unknown: { text: 'inconnu', cls: 'bg-ink-100 text-ink-600' },
 };
 
 function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: boolean }) {
-  if (loading) return <p className="text-sm text-slate-500">Chargement...</p>;
+  if (loading) return <p className="text-sm text-ink-500">Chargement...</p>;
   if (contacts.length === 0)
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+      <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
         Aucun contact pour l&apos;instant. Importe un CSV pour commencer.
       </div>
     );
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
       <table className="w-full min-w-[560px] text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
           <tr>
             <th className="px-4 py-2.5 font-medium">Nom</th>
             <th className="px-4 py-2.5 font-medium">Téléphone</th>
@@ -163,20 +163,20 @@ function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: bo
             <th className="px-4 py-2.5 font-medium">Champs</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-ink-100">
           {contacts.map((c) => {
             const badge = OPT_IN_LABEL[c.optInStatus] ?? OPT_IN_LABEL.unknown!;
             const fieldKeys = Object.keys(c.fields ?? {});
             return (
-              <tr key={c.id} className="hover:bg-slate-50">
-                <td className="px-4 py-2.5">{c.profileName ?? <span className="text-slate-400">-</span>}</td>
+              <tr key={c.id} className="hover:bg-ink-50">
+                <td className="px-4 py-2.5">{c.profileName ?? <span className="text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5 font-mono text-xs">{c.phoneE164 ?? '-'}</td>
                 <td className="px-4 py-2.5">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span>
                 </td>
                 <td className="px-4 py-2.5">
                   {(c.tags ?? []).length === 0 ? (
-                    <span className="text-slate-400">-</span>
+                    <span className="text-ink-400">-</span>
                   ) : (
                     <div className="flex flex-wrap gap-1">
                       {c.tags.map((t) => (
@@ -185,7 +185,7 @@ function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: bo
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-2.5 text-xs text-slate-500">
+                <td className="px-4 py-2.5 text-xs text-ink-500">
                   {fieldKeys.length === 0 ? '-' : fieldKeys.map((k) => `${k}: ${String(c.fields[k])}`).join(', ')}
                 </td>
               </tr>

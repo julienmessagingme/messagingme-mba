@@ -31,32 +31,32 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
     key === topActive ? (
       <span key={key} className="rounded-lg bg-brand-50 px-3 py-1.5 font-medium text-brand-700">{label}</span>
     ) : (
-      <Link key={key} href={href} className="rounded-lg px-3 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800">{label}</Link>
+      <Link key={key} href={href} className="rounded-lg px-3 py-1.5 text-ink-500 hover:bg-ink-100 hover:text-ink-800">{label}</Link>
     );
 
   const subTab = (href: string, key: string, label: string) =>
     key === active ? (
       <span key={key} className="rounded-md bg-white px-3 py-1 font-medium text-brand-700 shadow-sm">{label}</span>
     ) : (
-      <Link key={key} href={href} className="rounded-md px-3 py-1 text-slate-500 hover:text-slate-800">{label}</Link>
+      <Link key={key} href={href} className="rounded-md px-3 py-1 text-ink-500 hover:text-ink-800">{label}</Link>
     );
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+      <header className="sticky top-0 z-30 border-b border-ink-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">m</div>
-            <span className="text-sm font-semibold">Console MBA</span>
+            <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
           </div>
           <nav className="flex gap-1 text-sm">
             {tab('/inbox', 'inbox', 'Inbox')}
             {tab('/contacts', 'contacts', 'Contacts')}
             {tab('/campaigns', 'campagnes', 'Campagnes')}
           </nav>
-          <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-slate-500">
+          <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-ink-500">
             <span className="hidden max-w-[200px] truncate sm:inline">{session.email}</span>
-            <button onClick={logout} className="rounded-lg border border-slate-300 px-2.5 py-1 text-slate-700 hover:bg-slate-50">
+            <button onClick={logout} className="rounded-lg border border-ink-300 px-2.5 py-1 text-ink-700 hover:bg-ink-50">
               Déconnexion
             </button>
           </div>
@@ -64,7 +64,7 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
       </header>
       <main className="mx-auto max-w-5xl px-4 py-10">
         {topActive === 'campagnes' && (
-          <nav className="mb-6 inline-flex gap-1 rounded-lg bg-slate-100 p-1 text-xs">
+          <nav className="mb-6 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
             {subTab('/campaigns', 'campagnes', 'Campagnes')}
             {subTab('/templates', 'templates', 'Templates')}
           </nav>

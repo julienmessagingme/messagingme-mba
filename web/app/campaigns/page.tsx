@@ -26,21 +26,21 @@ export default function CampaignsPage() {
 }
 
 const STATUS: Record<string, { text: string; cls: string }> = {
-  draft: { text: 'brouillon', cls: 'bg-slate-100 text-slate-600' },
+  draft: { text: 'brouillon', cls: 'bg-ink-100 text-ink-600' },
   running: { text: 'en cours', cls: 'bg-blue-50 text-blue-700' },
   paused: { text: 'en pause', cls: 'bg-amber-50 text-amber-700' },
   completed: { text: 'terminée', cls: 'bg-emerald-50 text-emerald-700' },
   failed: { text: 'échec', cls: 'bg-red-50 text-red-700' },
-  pending: { text: 'en attente', cls: 'bg-slate-100 text-slate-600' },
+  pending: { text: 'en attente', cls: 'bg-ink-100 text-ink-600' },
   sending: { text: 'envoi', cls: 'bg-blue-50 text-blue-700' },
-  sent: { text: 'envoyé', cls: 'bg-slate-100 text-slate-700' },
+  sent: { text: 'envoyé', cls: 'bg-ink-100 text-ink-700' },
   skipped: { text: 'ignoré', cls: 'bg-amber-50 text-amber-700' },
   // Statuts de livraison Meta
   delivered: { text: 'délivré', cls: 'bg-blue-50 text-blue-700' },
   read: { text: 'lu', cls: 'bg-emerald-50 text-emerald-700' },
 };
 function Badge({ status }: { status: string }) {
-  const s = STATUS[status] ?? { text: status, cls: 'bg-slate-100 text-slate-600' };
+  const s = STATUS[status] ?? { text: status, cls: 'bg-ink-100 text-ink-600' };
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>;
 }
 
@@ -117,10 +117,10 @@ function CampaignsInner({ session }: { session: Session }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-slate-900">Campagnes ({campaigns.length})</h2>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Campagnes ({campaigns.length})</h2>
         <div className="flex items-center gap-3">
           {polling ? (
-            <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            <span className="flex items-center gap-1.5 text-xs text-ink-400">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
               actualisation...
             </span>
@@ -138,26 +138,26 @@ function CampaignsInner({ session }: { session: Session }) {
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {loading ? (
-        <p className="text-sm text-slate-500">Chargement...</p>
+        <p className="text-sm text-ink-500">Chargement...</p>
       ) : campaigns.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+        <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
           Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.
         </div>
       ) : (
           <ul className="space-y-2">
             {campaigns.map((c) => (
-              <li key={c.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <li key={c.id} className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{c.name}</span>
                       <Badge status={c.status} />
-                      <span className="text-xs text-slate-400">{c.category}</span>
+                      <span className="text-xs text-ink-400">{c.category}</span>
                     </div>
-                    <p className="mt-0.5 text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-ink-500">
                       template {c.templateName} ({c.templateLanguage}) · {c.counts.total} destinataires
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-ink-500">
                       <b className="text-emerald-700">{c.counts.sent}</b> envoyés
                       {c.counts.failed > 0 && <> · <b className="text-red-700">{c.counts.failed}</b> échecs</>}
                       {c.counts.pending > 0 && <> · {c.counts.pending} en attente</>}
@@ -195,20 +195,20 @@ function CampaignsInner({ session }: { session: Session }) {
 
 function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () => void }) {
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+    <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
         </div>
-        <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-700">Fermer</button>
+        <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
       </div>
       {detail.recipients.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-slate-500">Aucun destinataire.</p>
+        <p className="px-4 py-4 text-sm text-ink-500">Aucun destinataire.</p>
       ) : (
         <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
               <th className="px-4 py-2 font-medium">Téléphone</th>
               <th className="px-4 py-2 font-medium">Envoi</th>
@@ -216,13 +216,13 @@ function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () 
               <th className="px-4 py-2 font-medium">Détail</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-ink-100">
             {detail.recipients.map((r) => (
               <tr key={r.id}>
                 <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
                 <td className="px-4 py-2"><Badge status={r.status} /></td>
-                <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-slate-400">-</span>}</td>
-                <td className="px-4 py-2 text-xs text-slate-500" title={r.deliveryError ?? r.error ?? undefined}>
+                <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-400">-</span>}</td>
+                <td className="px-4 py-2 text-xs text-ink-500" title={r.deliveryError ?? r.error ?? undefined}>
                   {explainMetaError(r.deliveryError ?? r.error) ?? r.messageId ?? '-'}
                 </td>
               </tr>
@@ -381,9 +381,9 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName !== '' && selected.size > 0 && varsComplete && !busy;
 
   return (
-    <section className="h-fit rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold tracking-tight text-slate-900">Nouvelle campagne</h2>
-      <p className="mt-1 text-xs text-slate-500">Choisis un template approuvé et les contacts, puis lance l&apos;envoi.</p>
+    <section className="h-fit rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+      <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouvelle campagne</h2>
+      <p className="mt-1 text-xs text-ink-500">Choisis un template approuvé et les contacts, puis lance l&apos;envoi.</p>
 
       <Field label="Numéro expéditeur">
         {numbers.length === 0 ? (
@@ -402,7 +402,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       {/* 1. Choix du template (approuvés uniquement) */}
       <Field label="Template">
         {loadingRefs ? (
-          <p className="text-xs text-slate-400">Chargement des templates...</p>
+          <p className="text-xs text-ink-400">Chargement des templates...</p>
         ) : templates.length === 0 ? (
           <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans l&apos;onglet Templates et attends la validation Meta.</p>
         ) : (
@@ -425,11 +425,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       {/* 2. Variables du template (auto-déduites du corps) */}
       {vars.length > 0 && (
         <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-slate-700">Variables ({vars.length})</label>
+          <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
           <div className="space-y-2">
             {vars.map((v, i) => (
               <div key={i} className="flex items-center gap-1.5">
-                <span className="w-8 shrink-0 text-xs text-slate-400">{`{{${i + 1}}}`}</span>
+                <span className="w-8 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
                 <select
                   value={v.source}
                   onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
@@ -465,27 +465,27 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       {/* 3. Choix des contacts */}
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between">
-          <label className="text-sm font-medium text-slate-700">Destinataires</label>
+          <label className="text-sm font-medium text-ink-700">Destinataires</label>
           {contacts.length > 0 && (
-            <span className="text-xs text-slate-400">{selected.size} / {contacts.length} sélectionnés</span>
+            <span className="text-xs text-ink-400">{selected.size} / {contacts.length} sélectionnés</span>
           )}
         </div>
         {loadingRefs ? (
-          <p className="text-xs text-slate-400">Chargement des contacts...</p>
+          <p className="text-xs text-ink-400">Chargement des contacts...</p>
         ) : contacts.length === 0 ? (
           <p className="text-xs text-amber-700">Aucun contact avec numéro. Importe des contacts dans l&apos;onglet Contacts.</p>
         ) : (
           <div>
             {allTags.length > 0 && (
               <div className="mb-2 flex flex-wrap items-center gap-1">
-                <span className="text-[11px] text-slate-400">Tags :</span>
+                <span className="text-[11px] text-ink-400">Tags :</span>
                 {allTags.map((t) => (
                   <button
                     type="button"
                     key={t}
                     onClick={() => toggleTag(t)}
                     className={`rounded-full px-2 py-0.5 text-xs transition ${
-                      tagFilter.has(t) ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      tagFilter.has(t) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
                     }`}
                   >
                     {t}
@@ -500,7 +500,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             )}
             <div className="mb-2 flex items-center gap-2">
               <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder="Rechercher (nom, numéro, tag, champ)" />
-              <button type="button" onClick={toggleAllFiltered} className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-2 text-xs text-slate-600 hover:bg-slate-50">
+              <button type="button" onClick={toggleAllFiltered} className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-xs text-ink-600 hover:bg-ink-50">
                 {filteredAllSelected ? 'Vider' : 'Tout'}
               </button>
               {(tagFilter.size > 0 || search.trim() !== '') && (
@@ -509,21 +509,21 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
                 </button>
               )}
             </div>
-            <div className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+            <div className="max-h-48 divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
               {filteredContacts.map((c) => (
-                <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50">
+                <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
                   <span className="truncate text-sm">{c.profileName ?? c.phoneE164}</span>
                   {(c.tags ?? []).slice(0, 3).map((t) => (
                     <span key={t} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{t}</span>
                   ))}
-                  <span className="ml-auto shrink-0 font-mono text-[11px] text-slate-400">{c.phoneE164}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164}</span>
                   {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
                 </label>
               ))}
-              {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-slate-400">Aucun contact ne correspond.</p>}
+              {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-ink-400">Aucun contact ne correspond.</p>}
             </div>
-            <p className="mt-1 text-[11px] text-slate-400">{filteredContacts.length} affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
+            <p className="mt-1 text-[11px] text-ink-400">{filteredContacts.length} affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
             {filterActive && selectedOutside > 0 && (
               <p className="mt-1 text-[11px] text-amber-600">
                 ⚠️ {selectedOutside} sélectionné(s) hors du filtre partiront aussi. « Uniquement ceux-ci » pour ne cibler que le segment affiché.
@@ -555,12 +555,12 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
 }
 
 const inputCls =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mt-3">
-      <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+      <label className="mb-1 block text-sm font-medium text-ink-700">{label}</label>
       {children}
     </div>
   );

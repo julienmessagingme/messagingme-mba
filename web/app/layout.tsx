@@ -1,18 +1,19 @@
 import type { Metadata } from 'next';
-import { Manrope } from 'next/font/google';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 
-// Police premium self-hostée au build (aucun appel externe au runtime).
-const manrope = Manrope({ subsets: ['latin'], display: 'swap' });
+// Police du design system MM Business Agent, self-hostée au build (aucun appel externe au
+// runtime). Exposée en variable CSS --font-pjs, consommée par Tailwind (fontFamily.sans).
+const pjs = Plus_Jakarta_Sans({ subsets: ['latin'], display: 'swap', variable: '--font-pjs' });
 
 export const metadata: Metadata = {
-  title: 'messagingme - Console MBA',
-  description: 'Console WhatsApp Business : contacts, campagnes, agent.',
+  title: 'MM Business Agent',
+  description: 'MM Business Agent : contacts, campagnes, agent WhatsApp.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={manrope.className}>
+    <html lang="fr" className={pjs.variable}>
       <body>{children}</body>
     </html>
   );

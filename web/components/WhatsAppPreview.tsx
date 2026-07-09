@@ -51,8 +51,8 @@ export function WhatsAppPreview({ body, examples, buttons, senderName = 'Messagi
   });
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-slate-500">Aperçu WhatsApp</p>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+      <p className="mb-2 text-xs font-medium text-ink-500">Aperçu WhatsApp</p>
+      <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
         <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
           <div className="leading-tight">
@@ -63,16 +63,16 @@ export function WhatsAppPreview({ body, examples, buttons, senderName = 'Messagi
         <div className="min-h-[220px] px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
           <div className="max-w-[88%]">
             <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
-              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-slate-800">
-                {body.trim() ? formatInline(text) : <span className="text-slate-400">Le message apparaîtra ici…</span>}
+              <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
+                {body.trim() ? formatInline(text) : <span className="text-ink-400">Le message apparaîtra ici…</span>}
               </div>
-              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-slate-400">
+              <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">
                 12:30 <span className="text-[#53bdeb]">✓✓</span>
               </div>
               {buttons.length > 0 && (
                 <div className="-mx-2.5 -mb-1.5 mt-1.5">
                   {buttons.map((b, i) => (
-                    <div key={i} className="flex items-center justify-center gap-1.5 border-t border-slate-100 py-2 text-[13px] font-medium text-[#00a5f4]">
+                    <div key={i} className="flex items-center justify-center gap-1.5 border-t border-ink-100 py-2 text-[13px] font-medium text-[#00a5f4]">
                       {b.type === 'URL' ? <UrlIcon /> : <ReplyIcon />}
                       {b.text?.trim() || (b.type === 'URL' ? 'Lien' : 'Réponse')}
                     </div>
@@ -84,7 +84,7 @@ export function WhatsAppPreview({ body, examples, buttons, senderName = 'Messagi
         </div>
       </div>
       {!hideNote && (
-        <p className="mt-2 text-[11px] text-slate-400">Le rendu réel peut varier légèrement selon l&apos;appareil. *gras*, _italique_, ~barré~ sont supportés.</p>
+        <p className="mt-2 text-[11px] text-ink-400">Le rendu réel peut varier légèrement selon l&apos;appareil. *gras*, _italique_, ~barré~ sont supportés.</p>
       )}
     </div>
   );

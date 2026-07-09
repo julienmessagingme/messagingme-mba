@@ -34,14 +34,14 @@ function InboxInner({ session }: { session: Session }) {
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-slate-900">Conversations ({conversations.length})</h2>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">Conversations ({conversations.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading ? (
-          <p className="text-sm text-slate-500">Chargement...</p>
+          <p className="text-sm text-ink-500">Chargement...</p>
         ) : conversations.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+          <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
             Aucune conversation. Elles apparaissent quand un client répond à une campagne.
           </div>
         ) : (
@@ -51,14 +51,14 @@ function InboxInner({ session }: { session: Session }) {
                 <button
                   onClick={() => setSelected(c)}
                   className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
-                    selected?.id === c.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                    selected?.id === c.id ? 'border-brand-500 bg-brand-50' : 'border-ink-200 bg-white hover:bg-ink-50'
                   }`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-sm font-medium">{c.profileName ?? `+${c.waId}`}</span>
-                    <span className="shrink-0 text-[11px] text-slate-400">{new Date(c.lastMessageAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="shrink-0 text-[11px] text-ink-400">{new Date(c.lastMessageAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                  <p className="truncate text-xs text-slate-500">{c.lastPreview ?? ''}</p>
+                  <p className="truncate text-xs text-ink-500">{c.lastPreview ?? ''}</p>
                 </button>
               </li>
             ))}
@@ -70,7 +70,7 @@ function InboxInner({ session }: { session: Session }) {
         {selected ? (
           <Thread key={selected.id} session={session} conversation={selected} onSent={reload} />
         ) : (
-          <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white text-sm text-slate-400">
+          <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-ink-300 bg-white text-sm text-ink-400">
             Sélectionne une conversation
           </div>
         )}
@@ -119,10 +119,10 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   }
 
   return (
-    <div className="flex h-[540px] flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-4 py-2.5">
+    <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white shadow-sm">
+      <div className="border-b border-ink-100 px-4 py-2.5">
         <span className="text-sm font-semibold">{conversation.profileName ?? `+${conversation.waId}`}</span>
-        <span className="ml-2 font-mono text-xs text-slate-400">+{conversation.waId}</span>
+        <span className="ml-2 font-mono text-xs text-ink-400">+{conversation.waId}</span>
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
@@ -130,7 +130,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${
-                m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-800'
+                m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-800'
               }`}
             >
               {m.buttonPayload && m.direction === 'in' ? (
@@ -146,13 +146,13 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
 
       {error && <p className="mx-4 mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      <div className="flex items-center gap-2 border-t border-slate-100 p-3">
+      <div className="flex items-center gap-2 border-t border-ink-100 p-3">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void send(); }}
           placeholder="Répondre (fenêtre de service 24 h)..."
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
         <button
           onClick={send}
