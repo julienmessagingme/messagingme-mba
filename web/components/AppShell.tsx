@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
 import { Logo } from './Logo';
 
-type Tab = 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'inbox' | 'admin';
+type Tab = 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'flows' | 'inbox' | 'admin';
 
 /** Coquille commune : garde d'auth + RBAC, header (logo, email, logout) et navigation.
  *  RBAC : seule l'inbox est ouverte à l'agent. Toute page hors inbox exige le rôle admin ;
@@ -44,7 +44,7 @@ export function AppShell({ active, children }: { active: Tab; children: (session
 
   // Templates est un sous-onglet de Campagnes -> l'onglet principal actif est « campagnes »
   // quand on est sur Templates.
-  const topActive = active === 'templates' ? 'campagnes' : active;
+  const topActive = active === 'templates' || active === 'flows' ? 'campagnes' : active;
 
   const tab = (href: string, key: string, label: string) =>
     key === topActive ? (
@@ -98,6 +98,7 @@ export function AppShell({ active, children }: { active: Tab; children: (session
           <nav className="mb-6 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
             {subTab('/campaigns', 'campagnes', 'Campagnes')}
             {subTab('/templates', 'templates', 'Templates')}
+            {subTab('/flows', 'flows', 'Flows')}
           </nav>
         )}
         {children(session)}

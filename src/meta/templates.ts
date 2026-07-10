@@ -1,5 +1,6 @@
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
+import { FLOW_ENTRY_SCREEN } from './flow-json';
 
 /**
  * Client des templates WhatsApp (niveau WABA, pas phone_number_id). Création + liste via
@@ -8,10 +9,12 @@ import type { MetaErrorBody } from './errors';
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export interface TemplateButton {
-  type: 'QUICK_REPLY' | 'URL';
+  type: 'QUICK_REPLY' | 'URL' | 'FLOW';
   text: string;
   /** requis si type = URL */
   url?: string;
+  /** requis si type = FLOW : id Meta d'un flow PUBLISHED. */
+  flowId?: string;
 }
 
 export interface CreateTemplateInput {
@@ -67,6 +70,8 @@ function buildComponents(input: CreateTemplateInput): unknown[] {
     components.push({
       type: 'BUTTONS',
       buttons: input.buttons.map((b) => {
+        // Bouton FLOW : ouvre le flow publié à son écran d'entrée (navigate_screen = id d'écran, vérifié live).
+        if (b.type === 'FLOW') return { type: 'FLOW', text: b.text, flow_id: b.flowId, navigate_screen: FLOW_ENTRY_SCREEN, flow_action: 'navigate' };
         if (b.type !== 'URL') return { type: 'QUICK_REPLY', text: b.text };
         const btn: Record<string, unknown> = { type: 'URL', text: b.text, url: b.url };
         // URL dynamique ({{1}}) : Meta EXIGE un exemple d'URL complète au niveau du bouton.

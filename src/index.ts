@@ -61,6 +61,7 @@ async function main(): Promise<void> {
     templates: {
       templates: new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION),
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
+      getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
     },
     inbox: {
       listConversations: (tenant) => inboxStore.listConversations(tenant),

@@ -19,6 +19,42 @@ export default function InboxPage() {
   return <AppShell active="inbox">{(session) => <InboxInner session={session} />}</AppShell>;
 }
 
+/** Réponse de formulaire Flow (nfm_reply) : le payload est un objet JSON {champ: valeur}. Renvoie les
+ *  paires à afficher, ou null si ce n'est pas un objet (bouton simple, ou JSON tronqué non parsable). */
+function parseFormResponse(payload: string): Array<[string, unknown]> | null {
+  try {
+    const o = JSON.parse(payload) as unknown;
+    if (o && typeof o === 'object' && !Array.isArray(o)) {
+      const entries = Object.entries(o).filter(([k]) => k !== 'flow_token' && !k.startsWith('__'));
+      return entries.length > 0 ? entries : null;
+    }
+  } catch {
+    /* JSON tronqué/non parsable -> repli sur le brut */
+  }
+  return null;
+}
+function prettyKey(k: string): string {
+  const s = k.replace(/_/g, ' ').trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Rendu d'un message entrant à payload : carte « formulaire rempli » si c'est un objet, sinon bouton. */
+function InboundPayload({ body, payload }: { body: string | null; payload: string }) {
+  const entries = parseFormResponse(payload);
+  if (!entries) return <span>👆 {body ?? payload}</span>;
+  return (
+    <div className="space-y-0.5">
+      <div className="mb-1 text-xs font-semibold opacity-70">📋 Formulaire rempli</div>
+      {entries.map(([k, v]) => (
+        <div key={k} className="text-sm">
+          <span className="opacity-60">{prettyKey(k)} : </span>
+          {String(v)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function InboxInner({ session }: { session: Session }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
@@ -155,7 +191,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
               {m.type === 'template' ? (
                 <span className="italic opacity-90">📋 {m.body}</span>
               ) : m.buttonPayload && m.direction === 'in' ? (
-                <span>👆 {m.body ?? m.buttonPayload}</span>
+                <InboundPayload body={m.body} payload={m.buttonPayload} />
               ) : (
                 m.body ?? <span className="italic opacity-70">[{m.type}]</span>
               )}

@@ -13,6 +13,7 @@ import { registerFlows } from './http/flows';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
+import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
@@ -71,6 +72,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       // Message Meta tronqué (évite d'exposer un blob verbeux / des détails de trace).
       const detail = err.message.replace(/\s+/g, ' ').trim().slice(0, 200);
       return reply.code(422).send({ error: `Meta: ${detail}` });
+    }
+    // flow_json refusé par Meta à la création : 422 + les erreurs de validation (pas un 500 opaque).
+    if (err instanceof FlowJsonInvalidError) {
+      return reply.code(422).send({ error: err.message.slice(0, 200) });
     }
     const code = err.statusCode ?? 500;
     reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });

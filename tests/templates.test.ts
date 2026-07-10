@@ -27,11 +27,11 @@ function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown
   return { fn, calls };
 }
 
-function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1') {
+function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1', getPublishedFlow?: (t: string, f: string) => Promise<boolean>) {
   return buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
-    templates: { templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl), getWabaId: async () => wabaId },
+    templates: { templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl), getWabaId: async () => wabaId, ...(getPublishedFlow ? { getPublishedFlow } : {}) },
   });
 }
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
@@ -129,6 +129,49 @@ describe('routes templates', () => {
     const a = app(fn);
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/templates', ...h(agentToken) });
     expect(res.statusCode).toBe(200); // NON-régression : agent lit la liste (create reste 403, testé ci-dessus)
+    await a.close();
+  });
+});
+
+describe('bouton FLOW (templates)', () => {
+  it('create émet le composant FLOW {flow_id, navigate_screen:FORM, flow_action:navigate}', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', { name: 'lead', category: 'MARKETING', language: 'fr', body: 'Bonjour', buttons: [{ type: 'FLOW', text: 'Répondre', flowId: 'flow123' }] });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.components[1].buttons[0]).toEqual({ type: 'FLOW', text: 'Répondre', flow_id: 'flow123', navigate_screen: 'FORM', flow_action: 'navigate' });
+  });
+
+  it('FLOW sans flowId -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', buttons: [{ type: 'FLOW', text: 'Go' }] } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('FLOW mélangé à un autre bouton -> 400 (exclusif)', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', buttons: [{ type: 'FLOW', text: 'Go', flowId: 'f1' }, { type: 'QUICK_REPLY', text: 'Autre' }] } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('FLOW non publié (getPublishedFlow=false) -> 400 AVANT Meta (fetch non appelé)', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn, 'waba1', async () => false);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', buttons: [{ type: 'FLOW', text: 'Go', flowId: 'f1' }] } });
+    expect(res.statusCode).toBe(400);
+    expect(calls).toHaveLength(0); // pas d'appel Meta
+    await a.close();
+  });
+
+  it('FLOW publié (getPublishedFlow=true) -> 201', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn, 'waba1', async () => true);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', buttons: [{ type: 'FLOW', text: 'Go', flowId: 'f1' }] } });
+    expect(res.statusCode).toBe(201);
     await a.close();
   });
 });

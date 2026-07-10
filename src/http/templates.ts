@@ -7,6 +7,9 @@ export interface TemplateRouteDeps {
   templates: MetaTemplateClient;
   /** WABA du tenant (les templates sont au niveau WABA). */
   getWabaId(tenantId: string): Promise<string | null>;
+  /** Optionnel : pré-check « ce flowId est-il PUBLISHED pour ce tenant ? » avant d'appeler Meta.
+   *  Absent -> pas de pré-check (Meta reste seul juge, 422 passthrough). */
+  getPublishedFlow?(tenantId: string, flowId: string): Promise<boolean>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -23,12 +26,17 @@ function nonEmpty(v: unknown): v is string {
 function validButtons(v: unknown): v is TemplateButton[] | undefined {
   if (v === undefined) return true;
   if (!Array.isArray(v)) return false;
-  return v.every((b) => {
-    const btn = b as { type?: unknown; text?: unknown; url?: unknown };
+  const okEach = v.every((b) => {
+    const btn = b as { type?: unknown; text?: unknown; url?: unknown; flowId?: unknown };
     if (btn.type === 'QUICK_REPLY') return nonEmpty(btn.text);
     if (btn.type === 'URL') return nonEmpty(btn.text) && nonEmpty(btn.url);
+    if (btn.type === 'FLOW') return nonEmpty(btn.text) && nonEmpty(btn.flowId);
     return false;
   });
+  if (!okEach) return false;
+  // Contrainte Meta : un bouton FLOW est EXCLUSIF (impossible de le mélanger à d'autres boutons).
+  const hasFlow = v.some((b) => (b as { type?: unknown }).type === 'FLOW');
+  return !hasFlow || v.length === 1;
 }
 
 /** Routes de templates : liste (statut Meta) + création (soumission à validation Meta). */
@@ -59,6 +67,12 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
+
+    // Bouton FLOW : le flow référencé doit être PUBLISHED (pré-check avant Meta si dispo).
+    const flowBtn = Array.isArray(b.buttons) ? (b.buttons as TemplateButton[]).find((x) => x.type === 'FLOW') : undefined;
+    if (flowBtn && deps.getPublishedFlow && !(await deps.getPublishedFlow(tenant, flowBtn.flowId ?? ''))) {
+      return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
+    }
 
     // Nb de variables {{n}} dans le corps -> exiger autant d'exemples.
     const varCount = new Set((b.body.match(/\{\{\s*\d+\s*\}\}/g) ?? [])).size;

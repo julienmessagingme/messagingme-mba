@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import type { Session } from '@/lib/session';
-import { listTemplates, createTemplate, type TemplateSummary, type TemplateButtonInput } from '@/lib/api';
+import { listTemplates, createTemplate, listFlows, type TemplateSummary, type TemplateButtonInput, type FlowSummary } from '@/lib/api';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -126,6 +126,14 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
   const [ok, setOk] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [pubFlows, setPubFlows] = useState<FlowSummary[]>([]);
+  const hasFlow = buttons.some((b) => b.type === 'FLOW');
+
+  useEffect(() => {
+    listFlows(tenantId)
+      .then(({ flows }) => setPubFlows(flows.filter((f) => f.status === 'PUBLISHED')))
+      .catch(() => setPubFlows([]));
+  }, [tenantId]);
 
   // Nombre de variables {{n}} distinctes dans le corps.
   const varCount = useMemo(() => new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size, [body]);
@@ -169,7 +177,9 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
     }
   }
 
-  const canSubmit = name.trim() !== '' && body.trim() !== '' && !busy;
+  // Chaque bouton doit être complet : texte + (URL pour un lien / formulaire choisi pour un FLOW).
+  const buttonsComplete = buttons.every((b) => b.text.trim() !== '' && (b.type !== 'URL' || (b.url ?? '').trim() !== '') && (b.type !== 'FLOW' || (b.flowId ?? '') !== ''));
+  const canSubmit = name.trim() !== '' && body.trim() !== '' && buttonsComplete && !busy;
 
   return (
     <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
@@ -241,14 +251,24 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
             <div className="mb-1 flex items-center justify-between">
               <label className="text-sm font-medium text-ink-700">Boutons</label>
               <div className="flex gap-2 text-xs">
-                <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
-                <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
+                {/* Un bouton FLOW est EXCLUSIF (contrainte Meta) : on masque les autres si un FLOW est là,
+                    et « + Flow » remplace tous les boutons par un unique bouton FLOW. */}
+                {!hasFlow && (
+                  <>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
+                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title={pubFlows.length === 0 ? 'Publie d\'abord un formulaire dans l\'onglet Flows' : ''}>+ Flow</button>
+                  </>
+                )}
               </div>
             </div>
+            {hasFlow && pubFlows.length === 0 && (
+              <p className="mb-2 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">Aucun formulaire publié. Crée et publie un formulaire dans l&apos;onglet Flows pour l&apos;attacher ici.</p>
+            )}
             <div className="space-y-2">
               {buttons.map((b, i) => (
                 <div key={i} className="flex items-center gap-1.5">
-                  <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? 'lien' : 'réponse'}</span>
+                  <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? 'lien' : b.type === 'FLOW' ? 'flow' : 'réponse'}</span>
                   <input
                     value={b.text}
                     onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
@@ -262,6 +282,18 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
                       className={`${inputCls} w-28`}
                       placeholder="https://..."
                     />
+                  )}
+                  {b.type === 'FLOW' && (
+                    <select
+                      value={b.flowId ?? ''}
+                      onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, flowId: e.target.value } : x)))}
+                      className={`${inputCls} w-40`}
+                    >
+                      <option value="">Choisir un formulaire…</option>
+                      {pubFlows.map((f) => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
                   )}
                   <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
                 </div>

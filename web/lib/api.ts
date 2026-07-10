@@ -203,9 +203,11 @@ export interface TemplateSummary {
   headerFormat?: string | null;
 }
 export interface TemplateButtonInput {
-  type: 'QUICK_REPLY' | 'URL';
+  type: 'QUICK_REPLY' | 'URL' | 'FLOW';
   text: string;
   url?: string;
+  /** requis si type = FLOW : id d'un flow PUBLISHED. */
+  flowId?: string;
 }
 export interface CreateTemplateInput {
   name: string;
@@ -352,4 +354,32 @@ export function setUserDisabled(tenantId: string, userId: string, disabled: bool
 }
 export function deleteUser(tenantId: string, userId: string): Promise<{ id: string; deleted: boolean }> {
   return request(`/tenants/${tenantId}/users/${userId}`, { method: 'DELETE' });
+}
+
+// --- Flows (constructeur de formulaire) ---
+
+export type FlowFieldType = 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'date';
+export interface FlowFieldInput {
+  label: string;
+  type: FlowFieldType;
+  required: boolean;
+}
+export interface FlowField extends FlowFieldInput {
+  key: string;
+}
+export interface FlowSummary {
+  id: string;
+  name: string;
+  status: 'DRAFT' | 'PUBLISHED';
+  fields: FlowField[];
+  createdAt: string;
+}
+export function listFlows(tenantId: string): Promise<{ flows: FlowSummary[] }> {
+  return request<{ flows: FlowSummary[] }>(`/tenants/${tenantId}/flows`);
+}
+export function createFlow(tenantId: string, input: { name: string; fields: FlowFieldInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+  return request(`/tenants/${tenantId}/flows`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function publishFlow(tenantId: string, flowId: string): Promise<{ id: string; status: string }> {
+  return request(`/tenants/${tenantId}/flows/${flowId}/publish`, { method: 'POST' });
 }

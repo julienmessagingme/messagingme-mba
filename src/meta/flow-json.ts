@@ -1,5 +1,9 @@
 import { slugify } from '../crm/fields';
 
+/** Id de l'écran d'entrée du flow. Le bouton FLOW du template pointe cet écran via `navigate_screen`
+ *  (vérifié live : c'est l'id d'écran, PAS un mot réservé type FIRST_ENTRY_SCREEN). */
+export const FLOW_ENTRY_SCREEN = 'FORM';
+
 export type FlowFieldType = 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'date';
 
 export const FLOW_FIELD_TYPES: readonly FlowFieldType[] = ['text', 'email', 'phone', 'number', 'textarea', 'date'];
@@ -68,7 +72,7 @@ export function buildFlowJson(name: string, fields: FlowField[], version: string
     version,
     screens: [
       {
-        id: 'FORM',
+        id: FLOW_ENTRY_SCREEN,
         title: name.slice(0, 30) || 'Formulaire',
         terminal: true,
         success: true,
