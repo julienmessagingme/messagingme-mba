@@ -64,14 +64,18 @@ export function AppShell({ active, children }: { active: Tab; children: (session
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-ink-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-          <div className="flex shrink-0 items-center gap-2">
+          {/* Le logo est le lien d'accueil : admin -> dashboard, agent -> inbox. Pas d'onglet Dashboard. */}
+          <Link
+            href={session.role === 'admin' ? '/dashboard' : '/inbox'}
+            className="flex shrink-0 items-center gap-2 rounded-lg transition hover:opacity-80"
+            title="Accueil"
+          >
             <Logo className="h-8 w-8" />
             <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
-          </div>
+          </Link>
           <nav className="flex gap-1 text-sm">
             {session.role === 'admin' ? (
               <>
-                {tab('/dashboard', 'dashboard', 'Dashboard')}
                 {tab('/inbox', 'inbox', 'Inbox')}
                 {tab('/contacts', 'contacts', 'Contacts')}
                 {tab('/campaigns', 'campagnes', 'Campagnes')}

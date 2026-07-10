@@ -26,21 +26,22 @@ function fmtDay(iso: string): string {
   const [, m, d] = iso.split('-');
   return `${d}/${m}`;
 }
+function fmtNum(n: number): string {
+  return n.toLocaleString('fr-FR');
+}
 
-const W = 520;
-const H = 150;
-const PAD = { top: 12, right: 12, bottom: 20, left: 28 };
+const W = 560;
+const H = 176;
+const PAD = { top: 16, right: 14, bottom: 22, left: 8 };
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
 /** Courbe lissée (spline Catmull-Rom -> Bézier cubique, tension douce) passant par tous les points.
- *  Rend des lignes moins « cassées » que des segments droits, sans dépendance externe. Les points de
- *  contrôle en y sont bornés à l'intervalle des deux ancres du segment : pas d'overshoot de la spline
- *  sous 0 (ou au-dessus du max) sur des données en pic — l'aire ne déborde jamais sous la ligne du 0. */
+ *  Points de contrôle en y bornés aux ancres du segment : pas d'overshoot sous 0 sur des pics. */
 function smoothLine(pts: Array<{ x: number; y: number }>): string {
   if (pts.length === 0) return '';
   if (pts.length === 1) return `M ${pts[0]!.x.toFixed(1)} ${pts[0]!.y.toFixed(1)}`;
-  const t = 0.18; // tension : 0 = segments droits, plus haut = plus courbe (0.18 = doux)
+  const t = 0.18;
   let d = `M ${pts[0]!.x.toFixed(1)} ${pts[0]!.y.toFixed(1)}`;
   for (let i = 0; i < pts.length - 1; i += 1) {
     const p0 = pts[i - 1] ?? pts[i]!;
@@ -58,7 +59,11 @@ function smoothLine(pts: Array<{ x: number; y: number }>): string {
   return d;
 }
 
-/** Graphique « 1 point/jour » (aire + ligne), 1 ou plusieurs séries superposées. SVG maison. */
+/**
+ * Graphe « 1 point/jour » (aire lissée + ligne), une ou plusieurs séries. SVG maison, tokens MM.
+ * En-tête : libellé + grand chiffre + tendance (cumulé) ou Pic/Moyenne (flux) + point courant en fin
+ * de courbe. Survol : repère vertical + points + tooltip.
+ */
 export function DailyChart({
   title,
   series,
@@ -70,8 +75,7 @@ export function DailyChart({
   series: ChartSeries[];
   days: number;
   subtitle?: string;
-  /** Grand chiffre affiché : 'sum' = total de la période (séries en flux) ; 'last' = dernière valeur
-   *  (séries CUMULÉES, ex. contacts — sommer les snapshots journaliers n'aurait aucun sens). */
+  /** Grand chiffre : 'sum' = total période (flux) ; 'last' = dernière valeur (séries CUMULÉES). */
   summary?: 'sum' | 'last';
 }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -86,11 +90,18 @@ export function DailyChart({
     [series, dates],
   );
 
-  const lastVals = data[0]?.values ?? [];
-  const total =
+  const primary = data[0]?.values ?? [];
+  const hero =
     summary === 'last'
-      ? lastVals[lastVals.length - 1] ?? 0
+      ? primary[primary.length - 1] ?? 0
       : data.reduce((acc, s) => acc + s.values.reduce((a, b) => a + b, 0), 0);
+
+  // Tendance (séries cumulées) : évolution nette sur la période.
+  const delta = summary === 'last' ? (primary[primary.length - 1] ?? 0) - (primary[0] ?? 0) : null;
+  // Métriques (séries flux, une seule série) : pic + moyenne.
+  const peak = primary.length ? Math.max(...primary) : 0;
+  const avg = primary.length ? Math.round(primary.reduce((a, b) => a + b, 0) / primary.length) : 0;
+
   const max = Math.max(1, ...data.flatMap((s) => s.values));
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
@@ -107,63 +118,99 @@ export function DailyChart({
   }
 
   const gid = title.replace(/[^a-z0-9]/gi, '');
+  const multi = series.length > 1;
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <div className="mb-1 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-900">{title}</h3>
-        <span className="text-2xl font-bold tracking-tight text-ink-900">{total}</span>
-      </div>
-      {subtitle && <p className="mb-2 text-xs text-ink-400">{subtitle}</p>}
-      {series.length > 1 && (
-        <div className="mb-1 flex gap-3">
-          {series.map((s) => (
-            <span key={s.label} className="flex items-center gap-1 text-xs text-ink-500">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
-              {s.label}
-            </span>
-          ))}
+    <div className="rounded-2xl border border-ink-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(11,14,36,0.04),0_12px_28px_-16px_rgba(11,14,36,0.14)]">
+      {/* En-tête : libellé + grand chiffre + tendance / métriques */}
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">{title}</div>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-[2.5rem] font-light leading-none tracking-tight text-ink-900 tabular-nums">{fmtNum(hero)}</span>
+            {delta !== null && (
+              <span
+                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium ${
+                  delta > 0 ? 'bg-mint-50 text-mint-700' : delta < 0 ? 'bg-coral/10 text-coral' : 'bg-ink-100 text-ink-500'
+                }`}
+              >
+                {delta > 0 ? '↗' : delta < 0 ? '↘' : '→'} {delta > 0 ? '+' : ''}
+                {fmtNum(delta)}
+              </span>
+            )}
+          </div>
+          {subtitle && <p className="mt-1 text-xs text-ink-400">{subtitle}</p>}
         </div>
-      )}
+
+        {multi ? (
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            {data.map((s) => (
+              <span key={s.label} className="flex items-center gap-1.5 text-xs text-ink-500">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+                {s.label}
+                <span className="font-semibold text-ink-800 tabular-nums">{fmtNum(s.values[s.values.length - 1] ?? 0)}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="flex shrink-0 gap-2">
+            <MiniStat label="Pic" value={fmtNum(peak)} />
+            <MiniStat label="Moy." value={fmtNum(avg)} />
+          </div>
+        )}
+      </div>
 
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: 'visible' }}>
           <defs>
             {data.map((s, si) => (
               <linearGradient key={si} id={`grad-${gid}-${si}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={s.color} stopOpacity="0.22" />
+                <stop offset="0%" stopColor={s.color} stopOpacity="0.20" />
+                <stop offset="55%" stopColor={s.color} stopOpacity="0.05" />
                 <stop offset="100%" stopColor={s.color} stopOpacity="0" />
               </linearGradient>
             ))}
           </defs>
 
-          {/* grille horizontale */}
-          {[0, 0.5, 1].map((f) => (
-            <line key={f} x1={PAD.left} x2={W - PAD.right} y1={PAD.top + innerH * (1 - f)} y2={PAD.top + innerH * (1 - f)} stroke="#E7E9F0" strokeWidth="1" />
+          {/* grille horizontale discrète (4 paliers) */}
+          {[0, 0.33, 0.66, 1].map((f) => (
+            <line
+              key={f}
+              x1={PAD.left}
+              x2={W - PAD.right}
+              y1={PAD.top + innerH * (1 - f)}
+              y2={PAD.top + innerH * (1 - f)}
+              stroke="#EEF0F5"
+              strokeWidth="1"
+              strokeDasharray={f === 0 ? '0' : '2 5'}
+            />
           ))}
-          <text x={PAD.left - 6} y={PAD.top + 4} textAnchor="end" className="fill-ink-300 text-[9px]">{max}</text>
-          <text x={PAD.left - 6} y={PAD.top + innerH} textAnchor="end" className="fill-ink-300 text-[9px]">0</text>
 
           {data.map((s, si) => {
             const { line, area } = pathFor(s.values);
+            const lastY = y(s.values[s.values.length - 1] ?? 0);
+            const lastX = x(n - 1);
             return (
               <g key={si}>
                 <path d={area} fill={`url(#grad-${gid}-${si})`} />
-                <path d={line} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                <path d={line} fill="none" stroke={s.color} strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />
+                {/* point courant (fin de courbe) avec halo doux */}
+                <circle cx={lastX} cy={lastY} r="5.5" fill={s.color} opacity="0.16" />
+                <circle cx={lastX} cy={lastY} r="3" fill="#fff" stroke={s.color} strokeWidth="2" />
               </g>
             );
           })}
 
           {/* dates extrêmes */}
-          <text x={PAD.left} y={H - 5} textAnchor="start" className="fill-ink-300 text-[9px]">{fmtDay(dates[0] ?? '')}</text>
-          <text x={W - PAD.right} y={H - 5} textAnchor="end" className="fill-ink-300 text-[9px]">{fmtDay(dates[n - 1] ?? '')}</text>
+          <text x={PAD.left} y={H - 4} textAnchor="start" className="fill-ink-300 text-[10px]">{fmtDay(dates[0] ?? '')}</text>
+          <text x={W - PAD.right} y={H - 4} textAnchor="end" className="fill-ink-300 text-[10px]">{fmtDay(dates[n - 1] ?? '')}</text>
 
           {/* survol */}
           {hover !== null && (
             <>
-              <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke="#A6ABC6" strokeWidth="1" strokeDasharray="3 3" />
+              <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke="#C7CBDA" strokeWidth="1" strokeDasharray="3 3" />
               {data.map((s, si) => (
-                <circle key={si} cx={x(hover)} cy={y(s.values[hover] ?? 0)} r="3.5" fill="#fff" stroke={s.color} strokeWidth="2" />
+                <circle key={si} cx={x(hover)} cy={y(s.values[hover] ?? 0)} r="4" fill="#fff" stroke={s.color} strokeWidth="2.25" />
               ))}
             </>
           )}
@@ -185,19 +232,29 @@ export function DailyChart({
 
         {hover !== null && (
           <div
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-lg bg-ink-900 px-2 py-1 text-[11px] text-white shadow-lg"
-            style={{ left: `${(x(hover) / W) * 100}%`, top: 0 }}
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-ink-900 px-2.5 py-1.5 text-[11px] text-white shadow-lg"
+            style={{ left: `${(x(hover) / W) * 100}%`, top: -4 }}
           >
-            <div className="font-medium">{fmtDay(dates[hover] ?? '')}</div>
+            <div className="mb-0.5 font-semibold text-white/70">{fmtDay(dates[hover] ?? '')}</div>
             {data.map((s) => (
               <div key={s.label} className="flex items-center gap-1.5 whitespace-nowrap">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.color }} />
-                {series.length > 1 ? `${s.label}: ` : ''}{s.values[hover] ?? 0}
+                {multi ? `${s.label} ` : ''}
+                <span className="font-semibold tabular-nums">{fmtNum(s.values[hover] ?? 0)}</span>
               </div>
             ))}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-ink-50 px-2.5 py-1.5 text-right">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="text-sm font-semibold text-ink-800 tabular-nums">{value}</div>
     </div>
   );
 }
