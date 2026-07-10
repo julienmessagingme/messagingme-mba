@@ -22,6 +22,7 @@ function ContactsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'import'>('list');
+  const [detail, setDetail] = useState<Contact | null>(null);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -65,7 +66,8 @@ function ContactsInner({ session }: { session: Session }) {
         </div>
       </div>
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      <ContactsTable contacts={contacts} loading={loading} />
+      <ContactsTable contacts={contacts} loading={loading} onSelect={setDetail} />
+      {detail && <ContactDetail contact={detail} onClose={() => setDetail(null)} />}
     </section>
   );
 }
@@ -339,7 +341,14 @@ const OPT_IN_LABEL: Record<string, { text: string; cls: string }> = {
   unknown: { text: 'inconnu', cls: 'bg-ink-100 text-ink-600' },
 };
 
-function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: boolean }) {
+/** Valeur d'un champ perso (insensible à la casse pour les clés type prenom/prénom). */
+function fieldValue(c: Contact, key: string): string | null {
+  const f = c.fields ?? {};
+  const v = f[key] ?? f[key.toLowerCase()];
+  return v == null || String(v).trim() === '' ? null : String(v);
+}
+
+function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; loading: boolean; onSelect: (c: Contact) => void }) {
   if (loading) return <p className="text-sm text-ink-500">Chargement...</p>;
   if (contacts.length === 0)
     return (
@@ -349,46 +358,92 @@ function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: bo
     );
   return (
     <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
-      <table className="w-full min-w-[560px] text-sm">
+      <table className="w-full min-w-[520px] text-sm">
         <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
           <tr>
             <th className="px-4 py-2.5 font-medium">Nom</th>
+            <th className="px-4 py-2.5 font-medium">Prénom</th>
             <th className="px-4 py-2.5 font-medium">Téléphone</th>
-            <th className="px-4 py-2.5 font-medium">Consentement</th>
-            <th className="px-4 py-2.5 font-medium">Tags</th>
-            <th className="px-4 py-2.5 font-medium">Champs</th>
+            <th className="px-4 py-2.5 font-medium">Opt-in</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-100">
           {contacts.map((c) => {
             const badge = OPT_IN_LABEL[c.optInStatus] ?? OPT_IN_LABEL.unknown!;
-            const fieldKeys = Object.keys(c.fields ?? {});
             return (
-              <tr key={c.id} className="hover:bg-ink-50">
-                <td className="px-4 py-2.5">{c.profileName ?? <span className="text-ink-400">-</span>}</td>
+              <tr key={c.id} onClick={() => onSelect(c)} className="cursor-pointer transition hover:bg-brand-50">
+                <td className="px-4 py-2.5 font-medium text-ink-900">{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
+                <td className="px-4 py-2.5">{fieldValue(c, 'prenom') ?? <span className="text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5 font-mono text-xs">{c.phoneE164 ?? '-'}</td>
                 <td className="px-4 py-2.5">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span>
-                </td>
-                <td className="px-4 py-2.5">
-                  {(c.tags ?? []).length === 0 ? (
-                    <span className="text-ink-400">-</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {c.tags.map((t) => (
-                        <span key={t} className="rounded bg-brand-50 px-1.5 py-0.5 text-[11px] text-brand-700">{t}</span>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-2.5 text-xs text-ink-500">
-                  {fieldKeys.length === 0 ? '-' : fieldKeys.map((k) => `${k}: ${String(c.fields[k])}`).join(', ')}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Fiche détail d'un contact : tous les attributs, champs perso et tags. */
+function ContactDetail({ contact, onClose }: { contact: Contact; onClose: () => void }) {
+  const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
+  const fieldEntries = Object.entries(contact.fields ?? {}).filter(([, v]) => v != null && String(v).trim() !== '');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{contact.profileName ?? `+${contact.phoneE164 ?? ''}`}</h3>
+            <p className="font-mono text-xs text-ink-400">{contact.phoneE164 ?? '-'}</p>
+          </div>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 text-sm">
+          <span className="text-ink-400">Nom</span>
+          <span className="text-ink-900">{contact.profileName ?? '-'}</span>
+          <span className="text-ink-400">Prénom</span>
+          <span className="text-ink-900">{fieldValue(contact, 'prenom') ?? '-'}</span>
+          <span className="text-ink-400">Téléphone</span>
+          <span className="font-mono text-ink-900">{contact.phoneE164 ?? '-'}</span>
+          <span className="text-ink-400">Consentement</span>
+          <span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span></span>
+          <span className="text-ink-400">Ajouté le</span>
+          <span className="text-ink-900">{new Date(contact.createdAt).toLocaleDateString('fr-FR')}</span>
+        </div>
+
+        <div className="mt-5">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Tags</h4>
+          {(contact.tags ?? []).length === 0 ? (
+            <p className="text-sm text-ink-400">Aucun tag.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {contact.tags.map((t) => (
+                <span key={t} className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{t}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Champs</h4>
+          {fieldEntries.length === 0 ? (
+            <p className="text-sm text-ink-400">Aucun champ perso.</p>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-ink-200">
+              {fieldEntries.map(([k, v], i) => (
+                <div key={k} className={`grid grid-cols-[130px_1fr] gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
+                  <span className="truncate text-ink-500">{k}</span>
+                  <span className="break-words text-ink-900">{String(v)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
