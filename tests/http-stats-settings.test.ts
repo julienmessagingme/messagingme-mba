@@ -23,6 +23,8 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       templates: { utility: [{ date: '2026-07-09', count: 1 }], marketing: [{ date: '2026-07-09', count: 2 }] },
       exchanged: [{ date: '2026-07-09', count: 5 }],
     }),
+    getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
+    getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724 }),
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
@@ -63,6 +65,31 @@ describe('stats route', () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats' });
     expect(res.statusCode).toBe(401);
+    await a.close();
+  });
+
+  it('GET /stats/templates -> breakdown + pricing', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/templates?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const b = res.json<{ breakdown: Array<{ name: string; count: number }>; pricing: { totalCost: number; byCategory: Record<string, { ratePerMessage: number }> } }>();
+    expect(b.breakdown[0]).toEqual({ name: 'promo', category: 'marketing', count: 4 });
+    expect(b.pricing.byCategory.marketing?.ratePerMessage).toBeCloseTo(0.1431);
+    await a.close();
+  });
+
+  it('GET /stats/templates agent -> 403 (admin-only)', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/templates', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('GET /stats/templates pricing null (Meta indispo) -> 200, breakdown seul', async () => {
+    const a = app({ stats: { getPricing: async () => null } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/templates', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ pricing: unknown }>().pricing).toBeNull();
     await a.close();
   });
 });

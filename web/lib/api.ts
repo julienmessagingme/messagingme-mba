@@ -286,6 +286,30 @@ export function getStats(tenantId: string, days = 30): Promise<DashboardStats> {
   return request<DashboardStats>(`/tenants/${tenantId}/stats?days=${days}`);
 }
 
+export interface TemplateBreakdownRow {
+  name: string;
+  category: string | null;
+  count: number;
+}
+export interface CategoryPricing {
+  category: string;
+  cost: number;
+  volume: number;
+  ratePerMessage: number;
+}
+export interface PricingSummary {
+  byCategory: Record<string, CategoryPricing>;
+  totalCost: number;
+}
+export interface TemplateStats {
+  breakdown: TemplateBreakdownRow[];
+  /** null si Meta indisponible : afficher le volume seul, jamais un faux prix. */
+  pricing: PricingSummary | null;
+}
+export function getTemplateStats(tenantId: string, days = 30): Promise<TemplateStats> {
+  return request<TemplateStats>(`/tenants/${tenantId}/stats/templates?days=${days}`);
+}
+
 export interface TenantSettings {
   mbaEnabled: boolean;
 }

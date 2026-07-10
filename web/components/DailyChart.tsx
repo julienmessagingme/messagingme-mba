@@ -31,8 +31,49 @@ const W = 520;
 const H = 150;
 const PAD = { top: 12, right: 12, bottom: 20, left: 28 };
 
+const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
+
+/** Courbe lissée (spline Catmull-Rom -> Bézier cubique, tension douce) passant par tous les points.
+ *  Rend des lignes moins « cassées » que des segments droits, sans dépendance externe. Les points de
+ *  contrôle en y sont bornés à l'intervalle des deux ancres du segment : pas d'overshoot de la spline
+ *  sous 0 (ou au-dessus du max) sur des données en pic — l'aire ne déborde jamais sous la ligne du 0. */
+function smoothLine(pts: Array<{ x: number; y: number }>): string {
+  if (pts.length === 0) return '';
+  if (pts.length === 1) return `M ${pts[0]!.x.toFixed(1)} ${pts[0]!.y.toFixed(1)}`;
+  const t = 0.18; // tension : 0 = segments droits, plus haut = plus courbe (0.18 = doux)
+  let d = `M ${pts[0]!.x.toFixed(1)} ${pts[0]!.y.toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[i - 1] ?? pts[i]!;
+    const p1 = pts[i]!;
+    const p2 = pts[i + 1]!;
+    const p3 = pts[i + 2] ?? p2;
+    const loY = Math.min(p1.y, p2.y);
+    const hiY = Math.max(p1.y, p2.y);
+    const c1x = p1.x + (p2.x - p0.x) * t;
+    const c1y = clamp(p1.y + (p2.y - p0.y) * t, loY, hiY);
+    const c2x = p2.x - (p3.x - p1.x) * t;
+    const c2y = clamp(p2.y - (p3.y - p1.y) * t, loY, hiY);
+    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
 /** Graphique « 1 point/jour » (aire + ligne), 1 ou plusieurs séries superposées. SVG maison. */
-export function DailyChart({ title, series, days, subtitle }: { title: string; series: ChartSeries[]; days: number; subtitle?: string }) {
+export function DailyChart({
+  title,
+  series,
+  days,
+  subtitle,
+  summary = 'sum',
+}: {
+  title: string;
+  series: ChartSeries[];
+  days: number;
+  subtitle?: string;
+  /** Grand chiffre affiché : 'sum' = total de la période (séries en flux) ; 'last' = dernière valeur
+   *  (séries CUMULÉES, ex. contacts — sommer les snapshots journaliers n'aurait aucun sens). */
+  summary?: 'sum' | 'last';
+}) {
   const [hover, setHover] = useState<number | null>(null);
   const dates = useMemo(() => lastNDays(days), [days]);
 
@@ -45,7 +86,11 @@ export function DailyChart({ title, series, days, subtitle }: { title: string; s
     [series, dates],
   );
 
-  const total = data.reduce((acc, s) => acc + s.values.reduce((a, b) => a + b, 0), 0);
+  const lastVals = data[0]?.values ?? [];
+  const total =
+    summary === 'last'
+      ? lastVals[lastVals.length - 1] ?? 0
+      : data.reduce((acc, s) => acc + s.values.reduce((a, b) => a + b, 0), 0);
   const max = Math.max(1, ...data.flatMap((s) => s.values));
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
@@ -54,8 +99,10 @@ export function DailyChart({ title, series, days, subtitle }: { title: string; s
   const y = (v: number) => PAD.top + innerH - (v / max) * innerH;
 
   function pathFor(values: number[]): { line: string; area: string } {
-    const line = values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
-    const area = `${line} L ${x(n - 1).toFixed(1)} ${(PAD.top + innerH).toFixed(1)} L ${x(0).toFixed(1)} ${(PAD.top + innerH).toFixed(1)} Z`;
+    const pts = values.map((v, i) => ({ x: x(i), y: y(v) }));
+    const line = smoothLine(pts);
+    const base = (PAD.top + innerH).toFixed(1);
+    const area = pts.length === 0 ? '' : `${line} L ${x(n - 1).toFixed(1)} ${base} L ${x(0).toFixed(1)} ${base} Z`;
     return { line, area };
   }
 

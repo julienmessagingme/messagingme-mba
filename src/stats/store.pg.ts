@@ -6,9 +6,17 @@ export interface DailyPoint {
 }
 
 export interface DashboardStats {
+  /** CUMULATIF : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
   contacts: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
+}
+
+/** Un template envoyé sur la période, avec son volume (pour le dropdown + le prix estimé). */
+export interface TemplateBreakdownRow {
+  name: string;
+  category: string | null; // 'marketing' | 'utility' | null (envoi inbox sans catégorie)
+  count: number;
 }
 
 const TZ = 'Europe/Paris';
@@ -21,11 +29,31 @@ export class PgStatsStore {
     const window = Math.min(Math.max(days, 1), 365);
     const since = new Date(Date.now() - window * 24 * 3600 * 1000);
 
-    // 1) Contacts créés / jour.
+    // 1) Contacts CUMULÉS / jour : total courant = baseline (contacts créés AVANT la fenêtre) +
+    //    somme courante des nouveaux/jour. Série DENSE (generate_series en tz Europe/Paris) pour que
+    //    les jours sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
     const contacts = await this.pool.query<{ d: string; count: string }>(
-      `select to_char(date_trunc('day', created_at at time zone $3), 'YYYY-MM-DD') as d, count(*)::int as count
-       from contacts where tenant_id = $1 and created_at >= $2
-       group by d order by d`,
+      `with bounds as (
+         select date_trunc('day', $2::timestamptz at time zone $3) as start_day,
+                date_trunc('day', now() at time zone $3) as end_day
+       ),
+       series as (
+         select generate_series((select start_day from bounds), (select end_day from bounds), interval '1 day')::date as day
+       ),
+       baseline as (
+         select count(*)::int as n from contacts
+         where tenant_id = $1 and (created_at at time zone $3) < (select start_day from bounds)
+       ),
+       daily as (
+         select date_trunc('day', created_at at time zone $3)::date as day, count(*)::int as n
+         from contacts
+         where tenant_id = $1 and (created_at at time zone $3) >= (select start_day from bounds)
+         group by 1
+       )
+       select to_char(s.day, 'YYYY-MM-DD') as d,
+              ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0))::int as count
+       from series s left join daily dl on dl.day = s.day
+       order by s.day`,
       [tenantId, since, TZ],
     );
 
@@ -71,5 +99,31 @@ export class PgStatsStore {
       templates: { utility, marketing },
       exchanged: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
     };
+  }
+
+  /**
+   * Volume par template envoyé sur la période (campagnes + envois inbox), pour le dropdown du
+   * dashboard et le prix estimé. Exclut les livraisons en échec (delivery_status='failed').
+   */
+  async getTemplateBreakdown(tenantId: string, days: number): Promise<TemplateBreakdownRow[]> {
+    const window = Math.min(Math.max(days, 1), 365);
+    const since = new Date(Date.now() - window * 24 * 3600 * 1000);
+    const res = await this.pool.query<{ name: string; category: string | null; count: string }>(
+      `select name, category, sum(cnt)::int as count from (
+         select c.template_name as name, c.category as category, count(*) cnt
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id
+         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= $2
+           and (r.delivery_status is null or r.delivery_status <> 'failed')
+         group by c.template_name, c.category
+         union all
+         select m.template_name as name, m.template_category as category, count(*) cnt
+         from conversation_messages m join conversations cv on cv.id = m.conversation_id
+         where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
+           and m.template_name is not null and m.created_at >= $2
+         group by m.template_name, m.template_category
+       ) x group by name, category order by count desc`,
+      [tenantId, since],
+    );
+    return res.rows.map((r) => ({ name: r.name, category: r.category, count: Number(r.count) }));
   }
 }

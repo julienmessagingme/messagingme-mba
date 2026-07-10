@@ -71,6 +71,20 @@ prod. Résidus non bloquants ci-dessous.
   `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
   non-déterminisme multi-tenant.
 
+## Dashboard v2 — prix templates BLOQUÉ sur Advanced Access (2026-07-10)
+
+Le dashboard affiche le **prix estimé par template** via `pricing_analytics` (Graph API). Code prêt et
+testé, MAIS l'appel live renvoie **403 `(#200) Provide valid app ID`** sur TOUTES les lectures analytics
+ET même `id,name,currency` du WABA. Cause confirmée (doc Meta) : les lectures analytics avec
+`whatsapp_business_management` exigent l'**Advanced Access** (App Review) ; en accès standard -> #200.
+C'est le MÊME gate App Review déjà listé pour l'onboarding client (Access Verification + App Review).
+Messaging + templates create/list marchent (accès standard sur notre propre WABA), mais PAS l'analytics.
+
+- **Impact** : le dashboard affiche les volumes par template + « Prix Meta indisponible » (dégradation
+  propre, jamais de faux chiffre). Le prix s'allumera AUTOMATIQUEMENT après l'App Review, sans code.
+- **Action pour débloquer** : passer l'app en **Advanced Access** sur `whatsapp_business_management`
+  (App Review Meta, screencast). Tâche Julien/Meta, pas du code.
+
 ## Dette Feature 2 — Admin + RBAC (revue adversariale 2026-07-10)
 
 RBAC posé : rôles `admin`/`agent`, agent = inbox uniquement (garde serveur `makeRequireRole`

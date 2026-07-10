@@ -12,6 +12,7 @@ import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
 import { MetaTemplateClient } from './meta/templates';
+import { MetaPricingClient } from './meta/pricing';
 import { MetaClient } from './meta/client';
 import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
   const transport = new FetchTransport();
+  const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const app = buildServer({
     queue,
     auth: { users: new PgUserAuthStore(pool), secret: config.AUTH_SECRET },
@@ -72,7 +74,17 @@ async function main(): Promise<void> {
         return (await client.sendTemplate(to, spec)).messageId;
       },
     },
-    stats: { getDashboard: (tenant, days) => statsStore.getDashboard(tenant, days) },
+    stats: {
+      getDashboard: (tenant, days) => statsStore.getDashboard(tenant, days),
+      getTemplateBreakdown: (tenant, days) => statsStore.getTemplateBreakdown(tenant, days),
+      getPricing: async (tenant, days) => {
+        const wabaId = await repo.getTenantWabaId(tenant);
+        if (!wabaId) return null;
+        const endTs = Math.floor(Date.now() / 1000);
+        const startTs = endTs - Math.min(Math.max(days, 1), 365) * 24 * 3600;
+        return pricingClient.getPricingAnalytics(wabaId, startTs, endTs);
+      },
+    },
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
