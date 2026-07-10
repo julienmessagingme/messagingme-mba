@@ -103,6 +103,45 @@ describe('inbox routes', () => {
     await a.close();
   });
 
+  it('POST send-template -> persiste la catégorie normalisée en minuscule (le split dashboard)', async () => {
+    let recorded: { type?: string; cat?: string | null; name?: string | null } = {};
+    const a = app({
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      recordOutbound: async (_id, _body, _msg, type, cat, name) => { recorded = { type, cat, name }; },
+    });
+    const res = await a.inject({
+      method: 'POST',
+      url: '/tenants/t1/conversations/c1/send-template',
+      ...auth(),
+      payload: { templateName: 'promo', language: 'fr', templateCategory: 'MARKETING' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(recorded).toEqual({ type: 'template', cat: 'marketing', name: 'promo' });
+    await a.close();
+  });
+
+  it('POST send-template -> catégorie absente ou invalide persiste null', async () => {
+    const cats: Array<string | null> = [];
+    const a = app({
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      recordOutbound: async (_id, _body, _msg, _type, cat) => { cats.push(cat ?? null); },
+    });
+    // catégorie inconnue (ex. AUTHENTICATION / typo) -> null
+    const r1 = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(),
+      payload: { templateName: 'otp', language: 'fr', templateCategory: 'AUTHENTICATION' },
+    });
+    // catégorie absente -> null
+    const r2 = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(),
+      payload: { templateName: 'otp', language: 'fr' },
+    });
+    expect(r1.statusCode).toBe(200);
+    expect(r2.statusCode).toBe(200);
+    expect(cats).toEqual([null, null]);
+    await a.close();
+  });
+
   it('POST send-template sans templateName -> 400', async () => {
     const a = app();
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(), payload: { language: 'fr' } });

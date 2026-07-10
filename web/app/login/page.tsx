@@ -20,7 +20,7 @@ export default function LoginPage() {
     try {
       const res = await login(email.trim(), password);
       saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-      router.replace('/contacts');
+      router.replace(res.user.role === 'agent' ? '/inbox' : '/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connexion impossible');
     } finally {

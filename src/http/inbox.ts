@@ -22,7 +22,14 @@ export interface InboxRouteDeps {
     tenantId: string,
   ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
   getMessages(conversationId: string): Promise<ConversationMessage[]>;
-  recordOutbound(conversationId: string, body: string, messageId: string | null, type?: string): Promise<void>;
+  recordOutbound(
+    conversationId: string,
+    body: string,
+    messageId: string | null,
+    type?: string,
+    templateCategory?: string | null,
+    templateName?: string | null,
+  ): Promise<void>;
   /** Numéro du tenant depuis lequel répondre. */
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
   /** Envoie une réponse texte (fenêtre de service 24 h). Retourne le message_id. */
@@ -101,6 +108,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       bodyParams: unknown;
       headerMediaUrl: unknown;
       headerFormat: unknown;
+      templateCategory: unknown;
     }>;
     if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName requis' });
     if (!nonEmpty(b.language)) return reply.code(400).send({ error: 'language requis' });
@@ -114,6 +122,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const headerMediaUrl = nonEmpty(b.headerMediaUrl) ? b.headerMediaUrl : undefined;
     const headerFormat =
       b.headerFormat === 'IMAGE' || b.headerFormat === 'VIDEO' || b.headerFormat === 'DOCUMENT' ? b.headerFormat : undefined;
+    // Catégorie du template (pour les stats) : normalisée en minuscules marketing|utility.
+    const catRaw = typeof b.templateCategory === 'string' ? b.templateCategory.toLowerCase() : '';
+    const templateCategory = catRaw === 'marketing' || catRaw === 'utility' ? catRaw : null;
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
@@ -127,7 +138,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       ...(headerMediaUrl ? { headerMediaUrl } : {}),
       ...(headerFormat ? { headerFormat } : {}),
     });
-    await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template');
+    await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName);
     return reply.code(200).send({ messageId });
   });
 }

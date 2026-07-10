@@ -7,7 +7,8 @@ import { getSession } from '@/lib/session';
 export default function Home() {
   const router = useRouter();
   useEffect(() => {
-    router.replace(getSession() ? '/contacts' : '/login');
+    const s = getSession();
+    router.replace(!s ? '/login' : s.role === 'agent' ? '/inbox' : '/dashboard');
   }, [router]);
   return null;
 }

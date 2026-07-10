@@ -278,6 +278,7 @@ function TemplateSendPanel({
         templateName: sel.name,
         language: sel.language,
         bodyParams: Array.from({ length: varCount }, (_, i) => vars[i] ?? ''),
+        ...(sel.category ? { templateCategory: sel.category } : {}),
         ...(needsMedia && imageUrl.trim()
           ? { headerMediaUrl: imageUrl.trim(), headerFormat: sel.headerFormat as 'IMAGE' | 'VIDEO' | 'DOCUMENT' }
           : {}),

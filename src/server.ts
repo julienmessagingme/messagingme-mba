@@ -6,6 +6,8 @@ import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
+import { registerStats } from './http/stats';
+import { registerSettings } from './http/settings';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -14,6 +16,8 @@ import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
 import type { TemplateRouteDeps } from './http/templates';
 import type { InboxRouteDeps } from './http/inbox';
+import type { StatsRouteDeps } from './http/stats';
+import type { SettingsRouteDeps } from './http/settings';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -32,6 +36,10 @@ export interface ServerDeps {
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
   inbox?: InboxRouteDeps;
+  /** Stats du dashboard (séries 1 pt/jour). */
+  stats?: StatsRouteDeps;
+  /** Réglages tenant (toggle MBA). */
+  settings?: SettingsRouteDeps;
 }
 
 /**
@@ -77,6 +85,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAuth);
   if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
   if (deps.inbox) registerInbox(app, deps.inbox, requireAuth);
+  if (deps.stats) registerStats(app, deps.stats, requireAuth);
+  if (deps.settings) registerSettings(app, deps.settings, requireAuth);
 
   return app;
 }

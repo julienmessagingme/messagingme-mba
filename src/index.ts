@@ -7,6 +7,8 @@ import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
+import { PgStatsStore } from './stats/store.pg';
+import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaClient } from './meta/client';
@@ -22,6 +24,8 @@ async function main(): Promise<void> {
   const repo = new PgCampaignRepo(pool);
   const contactStore = new PgContactStore(pool);
   const inboxStore = new PgInboxStore(pool);
+  const statsStore = new PgStatsStore(pool);
+  const settingsStore = new PgTenantSettingsStore(pool);
   const transport = new FetchTransport();
   const app = buildServer({
     queue,
@@ -49,7 +53,7 @@ async function main(): Promise<void> {
       listConversations: (tenant) => inboxStore.listConversations(tenant),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
-      recordOutbound: (id, body, msgId, type) => inboxStore.recordOutbound(id, body, msgId, type),
+      recordOutbound: (id, body, msgId, type, cat, name) => inboxStore.recordOutbound(id, body, msgId, type, cat, name),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (phoneNumberId, to, text) => {
         const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
@@ -65,6 +69,11 @@ async function main(): Promise<void> {
         const spec = { name: tpl.name, language: tpl.language, ...(components.length > 0 ? { components } : {}) };
         return (await client.sendTemplate(to, spec)).messageId;
       },
+    },
+    stats: { getDashboard: (tenant, days) => statsStore.getDashboard(tenant, days) },
+    settings: {
+      getSettings: (tenant) => settingsStore.get(tenant),
+      setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
     },
   });
 

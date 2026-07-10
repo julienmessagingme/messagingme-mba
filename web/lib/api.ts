@@ -261,10 +261,37 @@ export interface SendTemplateInput {
   /** URL publique du média de header (image/vidéo/document), si le template en a un. */
   headerMediaUrl?: string;
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  /** Catégorie du template (pour les stats du dashboard) : MARKETING | UTILITY. */
+  templateCategory?: string;
 }
 export function sendTemplateToConversation(tenantId: string, conversationId: string, input: SendTemplateInput): Promise<{ messageId: string }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/send-template`, {
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+// --- Dashboard (stats + réglages) ---
+
+export interface DailyPoint {
+  date: string;
+  count: number;
+}
+export interface DashboardStats {
+  contacts: DailyPoint[];
+  templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
+  exchanged: DailyPoint[];
+}
+export function getStats(tenantId: string, days = 30): Promise<DashboardStats> {
+  return request<DashboardStats>(`/tenants/${tenantId}/stats?days=${days}`);
+}
+
+export interface TenantSettings {
+  mbaEnabled: boolean;
+}
+export function getSettings(tenantId: string): Promise<TenantSettings> {
+  return request<TenantSettings>(`/tenants/${tenantId}/settings`);
+}
+export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<TenantSettings> {
+  return request<TenantSettings>(`/tenants/${tenantId}/settings`, { method: 'PUT', body: JSON.stringify({ mbaEnabled }) });
 }

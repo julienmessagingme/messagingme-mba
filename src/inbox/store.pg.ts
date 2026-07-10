@@ -118,13 +118,21 @@ export class PgInboxStore implements InboxStore {
     }));
   }
 
-  /** Journalise une réponse sortante de l'agent (texte libre ou template). */
-  async recordOutbound(conversationId: string, body: string, messageId: string | null, type = 'text'): Promise<void> {
+  /** Journalise une réponse sortante de l'agent (texte libre ou template). Pour un template,
+   *  `templateCategory` (marketing|utility) + `templateName` alimentent les stats du dashboard. */
+  async recordOutbound(
+    conversationId: string,
+    body: string,
+    messageId: string | null,
+    type = 'text',
+    templateCategory: string | null = null,
+    templateName: string | null = null,
+  ): Promise<void> {
     await this.pool.query(`update conversations set last_message_at = now(), last_preview = $2 where id = $1`, [conversationId, body]);
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id)
-       values ($1, 'out', $4, $2, $3)`,
-      [conversationId, body, messageId, type],
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name)
+       values ($1, 'out', $4, $2, $3, $5, $6)`,
+      [conversationId, body, messageId, type, templateCategory, templateName],
     );
   }
 }
