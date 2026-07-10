@@ -47,6 +47,26 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
     return reply.code(200).send({ contacts });
   });
 
+  // Aperçu : parse le CSV + propose un mapping (même parseCsv que l'import réel -> en-têtes
+  // identiques, pas de désync). Le front affiche l'écran de mapping pré-rempli.
+  app.post('/tenants/:tenantId/contacts/import/preview', guard, async (req, reply) => {
+    const effectiveTenant = scopeTenant(req);
+    if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const body = (req.body ?? {}) as { csv?: unknown };
+    if (typeof body.csv !== 'string' || body.csv.trim() === '') {
+      return reply.code(400).send({ error: 'csv requis (texte brut)' });
+    }
+    const parsed = parseCsv(body.csv);
+    if (parsed.headers.length === 0) return reply.code(400).send({ error: 'aucune colonne détectée (1re ligne = en-têtes)' });
+    return reply.code(200).send({
+      headers: parsed.headers,
+      sampleRows: parsed.rows.slice(0, 4),
+      rowCount: parsed.rows.length,
+      mapping: mappingFromHeaders(parsed.headers),
+    });
+  });
+
   app.post('/tenants/:tenantId/contacts/import', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });

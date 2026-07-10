@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listContacts, importCsv, type Contact, type ImportReport } from '@/lib/api';
+import {
+  listContacts,
+  previewImport,
+  importCsv,
+  type Contact,
+  type ImportReport,
+  type ImportPreview,
+  type ColumnMapping,
+} from '@/lib/api';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -13,11 +21,12 @@ function ContactsInner({ session }: { session: Session }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'list' | 'import'>('list');
 
   const reload = useCallback(async () => {
     setError(null);
     try {
-      const { contacts } = await listContacts(session.tenantId);
+      const { contacts } = await listContacts(session.tenantId, { limit: 500 });
       setContacts(contacts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible');
@@ -30,41 +39,136 @@ function ContactsInner({ session }: { session: Session }) {
     void reload();
   }, [reload]);
 
+  if (mode === 'import') {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <button onClick={() => setMode('list')} className="mb-4 text-sm text-brand-600 hover:underline">
+          ← Retour aux contacts
+        </button>
+        <ImportScreen tenantId={session.tenantId} onImported={() => { void reload(); setMode('list'); }} />
+      </div>
+    );
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-      <ImportPanel tenantId={session.tenantId} onImported={reload} />
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">Contacts ({contacts.length})</h2>
+    <section>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Contacts ({contacts.length})</h2>
+        <div className="flex items-center gap-3">
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+          <button
+            onClick={() => setMode('import')}
+            className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
+          >
+            + Importer un CSV
+          </button>
         </div>
-        {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        <ContactsTable contacts={contacts} loading={loading} />
-      </section>
-    </div>
+      </div>
+      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      <ContactsTable contacts={contacts} loading={loading} />
+    </section>
   );
 }
 
-function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: () => void }) {
+// --- Import CSV avec mapping des colonnes ---
+
+const inputCls =
+  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
+// Catégories proposées pour chaque colonne. phone/name = attributs standard ; les autres presets
+// et « custom » sont des champs perso (fields.<key>).
+const CATEGORIES: Array<{ value: string; label: string }> = [
+  { value: 'phone', label: 'Téléphone' },
+  { value: 'name', label: 'Nom' },
+  { value: 'prenom', label: 'Prénom' },
+  { value: 'email', label: 'Email' },
+  { value: 'ville', label: 'Ville' },
+  { value: 'societe', label: 'Société' },
+  { value: 'custom', label: 'Champ perso…' },
+  { value: 'ignore', label: 'Ignorer' },
+];
+const PRESET_KEYS = ['prenom', 'email', 'ville', 'societe'];
+
+function slug(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+interface Choice {
+  choice: string;
+  customKey: string;
+}
+
+function initChoices(preview: ImportPreview): Record<string, Choice> {
+  const out: Record<string, Choice> = {};
+  for (const h of preview.headers) {
+    const m = preview.mapping.columns[h] ?? { target: 'ignore' as const };
+    if (m.target === 'phone') out[h] = { choice: 'phone', customKey: '' };
+    else if (m.target === 'name') out[h] = { choice: 'name', customKey: '' };
+    else if (m.target === 'ignore') out[h] = { choice: 'ignore', customKey: '' };
+    else {
+      const k = m.key ?? '';
+      out[h] = PRESET_KEYS.includes(k) ? { choice: k, customKey: '' } : { choice: 'custom', customKey: k };
+    }
+  }
+  return out;
+}
+
+function buildMapping(headers: string[], choices: Record<string, Choice>): ColumnMapping {
+  const columns: ColumnMapping['columns'] = {};
+  for (const h of headers) {
+    const c = choices[h] ?? { choice: 'ignore', customKey: '' };
+    if (c.choice === 'phone') columns[h] = { target: 'phone' };
+    else if (c.choice === 'name') columns[h] = { target: 'name' };
+    else if (c.choice === 'ignore') columns[h] = { target: 'ignore' };
+    else if (c.choice === 'custom') columns[h] = { target: 'custom', key: slug(c.customKey) || slug(h) };
+    else columns[h] = { target: 'custom', key: c.choice };
+  }
+  return { columns };
+}
+
+function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: () => void }) {
   const [csv, setCsv] = useState('');
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [choices, setChoices] = useState<Record<string, Choice>>({});
   const [optIn, setOptIn] = useState(true);
   const [tagsInput, setTagsInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [report, setReport] = useState<ImportReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<ImportReport | null>(null);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) setCsv(await file.text());
   }
 
+  async function analyze() {
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await previewImport(tenantId, csv);
+      setPreview(p);
+      setChoices(initChoices(p));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Analyse impossible');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit() {
+    if (!preview) return;
     setBusy(true);
     setError(null);
     setReport(null);
     try {
       const tags = tagsInput.split(',').map((t) => t.trim()).filter((t) => t !== '');
-      const r = await importCsv(tenantId, csv, optIn, tags);
+      const mapping = buildMapping(preview.headers, choices);
+      const r = await importCsv(tenantId, csv, optIn, tags, mapping);
       setReport(r);
       onImported();
     } catch (err) {
@@ -74,49 +178,108 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
     }
   }
 
+  function setChoice(header: string, patch: Partial<Choice>) {
+    setChoices((prev) => ({ ...prev, [header]: { ...prev[header]!, ...patch } }));
+  }
+
+  const hasPhone = preview ? preview.headers.some((h) => choices[h]?.choice === 'phone') : false;
+
+  // Étape 1 : coller / choisir le CSV.
+  if (!preview) {
+    return (
+      <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Importer un CSV</h2>
+        <p className="mt-1 text-xs text-ink-500">1re ligne = en-têtes. À l&apos;étape suivante tu associes chaque colonne à un champ.</p>
+
+        <label className="mt-4 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-3 py-2 text-sm text-ink-600 hover:border-brand-500 hover:text-brand-600">
+          Choisir un fichier .csv
+          <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
+        </label>
+
+        <textarea
+          value={csv}
+          onChange={(e) => setCsv(e.target.value)}
+          rows={8}
+          placeholder={'Prénom,Nom,Téléphone,Ville\nJulie,Dumas,+33612345678,Lyon'}
+          className="mt-3 w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        />
+
+        {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+        <button
+          onClick={analyze}
+          disabled={busy || csv.trim() === ''}
+          className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+        >
+          {busy ? 'Analyse...' : 'Analyser le CSV →'}
+        </button>
+      </section>
+    );
+  }
+
+  // Étape 2 : mapping des colonnes.
   return (
-    <section className="h-fit rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">Importer un CSV</h2>
+    <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Associer les colonnes</h2>
+        <button onClick={() => { setPreview(null); setReport(null); }} className="text-xs text-brand-600 hover:underline">
+          Changer de fichier
+        </button>
+      </div>
       <p className="mt-1 text-xs text-ink-500">
-        1re ligne = en-têtes. Les colonnes téléphone/nom sont reconnues, le reste devient des champs perso.
+        {preview.headers.length} colonnes · {preview.rowCount} lignes. Choisis à quoi correspond chaque colonne.
       </p>
 
-      <label className="mt-4 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-3 py-2 text-sm text-ink-600 hover:border-brand-500 hover:text-brand-600">
-        Choisir un fichier .csv
-        <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
-      </label>
-
-      <textarea
-        value={csv}
-        onChange={(e) => setCsv(e.target.value)}
-        rows={7}
-        placeholder={'Nom,Téléphone,Ville\nJulie,+33612345678,Lyon'}
-        className="mt-3 w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-      />
-
-      <div className="mt-3">
-        <label className="mb-1 block text-sm font-medium text-ink-700">Tags (séparés par des virgules)</label>
-        <input
-          value={tagsInput}
-          onChange={(e) => setTagsInput(e.target.value)}
-          placeholder="salon-2026, prospect"
-          className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-        />
-        <p className="mt-1 text-xs text-ink-400">Appliqués à tous les contacts de cet import (pour filtrer tes campagnes ensuite).</p>
+      <div className="mt-4 space-y-2">
+        {preview.headers.map((h) => {
+          const samples = preview.sampleRows.map((r) => r[h]).filter((v) => v && v.trim()).slice(0, 2).join(' · ');
+          const c = choices[h] ?? { choice: 'ignore', customKey: '' };
+          const ignored = c.choice === 'ignore';
+          return (
+            <div key={h} className={`flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 p-2.5 ${ignored ? 'opacity-60' : ''}`}>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-ink-900">{h}</div>
+                {samples && <div className="truncate text-xs text-ink-400">{samples}</div>}
+              </div>
+              <span className="text-ink-300">→</span>
+              <select
+                value={c.choice}
+                onChange={(e) => setChoice(h, { choice: e.target.value })}
+                className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat.value} value={cat.value}>{cat.label}</option>
+                ))}
+              </select>
+              {c.choice === 'custom' && (
+                <input
+                  value={c.customKey}
+                  onChange={(e) => setChoice(h, { customKey: e.target.value })}
+                  placeholder="nom du champ"
+                  className="w-32 shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      <label className="mt-3 flex items-center gap-2 text-sm text-ink-700">
-        <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
-        Ces contacts ont donné leur consentement (opt-in)
-      </label>
+      {!hasPhone && (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Associe au moins une colonne à <b>Téléphone</b> : c&apos;est la clé d&apos;un contact.
+        </p>
+      )}
 
-      <button
-        onClick={submit}
-        disabled={busy || csv.trim() === ''}
-        className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-      >
-        {busy ? 'Import en cours...' : 'Importer'}
-      </button>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-700">Tags (optionnel)</label>
+          <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="salon-2026, prospect" className={inputCls} />
+        </div>
+        <label className="flex items-end gap-2 pb-2 text-sm text-ink-700">
+          <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
+          Consentement (opt-in) donné
+        </label>
+      </div>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {report && (
@@ -125,14 +288,20 @@ function ImportPanel({ tenantId, onImported }: { tenantId: string; onImported: (
           {report.errors.length > 0 && (
             <ul className="mt-1 list-inside list-disc text-xs text-emerald-700">
               {report.errors.slice(0, 5).map((e, i) => (
-                <li key={i}>
-                  ligne {e.line} : {e.reason}
-                </li>
+                <li key={i}>ligne {e.line} : {e.reason}</li>
               ))}
             </ul>
           )}
         </div>
       )}
+
+      <button
+        onClick={submit}
+        disabled={busy || !hasPhone}
+        className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+      >
+        {busy ? 'Import en cours...' : `Importer ${preview.rowCount} lignes`}
+      </button>
     </section>
   );
 }
@@ -148,7 +317,7 @@ function ContactsTable({ contacts, loading }: { contacts: Contact[]; loading: bo
   if (contacts.length === 0)
     return (
       <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-        Aucun contact pour l&apos;instant. Importe un CSV pour commencer.
+        Aucun contact pour l&apos;instant. Clique « + Importer un CSV » pour commencer.
       </div>
     );
   return (

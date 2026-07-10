@@ -67,6 +67,46 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     await app.close();
   });
 
+  it('POST /import/preview -> colonnes + mapping suggéré (sans écrire)', async () => {
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import/preview',
+      ...auth(),
+      payload: { csv: 'Nom,Téléphone,Ville\nJulie,+33611111111,Lyon' },
+    });
+    expect(res.statusCode).toBe(200);
+    const b = res.json<{ headers: string[]; rowCount: number; mapping: { columns: Record<string, { target: string }> } }>();
+    expect(b.headers).toEqual(['Nom', 'Téléphone', 'Ville']);
+    expect(b.rowCount).toBe(1);
+    expect(b.mapping.columns['Téléphone']?.target).toBe('phone');
+    expect(b.mapping.columns['Nom']?.target).toBe('name');
+    expect(b.mapping.columns['Ville']?.target).toBe('custom');
+    expect(contacts.upserts).toHaveLength(0); // aperçu = zéro écriture
+    await app.close();
+  });
+
+  it('mapping explicite respecté (une colonne forcée en Ignorer)', async () => {
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      ...auth(),
+      payload: {
+        csv: 'A,B,C\nJulie,+33611111111,secret',
+        optIn: true,
+        mapping: { columns: { A: { target: 'name' }, B: { target: 'phone' }, C: { target: 'ignore' } } },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(contacts.upserts[0]?.profileName).toBe('Julie');
+    expect(contacts.upserts[0]?.phoneE164).toBe('+33611111111');
+    expect(contacts.upserts[0]?.fields).toEqual({}); // C ignorée
+    await app.close();
+  });
+
   it('sans token -> 401', async () => {
     const app = inject(new FakeContacts(), new FakeFields());
     const res = await app.inject({

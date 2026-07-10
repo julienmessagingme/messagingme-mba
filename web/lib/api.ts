@@ -76,10 +76,41 @@ export interface ImportReport {
   skipped: number;
   errors: Array<{ line: number; reason: string }>;
 }
-export function importCsv(tenantId: string, csv: string, optIn: boolean, tags?: string[]): Promise<ImportReport> {
+
+export type ColumnTarget = 'phone' | 'name' | 'custom' | 'ignore';
+export interface ColumnMapping {
+  columns: Record<string, { target: ColumnTarget; key?: string }>;
+}
+export interface ImportPreview {
+  headers: string[];
+  sampleRows: Array<Record<string, string>>;
+  rowCount: number;
+  mapping: ColumnMapping;
+}
+
+/** Aperçu : renvoie les colonnes détectées + un mapping suggéré (même parsing que l'import). */
+export function previewImport(tenantId: string, csv: string): Promise<ImportPreview> {
+  return request<ImportPreview>(`/tenants/${tenantId}/contacts/import/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ csv }),
+  });
+}
+
+export function importCsv(
+  tenantId: string,
+  csv: string,
+  optIn: boolean,
+  tags?: string[],
+  mapping?: ColumnMapping,
+): Promise<ImportReport> {
   return request<ImportReport>(`/tenants/${tenantId}/contacts/import`, {
     method: 'POST',
-    body: JSON.stringify({ csv, optIn, ...(tags && tags.length > 0 ? { tags } : {}) }),
+    body: JSON.stringify({
+      csv,
+      optIn,
+      ...(tags && tags.length > 0 ? { tags } : {}),
+      ...(mapping ? { mapping } : {}),
+    }),
   });
 }
 
