@@ -32,6 +32,8 @@ export interface TemplateSummary {
   language: string;
   /** Corps du template (composant BODY) : sert à déduire les variables + l'aperçu côté campagne. */
   body: string;
+  /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
+  headerFormat: string | null;
 }
 
 /** Texte du composant BODY parmi les components d'un template. */
@@ -42,6 +44,16 @@ function bodyOf(components: unknown): string {
     if (comp?.type === 'BODY' && typeof comp.text === 'string') return comp.text;
   }
   return '';
+}
+
+/** Format du composant HEADER (IMAGE/VIDEO/DOCUMENT/TEXT), null si aucun. */
+function headerFormatOf(components: unknown): string | null {
+  if (!Array.isArray(components)) return null;
+  for (const c of components) {
+    const comp = c as { type?: string; format?: string };
+    if (comp?.type === 'HEADER') return typeof comp.format === 'string' ? comp.format : null;
+  }
+  return null;
 }
 
 function buildComponents(input: CreateTemplateInput): unknown[] {
@@ -127,6 +139,7 @@ export class MetaTemplateClient {
           category: t.category ?? '',
           language: t.language ?? '',
           body: bodyOf(t.components),
+          headerFormat: headerFormatOf(t.components),
         });
       }
       next = json.paging?.next ?? null;

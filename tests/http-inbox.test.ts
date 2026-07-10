@@ -18,13 +18,14 @@ function app(over: Partial<InboxRouteDeps> = {}) {
     listConversations: async () => [
       { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z' },
     ],
-    getConversationWaId: async (id) => (id === 'c1' ? '33611' : null),
+    getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
     getMessages: async () => [
       { id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z' },
     ],
     recordOutbound: async () => {},
     getTenantPhoneNumberId: async () => 'pn1',
     sendReply: async () => 'wamid.OUT',
+    sendTemplateMessage: async () => 'wamid.TPL',
     ...over,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
@@ -39,12 +40,13 @@ describe('inbox routes', () => {
     await a.close();
   });
 
-  it('GET messages d une conversation connue -> 200', async () => {
+  it('GET messages d une conversation connue -> 200 + windowOpen', async () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ waId: string; messages: Array<{ body: string }> }>();
+    const body = res.json<{ waId: string; windowOpen: boolean; messages: Array<{ body: string }> }>();
     expect(body.waId).toBe('33611');
+    expect(body.windowOpen).toBe(true);
     expect(body.messages[0]?.body).toBe('coucou');
     await a.close();
   });
@@ -56,17 +58,55 @@ describe('inbox routes', () => {
     await a.close();
   });
 
-  it('POST reply -> envoie et journalise (200)', async () => {
-    let recorded: [string, string, string | null] | null = null;
+  it('POST reply (fenêtre ouverte) -> envoie et journalise (200)', async () => {
+    let recorded: [string, string, string | null, string | undefined] | null = null;
     let sent: [string, string, string] | null = null;
     const a = app({
-      recordOutbound: async (id, body, msgId) => { recorded = [id, body, msgId]; },
+      recordOutbound: async (id, body, msgId, type) => { recorded = [id, body, msgId, type]; },
       sendReply: async (pn, to, text) => { sent = [pn, to, text]; return 'wamid.OUT'; },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
     expect(res.statusCode).toBe(200);
     expect(sent).toEqual(['pn1', '33611', 'Merci !']);
-    expect(recorded).toEqual(['c1', 'Merci !', 'wamid.OUT']);
+    expect(recorded).toEqual(['c1', 'Merci !', 'wamid.OUT', 'text']);
+    await a.close();
+  });
+
+  it('POST reply HORS fenêtre 24 h -> 422 (texte libre interdit)', async () => {
+    const a = app({
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'coucou' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ code: string }>().code).toBe('window_closed');
+    await a.close();
+  });
+
+  it('POST send-template -> envoie le template (200), autorisé hors fenêtre', async () => {
+    let sent: { pn: string; to: string; tpl: unknown } | null = null;
+    let recordedType: string | undefined;
+    const a = app({
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
+      sendTemplateMessage: async (pn, to, tpl) => { sent = { pn, to, tpl }; return 'wamid.TPL'; },
+      recordOutbound: async (_id, _body, _msg, type) => { recordedType = type; },
+    });
+    const res = await a.inject({
+      method: 'POST',
+      url: '/tenants/t1/conversations/c1/send-template',
+      ...auth(),
+      payload: { templateName: 'promo', language: 'fr', bodyParams: ['Julie'], headerImageUrl: 'https://x.fr/a.jpg' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ messageId: string }>().messageId).toBe('wamid.TPL');
+    expect(sent).toMatchObject({ pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerImageUrl: 'https://x.fr/a.jpg' } });
+    expect(recordedType).toBe('template');
+    await a.close();
+  });
+
+  it('POST send-template sans templateName -> 400', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(), payload: { language: 'fr' } });
+    expect(res.statusCode).toBe(400);
     await a.close();
   });
 

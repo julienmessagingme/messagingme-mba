@@ -85,6 +85,30 @@ export class PgInboxStore implements InboxStore {
     return res.rows[0]?.wa_id ?? null;
   }
 
+  /**
+   * Contexte pour répondre : wa_id + état de la fenêtre de service 24 h. La fenêtre est ouverte
+   * si le DERNIER message ENTRANT (du client) a moins de 24 h. Hors fenêtre -> texte libre
+   * interdit par Meta (131047), il faut un template. null si conversation absente/autre tenant.
+   */
+  async getConversationContext(
+    conversationId: string,
+    tenantId: string,
+  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null> {
+    const res = await this.pool.query<{ wa_id: string; last_in: Date | null }>(
+      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in') as last_in
+       from conversations c
+       left join conversation_messages m on m.conversation_id = c.id
+       where c.id = $1 and c.tenant_id = $2
+       group by c.wa_id`,
+      [conversationId, tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    const lastIn = r.last_in;
+    const windowOpen = !!lastIn && Date.now() - lastIn.getTime() < 24 * 3600 * 1000;
+    return { waId: r.wa_id, lastInboundAt: lastIn ? lastIn.toISOString() : null, windowOpen };
+  }
+
   async getMessages(conversationId: string): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
       id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date;
@@ -103,13 +127,13 @@ export class PgInboxStore implements InboxStore {
     }));
   }
 
-  /** Journalise une réponse sortante de l'agent. */
-  async recordOutbound(conversationId: string, body: string, messageId: string | null): Promise<void> {
+  /** Journalise une réponse sortante de l'agent (texte libre ou template). */
+  async recordOutbound(conversationId: string, body: string, messageId: string | null, type = 'text'): Promise<void> {
     await this.pool.query(`update conversations set last_message_at = now(), last_preview = $2 where id = $1`, [conversationId, body]);
     await this.pool.query(
       `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id)
-       values ($1, 'out', 'text', $2, $3)`,
-      [conversationId, body, messageId],
+       values ($1, 'out', $4, $2, $3)`,
+      [conversationId, body, messageId, type],
     );
   }
 }

@@ -199,6 +199,8 @@ export interface TemplateSummary {
   language: string;
   /** Corps du template : déduit les variables + aperçu côté campagne. Peut être '' (anciens). */
   body?: string;
+  /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
+  headerFormat?: string | null;
 }
 export interface TemplateButtonInput {
   type: 'QUICK_REPLY' | 'URL';
@@ -240,9 +242,27 @@ export interface InboxMessage {
 export function listConversations(tenantId: string): Promise<{ conversations: Conversation[] }> {
   return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations`);
 }
-export function getConversationMessages(tenantId: string, conversationId: string): Promise<{ waId: string; messages: InboxMessage[] }> {
+export interface ConversationThread {
+  waId: string;
+  windowOpen: boolean;
+  lastInboundAt: string | null;
+  messages: InboxMessage[];
+}
+export function getConversationMessages(tenantId: string, conversationId: string): Promise<ConversationThread> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/messages`);
 }
 export function replyConversation(tenantId: string, conversationId: string, text: string): Promise<{ messageId: string }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+}
+export interface SendTemplateInput {
+  templateName: string;
+  language: string;
+  bodyParams: string[];
+  headerImageUrl?: string;
+}
+export function sendTemplateToConversation(tenantId: string, conversationId: string, input: SendTemplateInput): Promise<{ messageId: string }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/send-template`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }

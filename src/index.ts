@@ -46,13 +46,25 @@ async function main(): Promise<void> {
     },
     inbox: {
       listConversations: (tenant) => inboxStore.listConversations(tenant),
-      getConversationWaId: (id, tenant) => inboxStore.getConversationWaId(id, tenant),
+      getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
-      recordOutbound: (id, body, msgId) => inboxStore.recordOutbound(id, body, msgId),
+      recordOutbound: (id, body, msgId, type) => inboxStore.recordOutbound(id, body, msgId, type),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (phoneNumberId, to, text) => {
         const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
         return (await client.sendText(to, text)).messageId;
+      },
+      sendTemplateMessage: async (phoneNumberId, to, tpl) => {
+        const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
+        const components: unknown[] = [];
+        if (tpl.headerImageUrl) {
+          components.push({ type: 'header', parameters: [{ type: 'image', image: { link: tpl.headerImageUrl } }] });
+        }
+        if (tpl.bodyParams.length > 0) {
+          components.push({ type: 'body', parameters: tpl.bodyParams.map((v) => ({ type: 'text', text: v })) });
+        }
+        const spec = { name: tpl.name, language: tpl.language, ...(components.length > 0 ? { components } : {}) };
+        return (await client.sendTemplate(to, spec)).messageId;
       },
     },
   });
