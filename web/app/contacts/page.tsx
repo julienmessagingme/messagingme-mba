@@ -77,8 +77,9 @@ function ContactsInner({ session }: { session: Session }) {
 const inputCls =
   'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
-// Catégories proposées pour chaque colonne. phone/name = attributs standard ; les autres presets
-// et « custom » sont des champs perso (fields.<key>).
+// Catégories proposées pour chaque colonne IMPORTÉE. phone/name = attributs standard ; les
+// autres presets et « custom » sont des champs perso (fields.<key>). L'inclusion (importer ou
+// non la colonne) est gérée à part par une case à cocher.
 const CATEGORIES: Array<{ value: string; label: string }> = [
   { value: 'phone', label: 'Téléphone' },
   { value: 'name', label: 'Nom' },
@@ -87,7 +88,6 @@ const CATEGORIES: Array<{ value: string; label: string }> = [
   { value: 'ville', label: 'Ville' },
   { value: 'societe', label: 'Société' },
   { value: 'custom', label: 'Champ perso…' },
-  { value: 'ignore', label: 'Ignorer' },
 ];
 const PRESET_KEYS = ['prenom', 'email', 'ville', 'societe'];
 
@@ -101,6 +101,8 @@ function slug(s: string): string {
 }
 
 interface Choice {
+  /** Importer cette colonne ? (case à cocher) */
+  include: boolean;
   choice: string;
   customKey: string;
 }
@@ -109,13 +111,19 @@ function initChoices(preview: ImportPreview): Record<string, Choice> {
   const out: Record<string, Choice> = {};
   for (const h of preview.headers) {
     const m = preview.mapping.columns[h] ?? { target: 'ignore' as const };
-    if (m.target === 'phone') out[h] = { choice: 'phone', customKey: '' };
-    else if (m.target === 'name') out[h] = { choice: 'name', customKey: '' };
-    else if (m.target === 'ignore') out[h] = { choice: 'ignore', customKey: '' };
-    else {
+    let choice = 'custom';
+    let customKey = '';
+    if (m.target === 'phone') choice = 'phone';
+    else if (m.target === 'name') choice = 'name';
+    else if (m.target === 'custom') {
       const k = m.key ?? '';
-      out[h] = PRESET_KEYS.includes(k) ? { choice: k, customKey: '' } : { choice: 'custom', customKey: k };
+      if (PRESET_KEYS.includes(k)) choice = k;
+      else customKey = k;
     }
+    // Par défaut : on coche ce qui est reconnu (téléphone, nom, prénom, email, ville, société),
+    // on laisse décoché le reste (bruit CRM), à l'utilisateur de cocher ce qu'il veut garder.
+    const include = choice !== 'custom';
+    out[h] = { include, choice, customKey };
   }
   return out;
 }
@@ -123,10 +131,10 @@ function initChoices(preview: ImportPreview): Record<string, Choice> {
 function buildMapping(headers: string[], choices: Record<string, Choice>): ColumnMapping {
   const columns: ColumnMapping['columns'] = {};
   for (const h of headers) {
-    const c = choices[h] ?? { choice: 'ignore', customKey: '' };
-    if (c.choice === 'phone') columns[h] = { target: 'phone' };
+    const c = choices[h] ?? { include: false, choice: 'custom', customKey: '' };
+    if (!c.include) columns[h] = { target: 'ignore' };
+    else if (c.choice === 'phone') columns[h] = { target: 'phone' };
     else if (c.choice === 'name') columns[h] = { target: 'name' };
-    else if (c.choice === 'ignore') columns[h] = { target: 'ignore' };
     else if (c.choice === 'custom') columns[h] = { target: 'custom', key: slug(c.customKey) || slug(h) };
     else columns[h] = { target: 'custom', key: c.choice };
   }
@@ -191,7 +199,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
 
   function setChoice(header: string, patch: Partial<Choice>) {
     setChoices((prev) => {
-      const cur = prev[header] ?? { choice: 'ignore', customKey: '' };
+      const cur = prev[header] ?? { include: true, choice: 'custom', customKey: '' };
       const next: Choice = { ...cur, ...patch };
       // En passant sur « Champ perso… », pré-remplir le nom du champ (slug de l'en-tête) pour
       // qu'il soit éditable, plutôt qu'un champ vide.
@@ -200,7 +208,15 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
     });
   }
 
-  const hasPhone = preview ? preview.headers.some((h) => choices[h]?.choice === 'phone') : false;
+  function toggleInclude(header: string) {
+    setChoices((prev) => {
+      const cur = prev[header] ?? { include: false, choice: 'custom', customKey: '' };
+      return { ...prev, [header]: { ...cur, include: !cur.include } };
+    });
+  }
+
+  const includedCount = preview ? preview.headers.filter((h) => choices[h]?.include).length : 0;
+  const hasPhone = preview ? preview.headers.some((h) => choices[h]?.include && choices[h]?.choice === 'phone') : false;
 
   // Étape 1 : choisir le fichier. On lit juste les en-têtes et on enchaîne sur le mapping,
   // sans jamais afficher les données.
@@ -256,37 +272,49 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
         </button>
       </div>
       <p className="mt-1 text-xs text-ink-500">
-        {preview.headers.length} colonnes · {preview.rowCount} lignes. Les suggestions sont modifiables : passe une colonne en <b>Champ perso…</b> pour la nommer toi-même, ou en <b>Ignorer</b>.
+        {preview.headers.length} colonnes · {preview.rowCount} lignes. <b>Coche les colonnes à importer</b> et associe chacune à un champ. <b>{includedCount}</b> cochée{includedCount > 1 ? 's' : ''}.
       </p>
 
       <div className="mt-4 space-y-2">
         {preview.headers.map((h) => {
           const samples = preview.sampleRows.map((r) => r[h]).filter((v) => v && v.trim()).slice(0, 2).join(' · ');
-          const c = choices[h] ?? { choice: 'ignore', customKey: '' };
-          const ignored = c.choice === 'ignore';
+          const c = choices[h] ?? { include: false, choice: 'custom', customKey: '' };
           return (
-            <div key={h} className={`flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 p-2.5 ${ignored ? 'opacity-60' : ''}`}>
+            <div key={h} className={`flex flex-wrap items-center gap-2 rounded-lg border p-2.5 ${c.include ? 'border-ink-200 bg-white' : 'border-ink-200 bg-ink-50 opacity-70'}`}>
+              <input
+                type="checkbox"
+                checked={c.include}
+                onChange={() => toggleInclude(h)}
+                title={c.include ? 'Importer cette colonne' : 'Colonne ignorée'}
+                className="h-4 w-4 shrink-0 accent-brand-500"
+              />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-ink-900">{h}</div>
                 {samples && <div className="truncate text-xs text-ink-400">{samples}</div>}
               </div>
-              <span className="text-ink-300">→</span>
-              <select
-                value={c.choice}
-                onChange={(e) => setChoice(h, { choice: e.target.value })}
-                className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-              >
-                {CATEGORIES.map((cat) => (
-                  <option key={cat.value} value={cat.value}>{cat.label}</option>
-                ))}
-              </select>
-              {c.choice === 'custom' && (
-                <input
-                  value={c.customKey}
-                  onChange={(e) => setChoice(h, { customKey: e.target.value })}
-                  placeholder="nom du champ"
-                  className="w-32 shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-                />
+              {c.include ? (
+                <>
+                  <span className="text-ink-300">→</span>
+                  <select
+                    value={c.choice}
+                    onChange={(e) => setChoice(h, { choice: e.target.value })}
+                    className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat.value} value={cat.value}>{cat.label}</option>
+                    ))}
+                  </select>
+                  {c.choice === 'custom' && (
+                    <input
+                      value={c.customKey}
+                      onChange={(e) => setChoice(h, { customKey: e.target.value })}
+                      placeholder="nom du champ"
+                      className="w-32 shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                    />
+                  )}
+                </>
+              ) : (
+                <span className="shrink-0 text-xs text-ink-400">non importée</span>
               )}
             </div>
           );
