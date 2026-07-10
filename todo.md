@@ -30,9 +30,11 @@ Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **
   échange de token BISU côté backend → **Access Verification (Tech Provider)** + **App Review**
   (Advanced Access sur les perms WhatsApp, screencast par permission). Ni l'un ni l'autre requis
   pour NOTRE propre numéro (rôle sur l'app), mais requis pour brancher les WABA de clients.
-- **Veille MBA** : cron qui poll `GET api.facebook.com/{phone_number_id}/agent_eligibility`
-  (baseline = 403 « Meta Business AI Terms »), alerte au changement. **NON posé** (service de
-  triggers KO + creds Telegram non accessibles) — à recâbler (cron VPS + canal d'alerte fourni par Julien).
+- ✅ **Veille MBA POSÉE (2026-07-09)** : cron VPS `ops/mba-eligibility-watch.mjs` (crontab ubuntu,
+  toutes les 6h) qui poll `GET api.facebook.com/{pnid}/agent_eligibility` (X-API-Version 2.0.0).
+  Baseline = 403 « Meta Business AI Terms » (`BLOCKED_TOS`, état dans `.mba-eligibility-state.json`).
+  Alerte Telegram (`@Messagingmeapp_bot`, creds lus au runtime depuis `messagingme-pilot/config.json`)
+  au moindre changement d'état (mur ToS levé → MBA ouvre FR). Log `.mba-eligibility.log`.
 
 ## ✅ Suites revue templates + inbox — TOUT RÉSOLU (2026-07-08)
 
