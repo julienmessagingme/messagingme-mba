@@ -19,8 +19,12 @@ function norm(h: string): string {
 // Attributs standard (colonnes du contact).
 const STANDARD: Record<'phone' | 'name', string[]> = {
   phone: ['phone', 'telephone', 'tel', 'mobile', 'portable', 'whatsapp', 'gsm', 'msisdn', 'phone number', 'mobile number', 'numero de telephone', 'numero mobile'],
-  name: ['name', 'nom', 'prenom', 'firstname', 'fullname', 'contact', 'full name', 'first name', 'nom complet'],
+  // `name` = nom d'affichage (profile_name). Le prénom est traité à part pour ne PAS écraser le
+  // nom quand le CSV a les deux colonnes.
+  name: ['name', 'nom', 'fullname', 'contact', 'full name', 'nom complet', 'lastname', 'last name', 'nom de famille'],
 };
+// Prénom -> champ perso `prenom`. Vérifié AVANT `name` (« first name » contient le token « name »).
+const PRENOM = ['prenom', 'firstname', 'first name', 'given name'];
 // Alias ambigus : ne matchent phone QUE si le header normalisé est EXACTEMENT ça
 // (`numéro` seul -> phone, mais `numéro de commande` -> custom).
 const PHONE_EXACT = ['numero', 'number', 'num'];
@@ -41,6 +45,9 @@ export function recognizeColumns(headers: string[]): ColumnSuggestion[] {
     const n = norm(header);
     if (STANDARD.phone.some((a) => matches(n, a)) || PHONE_EXACT.includes(n)) {
       return { header, target: 'phone' };
+    }
+    if (PRENOM.some((a) => matches(n, a))) {
+      return { header, target: 'custom', suggestedKey: 'prenom' };
     }
     if (STANDARD.name.some((a) => matches(n, a))) {
       return { header, target: 'name' };

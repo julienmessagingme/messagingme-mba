@@ -3,8 +3,17 @@ import { recognizeColumns } from '../src/crm/recognize';
 
 describe('recognizeColumns', () => {
   it('reconnaît les attributs standard (FR + EN)', () => {
-    const s = recognizeColumns(['Téléphone', 'Mobile', 'Nom', 'First Name']);
-    expect(s.map((x) => x.target)).toEqual(['phone', 'phone', 'name', 'name']);
+    const s = recognizeColumns(['Téléphone', 'Mobile', 'Nom']);
+    expect(s.map((x) => x.target)).toEqual(['phone', 'phone', 'name']);
+  });
+
+  it('prénom -> champ perso "prenom" (n\'écrase pas le nom quand les deux colonnes existent)', () => {
+    const s = recognizeColumns(['Prénom', 'Nom', 'First Name']);
+    expect(s.map((x) => ({ t: x.target, k: x.suggestedKey }))).toEqual([
+      { t: 'custom', k: 'prenom' },
+      { t: 'name', k: undefined },
+      { t: 'custom', k: 'prenom' },
+    ]);
   });
 
   it('email -> custom avec key normalisée "email"', () => {
