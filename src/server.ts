@@ -9,6 +9,7 @@ import { registerInbox } from './http/inbox';
 import { registerStats } from './http/stats';
 import { registerSettings } from './http/settings';
 import { registerUsers } from './http/users';
+import { registerFlows } from './http/flows';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -20,6 +21,7 @@ import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
 import type { SettingsRouteDeps } from './http/settings';
 import type { UsersRouteDeps } from './http/users';
+import type { FlowRouteDeps } from './http/flows';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -44,6 +46,8 @@ export interface ServerDeps {
   settings?: SettingsRouteDeps;
   /** Gestion des comptes (onglet Admin) — réservé aux admins. */
   admin?: UsersRouteDeps;
+  /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
+  flows?: FlowRouteDeps;
 }
 
 /**
@@ -52,8 +56,8 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin) && !deps.auth) {
-    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin sont exposées');
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows) && !deps.auth) {
+    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows sont exposées');
   }
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
@@ -98,6 +102,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.stats) registerStats(app, deps.stats, requireAdmin);
   if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
   if (deps.admin) registerUsers(app, deps.admin, requireAdmin);
+  if (deps.flows) registerFlows(app, deps.flows, requireAdmin);
 
   return app;
 }

@@ -71,19 +71,18 @@ prod. Résidus non bloquants ci-dessous.
   `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
   non-déterminisme multi-tenant.
 
-## Dashboard v2 — prix templates BLOQUÉ sur Advanced Access (2026-07-10)
+## ✅ Dashboard v2 — prix templates MARCHE EN PROD (corrigé 2026-07-10)
 
-Le dashboard affiche le **prix estimé par template** via `pricing_analytics` (Graph API). Code prêt et
-testé, MAIS l'appel live renvoie **403 `(#200) Provide valid app ID`** sur TOUTES les lectures analytics
-ET même `id,name,currency` du WABA. Cause confirmée (doc Meta) : les lectures analytics avec
-`whatsapp_business_management` exigent l'**Advanced Access** (App Review) ; en accès standard -> #200.
-C'est le MÊME gate App Review déjà listé pour l'onboarding client (Access Verification + App Review).
-Messaging + templates create/list marchent (accès standard sur notre propre WABA), mais PAS l'analytics.
+⚠️ CORRECTION d'une conclusion erronée. J'avais écrit que `pricing_analytics` était bloqué par
+l'Advanced Access (403 #200). **C'était FAUX** : la sonde avait tourné avec le token du `.env` LOCAL,
+qui est limité/périmé, PAS le token permanent de prod. Re-testé DANS le conteneur `mba-api` (vrai token
+`.env.prod`) : `pricing_analytics` renvoie **200 + vraies données** (marketing 0,0712 / utility 0,0248…).
+Donc **le prix par template s'affiche déjà en prod** (le getPricing déployé utilise le bon token). Aucun
+App Review requis pour l'analytics de NOTRE WABA. Pas de dégradation « indisponible » en réalité.
 
-- **Impact** : le dashboard affiche les volumes par template + « Prix Meta indisponible » (dégradation
-  propre, jamais de faux chiffre). Le prix s'allumera AUTOMATIQUEMENT après l'App Review, sans code.
-- **Action pour débloquer** : passer l'app en **Advanced Access** sur `whatsapp_business_management`
-  (App Review Meta, screencast). Tâche Julien/Meta, pas du code.
+- **Leçon (cf. LEARNINGS)** : le `META_ACCESS_TOKEN` du `.env` LOCAL n'est PAS le token de prod. Toute
+  sonde Meta doit tourner **dans le conteneur / avec le token de prod** (`docker cp` + `docker exec mba-api
+  node ...`), jamais avec un scratch local, sinon faux négatifs (#200 « Provide valid app ID »).
 
 ## Dette Feature 2 — Admin + RBAC (revue adversariale 2026-07-10)
 

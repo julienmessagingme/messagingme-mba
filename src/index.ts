@@ -11,7 +11,9 @@ import { PgStatsStore } from './stats/store.pg';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
+import { PgFlowStore } from './flow/store.pg';
 import { MetaTemplateClient } from './meta/templates';
+import { MetaFlowClient } from './meta/flows';
 import { MetaPricingClient } from './meta/pricing';
 import { MetaClient } from './meta/client';
 import { buildTemplateComponents } from './meta/template-components';
@@ -29,8 +31,10 @@ async function main(): Promise<void> {
   const statsStore = new PgStatsStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
+  const flowStore = new PgFlowStore(pool);
   const transport = new FetchTransport();
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
+  const flowClient = new MetaFlowClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION, config.META_FLOW_JSON_VERSION);
   const app = buildServer({
     queue,
     auth: {
@@ -100,6 +104,14 @@ async function main(): Promise<void> {
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
       setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
       deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),
+    },
+    flows: {
+      flows: flowClient,
+      getWabaId: (tenant) => repo.getTenantWabaId(tenant),
+      insertFlow: (tenantId, id, name, fields) => flowStore.insert({ id, tenantId, name, fields }),
+      listFlows: (tenant) => flowStore.list(tenant),
+      belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
+      markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
     },
   });
 

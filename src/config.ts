@@ -8,6 +8,9 @@ const schema = z.object({
   META_ACCESS_TOKEN: z.string().default(''),
   /** Version Graph API pour les appels d'envoi. */
   META_GRAPH_VERSION: z.string().default('v25.0'),
+  /** Version du schéma flow_json (indépendante de la version Graph). Vérifié live 2026-07-10 : 7.2
+   *  supportée. Une dépréciation Meta = un changement d'env, pas de code. */
+  META_FLOW_JSON_VERSION: z.string().default('7.2'),
   /**
    * Router le marketing par MM Lite (`/marketing_messages`). Défaut 'false' -> endpoint standard
    * `/messages`. MM Lite exige un onboarding Business Manager ; sans lui -> erreur 131042. Passer
