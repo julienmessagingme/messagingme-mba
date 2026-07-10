@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { login } from '@/lib/api';
 import { saveSession } from '@/lib/session';
+import { Logo } from '@/components/Logo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,9 +32,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500 text-lg font-bold text-white">
-            m
-          </div>
+          <Logo className="mx-auto mb-3 h-14 w-14" />
           <h1 className="text-xl font-semibold tracking-tight text-ink-900">MM Business Agent</h1>
           <p className="mt-1 text-sm text-ink-400">Connecte-toi pour gérer tes contacts et campagnes.</p>
         </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
+import { Logo } from './Logo';
 
 /** Coquille commune : garde d'auth, header (logo, email, logout) et navigation. */
 export function AppShell({ active, children }: { active: 'contacts' | 'campagnes' | 'templates' | 'inbox'; children: (session: Session) => React.ReactNode }) {
@@ -46,7 +47,7 @@ export function AppShell({ active, children }: { active: 'contacts' | 'campagnes
       <header className="sticky top-0 z-30 border-b border-ink-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <div className="flex shrink-0 items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">m</div>
+            <Logo className="h-8 w-8" />
             <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
           </div>
           <nav className="flex gap-1 text-sm">
