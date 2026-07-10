@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, createUser, setUserRole, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, createUser, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -42,6 +42,32 @@ function AdminInner({ session }: { session: Session }) {
     }
   }
 
+  async function toggleDisabled(u: AdminUser) {
+    setError(null);
+    const next = !u.disabled;
+    const prev = users;
+    setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, disabled: next } : x))); // optimiste
+    try {
+      await setUserDisabled(session.tenantId, u.id, next);
+    } catch (err) {
+      setUsers(prev); // rollback
+      setError(err instanceof Error ? err.message : 'Action impossible');
+    }
+  }
+
+  async function removeUser(u: AdminUser) {
+    if (!window.confirm(`Supprimer définitivement le compte ${u.email} ?\nCette action est irréversible.`)) return;
+    setError(null);
+    const prev = users;
+    setUsers((list) => list.filter((x) => x.id !== u.id)); // optimiste
+    try {
+      await deleteUser(session.tenantId, u.id);
+    } catch (err) {
+      setUsers(prev); // rollback
+      setError(err instanceof Error ? err.message : 'Suppression impossible');
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h2 className="text-base font-semibold tracking-tight text-ink-900">Compte</h2>
@@ -62,6 +88,8 @@ function AdminInner({ session }: { session: Session }) {
                 <th className="px-5 py-2 font-medium">Nom</th>
                 <th className="px-5 py-2 font-medium">Email</th>
                 <th className="px-5 py-2 font-medium">Rôle</th>
+                <th className="px-5 py-2 font-medium">Statut</th>
+                <th className="px-5 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -69,8 +97,8 @@ function AdminInner({ session }: { session: Session }) {
                 const isSelf = u.email.toLowerCase() === session.email.toLowerCase();
                 return (
                   <tr key={u.id} className="border-b border-ink-50 last:border-0">
-                    <td className="px-5 py-3 text-ink-800">{u.name ?? <span className="text-ink-300">·</span>}</td>
-                    <td className="px-5 py-3 text-ink-600">{u.email}</td>
+                    <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-800'}`}>{u.name ?? <span className="text-ink-300">·</span>}</td>
+                    <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-600'}`}>{u.email}</td>
                     <td className="px-5 py-3">
                       <select
                         value={u.role}
@@ -82,6 +110,33 @@ function AdminInner({ session }: { session: Session }) {
                         <option value="admin">Admin</option>
                         <option value="agent">Agent</option>
                       </select>
+                    </td>
+                    <td className="px-5 py-3">
+                      {u.disabled ? (
+                        <span className="inline-flex items-center rounded-full bg-coral/10 px-2 py-0.5 text-xs font-medium text-coral">Révoqué</span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">Actif</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => toggleDisabled(u)}
+                          disabled={isSelf}
+                          title={isSelf ? 'Tu ne peux pas révoquer ton propre compte' : ''}
+                          className="text-ink-600 hover:text-ink-900 disabled:cursor-not-allowed disabled:text-ink-300"
+                        >
+                          {u.disabled ? 'Réactiver' : 'Révoquer'}
+                        </button>
+                        <button
+                          onClick={() => removeUser(u)}
+                          disabled={isSelf}
+                          title={isSelf ? 'Tu ne peux pas supprimer ton propre compte' : 'Suppression définitive'}
+                          className="text-coral hover:text-coral/80 disabled:cursor-not-allowed disabled:text-ink-300"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

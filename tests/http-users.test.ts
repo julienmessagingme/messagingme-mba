@@ -17,24 +17,34 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', createdAt: '2026-07-01T00:00:00.000Z' };
+const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, createdAt: '2026-07-01T00:00:00.000Z' };
 
 interface Captured {
   created: Array<{ tenant: string; input: CreateUserInput }>;
   roleSet: Array<{ tenant: string; userId: string; role: string }>;
+  disabledSet: Array<{ tenant: string; userId: string; disabled: boolean }>;
+  deleted: Array<{ tenant: string; userId: string }>;
 }
 
 function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
-  const cap: Captured = { created: [], roleSet: [] };
+  const cap: Captured = { created: [], roleSet: [], disabledSet: [], deleted: [] };
   const deps: UsersRouteDeps = {
     listUsers: async () => [EXISTING],
     createUser: async (tenant, input) => {
       cap.created.push({ tenant, input });
-      return { id: 'new', email: input.email, name: input.name, role: input.role, createdAt: '2026-07-10T00:00:00.000Z' };
+      return { id: 'new', email: input.email, name: input.name, role: input.role, disabled: false, createdAt: '2026-07-10T00:00:00.000Z' };
     },
     setUserRole: async (tenant, userId, role) => {
       cap.roleSet.push({ tenant, userId, role });
-      return userId === 'known' ? 'updated' : 'not_found'; // 'known' existe, tout le reste -> 404
+      return userId === 'known' ? 'ok' : 'not_found'; // 'known' existe, tout le reste -> 404
+    },
+    setUserDisabled: async (tenant, userId, disabled) => {
+      cap.disabledSet.push({ tenant, userId, disabled });
+      return userId === 'known' ? 'ok' : 'not_found';
+    },
+    deleteUser: async (tenant, userId) => {
+      cap.deleted.push({ tenant, userId });
+      return userId === 'known' ? 'ok' : 'not_found';
     },
     ...over,
   };
@@ -174,6 +184,101 @@ describe('users route — changement de rôle', () => {
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/role', ...h(agentTok), payload: { role: 'admin' } });
     expect(res.statusCode).toBe(403);
     expect(cap.roleSet).toHaveLength(0);
+    await server.close();
+  });
+});
+
+describe('users route — révocation', () => {
+  it('PATCH disabled=true admin -> 200 (révoque)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/disabled', ...h(adminTok), payload: { disabled: true } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.disabledSet[0]).toEqual({ tenant: 't1', userId: 'known', disabled: true });
+    await server.close();
+  });
+
+  it('PATCH disabled=false -> 200 (réactive)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/disabled', ...h(adminTok), payload: { disabled: false } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.disabledSet[0]?.disabled).toBe(false);
+    await server.close();
+  });
+
+  it('PATCH disabled body invalide -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/disabled', ...h(adminTok), payload: { disabled: 'oui' } });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('PATCH disabled sur soi-même -> 400 (self-block, ne modifie rien)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/u1/disabled', ...h(adminTok), payload: { disabled: true } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.disabledSet).toHaveLength(0);
+    await server.close();
+  });
+
+  it('PATCH disabled dernier admin actif -> 409', async () => {
+    const { server } = app({ setUserDisabled: async () => 'last_admin' });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/disabled', ...h(adminTok), payload: { disabled: true } });
+    expect(res.statusCode).toBe(409);
+    await server.close();
+  });
+
+  it('PATCH disabled user inconnu -> 404', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/ghost/disabled', ...h(adminTok), payload: { disabled: true } });
+    expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('PATCH disabled agent -> 403 (ne modifie rien)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/disabled', ...h(agentTok), payload: { disabled: true } });
+    expect(res.statusCode).toBe(403);
+    expect(cap.disabledSet).toHaveLength(0);
+    await server.close();
+  });
+});
+
+describe('users route — suppression', () => {
+  it('DELETE admin -> 200 (supprime)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/known', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(cap.deleted[0]).toEqual({ tenant: 't1', userId: 'known' });
+    await server.close();
+  });
+
+  it('DELETE sur soi-même -> 400 (self-block, ne supprime rien)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/u1', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    expect(cap.deleted).toHaveLength(0);
+    await server.close();
+  });
+
+  it('DELETE dernier admin actif -> 409', async () => {
+    const { server } = app({ deleteUser: async () => 'last_admin' });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/known', ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    await server.close();
+  });
+
+  it('DELETE user inconnu -> 404', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/ghost', ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('DELETE agent -> 403 (ne supprime rien)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/known', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    expect(cap.deleted).toHaveLength(0);
     await server.close();
   });
 });

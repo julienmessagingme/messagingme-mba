@@ -33,7 +33,12 @@ async function main(): Promise<void> {
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const app = buildServer({
     queue,
-    auth: { users: new PgUserAuthStore(pool), secret: config.AUTH_SECRET },
+    auth: {
+      users: new PgUserAuthStore(pool),
+      secret: config.AUTH_SECRET,
+      // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
+      getUserState: (userId) => userStore.getAuthState(userId),
+    },
     import: {
       contacts: contactStore,
       userFields: new PgUserFieldStore(pool),
@@ -93,6 +98,8 @@ async function main(): Promise<void> {
       listUsers: (tenant) => userStore.list(tenant),
       createUser: (tenant, input) => userStore.create(tenant, input),
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
+      setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
+      deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),
     },
   });
 

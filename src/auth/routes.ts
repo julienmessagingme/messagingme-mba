@@ -4,12 +4,16 @@ import { verifyPassword, hashPassword } from './password';
 import { signSession } from './token';
 import { RateLimiter } from './rate-limit';
 import type { UserAuthStore } from './store';
+import type { UserStateLoader } from './middleware';
 
 export interface AuthRouteDeps {
   users: UserAuthStore;
   secret: string;
   /** Rate-limit du login (par IP). Défaut : 10 tentatives / minute. */
   loginRateLimit?: { max: number; windowMs: number };
+  /** Re-vérification par requête de l'état du compte (révoqué/supprimé/rôle frais). Optionnel :
+   *  absent en test (JWT seul). Voir makeRequireAuth. */
+  getUserState?: UserStateLoader;
 }
 
 // Hash leurre (format scrypt valide) pour égaliser le temps CPU quand l'email est inconnu :

@@ -5,8 +5,13 @@ export interface UserRow {
   email: string;
   name: string | null;
   role: string;
+  /** true = compte révoqué (login bloqué), réversible. */
+  disabled: boolean;
   createdAt: string;
 }
+
+/** Résultat d'une mutation de compte gardée par l'invariant « ≥1 admin actif par tenant ». */
+export type UserMutation = 'ok' | 'last_admin' | 'not_found';
 
 export interface CreateUserInput {
   email: string;
@@ -31,9 +36,23 @@ export class DuplicateEmailError extends Error {
 export class PgUserStore {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * État d'auth courant d'un compte (pour la re-vérification par requête dans requireAuth) :
+   * rôle FRAIS + révoqué ? null = compte supprimé. Ferme la fenêtre de staleness du JWT : une
+   * révocation/suppression/changement de rôle prend effet immédiatement, la base fait foi.
+   */
+  async getAuthState(userId: string): Promise<{ role: string; disabled: boolean } | null> {
+    const res = await this.pool.query<{ role: string; disabled_at: Date | null }>(
+      `select role, disabled_at from users where id = $1`,
+      [userId],
+    );
+    const r = res.rows[0];
+    return r ? { role: r.role, disabled: r.disabled_at !== null } : null;
+  }
+
   async list(tenantId: string): Promise<UserRow[]> {
-    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; created_at: Date }>(
-      `select id, email, name, role, created_at from users
+    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; disabled_at: Date | null; created_at: Date }>(
+      `select id, email, name, role, disabled_at, created_at from users
        where tenant_id = $1 order by created_at asc`,
       [tenantId],
     );
@@ -42,6 +61,7 @@ export class PgUserStore {
       email: r.email,
       name: r.name,
       role: r.role,
+      disabled: r.disabled_at !== null,
       createdAt: r.created_at.toISOString(),
     }));
   }
@@ -55,7 +75,7 @@ export class PgUserStore {
         [tenantId, input.email, input.name, input.role, input.passwordHash],
       );
       const r = res.rows[0]!;
-      return { id: r.id, email: r.email, name: r.name, role: r.role, createdAt: r.created_at.toISOString() };
+      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, createdAt: r.created_at.toISOString() };
     } catch (err) {
       // 23505 = unique_violation : email déjà pris (index global users_email_lower_unique ou (tenant,email)).
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') {
@@ -77,16 +97,57 @@ export class PgUserStore {
    *  toutes deux voir count>1. Négligeable ici — 2 admins qui se rétrogradent à la milliseconde —
    *  et le chemin réaliste, le JWT périmé, est fermé. À revoir si on ajoute token_version.)
    */
-  async setRole(tenantId: string, userId: string, role: string): Promise<'updated' | 'last_admin' | 'not_found'> {
+  async setRole(tenantId: string, userId: string, role: string): Promise<UserMutation> {
     const upd = await this.pool.query(
       `update users set role = $3
          where id = $1 and tenant_id = $2
-           and ($3 = 'admin' or role = 'agent'
-                or (select count(*) from users where tenant_id = $2 and role = 'admin') > 1)`,
+           and ($3 = 'admin' or role = 'agent' or disabled_at is not null
+                or (select count(*) from users where tenant_id = $2 and role = 'admin' and disabled_at is null) > 1)`,
       [userId, tenantId, role],
     );
-    if ((upd.rowCount ?? 0) > 0) return 'updated';
+    if ((upd.rowCount ?? 0) > 0) return 'ok';
     // rowCount 0 : soit l'id n'existe pas (autre tenant/inconnu), soit l'invariant a bloqué la MAJ.
+    const exists = await this.pool.query(`select 1 from users where id = $1 and tenant_id = $2`, [userId, tenantId]);
+    return (exists.rowCount ?? 0) > 0 ? 'last_admin' : 'not_found';
+  }
+
+  /**
+   * Révoque (disabled=true) ou réactive (false) un compte DU tenant. La révocation d'un admin est
+   * refusée si c'est le DERNIER admin ACTIF (invariant « ≥1 admin actif », compté en base). La
+   * réactivation est toujours permise (elle ajoute de la capacité admin, aucun risque de lockout).
+   * (Même course TOCTOU théorique que setRole : deux révoc/suppr concurrentes sur 2 admins actifs
+   *  distincts pourraient chacune voir count>1. Négligeable ; à durcir via lock si le volume monte.)
+   */
+  async setDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation> {
+    if (!disabled) {
+      const upd = await this.pool.query(`update users set disabled_at = null where id = $1 and tenant_id = $2`, [userId, tenantId]);
+      return (upd.rowCount ?? 0) > 0 ? 'ok' : 'not_found';
+    }
+    const upd = await this.pool.query(
+      `update users set disabled_at = now()
+         where id = $1 and tenant_id = $2
+           and (role <> 'admin' or disabled_at is not null
+                or (select count(*) from users where tenant_id = $2 and role = 'admin' and disabled_at is null) > 1)`,
+      [userId, tenantId],
+    );
+    if ((upd.rowCount ?? 0) > 0) return 'ok';
+    const exists = await this.pool.query(`select 1 from users where id = $1 and tenant_id = $2`, [userId, tenantId]);
+    return (exists.rowCount ?? 0) > 0 ? 'last_admin' : 'not_found';
+  }
+
+  /**
+   * Supprime définitivement un compte DU tenant. Refusé si c'est le dernier admin ACTIF (même
+   * invariant que la révocation). Aucune FK ne référence users -> pas de violation à la suppression.
+   */
+  async deleteUser(tenantId: string, userId: string): Promise<UserMutation> {
+    const del = await this.pool.query(
+      `delete from users
+         where id = $1 and tenant_id = $2
+           and (role <> 'admin' or disabled_at is not null
+                or (select count(*) from users where tenant_id = $2 and role = 'admin' and disabled_at is null) > 1)`,
+      [userId, tenantId],
+    );
+    if ((del.rowCount ?? 0) > 0) return 'ok';
     const exists = await this.pool.query(`select 1 from users where id = $1 and tenant_id = $2`, [userId, tenantId]);
     return (exists.rowCount ?? 0) > 0 ? 'last_admin' : 'not_found';
   }

@@ -26,8 +26,9 @@ export class PgUserAuthStore implements UserAuthStore {
     }>(
       // Unicité globale insensible à la casse (index users_email_lower_unique, migration 0010) :
       // un email = un compte. LIMIT 1 par prudence ; lower() pour matcher l'index.
+      // disabled_at is null : un compte révoqué ne peut pas s'authentifier (comme un compte sans hash).
       `select id, tenant_id, email, role, password_hash from users
-       where lower(email) = lower($1) limit 1`,
+       where lower(email) = lower($1) and disabled_at is null limit 1`,
       [email],
     );
     const r = res.rows[0];

@@ -13,6 +13,9 @@ export type PreHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<v
  *  court-circuite dès qu'un maillon répond). Sert à composer [requireAuth, requireRole]. */
 export type Guard = PreHandler | PreHandler[];
 
+/** Relit l'état d'auth courant du compte en base. null = compte supprimé. */
+export type UserStateLoader = (userId: string, tenantId: string) => Promise<{ role: string; disabled: boolean } | null>;
+
 /**
  * Garde de rôle à utiliser DANS un handler déjà authentifié : renvoie true (et répond 403)
  * si l'appelant n'est pas admin. Les actions à impact (créer/lancer campagne, import) sont
@@ -49,8 +52,13 @@ export function makeRequireRole(roles: readonly string[]): PreHandler {
 /**
  * Construit un preHandler Fastify qui exige un Bearer JWT valide et pose `req.auth`.
  * 401 si absent/invalide. Les routes DÉRIVENT le tenant de `req.auth`, jamais de l'URL.
+ *
+ * `loadState` (optionnel) relit l'état du compte EN BASE à chaque requête : compte supprimé ou
+ * révoqué -> 401 immédiat (le JWT ne fait plus foi seul), et le rôle est rafraîchi depuis la base
+ * (un changement de rôle prend effet tout de suite). Ferme la fenêtre de staleness du token de 12 h.
+ * Sans `loadState` (tests DB-free), on retombe sur la vérification JWT seule.
  */
-export function makeRequireAuth(secret: string): PreHandler {
+export function makeRequireAuth(secret: string, loadState?: UserStateLoader): PreHandler {
   return async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
@@ -62,6 +70,14 @@ export function makeRequireAuth(secret: string): PreHandler {
     if (!session) {
       await reply.code(401).send({ error: 'token invalide ou expiré' });
       return;
+    }
+    if (loadState) {
+      const state = await loadState(session.userId, session.tenantId);
+      if (!state || state.disabled) {
+        await reply.code(401).send({ error: 'session révoquée' });
+        return;
+      }
+      session.role = state.role; // rôle frais : les changements de rôle sont immédiats
     }
     req.auth = session;
   };

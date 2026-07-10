@@ -1,14 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { hashPassword } from '../auth/password';
 import { DuplicateEmailError } from '../user/store.pg';
-import type { UserRow, CreateUserInput } from '../user/store.pg';
+import type { UserRow, CreateUserInput, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
 
 export interface UsersRouteDeps {
   listUsers(tenantId: string): Promise<UserRow[]>;
   createUser(tenantId: string, input: CreateUserInput): Promise<UserRow>;
-  /** 'updated' | 'last_admin' (refusé : dernier admin) | 'not_found' (inconnu/hors tenant). */
-  setUserRole(tenantId: string, userId: string, role: string): Promise<'updated' | 'last_admin' | 'not_found'>;
+  /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
+  setUserRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
+  /** Révoque (true) ou réactive (false) un compte. Mêmes garde-fous que le rôle. */
+  setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
+  /** Supprime définitivement un compte. Refusé si dernier admin actif. */
+  deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
 }
 
 const ROLES = new Set(['admin', 'agent']);
@@ -87,5 +91,33 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur est requis' });
     return reply.code(200).send({ id: userId, role });
+  });
+
+  // Révoquer (disabled=true) ou réactiver (false) un compte : login bloqué sans supprimer la ligne.
+  app.patch('/tenants/:tenantId/users/:userId/disabled', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { userId } = req.params as { userId: string };
+    const disabled = (req.body as { disabled?: unknown } | null)?.disabled;
+    if (typeof disabled !== 'boolean') return reply.code(400).send({ error: 'disabled (booléen) requis' });
+    // Self-block : ne pas se révoquer soi-même (auto-lockout).
+    if (req.auth?.userId === userId) return reply.code(400).send({ error: 'tu ne peux pas révoquer ton propre compte' });
+    const result = await deps.setUserDisabled(tenant, userId, disabled);
+    if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
+    if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
+    return reply.code(200).send({ id: userId, disabled });
+  });
+
+  // Supprimer définitivement un compte (irréversible). Mêmes garde-fous que la révocation.
+  app.delete('/tenants/:tenantId/users/:userId', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { userId } = req.params as { userId: string };
+    // Self-block : ne pas supprimer son propre compte.
+    if (req.auth?.userId === userId) return reply.code(400).send({ error: 'tu ne peux pas supprimer ton propre compte' });
+    const result = await deps.deleteUser(tenant, userId);
+    if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
+    if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur actif est requis' });
+    return reply.code(200).send({ id: userId, deleted: true });
   });
 }

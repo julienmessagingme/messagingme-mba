@@ -328,6 +328,8 @@ export interface AdminUser {
   email: string;
   name: string | null;
   role: UserRole;
+  /** true = compte révoqué (login bloqué). */
+  disabled: boolean;
   createdAt: string;
 }
 export function listUsers(tenantId: string): Promise<{ users: AdminUser[] }> {
@@ -344,4 +346,10 @@ export function createUser(tenantId: string, input: CreateUserInput): Promise<{ 
 }
 export function setUserRole(tenantId: string, userId: string, role: UserRole): Promise<{ id: string; role: UserRole }> {
   return request(`/tenants/${tenantId}/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+}
+export function setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<{ id: string; disabled: boolean }> {
+  return request(`/tenants/${tenantId}/users/${userId}/disabled`, { method: 'PATCH', body: JSON.stringify({ disabled }) });
+}
+export function deleteUser(tenantId: string, userId: string): Promise<{ id: string; deleted: boolean }> {
+  return request(`/tenants/${tenantId}/users/${userId}`, { method: 'DELETE' });
 }

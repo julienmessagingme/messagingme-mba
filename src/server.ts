@@ -83,7 +83,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     appSecret: deps.appSecret ?? config.META_APP_SECRET,
   });
 
-  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret) : undefined;
+  const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState) : undefined;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
   // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
   const requireAdmin = requireAuth ? [requireAuth, makeRequireRole(['admin'])] : undefined;

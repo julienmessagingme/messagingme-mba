@@ -93,11 +93,11 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
 (l'inbox agent en dépend) ; invariant « ≥1 admin/tenant » forcé EN BASE dans `setRole` (refus
 `last_admin` -> 409) ; tests agent->403 ajoutés sur contacts/import. Résidus non bloquants :
 
-- 🟡 **JWT figé sur changement de rôle** : le rôle vit dans le token (TTL 12h) ; une rétrogradation
-  admin->agent prend pleinement effet au plus tard à l'expiration/reconnexion. L'invariant base
-  empêche le zéro-admin, mais un admin rétrogradé garde ses droits admin jusqu'à expiration du token.
-  Acceptable pour un jeu d'admins B2B restreint et de confiance. Durcissement si besoin :
-  `users.token_version` (claim signé + rejet si version périmée) OU TTL réduit + refresh token.
+- ✅ **JWT figé sur changement de rôle / révocation — RÉSOLU (2026-07-10)** : `requireAuth` relit
+  l'état du compte EN BASE à chaque requête authentifiée (`getUserState` -> `PgUserStore.getAuthState`) :
+  compte supprimé/révoqué -> 401 immédiat, rôle rafraîchi depuis la base. Un changement de rôle, une
+  révocation ou une suppression prennent effet TOUT DE SUITE, plus de fenêtre de 12h. Coût : un lookup
+  PK par requête (négligeable à ce volume). Optionnel (absent en test -> JWT seul).
 - 🟡 **Oracle d'existence d'email cross-tenant** : POST /users renvoie 409 si l'email existe DÉJÀ
   ailleurs (index unique GLOBAL `lower(email)`, migration 0010). Un admin peut ainsi sonder si un
   email est déjà un compte console d'un autre tenant (fuite limitée à l'existence, message générique,
