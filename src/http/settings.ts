@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
-import type { PreHandler } from '../auth/middleware';
+import type { Guard } from '../auth/middleware';
 import type { TenantSettings } from '../settings/store.pg';
 
 export interface SettingsRouteDeps {
@@ -16,7 +16,7 @@ function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): str
 }
 
 /** Réglages tenant : GET ouvert (lecture), PUT admin-only (toggle MBA). */
-export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, requireAuth?: PreHandler): void {
+export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
   app.get('/tenants/:tenantId/settings', guard, async (req, reply) => {

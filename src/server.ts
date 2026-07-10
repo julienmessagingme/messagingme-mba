@@ -8,8 +8,9 @@ import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerStats } from './http/stats';
 import { registerSettings } from './http/settings';
+import { registerUsers } from './http/users';
 import { registerAuth } from './auth/routes';
-import { makeRequireAuth } from './auth/middleware';
+import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
 import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
@@ -18,6 +19,7 @@ import type { TemplateRouteDeps } from './http/templates';
 import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
 import type { SettingsRouteDeps } from './http/settings';
+import type { UsersRouteDeps } from './http/users';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -40,6 +42,8 @@ export interface ServerDeps {
   stats?: StatsRouteDeps;
   /** Réglages tenant (toggle MBA). */
   settings?: SettingsRouteDeps;
+  /** Gestion des comptes (onglet Admin) — réservé aux admins. */
+  admin?: UsersRouteDeps;
 }
 
 /**
@@ -48,8 +52,8 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns) && !deps.auth) {
-    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns sont exposées');
+  if ((deps.import || deps.campaigns || deps.admin) && !deps.auth) {
+    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin sont exposées');
   }
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
@@ -80,13 +84,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
 
   const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret) : undefined;
+  // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
+  // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
+  const requireAdmin = requireAuth ? [requireAuth, makeRequireRole(['admin'])] : undefined;
   if (deps.auth) registerAuth(app, deps.auth);
-  if (deps.import) registerImport(app, deps.import, requireAuth);
-  if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAuth);
+  if (deps.import) registerImport(app, deps.import, requireAdmin);
+  if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin);
+  // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
+  // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
+  // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.
   if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
   if (deps.inbox) registerInbox(app, deps.inbox, requireAuth);
-  if (deps.stats) registerStats(app, deps.stats, requireAuth);
-  if (deps.settings) registerSettings(app, deps.settings, requireAuth);
+  if (deps.stats) registerStats(app, deps.stats, requireAdmin);
+  if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
+  if (deps.admin) registerUsers(app, deps.admin, requireAdmin);
 
   return app;
 }

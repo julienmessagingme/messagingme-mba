@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
-import type { PreHandler } from '../auth/middleware';
+import type { Guard } from '../auth/middleware';
 import type { MetaTemplateClient, CreateTemplateInput, TemplateButton } from '../meta/templates';
 
 export interface TemplateRouteDeps {
@@ -32,7 +32,7 @@ function validButtons(v: unknown): v is TemplateButton[] | undefined {
 }
 
 /** Routes de templates : liste (statut Meta) + création (soumission à validation Meta). */
-export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps, requireAuth?: PreHandler): void {
+export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
   app.get('/tenants/:tenantId/templates', guard, async (req, reply) => {

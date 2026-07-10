@@ -9,6 +9,9 @@ declare module 'fastify' {
 }
 
 export type PreHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+/** Une garde de route : un preHandler seul, ou une chaîne exécutée dans l'ordre (Fastify
+ *  court-circuite dès qu'un maillon répond). Sert à composer [requireAuth, requireRole]. */
+export type Guard = PreHandler | PreHandler[];
 
 /**
  * Garde de rôle à utiliser DANS un handler déjà authentifié : renvoie true (et répond 403)
@@ -21,6 +24,26 @@ export function forbidNonAdmin(req: FastifyRequest, reply: FastifyReply): boolea
     return true;
   }
   return false;
+}
+
+/**
+ * preHandler de groupe : exige que `req.auth.role` soit dans `roles`. À composer APRÈS
+ * `makeRequireAuth` (`preHandler: [requireAuth, makeRequireRole(['admin'])]`) — il suppose
+ * `req.auth` déjà posé. 401 défensif si l'auth manque, 403 si le rôle n'est pas autorisé.
+ * C'est la barrière serveur qui réserve tout sauf l'inbox aux admins (agent = inbox only).
+ */
+export function makeRequireRole(roles: readonly string[]): PreHandler {
+  const allowed = new Set(roles);
+  return async function requireRole(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+    if (!req.auth) {
+      await reply.code(401).send({ error: 'authentification requise' });
+      return;
+    }
+    if (!allowed.has(req.auth.role)) {
+      await reply.code(403).send({ error: 'action réservée aux administrateurs' });
+      return;
+    }
+  };
 }
 
 /**

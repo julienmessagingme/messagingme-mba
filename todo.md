@@ -71,6 +71,29 @@ prod. Résidus non bloquants ci-dessous.
   `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
   non-déterminisme multi-tenant.
 
+## Dette Feature 2 — Admin + RBAC (revue adversariale 2026-07-10)
+
+RBAC posé : rôles `admin`/`agent`, agent = inbox uniquement (garde serveur `makeRequireRole`
+sur tous les groupes sauf inbox + templates GET, source de vérité), onglet Admin (liste users,
+créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET remis en `requireAuth`
+(l'inbox agent en dépend) ; invariant « ≥1 admin/tenant » forcé EN BASE dans `setRole` (refus
+`last_admin` -> 409) ; tests agent->403 ajoutés sur contacts/import. Résidus non bloquants :
+
+- 🟡 **JWT figé sur changement de rôle** : le rôle vit dans le token (TTL 12h) ; une rétrogradation
+  admin->agent prend pleinement effet au plus tard à l'expiration/reconnexion. L'invariant base
+  empêche le zéro-admin, mais un admin rétrogradé garde ses droits admin jusqu'à expiration du token.
+  Acceptable pour un jeu d'admins B2B restreint et de confiance. Durcissement si besoin :
+  `users.token_version` (claim signé + rejet si version périmée) OU TTL réduit + refresh token.
+- 🟡 **Oracle d'existence d'email cross-tenant** : POST /users renvoie 409 si l'email existe DÉJÀ
+  ailleurs (index unique GLOBAL `lower(email)`, migration 0010). Un admin peut ainsi sonder si un
+  email est déjà un compte console d'un autre tenant (fuite limitée à l'existence, message générique,
+  pas de PII ni de tenant révélé). Conséquence assumée du design « un email = un compte global ».
+  Fermer l'oracle imposerait de repasser à l'unicité par tenant + login scopé au tenant (changement
+  de schéma qui touche le login) -> à trancher côté produit, pas en aveugle.
+- 🟡 **Course théorique zéro-admin** : deux rétrogradations croisées simultanées (READ COMMITTED)
+  pourraient toutes deux voir count>1. Négligeable (2 admins à la milliseconde). Fermer via
+  transaction + `SELECT ... FOR UPDATE` si on ajoute un jour token_version.
+
 ## Suites de la revue Loops 3-5
 
 - ✅ **Réconciliation `sending`** : sweeper `reclaimStale` en place (worker.ts, `STALE_SENDING_MS`),

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { PreHandler } from '../auth/middleware';
+import type { Guard } from '../auth/middleware';
 import type { DashboardStats } from '../stats/store.pg';
 
 export interface StatsRouteDeps {
@@ -14,7 +14,7 @@ function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): str
 }
 
 /** Stats du dashboard (séries 1 pt/jour). Lecture ouverte à tout compte authentifié. */
-export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requireAuth?: PreHandler): void {
+export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
   app.get('/tenants/:tenantId/stats', guard, async (req, reply) => {

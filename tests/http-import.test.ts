@@ -9,11 +9,14 @@ import type { UserFieldDef } from '../src/crm/types';
 
 const SECRET = 'test-secret';
 let token = '';
+let agentToken = '';
 beforeAll(async () => {
   token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+  agentToken = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
+const asAgent = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${agentToken}` } });
 
 class FakeContacts implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
@@ -180,5 +183,32 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     expect(res.statusCode).toBe(200);
     expect(contacts.upserts[0]?.optInStatus).toBe('unknown');
     await app.close();
+  });
+
+  // RBAC (Feature 2) : les contacts (PII : téléphones E164, opt-in) sont réservés aux admins.
+  // L'agent (inbox uniquement) doit être refusé (403) AVANT tout accès au store.
+  describe('RBAC — agent refusé sur contacts/import', () => {
+    it('GET /contacts agent -> 403', async () => {
+      const app = inject(new FakeContacts(), new FakeFields());
+      const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts', ...asAgent() });
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    });
+
+    it('POST /import agent -> 403 (aucune écriture)', async () => {
+      const contacts = new FakeContacts();
+      const app = inject(contacts, new FakeFields());
+      const res = await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...asAgent(), payload: { csv: 'Tel\n+33611111111', optIn: true } });
+      expect(res.statusCode).toBe(403);
+      expect(contacts.upserts).toHaveLength(0); // court-circuit au preHandler, store intact
+      await app.close();
+    });
+
+    it('POST /import/preview agent -> 403', async () => {
+      const app = inject(new FakeContacts(), new FakeFields());
+      const res = await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import/preview', ...asAgent(), payload: { csv: 'Tel\n+33611111111' } });
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    });
   });
 });

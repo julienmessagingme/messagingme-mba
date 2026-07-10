@@ -6,7 +6,7 @@ import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow } from '../crm/contact-store.pg';
 import { forbidNonAdmin } from '../auth/middleware';
-import type { PreHandler } from '../auth/middleware';
+import type { Guard } from '../auth/middleware';
 
 export interface ImportRouteDeps extends ImportDeps {
   listContacts(tenantId: string, limit?: number, offset?: number): Promise<ContactRow[]>;
@@ -26,7 +26,7 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
  * POST /tenants/:tenantId/contacts/import — importe un CSV brut : parse, reconnaît les
  * colonnes (si pas de mapping fourni), upsert les contacts. Retourne un ImportReport.
  */
-export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: PreHandler): void {
+export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
   /** Tenant effectif = celui du JWT ; l'URL doit correspondre. Renvoie null si interdit. */

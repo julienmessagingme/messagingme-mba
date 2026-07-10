@@ -295,3 +295,29 @@ export function getSettings(tenantId: string): Promise<TenantSettings> {
 export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`, { method: 'PUT', body: JSON.stringify({ mbaEnabled }) });
 }
+
+// --- Admin (gestion des comptes) ---
+
+export type UserRole = 'admin' | 'agent';
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  createdAt: string;
+}
+export function listUsers(tenantId: string): Promise<{ users: AdminUser[] }> {
+  return request<{ users: AdminUser[] }>(`/tenants/${tenantId}/users`);
+}
+export interface CreateUserInput {
+  email: string;
+  password: string;
+  role: UserRole;
+  name?: string;
+}
+export function createUser(tenantId: string, input: CreateUserInput): Promise<{ user: AdminUser }> {
+  return request<{ user: AdminUser }>(`/tenants/${tenantId}/users`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function setUserRole(tenantId: string, userId: string, role: UserRole): Promise<{ id: string; role: UserRole }> {
+  return request(`/tenants/${tenantId}/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+}

@@ -6,7 +6,7 @@ import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberR
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
 import { forbidNonAdmin } from '../auth/middleware';
-import type { PreHandler } from '../auth/middleware';
+import type { Guard } from '../auth/middleware';
 
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
@@ -38,7 +38,7 @@ function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): str
 }
 
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
-export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: PreHandler): void {
+export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
   app.get('/tenants/:tenantId/campaigns', guard, async (req, reply) => {

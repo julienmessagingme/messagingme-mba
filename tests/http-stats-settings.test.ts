@@ -45,10 +45,10 @@ describe('stats route', () => {
     await a.close();
   });
 
-  it('agent peut lire les stats (lecture ouverte)', async () => {
+  it('agent -> 403 sur les stats (dashboard réservé admin, Feature 2 RBAC)', async () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats', ...h(agentTok) });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(403);
     await a.close();
   });
 
@@ -68,11 +68,18 @@ describe('stats route', () => {
 });
 
 describe('settings route', () => {
-  it('GET /settings -> mbaEnabled', async () => {
+  it('GET /settings admin -> mbaEnabled', async () => {
     const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true }) } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(agentTok) });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
+    await a.close();
+  });
+
+  it('GET /settings agent -> 403 (admin-only, Feature 2 RBAC)', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
     await a.close();
   });
 

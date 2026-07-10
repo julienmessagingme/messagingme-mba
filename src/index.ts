@@ -10,6 +10,7 @@ import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
+import { PgUserStore } from './user/store.pg';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaClient } from './meta/client';
 import { buildTemplateComponents } from './meta/template-components';
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   const inboxStore = new PgInboxStore(pool);
   const statsStore = new PgStatsStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
+  const userStore = new PgUserStore(pool);
   const transport = new FetchTransport();
   const app = buildServer({
     queue,
@@ -74,6 +76,11 @@ async function main(): Promise<void> {
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
+    },
+    admin: {
+      listUsers: (tenant) => userStore.list(tenant),
+      createUser: (tenant, input) => userStore.create(tenant, input),
+      setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
     },
   });
 

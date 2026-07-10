@@ -1,0 +1,186 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { AppShell } from '@/components/AppShell';
+import type { Session } from '@/lib/session';
+import { listUsers, createUser, setUserRole, type AdminUser, type UserRole } from '@/lib/api';
+
+export default function AdminPage() {
+  return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
+}
+
+function AdminInner({ session }: { session: Session }) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const { users } = await listUsers(session.tenantId);
+      setUsers(users);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Chargement impossible');
+    } finally {
+      setLoading(false);
+    }
+  }, [session.tenantId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function changeRole(u: AdminUser, role: UserRole) {
+    setError(null);
+    const prev = users;
+    setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, role } : x))); // optimiste
+    try {
+      await setUserRole(session.tenantId, u.id, role);
+    } catch (err) {
+      setUsers(prev); // rollback
+      setError(err instanceof Error ? err.message : 'Changement de rôle impossible');
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-base font-semibold tracking-tight text-ink-900">Administration</h2>
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      <CreateUserCard tenantId={session.tenantId} onCreated={load} />
+
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
+          Comptes ({users.length})
+        </div>
+        {loading ? (
+          <p className="px-5 py-6 text-sm text-ink-500">Chargement…</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+                <th className="px-5 py-2 font-medium">Nom</th>
+                <th className="px-5 py-2 font-medium">Email</th>
+                <th className="px-5 py-2 font-medium">Rôle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const isSelf = u.email.toLowerCase() === session.email.toLowerCase();
+                return (
+                  <tr key={u.id} className="border-b border-ink-50 last:border-0">
+                    <td className="px-5 py-3 text-ink-800">{u.name ?? <span className="text-ink-300">·</span>}</td>
+                    <td className="px-5 py-3 text-ink-600">{u.email}</td>
+                    <td className="px-5 py-3">
+                      <select
+                        value={u.role}
+                        disabled={isSelf}
+                        onChange={(e) => changeRole(u, e.target.value as UserRole)}
+                        title={isSelf ? 'Tu ne peux pas changer ton propre rôle' : ''}
+                        className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-sm text-ink-800 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="agent">Agent</option>
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CreateUserCard({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<UserRole>('agent');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setBusy(true);
+    try {
+      await createUser(tenantId, { email: email.trim(), password, role, ...(name.trim() ? { name: name.trim() } : {}) });
+      setMsg({ kind: 'ok', text: `Compte ${email.trim()} créé.` });
+      setEmail('');
+      setName('');
+      setPassword('');
+      setRole('agent');
+      onCreated();
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Création impossible' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="text-sm font-semibold text-ink-900">Créer un compte</div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Nom (optionnel)</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            placeholder="Marie Dupont"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Email</label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            placeholder="agent@demo.test"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Mot de passe (min 8)</label>
+          <input
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            placeholder="••••••••"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Rôle</label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+            className="w-full rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          >
+            <option value="agent">Agent (inbox uniquement)</option>
+            <option value="admin">Admin (accès complet)</option>
+          </select>
+        </div>
+      </div>
+      {msg && (
+        <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>
+          {msg.text}
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={busy}
+        className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+      >
+        {busy ? 'Création…' : 'Créer le compte'}
+      </button>
+    </form>
+  );
+}

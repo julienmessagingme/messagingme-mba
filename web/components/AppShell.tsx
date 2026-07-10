@@ -6,18 +6,36 @@ import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
 import { Logo } from './Logo';
 
-/** Coquille commune : garde d'auth, header (logo, email, logout) et navigation. */
-export function AppShell({ active, children }: { active: 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'inbox'; children: (session: Session) => React.ReactNode }) {
+type Tab = 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'inbox' | 'admin';
+
+/** Coquille commune : garde d'auth + RBAC, header (logo, email, logout) et navigation.
+ *  RBAC : seule l'inbox est ouverte à l'agent. Toute page hors inbox exige le rôle admin ;
+ *  un agent qui y accède (URL directe) est renvoyé sur /inbox. Barrière de confort : la vraie
+ *  autorité reste le serveur (preHandler admin), mais on évite d'afficher une page vide/403. */
+export function AppShell({ active, children }: { active: Tab; children: (session: Session) => React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
 
+  // Fail-safe : tout ce qui n'est pas l'inbox est réservé aux admins (une nouvelle page admin
+  // est gardée par défaut sans rien oublier). L'inbox est le seul périmètre agent.
+  const adminOnly = active !== 'inbox';
+
   useEffect(() => {
     const s = getSession();
-    if (!s) router.replace('/login');
-    else setSession(s);
-  }, [router]);
+    if (!s) {
+      router.replace('/login');
+      return;
+    }
+    if (adminOnly && s.role !== 'admin') {
+      router.replace('/inbox');
+      return;
+    }
+    setSession(s);
+  }, [router, adminOnly]);
 
   if (!session) return null;
+  // Ceinture + bretelles : ne rend pas le contenu admin à un agent même le temps du replace.
+  if (adminOnly && session.role !== 'admin') return null;
 
   function logout() {
     clearSession();
@@ -51,10 +69,18 @@ export function AppShell({ active, children }: { active: 'dashboard' | 'contacts
             <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
           </div>
           <nav className="flex gap-1 text-sm">
-            {tab('/dashboard', 'dashboard', 'Dashboard')}
-            {tab('/inbox', 'inbox', 'Inbox')}
-            {tab('/contacts', 'contacts', 'Contacts')}
-            {tab('/campaigns', 'campagnes', 'Campagnes')}
+            {session.role === 'admin' ? (
+              <>
+                {tab('/dashboard', 'dashboard', 'Dashboard')}
+                {tab('/inbox', 'inbox', 'Inbox')}
+                {tab('/contacts', 'contacts', 'Contacts')}
+                {tab('/campaigns', 'campagnes', 'Campagnes')}
+                {tab('/admin', 'admin', 'Admin')}
+              </>
+            ) : (
+              // Agent : l'inbox est son seul périmètre.
+              tab('/inbox', 'inbox', 'Inbox')
+            )}
           </nav>
           <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-ink-500">
             <span className="hidden max-w-[200px] truncate sm:inline">{session.email}</span>

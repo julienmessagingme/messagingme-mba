@@ -123,4 +123,12 @@ describe('routes templates', () => {
     expect(res.json<{ templates: Array<{ status: string }> }>().templates[0]?.status).toBe('APPROVED');
     await a.close();
   });
+
+  it('GET liste : agent AUTORISÉ (200) — l inbox en a besoin pour envoyer un template hors fenêtre 24h', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { data: [{ name: 'promo', status: 'APPROVED', category: 'MARKETING', language: 'fr' }] } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/templates', ...h(agentToken) });
+    expect(res.statusCode).toBe(200); // NON-régression : agent lit la liste (create reste 403, testé ci-dessus)
+    await a.close();
+  });
 });
