@@ -357,7 +357,9 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
         disabled={busy || !hasPhone}
         className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
       >
-        {busy ? 'Import en cours...' : `Importer ${preview.rowCount} lignes`}
+        {busy
+          ? 'Import en cours...'
+          : `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`}
       </button>
     </section>
   );
