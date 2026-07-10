@@ -44,7 +44,7 @@ function AdminInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">Administration</h2>
+      <h2 className="text-base font-semibold tracking-tight text-ink-900">Compte</h2>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       <CreateUserCard tenantId={session.tenantId} onCreated={load} />

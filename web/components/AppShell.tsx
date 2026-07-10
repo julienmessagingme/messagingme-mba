@@ -79,7 +79,7 @@ export function AppShell({ active, children }: { active: Tab; children: (session
                 {tab('/inbox', 'inbox', 'Inbox')}
                 {tab('/contacts', 'contacts', 'Contacts')}
                 {tab('/campaigns', 'campagnes', 'Campagnes')}
-                {tab('/admin', 'admin', 'Admin')}
+                {tab('/admin', 'admin', 'Compte')}
               </>
             ) : (
               // Agent : l'inbox est son seul périmètre.
@@ -87,7 +87,6 @@ export function AppShell({ active, children }: { active: Tab; children: (session
             )}
           </nav>
           <div className="ml-auto flex shrink-0 items-center gap-3 text-sm text-ink-500">
-            <span className="hidden max-w-[200px] truncate sm:inline">{session.email}</span>
             <button onClick={logout} className="rounded-lg border border-ink-300 px-2.5 py-1 text-ink-700 hover:bg-ink-50">
               Déconnexion
             </button>
