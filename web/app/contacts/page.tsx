@@ -140,17 +140,19 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
+  const [showPaste, setShowPaste] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) setCsv(await file.text());
-  }
-
-  async function analyze() {
+  // Analyse le CSV (depuis un fichier ou du texte collé) et enchaîne DIRECTEMENT sur le mapping.
+  // On n'affiche jamais les données brutes.
+  async function analyze(src?: string) {
+    const text = src ?? csv;
+    if (text.trim() === '') return;
     setBusy(true);
     setError(null);
     try {
-      const p = await previewImport(tenantId, csv);
+      const p = await previewImport(tenantId, text);
+      setCsv(text);
       setPreview(p);
       setChoices(initChoices(p));
     } catch (err) {
@@ -158,6 +160,13 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    await analyze(await file.text());
   }
 
   async function submit() {
@@ -184,35 +193,46 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
 
   const hasPhone = preview ? preview.headers.some((h) => choices[h]?.choice === 'phone') : false;
 
-  // Étape 1 : coller / choisir le CSV.
+  // Étape 1 : choisir le fichier. On lit juste les en-têtes et on enchaîne sur le mapping,
+  // sans jamais afficher les données.
   if (!preview) {
     return (
       <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-semibold tracking-tight text-ink-900">Importer un CSV</h2>
-        <p className="mt-1 text-xs text-ink-500">1re ligne = en-têtes. À l&apos;étape suivante tu associes chaque colonne à un champ.</p>
+        <p className="mt-1 text-xs text-ink-500">On lit la 1re ligne (les en-têtes) et tu associes chaque colonne à un champ. Tes données ne s&apos;affichent pas ici.</p>
 
-        <label className="mt-4 flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-3 py-2 text-sm text-ink-600 hover:border-brand-500 hover:text-brand-600">
-          Choisir un fichier .csv
-          <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
+        <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-ink-300 px-3 py-10 text-center hover:border-brand-500">
+          <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink-300" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
+          <span className="text-sm font-medium text-ink-700">{busy ? 'Analyse en cours…' : 'Choisir un fichier .csv'}</span>
+          <span className="text-xs text-ink-400">{fileName ?? 'ou glisse-le ici'}</span>
+          <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" disabled={busy} />
         </label>
-
-        <textarea
-          value={csv}
-          onChange={(e) => setCsv(e.target.value)}
-          rows={8}
-          placeholder={'Prénom,Nom,Téléphone,Ville\nJulie,Dumas,+33612345678,Lyon'}
-          className="mt-3 w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-        />
 
         {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-        <button
-          onClick={analyze}
-          disabled={busy || csv.trim() === ''}
-          className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-        >
-          {busy ? 'Analyse...' : 'Analyser le CSV →'}
-        </button>
+        <div className="mt-3 text-center">
+          <button onClick={() => setShowPaste((s) => !s)} className="text-xs text-ink-400 hover:text-brand-600">
+            {showPaste ? 'masquer' : 'ou coller le texte à la place'}
+          </button>
+        </div>
+        {showPaste && (
+          <div className="mt-2">
+            <textarea
+              value={csv}
+              onChange={(e) => setCsv(e.target.value)}
+              rows={4}
+              placeholder={'Prénom,Nom,Téléphone\nJulie,Dumas,+33612345678'}
+              className="w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            />
+            <button
+              onClick={() => analyze()}
+              disabled={busy || csv.trim() === ''}
+              className="mt-2 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+            >
+              {busy ? 'Analyse...' : 'Analyser →'}
+            </button>
+          </div>
+        )}
       </section>
     );
   }
