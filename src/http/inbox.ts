@@ -8,8 +8,10 @@ export interface OutboundTemplate {
   language: string;
   /** Valeurs des variables du corps {{1}}, {{2}}... dans l'ordre. */
   bodyParams: string[];
-  /** URL d'image pour le header média du template, si le template en a un. */
-  headerImageUrl?: string;
+  /** URL publique du média de header (image/vidéo/document), si le template en a un. */
+  headerMediaUrl?: string;
+  /** Format du header média, pour construire le bon type de paramètre côté Meta. */
+  headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 }
 
 export interface InboxRouteDeps {
@@ -97,7 +99,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       templateName: string;
       language: string;
       bodyParams: unknown;
-      headerImageUrl: unknown;
+      headerMediaUrl: unknown;
+      headerFormat: unknown;
     }>;
     if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName requis' });
     if (!nonEmpty(b.language)) return reply.code(400).send({ error: 'language requis' });
@@ -108,7 +111,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       }
       bodyParams = b.bodyParams as string[];
     }
-    const headerImageUrl = nonEmpty(b.headerImageUrl) ? b.headerImageUrl : undefined;
+    const headerMediaUrl = nonEmpty(b.headerMediaUrl) ? b.headerMediaUrl : undefined;
+    const headerFormat =
+      b.headerFormat === 'IMAGE' || b.headerFormat === 'VIDEO' || b.headerFormat === 'DOCUMENT' ? b.headerFormat : undefined;
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
@@ -119,7 +124,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       name: b.templateName,
       language: b.language,
       bodyParams,
-      ...(headerImageUrl ? { headerImageUrl } : {}),
+      ...(headerMediaUrl ? { headerMediaUrl } : {}),
+      ...(headerFormat ? { headerFormat } : {}),
     });
     await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template');
     return reply.code(200).send({ messageId });

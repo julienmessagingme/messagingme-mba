@@ -278,7 +278,9 @@ function TemplateSendPanel({
         templateName: sel.name,
         language: sel.language,
         bodyParams: Array.from({ length: varCount }, (_, i) => vars[i] ?? ''),
-        ...(needsMedia && imageUrl.trim() ? { headerImageUrl: imageUrl.trim() } : {}),
+        ...(needsMedia && imageUrl.trim()
+          ? { headerMediaUrl: imageUrl.trim(), headerFormat: sel.headerFormat as 'IMAGE' | 'VIDEO' | 'DOCUMENT' }
+          : {}),
       });
       await onSent();
     } catch (err) {

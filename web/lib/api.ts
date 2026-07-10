@@ -258,7 +258,9 @@ export interface SendTemplateInput {
   templateName: string;
   language: string;
   bodyParams: string[];
-  headerImageUrl?: string;
+  /** URL publique du média de header (image/vidéo/document), si le template en a un. */
+  headerMediaUrl?: string;
+  headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 }
 export function sendTemplateToConversation(tenantId: string, conversationId: string, input: SendTemplateInput): Promise<{ messageId: string }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/send-template`, {

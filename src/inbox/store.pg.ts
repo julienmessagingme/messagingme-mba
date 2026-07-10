@@ -76,15 +76,6 @@ export class PgInboxStore implements InboxStore {
     }));
   }
 
-  /** Retourne le wa_id de la conversation si elle appartient au tenant, sinon null. */
-  async getConversationWaId(conversationId: string, tenantId: string): Promise<string | null> {
-    const res = await this.pool.query<{ wa_id: string }>(
-      `select wa_id from conversations where id = $1 and tenant_id = $2`,
-      [conversationId, tenantId],
-    );
-    return res.rows[0]?.wa_id ?? null;
-  }
-
   /**
    * Contexte pour répondre : wa_id + état de la fenêtre de service 24 h. La fenêtre est ouverte
    * si le DERNIER message ENTRANT (du client) a moins de 24 h. Hors fenêtre -> texte libre

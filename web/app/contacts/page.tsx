@@ -188,7 +188,14 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
   }
 
   function setChoice(header: string, patch: Partial<Choice>) {
-    setChoices((prev) => ({ ...prev, [header]: { ...prev[header]!, ...patch } }));
+    setChoices((prev) => {
+      const cur = prev[header] ?? { choice: 'ignore', customKey: '' };
+      const next: Choice = { ...cur, ...patch };
+      // En passant sur « Champ perso… », pré-remplir le nom du champ (slug de l'en-tête) pour
+      // qu'il soit éditable, plutôt qu'un champ vide.
+      if (patch.choice === 'custom' && next.customKey.trim() === '') next.customKey = slug(header);
+      return { ...prev, [header]: next };
+    });
   }
 
   const hasPhone = preview ? preview.headers.some((h) => choices[h]?.choice === 'phone') : false;
@@ -247,7 +254,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
         </button>
       </div>
       <p className="mt-1 text-xs text-ink-500">
-        {preview.headers.length} colonnes · {preview.rowCount} lignes. Choisis à quoi correspond chaque colonne.
+        {preview.headers.length} colonnes · {preview.rowCount} lignes. Les suggestions sont modifiables : passe une colonne en <b>Champ perso…</b> pour la nommer toi-même, ou en <b>Ignorer</b>.
       </p>
 
       <div className="mt-4 space-y-2">

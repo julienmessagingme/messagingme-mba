@@ -10,6 +10,7 @@ import { PgInboxStore } from './inbox/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaClient } from './meta/client';
+import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
@@ -56,13 +57,11 @@ async function main(): Promise<void> {
       },
       sendTemplateMessage: async (phoneNumberId, to, tpl) => {
         const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
-        const components: unknown[] = [];
-        if (tpl.headerImageUrl) {
-          components.push({ type: 'header', parameters: [{ type: 'image', image: { link: tpl.headerImageUrl } }] });
-        }
-        if (tpl.bodyParams.length > 0) {
-          components.push({ type: 'body', parameters: tpl.bodyParams.map((v) => ({ type: 'text', text: v })) });
-        }
+        const components = buildTemplateComponents({
+          bodyParams: tpl.bodyParams,
+          ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
+          ...(tpl.headerFormat ? { headerFormat: tpl.headerFormat } : {}),
+        });
         const spec = { name: tpl.name, language: tpl.language, ...(components.length > 0 ? { components } : {}) };
         return (await client.sendTemplate(to, spec)).messageId;
       },

@@ -94,11 +94,11 @@ describe('inbox routes', () => {
       method: 'POST',
       url: '/tenants/t1/conversations/c1/send-template',
       ...auth(),
-      payload: { templateName: 'promo', language: 'fr', bodyParams: ['Julie'], headerImageUrl: 'https://x.fr/a.jpg' },
+      payload: { templateName: 'promo', language: 'fr', bodyParams: ['Julie'], headerMediaUrl: 'https://x.fr/v.mp4', headerFormat: 'VIDEO' },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ messageId: string }>().messageId).toBe('wamid.TPL');
-    expect(sent).toMatchObject({ pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerImageUrl: 'https://x.fr/a.jpg' } });
+    expect(sent).toMatchObject({ pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerMediaUrl: 'https://x.fr/v.mp4', headerFormat: 'VIDEO' } });
     expect(recordedType).toBe('template');
     await a.close();
   });
