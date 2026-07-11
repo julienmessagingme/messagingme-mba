@@ -39,6 +39,53 @@ async function resizeToDataUrl(file: File, max = 1024): Promise<string> {
 const emptyCard = (): Card => ({ headerHandle: '', preview: '', body: '', uploading: false });
 const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
+/** Aperçu façon WhatsApp d'un carousel : bulle d'intro + cartes défilables (image + texte + boutons). */
+function CarouselPreview({ body, cards, buttons }: { body: string; cards: Card[]; buttons: TemplateButtonInput[] }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-ink-500">Aperçu WhatsApp</p>
+      <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
+        <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
+          <div className="leading-tight">
+            <div className="text-sm font-medium">Messaging Me Tech</div>
+            <div className="text-[10px] text-white/70">en ligne</div>
+          </div>
+        </div>
+        <div className="space-y-2 px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
+          <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-800 shadow-sm">
+            {body.trim() ? <span className="whitespace-pre-wrap break-words">{body}</span> : <span className="text-ink-400">Message d&apos;introduction…</span>}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {cards.map((c, i) => (
+              <div key={i} className="w-44 shrink-0 overflow-hidden rounded-lg bg-white shadow-sm">
+                <div className="flex aspect-video w-full items-center justify-center bg-ink-100 text-[11px] text-ink-400">
+                  {c.preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={c.preview} alt={`Carte ${i + 1}`} className="h-full w-full object-cover" />
+                  ) : (
+                    'image'
+                  )}
+                </div>
+                {c.body.trim() && <div className="px-2 py-1.5 text-[12px] leading-snug text-ink-800">{c.body}</div>}
+                {buttons.length > 0 && (
+                  <div>
+                    {buttons.map((b, j) => (
+                      <div key={j} className="border-t border-ink-100 py-1.5 text-center text-[12px] font-medium text-[#00a5f4]">
+                        {b.text?.trim() || (b.type === 'URL' ? 'Lien' : 'Réponse')}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Éditeur de template CAROUSEL : corps commun + 2 à 10 cartes (image + texte), boutons identiques
  *  sur toutes les cartes (contrainte Meta). Les images sont uploadées à la sélection (handle Meta). */
 export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
@@ -179,6 +226,8 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         </div>
         <button type="button" onClick={addCard} disabled={cards.length >= 10} className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-40">+ Ajouter une carte</button>
       </div>
+
+      <CarouselPreview body={body} cards={cards} buttons={buttons} />
 
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
       <button onClick={submit} disabled={!canSubmit} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
