@@ -367,28 +367,36 @@ export function deleteUser(tenantId: string, userId: string): Promise<{ id: stri
   return request(`/tenants/${tenantId}/users/${userId}`, { method: 'DELETE' });
 }
 
-// --- Flows (constructeur de formulaire) ---
+// --- Flows (constructeur de formulaire RICHE : texte / image / champ) ---
 
 export type FlowFieldType = 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'date';
-export interface FlowFieldInput {
+export type FlowTextKind = 'heading' | 'subheading' | 'body' | 'caption';
+
+/** Élément riche envoyé à la création d'un flow, dans l'ordre. `saveTo` (sur un champ) : clé du user field
+ *  cible ; absent -> le serveur crée un user field d'après le libellé (mapping par défaut). */
+export type FlowElementInput =
+  | { kind: FlowTextKind; text: string }
+  | { kind: 'image'; src: string }
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; saveTo?: string };
+
+export interface FlowField {
   label: string;
   type: FlowFieldType;
   required: boolean;
-}
-export interface FlowField extends FlowFieldInput {
   key: string;
 }
 export interface FlowSummary {
   id: string;
   name: string;
   status: 'DRAFT' | 'PUBLISHED';
+  /** Champs dérivés (kind='field') — pour l'aperçu de la liste. */
   fields: FlowField[];
   createdAt: string;
 }
 export function listFlows(tenantId: string): Promise<{ flows: FlowSummary[] }> {
   return request<{ flows: FlowSummary[] }>(`/tenants/${tenantId}/flows`);
 }
-export function createFlow(tenantId: string, input: { name: string; fields: FlowFieldInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+export function createFlow(tenantId: string, input: { name: string; elements: FlowElementInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
   return request(`/tenants/${tenantId}/flows`, { method: 'POST', body: JSON.stringify(input) });
 }
 export function publishFlow(tenantId: string, flowId: string): Promise<{ id: string; status: string }> {

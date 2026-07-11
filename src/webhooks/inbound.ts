@@ -4,6 +4,8 @@
  * chaque `value.messages[]`. BSUID-native : `from` peut manquer -> fallback `contacts[].wa_id`.
  */
 
+import { FLOW_REF_KEY } from '../meta/flow-json';
+
 export interface InboundMessage {
   phoneNumberId: string;
   waId: string;
@@ -12,6 +14,15 @@ export interface InboundMessage {
   body: string | null;
   buttonPayload: string | null;
   profileName: string | null;
+}
+
+/** Complétion d'un WhatsApp Flow (nfm_reply parsé) : le discriminant `ref` identifie le flow (donc le
+ *  tenant + le mapping), `values` porte les champs saisis (clés = clés de champ du flow). */
+export interface FlowCompletion {
+  phoneNumberId: string;
+  waId: string;
+  ref: string;
+  values: Record<string, unknown>;
 }
 
 export interface InboxStore {
@@ -97,6 +108,46 @@ export function extractInbound(payload: unknown): InboundMessage[] {
           buttonPayload,
           profileName,
         });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Extrait les complétions de WhatsApp Flow (nfm_reply) d'un payload webhook. Parse `response_json` et
+ * isole le discriminant `_ref` (FLOW_REF_KEY) : sans lui on ne sait pas à quel flow/mapping rattacher les
+ * valeurs -> on ignore (flow hors de notre générateur). Le `_ref` est retiré des `values`. Ne lève JAMAIS
+ * (JSON illisible -> complétion ignorée) : c'est de la donnée externe non fiable.
+ */
+export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
+  const out: FlowCompletion[] = [];
+  for (const entryRaw of asArray(asRecord(payload)['entry'])) {
+    for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
+      const value = asRecord(asRecord(changeRaw)['value']);
+      const phoneNumberId = str(asRecord(value['metadata'])['phone_number_id']);
+      if (!phoneNumberId) continue;
+      const contacts = asArray(value['contacts']).map(asRecord);
+      const fallbackWaId = str(contacts[0]?.['wa_id']);
+      for (const msgRaw of asArray(value['messages'])) {
+        const msg = asRecord(msgRaw);
+        if (str(msg['type']) !== 'interactive') continue;
+        const rj = asRecord(asRecord(msg['interactive'])['nfm_reply'])['response_json'];
+        if (typeof rj !== 'string') continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(rj);
+        } catch {
+          continue;
+        }
+        const obj = asRecord(parsed);
+        const ref = str(obj[FLOW_REF_KEY]);
+        if (!ref) continue;
+        const waId = str(msg['from']) ?? fallbackWaId;
+        if (!waId) continue;
+        const values: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) if (k !== FLOW_REF_KEY) values[k] = v;
+        out.push({ phoneNumberId, waId, ref, values });
       }
     }
   }

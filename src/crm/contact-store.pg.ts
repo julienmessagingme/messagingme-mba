@@ -51,6 +51,27 @@ export class PgContactStore implements ContactStore {
     return res.rows[0]?.created ? 'created' : 'updated';
   }
 
+  /**
+   * MERGE jsonb des valeurs saisies dans un WhatsApp Flow sur le contact correspondant (par tenant + wa_id).
+   * Même matching téléphone que l'inbox (E.164 exact `'+' || wa_id` PUIS chiffres nus, préférence à l'exact,
+   * un seul contact). V1 : NE crée PAS un contact inconnu (merge-only) — un flow rempli par un numéro hors
+   * base n'invente pas de fiche. Renvoie le nombre de contacts touchés (0 = inconnu). `fields || values` :
+   * les clés fournies écrasent, les autres sont préservées.
+   */
+  async mergeFieldsByPhone(tenantId: string, waId: string, values: Record<string, unknown>): Promise<number> {
+    if (Object.keys(values).length === 0) return 0;
+    const res = await this.pool.query(
+      `update contacts set fields = fields || $3::jsonb, updated_at = now()
+       where id = (
+         select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1
+       )`,
+      [tenantId, waId, JSON.stringify(values)],
+    );
+    return res.rowCount ?? 0;
+  }
+
   /** Liste paginée des contacts d'un tenant (les plus récents d'abord). */
   async list(tenantId: string, limit = 100, offset = 0): Promise<ContactRow[]> {
     const capped = Math.min(Math.max(limit, 1), 500);

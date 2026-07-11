@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { createTemplate, uploadMedia, type TemplateButtonInput } from '@/lib/api';
+import { resizeToDataUrl } from '@/lib/image';
 
 interface Card {
   headerHandle: string;
@@ -9,31 +10,6 @@ interface Card {
   body: string;
   uploading: boolean;
   error?: string;
-}
-
-/** Redimensionne une image côté client (canvas, max 1024px, JPEG q0.82) -> data URL léger. */
-async function resizeToDataUrl(file: File, max = 1024): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = () => rej(new Error('image illisible'));
-      i.src = url;
-    });
-    const scale = Math.min(1, max / Math.max(img.width, img.height));
-    const w = Math.max(1, Math.round(img.width * scale));
-    const h = Math.max(1, Math.round(img.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('canvas indisponible');
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.82);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
 }
 
 const emptyCard = (): Card => ({ headerHandle: '', preview: '', body: '', uploading: false });

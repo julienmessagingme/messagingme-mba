@@ -1,13 +1,15 @@
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import type { FetchLike } from './templates';
-import { buildFlowJson } from './flow-json';
-import type { FlowField } from './flow-json';
+import { buildFlowElements } from './flow-json';
+import type { FlowElement } from './flow-json';
 
 export interface CreateFlowInput {
   name: string;
-  /** Champs DÉJÀ dérivés (avec clé). La dérivation/validation vit dans la route, pas ici. */
-  fields: FlowField[];
+  /** Éléments DÉJÀ dérivés (texte/image/champ avec clés). La validation vit dans la route, pas ici. */
+  elements: FlowElement[];
+  /** Discriminant du flow, figé dans le payload complete (identifie le flow au retour nfm_reply). */
+  ref: string;
 }
 
 export interface FlowSummary {
@@ -29,7 +31,7 @@ export class FlowJsonInvalidError extends Error {
 /**
  * Client des WhatsApp Flows (niveau WABA). Créer / publier / lister via l'API Graph. `fetchImpl`
  * injectable pour les tests. Ne lève que MetaApiError (réseau/HTTP) ou FlowJsonInvalidError (validation).
- * Calque de MetaTemplateClient : la génération du flow_json est interne (buildFlowJson).
+ * Calque de MetaTemplateClient : la génération du flow_json est interne (buildFlowElements).
  */
 export class MetaFlowClient {
   constructor(
@@ -52,7 +54,7 @@ export class MetaFlowClient {
 
   /** POST /{waba}/flows — name + categories:['LEAD_GENERATION'] + flow_json (STRING). Statut initial DRAFT. */
   async create(wabaId: string, input: CreateFlowInput): Promise<{ id: string; status: string }> {
-    const flowJson = buildFlowJson(input.name, input.fields, this.flowJsonVersion);
+    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref);
     const json = (await this.call(`${this.baseUrl}/${this.version}/${wabaId}/flows`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { MetaFlowClient, FlowJsonInvalidError } from '../src/meta/flows';
 import { MetaApiError } from '../src/meta/errors';
-import { deriveFieldKeys } from '../src/meta/flow-json';
+import { deriveElements } from '../src/meta/flow-json';
 import type { FetchLike } from '../src/meta/templates';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -22,16 +22,16 @@ function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown
   return { fn, calls };
 }
 
-const FIELDS = deriveFieldKeys([
-  { label: 'Nom', type: 'text', required: true },
-  { label: 'Email', type: 'email', required: false },
+const ELEMENTS = deriveElements([
+  { kind: 'field', label: 'Nom', type: 'text', required: true },
+  { kind: 'field', label: 'Email', type: 'email', required: false },
 ]);
 
 describe('MetaFlowClient.create', () => {
   it('POST /{waba}/flows : categories LEAD_GENERATION + flow_json en STRING -> {id, DRAFT}', async () => {
     const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'flow1', success: true } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
-    const res = await client.create('waba1', { name: 'Contact', fields: FIELDS });
+    const res = await client.create('waba1', { name: 'Contact', elements: ELEMENTS, ref: 'ref1' });
     expect(res).toEqual({ id: 'flow1', status: 'DRAFT' });
     expect(calls[0]!.url).toContain('/waba1/flows');
     const body = JSON.parse(calls[0]!.init.body as string);
@@ -45,13 +45,13 @@ describe('MetaFlowClient.create', () => {
   it('validation_errors non vide -> FlowJsonInvalidError', async () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'bad', validation_errors: [{ message: 'INVALID_FLOW_JSON_VERSION' }] } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '3.1', fn);
-    await expect(client.create('waba1', { name: 'X', fields: FIELDS })).rejects.toBeInstanceOf(FlowJsonInvalidError);
+    await expect(client.create('waba1', { name: 'X', elements: ELEMENTS, ref: 'ref1' })).rejects.toBeInstanceOf(FlowJsonInvalidError);
   });
 
   it('HTTP non-ok -> MetaApiError', async () => {
     const { fn } = makeFetch([{ ok: false, status: 400, json: { error: { message: 'oops', code: 100 } } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
-    await expect(client.create('waba1', { name: 'X', fields: FIELDS })).rejects.toBeInstanceOf(MetaApiError);
+    await expect(client.create('waba1', { name: 'X', elements: ELEMENTS, ref: 'ref1' })).rejects.toBeInstanceOf(MetaApiError);
   });
 });
 
@@ -109,15 +109,20 @@ function app(over: Partial<FlowRouteDeps> = {}, opts: { wabaId?: string | null; 
     flows: new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch),
     getWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId),
     insertFlow: async (_t, id, name) => { cap.inserted.push({ id, name }); },
-    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
+    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], elements: null, ref: null, mapping: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
     belongsTo: async () => opts.belongs !== false,
     markPublished: async (id) => { cap.published.push(id); return true; },
+    // Mime la vraie ensureField : rejette un type qui n'est PAS un UserFieldType (text|number|date|boolean|url).
+    // Sans normalisation, un champ Flow email/phone/textarea arriverait ici tel quel -> throw -> 500.
+    ensureUserField: async (_t, _label, type) => {
+      if (!['text', 'number', 'date', 'boolean', 'url'].includes(type)) throw new Error(`type de champ invalide: ${type}`);
+    },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, flows: deps }), cap };
 }
 
-const validBody = { name: 'Contact', fields: [{ label: 'Nom', type: 'text', required: true }, { label: 'Email', type: 'email', required: false }] };
+const validBody = { name: 'Contact', elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true }, { kind: 'field', label: 'Email', type: 'email', required: false }] };
 
 describe('routes flows — création', () => {
   it('POST admin -> 201, create Meta + insert appelés', async () => {
@@ -129,25 +134,40 @@ describe('routes flows — création', () => {
     await server.close();
   });
 
+  it('POST champ email en mapping par défaut -> 201 (type Flow normalisé en user field, pas de 500)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST',
+      url: '/tenants/t1/flows',
+      ...h(adminTok),
+      payload: { name: 'Contact', elements: [{ kind: 'field', label: 'Email', type: 'email', required: true }, { kind: 'field', label: 'Téléphone', type: 'phone', required: false }] },
+    });
+    expect(res.statusCode).toBe(201); // ensureUserField reçoit 'text', pas 'email'/'phone' -> pas d'erreur
+    expect(cap.inserted).toHaveLength(1);
+    await server.close();
+  });
+
   it('POST name vide -> 400', async () => {
     const { server } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: '', fields: validBody.fields } });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: '', elements: validBody.elements } });
     expect(res.statusCode).toBe(400);
     await server.close();
   });
 
-  it('POST fields vide / type invalide -> 400', async () => {
+  it('POST aucun champ / type invalide -> 400', async () => {
     const { server } = app();
-    const r1 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', fields: [] } });
-    const r2 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', fields: [{ label: 'A', type: 'checkbox', required: false }] } });
+    const r1 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [] } });
+    const r2 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [{ kind: 'field', label: 'A', type: 'checkbox', required: false }] } });
+    const r3 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [{ kind: 'heading', text: 'Bonjour' }] } }); // texte seul, 0 champ -> rien à collecter
     expect(r1.statusCode).toBe(400);
     expect(r2.statusCode).toBe(400);
+    expect(r3.statusCode).toBe(400);
     await server.close();
   });
 
   it('POST collision de clés -> 400 AVANT Meta (aucun appel Meta)', async () => {
     const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', fields: [{ label: 'Nom', type: 'text', required: true }, { label: ' nom ', type: 'text', required: false }] } });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true }, { kind: 'field', label: ' nom ', type: 'text', required: false }] } });
     expect(res.statusCode).toBe(400);
     expect(cap.metaCalls).toHaveLength(0);
     await server.close();

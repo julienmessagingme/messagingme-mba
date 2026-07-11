@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { CarouselForm } from '@/components/CarouselForm';
+import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
 import { listTemplates, createTemplate, listFlows, type TemplateSummary, type TemplateButtonInput, type FlowSummary } from '@/lib/api';
 
@@ -144,6 +145,7 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
   const [emojiOpen, setEmojiOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [pubFlows, setPubFlows] = useState<FlowSummary[]>([]);
+  const [creatingFlow, setCreatingFlow] = useState(false);
   const hasFlow = buttons.some((b) => b.type === 'FLOW');
 
   useEffect(() => {
@@ -274,14 +276,11 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
                   <>
                     <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
                     <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
-                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title={pubFlows.length === 0 ? 'Publie d\'abord un formulaire dans l\'onglet Flows' : ''}>+ Flow</button>
+                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title="Un bouton formulaire : créer un formulaire inline ou en choisir un déjà publié">+ Flow</button>
                   </>
                 )}
               </div>
             </div>
-            {hasFlow && pubFlows.length === 0 && (
-              <p className="mb-2 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">Aucun formulaire publié. Crée et publie un formulaire dans l&apos;onglet Flows pour l&apos;attacher ici.</p>
-            )}
             <div className="space-y-2">
               {buttons.map((b, i) => (
                 <div key={i} className="flex items-center gap-1.5">
@@ -316,6 +315,33 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
                 </div>
               ))}
             </div>
+
+            {/* Bouton FLOW : choisir un formulaire publié OU en créer un inline (publié aussitôt puis attaché). */}
+            {hasFlow && (
+              <div className="mt-2">
+                {!creatingFlow ? (
+                  <button type="button" onClick={() => setCreatingFlow(true)} className="text-xs font-medium text-brand-600 hover:underline">
+                    ＋ Créer un nouveau formulaire
+                  </button>
+                ) : (
+                  <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-ink-900">Nouveau formulaire</span>
+                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-400 hover:text-ink-700">Annuler</button>
+                    </div>
+                    <FlowBuilder
+                      tenantId={tenantId}
+                      autoPublish
+                      onCreated={(flow) => {
+                        setPubFlows((prev) => [{ id: flow.id, name: flow.name, status: 'PUBLISHED', fields: [], createdAt: new Date().toISOString() }, ...prev]);
+                        setButtons((list) => list.map((x) => (x.type === 'FLOW' ? { ...x, flowId: flow.id } : x)));
+                        setCreatingFlow(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

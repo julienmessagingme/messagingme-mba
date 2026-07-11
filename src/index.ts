@@ -6,6 +6,7 @@ import { pool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
+import { ensureField } from './crm/fields';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
@@ -114,10 +115,11 @@ async function main(): Promise<void> {
     flows: {
       flows: flowClient,
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
-      insertFlow: (tenantId, id, name, fields) => flowStore.insert({ id, tenantId, name, fields }),
+      insertFlow: (tenantId, id, name, elements, ref, mapping) => flowStore.insert({ id, tenantId, name, elements, ref, mapping }),
       listFlows: (tenant) => flowStore.list(tenant),
       belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
       markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
+      ensureUserField: async (tenant, label, type) => { await ensureField(fieldStore, tenant, label, type); },
     },
     media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
     tags: {

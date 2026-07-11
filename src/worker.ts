@@ -13,6 +13,8 @@ import {
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
 import { PgInboxStore } from './inbox/store.pg';
+import { PgFlowStore } from './flow/store.pg';
+import { PgContactStore } from './crm/contact-store.pg';
 import { MetaClient } from './meta/client';
 import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
@@ -25,12 +27,19 @@ async function main(): Promise<void> {
   await queue.start();
 
   // File webhook (Loop 1). Le PgRecipientStore applique les statuts de livraison ; le
-  // PgInboxStore enregistre les messages entrants (réponses / taps de boutons) en conversations.
+  // PgInboxStore enregistre les messages entrants (réponses / taps de boutons) en conversations ;
+  // le report Flow -> user fields (flowStore.findByRef + contactStore.mergeFieldsByPhone) est ISOLÉ
+  // dans handleWebhookJob (ne fait jamais échouer le job partagé avec les statuts).
   const eventStore = new PgEventStore(pool);
   const recipientStore = new PgRecipientStore(pool);
   const inboxStore = new PgInboxStore(pool);
+  const flowStore = new PgFlowStore(pool);
+  const contactStore = new PgContactStore(pool);
   await queue.work('webhook', async (data) => {
-    await handleWebhookJob(data, eventStore, recipientStore, inboxStore);
+    await handleWebhookJob(data, eventStore, recipientStore, inboxStore, {
+      lookup: flowStore,
+      writer: contactStore,
+    });
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).
