@@ -17,6 +17,13 @@ export interface TemplateButton {
   flowId?: string;
 }
 
+/** Une carte de carousel : image (handle du resumable upload) + texte + boutons (identiques sur toutes). */
+export interface CarouselCard {
+  headerHandle: string;
+  body?: string;
+  buttons?: TemplateButton[];
+}
+
 export interface CreateTemplateInput {
   name: string;
   category: 'MARKETING' | 'UTILITY';
@@ -26,6 +33,8 @@ export interface CreateTemplateInput {
   /** exemples de valeurs pour chaque variable (requis par Meta si le corps a des variables) */
   example?: string[];
   buttons?: TemplateButton[];
+  /** Template CAROUSEL : corps commun (`body`) + 2-10 cartes. Exclut `buttons` (boutons par carte). */
+  carousel?: { cards: CarouselCard[] };
 }
 
 export interface TemplateSummary {
@@ -59,6 +68,19 @@ function headerFormatOf(components: unknown): string | null {
   return null;
 }
 
+/** Mappe un bouton applicatif -> composant Meta (QUICK_REPLY / URL / FLOW). Réutilisé top-level + cartes. */
+function mapButton(b: TemplateButton): Record<string, unknown> {
+  // Bouton FLOW : ouvre le flow publié à son écran d'entrée (navigate_screen = id d'écran, vérifié live).
+  if (b.type === 'FLOW') return { type: 'FLOW', text: b.text, flow_id: b.flowId, navigate_screen: FLOW_ENTRY_SCREEN, flow_action: 'navigate' };
+  if (b.type !== 'URL') return { type: 'QUICK_REPLY', text: b.text };
+  const btn: Record<string, unknown> = { type: 'URL', text: b.text, url: b.url };
+  // URL dynamique ({{1}}) : Meta EXIGE un exemple d'URL complète au niveau du bouton.
+  if (b.url && /\{\{\s*\d+\s*\}\}/.test(b.url)) {
+    btn.example = [b.url.replace(/\{\{\s*\d+\s*\}\}/g, 'exemple')];
+  }
+  return btn;
+}
+
 function buildComponents(input: CreateTemplateInput): unknown[] {
   const components: unknown[] = [];
   const body: Record<string, unknown> = { type: 'BODY', text: input.body };
@@ -66,21 +88,24 @@ function buildComponents(input: CreateTemplateInput): unknown[] {
     body.example = { body_text: [input.example] };
   }
   components.push(body);
-  if (input.buttons && input.buttons.length > 0) {
+
+  // Template CAROUSEL : un composant CAROUSEL de cartes (chaque carte = header image + body + boutons).
+  if (input.carousel) {
     components.push({
-      type: 'BUTTONS',
-      buttons: input.buttons.map((b) => {
-        // Bouton FLOW : ouvre le flow publié à son écran d'entrée (navigate_screen = id d'écran, vérifié live).
-        if (b.type === 'FLOW') return { type: 'FLOW', text: b.text, flow_id: b.flowId, navigate_screen: FLOW_ENTRY_SCREEN, flow_action: 'navigate' };
-        if (b.type !== 'URL') return { type: 'QUICK_REPLY', text: b.text };
-        const btn: Record<string, unknown> = { type: 'URL', text: b.text, url: b.url };
-        // URL dynamique ({{1}}) : Meta EXIGE un exemple d'URL complète au niveau du bouton.
-        if (b.url && /\{\{\s*\d+\s*\}\}/.test(b.url)) {
-          btn.example = [b.url.replace(/\{\{\s*\d+\s*\}\}/g, 'exemple')];
-        }
-        return btn;
-      }),
+      type: 'CAROUSEL',
+      cards: input.carousel.cards.map((card) => ({
+        components: [
+          { type: 'HEADER', format: 'IMAGE', example: { header_handle: [card.headerHandle] } },
+          ...(card.body ? [{ type: 'BODY', text: card.body }] : []),
+          ...(card.buttons && card.buttons.length > 0 ? [{ type: 'BUTTONS', buttons: card.buttons.map(mapButton) }] : []),
+        ],
+      })),
     });
+    return components;
+  }
+
+  if (input.buttons && input.buttons.length > 0) {
+    components.push({ type: 'BUTTONS', buttons: input.buttons.map(mapButton) });
   }
   return components;
 }

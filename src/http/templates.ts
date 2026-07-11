@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { MetaTemplateClient, CreateTemplateInput, TemplateButton } from '../meta/templates';
+import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard } from '../meta/templates';
 
 export interface TemplateRouteDeps {
   templates: MetaTemplateClient;
@@ -74,6 +74,32 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
     }
 
+    // Carousel : 2-10 cartes, chaque carte a une image (handle) + des boutons IDENTIQUES entre cartes.
+    let carousel: { cards: CarouselCard[] } | undefined;
+    const carRaw = (b as { carousel?: unknown }).carousel;
+    if (carRaw !== undefined) {
+      const cards = (carRaw as { cards?: unknown }).cards;
+      if (!Array.isArray(cards) || cards.length < 2 || cards.length > 10) {
+        return reply.code(400).send({ error: 'carousel : entre 2 et 10 cartes' });
+      }
+      const sig = (c: { buttons?: unknown }) => (Array.isArray(c.buttons) ? c.buttons.map((x) => (x as { type?: string }).type).join(',') : '');
+      const firstSig = sig(cards[0] as { buttons?: unknown });
+      for (const raw of cards) {
+        const c = raw as { headerHandle?: unknown; buttons?: unknown };
+        if (!nonEmpty(c.headerHandle)) return reply.code(400).send({ error: 'chaque carte doit avoir une image' });
+        if (sig(c) !== firstSig) return reply.code(400).send({ error: 'toutes les cartes doivent avoir les mêmes boutons' });
+        if (Array.isArray(c.buttons)) {
+          for (const bt of c.buttons) {
+            const btn = bt as { type?: string; text?: unknown; url?: unknown };
+            if (btn.type === 'QUICK_REPLY' && nonEmpty(btn.text)) continue;
+            if (btn.type === 'URL' && nonEmpty(btn.text) && nonEmpty(btn.url)) continue;
+            return reply.code(400).send({ error: 'bouton de carte invalide (quick_reply|url uniquement)' });
+          }
+        }
+      }
+      carousel = { cards: cards as CarouselCard[] };
+    }
+
     // Nb de variables {{n}} dans le corps -> exiger autant d'exemples.
     const varCount = new Set((b.body.match(/\{\{\s*\d+\s*\}\}/g) ?? [])).size;
     const example = Array.isArray(b.example) ? b.example.map(String) : [];
@@ -87,7 +113,8 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       language: b.language,
       body: b.body,
       ...(varCount > 0 ? { example: example.slice(0, varCount) } : {}),
-      ...(Array.isArray(b.buttons) ? { buttons: b.buttons as TemplateButton[] } : {}),
+      // Un carousel a ses boutons PAR CARTE : on ignore d'éventuels boutons top-level s'il est présent.
+      ...(carousel ? { carousel } : Array.isArray(b.buttons) ? { buttons: b.buttons as TemplateButton[] } : {}),
     };
     const res = await deps.templates.create(wabaId, input);
     return reply.code(201).send(res);

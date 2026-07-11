@@ -10,6 +10,7 @@ import { registerStats } from './http/stats';
 import { registerSettings } from './http/settings';
 import { registerUsers } from './http/users';
 import { registerFlows } from './http/flows';
+import { registerMedia } from './http/media';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -23,6 +24,7 @@ import type { StatsRouteDeps } from './http/stats';
 import type { SettingsRouteDeps } from './http/settings';
 import type { UsersRouteDeps } from './http/users';
 import type { FlowRouteDeps } from './http/flows';
+import type { MediaRouteDeps } from './http/media';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -49,6 +51,8 @@ export interface ServerDeps {
   admin?: UsersRouteDeps;
   /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
   flows?: FlowRouteDeps;
+  /** Upload d'image (headers de cartes carousel) — réservé aux admins. */
+  media?: MediaRouteDeps;
 }
 
 /**
@@ -108,6 +112,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
   if (deps.admin) registerUsers(app, deps.admin, requireAdmin);
   if (deps.flows) registerFlows(app, deps.flows, requireAdmin);
+  if (deps.media) registerMedia(app, deps.media, requireAdmin);
 
   return app;
 }

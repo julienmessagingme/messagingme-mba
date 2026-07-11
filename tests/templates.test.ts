@@ -175,3 +175,63 @@ describe('bouton FLOW (templates)', () => {
     await a.close();
   });
 });
+
+describe('template CAROUSEL', () => {
+  const card = (handle: string) => ({ headerHandle: handle, body: 'Carte', buttons: [{ type: 'QUICK_REPLY' as const, text: 'Voir' }] });
+
+  it('create émet BODY + CAROUSEL avec cards (header IMAGE + header_handle + body + buttons)', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', { name: 'promo', category: 'MARKETING', language: 'fr', body: 'Notre sélection', carousel: { cards: [card('H1'), card('H2')] } });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.components[0]).toMatchObject({ type: 'BODY', text: 'Notre sélection' });
+    expect(body.components[1].type).toBe('CAROUSEL');
+    expect(body.components[1].cards).toHaveLength(2);
+    const c0 = body.components[1].cards[0].components;
+    expect(c0[0]).toEqual({ type: 'HEADER', format: 'IMAGE', example: { header_handle: ['H1'] } });
+    expect(c0[1]).toEqual({ type: 'BODY', text: 'Carte' });
+    expect(c0[2]).toMatchObject({ type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Voir' }] });
+  });
+
+  it('route : moins de 2 cartes -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards: [card('H1')] } } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('route : plus de 10 cartes -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const cards = Array.from({ length: 11 }, (_, i) => card('H' + i));
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards } } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('route : carte sans image (headerHandle) -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards: [card('H1'), { body: 'x', buttons: [{ type: 'QUICK_REPLY', text: 'Voir' }] }] } } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('route : boutons divergents entre cartes -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const cards = [card('H1'), { headerHandle: 'H2', body: 'C', buttons: [{ type: 'URL' as const, text: 'Voir', url: 'https://x.fr' }] }];
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards } } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('route : 2 cartes cohérentes -> 201', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards: [card('H1'), card('H2')] } } });
+    expect(res.statusCode).toBe(201);
+    await a.close();
+  });
+});

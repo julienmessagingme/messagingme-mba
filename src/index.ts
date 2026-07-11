@@ -14,6 +14,7 @@ import { PgUserStore } from './user/store.pg';
 import { PgFlowStore } from './flow/store.pg';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaFlowClient } from './meta/flows';
+import { MetaMediaClient } from './meta/media';
 import { MetaPricingClient } from './meta/pricing';
 import { MetaClient } from './meta/client';
 import { buildTemplateComponents } from './meta/template-components';
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   const transport = new FetchTransport();
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const flowClient = new MetaFlowClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION, config.META_FLOW_JSON_VERSION);
+  const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
   const app = buildServer({
     queue,
     auth: {
@@ -114,6 +116,7 @@ async function main(): Promise<void> {
       belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
       markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
     },
+    media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
   });
 
   installGracefulShutdown(async () => {

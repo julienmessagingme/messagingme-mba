@@ -11,6 +11,8 @@ const schema = z.object({
   /** Version du schéma flow_json (indépendante de la version Graph). Vérifié live 2026-07-10 : 7.2
    *  supportée. Une dépréciation Meta = un changement d'env, pas de code. */
   META_FLOW_JSON_VERSION: z.string().default('7.2'),
+  /** App ID Meta (public) — endpoint du resumable upload `/{appId}/uploads` (headers média carousel). */
+  META_APP_ID: z.string().default('988129420727963'),
   /**
    * Router le marketing par MM Lite (`/marketing_messages`). Défaut 'false' -> endpoint standard
    * `/messages`. MM Lite exige un onboarding Business Manager ; sans lui -> erreur 131042. Passer
