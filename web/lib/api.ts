@@ -394,3 +394,35 @@ export function createFlow(tenantId: string, input: { name: string; fields: Flow
 export function publishFlow(tenantId: string, flowId: string): Promise<{ id: string; status: string }> {
   return request(`/tenants/${tenantId}/flows/${flowId}/publish`, { method: 'POST' });
 }
+
+// --- Contenu : Tags + User fields (édition) ---
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+export function listTags(tenantId: string): Promise<{ tags: TagCount[] }> {
+  return request<{ tags: TagCount[] }>(`/tenants/${tenantId}/tags`);
+}
+export function renameTag(tenantId: string, from: string, to: string): Promise<{ renamed: number }> {
+  return request(`/tenants/${tenantId}/tags`, { method: 'PATCH', body: JSON.stringify({ from, to }) });
+}
+export function deleteTag(tenantId: string, tag: string): Promise<{ removed: number }> {
+  return request(`/tenants/${tenantId}/tags?tag=${encodeURIComponent(tag)}`, { method: 'DELETE' });
+}
+
+export type UserFieldKind = 'text' | 'number' | 'date' | 'boolean' | 'url';
+export interface UserFieldDef {
+  key: string;
+  label: string;
+  type: UserFieldKind;
+}
+export function listUserFields(tenantId: string): Promise<{ fields: UserFieldDef[] }> {
+  return request<{ fields: UserFieldDef[] }>(`/tenants/${tenantId}/user-fields`);
+}
+export function updateUserField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldKind }): Promise<unknown> {
+  return request(`/tenants/${tenantId}/user-fields/${encodeURIComponent(key)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteUserField(tenantId: string, key: string): Promise<unknown> {
+  return request(`/tenants/${tenantId}/user-fields/${encodeURIComponent(key)}`, { method: 'DELETE' });
+}

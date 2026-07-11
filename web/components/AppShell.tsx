@@ -7,7 +7,7 @@ import { getSession, clearSession, type Session } from '@/lib/session';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 
-type Tab = 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'flows' | 'inbox' | 'admin' | 'support';
+type Tab = 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -33,6 +33,8 @@ const NAV_ADMIN: NavItem[] = [
   { key: 'contenu', label: 'Contenu', d: icons.content, children: [
     { key: 'templates', href: '/templates', label: 'Templates' },
     { key: 'flows', href: '/flows', label: 'Flows' },
+    { key: 'tags', href: '/tags', label: 'Tags' },
+    { key: 'fields', href: '/fields', label: 'Champs' },
   ] },
   { key: 'analytics', href: '/dashboard', label: 'Analytics', d: icons.analytics },
   { key: 'support', href: '/support', label: 'Support', d: icons.support },
@@ -74,7 +76,8 @@ export function AppShell({ active, children }: { active: Tab; children: (session
   }
 
   // Groupe de nav actif : dashboard -> Analytics ; templates|flows -> Contenu ; sinon la page elle-même.
-  const group = active === 'dashboard' ? 'analytics' : active === 'templates' || active === 'flows' ? 'contenu' : active;
+  const group =
+    active === 'dashboard' ? 'analytics' : active === 'templates' || active === 'flows' || active === 'tags' || active === 'fields' ? 'contenu' : active;
   const nav = session.role === 'admin' ? NAV_ADMIN : NAV_AGENT;
 
   const itemCls = (on: boolean) =>

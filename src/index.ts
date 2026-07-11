@@ -5,6 +5,7 @@ import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
+import { PgTagStore } from './crm/tag-store.pg';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
@@ -28,6 +29,8 @@ async function main(): Promise<void> {
 
   const repo = new PgCampaignRepo(pool);
   const contactStore = new PgContactStore(pool);
+  const fieldStore = new PgUserFieldStore(pool);
+  const tagStore = new PgTagStore(pool);
   const inboxStore = new PgInboxStore(pool);
   const statsStore = new PgStatsStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
@@ -47,7 +50,7 @@ async function main(): Promise<void> {
     },
     import: {
       contacts: contactStore,
-      userFields: new PgUserFieldStore(pool),
+      userFields: fieldStore,
       defaultCountry: config.DEFAULT_COUNTRY as CountryCode,
       listContacts: (tenantId, limit, offset) => contactStore.list(tenantId, limit, offset),
     },
@@ -117,6 +120,16 @@ async function main(): Promise<void> {
       markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
     },
     media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
+    tags: {
+      listTags: (tenant) => tagStore.listDistinct(tenant),
+      renameTag: (tenant, from, to) => tagStore.rename(tenant, from, to),
+      removeTag: (tenant, tag) => tagStore.remove(tenant, tag),
+    },
+    fields: {
+      listFields: (tenant) => fieldStore.list(tenant),
+      updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
+      deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
+    },
   });
 
   installGracefulShutdown(async () => {

@@ -21,4 +21,31 @@ export class PgUserFieldStore implements UserFieldStore {
       [tenantId, def.key, def.label, def.type],
     );
   }
+
+  /**
+   * Met à jour le libellé et/ou le type d'un champ. La CLÉ est immuable (la renommer casserait les
+   * paramMapping de campagnes + les valeurs `contacts.fields` indexées par clé). true si une ligne a bougé.
+   */
+  async updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean> {
+    const sets: string[] = [];
+    const vals: unknown[] = [tenantId, key];
+    if (patch.label !== undefined) {
+      vals.push(patch.label);
+      sets.push(`label = $${vals.length}`);
+    }
+    if (patch.type !== undefined) {
+      vals.push(patch.type);
+      sets.push(`type = $${vals.length}`);
+    }
+    if (sets.length === 0) return false;
+    const res = await this.pool.query(`update user_fields set ${sets.join(', ')} where tenant_id = $1 and key = $2`, vals);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Supprime la DÉFINITION du champ. NE purge PAS les valeurs déjà stockées dans `contacts.fields`
+   *  (orphelines mais inoffensives, réversibles en recréant la clé). true si la définition existait. */
+  async deleteField(tenantId: string, key: string): Promise<boolean> {
+    const res = await this.pool.query(`delete from user_fields where tenant_id = $1 and key = $2`, [tenantId, key]);
+    return (res.rowCount ?? 0) > 0;
+  }
 }
