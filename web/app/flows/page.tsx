@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
-import { listFlows, publishFlow, type FlowSummary } from '@/lib/api';
+import { listFlows, publishFlow, duplicateFlow, type FlowSummary } from '@/lib/api';
 
 export default function FlowsPage() {
   return <AppShell active="flows">{(session) => <FlowsInner session={session} />}</AppShell>;
@@ -14,14 +14,17 @@ function FlowsInner({ session }: { session: Session }) {
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<FlowSummary | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<FlowSummary[]> => {
     setError(null);
     try {
       const { flows } = await listFlows(session.tenantId);
       setFlows(flows);
+      return flows;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -32,7 +35,7 @@ function FlowsInner({ session }: { session: Session }) {
   }, [load]);
 
   async function publish(f: FlowSummary) {
-    if (!window.confirm(`Publier le formulaire « ${f.name} » ?\nUn formulaire publié ne peut plus être modifié (irréversible côté Meta). Pour changer les champs, il faudra en créer un nouveau.`)) return;
+    if (!window.confirm(`Publier le formulaire « ${f.name} » ?\nUn formulaire publié ne peut plus être modifié (irréversible côté Meta). Pour changer les champs, il faudra « Dupliquer pour modifier ».`)) return;
     setError(null);
     const prev = flows;
     setFlows((list) => list.map((x) => (x.id === f.id ? { ...x, status: 'PUBLISHED' } : x))); // optimiste
@@ -44,6 +47,18 @@ function FlowsInner({ session }: { session: Session }) {
     }
   }
 
+  async function duplicate(f: FlowSummary) {
+    setError(null);
+    try {
+      const res = await duplicateFlow(session.tenantId, f.id);
+      const list = await load();
+      const created = list.find((x) => x.id === res.id);
+      if (created) setEditing(created); // ouvre le nouveau DRAFT pour modification immédiate
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Duplication impossible');
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -52,10 +67,29 @@ function FlowsInner({ session }: { session: Session }) {
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-        <div className="mb-3 text-sm font-semibold text-ink-900">Créer un formulaire</div>
-        <FlowBuilder tenantId={session.tenantId} onCreated={load} />
-      </div>
+      {editing ? (
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-ink-900">Modifier « {editing.name} » <span className="ml-2 text-xs font-normal text-ink-400">(brouillon)</span></div>
+            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+          </div>
+          <FlowBuilder
+            key={editing.id}
+            tenantId={session.tenantId}
+            mode="edit"
+            flowId={editing.id}
+            initialName={editing.name}
+            initialElements={editing.elements}
+            initialMapping={editing.mapping}
+            onCreated={() => { void load(); setEditing(null); }}
+          />
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 text-sm font-semibold text-ink-900">Créer un formulaire</div>
+          <FlowBuilder tenantId={session.tenantId} onCreated={() => void load()} />
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Formulaires ({flows.length})</div>
@@ -70,7 +104,7 @@ function FlowsInner({ session }: { session: Session }) {
                 <th className="px-5 py-2 font-medium">Nom</th>
                 <th className="px-5 py-2 font-medium">Champs</th>
                 <th className="px-5 py-2 font-medium">Statut</th>
-                <th className="px-5 py-2 text-right font-medium">Action</th>
+                <th className="px-5 py-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -87,9 +121,16 @@ function FlowsInner({ session }: { session: Session }) {
                   </td>
                   <td className="px-5 py-3 text-right">
                     {f.status === 'DRAFT' ? (
-                      <button onClick={() => publish(f)} className="font-medium text-brand-600 hover:text-brand-700">Publier</button>
+                      <div className="flex items-center justify-end gap-3">
+                        {f.elements && f.elements.length > 0 ? (
+                          <button onClick={() => setEditing(f)} className="font-medium text-brand-600 hover:text-brand-700">Éditer</button>
+                        ) : (
+                          <span className="text-ink-300" title="Formulaire antérieur au modèle riche : à recréer">Éditer</span>
+                        )}
+                        <button onClick={() => publish(f)} className="font-medium text-brand-600 hover:text-brand-700">Publier</button>
+                      </div>
                     ) : (
-                      <span className="text-ink-300">—</span>
+                      <button onClick={() => duplicate(f)} className="font-medium text-brand-600 hover:text-brand-700" title="Un formulaire publié est immuable : on en crée une copie modifiable">Dupliquer pour modifier</button>
                     )}
                   </td>
                 </tr>

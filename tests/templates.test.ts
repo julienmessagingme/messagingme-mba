@@ -27,11 +27,17 @@ function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown
   return { fn, calls };
 }
 
-function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1', getPublishedFlow?: (t: string, f: string) => Promise<boolean>) {
+type ListActive = (tenantId: string, name: string, language?: string) => Promise<Array<{ id: string; name: string; status: 'draft' | 'running' | 'paused'; templateLanguage: string }>>;
+function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1', getPublishedFlow?: (t: string, f: string) => Promise<boolean>, listActive?: ListActive) {
   return buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
-    templates: { templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl), getWabaId: async () => wabaId, ...(getPublishedFlow ? { getPublishedFlow } : {}) },
+    templates: {
+      templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl),
+      getWabaId: async () => wabaId,
+      ...(getPublishedFlow ? { getPublishedFlow } : {}),
+      ...(listActive ? { listActiveCampaignsForTemplate: listActive } : {}),
+    },
   });
 }
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
@@ -232,6 +238,145 @@ describe('template CAROUSEL', () => {
     const a = app(fn);
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards: [card('H1'), card('H2')] } } });
     expect(res.statusCode).toBe(201);
+    await a.close();
+  });
+});
+
+describe('MetaTemplateClient.update / remove', () => {
+  it('update POST /{id} : components remplacés, PAS de name/language (immuables)', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { success: true } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    const res = await client.update('tid1', { category: 'MARKETING', body: 'Bonjour {{1}}', example: ['Marc'], buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }] });
+    expect(res).toEqual({ success: true });
+    expect(calls[0]!.url).toContain('/tid1');
+    expect(calls[0]!.url).not.toContain('message_templates'); // node template direct, pas l'edge WABA
+    expect(calls[0]!.init.method).toBe('POST');
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.name).toBeUndefined();
+    expect(body.language).toBeUndefined();
+    expect(body.category).toBe('MARKETING');
+    expect(body.components[0]).toMatchObject({ type: 'BODY', text: 'Bonjour {{1}}', example: { body_text: [['Marc']] } });
+    expect(body.components[1]).toMatchObject({ type: 'BUTTONS' });
+  });
+
+  it('remove DELETE /{waba}/message_templates?name=', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { success: true } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    const res = await client.remove('waba1', 'promo_ete');
+    expect(res).toEqual({ success: true });
+    expect(calls[0]!.init.method).toBe('DELETE');
+    expect(calls[0]!.url).toContain('/message_templates?name=promo_ete');
+  });
+});
+
+describe('MetaTemplateClient.list (id + buttons + example + isCarousel + editable)', () => {
+  it('projette id/buttons/example/isCarousel/editable depuis les components', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { data: [
+      { id: 'T1', name: 'simple', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Bonjour {{1}}', example: { body_text: [['Marc']] } }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }] }] },
+      { id: 'T2', name: 'promo', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Sélection' }, { type: 'CAROUSEL', cards: [] }] },
+      { id: 'T3', name: 'entete', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'Avec image' }] },
+    ] } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    const all = await client.list('waba1');
+    expect(all[0]).toMatchObject({ id: 'T1', isCarousel: false, editable: true, example: ['Marc'] }); // BODY+BUTTONS -> éditable
+    expect(all[0]!.buttons).toEqual([{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }]);
+    expect(all[1]).toMatchObject({ id: 'T2', isCarousel: true, editable: false }); // carousel -> non éditable
+    expect(all[1]!.buttons).toBeUndefined();
+    expect(all[2]).toMatchObject({ id: 'T3', isCarousel: false, editable: false }); // header -> non éditable (serait supprimé)
+  });
+});
+
+describe('routes templates — édition (PATCH)', () => {
+  const listOne = (t: Record<string, unknown>) => ({ ok: true, status: 200, json: { data: [t] } });
+  const approved = { id: 'TID', name: 'promo', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Ancien' }] };
+
+  it('PATCH simple -> 200 : l id est RÉSOLU côté serveur depuis le WABA (jamais fourni par le client)', async () => {
+    const { fn, calls } = makeFetch([listOne(approved), { ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'Nouveau' } });
+    expect(res.statusCode).toBe(200);
+    expect(calls[0]!.url).toContain('message_templates'); // 1er appel = list (résolution id)
+    expect(calls[1]!.url).toContain('/TID'); // 2e appel = update sur l id résolu
+    expect(calls[1]!.url).not.toContain('message_templates');
+    await a.close();
+  });
+
+  it('PATCH template introuvable dans le WABA -> 404', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { data: [] } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/ghost', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('PATCH template PENDING -> 409 (non éditable)', async () => {
+    const { fn } = makeFetch([listOne({ ...approved, status: 'PENDING' })]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
+    expect(res.statusCode).toBe(409);
+    await a.close();
+  });
+
+  it('PATCH template carousel -> 422 (édition non supportée)', async () => {
+    const { fn } = makeFetch([listOne({ ...approved, components: [{ type: 'BODY', text: 'x' }, { type: 'CAROUSEL', cards: [] }] })]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
+    expect(res.statusCode).toBe(422);
+    await a.close();
+  });
+
+  it('PATCH template avec HEADER -> 422 (le header serait supprimé, anti perte de données)', async () => {
+    const { fn, calls } = makeFetch([listOne({ ...approved, components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'x' }] })]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
+    expect(res.statusCode).toBe(422);
+    expect(calls).toHaveLength(1); // seulement le list de résolution, PAS d'update Meta
+    await a.close();
+  });
+
+  it('PATCH bloqué si campagne active -> 409 (garde-fou D1) avec la liste des campagnes', async () => {
+    const { fn } = makeFetch([listOne(approved), { ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn, 'waba1', undefined, async () => [{ id: 'c1', name: 'Promo été', status: 'running', templateLanguage: 'fr' }]);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ campaigns: unknown[] }>().campaigns).toHaveLength(1);
+    await a.close();
+  });
+
+  it('PATCH agent -> 403', async () => {
+    const { fn } = makeFetch([listOne(approved)]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(agentToken), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
+    expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+});
+
+describe('routes templates — suppression (DELETE)', () => {
+  it('DELETE -> 200 : remove appelé (DELETE ?name=)', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'DELETE', url: '/tenants/t1/templates/promo', ...h(token) });
+    expect(res.statusCode).toBe(200);
+    expect(calls[0]!.init.method).toBe('DELETE');
+    expect(calls[0]!.url).toContain('name=promo');
+    await a.close();
+  });
+
+  it('DELETE bloqué si campagne active -> 409, AUCUN appel Meta', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn, 'waba1', undefined, async () => [{ id: 'c1', name: 'X', status: 'draft', templateLanguage: 'fr' }]);
+    const res = await a.inject({ method: 'DELETE', url: '/tenants/t1/templates/promo', ...h(token) });
+    expect(res.statusCode).toBe(409);
+    expect(calls).toHaveLength(0);
+    await a.close();
+  });
+
+  it('DELETE agent -> 403', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'DELETE', url: '/tenants/t1/templates/promo', ...h(agentToken) });
+    expect(res.statusCode).toBe(403);
     await a.close();
   });
 });

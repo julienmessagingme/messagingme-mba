@@ -65,6 +65,26 @@ export class MetaFlowClient {
     return { id: json.id ?? '', status: 'DRAFT' };
   }
 
+  /**
+   * Édite le flow_json d'un flow DRAFT : POST /{flowId}/assets en MULTIPART (asset_type=FLOW_JSON,
+   * name=flow.json, file=<json>). ⚠️ Diffère du create (JSON inline) : /assets EXIGE du multipart/form-data
+   * (vérifié live). Ne PAS forcer content-type (le runtime pose le boundary). Un flow PUBLISHED est immuable
+   * chez Meta (refusé) : la route amont doit garantir status=DRAFT (409 sinon). Relit validation_errors.
+   */
+  async updateDraft(flowId: string, input: CreateFlowInput): Promise<void> {
+    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref);
+    const fd = new FormData();
+    fd.append('asset_type', 'FLOW_JSON');
+    fd.append('name', 'flow.json');
+    fd.append('file', new Blob([JSON.stringify(flowJson)], { type: 'application/json' }), 'flow.json');
+    const json = (await this.call(`${this.baseUrl}/${this.version}/${flowId}/assets`, {
+      method: 'POST',
+      body: fd,
+    })) as { validation_errors?: Array<{ message?: string; error?: string }> };
+    const errs = json.validation_errors ?? [];
+    if (errs.length > 0) throw new FlowJsonInvalidError(errs.map((e) => e.message ?? e.error ?? 'erreur'));
+  }
+
   /** POST /{flow}/publish — DRAFT -> PUBLISHED. Irréversible côté Meta. */
   async publish(flowId: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${flowId}/publish`, { method: 'POST' });

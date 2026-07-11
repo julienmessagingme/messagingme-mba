@@ -6,7 +6,7 @@ import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { CarouselForm } from '@/components/CarouselForm';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
-import { listTemplates, createTemplate, listFlows, type TemplateSummary, type TemplateButtonInput, type FlowSummary } from '@/lib/api';
+import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, type TemplateSummary, type TemplateButtonInput, type FlowSummary } from '@/lib/api';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -32,6 +32,7 @@ function TemplatesInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'simple' | 'carousel'>('simple');
+  const [editing, setEditing] = useState<TemplateSummary | null>(null);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -48,23 +49,47 @@ function TemplatesInner({ session }: { session: Session }) {
     void reload();
   }, [reload]);
 
+  async function remove(t: TemplateSummary) {
+    if (!window.confirm(`Supprimer le template « ${t.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.`)) return;
+    setError(null);
+    try {
+      await deleteTemplate(session.tenantId, t.name);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Suppression impossible');
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
-        {(['simple', 'carousel'] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
-          >
-            {m === 'simple' ? 'Template simple' : 'Carousel'}
-          </button>
-        ))}
-      </div>
-      {mode === 'simple' ? (
-        <CreateForm tenantId={session.tenantId} onCreated={reload} />
+      {editing ? (
+        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">Modifier « {editing.name} »</h2>
+            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+          </div>
+          <p className="mb-4 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.</p>
+          <CreateForm key={editing.name} tenantId={session.tenantId} onCreated={() => { void reload(); setEditing(null); }} initial={editing} />
+        </section>
       ) : (
-        <CarouselForm tenantId={session.tenantId} onCreated={reload} />
+        <>
+          <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
+            {(['simple', 'carousel'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+              >
+                {m === 'simple' ? 'Template simple' : 'Carousel'}
+              </button>
+            ))}
+          </div>
+          {mode === 'simple' ? (
+            <CreateForm tenantId={session.tenantId} onCreated={reload} />
+          ) : (
+            <CarouselForm tenantId={session.tenantId} onCreated={reload} />
+          )}
+        </>
       )}
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -87,6 +112,7 @@ function TemplatesInner({ session }: { session: Session }) {
                   <th className="px-4 py-2.5 font-medium">Catégorie</th>
                   <th className="px-4 py-2.5 font-medium">Langue</th>
                   <th className="px-4 py-2.5 font-medium">Statut</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
@@ -99,6 +125,16 @@ function TemplatesInner({ session }: { session: Session }) {
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[t.status] ?? 'bg-ink-100 text-ink-600'}`}>
                         {t.status?.toLowerCase()}
                       </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-3 text-xs">
+                        {t.editable === false ? (
+                          <span className="text-ink-300" title={t.isCarousel ? "Édition d'un carousel non supportée" : "Édition non supportée : en-tête ou pied de page (il serait supprimé)"}>Éditer</span>
+                        ) : (
+                          <button onClick={() => setEditing(t)} className="font-medium text-brand-600 hover:text-brand-700">Éditer</button>
+                        )}
+                        <button onClick={() => remove(t)} className="font-medium text-coral hover:text-red-700">Supprimer</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -132,13 +168,14 @@ function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose
   );
 }
 
-function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>('MARKETING');
-  const [language, setLanguage] = useState('fr');
-  const [body, setBody] = useState('');
-  const [examples, setExamples] = useState<string[]>([]);
-  const [buttons, setButtons] = useState<TemplateButtonInput[]>([]);
+function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCreated: () => void; initial?: TemplateSummary }) {
+  const isEdit = !!initial;
+  const [name, setName] = useState(initial?.name ?? '');
+  const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>((initial?.category?.toUpperCase() as 'MARKETING' | 'UTILITY') ?? 'MARKETING');
+  const [language, setLanguage] = useState(initial?.language ?? 'fr');
+  const [body, setBody] = useState(initial?.body ?? '');
+  const [examples, setExamples] = useState<string[]>(initial?.example ?? []);
+  const [buttons, setButtons] = useState<TemplateButtonInput[]>(initial?.buttons ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -175,12 +212,26 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
     setError(null);
     setOk(null);
     try {
+      const example = varCount > 0 ? examples.slice(0, varCount).map((e) => e || 'exemple') : undefined;
+      if (isEdit && initial) {
+        // name/language immuables : on édite le template résolu par son nom+langue côté serveur.
+        await updateTemplate(tenantId, initial.name, {
+          language: initial.language,
+          category,
+          body,
+          ...(example ? { example } : {}),
+          ...(buttons.length > 0 ? { buttons } : {}),
+        });
+        setOk('Modifications envoyées. Le template repasse en validation Meta.');
+        onCreated();
+        return;
+      }
       const res = await createTemplate(tenantId, {
         name: name.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
         category,
         language,
         body,
-        ...(varCount > 0 ? { example: examples.slice(0, varCount).map((e) => e || 'exemple') } : {}),
+        ...(example ? { example } : {}),
         ...(buttons.length > 0 ? { buttons } : {}),
       });
       setOk(`Template soumis (statut : ${res.status}). Il passe en revue Meta.`);
@@ -190,7 +241,7 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
       setButtons([]);
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Création impossible');
+      setError(err instanceof Error ? err.message : isEdit ? 'Modification impossible' : 'Création impossible');
     } finally {
       setBusy(false);
     }
@@ -201,15 +252,19 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
   const canSubmit = name.trim() !== '' && body.trim() !== '' && buttonsComplete && !busy;
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouveau template</h2>
-      <p className="mt-1 text-xs text-ink-500">Soumis à Meta pour validation (quelques minutes à quelques heures).</p>
+    <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6 shadow-sm'}>
+      {!isEdit && (
+        <>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouveau template</h2>
+          <p className="mt-1 text-xs text-ink-500">Soumis à Meta pour validation (quelques minutes à quelques heures).</p>
+        </>
+      )}
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Colonne formulaire */}
         <div>
-          <Field label="Nom (minuscules, sans espaces)">
-            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="promo_ete" />
+          <Field label={isEdit ? 'Nom (non modifiable)' : 'Nom (minuscules, sans espaces)'}>
+            <input value={name} onChange={(e) => setName(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="promo_ete" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Catégorie">
@@ -218,8 +273,8 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
                 <option value="UTILITY">utility</option>
               </select>
             </Field>
-            <Field label="Langue">
-              <input value={language} onChange={(e) => setLanguage(e.target.value)} className={inputCls} placeholder="fr" />
+            <Field label={isEdit ? 'Langue (non modifiable)' : 'Langue'}>
+              <input value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="fr" />
             </Field>
           </div>
 
@@ -353,7 +408,7 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
             disabled={!canSubmit}
             className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
           >
-            {busy ? 'Soumission...' : 'Créer le template'}
+            {busy ? 'Envoi...' : isEdit ? 'Enregistrer les modifications' : 'Créer le template'}
           </button>
         </div>
 
@@ -362,7 +417,7 @@ function CreateForm({ tenantId, onCreated }: { tenantId: string; onCreated: () =
           <WhatsAppPreview body={body} examples={examples} buttons={buttons} />
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 

@@ -193,6 +193,8 @@ export function runCampaign(campaignId: string): Promise<{ enqueued: boolean }> 
 // --- Templates ---
 
 export interface TemplateSummary {
+  /** Id Meta (requis pour l'édition). '' si l'appel n'a pas demandé le field. */
+  id: string;
   name: string;
   status: string;
   category: string;
@@ -201,6 +203,14 @@ export interface TemplateSummary {
   body?: string;
   /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
   headerFormat?: string | null;
+  /** Boutons top-level (pré-remplissage de l'édition). */
+  buttons?: TemplateButtonInput[];
+  /** Exemples de variables du BODY (pré-remplissage). */
+  example?: string[];
+  /** true = carousel : édition non supportée (header_handle non récupérable). */
+  isCarousel?: boolean;
+  /** true = template limité à BODY(+BUTTONS) : seul cas éditable sans perte (header/footer/carousel bloqués). */
+  editable?: boolean;
 }
 export interface TemplateButtonInput {
   type: 'QUICK_REPLY' | 'URL' | 'FLOW';
@@ -229,6 +239,20 @@ export function listTemplates(tenantId: string): Promise<{ templates: TemplateSu
 }
 export function createTemplate(tenantId: string, input: CreateTemplateInput): Promise<{ id: string; status: string }> {
   return request(`/tenants/${tenantId}/templates`, { method: 'POST', body: JSON.stringify(input) });
+}
+/** Édite un template SIMPLE (body/boutons/category). L'id est résolu côté serveur depuis le nom+langue. */
+export interface UpdateTemplateInput {
+  language: string;
+  category: 'MARKETING' | 'UTILITY';
+  body: string;
+  example?: string[];
+  buttons?: TemplateButtonInput[];
+}
+export function updateTemplate(tenantId: string, name: string, input: UpdateTemplateInput): Promise<{ success: boolean; status: string }> {
+  return request(`/tenants/${tenantId}/templates/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify(input) });
+}
+export function deleteTemplate(tenantId: string, name: string): Promise<{ success: boolean }> {
+  return request(`/tenants/${tenantId}/templates/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 /** Upload d'une image (data URL base64) -> handle média Meta (header de carte carousel). */
 export function uploadMedia(tenantId: string, dataUrl: string): Promise<{ handle: string }> {
@@ -385,12 +409,21 @@ export interface FlowField {
   required: boolean;
   key: string;
 }
+/** Élément riche STOCKÉ (les champs portent leur clé dérivée) — sert à pré-remplir l'édition. */
+export type FlowElement =
+  | { kind: FlowTextKind; text: string }
+  | { kind: 'image'; src: string }
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; key: string };
 export interface FlowSummary {
   id: string;
   name: string;
   status: 'DRAFT' | 'PUBLISHED';
   /** Champs dérivés (kind='field') — pour l'aperçu de la liste. */
   fields: FlowField[];
+  /** Éléments riches (null pour les flows antérieurs au modèle) — pour pré-remplir l'édition. */
+  elements?: FlowElement[] | null;
+  /** Mapping clé champ -> clé user field — pour restaurer le « enregistrer dans » à l'édition. */
+  mapping?: Record<string, string> | null;
   createdAt: string;
 }
 export function listFlows(tenantId: string): Promise<{ flows: FlowSummary[] }> {
@@ -398,6 +431,14 @@ export function listFlows(tenantId: string): Promise<{ flows: FlowSummary[] }> {
 }
 export function createFlow(tenantId: string, input: { name: string; elements: FlowElementInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
   return request(`/tenants/${tenantId}/flows`, { method: 'POST', body: JSON.stringify(input) });
+}
+/** Édite un flow DRAFT (réécrit le flow_json). 409 si le flow est PUBLISHED (immuable). */
+export function updateFlow(tenantId: string, flowId: string, input: { name: string; elements: FlowElementInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+  return request(`/tenants/${tenantId}/flows/${flowId}`, { method: 'PATCH', body: JSON.stringify(input) });
+}
+/** « Dupliquer pour modifier » : clone un flow (publié ou draft) en un nouveau DRAFT éditable. */
+export function duplicateFlow(tenantId: string, flowId: string): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+  return request(`/tenants/${tenantId}/flows/${flowId}/duplicate`, { method: 'POST' });
 }
 export function publishFlow(tenantId: string, flowId: string): Promise<{ id: string; status: string }> {
   return request(`/tenants/${tenantId}/flows/${flowId}/publish`, { method: 'POST' });

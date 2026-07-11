@@ -63,6 +63,47 @@ export class PgFlowStore {
     }));
   }
 
+  /** Un flow par id, scopé tenant (pour l'édition : lire le status/elements). null si absent/autre tenant. */
+  async getById(id: string, tenantId: string): Promise<FlowRow | null> {
+    const res = await this.pool.query<{
+      id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
+      fields: FlowField[]; elements: FlowElement[] | null; ref: string | null; mapping: Record<string, string> | null;
+      created_at: Date; updated_at: Date;
+    }>(
+      `select id, tenant_id, name, status, fields, elements, ref, mapping, created_at, updated_at from flows
+       where id = $1 and tenant_id = $2 limit 1`,
+      [id, tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+      id: r.id,
+      tenantId: r.tenant_id,
+      name: r.name,
+      status: r.status,
+      fields: r.fields,
+      elements: r.elements,
+      ref: r.ref,
+      mapping: r.mapping,
+      createdAt: r.created_at.toISOString(),
+      updatedAt: r.updated_at.toISOString(),
+    };
+  }
+
+  /**
+   * Met à jour un flow DRAFT (name/elements/ref/mapping). `fields` est RE-DÉRIVÉ (fieldsOf) pour ne jamais
+   * diverger des elements. WHERE status='DRAFT' : 2e barrière SQL contre l'écriture d'un PUBLISHED (immuable
+   * chez Meta). Renvoie true si une ligne DRAFT du tenant a été mise à jour.
+   */
+  async update(id: string, tenantId: string, patch: { name: string; elements: FlowElement[]; ref: string; mapping: Record<string, string> }): Promise<boolean> {
+    const res = await this.pool.query(
+      `update flows set name = $3, fields = $4::jsonb, elements = $5::jsonb, ref = $6, mapping = $7::jsonb, updated_at = now()
+       where id = $1 and tenant_id = $2 and status = 'DRAFT'`,
+      [id, tenantId, patch.name, JSON.stringify(fieldsOf(patch.elements)), JSON.stringify(patch.elements), patch.ref, JSON.stringify(patch.mapping)],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Retrouve le tenant + le mapping d'un flow par son `ref` (retour nfm_reply). null si inconnu. */
   async findByRef(ref: string): Promise<FlowMappingRow | null> {
     const res = await this.pool.query<{ tenant_id: string; mapping: Record<string, string> | null }>(

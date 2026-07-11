@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       templates: new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION),
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
       getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
+      listActiveCampaignsForTemplate: (tenant, name, language) => repo.listActiveCampaignsForTemplate(tenant, name, language),
     },
     inbox: {
       listConversations: (tenant) => inboxStore.listConversations(tenant),
@@ -120,6 +121,8 @@ async function main(): Promise<void> {
       belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
       markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
       ensureUserField: async (tenant, label, type) => { await ensureField(fieldStore, tenant, label, type); },
+      getFlow: (flowId, tenant) => flowStore.getById(flowId, tenant),
+      updateFlowRow: (tenant, id, name, elements, ref, mapping) => flowStore.update(id, tenant, { name, elements, ref, mapping }),
     },
     media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
     tags: {

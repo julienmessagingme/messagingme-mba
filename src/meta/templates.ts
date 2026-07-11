@@ -38,6 +38,8 @@ export interface CreateTemplateInput {
 }
 
 export interface TemplateSummary {
+  /** Id Meta du template (requis pour l'édition POST /{id}). Vide pour les anciens appels sans le field. */
+  id: string;
   name: string;
   status: string;
   category: string;
@@ -46,6 +48,16 @@ export interface TemplateSummary {
   body: string;
   /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
   headerFormat: string | null;
+  /** Boutons top-level (pour pré-remplir l'édition). undefined si aucun. */
+  buttons?: TemplateButton[];
+  /** Exemples de variables du BODY (pour pré-remplir l'édition). undefined si aucun. */
+  example?: string[];
+  /** true si le template est un CAROUSEL (édition non supportée : header_handle non récupérable). */
+  isCarousel: boolean;
+  /** true si le template se limite à BODY (+BUTTONS) : seul cas éditable en place sans PERTE. Un HEADER,
+   *  un FOOTER ou un CAROUSEL serait supprimé par l'édition (buildComponents ne les régénère pas + Meta
+   *  REMPLACE tous les components). L'UI et la route PATCH bloquent l'édition si `editable` est false. */
+  editable: boolean;
 }
 
 /** Texte du composant BODY parmi les components d'un template. */
@@ -68,6 +80,52 @@ function headerFormatOf(components: unknown): string | null {
   return null;
 }
 
+/** Boutons top-level (composant BUTTONS) remappés en TemplateButton, pour pré-remplir l'édition. */
+function buttonsOf(components: unknown): TemplateButton[] | undefined {
+  if (!Array.isArray(components)) return undefined;
+  for (const c of components) {
+    const comp = c as { type?: string; buttons?: unknown };
+    if (comp?.type === 'BUTTONS' && Array.isArray(comp.buttons)) {
+      return comp.buttons.map((raw): TemplateButton => {
+        const b = raw as { type?: string; text?: string; url?: string; flow_id?: string };
+        if (b.type === 'URL') return { type: 'URL', text: b.text ?? '', url: b.url ?? '' };
+        if (b.type === 'FLOW') return { type: 'FLOW', text: b.text ?? '', flowId: b.flow_id ?? '' };
+        return { type: 'QUICK_REPLY', text: b.text ?? '' };
+      });
+    }
+  }
+  return undefined;
+}
+
+/** Exemples de variables du BODY (example.body_text[0]) pour pré-remplir l'édition. */
+function exampleOf(components: unknown): string[] | undefined {
+  if (!Array.isArray(components)) return undefined;
+  for (const c of components) {
+    const comp = c as { type?: string; example?: { body_text?: unknown } };
+    if (comp?.type === 'BODY' && comp.example && Array.isArray(comp.example.body_text)) {
+      const row = comp.example.body_text[0];
+      if (Array.isArray(row)) return row.map(String);
+    }
+  }
+  return undefined;
+}
+
+/** true si le template porte un composant CAROUSEL (édition non supportée en V1). */
+function isCarouselOf(components: unknown): boolean {
+  return Array.isArray(components) && components.some((c) => (c as { type?: string })?.type === 'CAROUSEL');
+}
+
+/**
+ * Un template n'est éditable en place QUE s'il se limite à BODY (+ éventuel BUTTONS). Tout HEADER / FOOTER /
+ * CAROUSEL serait DÉTRUIT par l'édition : buildComponents ne régénère que BODY/BUTTONS/CAROUSEL et Meta
+ * remplace intégralement les components. On bloque donc l'édition de ces templates (garde-fou anti perte).
+ */
+function isSimpleEditable(components: unknown): boolean {
+  if (!Array.isArray(components)) return false;
+  const types = components.map((c) => (c as { type?: string })?.type);
+  return types.includes('BODY') && types.every((t) => t === 'BODY' || t === 'BUTTONS');
+}
+
 /** Mappe un bouton applicatif -> composant Meta (QUICK_REPLY / URL / FLOW). Réutilisé top-level + cartes. */
 function mapButton(b: TemplateButton): Record<string, unknown> {
   // Bouton FLOW : ouvre le flow publié à son écran d'entrée (navigate_screen = id d'écran, vérifié live).
@@ -81,7 +139,10 @@ function mapButton(b: TemplateButton): Record<string, unknown> {
   return btn;
 }
 
-function buildComponents(input: CreateTemplateInput): unknown[] {
+/** Les seuls champs qui déterminent les `components` Meta (partagé create + update ; name/language exclus). */
+type ComponentInput = Pick<CreateTemplateInput, 'body' | 'example' | 'buttons' | 'carousel'>;
+
+function buildComponents(input: ComponentInput): unknown[] {
   const components: unknown[] = [];
   const body: Record<string, unknown> = { type: 'BODY', text: input.body };
   if (input.example && input.example.length > 0) {
@@ -156,24 +217,52 @@ export class MetaTemplateClient {
    */
   async list(wabaId: string): Promise<TemplateSummary[]> {
     const out: TemplateSummary[] = [];
-    let next: string | null = this.url(wabaId, '?fields=name,status,category,language,components&limit=100');
+    let next: string | null = this.url(wabaId, '?fields=id,name,status,category,language,components&limit=100');
     for (let page = 0; page < 20 && next; page++) {
       const json = (await this.call(next, { method: 'GET' })) as {
-        data?: Array<{ name?: string; status?: string; category?: string; language?: string; components?: unknown }>;
+        data?: Array<{ id?: string; name?: string; status?: string; category?: string; language?: string; components?: unknown }>;
         paging?: { next?: string };
       };
       for (const t of json.data ?? []) {
         out.push({
+          id: t.id ?? '',
           name: t.name ?? '',
           status: t.status ?? '',
           category: t.category ?? '',
           language: t.language ?? '',
           body: bodyOf(t.components),
           headerFormat: headerFormatOf(t.components),
+          ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
+          ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),
+          isCarousel: isCarouselOf(t.components),
+          editable: isSimpleEditable(t.components),
         });
       }
       next = json.paging?.next ?? null;
     }
     return out;
+  }
+
+  /**
+   * Édite un template existant : POST /{templateId} (node template, PAS /message_templates). Meta REMPLACE
+   * intégralement les components (pas de patch) et n'accepte QUE category et/ou components (name/language
+   * immuables). Un APPROVED édité repasse en revue (PENDING) puis est auto-réapprouvé si la review passe.
+   */
+  async update(
+    templateId: string,
+    input: { category?: 'MARKETING' | 'UTILITY' } & ComponentInput,
+  ): Promise<{ success: boolean }> {
+    const json = (await this.call(`${this.baseUrl}/${this.version}/${templateId}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...(input.category ? { category: input.category } : {}), components: buildComponents(input) }),
+    })) as { success?: boolean };
+    return { success: json.success ?? false };
+  }
+
+  /** Supprime un template par NOM (toutes langues) : DELETE /{waba}/message_templates?name=. */
+  async remove(wabaId: string, name: string): Promise<{ success: boolean }> {
+    const json = (await this.call(this.url(wabaId, `?name=${encodeURIComponent(name)}`), { method: 'DELETE' })) as { success?: boolean };
+    return { success: json.success ?? false };
   }
 }

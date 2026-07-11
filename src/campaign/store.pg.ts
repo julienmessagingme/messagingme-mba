@@ -127,6 +127,30 @@ export class PgCampaignRepo {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Campagnes ACTIVES (draft/running/paused) référençant un template (par nom ; langue optionnelle).
+   * Garde-fou D1 : éditer/supprimer un template utilisé par une de ces campagnes casserait des envois
+   * (un draft a déjà ses recipients construits ; un running/paused est relançable via POST /run ; un edit
+   * repasse le template en PENDING donc en 422 par destinataire). completed/failed = terminaux -> exclus.
+   * Langue omise = toutes langues (cas de la suppression par nom, qui efface toutes les langues chez Meta).
+   */
+  async listActiveCampaignsForTemplate(
+    tenantId: string,
+    templateName: string,
+    templateLanguage?: string,
+  ): Promise<Array<{ id: string; name: string; status: CampaignStatus; templateLanguage: string }>> {
+    const res = await this.pool.query<{ id: string; name: string; status: CampaignStatus; template_language: string }>(
+      `select id, name, status, template_language
+       from campaigns
+       where tenant_id = $1 and template_name = $2
+         and ($3::text is null or template_language = $3)
+         and status in ('draft', 'running', 'paused')
+       order by created_at desc`,
+      [tenantId, templateName, templateLanguage ?? null],
+    );
+    return res.rows.map((r) => ({ id: r.id, name: r.name, status: r.status, templateLanguage: r.template_language }));
+  }
+
   /** Résumé des campagnes du tenant avec le décompte des destinataires par statut. */
   async listCampaignSummaries(tenantId: string): Promise<CampaignSummary[]> {
     const res = await this.pool.query<{

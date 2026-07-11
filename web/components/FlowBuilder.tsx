@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   createFlow,
+  updateFlow,
   publishFlow,
   listUserFields,
   type FlowFieldType,
   type FlowTextKind,
+  type FlowElement,
   type FlowElementInput,
   type UserFieldDef,
 } from '@/lib/api';
@@ -29,28 +31,71 @@ type BElem =
 
 const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
+/** L'image Flow est stockée en base64 BRUT (préfixe strippé côté serveur) : on re-préfixe pour l'aperçu. */
+function toDataUrl(src: string): string {
+  return src.startsWith('data:') ? src : `data:image/jpeg;base64,${src}`;
+}
+
+/** Convertit des elements STOCKÉS (avec clés) en éléments d'édition (uid, saveTo reconstruit du mapping). */
+function toBElems(elements: FlowElement[], mapping: Record<string, string>, startUid: number): { elems: BElem[]; nextUid: number } {
+  let uid = startUid;
+  const elems = elements.map((e): BElem => {
+    if (e.kind === 'image') return { uid: uid++, kind: 'image', src: toDataUrl(e.src), uploading: false };
+    if (e.kind === 'field') {
+      // mapping[key] === key -> mapping par défaut (nouveau champ) : select vide ; sinon la cible explicite.
+      const target = mapping[e.key];
+      return { uid: uid++, kind: 'field', label: e.label, type: e.type, required: e.required, saveTo: target && target !== e.key ? target : '' };
+    }
+    return { uid: uid++, kind: e.kind, text: e.text };
+  });
+  return { elems, nextUid: uid };
+}
+
+const emptySeed = (): { elems: BElem[]; nextUid: number } => ({
+  elems: [{ uid: 1, kind: 'field', label: '', type: 'text', required: true, saveTo: '' }],
+  nextUid: 2,
+});
+
 /**
  * Constructeur de Flow RICHE : une liste ordonnée d'éléments (titres/paragraphes/légendes, image, champ de
- * saisie). Chaque CHAMP se range dans un user field du contact au retour du formulaire : « Nouveau champ »
- * (créé d'après le libellé) par défaut, ou un user field existant choisi dans le select. `autoPublish` :
- * publie aussitôt (contexte template, où le flow doit être PUBLISHED pour être attaché à un bouton).
+ * saisie). Chaque CHAMP se range dans un user field du contact : « Nouveau champ » (créé d'après le libellé)
+ * par défaut, ou un user field existant. `mode='edit'` (avec `flowId`) : réécrit un flow DRAFT existant,
+ * pré-rempli via `initialName`/`initialElements`/`initialMapping`. `autoPublish` (mode create) : publie aussitôt
+ * (contexte template, où le flow doit être PUBLISHED pour être attaché).
  */
 export function FlowBuilder({
   tenantId,
   onCreated,
   autoPublish = false,
+  mode = 'create',
+  flowId,
+  initialName,
+  initialElements,
+  initialMapping,
 }: {
   tenantId: string;
   onCreated: (flow: { id: string; name: string; status: string }) => void;
   autoPublish?: boolean;
+  mode?: 'create' | 'edit';
+  flowId?: string;
+  initialName?: string;
+  initialElements?: FlowElement[] | null;
+  initialMapping?: Record<string, string> | null;
 }) {
-  const [name, setName] = useState('');
-  const [elements, setElements] = useState<BElem[]>([{ uid: 1, kind: 'field', label: '', type: 'text', required: true, saveTo: '' }]);
+  const seedRef = useRef<{ elems: BElem[]; nextUid: number } | null>(null);
+  if (seedRef.current === null) {
+    seedRef.current = initialElements && initialElements.length > 0
+      ? toBElems(initialElements, initialMapping ?? {}, 1)
+      : emptySeed();
+  }
+  const [name, setName] = useState(initialName ?? '');
+  const [elements, setElements] = useState<BElem[]>(seedRef.current.elems);
   const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const uidRef = useRef(2);
+  const uidRef = useRef(seedRef.current.nextUid);
   const fileRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const isEdit = mode === 'edit' && !!flowId;
 
   useEffect(() => {
     listUserFields(tenantId).then(({ fields }) => setUserFields(fields)).catch(() => setUserFields([]));
@@ -116,6 +161,12 @@ export function FlowBuilder({
         if (e.kind === 'field') return { kind: 'field', label: e.label.trim(), type: e.type, required: e.required, ...(e.saveTo ? { saveTo: e.saveTo } : {}) };
         return { kind: e.kind, text: e.text.trim() };
       });
+      if (isEdit) {
+        const res = await updateFlow(tenantId, flowId!, { name: name.trim(), elements: payload });
+        setMsg({ kind: 'ok', text: `Formulaire « ${res.name} » mis à jour (brouillon).` });
+        onCreated({ id: res.id, name: res.name, status: res.status });
+        return; // pas de reset en édition : on garde l'état édité affiché
+      }
       const res = await createFlow(tenantId, { name: name.trim(), elements: payload });
       let status = res.status;
       if (autoPublish) {
@@ -127,7 +178,7 @@ export function FlowBuilder({
       setElements([{ uid: nextUid(), kind: 'field', label: '', type: 'text', required: true, saveTo: '' }]);
       onCreated({ id: res.id, name: res.name, status });
     } catch (err) {
-      setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Création impossible' });
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Enregistrement impossible' });
     } finally {
       setBusy(false);
     }
@@ -229,7 +280,7 @@ export function FlowBuilder({
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
 
       <button onClick={submit} disabled={!canSubmit} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
-        {busy ? 'Création…' : autoPublish ? 'Créer et publier' : 'Créer le formulaire'}
+        {busy ? 'Enregistrement…' : isEdit ? 'Enregistrer les modifications' : autoPublish ? 'Créer et publier' : 'Créer le formulaire'}
       </button>
     </div>
   );

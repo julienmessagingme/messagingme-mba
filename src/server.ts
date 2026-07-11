@@ -69,8 +69,9 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows) && !deps.auth) {
-    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows sont exposées');
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates) && !deps.auth) {
+    // templates inclus : PATCH/DELETE (destructif) s'appuient sur forbidNonAdmin, qui est un no-op sans req.auth.
+    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates sont exposées');
   }
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
