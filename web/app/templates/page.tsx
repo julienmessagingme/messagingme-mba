@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { CarouselForm } from '@/components/CarouselForm';
 import type { Session } from '@/lib/session';
 import { listTemplates, createTemplate, listFlows, type TemplateSummary, type TemplateButtonInput, type FlowSummary } from '@/lib/api';
 
@@ -29,6 +30,7 @@ function TemplatesInner({ session }: { session: Session }) {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'simple' | 'carousel'>('simple');
 
   const reload = useCallback(async () => {
     setError(null);
@@ -47,7 +49,22 @@ function TemplatesInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-6">
-      <CreateForm tenantId={session.tenantId} onCreated={reload} />
+      <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
+        {(['simple', 'carousel'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+          >
+            {m === 'simple' ? 'Template simple' : 'Carousel'}
+          </button>
+        ))}
+      </div>
+      {mode === 'simple' ? (
+        <CreateForm tenantId={session.tenantId} onCreated={reload} />
+      ) : (
+        <CarouselForm tenantId={session.tenantId} onCreated={reload} />
+      )}
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900">Templates ({templates.length})</h2>

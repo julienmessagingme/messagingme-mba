@@ -209,6 +209,11 @@ export interface TemplateButtonInput {
   /** requis si type = FLOW : id d'un flow PUBLISHED. */
   flowId?: string;
 }
+export interface CarouselCardInput {
+  headerHandle: string;
+  body?: string;
+  buttons?: TemplateButtonInput[];
+}
 export interface CreateTemplateInput {
   name: string;
   category: 'MARKETING' | 'UTILITY';
@@ -216,12 +221,18 @@ export interface CreateTemplateInput {
   body: string;
   example?: string[];
   buttons?: TemplateButtonInput[];
+  /** Template CAROUSEL : corps commun (body) + 2-10 cartes. */
+  carousel?: { cards: CarouselCardInput[] };
 }
 export function listTemplates(tenantId: string): Promise<{ templates: TemplateSummary[] }> {
   return request<{ templates: TemplateSummary[] }>(`/tenants/${tenantId}/templates`);
 }
 export function createTemplate(tenantId: string, input: CreateTemplateInput): Promise<{ id: string; status: string }> {
   return request(`/tenants/${tenantId}/templates`, { method: 'POST', body: JSON.stringify(input) });
+}
+/** Upload d'une image (data URL base64) -> handle média Meta (header de carte carousel). */
+export function uploadMedia(tenantId: string, dataUrl: string): Promise<{ handle: string }> {
+  return request<{ handle: string }>(`/tenants/${tenantId}/media`, { method: 'POST', body: JSON.stringify({ dataUrl }) });
 }
 
 // --- Inbox ---
