@@ -22,6 +22,16 @@ export class PgUserFieldStore implements UserFieldStore {
     );
   }
 
+  /** Crée une définition de champ. 'exists' (409 amont) si la clé existe déjà (pas d'écrasement silencieux). */
+  async create(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'> {
+    const res = await this.pool.query(
+      `insert into user_fields (tenant_id, key, label, type) values ($1, $2, $3, $4)
+       on conflict (tenant_id, key) do nothing`,
+      [tenantId, def.key, def.label, def.type],
+    );
+    return (res.rowCount ?? 0) > 0 ? 'created' : 'exists';
+  }
+
   /**
    * Met à jour le libellé et/ou le type d'un champ. La CLÉ est immuable (la renommer casserait les
    * paramMapping de campagnes + les valeurs `contacts.fields` indexées par clé). true si une ligne a bougé.

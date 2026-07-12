@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgUserFieldStore } from '../../src/crm/field-store.pg';
+import { PgTagStore } from '../../src/crm/tag-store.pg';
 import {
   PgCampaignRepo,
   PgCampaignStore,
@@ -97,6 +98,37 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const ville = list.filter((f) => f.key === 'ville');
     expect(ville).toHaveLength(1);
     expect(ville[0]?.label).toBe('Ville');
+  });
+
+  it('PgUserFieldStore.create : created puis exists (pas d’écrasement)', async () => {
+    const store = new PgUserFieldStore(pool);
+    expect(await store.create(tenantId, { key: 'newf', label: 'New', type: 'text' })).toBe('created');
+    expect(await store.create(tenantId, { key: 'newf', label: 'Autre', type: 'number' })).toBe('exists');
+    expect((await store.list(tenantId)).find((f) => f.key === 'newf')?.label).toBe('New'); // pas écrasé
+  });
+
+  it('PgTagStore : create idempotent, listDistinct union (déclaré 0 + utilisé), rename/remove transactionnels', async () => {
+    const store = new PgTagStore(pool);
+    expect(await store.create(tenantId, 'declared-only')).toBe(true);
+    expect(await store.create(tenantId, 'declared-only')).toBe(false); // idempotent
+
+    await pool.query(`insert into contacts (tenant_id, phone_e164, opt_in_status, tags) values ($1, $2, 'opted_in', array['used-only'])`, [tenantId, '+33600000020']);
+    const before = new Map((await store.listDistinct(tenantId)).map((t) => [t.tag, t.count]));
+    expect(before.get('declared-only')).toBe(0); // déclaré, non utilisé
+    expect(before.get('used-only')).toBe(1); // utilisé
+
+    expect(await store.rename(tenantId, 'used-only', 'renamed')).toBe(1);
+    const after = new Map((await store.listDistinct(tenantId)).map((t) => [t.tag, t.count]));
+    expect(after.has('used-only')).toBe(false);
+    expect(after.get('renamed')).toBe(1);
+
+    // rename d'un `from` inconnu -> ne déclare PAS 'ghost-to'.
+    await store.rename(tenantId, 'inconnu-xyz', 'ghost-to');
+    expect((await store.listDistinct(tenantId)).some((t) => t.tag === 'ghost-to')).toBe(false);
+
+    // remove d'un tag déclaré -> disparaît de la table.
+    await store.remove(tenantId, 'declared-only');
+    expect((await store.listDistinct(tenantId)).some((t) => t.tag === 'declared-only')).toBe(false);
   });
 
   it('PgCampaignRepo + stores : insert, listPending, markResult, setStatus, lastSentAt', async () => {

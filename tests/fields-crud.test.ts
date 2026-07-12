@@ -16,11 +16,12 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { updated: Array<{ key: string; patch: { label?: string; type?: UserFieldType } }>; deleted: string[] }
+interface Cap { created: Array<{ key: string; label: string; type: UserFieldType }>; updated: Array<{ key: string; patch: { label?: string; type?: UserFieldType } }>; deleted: string[] }
 function app(over: Partial<FieldsRouteDeps> = {}) {
-  const cap: Cap = { updated: [], deleted: [] };
+  const cap: Cap = { created: [], updated: [], deleted: [] };
   const deps: FieldsRouteDeps = {
     listFields: async () => [{ key: 'ville', label: 'Ville', type: 'text' }],
+    createField: async (_t, def) => { cap.created.push(def); return def.key === 'ville' ? 'exists' : 'created'; },
     updateField: async (_t, key, patch) => { cap.updated.push({ key, patch }); return key === 'ville'; },
     deleteField: async (_t, key) => { cap.deleted.push(key); return key === 'ville'; },
     ...over,
@@ -41,6 +42,31 @@ describe('routes user-fields (CRUD)', () => {
     const { server } = app();
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('POST create field -> 201 (clé dérivée du libellé)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(adminTok), payload: { label: 'Code postal', type: 'text' } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ key: string }>().key).toBe('code_postal'); // slug du libellé
+    expect(cap.created[0]).toMatchObject({ key: 'code_postal', label: 'Code postal', type: 'text' });
+    await server.close();
+  });
+
+  it('POST create field clé existante -> 409', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(adminTok), payload: { label: 'Ville', type: 'text' } });
+    expect(res.statusCode).toBe(409); // slug 'ville' déjà présent -> le mock renvoie 'exists'
+    await server.close();
+  });
+
+  it('POST create field type invalide -> 400 ; agent -> 403', async () => {
+    const { server } = app();
+    const bad = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(adminTok), payload: { label: 'X', type: 'json' } });
+    const agent = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(agentTok), payload: { label: 'X', type: 'text' } });
+    expect(bad.statusCode).toBe(400);
+    expect(agent.statusCode).toBe(403);
     await server.close();
   });
 

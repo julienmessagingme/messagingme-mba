@@ -488,6 +488,9 @@ export interface TagCount {
 export function listTags(tenantId: string): Promise<{ tags: TagCount[] }> {
   return request<{ tags: TagCount[] }>(`/tenants/${tenantId}/tags`);
 }
+export function createTag(tenantId: string, name: string): Promise<{ name: string; created: boolean }> {
+  return request(`/tenants/${tenantId}/tags`, { method: 'POST', body: JSON.stringify({ name }) });
+}
 export function renameTag(tenantId: string, from: string, to: string): Promise<{ renamed: number }> {
   return request(`/tenants/${tenantId}/tags`, { method: 'PATCH', body: JSON.stringify({ from, to }) });
 }
@@ -503,6 +506,9 @@ export interface UserFieldDef {
 }
 export function listUserFields(tenantId: string): Promise<{ fields: UserFieldDef[] }> {
   return request<{ fields: UserFieldDef[] }>(`/tenants/${tenantId}/user-fields`);
+}
+export function createUserField(tenantId: string, input: { label: string; type: UserFieldKind }): Promise<UserFieldDef> {
+  return request<UserFieldDef>(`/tenants/${tenantId}/user-fields`, { method: 'POST', body: JSON.stringify(input) });
 }
 export function updateUserField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldKind }): Promise<unknown> {
   return request(`/tenants/${tenantId}/user-fields/${encodeURIComponent(key)}`, { method: 'PATCH', body: JSON.stringify(patch) });

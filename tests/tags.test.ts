@@ -15,11 +15,12 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { renamed: Array<{ from: string; to: string }>; removed: string[] }
+interface Cap { created: string[]; renamed: Array<{ from: string; to: string }>; removed: string[] }
 function app(over: Partial<TagsRouteDeps> = {}) {
-  const cap: Cap = { renamed: [], removed: [] };
+  const cap: Cap = { created: [], renamed: [], removed: [] };
   const deps: TagsRouteDeps = {
     listTags: async () => [{ tag: 'vip', count: 3 }, { tag: 'salon', count: 1 }],
+    createTag: async (_t, name) => { cap.created.push(name); return true; },
     renameTag: async (_t, from, to) => { cap.renamed.push({ from, to }); return 2; },
     removeTag: async (_t, tag) => { cap.removed.push(tag); return 5; },
     ...over,
@@ -40,6 +41,24 @@ describe('routes tags', () => {
     const { server } = app();
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/tags', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('POST create tag admin -> 201, createTag appelé', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/tags', ...h(adminTok), payload: { name: 'prospect' } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.created).toEqual(['prospect']);
+    await server.close();
+  });
+
+  it('POST create tag name vide -> 400 ; agent -> 403', async () => {
+    const { server, cap } = app();
+    const empty = await server.inject({ method: 'POST', url: '/tenants/t1/tags', ...h(adminTok), payload: { name: '  ' } });
+    const agent = await server.inject({ method: 'POST', url: '/tenants/t1/tags', ...h(agentTok), payload: { name: 'x' } });
+    expect(empty.statusCode).toBe(400);
+    expect(agent.statusCode).toBe(403);
+    expect(cap.created).toHaveLength(0);
     await server.close();
   });
 

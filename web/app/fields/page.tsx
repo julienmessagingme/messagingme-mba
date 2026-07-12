@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUserFields, updateUserField, deleteUserField, type UserFieldDef, type UserFieldKind } from '@/lib/api';
+import { listUserFields, createUserField, updateUserField, deleteUserField, type UserFieldDef, type UserFieldKind } from '@/lib/api';
 
 const TYPES: { value: UserFieldKind; label: string }[] = [
   { value: 'text', label: 'Texte' },
@@ -22,6 +22,8 @@ function FieldsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [newLabel, setNewLabel] = useState('');
+  const [newType, setNewType] = useState<UserFieldKind>('text');
 
   const load = useCallback(async () => {
     setError(null);
@@ -54,6 +56,20 @@ function FieldsInner({ session }: { session: Session }) {
       setSavingKey(null);
     }
   }
+  async function create() {
+    const label = newLabel.trim();
+    if (!label) return;
+    setError(null);
+    try {
+      await createUserField(session.tenantId, { label, type: newType });
+      setNewLabel('');
+      setNewType('text');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Création impossible (ce champ existe peut-être déjà)');
+    }
+  }
+
   async function remove(f: UserFieldDef) {
     if (!window.confirm(`Supprimer le champ « ${f.label} » (clé ${f.key}) ?\nLes valeurs déjà saisies sur les contacts sont conservées.`)) return;
     setError(null);
@@ -69,9 +85,23 @@ function FieldsInner({ session }: { session: Session }) {
     <div className="max-w-3xl space-y-6">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-ink-900">Champs personnalisés</h2>
-        <p className="mt-1 text-sm text-ink-500">Modifie le libellé ou le type. La clé technique est verrouillée (elle est référencée par les campagnes et les valeurs des contacts).</p>
+        <p className="mt-1 text-sm text-ink-500">Crée un champ, ou modifie son libellé/type. La clé technique est verrouillée (référencée par les campagnes et les valeurs des contacts).</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void create(); }}
+          placeholder="Libellé du nouveau champ (ex. Code postal)…"
+          className="min-w-[200px] flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        />
+        <select value={newType} onChange={(e) => setNewType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
+          {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <button onClick={create} disabled={newLabel.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">Créer un champ</button>
+      </div>
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Champs ({fields.length})</div>

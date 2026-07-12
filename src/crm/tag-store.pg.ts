@@ -6,41 +6,84 @@ export interface TagCount {
 }
 
 /**
- * Gestion des tags. Les tags sont DÉRIVÉS des contacts (`contacts.tags text[]`, pas de table dédiée) :
- * lister = agréger, renommer/supprimer = éditer les arrays. Tout est scopé au tenant. Renommer re-dédup
- * (si la cible existe déjà sur un contact, pas de doublon).
+ * Gestion des tags. Modèle mixte (lot 2) : une table `tags` de tags PRÉ-DÉCLARÉS (créés à vide) + les tags
+ * portés par les contacts (`contacts.tags text[]`). Lister = UNION des deux avec le compte d'usage (0 si
+ * déclaré mais non utilisé). Renommer/supprimer réconcilient les DEUX (table + arrays contacts). Scopé tenant.
  */
 export class PgTagStore {
   constructor(private readonly pool: Pool) {}
 
+  /** Déclare un tag (réutilisable, même sans contact). Idempotent. true si créé, false s'il existait déjà. */
+  async create(tenantId: string, name: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `insert into tags (tenant_id, name) values ($1, $2) on conflict (tenant_id, name) do nothing`,
+      [tenantId, name],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Union des tags déclarés (table) + utilisés (contacts), avec le compte d'usage (0 = déclaré, non utilisé). */
   async listDistinct(tenantId: string): Promise<TagCount[]> {
     const res = await this.pool.query<{ tag: string; count: string }>(
-      `select t as tag, count(*)::int as count
-       from contacts, unnest(tags) t
-       where tenant_id = $1
-       group by t order by t`,
+      `with declared as (select name as tag from tags where tenant_id = $1),
+            used as (select t as tag, count(*)::int as cnt from contacts, unnest(tags) t where tenant_id = $1 group by t)
+       select coalesce(d.tag, u.tag) as tag, coalesce(u.cnt, 0) as count
+       from declared d full outer join used u on u.tag = d.tag
+       order by 1`,
       [tenantId],
     );
     return res.rows.map((r) => ({ tag: r.tag, count: Number(r.count) }));
   }
 
-  /** Renomme `from` -> `to` sur tous les contacts du tenant, en re-dédupliquant. Nb de contacts touchés. */
+  /**
+   * Renomme `from` -> `to` sur les contacts (re-dédup) ET dans la table des tags déclarés, en UNE
+   * transaction (pas d'incohérence table/contacts si une requête échoue). Ne déclare `to` que si `from`
+   * existait réellement (déclaré ou porté par un contact) -> pas de tag fantôme créé sur un `from` inconnu.
+   * Renvoie le nb de contacts touchés.
+   */
   async rename(tenantId: string, from: string, to: string): Promise<number> {
-    const res = await this.pool.query(
-      `update contacts
-         set tags = (select coalesce(array_agg(distinct x), '{}') from unnest(array_replace(tags, $2, $3)) x)
-         where tenant_id = $1 and tags @> array[$2]::text[]`,
-      [tenantId, from, to],
-    );
-    return res.rowCount ?? 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const res = await client.query(
+        `update contacts
+           set tags = (select coalesce(array_agg(distinct x), '{}') from unnest(array_replace(tags, $2, $3)) x)
+           where tenant_id = $1 and tags @> array[$2]::text[]`,
+        [tenantId, from, to],
+      );
+      const declared = await client.query('select 1 from tags where tenant_id = $1 and name = $2', [tenantId, from]);
+      // `from` existait (utilisé sur un contact OU déclaré) -> on réconcilie la table (to peut déjà exister).
+      if ((res.rowCount ?? 0) > 0 || (declared.rowCount ?? 0) > 0) {
+        await client.query('insert into tags (tenant_id, name) values ($1, $2) on conflict (tenant_id, name) do nothing', [tenantId, to]);
+        await client.query('delete from tags where tenant_id = $1 and name = $2', [tenantId, from]);
+      }
+      await client.query('commit');
+      return res.rowCount ?? 0;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
-  /** Retire `tag` de tous les contacts du tenant. Nb de contacts touchés. */
+  /** Retire `tag` des contacts ET de la table des tags déclarés, en UNE transaction. Nb de contacts touchés. */
   async remove(tenantId: string, tag: string): Promise<number> {
-    const res = await this.pool.query(
-      `update contacts set tags = array_remove(tags, $2) where tenant_id = $1 and tags @> array[$2]::text[]`,
-      [tenantId, tag],
-    );
-    return res.rowCount ?? 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const res = await client.query(
+        `update contacts set tags = array_remove(tags, $2) where tenant_id = $1 and tags @> array[$2]::text[]`,
+        [tenantId, tag],
+      );
+      await client.query('delete from tags where tenant_id = $1 and name = $2', [tenantId, tag]);
+      await client.query('commit');
+      return res.rowCount ?? 0;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }

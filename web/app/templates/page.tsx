@@ -33,6 +33,8 @@ function TemplatesInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'simple' | 'carousel'>('simple');
   const [editing, setEditing] = useState<TemplateSummary | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [preview, setPreview] = useState<TemplateSummary | null>(null);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -71,9 +73,13 @@ function TemplatesInner({ session }: { session: Session }) {
           <p className="mb-4 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.</p>
           <CreateForm key={editing.name} tenantId={session.tenantId} onCreated={() => { void reload(); setEditing(null); }} initial={editing} />
         </section>
-      ) : (
-        <>
-          <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
+      ) : creating ? (
+        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouveau template</h2>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+          </div>
+          <div className="mb-4 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
             {(['simple', 'carousel'] as const).map((m) => (
               <button
                 key={m}
@@ -85,23 +91,28 @@ function TemplatesInner({ session }: { session: Session }) {
             ))}
           </div>
           {mode === 'simple' ? (
-            <CreateForm tenantId={session.tenantId} onCreated={reload} />
+            <CreateForm tenantId={session.tenantId} onCreated={() => { void reload(); setCreating(false); }} />
           ) : (
-            <CarouselForm tenantId={session.tenantId} onCreated={reload} />
+            <CarouselForm tenantId={session.tenantId} onCreated={() => { void reload(); setCreating(false); }} />
           )}
-        </>
-      )}
+        </section>
+      ) : null}
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900">Templates ({templates.length})</h2>
-          <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+          <div className="flex items-center gap-3">
+            <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+            {!creating && !editing && (
+              <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">+ Créer un template</button>
+            )}
+          </div>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading ? (
           <p className="text-sm text-ink-500">Chargement...</p>
         ) : templates.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            Aucun template. Crée-en un ci-dessus (il passe en revue Meta avant d&apos;être utilisable).
+            Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d&apos;être utilisable).
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
@@ -118,7 +129,9 @@ function TemplatesInner({ session }: { session: Session }) {
               <tbody className="divide-y divide-ink-100">
                 {templates.map((t) => (
                   <tr key={`${t.name}-${t.language}`} className="hover:bg-ink-50">
-                    <td className="px-4 py-2.5 font-mono text-xs">{t.name}</td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => setPreview(t)} className="font-mono text-xs font-medium text-brand-600 hover:underline" title="Voir l'aperçu">{t.name}</button>
+                    </td>
                     <td className="px-4 py-2.5 text-xs text-ink-500">{t.category?.toLowerCase()}</td>
                     <td className="px-4 py-2.5 text-xs">{t.language}</td>
                     <td className="px-4 py-2.5">
@@ -143,6 +156,35 @@ function TemplatesInner({ session }: { session: Session }) {
           </div>
         )}
       </section>
+      {preview && <TemplatePreviewModal template={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+/** Aperçu WhatsApp d'un template au clic sur son nom (corps + boutons ; carousel/média = note). */
+function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <h3 className="font-mono text-sm font-semibold text-ink-900">{template.name}</h3>
+            <p className="text-xs text-ink-400">{template.category?.toLowerCase()} · {template.language} · {template.status?.toLowerCase()}</p>
+          </div>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+        </div>
+        {template.isCarousel ? (
+          <div className="rounded-lg bg-ink-50 px-3 py-4 text-sm text-ink-600">
+            <p className="font-medium">Template carousel</p>
+            <p className="mt-1 text-ink-500">{template.body || 'Message d’introduction non chargé.'}</p>
+          </div>
+        ) : (
+          <WhatsAppPreview body={template.body ?? ''} examples={template.example ?? []} buttons={template.buttons ?? []} hideNote />
+        )}
+        {template.headerFormat && !template.isCarousel && (
+          <p className="mt-2 text-[11px] text-ink-400">En-tête {template.headerFormat.toLowerCase()} présent (média non affiché dans l&apos;aperçu).</p>
+        )}
+      </div>
     </div>
   );
 }

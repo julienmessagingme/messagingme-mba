@@ -15,6 +15,8 @@ function FlowsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<FlowSummary | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [preview, setPreview] = useState<FlowSummary | null>(null);
 
   const load = useCallback(async (): Promise<FlowSummary[]> => {
     setError(null);
@@ -84,15 +86,23 @@ function FlowsInner({ session }: { session: Session }) {
             onCreated={() => { void load(); setEditing(null); }}
           />
         </div>
-      ) : (
-        <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 text-sm font-semibold text-ink-900">Créer un formulaire</div>
-          <FlowBuilder tenantId={session.tenantId} onCreated={() => void load()} />
+      ) : creating ? (
+        <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-ink-900">Nouveau formulaire</div>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+          </div>
+          <FlowBuilder tenantId={session.tenantId} onCreated={() => { void load(); setCreating(false); }} />
         </div>
-      )}
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
-        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Formulaires ({flows.length})</div>
+        <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
+          <span className="text-sm font-semibold text-ink-900">Formulaires ({flows.length})</span>
+          {!creating && !editing && (
+            <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">+ Créer un formulaire</button>
+          )}
+        </div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">Chargement…</p>
         ) : flows.length === 0 ? (
@@ -110,7 +120,9 @@ function FlowsInner({ session }: { session: Session }) {
             <tbody>
               {flows.map((f) => (
                 <tr key={f.id} className="border-b border-ink-50 last:border-0">
-                  <td className="px-5 py-3 text-ink-800">{f.name}</td>
+                  <td className="px-5 py-3">
+                    <button onClick={() => setPreview(f)} className="font-medium text-brand-600 hover:underline" title="Voir l'aperçu">{f.name}</button>
+                  </td>
                   <td className="px-5 py-3 text-ink-500">{f.fields.map((x) => x.label).join(', ') || '—'}</td>
                   <td className="px-5 py-3">
                     {f.status === 'PUBLISHED' ? (
@@ -137,6 +149,47 @@ function FlowsInner({ session }: { session: Session }) {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+      {preview && <FlowPreviewModal flow={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+const TEXT_KINDS: Record<string, string> = { heading: 'Titre', subheading: 'Sous-titre', body: 'Paragraphe', caption: 'Légende' };
+
+/** Aperçu read-only d'un formulaire au clic sur son nom : les éléments dans l'ordre (texte/image/champ). */
+function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () => void }) {
+  const els = flow.elements ?? null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-ink-900">{flow.name}</h3>
+            <p className="text-xs text-ink-400">{flow.status === 'PUBLISHED' ? 'Publié' : 'Brouillon'} · {flow.fields.length} champ{flow.fields.length > 1 ? 's' : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+        </div>
+        {!els || els.length === 0 ? (
+          <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : 'Formulaire antérieur au modèle riche (aperçu détaillé indisponible).'}</p>
+        ) : (
+          <div className="space-y-2 rounded-xl border border-ink-200 bg-ink-50/50 p-3">
+            {els.map((e, i) => (
+              <div key={i} className="text-sm">
+                {e.kind === 'image' ? (
+                  <div className="flex items-center gap-2 text-ink-500"><span className="rounded bg-ink-200 px-1.5 py-0.5 text-[10px] uppercase">Image</span></div>
+                ) : e.kind === 'field' ? (
+                  <div className="rounded-lg border border-ink-200 bg-white px-3 py-2">
+                    <span className="text-ink-800">{e.label}</span>
+                    <span className="ml-2 text-[11px] text-ink-400">{e.type}{e.required ? ' · requis' : ''}</span>
+                  </div>
+                ) : (
+                  <div><span className="mr-1 text-[10px] uppercase text-ink-400">{TEXT_KINDS[e.kind] ?? e.kind}</span><span className={e.kind === 'heading' ? 'font-semibold text-ink-900' : 'text-ink-700'}>{e.text}</span></div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

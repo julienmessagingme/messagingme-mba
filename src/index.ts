@@ -129,11 +129,13 @@ async function main(): Promise<void> {
     media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
     tags: {
       listTags: (tenant) => tagStore.listDistinct(tenant),
+      createTag: (tenant, name) => tagStore.create(tenant, name),
       renameTag: (tenant, from, to) => tagStore.rename(tenant, from, to),
       removeTag: (tenant, tag) => tagStore.remove(tenant, tag),
     },
     fields: {
       listFields: (tenant) => fieldStore.list(tenant),
+      createField: (tenant, def) => fieldStore.create(tenant, def),
       updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
       deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
     },
