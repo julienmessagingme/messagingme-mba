@@ -7,10 +7,15 @@ import {
   listContacts,
   previewImport,
   importCsv,
+  updateContact,
+  listUserFields,
+  listTags,
   type Contact,
   type ImportReport,
   type ImportPreview,
   type ColumnMapping,
+  type UserFieldDef,
+  type UserFieldKind,
 } from '@/lib/api';
 
 export default function ContactsPage() {
@@ -23,6 +28,8 @@ function ContactsInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'import'>('list');
   const [detail, setDetail] = useState<Contact | null>(null);
+  const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -39,6 +46,18 @@ function ContactsInner({ session }: { session: Session }) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Définitions user fields + tags existants (pour la fiche) : chargés une fois.
+  useEffect(() => {
+    listUserFields(session.tenantId).then(({ fields }) => setUserFields(fields)).catch(() => setUserFields([]));
+    listTags(session.tenantId).then(({ tags }) => setTagSuggestions(tags.map((t) => t.tag))).catch(() => setTagSuggestions([]));
+  }, [session.tenantId]);
+
+  // Reflète une modif de fiche dans la liste ET la modale, sans recharger toute la liste.
+  function onContactUpdated(updated: Contact) {
+    setDetail(updated);
+    setContacts((list) => list.map((c) => (c.id === updated.id ? updated : c)));
+  }
 
   if (mode === 'import') {
     return (
@@ -67,7 +86,16 @@ function ContactsInner({ session }: { session: Session }) {
       </div>
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       <ContactsTable contacts={contacts} loading={loading} onSelect={setDetail} />
-      {detail && <ContactDetail contact={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <ContactDetail
+          contact={detail}
+          userFields={userFields}
+          tagSuggestions={tagSuggestions}
+          tenantId={session.tenantId}
+          onUpdated={onContactUpdated}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </section>
   );
 }
@@ -417,10 +445,79 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
   );
 }
 
-/** Fiche détail d'un contact : tous les attributs, champs perso et tags. */
-function ContactDetail({ contact, onClose }: { contact: Contact; onClose: () => void }) {
+/** Input adapté au type d'un user field. */
+function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value: string; onChange: (v: string) => void }) {
+  const cls = 'flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  if (type === 'boolean') {
+    return (
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={`${cls} bg-white`}>
+        <option value="">—</option>
+        <option value="oui">oui</option>
+        <option value="non">non</option>
+      </select>
+    );
+  }
+  const inputType = type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'url' ? 'url' : 'text';
+  return <input type={inputType} value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={type === 'url' ? 'https://…' : 'valeur'} />;
+}
+
+/** Fiche détail d'un contact : attributs, champs perso (libellé + valeur), tags. Éditable : ajouter un
+ *  champ (valeur), affecter/retirer un tag. */
+function ContactDetail({
+  contact,
+  userFields,
+  tagSuggestions,
+  tenantId,
+  onUpdated,
+  onClose,
+}: {
+  contact: Contact;
+  userFields: UserFieldDef[];
+  tagSuggestions: string[];
+  tenantId: string;
+  onUpdated: (c: Contact) => void;
+  onClose: () => void;
+}) {
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
-  const fieldEntries = Object.entries(contact.fields ?? {}).filter(([, v]) => v != null && String(v).trim() !== '');
+  const defByKey = new Map(userFields.map((d) => [d.key, d]));
+  // 'prenom' est déjà affiché dans le bloc fixe ci-dessus -> l'exclure de la section Champs (pas de doublon).
+  const fieldEntries = Object.entries(contact.fields ?? {}).filter(([k, v]) => k !== 'prenom' && v != null && String(v).trim() !== '');
+  const filledKeys = new Set([...fieldEntries.map(([k]) => k), 'prenom']);
+  const addable = userFields.filter((d) => !filledKeys.has(d.key));
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [newKey, setNewKey] = useState('');
+  const [newVal, setNewVal] = useState('');
+  const [newTag, setNewTag] = useState('');
+
+  const selectedDef = defByKey.get(newKey);
+
+  async function apply(patch: { fields?: Record<string, string>; addTags?: string[]; removeTags?: string[] }) {
+    setBusy(true);
+    setError(null);
+    try {
+      const { contact: updated } = await updateContact(tenantId, contact.id, patch);
+      onUpdated(updated);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Modification impossible');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addField() {
+    if (!newKey || newVal.trim() === '') return;
+    if (await apply({ fields: { [newKey]: newVal.trim() } })) { setNewKey(''); setNewVal(''); }
+  }
+  async function addTag() {
+    const t = newTag.trim();
+    if (t === '') return;
+    if (await apply({ addTags: [t] })) setNewTag('');
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -445,17 +542,31 @@ function ContactDetail({ contact, onClose }: { contact: Contact; onClose: () => 
           <span className="text-ink-900">{new Date(contact.createdAt).toLocaleDateString('fr-FR')}</span>
         </div>
 
+        {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
         <div className="mt-5">
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Tags</h4>
-          {(contact.tags ?? []).length === 0 ? (
-            <p className="text-sm text-ink-400">Aucun tag.</p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {contact.tags.map((t) => (
-                <span key={t} className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{t}</span>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(contact.tags ?? []).map((t) => (
+              <span key={t} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {t}
+                <button onClick={() => void apply({ removeTags: [t] })} disabled={busy} className="text-brand-400 hover:text-coral" aria-label={`Retirer ${t}`}>×</button>
+              </span>
+            ))}
+            {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">Aucun tag.</span>}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              list="tag-suggestions"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
+              placeholder="Ajouter un tag…"
+              className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            />
+            <datalist id="tag-suggestions">{tagSuggestions.map((t) => <option key={t} value={t} />)}</datalist>
+            <button onClick={addTag} disabled={busy || newTag.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Ajouter</button>
+          </div>
         </div>
 
         <div className="mt-5">
@@ -466,10 +577,24 @@ function ContactDetail({ contact, onClose }: { contact: Contact; onClose: () => 
             <div className="overflow-hidden rounded-lg border border-ink-200">
               {fieldEntries.map(([k, v], i) => (
                 <div key={k} className={`grid grid-cols-[130px_1fr] gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
-                  <span className="truncate text-ink-500">{k}</span>
+                  <span className="truncate text-ink-500">{defByKey.get(k)?.label ?? k}</span>
                   <span className="break-words text-ink-900">{String(v)}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {addable.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
+                <option value="">Ajouter un champ…</option>
+                {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select>
+              {selectedDef && (
+                <>
+                  <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
+                  <button onClick={addField} disabled={busy || newVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Ajouter</button>
+                </>
+              )}
             </div>
           )}
         </div>

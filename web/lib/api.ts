@@ -57,6 +57,16 @@ export function listContacts(tenantId: string, opts?: { limit?: number; offset?:
   return request<{ contacts: Contact[] }>(`/tenants/${tenantId}/contacts${suffix}`);
 }
 
+/** Édite un contact (fiche) : ajoute/met à jour des valeurs de user fields + affecte/retire des tags.
+ *  MERGE côté serveur (n'écrase pas les autres champs). Renvoie le contact à jour. */
+export function updateContact(
+  tenantId: string,
+  contactId: string,
+  patch: { fields?: Record<string, string>; addTags?: string[]; removeTags?: string[] },
+): Promise<{ contact: Contact }> {
+  return request<{ contact: Contact }>(`/tenants/${tenantId}/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
 /** Récupère TOUS les contacts d'un tenant (pagination par pages de 500). Pour la sélection de
  *  campagne : ne jamais tronquer silencieusement (sinon on enverrait à un sous-ensemble). */
 export async function listAllContacts(tenantId: string): Promise<Contact[]> {

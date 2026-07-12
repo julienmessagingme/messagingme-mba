@@ -14,6 +14,7 @@ import { registerMedia } from './http/media';
 import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
+import { registerContacts } from './http/contacts';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -31,6 +32,7 @@ import type { MediaRouteDeps } from './http/media';
 import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
 import type { SupportRouteDeps } from './http/support';
+import type { ContactsRouteDeps } from './http/contacts';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -65,6 +67,8 @@ export interface ServerDeps {
   fields?: FieldsRouteDeps;
   /** Formulaire de support (envoi email via Resend) — tout compte authentifié. */
   support?: SupportRouteDeps;
+  /** Édition d'un contact (fields/tags depuis la fiche) — réservé aux admins. */
+  contacts?: ContactsRouteDeps;
 }
 
 /**
@@ -73,9 +77,9 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support) && !deps.auth) {
-    // templates/support inclus : ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
-    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support sont exposées');
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts) && !deps.auth) {
+    // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
+    throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
 
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
@@ -129,6 +133,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.tags) registerTags(app, deps.tags, requireAdmin);
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);
   if (deps.support) registerSupport(app, deps.support, requireAuth);
+  if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
 
   return app;
 }

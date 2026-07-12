@@ -1,0 +1,125 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { buildServer } from '../src/server';
+import { FakeQueue } from '../src/queue/fake';
+import { signSession } from '../src/auth/token';
+import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { ContactsRouteDeps } from '../src/http/contacts';
+import type { ContactRow } from '../src/crm/contact-store.pg';
+import type { UserFieldDef } from '../src/crm/types';
+
+const SECRET = 'test-secret';
+let adminTok = '';
+let agentTok = '';
+beforeAll(async () => {
+  adminTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+  agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
+});
+const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
+
+const CONTACT: ContactRow = {
+  id: 'c1', phoneE164: '+33611', profileName: 'Marc', optInStatus: 'opted_in',
+  fields: { prenom: 'Marc' }, tags: ['vip'], createdAt: '2026-07-10T00:00:00.000Z',
+};
+const FIELDS: UserFieldDef[] = [
+  { key: 'prenom', label: 'Prénom', type: 'text' },
+  { key: 'age', label: 'Âge', type: 'number' },
+  { key: 'date_rdv', label: 'Date RDV', type: 'date' },
+];
+
+interface Cap { merged: Array<Record<string, string>>; added: string[][]; removed: string[][] }
+
+function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow | null } = {}) {
+  const cap: Cap = { merged: [], added: [], removed: [] };
+  const deps: ContactsRouteDeps = {
+    applyEdits: async (_t, _id, edits) => {
+      const result = opts.contact === undefined ? CONTACT : opts.contact;
+      if (result === null) return null; // contact inconnu -> transaction rollback, aucune écriture
+      if (Object.keys(edits.fields).length) cap.merged.push(edits.fields);
+      if (edits.addTags.length) cap.added.push(edits.addTags);
+      if (edits.removeTags.length) cap.removed.push(edits.removeTags);
+      return result;
+    },
+    listUserFields: async () => FIELDS,
+    ...over,
+  };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), cap };
+}
+
+describe('routes contacts — édition fiche', () => {
+  it('PATCH champ connu + valeur valide -> 200, mergeFields appelé, renvoie le contact', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { age: '42' } } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.merged).toEqual([{ age: '42' }]);
+    expect(res.json<{ contact: { id: string } }>().contact.id).toBe('c1');
+    await server.close();
+  });
+
+  it('PATCH champ INCONNU -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { inexistant: 'x' } } });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('PATCH valeur invalide pour le type (age=abc) -> 400', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { age: 'abc' } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.merged).toHaveLength(0); // rien écrit
+    await server.close();
+  });
+
+  it('PATCH date mal formée -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { date_rdv: '01/08/2026' } } });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('PATCH addTags + removeTags -> 200, les deux appelés', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['prospect'], removeTags: ['vip'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.added).toEqual([['prospect']]);
+    expect(cap.removed).toEqual([['vip']]);
+    await server.close();
+  });
+
+  it('PATCH vide (rien à modifier) -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('PATCH contact hors tenant (getContact null) -> 404, aucune écriture', async () => {
+    const { server, cap } = app({}, { contact: null });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/ghost', ...h(adminTok), payload: { fields: { age: '30' } } });
+    expect(res.statusCode).toBe(404);
+    expect(cap.merged).toHaveLength(0);
+    await server.close();
+  });
+
+  it('PATCH tenant != token -> 403', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/AUTRE/contacts/c1', ...h(adminTok), payload: { addTags: ['x'] } });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('PATCH agent -> 403 (admin-only)', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(agentTok), payload: { addTags: ['x'] } });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('sans token -> 401', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', headers: { 'content-type': 'application/json' }, payload: { addTags: ['x'] } });
+    expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+});

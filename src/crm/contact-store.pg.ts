@@ -72,6 +72,65 @@ export class PgContactStore implements ContactStore {
     return res.rowCount ?? 0;
   }
 
+  private static rowToContact(r: {
+    id: string; phone_e164: string | null; profile_name: string | null; opt_in_status: string;
+    fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
+  }): ContactRow {
+    return {
+      id: r.id, phoneE164: r.phone_e164, profileName: r.profile_name, optInStatus: r.opt_in_status,
+      fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
+    };
+  }
+  private static readonly SELECT_ONE =
+    'select id, phone_e164, profile_name, opt_in_status, fields, tags, created_at from contacts where id = $1 and tenant_id = $2';
+
+  /** Un contact par id, scopé tenant. null si absent/autre tenant. */
+  async getById(tenantId: string, contactId: string): Promise<ContactRow | null> {
+    const res = await this.pool.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
+    const r = res.rows[0];
+    return r ? PgContactStore.rowToContact(r) : null;
+  }
+
+  /**
+   * Édite UN contact (fiche) en une TRANSACTION : MERGE des valeurs de fields (n'écrase que les clés
+   * fournies, invariant import/flow) + ajout/retrait de tags (dédupliqués). Verrouille la ligne (FOR UPDATE),
+   * renvoie le contact à jour, ou null s'il n'existe pas dans le tenant (=> 404). Atomique : un échec en
+   * cours de route ne laisse pas une modif partielle (calqué sur createWithRecipients).
+   */
+  async applyEdits(
+    tenantId: string,
+    contactId: string,
+    edits: { fields: Record<string, string>; addTags: string[]; removeTags: string[] },
+  ): Promise<ContactRow | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const exists = await client.query('select 1 from contacts where id = $1 and tenant_id = $2 for update', [contactId, tenantId]);
+      if ((exists.rowCount ?? 0) === 0) {
+        await client.query('rollback');
+        return null;
+      }
+      if (Object.keys(edits.fields).length > 0) {
+        await client.query('update contacts set fields = fields || $3::jsonb, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, JSON.stringify(edits.fields)]);
+      }
+      if (edits.addTags.length > 0) {
+        await client.query(`update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.addTags]);
+      }
+      if (edits.removeTags.length > 0) {
+        await client.query(`update contacts set tags = (select coalesce(array_agg(t), '{}') from unnest(tags) t where t <> all($3::text[])), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.removeTags]);
+      }
+      const res = await client.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
+      await client.query('commit');
+      const r = res.rows[0];
+      return r ? PgContactStore.rowToContact(r) : null;
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   /** Liste paginée des contacts d'un tenant (les plus récents d'abord). */
   async list(tenantId: string, limit = 100, offset = 0): Promise<ContactRow[]> {
     const capped = Math.min(Math.max(limit, 1), 500);

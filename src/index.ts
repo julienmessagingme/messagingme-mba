@@ -137,6 +137,10 @@ async function main(): Promise<void> {
       updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
       deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
     },
+    contacts: {
+      applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
+      listUserFields: (tenant) => fieldStore.list(tenant),
+    },
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
       sendSupport: async ({ tenantId, userId, email, subject, message }) => {

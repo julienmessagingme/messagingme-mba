@@ -63,6 +63,32 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(lea.fields).toMatchObject({ ville: 'Nice' }); // le 3e import a bien mergé les fields
   });
 
+  it('PgContactStore.applyEdits : MERGE fields + tags add/remove en transaction, scoping tenant', async () => {
+    const store = new PgContactStore(pool);
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status, fields, tags)
+       values ($1, $2, 'opted_in', '{"ville":"Lyon"}'::jsonb, array['vip']) returning id`,
+      [tenantId, '+33600000010'],
+    )).rows[0]!.id;
+
+    // MERGE fields (garde ville, ajoute age) + addTags dédup (vip déjà là).
+    const c1 = await store.applyEdits(tenantId, contactId, { fields: { age: '42' }, addTags: ['prospect', 'vip'], removeTags: [] });
+    expect(c1!.fields).toMatchObject({ ville: 'Lyon', age: '42' });
+    expect([...c1!.tags].sort()).toEqual(['prospect', 'vip']); // union dédup
+
+    // removeTags : retire tous les tags -> '{}' (pas NULL) ; fields intacts.
+    const c2 = await store.applyEdits(tenantId, contactId, { fields: {}, addTags: [], removeTags: ['vip', 'prospect'] });
+    expect(c2!.tags).toEqual([]);
+    expect(c2!.fields).toMatchObject({ ville: 'Lyon', age: '42' });
+
+    // Contact inexistant -> null (=> 404 amont), aucune écriture.
+    expect(await store.applyEdits(tenantId, '00000000-0000-0000-0000-000000000000', { fields: { age: '1' }, addTags: [], removeTags: [] })).toBeNull();
+
+    // getById scopé tenant.
+    expect(await store.getById(tenantId, contactId)).not.toBeNull();
+    expect(await store.getById('00000000-0000-0000-0000-000000000000', contactId)).toBeNull();
+  });
+
   it('PgUserFieldStore : upsert idempotent + list', async () => {
     const store = new PgUserFieldStore(pool);
     await store.upsert(tenantId, { key: 'ville', label: 'Ville', type: 'text' });
