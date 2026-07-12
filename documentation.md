@@ -42,7 +42,8 @@ dégradation du quality rating, fréquence max par contact. C'est là que vivent
 
 Migrations SQL versionnées `db/migrations/` (suivi `schema_migrations`), appliquées via `npm run migrate`.
 **Migrations NON auto-appliquées** au déploiement : toute migration qui ajoute une colonne écrite par le
-code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0017**.
+code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0020**
+(`phone_numbers.status`/`messaging_limit_tier` 0019, `campaign_recipients.error_code` 0020).
 
 Tables :
 - `tenants` / `users` (`role` ∈ admin|agent, `name` nullable 0013, `disabled` 0014) / `waba` / `phone_numbers`.
@@ -78,10 +79,14 @@ webhook des statuts de livraison, un mapping cassé ne doit pas rejouer/DLQ les 
 
 `src/stats/range.ts` : `DateRange {from,to}` (YYYY-MM-DD, Europe/Paris), `parseRange` (repli `?days=`,
 400 si from>to / to futur / span>366), `rangeToUnix` (epoch minuit Paris de from..to+1, **DST-aware**, pas
-de `date*86400`). `PgStatsStore` : bornes SQL EXCLUSIVES (`(to+1)@TZ`), `getDeliveryFunnel` (sent/delivered/
-read/failed sur `campaign_recipients`, `IS DISTINCT FROM 'failed'` obligatoire — null souvent). Routes
-`/stats`, `/stats/templates`, `/stats/funnel` (admin-only). Coût par campagne = 100% frontend (réutilise
-`getTemplateStats`, pricing chargé 1× au montage, hors du reload pollé).
+de `date*86400`). `PgStatsStore` : bornes SQL EXCLUSIVES (`(to+1)@TZ`), `IS DISTINCT FROM 'failed'`
+obligatoire (delivery_status null souvent). Routes (admin-only) : `/stats`, `/stats/templates`,
+`/stats/campaign-funnel?campaignId` (sent/delivered/read/**replied**/failed ; « replied » = inbound après
+sent_at attribué au dernier envoi, join `to_e164`↔`wa_id`), `/stats/errors` (group by `error_code`, ancré
+`coalesce(delivery_updated_at,sent_at,claimed_at)`), `/stats/cost?campaignId&templateName` (coût/jour
+estimé). `error_code` (0020) alimenté par `extractDelivery` (webhook) + `markResult` (échec d'envoi,
+`MetaApiError.code`). **Coût = backend** : `getCostVolume` (volume/jour/catégorie, filtrable) × tarif Meta
+(`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif).
 
 ## Support (Resend)
 

@@ -60,8 +60,14 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 
 - ✅ **Plage de dates libre** : presets 7/30/90 j **+** sélecteur de dates personnalisé (les graphes honorent
   une plage passée). Séries : contacts (cumul), templates envoyés, messages échangés.
-- ✅ **Funnel de livraison & lecture** : envoyés → délivrés → **lus (accusés de lecture)** + taux, sur les
-  campagnes. Sous-estimation assumée si le destinataire a coupé les accusés. Campagne-only en V1.
+- ✅ **Funnel PAR campagne** : sélecteur de campagne, envoyés → délivrés → **lus** → **répondus** + taux
+  (+ échecs). « Répondu » = réponse reçue après l'envoi, attribuée au dernier envoi (pas de double-comptage).
+  Sous-estimation des « lus » assumée si le destinataire a coupé les accusés. Campagne-only en V1.
+- ✅ **Erreurs Meta par code** : breakdown des codes d'erreur (131049, 131047, 131026...) sur la période,
+  avec libellé FR et volume.
+- ✅ **Graphe de coût estimé** : coût/jour (marketing + utility) sur la période, **filtrable par campagne
+  ou par template**, tarif Meta × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
+  (jamais de faux coût).
 - ✅ **Coût / breakdown par template** (prix Meta par catégorie).
 
 ## Support (menu Support)

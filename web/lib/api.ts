@@ -356,14 +356,41 @@ function rangeQuery(range?: StatsRange): string {
 export function getStats(tenantId: string, range?: StatsRange): Promise<DashboardStats> {
   return request<DashboardStats>(`/tenants/${tenantId}/stats${rangeQuery(range)}`);
 }
-export interface DeliveryFunnel {
+/** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
+export interface CampaignFunnel {
   sent: number;
   delivered: number;
   read: number;
+  replied: number;
   failed: number;
 }
-export function getDeliveryFunnel(tenantId: string, range?: StatsRange): Promise<DeliveryFunnel> {
-  return request<DeliveryFunnel>(`/tenants/${tenantId}/stats/funnel${rangeQuery(range)}`);
+export function getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
+  return request<CampaignFunnel>(`/tenants/${tenantId}/stats/campaign-funnel?campaignId=${encodeURIComponent(campaignId)}`);
+}
+
+/** Une ligne du breakdown d'erreurs Meta : code numérique + occurrences. */
+export interface ErrorBreakdownRow {
+  code: number;
+  count: number;
+}
+export function getErrorBreakdown(tenantId: string, range?: StatsRange): Promise<{ errors: ErrorBreakdownRow[] }> {
+  return request<{ errors: ErrorBreakdownRow[] }>(`/tenants/${tenantId}/stats/errors${rangeQuery(range)}`);
+}
+
+/** Série de coût estimé/jour, par catégorie. `hasRates=false` si Meta n'a fourni aucun tarif. */
+export interface CostSeries {
+  marketing: DailyPoint[];
+  utility: DailyPoint[];
+  total: number;
+  hasRates: boolean;
+}
+export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { campaignId?: string; templateName?: string }): Promise<CostSeries> {
+  const parts: string[] = [];
+  if (filter?.campaignId) parts.push(`campaignId=${encodeURIComponent(filter.campaignId)}`);
+  if (filter?.templateName) parts.push(`templateName=${encodeURIComponent(filter.templateName)}`);
+  const base = rangeQuery(range);
+  const extra = parts.length ? (base ? `&${parts.join('&')}` : `?${parts.join('&')}`) : '';
+  return request<CostSeries>(`/tenants/${tenantId}/stats/cost${base}${extra}`);
 }
 
 export interface TemplateBreakdownRow {

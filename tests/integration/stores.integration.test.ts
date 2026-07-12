@@ -12,6 +12,7 @@ import {
   PgFrequencyStore,
   PgQualityProvider,
 } from '../../src/campaign/store.pg';
+import { PgStatsStore } from '../../src/stats/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -177,12 +178,96 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await frequency.lastSentAt(tenantId, '+33699999999')).toBeNull();
 
     // Suivi de livraison (par message_id 'm-1'), monotone.
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null)).toBe(1);
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'read', null)).toBe(1);
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'delivered', null)).toBe(0); // read ne régresse pas
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null, null)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'read', null, null)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'delivered', null, null)).toBe(0); // read ne régresse pas
     const dstatus = (await pool.query<{ delivery_status: string }>(`select delivery_status from campaign_recipients where id = $1`, [rid])).rows[0]?.delivery_status;
     expect(dstatus).toBe('read');
-    expect(await recipients.updateDeliveryByMessageId('m-inconnu', 'sent', null)).toBe(0); // wamid pas à nous
+    expect(await recipients.updateDeliveryByMessageId('m-inconnu', 'sent', null, null)).toBe(0); // wamid pas à nous
+
+    // error_code : un 'failed' avec code le persiste (breakdown analytics).
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'failed', '131049 blocked', 131049)).toBe(1);
+    const ec = (await pool.query<{ error_code: number | null }>(`select error_code from campaign_recipients where id = $1`, [rid])).rows[0]?.error_code;
+    expect(ec).toBe(131049);
+  });
+
+  it('PgStatsStore : campaign funnel (répondu=inbound après envoi), error breakdown, cost volume', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const stats = new PgStatsStore(pool);
+
+    const mk = async (phone: string) => (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, phone],
+    )).rows[0]!.id;
+    const [c1, c2, c3] = [await mk('+33600000050'), await mk('+33600000051'), await mk('+33600000052')];
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: 'pn-st', name: 'Funnel', category: 'marketing', templateName: 'te', templateLanguage: 'fr', paramMapping: [] },
+      [
+        { contactId: c1, toE164: '+33600000050', resolvedParams: [] },
+        { contactId: c2, toE164: '+33600000051', resolvedParams: [] },
+        { contactId: c3, toE164: '+33600000052', resolvedParams: [] },
+      ],
+    );
+    const byPhone = new Map((await recipients.listPending(campaignId)).map((p) => [p.toE164, p.id]));
+    const r1 = byPhone.get('+33600000050')!, r2 = byPhone.get('+33600000051')!, r3 = byPhone.get('+33600000052')!;
+    const at = Date.now() - 5000;
+
+    // r1 envoyé + lu + répond ; r2 envoyé + délivré ; r3 échec d'envoi (code 131026).
+    await recipients.claim(r1); await recipients.markResult(r1, { status: 'sent', messageId: 'ms-1', sentAt: at });
+    await recipients.claim(r2); await recipients.markResult(r2, { status: 'sent', messageId: 'ms-2', sentAt: at });
+    await recipients.claim(r3); await recipients.markResult(r3, { status: 'failed', error: '131026 x', errorCode: 131026 });
+    await recipients.updateDeliveryByMessageId('ms-1', 'read', null, null);
+    await recipients.updateDeliveryByMessageId('ms-2', 'delivered', null, null);
+
+    // r1 répond : conversation + message ENTRANT après l'envoi (created_at defaut now() > at).
+    const convId = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, '33600000050') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(`insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'in', 'text', 'oui')`, [convId]);
+
+    const funnel = await stats.getCampaignFunnel(tenantId, campaignId);
+    expect(funnel).toEqual({ sent: 2, delivered: 2, read: 1, replied: 1, failed: 1 });
+
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    const range = { from: today, to: today };
+    const errors = await stats.getErrorBreakdown(tenantId, range);
+    expect(errors.find((e) => e.code === 131026)?.count).toBe(1);
+
+    const vol = await stats.getCostVolume(tenantId, range, {});
+    expect(vol.find((v) => v.category === 'marketing' && v.date === today)?.count).toBe(2); // r1 + r2 (r3 échec exclu)
+    // Filtre par template inexistant -> aucun volume.
+    expect(await stats.getCostVolume(tenantId, range, { templateName: 'inconnu' })).toHaveLength(0);
+  });
+
+  it('getCampaignFunnel : une réponse est attribuée à la DERNIÈRE campagne (pas de double-comptage)', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const stats = new PgStatsStore(pool);
+    const phone = '+33600000060';
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, phone],
+    )).rows[0]!.id;
+    const mkCampaign = async (name: string, sentAt: number): Promise<string> => {
+      const { campaignId } = await repo.createWithRecipients(
+        { tenantId, phoneNumberId: 'pn-a', name, category: 'marketing', templateName: 'tt', templateLanguage: 'fr', paramMapping: [] },
+        [{ contactId, toE164: phone, resolvedParams: [] }],
+      );
+      const rid = (await recipients.listPending(campaignId))[0]!.id;
+      await recipients.claim(rid);
+      await recipients.markResult(rid, { status: 'sent', messageId: `mm-${name}`, sentAt });
+      return campaignId;
+    };
+    const base = Date.now() - 20_000;
+    const campA = await mkCampaign('A', base);
+    const campB = await mkCampaign('B', base + 5_000); // envoi ultérieur au MÊME numéro
+    // Réponse APRÈS les deux envois -> attribuée à B (le dernier envoi avant la réponse), pas à A.
+    const convId = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, '33600000060') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(`insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'in', 'text', 'oui')`, [convId]);
+
+    expect((await stats.getCampaignFunnel(tenantId, campA)).replied).toBe(0); // volée par B
+    expect((await stats.getCampaignFunnel(tenantId, campB)).replied).toBe(1);
   });
 
   it('PgQualityProvider : UNKNOWN si numéro absent, lit le rating sinon', async () => {

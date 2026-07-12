@@ -19,7 +19,7 @@ export interface RecipientStore {
   claim(id: string): Promise<boolean>;
   markResult(
     id: string,
-    r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number },
+    r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
   ): Promise<void>;
 }
 
@@ -116,7 +116,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           : await deps.sender.sendTemplate(r.toE164, tpl);
     } catch (err) {
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
-      await deps.recipients.markResult(r.id, { status: 'failed', error: msg });
+      const errorCode = err instanceof MetaApiError && typeof err.code === 'number' ? err.code : undefined;
+      await deps.recipients.markResult(r.id, { status: 'failed', error: msg, ...(errorCode !== undefined ? { errorCode } : {}) });
       report.failed += 1;
       continue;
     }

@@ -10,6 +10,7 @@ import { ensureField } from './crm/fields';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
+import { estimateCostSeries } from './stats/cost';
 import { rangeToUnix } from './stats/range';
 import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
@@ -107,7 +108,21 @@ async function main(): Promise<void> {
         const { startTs, endTs } = rangeToUnix(range);
         return pricingClient.getPricingAnalytics(wabaId, startTs, endTs);
       },
-      getDeliveryFunnel: (tenant, range) => statsStore.getDeliveryFunnel(tenant, range),
+      getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
+      getErrorBreakdown: (tenant, range) => statsStore.getErrorBreakdown(tenant, range),
+      getCostSeries: async (tenant, range, filter) => {
+        const wabaId = await repo.getTenantWabaId(tenant);
+        const { startTs, endTs } = rangeToUnix(range);
+        const [rows, pricing] = await Promise.all([
+          statsStore.getCostVolume(tenant, range, filter),
+          wabaId ? pricingClient.getPricingAnalytics(wabaId, startTs, endTs) : Promise.resolve(null),
+        ]);
+        const rates = {
+          marketing: pricing?.byCategory['marketing']?.ratePerMessage ?? null,
+          utility: pricing?.byCategory['utility']?.ratePerMessage ?? null,
+        };
+        return estimateCostSeries(range.from, range.to, rows, rates);
+      },
     },
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),

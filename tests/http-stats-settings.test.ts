@@ -25,7 +25,9 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724 }),
-    getDeliveryFunnel: async () => ({ sent: 10, delivered: 8, read: 5, failed: 1 }),
+    getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1 }),
+    getErrorBreakdown: async () => [{ code: 131049, count: 4 }, { code: 131047, count: 2 }],
+    getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true }),
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
@@ -94,17 +96,42 @@ describe('stats route', () => {
     await a.close();
   });
 
-  it('GET /stats/funnel -> {sent,delivered,read,failed}', async () => {
+  it('GET /stats/campaign-funnel?campaignId -> {sent,delivered,read,replied,failed}', async () => {
     const a = app();
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/funnel?days=30', ...h(adminTok) });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel?campaignId=c1', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, failed: 1 });
+    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1 });
     await a.close();
   });
 
-  it('GET /stats/funnel agent -> 403 (admin-only)', async () => {
+  it('GET /stats/campaign-funnel sans campaignId -> 400', async () => {
     const a = app();
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/funnel', ...h(agentTok) });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('GET /stats/errors -> { errors: [...] } trié', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ errors: Array<{ code: number; count: number }> }>().errors[0]).toEqual({ code: 131049, count: 4 });
+    await a.close();
+  });
+
+  it('GET /stats/cost -> série marketing/utility + total', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost?days=30&templateName=promo', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const b = res.json<{ total: number; hasRates: boolean; marketing: unknown[] }>();
+    expect(b.total).toBe(0.57);
+    expect(b.hasRates).toBe(true);
+    await a.close();
+  });
+
+  it('GET /stats/cost agent -> 403 (admin-only)', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/cost', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
     await a.close();
   });

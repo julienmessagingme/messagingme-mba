@@ -4,7 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { DailyChart } from '@/components/DailyChart';
 import type { Session } from '@/lib/session';
-import { getStats, getTemplateStats, getDeliveryFunnel, type DashboardStats, type TemplateStats, type DeliveryFunnel, type StatsRange } from '@/lib/api';
+import {
+  getStats, getTemplateStats, getErrorBreakdown, getCampaignFunnel, getCostSeries, listCampaigns,
+  type DashboardStats, type TemplateStats, type StatsRange, type ErrorBreakdownRow, type CampaignFunnel,
+  type CostSeries, type CampaignSummary,
+} from '@/lib/api';
+import { metaCodeLabel } from '@/lib/meta-errors';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
 
 export default function DashboardPage() {
@@ -31,7 +36,8 @@ function DashboardInner({ session }: { session: Session }) {
   const [draftTo, setDraftTo] = useState(range.to);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
-  const [funnel, setFunnel] = useState<DeliveryFunnel | null>(null);
+  const [errors, setErrors] = useState<ErrorBreakdownRow[]>([]);
+  const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,14 +47,16 @@ function DashboardInner({ session }: { session: Session }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, ts, fn] = await Promise.all([
+      const [s, ts, eb, cp] = await Promise.all([
         getStats(session.tenantId, range),
         getTemplateStats(session.tenantId, range),
-        getDeliveryFunnel(session.tenantId, range),
+        getErrorBreakdown(session.tenantId, range),
+        listCampaigns(session.tenantId),
       ]);
       setStats(s);
       setTemplateStats(ts);
-      setFunnel(fn);
+      setErrors(eb.errors);
+      setCampaigns(cp.campaigns);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible');
     } finally {
@@ -137,8 +145,10 @@ function DashboardInner({ session }: { session: Session }) {
             />
           </div>
           <div className="lg:col-span-2">
-            <FunnelCard funnel={funnel} />
+            <CostChartCard tenantId={session.tenantId} range={range} campaigns={campaigns} templates={templateStats?.breakdown ?? []} />
           </div>
+          <CampaignFunnelCard tenantId={session.tenantId} campaigns={campaigns} />
+          <ErrorBreakdownCard errors={errors} />
           <div className="lg:col-span-2">
             <TemplateBreakdownCard data={templateStats} />
           </div>
@@ -148,41 +158,180 @@ function DashboardInner({ session }: { session: Session }) {
   );
 }
 
-/** Funnel de livraison des campagnes : envoyés -> délivrés -> lus (accusés de lecture). */
-function FunnelCard({ funnel }: { funnel: DeliveryFunnel | null }) {
-  if (!funnel) return null;
-  const { sent, delivered, read, failed } = funnel;
+/**
+ * Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus (+ échecs). Remplace le funnel global.
+ * « répondu » = message entrant reçu après l'envoi (peut dépasser « lu » si les accusés sont désactivés).
+ */
+function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaigns: CampaignSummary[] }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [funnel, setFunnel] = useState<CampaignFunnel | null>(null);
+  const [loading, setLoading] = useState(false);
+  const current = campaigns.find((c) => c.id === selected) ?? campaigns[0] ?? null;
+  const currentId = current?.id ?? null;
+
+  // Dépend de l'ID (pas de l'objet `current`) : un rechargement de `campaigns` au changement de plage
+  // recrée le tableau mais le funnel d'une campagne ne dépend pas de la plage -> pas de refetch inutile.
+  useEffect(() => {
+    if (!currentId) { setFunnel(null); return; }
+    let alive = true;
+    setLoading(true);
+    getCampaignFunnel(tenantId, currentId)
+      .then((f) => { if (alive) setFunnel(f); })
+      .catch(() => { if (alive) setFunnel(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [tenantId, currentId]);
+
+  const sent = funnel?.sent ?? 0;
   const pct = (n: number) => (sent > 0 ? Math.max(2, Math.round((n / sent) * 100)) : 0);
-  const bars: Array<{ label: string; value: number; color: string; sub?: string }> = [
-    { label: 'Envoyés', value: sent, color: '#009AFE' },
-    { label: 'Délivrés', value: delivered, color: '#17C74E', sub: fmtPct(delivered, sent) },
-    { label: 'Lus (accusés de lecture)', value: read, color: '#6E5AE0', sub: fmtPct(read, sent) },
-  ];
+  const bars = funnel
+    ? [
+        { label: 'Envoyés', value: funnel.sent, color: '#009AFE', sub: '' },
+        { label: 'Délivrés', value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent) },
+        { label: 'Lus', value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent) },
+        { label: 'Répondus', value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent) },
+      ]
+    : [];
+
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <div className="mb-3">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-900">Livraison &amp; lecture</h3>
-        <p className="text-xs text-ink-400">campagnes sur la période · « lus » = accusés de lecture (sous-estimé si le destinataire les a désactivés)</p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">Funnel par campagne</h3>
+          <p className="text-xs text-ink-400">envoyés → délivrés → lus → répondus</p>
+        </div>
+        {campaigns.length > 0 && (
+          <select
+            value={current?.id ?? ''}
+            onChange={(e) => setSelected(e.target.value)}
+            className="max-w-[60%] rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          >
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
       </div>
-      {sent === 0 ? (
-        <p className="text-sm text-ink-500">Aucun envoi de campagne sur la période.</p>
+      {campaigns.length === 0 ? (
+        <p className="text-sm text-ink-500">Aucune campagne pour le moment.</p>
+      ) : loading ? (
+        <p className="text-sm text-ink-500">Chargement…</p>
+      ) : !funnel || sent === 0 ? (
+        <p className="text-sm text-ink-500">Aucun envoi sur cette campagne.</p>
       ) : (
         <div className="space-y-2.5">
           {bars.map((b) => (
             <div key={b.label} className="flex items-center gap-3">
-              <div className="w-40 shrink-0 text-xs text-ink-600">{b.label}</div>
+              <div className="w-24 shrink-0 text-xs text-ink-600">{b.label}</div>
               <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
                 <div className="flex h-full items-center rounded-md px-2 text-[11px] font-medium text-white" style={{ width: `${pct(b.value)}%`, backgroundColor: b.color }}>
                   {fmtNum(b.value)}
                 </div>
               </div>
-              <div className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-500">{b.sub ?? ''}</div>
+              <div className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-500">{b.sub}</div>
             </div>
           ))}
-          {failed > 0 && (
-            <p className="pt-1 text-xs text-ink-400">Échecs de livraison sur la période : <span className="font-medium text-coral">{fmtNum(failed)}</span></p>
+          {funnel.failed > 0 && (
+            <p className="pt-1 text-xs text-ink-400">Échecs : <span className="font-medium text-coral">{fmtNum(funnel.failed)}</span></p>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Breakdown des codes d'erreur Meta sur la période (avec libellé FR). */
+function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
+  const total = errors.reduce((a, e) => a + e.count, 0);
+  const max = errors.reduce((m, e) => Math.max(m, e.count), 0);
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold tracking-tight text-ink-900">Erreurs Meta</h3>
+        <p className="text-xs text-ink-400">par code, sur la période</p>
+      </div>
+      {errors.length === 0 ? (
+        <p className="text-sm text-ink-500">Aucune erreur sur la période.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {errors.map((e) => (
+            <div key={e.code}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-mono text-xs font-medium text-ink-700">{e.code}</span>
+                <span className="text-xs tabular-nums text-ink-500">{fmtNum(e.count)}</span>
+              </div>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-50">
+                <div className="h-full rounded-full bg-coral" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
+              </div>
+              <p className="mt-0.5 text-[11px] text-ink-400">{metaCodeLabel(e.code)}</p>
+            </div>
+          ))}
+          <p className="pt-1 text-xs text-ink-400">Total : <span className="font-medium text-ink-700">{fmtNum(total)}</span></p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Graphe de coût estimé/jour (marketing + utility), filtrable par campagne OU template. */
+function CostChartCard({
+  tenantId, range, campaigns, templates,
+}: { tenantId: string; range: StatsRange; campaigns: CampaignSummary[]; templates: TemplateStats['breakdown'] }) {
+  const [campaignId, setCampaignId] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [cost, setCost] = useState<CostSeries | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    const filter: { campaignId?: string; templateName?: string } = {
+      ...(campaignId ? { campaignId } : {}),
+      ...(templateName ? { templateName } : {}),
+    };
+    getCostSeries(tenantId, range, filter)
+      .then((c) => { if (alive) setCost(c); })
+      .catch(() => { if (alive) setCost(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [tenantId, range, campaignId, templateName]);
+
+  const selectCls = 'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">Coût estimé</h3>
+          <p className="text-xs text-ink-400">
+            par jour, tarif Meta × volume{cost ? <> · total ≈ <span className="font-medium text-ink-700">{fmtCost(cost.total)}</span></> : null}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <select value={campaignId} onChange={(e) => { setCampaignId(e.target.value); setTemplateName(''); }} className={selectCls}>
+            <option value="">Toutes campagnes</option>
+            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={templateName} onChange={(e) => { setTemplateName(e.target.value); setCampaignId(''); }} className={selectCls}>
+            <option value="">Tous templates</option>
+            {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+          </select>
+        </div>
+      </div>
+      {loading ? (
+        <p className="text-sm text-ink-500">Chargement…</p>
+      ) : !cost || !cost.hasRates ? (
+        <p className="text-sm text-ink-500">Tarif Meta indisponible : coût non estimable pour l&apos;instant.</p>
+      ) : (
+        <DailyChart
+          title=""
+          from={range.from}
+          to={range.to}
+          series={[
+            { label: 'Marketing', color: '#0080D6', points: cost.marketing },
+            { label: 'Utility', color: '#17C74E', points: cost.utility },
+          ]}
+        />
       )}
     </div>
   );

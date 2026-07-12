@@ -375,16 +375,17 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
    * -> read ne régresse jamais (un `delivered` tardif n'écrase pas un `read`). `failed`
    * s'applique toujours. Retourne le nb de lignes touchées (0 si le wamid n'est pas à nous).
    */
-  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null): Promise<number> {
+  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number> {
     const res = await this.pool.query(
       `update campaign_recipients
-       set delivery_status = $2, delivery_error = $3, delivery_updated_at = now()
+       set delivery_status = $2, delivery_error = $3, delivery_updated_at = now(),
+           error_code = $4::integer
        where message_id = $1 and (
          $2 = 'failed'
          or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
             > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
        )`,
-      [messageId, status, error],
+      [messageId, status, error, errorCode],
     );
     return res.rowCount ?? 0;
   }
@@ -440,14 +441,16 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
 
   async markResult(
     id: string,
-    r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number },
+    r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
   ): Promise<void> {
-    // Invariant sent_at <-> status='sent' : hors 'sent', sent_at est remis à null.
+    // Invariant sent_at <-> status='sent' : hors 'sent', sent_at est remis à null. error_code : posé sur
+    // 'failed' (échec d'envoi), effacé sur 'sent' (un succès n'a pas d'erreur).
     await this.pool.query(
       `update campaign_recipients
        set status = $2,
            message_id = $3,
            error = $4,
+           error_code = case when $2 = 'sent' then null::integer else $6::integer end,
            sent_at = case
              when $2 = 'sent' and $5::double precision is not null
                then to_timestamp($5::double precision / 1000.0)
@@ -455,7 +458,7 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
              else null
            end
        where id = $1`,
-      [id, r.status, r.messageId ?? null, r.error ?? null, r.sentAt ?? null],
+      [id, r.status, r.messageId ?? null, r.error ?? null, r.sentAt ?? null, r.errorCode ?? null],
     );
   }
 }

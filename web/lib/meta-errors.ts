@@ -36,3 +36,8 @@ export function explainMetaError(raw: string | null | undefined): string | null 
   const friendly = code ? CODES[code] : undefined;
   return friendly ? `${friendly} (code ${code})` : raw;
 }
+
+/** Libellé FR d'un code d'erreur Meta NUMÉRIQUE (breakdown analytics). Inconnu -> « Erreur Meta ». */
+export function metaCodeLabel(code: number): string {
+  return CODES[String(code)] ?? 'Erreur Meta (code non répertorié)';
+}

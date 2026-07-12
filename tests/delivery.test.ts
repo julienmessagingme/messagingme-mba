@@ -6,12 +6,17 @@ import type { EventStore, StoredEvent } from '../src/webhooks/store';
 
 describe('extractDelivery', () => {
   it('extrait id + status', () => {
-    expect(extractDelivery({ id: 'wamid.X', status: 'delivered' })).toEqual({ messageId: 'wamid.X', status: 'delivered', error: null });
+    expect(extractDelivery({ id: 'wamid.X', status: 'delivered' })).toEqual({ messageId: 'wamid.X', status: 'delivered', error: null, errorCode: null });
   });
-  it('failed -> capture l erreur', () => {
+  it('failed -> capture l erreur + le code numérique', () => {
     const d = extractDelivery({ id: 'wamid.X', status: 'failed', errors: [{ code: 131049, title: 'blocked' }] });
     expect(d?.status).toBe('failed');
     expect(d?.error).toContain('blocked');
+    expect(d?.errorCode).toBe(131049);
+  });
+  it('code string de chiffres -> numérique ; code absent -> null', () => {
+    expect(extractDelivery({ id: 'w', status: 'failed', errors: [{ code: '131047' }] })?.errorCode).toBe(131047);
+    expect(extractDelivery({ id: 'w', status: 'failed', errors: [{ title: 'x' }] })?.errorCode).toBeNull();
   });
   it('status inconnu ou id absent -> null', () => {
     expect(extractDelivery({ id: 'x', status: 'queued' })).toBeNull();
@@ -21,9 +26,9 @@ describe('extractDelivery', () => {
 });
 
 class FakeDelivery implements DeliveryStore {
-  readonly calls: Array<{ messageId: string; status: DeliveryStatus; error: string | null }> = [];
-  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null): Promise<number> {
-    this.calls.push({ messageId, status, error });
+  readonly calls: Array<{ messageId: string; status: DeliveryStatus; error: string | null; errorCode: number | null }> = [];
+  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number> {
+    this.calls.push({ messageId, status, error, errorCode });
     return 1;
   }
 }

@@ -32,7 +32,7 @@ class FakeSender implements MessageSender {
   }
 }
 class FakeRecipients implements RecipientStore {
-  readonly results = new Map<string, { status: string; messageId?: string; error?: string; sentAt?: number }>();
+  readonly results = new Map<string, { status: string; messageId?: string; error?: string; sentAt?: number; errorCode?: number }>();
   readonly claimed: string[] = [];
   /** ids pour lesquels l'écriture `sent` throw (panne de persistance après envoi réussi). */
   throwSentFor: Set<string> = new Set();
@@ -49,7 +49,7 @@ class FakeRecipients implements RecipientStore {
   }
   async markResult(
     id: string,
-    r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number },
+    r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
   ): Promise<void> {
     if (r.status === 'sent' && this.throwSentFor.has(id)) throw new Error('db down');
     this.results.set(id, r);
@@ -165,7 +165,8 @@ describe('runCampaign', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     const report = await runCampaign(campaign, deps({ recipients, sender }));
     expect(report).toMatchObject({ sent: 1, failed: 1 });
-    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
+    // Le code Meta (131049) est isolé et transmis à markResult -> alimente le breakdown d'erreurs.
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed', errorCode: 131049 });
     expect(recipients.results.get('r2')).toMatchObject({ status: 'sent' });
   });
 
