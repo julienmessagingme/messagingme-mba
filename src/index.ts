@@ -75,7 +75,7 @@ async function main(): Promise<void> {
       listConversations: (tenant) => inboxStore.listConversations(tenant),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
-      recordOutbound: (id, body, msgId, type, cat, name) => inboxStore.recordOutbound(id, body, msgId, type, cat, name),
+      recordOutbound: (id, body, msgId, type, cat, name, sender) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (phoneNumberId, to, text) => {
         const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });

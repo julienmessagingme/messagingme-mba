@@ -72,6 +72,29 @@ describe('inbox routes', () => {
     await a.close();
   });
 
+  it('POST reply -> journalise l auteur (sender_user_id du JWT) en 7e position', async () => {
+    let sender: string | null | undefined = 'UNSET';
+    const a = app({
+      recordOutbound: async (_id, _body, _msg, _type, _cat, _name, s) => { sender = s; },
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
+    expect(res.statusCode).toBe(200);
+    expect(sender).toBe('u1'); // userId du token
+    await a.close();
+  });
+
+  it('GET messages -> expose senderName sur les bulles sortantes', async () => {
+    const a = app({
+      getMessages: async () => [
+        { id: 'm2', direction: 'out', type: 'text', body: 'Bonjour', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z', senderName: 'Julien' },
+      ],
+    });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ messages: Array<{ senderName?: string }> }>().messages[0]?.senderName).toBe('Julien');
+    await a.close();
+  });
+
   it('POST reply HORS fenêtre 24 h -> 422 (texte libre interdit)', async () => {
     const a = app({
       getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),

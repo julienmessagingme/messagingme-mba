@@ -275,6 +275,8 @@ export interface InboxMessage {
   body: string | null;
   buttonPayload: string | null;
   createdAt: string;
+  /** Auteur d'un message sortant (pastille inbox) ; null/absent = pas d'auteur (legacy / réponse auto). */
+  senderName?: string | null;
 }
 export function listConversations(tenantId: string): Promise<{ conversations: Conversation[] }> {
   return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations`);

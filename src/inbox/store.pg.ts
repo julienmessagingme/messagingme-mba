@@ -15,6 +15,9 @@ export interface ConversationMessage {
   body: string | null;
   buttonPayload: string | null;
   createdAt: string;
+  /** Auteur d'un message sortant (name sinon partie locale de l'email). null = pas d'auteur (legacy/auto).
+   *  Optionnel : les mocks de test qui omettent le champ restent valides. */
+  senderName?: string | null;
 }
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
@@ -102,10 +105,14 @@ export class PgInboxStore implements InboxStore {
 
   async getMessages(conversationId: string): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date;
+      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; sender_name: string | null;
     }>(
-      `select id, direction, type, body, button_payload, created_at
-       from conversation_messages where conversation_id = $1 order by created_at limit 500`,
+      // sender_name : name du user, sinon la partie locale de son email ; null si pas d'auteur (legacy/auto).
+      `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at,
+              coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
+       from conversation_messages m
+       left join users u on u.id = m.sender_user_id
+       where m.conversation_id = $1 order by m.created_at limit 500`,
       [conversationId],
     );
     return res.rows.map((r) => ({
@@ -115,11 +122,13 @@ export class PgInboxStore implements InboxStore {
       body: r.body,
       buttonPayload: r.button_payload,
       createdAt: r.created_at.toISOString(),
+      senderName: r.sender_name,
     }));
   }
 
   /** Journalise une réponse sortante de l'agent (texte libre ou template). Pour un template,
-   *  `templateCategory` (marketing|utility) + `templateName` alimentent les stats du dashboard. */
+   *  `templateCategory` (marketing|utility) + `templateName` alimentent les stats du dashboard.
+   *  `senderUserId` (EN FIN de signature) = auteur -> pastille dans l'inbox ; null pour les réponses auto. */
   async recordOutbound(
     conversationId: string,
     body: string,
@@ -127,12 +136,13 @@ export class PgInboxStore implements InboxStore {
     type = 'text',
     templateCategory: string | null = null,
     templateName: string | null = null,
+    senderUserId: string | null = null,
   ): Promise<void> {
     await this.pool.query(`update conversations set last_message_at = now(), last_preview = $2 where id = $1`, [conversationId, body]);
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name)
-       values ($1, 'out', $4, $2, $3, $5, $6)`,
-      [conversationId, body, messageId, type, templateCategory, templateName],
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id)
+       values ($1, 'out', $4, $2, $3, $5, $6, $7)`,
+      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId],
     );
   }
 }

@@ -29,6 +29,7 @@ export interface InboxRouteDeps {
     type?: string,
     templateCategory?: string | null,
     templateName?: string | null,
+    senderUserId?: string | null,
   ): Promise<void>;
   /** Numéro du tenant depuis lequel répondre. */
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
@@ -93,7 +94,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
     const messageId = await deps.sendReply(phoneNumberId, ctx.waId, text);
-    await deps.recordOutbound(conversationId, text, messageId, 'text');
+    await deps.recordOutbound(conversationId, text, messageId, 'text', null, null, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });
 
@@ -138,7 +139,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       ...(headerMediaUrl ? { headerMediaUrl } : {}),
       ...(headerFormat ? { headerFormat } : {}),
     });
-    await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName);
+    await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });
 }

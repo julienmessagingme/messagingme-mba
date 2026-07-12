@@ -38,6 +38,27 @@ function prettyKey(k: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Initiales d'un nom : 2 lettres (1re de 2 mots, sinon 2 premières lettres). */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+/** Pastille d'auteur d'une bulle sortante (initiales + tooltip nom). */
+function AgentBadge({ name }: { name: string }) {
+  return (
+    <span
+      title={`Envoyé par ${name}`}
+      aria-label={`Envoyé par ${name}`}
+      className="flex h-6 w-6 shrink-0 select-none items-center justify-center rounded-full bg-ink-700 text-[10px] font-semibold text-white"
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
 /** Rendu d'un message entrant à payload : carte « formulaire rempli » si c'est un objet, sinon bouton. */
 function InboundPayload({ body, payload }: { body: string | null; payload: string }) {
   const entries = parseFormResponse(payload);
@@ -182,7 +203,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+          <div key={m.id} className={`flex items-end gap-1.5 ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${
                 m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-800'
@@ -196,6 +217,8 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
                 m.body ?? <span className="italic opacity-70">[{m.type}]</span>
               )}
             </div>
+            {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur — legacy ou réponse auto). */}
+            {m.direction === 'out' && m.senderName ? <AgentBadge name={m.senderName} /> : null}
           </div>
         ))}
         <div ref={bottomRef} />
