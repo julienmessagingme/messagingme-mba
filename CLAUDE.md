@@ -36,7 +36,7 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
-`sudo docker compose run --rm --no-deps mba-api npx tsx db/migrate.ts`, PUIS `up -d --build`). Dernière : 0017.
+`sudo docker compose run --rm --no-deps mba-api npx tsx db/migrate.ts`, PUIS `up -d --build`). Dernière : 0020.
 
 ## Docs du repo (séparation stricte)
 
@@ -63,7 +63,20 @@ passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` pui
 ### Gotchas Meta du lot (2026-07-12)
 - **Édition d'un template Meta REMPLACE tous les components** (pas de patch) : un HEADER/FOOTER/CAROUSEL
   serait supprimé s'il n'est pas re-fourni -> on **bloque l'édition** de ces templates (flag `editable`).
+- **En-tête template TEXTE à variable interdit en V1** : aucun chemin d'envoi (campagne/inbox) ne fournit un
+  paramètre de header -> Meta #132000 à l'envoi. `parseHeader` rejette `{{n}}` dans le header texte.
 - **Éditer le flow_json d'un DRAFT = `POST /{flow_id}/assets` en MULTIPART** (le create est du JSON inline) ;
   un flow PUBLISHED est immuable -> « dupliquer pour modifier ».
 - **Funnel read receipts** : `delivery_status IS DISTINCT FROM 'failed'` (PAS `<> 'failed'` : la colonne est
   souvent NULL, `NULL <> x` = NULL = faux -> sortirait les null du dénominateur).
+
+### Gotchas lot 2 (2026-07-12)
+- **Statut compte « jamais de faux vert »** (`src/account/service.ts`, PUR) : le vert exige numéro `CONNECTED`
+  + qualité `GREEN` confirmée ; tout inconnu -> gris. Une qualité `UNKNOWN` fraîche doit ÉCRASER un vieux
+  `GREEN` en base (`pullFromInfo` persiste toujours la qualité, sinon staleness = faux vert).
+- **Funnel « répondu » attribué au DERNIER envoi** : `getCampaignFunnel` borne la réponse par un `not exists`
+  d'un envoi ultérieur au même numéro avant la réponse -> pas de double-comptage sur plusieurs campagnes.
+- **`/ops` = surface cross-tenant LECTURE SEULE**, autorité SÉPARÉE du JWT : header `x-ops-token` == `OPS_TOKEN`
+  (env, compare constant-time). Vide -> 401 (désactivé). `OPS_TOKEN` vit dans `.env.prod` du VPS, jamais commité.
+- **Nom de schéma pgboss interpolé en SQL** (`${schema}.job`) : validé par regex (`safeSchema`), source = env
+  seule. Toute VALEUR reste bindée `$n`. Un `$n` non typé dans un CASE défaut à `text` -> caster `$n::type`.

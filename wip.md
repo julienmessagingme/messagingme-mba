@@ -45,25 +45,42 @@ phase, commit + deploy à chaque phase). Détail des décisions : `documentation
 
 Tests : **~380 verts**. Aucune régression. 2 migrations appliquées (0016, 0017).
 
-### Suivis ouverts du lot
-- **Support (ph 7)** : en **mode test** Resend (n'envoie qu'à l'adresse du compte `testsuperchatjd@gmail.com`).
+## Lot 2 — Contact/Contenu/Analytics/Accueil/Ops (2026-07-12) : phases A-F LIVE ✅
+
+Deuxième grand lot en feature-loop (plan `.loop/lot2-plan.md`, revue transversale + fixes par phase,
+commit + deploy à chaque phase). Détail usage : `features.md`. Détail technique : `documentation.md`.
+- **A** Fiche contact éditable (champs+valeurs+libellés, ajout champ/tag, `applyEdits` transactionnel).
+- **B** Contenu liste-first + créer (Tags/Champs/Templates/Flows), aperçu au clic, **migration 0018** (table `tags`).
+- **C** Templates : header **texte/image/vidéo** + footer (variable header interdite V1) ; aperçu WhatsApp header+footer.
+- **D** Page **`/accueil`** (clic logo) : « Bonjour {prénom} », statut compte « jamais faux vert » (pull Graph),
+  carte MBA déplacée hors Dashboard ; séparateurs de date inbox. **Migration 0019** (`phone_numbers.status`/tier).
+- **E** Analytics : funnel PAR campagne (répondu attribué au dernier envoi), breakdown codes d'erreur Meta,
+  graphe coût estimé filtrable campagne/template. **Migration 0020** (`campaign_recipients.error_code`).
+- **F** Console **`/ops`** cross-tenant LECTURE SEULE (protégée `OPS_TOKEN`, rollup par tenant + charge pg-boss).
+  Revue sécurité 10/10. `OPS_TOKEN` posé dans `.env.prod` du VPS.
+
+Tests : **441 unit + 18 intégration**. 2 migrations (0019, 0020) appliquées avant deploy. Aucune régression.
+
+### Suivis ouverts (lots 1 + 2)
+- **Support** : toujours en **mode test** Resend (n'envoie qu'à l'adresse du compte `testsuperchatjd@gmail.com`).
   Pour router vers `julien@messagingme.fr` : vérifier un domaine chez resend.com/domains (records DNS
   Cloudflare) puis basculer `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans
   `.env.prod` + `docker compose up -d --force-recreate`. Clé Resend déjà dans `.env.prod` (dormante avant ph 7).
 - **Analytics (ph 5)** : le filet de revue multi-agents a stallé (souci workflow) ; revue manuelle + 32 tests
   stats clean, déployé pour test par Julien. À re-vérifier si un retour terrain remonte un souci.
-- Coup d'œil navigateur (Julien) sur les visuels des phases 3-7.
+- **Resend** : basculer le support hors mode test (vérifier le domaine chez resend.com/domains -> DNS
+  Cloudflare -> `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans `.env.prod`
+  + `up -d --force-recreate`). Action Julien.
+- **Coup d'œil navigateur (Julien)** sur les visuels des lots 1 (ph 3-7) et 2 (A-F : `/accueil`, dates inbox,
+  cartes analytics, table `/ops`).
 
 ## Prochaine étape
 
-1. ⚠️ **URGENT — remplacer le token temporaire (24 h)** par un token System User permanent
-   (Business Settings → System Users → assigner le WABA → scopes `whatsapp_business_messaging`
-   + `whatsapp_business_management`), sinon l'envoi casse à expiration. Puis `sed` dans
-   `.env.prod` + `docker compose up -d --force-recreate`.
-2. Faire approuver le template `promo_test` (Marketing, FR, 1 variable) pour de vraies campagnes.
-3. **Onboarding client (Embedded Signup)** : configurer Facebook Login for Business (config_id),
+1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.
+2. **Onboarding client (Embedded Signup)** : configurer Facebook Login for Business (config_id),
    coder le bouton ES + l'échange de token, puis Access Verification (Tech Provider) + App Review
    (screencast). Voir `todo.md`.
+(Le token System User permanent est déjà posé, cf `todo.md` — plus d'urgence token.)
 
 ## En attente (dépendances externes)
 
