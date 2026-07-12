@@ -31,9 +31,12 @@ Bundler` sans extensions). `npm run build` (tsc) n'est pas le chemin de déploie
 ## Déploiement
 
 Déployé sur **`mba.messagingme.app`** (VPS Docker : `mba-api` + `mba-worker` + `mba-web`).
-Runbook complet + checklist live : [DEPLOY.md](DEPLOY.md). Mode **`DRY_RUN=true`** (le worker
-marque `sent` sans appeler Meta) tant qu'aucun vrai numéro n'est branché. Auth **JWT (login)** +
-**RBAC** (écritures réservées aux admins).
+Runbook complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
+Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
+
+⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
+passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
+`sudo docker compose run --rm --no-deps mba-api npx tsx db/migrate.ts`, PUIS `up -d --build`). Dernière : 0017.
 
 ## Docs du repo (séparation stricte)
 
@@ -53,5 +56,14 @@ marque `sent` sans appeler Meta) tant qu'aucun vrai numéro n'est branché. Auth
   déjà end-to-end en **DRY_RUN** sur le déploiement ; l'envoi Meta réel se valide en live plus tard.
 - **Pas de tirets longs** dans la doc (« — » / « – » interdits).
 - Git : rester sur `main`, committer sur `main`, push `origin`.
-- **Discipline anti-tailor-made** : pas de flow builder, pas de nodes, inbox minimal borné.
-  Voir la liste « on ne construit PAS » du cadrage.
+- **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
+  (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
+  workflow builder générique.)
+
+### Gotchas Meta du lot (2026-07-12)
+- **Édition d'un template Meta REMPLACE tous les components** (pas de patch) : un HEADER/FOOTER/CAROUSEL
+  serait supprimé s'il n'est pas re-fourni -> on **bloque l'édition** de ces templates (flag `editable`).
+- **Éditer le flow_json d'un DRAFT = `POST /{flow_id}/assets` en MULTIPART** (le create est du JSON inline) ;
+  un flow PUBLISHED est immuable -> « dupliquer pour modifier ».
+- **Funnel read receipts** : `delivery_status IS DISTINCT FROM 'failed'` (PAS `<> 'failed'` : la colonne est
+  souvent NULL, `NULL <> x` = NULL = faux -> sortirait les null du dénominateur).
