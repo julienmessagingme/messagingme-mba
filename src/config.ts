@@ -31,6 +31,8 @@ const schema = z.object({
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
+  /** Secret de la surface d'exploitation cross-tenant `/ops` (lecture seule). Vide -> /ops désactivé (401). */
+  OPS_TOKEN: z.string().default(''),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :
@@ -48,6 +50,15 @@ const schema = z.object({
         code: z.ZodIssueCode.custom,
         path: ['AUTH_SECRET'],
         message: 'AUTH_SECRET requis en production (>= 32 octets aléatoires, pas le placeholder)',
+      });
+    }
+    // OPS_TOKEN reste OPTIONNEL (vide -> /ops désactivé). Mais s'il EST défini en prod, il doit être fort :
+    // un token faible sur une surface cross-tenant = fuite de données inter-clients.
+    if (c.OPS_TOKEN !== '' && Buffer.byteLength(c.OPS_TOKEN) < 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['OPS_TOKEN'],
+        message: 'OPS_TOKEN, si défini en production, doit faire >= 32 octets aléatoires',
       });
     }
   }

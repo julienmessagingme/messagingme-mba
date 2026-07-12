@@ -25,6 +25,7 @@ import { MetaPhoneNumberClient } from './meta/phone-number';
 import { MetaClient } from './meta/client';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
+import { PgOpsStore } from './ops/store.pg';
 import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   const userStore = new PgUserStore(pool);
   const flowStore = new PgFlowStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
+  const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const phoneClient = new MetaPhoneNumberClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const transport = new FetchTransport();
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
@@ -176,6 +178,12 @@ async function main(): Promise<void> {
       saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
     },
     me: { getUser: (userId) => userStore.getById(userId) },
+    ops: {
+      getTenantOverview: () => opsStore.getTenantOverview(),
+      getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
+      getQueueLoad: () => opsStore.getQueueLoad(),
+    },
+    opsToken: config.OPS_TOKEN,
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
       sendSupport: async ({ tenantId, userId, email, subject, message }) => {

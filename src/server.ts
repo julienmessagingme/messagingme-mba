@@ -17,6 +17,7 @@ import { registerSupport } from './http/support';
 import { registerContacts } from './http/contacts';
 import { registerAccount } from './http/account';
 import { registerMe } from './http/me';
+import { registerOps } from './http/ops';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -37,6 +38,7 @@ import type { SupportRouteDeps } from './http/support';
 import type { ContactsRouteDeps } from './http/contacts';
 import type { AccountRouteDeps } from './http/account';
 import type { MeRouteDeps } from './http/me';
+import type { OpsRouteDeps } from './http/ops';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -77,6 +79,10 @@ export interface ServerDeps {
   account?: AccountRouteDeps;
   /** Profil de l'utilisateur courant (Accueil : « Bonjour {prénom} ») — tout compte authentifié. */
   me?: MeRouteDeps;
+  /** Surface d'exploitation cross-tenant `/ops` (lecture seule) — protégée par OPS_TOKEN, pas le JWT. */
+  ops?: OpsRouteDeps;
+  /** Secret de `/ops`. Défaut : config.OPS_TOKEN. Vide -> /ops répond 401. Injectable en test. */
+  opsToken?: string;
 }
 
 /**
@@ -120,6 +126,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     verifyToken: deps.verifyToken ?? config.META_VERIFY_TOKEN,
     appSecret: deps.appSecret ?? config.META_APP_SECRET,
   });
+
+  // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
+  // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
+  if (deps.ops) registerOps(app, deps.ops, deps.opsToken ?? config.OPS_TOKEN);
 
   const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState) : undefined;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière

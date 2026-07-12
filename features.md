@@ -75,6 +75,19 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 - ✅ **Formulaire de contact** : sujet + message -> email à l'équipe via Resend (reply-to = email de l'auteur).
   Mode test tant que le domaine n'est pas vérifié (envoi limité à l'adresse du compte Resend).
 
+## Accueil (clic logo)
+
+- ✅ **Page d'accueil** `/accueil` (clic sur le logo, admin) : « Bonjour {prénom} », **statut du compte
+  WhatsApp** (pastille vert/ambre/rouge/gris, jamais de faux vert), **numéro** + qualité + palier d'envoi,
+  et la carte **MBA actif/inactif** (déplacée hors du Dashboard).
+
+## Exploitation `/ops` (interne, hors console client)
+
+- ✅ **Console d'exploitation cross-tenant** `/ops` : vue **lecture seule** de TOUS les clients (protégée par
+  un jeton `OPS_TOKEN` saisi une fois, distinct des comptes clients). Par client : MBA on/off, numéro +
+  qualité, nb d'utilisateurs / contacts / messages / templates, dernier envoi. **Signal de charge pg-boss**
+  (files en attente / actifs / échoués) pour décider d'une bascule d'infra. Messages échangés/jour (global).
+
 ## À venir / hors périmètre
 
 - 🔲 **Onboarding guidé** (Embedded Signup) : connexion du numéro en self-service + option pool de numéros.

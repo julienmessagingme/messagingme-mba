@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifySession } from './token';
 import type { Session } from './token';
+import { timingSafeEqualStr } from '../lib/signature';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -58,6 +59,23 @@ export function makeRequireRole(roles: readonly string[]): PreHandler {
  * (un changement de rôle prend effet tout de suite). Ferme la fenêtre de staleness du token de 12 h.
  * Sans `loadState` (tests DB-free), on retombe sur la vérification JWT seule.
  */
+/**
+ * preHandler de la surface d'exploitation cross-tenant `/ops` : exige le header `x-ops-token` ÉGAL
+ * (comparaison constant-time) au secret d'env `OPS_TOKEN`. 401 si le token est vide (surface
+ * désactivée par défaut), absent, ou incorrect. N'utilise PAS `req.auth` : c'est une autorité
+ * distincte du JWT tenant (un admin de tenant ne peut donc PAS atteindre /ops, et réciproquement).
+ */
+export function makeRequireOps(opsToken: string): PreHandler {
+  return async function requireOps(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+    const raw = req.headers['x-ops-token'];
+    const provided = Array.isArray(raw) ? raw[0] : raw;
+    if (!opsToken || !provided || !timingSafeEqualStr(provided, opsToken)) {
+      await reply.code(401).send({ error: 'ops: non autorisé' });
+      return;
+    }
+  };
+}
+
 export function makeRequireAuth(secret: string, loadState?: UserStateLoader): PreHandler {
   return async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;

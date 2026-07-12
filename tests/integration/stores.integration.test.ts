@@ -13,6 +13,7 @@ import {
   PgQualityProvider,
 } from '../../src/campaign/store.pg';
 import { PgStatsStore } from '../../src/stats/store.pg';
+import { PgOpsStore } from '../../src/ops/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -268,6 +269,29 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     expect((await stats.getCampaignFunnel(tenantId, campA)).replied).toBe(0); // volée par B
     expect((await stats.getCampaignFunnel(tenantId, campB)).replied).toBe(1);
+  });
+
+  it('PgOpsStore : rollup cross-tenant (le tenant de test apparaît, agrégats cohérents) + queue load', async () => {
+    const ops = new PgOpsStore(pool, 'pgboss');
+    const overview = await ops.getTenantOverview();
+    const mine = overview.find((t) => t.id === tenantId);
+    expect(mine).toBeDefined();
+    // Les tests précédents ont créé contacts + campagnes + envois pour CE tenant.
+    expect(mine!.contacts).toBeGreaterThan(0);
+    expect(mine!.templatesUsed).toBeGreaterThan(0);
+    expect(typeof mine!.mbaEnabled).toBe('boolean');
+
+    const daily = await ops.getGlobalDaily(14);
+    expect(Array.isArray(daily)).toBe(true);
+
+    // Queue load : tolère l'absence de pg-boss, sinon renvoie les 4 files avec des compteurs >= 0.
+    const queues = await ops.getQueueLoad();
+    expect(queues.map((q) => q.queue)).toEqual(['webhook', 'campaign-run', 'webhook-dlq', 'campaign-run-dlq']);
+    for (const q of queues) {
+      expect(q.backlog).toBeGreaterThanOrEqual(0);
+      expect(q.active).toBeGreaterThanOrEqual(0);
+      expect(q.failed).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('PgQualityProvider : UNKNOWN si numéro absent, lit le rating sinon', async () => {

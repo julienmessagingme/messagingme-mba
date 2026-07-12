@@ -451,6 +451,47 @@ export function getAccountStatus(tenantId: string): Promise<AccountStatusRespons
   return request<AccountStatusResponse>(`/tenants/${tenantId}/account-status`);
 }
 
+// --- Surface d'exploitation cross-tenant (/ops) : token SÉPARÉ (x-ops-token), PAS la session JWT ---
+
+export interface TenantOverviewRow {
+  id: string;
+  name: string;
+  createdAt: string;
+  mbaEnabled: boolean;
+  users: number;
+  contacts: number;
+  messages: number;
+  templatesUsed: number;
+  lastSendAt: string | null;
+  phone: string | null;
+  phoneStatus: string | null;
+  quality: string | null;
+}
+export interface QueueLoadRow {
+  queue: string;
+  backlog: number;
+  active: number;
+  failed: number;
+}
+export interface OpsOverview {
+  tenants: TenantOverviewRow[];
+  daily: DailyPoint[];
+  queues: QueueLoadRow[];
+}
+
+/**
+ * Appel dédié à /ops : n'utilise NI getSession NI clearSession (un 401 ops ne doit pas déconnecter la
+ * console admin), pose seulement `x-ops-token`. Le token est saisi par l'ops et gardé en localStorage.
+ */
+export async function getOpsOverview(opsToken: string): Promise<OpsOverview> {
+  const res = await fetch(`${BASE}/ops/overview`, { headers: { 'x-ops-token': opsToken } });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<OpsOverview>;
+}
+
 // --- Support (formulaire de contact -> email Resend) ---
 
 export function sendSupportMessage(tenantId: string, input: { subject: string; message: string; email?: string }): Promise<{ ok: boolean }> {
