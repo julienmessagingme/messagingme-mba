@@ -37,18 +37,26 @@ export interface WhatsAppPreviewProps {
   /** Valeurs des variables {{n}} ; si absent/vide, la variable reste affichée `{{n}}`. */
   examples: string[];
   buttons: TemplateButtonInput[];
+  /** En-tête : texte (rendu tel quel) ou média (bloc placeholder image/vidéo/document). */
+  header?: { format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; text?: string } | null;
+  /** Pied de page : petit texte gris sous le corps. */
+  footer?: string;
   /** Nom affiché dans l'en-tête (défaut = le nom vérifié du WABA). */
   senderName?: string;
   /** Masque la petite note sous l'aperçu (formatage supporté). */
   hideNote?: boolean;
 }
 
+const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', string> = { IMAGE: '🖼️', VIDEO: '🎬', DOCUMENT: '📄' };
+
 /** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). Partagé Templates + Campagnes. */
-export function WhatsAppPreview({ body, examples, buttons, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
+export function WhatsAppPreview({ body, examples, buttons, header, footer, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
   const text = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n: string) => {
     const v = examples[Number(n) - 1];
     return v && v.trim() ? v : `{{${n}}}`;
   });
+  const mediaHeader = header && header.format !== 'TEXT' ? header.format : null;
+  const textHeader = header && header.format === 'TEXT' && header.text?.trim() ? header.text : null;
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-ink-500">Aperçu WhatsApp</p>
@@ -63,9 +71,16 @@ export function WhatsAppPreview({ body, examples, buttons, senderName = 'Messagi
         <div className="min-h-[220px] px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
           <div className="max-w-[88%]">
             <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
+              {mediaHeader && (
+                <div className="-mx-2.5 -mt-1.5 mb-1.5 flex h-24 items-center justify-center rounded-t-lg bg-ink-100 text-3xl text-ink-400">
+                  {MEDIA_ICON[mediaHeader]}
+                </div>
+              )}
+              {textHeader && <div className="mb-1 break-words text-[13px] font-semibold text-ink-900">{textHeader}</div>}
               <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
                 {body.trim() ? formatInline(text) : <span className="text-ink-400">Le message apparaîtra ici…</span>}
               </div>
+              {footer?.trim() && <div className="mt-1 break-words text-[11px] leading-snug text-ink-400">{footer}</div>}
               <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">
                 12:30 <span className="text-[#53bdeb]">✓✓</span>
               </div>

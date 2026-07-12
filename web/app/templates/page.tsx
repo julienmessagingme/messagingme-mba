@@ -6,7 +6,8 @@ import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { CarouselForm } from '@/components/CarouselForm';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
-import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, type TemplateSummary, type TemplateButtonInput, type FlowSummary } from '@/lib/api';
+import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, uploadMedia, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary } from '@/lib/api';
+import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -179,10 +180,17 @@ function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary
             <p className="mt-1 text-ink-500">{template.body || 'Message d’introduction non chargé.'}</p>
           </div>
         ) : (
-          <WhatsAppPreview body={template.body ?? ''} examples={template.example ?? []} buttons={template.buttons ?? []} hideNote />
+          <WhatsAppPreview
+            body={template.body ?? ''}
+            examples={template.example ?? []}
+            buttons={template.buttons ?? []}
+            header={template.headerFormat ? { format: template.headerFormat, text: template.headerText } : null}
+            footer={template.footer}
+            hideNote
+          />
         )}
-        {template.headerFormat && !template.isCarousel && (
-          <p className="mt-2 text-[11px] text-ink-400">En-tête {template.headerFormat.toLowerCase()} présent (média non affiché dans l&apos;aperçu).</p>
+        {template.headerFormat && template.headerFormat !== 'TEXT' && !template.isCarousel && (
+          <p className="mt-2 text-[11px] text-ink-400">En-tête {template.headerFormat.toLowerCase()} (le média réel s&apos;affiche à l&apos;envoi).</p>
         )}
       </div>
     </div>
@@ -218,6 +226,14 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
   const [body, setBody] = useState(initial?.body ?? '');
   const [examples, setExamples] = useState<string[]>(initial?.example ?? []);
   const [buttons, setButtons] = useState<TemplateButtonInput[]>(initial?.buttons ?? []);
+  // En-tête : en édition seuls les templates à en-tête TEXTE (ou sans) sont éditables (média non re-téléchargeable).
+  const [headerType, setHeaderType] = useState<'none' | 'TEXT' | 'IMAGE' | 'VIDEO'>(initial?.headerFormat === 'TEXT' ? 'TEXT' : 'none');
+  const [headerText, setHeaderText] = useState(initial?.headerText ?? '');
+  const [headerHandle, setHeaderHandle] = useState('');
+  const [headerFileName, setHeaderFileName] = useState('');
+  const [headerUploading, setHeaderUploading] = useState(false);
+  const [footer, setFooter] = useState(initial?.footer ?? '');
+  const headerFileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -249,18 +265,45 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     });
   }
 
+  function buildHeader(): TemplateHeaderInput | undefined {
+    if (headerType === 'TEXT') return headerText.trim() ? { format: 'TEXT', text: headerText.trim() } : undefined;
+    if (headerType === 'IMAGE' || headerType === 'VIDEO') return headerHandle ? { format: headerType, handle: headerHandle } : undefined;
+    return undefined;
+  }
+
+  async function onHeaderFile(file: File | undefined) {
+    if (!file) return;
+    setHeaderUploading(true);
+    setError(null);
+    try {
+      // Image : resize canvas (léger). Vidéo : brut en base64 (pas de resize, capé côté serveur à 16 Mo).
+      const dataUrl = headerType === 'VIDEO' ? await fileToDataUrl(file) : await resizeToDataUrl(file, 1024, 0.85);
+      const { handle } = await uploadMedia(tenantId, dataUrl);
+      setHeaderHandle(handle);
+      setHeaderFileName(file.name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload du média impossible');
+    } finally {
+      setHeaderUploading(false);
+    }
+  }
+
   async function submit() {
     setBusy(true);
     setError(null);
     setOk(null);
     try {
       const example = varCount > 0 ? examples.slice(0, varCount).map((e) => e || 'exemple') : undefined;
+      const header = buildHeader();
+      const foot = footer.trim() || undefined;
       if (isEdit && initial) {
         // name/language immuables : on édite le template résolu par son nom+langue côté serveur.
         await updateTemplate(tenantId, initial.name, {
           language: initial.language,
           category,
           body,
+          ...(header ? { header } : {}),
+          ...(foot ? { footer: foot } : {}),
           ...(example ? { example } : {}),
           ...(buttons.length > 0 ? { buttons } : {}),
         });
@@ -273,6 +316,8 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
         category,
         language,
         body,
+        ...(header ? { header } : {}),
+        ...(foot ? { footer: foot } : {}),
         ...(example ? { example } : {}),
         ...(buttons.length > 0 ? { buttons } : {}),
       });
@@ -281,6 +326,11 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       setBody('');
       setExamples([]);
       setButtons([]);
+      setHeaderType('none');
+      setHeaderText('');
+      setHeaderHandle('');
+      setHeaderFileName('');
+      setFooter('');
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : isEdit ? 'Modification impossible' : 'Création impossible');
@@ -291,7 +341,11 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
 
   // Chaque bouton doit être complet : texte + (URL pour un lien / formulaire choisi pour un FLOW).
   const buttonsComplete = buttons.every((b) => b.text.trim() !== '' && (b.type !== 'URL' || (b.url ?? '').trim() !== '') && (b.type !== 'FLOW' || (b.flowId ?? '') !== ''));
-  const canSubmit = name.trim() !== '' && body.trim() !== '' && buttonsComplete && !busy;
+  const headerReady =
+    headerType === 'none' ||
+    (headerType === 'TEXT' && headerText.trim() !== '') ||
+    ((headerType === 'IMAGE' || headerType === 'VIDEO') && headerHandle !== '');
+  const canSubmit = name.trim() !== '' && body.trim() !== '' && buttonsComplete && headerReady && !headerUploading && !busy;
 
   return (
     <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6 shadow-sm'}>
@@ -321,6 +375,34 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
           </div>
 
           <div className="mt-3">
+            <label className="mb-1 block text-sm font-medium text-ink-700">En-tête (optionnel)</label>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={headerType}
+                onChange={(e) => { setHeaderType(e.target.value as 'none' | 'TEXT' | 'IMAGE' | 'VIDEO'); setHeaderHandle(''); setHeaderFileName(''); }}
+                className={`${inputCls} max-w-[150px]`}
+              >
+                <option value="none">Aucun</option>
+                <option value="TEXT">Texte</option>
+                <option value="IMAGE">Image</option>
+                <option value="VIDEO">Vidéo</option>
+              </select>
+              {headerType === 'TEXT' && (
+                <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} maxLength={60} placeholder="Titre fixe (60 car. max, sans variable)" className={`${inputCls} flex-1`} />
+              )}
+              {(headerType === 'IMAGE' || headerType === 'VIDEO') && (
+                <>
+                  <button type="button" onClick={() => headerFileRef.current?.click()} disabled={headerUploading} className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-50">
+                    {headerUploading ? 'Upload…' : headerHandle ? 'Remplacer' : headerType === 'IMAGE' ? 'Choisir une image' : 'Choisir une vidéo (mp4)'}
+                  </button>
+                  {headerFileName && <span className="max-w-[140px] truncate text-xs text-ink-500">{headerFileName} ✓</span>}
+                  <input ref={headerFileRef} type="file" accept={headerType === 'IMAGE' ? 'image/png,image/jpeg' : 'video/mp4'} className="hidden" onChange={(e) => onHeaderFile(e.target.files?.[0])} />
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3">
             <label className="mb-1 block text-sm font-medium text-ink-700">Corps du message</label>
             <div className="relative">
               <textarea
@@ -342,6 +424,11 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
               {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
             </div>
             <p className="mt-1 text-xs text-ink-400">Utilise {'{{1}}'}, {'{{2}}'}... pour les variables (mappées sur les champs contact à la campagne).</p>
+          </div>
+
+          <div className="mt-3">
+            <label className="mb-1 block text-sm font-medium text-ink-700">Pied de page (optionnel)</label>
+            <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder="Petit texte en bas (60 car. max, sans variable)" className={inputCls} />
           </div>
 
           {varCount > 0 && (
@@ -456,7 +543,21 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
 
         {/* Colonne aperçu (collante) */}
         <div className="lg:sticky lg:top-4 lg:h-fit">
-          <WhatsAppPreview body={body} examples={examples} buttons={buttons} />
+          <WhatsAppPreview
+            body={body}
+            examples={examples}
+            buttons={buttons}
+            header={
+              headerType === 'none'
+                ? null
+                : headerType === 'TEXT'
+                  ? headerText.trim()
+                    ? { format: 'TEXT', text: headerText }
+                    : null
+                  : { format: headerType }
+            }
+            footer={footer}
+          />
         </div>
       </div>
     </div>

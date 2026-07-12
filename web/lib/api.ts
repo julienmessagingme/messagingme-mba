@@ -212,7 +212,11 @@ export interface TemplateSummary {
   /** Corps du template : déduit les variables + aperçu côté campagne. Peut être '' (anciens). */
   body?: string;
   /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
-  headerFormat?: string | null;
+  headerFormat?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null;
+  /** Texte du header TEXT (pré-remplissage édition). */
+  headerText?: string;
+  /** Pied de page (pré-remplissage édition). */
+  footer?: string;
   /** Boutons top-level (pré-remplissage de l'édition). */
   buttons?: TemplateButtonInput[];
   /** Exemples de variables du BODY (pré-remplissage). */
@@ -234,12 +238,20 @@ export interface CarouselCardInput {
   body?: string;
   buttons?: TemplateButtonInput[];
 }
+/** En-tête d'un template : texte (variable optionnelle) OU média (handle du resumable upload). */
+export type TemplateHeaderInput =
+  | { format: 'TEXT'; text: string; example?: string }
+  | { format: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; handle: string };
 export interface CreateTemplateInput {
   name: string;
   category: 'MARKETING' | 'UTILITY';
   language: string;
+  /** En-tête optionnel (texte/image/vidéo). */
+  header?: TemplateHeaderInput;
   body: string;
   example?: string[];
+  /** Pied de page optionnel (<= 60 car.). */
+  footer?: string;
   buttons?: TemplateButtonInput[];
   /** Template CAROUSEL : corps commun (body) + 2-10 cartes. */
   carousel?: { cards: CarouselCardInput[] };
@@ -254,8 +266,10 @@ export function createTemplate(tenantId: string, input: CreateTemplateInput): Pr
 export interface UpdateTemplateInput {
   language: string;
   category: 'MARKETING' | 'UTILITY';
+  header?: TemplateHeaderInput;
   body: string;
   example?: string[];
+  footer?: string;
   buttons?: TemplateButtonInput[];
 }
 export function updateTemplate(tenantId: string, name: string, input: UpdateTemplateInput): Promise<{ success: boolean; status: string }> {

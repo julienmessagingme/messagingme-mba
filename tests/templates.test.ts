@@ -242,6 +242,49 @@ describe('template CAROUSEL', () => {
   });
 });
 
+describe('template HEADER + FOOTER', () => {
+  it('create émet HEADER texte + FOOTER, ordre HEADER/BODY/FOOTER/BUTTONS', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', { name: 'p', category: 'MARKETING', language: 'fr', header: { format: 'TEXT', text: 'Bonjour {{1}}', example: 'Marc' }, body: 'Corps', footer: 'À bientôt', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }] });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.components.map((c: { type: string }) => c.type)).toEqual(['HEADER', 'BODY', 'FOOTER', 'BUTTONS']);
+    expect(body.components[0]).toMatchObject({ type: 'HEADER', format: 'TEXT', text: 'Bonjour {{1}}', example: { header_text: ['Marc'] } });
+    expect(body.components[2]).toEqual({ type: 'FOOTER', text: 'À bientôt' });
+  });
+
+  it('create émet HEADER média (header_handle)', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', { name: 'p', category: 'MARKETING', language: 'fr', header: { format: 'IMAGE', handle: 'H123' }, body: 'Corps' });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.components[0]).toEqual({ type: 'HEADER', format: 'IMAGE', example: { header_handle: ['H123'] } });
+  });
+
+  it('route POST header texte + footer -> 201', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', header: { format: 'TEXT', text: 'Titre' }, footer: 'Merci' } });
+    expect(res.statusCode).toBe(201);
+    await a.close();
+  });
+
+  it('route POST header texte trop long / média sans handle / footer trop long -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const long = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', header: { format: 'TEXT', text: 'a'.repeat(70) } } });
+    const noHandle = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', header: { format: 'IMAGE' } } });
+    const footLong = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', footer: 'a'.repeat(70) } });
+    // En-tête texte AVEC variable : rejeté en V1 (aucun chemin d'envoi ne sait fournir un param header -> Meta #132000).
+    const headerVar = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', header: { format: 'TEXT', text: 'Salut {{1}}' } } });
+    expect(long.statusCode).toBe(400);
+    expect(noHandle.statusCode).toBe(400);
+    expect(footLong.statusCode).toBe(400);
+    expect(headerVar.statusCode).toBe(400);
+    await a.close();
+  });
+});
+
 describe('MetaTemplateClient.update / remove', () => {
   it('update POST /{id} : components remplacés, PAS de name/language (immuables)', async () => {
     const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { success: true } }]);
@@ -275,6 +318,7 @@ describe('MetaTemplateClient.list (id + buttons + example + isCarousel + editabl
       { id: 'T1', name: 'simple', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Bonjour {{1}}', example: { body_text: [['Marc']] } }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }] }] },
       { id: 'T2', name: 'promo', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Sélection' }, { type: 'CAROUSEL', cards: [] }] },
       { id: 'T3', name: 'entete', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'Avec image' }] },
+      { id: 'T4', name: 'texte', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'HEADER', format: 'TEXT', text: 'Titre' }, { type: 'BODY', text: 'Corps' }, { type: 'FOOTER', text: 'À bientôt' }] },
     ] } }]);
     const client = new MetaTemplateClient('tok', 'v23.0', fn);
     const all = await client.list('waba1');
@@ -282,7 +326,8 @@ describe('MetaTemplateClient.list (id + buttons + example + isCarousel + editabl
     expect(all[0]!.buttons).toEqual([{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }]);
     expect(all[1]).toMatchObject({ id: 'T2', isCarousel: true, editable: false }); // carousel -> non éditable
     expect(all[1]!.buttons).toBeUndefined();
-    expect(all[2]).toMatchObject({ id: 'T3', isCarousel: false, editable: false }); // header -> non éditable (serait supprimé)
+    expect(all[2]).toMatchObject({ id: 'T3', isCarousel: false, editable: false }); // header MÉDIA -> non éditable (handle non récupérable)
+    expect(all[3]).toMatchObject({ id: 'T4', editable: true, headerText: 'Titre', footer: 'À bientôt' }); // header TEXTE + footer -> éditable + projetés
   });
 });
 
@@ -325,12 +370,23 @@ describe('routes templates — édition (PATCH)', () => {
     await a.close();
   });
 
-  it('PATCH template avec HEADER -> 422 (le header serait supprimé, anti perte de données)', async () => {
+  it('PATCH template avec HEADER MÉDIA -> 422 (handle non récupérable, anti perte de données)', async () => {
     const { fn, calls } = makeFetch([listOne({ ...approved, components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'x' }] })]);
     const a = app(fn);
     const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'x' } });
     expect(res.statusCode).toBe(422);
     expect(calls).toHaveLength(1); // seulement le list de résolution, PAS d'update Meta
+    await a.close();
+  });
+
+  it('PATCH template à header TEXTE -> 200 (éditable), header régénéré', async () => {
+    const { fn, calls } = makeFetch([listOne({ ...approved, components: [{ type: 'HEADER', format: 'TEXT', text: 'Ancien' }, { type: 'BODY', text: 'x' }] }), { ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'MARKETING', body: 'y', header: { format: 'TEXT', text: 'Nouveau' }, footer: 'Bas' } });
+    expect(res.statusCode).toBe(200);
+    const upd = JSON.parse(calls[1]!.init.body as string);
+    expect(upd.components[0]).toMatchObject({ type: 'HEADER', format: 'TEXT', text: 'Nouveau' });
+    expect(upd.components.some((c: { type: string }) => c.type === 'FOOTER')).toBe(true);
     await a.close();
   });
 

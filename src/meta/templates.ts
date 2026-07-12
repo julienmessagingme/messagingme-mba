@@ -24,14 +24,23 @@ export interface CarouselCard {
   buttons?: TemplateButton[];
 }
 
+/** En-tête d'un template : texte (avec variable optionnelle) OU média (handle du resumable upload). */
+export type TemplateHeader =
+  | { format: 'TEXT'; text: string; example?: string }
+  | { format: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; handle: string };
+
 export interface CreateTemplateInput {
   name: string;
   category: 'MARKETING' | 'UTILITY';
   language: string;
+  /** En-tête optionnel (texte / image / vidéo / document). Un seul par template. */
+  header?: TemplateHeader;
   /** corps du message, variables {{1}}, {{2}}... */
   body: string;
   /** exemples de valeurs pour chaque variable (requis par Meta si le corps a des variables) */
   example?: string[];
+  /** Pied de page optionnel (texte court, <= 60 car., sans variable). */
+  footer?: string;
   buttons?: TemplateButton[];
   /** Template CAROUSEL : corps commun (`body`) + 2-10 cartes. Exclut `buttons` (boutons par carte). */
   carousel?: { cards: CarouselCard[] };
@@ -48,6 +57,10 @@ export interface TemplateSummary {
   body: string;
   /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
   headerFormat: string | null;
+  /** Texte du header TEXT (pour pré-remplir l'édition). undefined si header média/absent. */
+  headerText?: string;
+  /** Pied de page (composant FOOTER), pour pré-remplir l'édition. undefined si absent. */
+  footer?: string;
   /** Boutons top-level (pour pré-remplir l'édition). undefined si aucun. */
   buttons?: TemplateButton[];
   /** Exemples de variables du BODY (pour pré-remplir l'édition). undefined si aucun. */
@@ -78,6 +91,26 @@ function headerFormatOf(components: unknown): string | null {
     if (comp?.type === 'HEADER') return typeof comp.format === 'string' ? comp.format : null;
   }
   return null;
+}
+
+/** Texte d'un header TEXT (pré-remplissage édition). undefined si header média/absent. */
+function headerTextOf(components: unknown): string | undefined {
+  if (!Array.isArray(components)) return undefined;
+  for (const c of components) {
+    const comp = c as { type?: string; format?: string; text?: string };
+    if (comp?.type === 'HEADER' && comp.format === 'TEXT' && typeof comp.text === 'string') return comp.text;
+  }
+  return undefined;
+}
+
+/** Texte du composant FOOTER (pré-remplissage édition). undefined si absent. */
+function footerOf(components: unknown): string | undefined {
+  if (!Array.isArray(components)) return undefined;
+  for (const c of components) {
+    const comp = c as { type?: string; text?: string };
+    if (comp?.type === 'FOOTER' && typeof comp.text === 'string') return comp.text;
+  }
+  return undefined;
 }
 
 /** Boutons top-level (composant BUTTONS) remappés en TemplateButton, pour pré-remplir l'édition. */
@@ -116,14 +149,21 @@ function isCarouselOf(components: unknown): boolean {
 }
 
 /**
- * Un template n'est éditable en place QUE s'il se limite à BODY (+ éventuel BUTTONS). Tout HEADER / FOOTER /
- * CAROUSEL serait DÉTRUIT par l'édition : buildComponents ne régénère que BODY/BUTTONS/CAROUSEL et Meta
- * remplace intégralement les components. On bloque donc l'édition de ces templates (garde-fou anti perte).
+ * Éditable en place = on sait REGÉNÉRER tous ses composants à l'identique. OK : BODY, BUTTONS, FOOTER, et un
+ * HEADER **TEXTE** (texte récupérable depuis list). PAS éditable : un HEADER **média** (le header_handle
+ * n'est pas récupérable -> l'édition le détruirait) ni un CAROUSEL. Meta remplace TOUS les components à l'edit.
  */
 function isSimpleEditable(components: unknown): boolean {
   if (!Array.isArray(components)) return false;
-  const types = components.map((c) => (c as { type?: string })?.type);
-  return types.includes('BODY') && types.every((t) => t === 'BODY' || t === 'BUTTONS');
+  let hasBody = false;
+  for (const c of components) {
+    const comp = c as { type?: string; format?: string };
+    if (comp?.type === 'BODY') hasBody = true;
+    else if (comp?.type === 'BUTTONS' || comp?.type === 'FOOTER') continue;
+    else if (comp?.type === 'HEADER' && comp.format === 'TEXT') continue;
+    else return false; // HEADER média, CAROUSEL, ou composant inconnu -> non éditable
+  }
+  return hasBody;
 }
 
 /** Mappe un bouton applicatif -> composant Meta (QUICK_REPLY / URL / FLOW). Réutilisé top-level + cartes. */
@@ -140,15 +180,32 @@ function mapButton(b: TemplateButton): Record<string, unknown> {
 }
 
 /** Les seuls champs qui déterminent les `components` Meta (partagé create + update ; name/language exclus). */
-type ComponentInput = Pick<CreateTemplateInput, 'body' | 'example' | 'buttons' | 'carousel'>;
+type ComponentInput = Pick<CreateTemplateInput, 'header' | 'body' | 'example' | 'footer' | 'buttons' | 'carousel'>;
+
+const hasVar = (s: string): boolean => /\{\{\s*\d+\s*\}\}/.test(s);
 
 function buildComponents(input: ComponentInput): unknown[] {
   const components: unknown[] = [];
+
+  // HEADER (ordre Meta : HEADER, BODY, FOOTER, BUTTONS). Hors carousel (le carousel a ses headers par carte).
+  if (input.header && !input.carousel) {
+    if (input.header.format === 'TEXT') {
+      const h: Record<string, unknown> = { type: 'HEADER', format: 'TEXT', text: input.header.text };
+      if (hasVar(input.header.text)) h.example = { header_text: [input.header.example || 'exemple'] };
+      components.push(h);
+    } else {
+      // Image / vidéo / document : le handle vient du resumable upload (pas une URL).
+      components.push({ type: 'HEADER', format: input.header.format, example: { header_handle: [input.header.handle] } });
+    }
+  }
+
   const body: Record<string, unknown> = { type: 'BODY', text: input.body };
   if (input.example && input.example.length > 0) {
     body.example = { body_text: [input.example] };
   }
   components.push(body);
+
+  if (input.footer && !input.carousel) components.push({ type: 'FOOTER', text: input.footer });
 
   // Template CAROUSEL : un composant CAROUSEL de cartes (chaque carte = header image + body + boutons).
   if (input.carousel) {
@@ -232,6 +289,8 @@ export class MetaTemplateClient {
           language: t.language ?? '',
           body: bodyOf(t.components),
           headerFormat: headerFormatOf(t.components),
+          ...(headerTextOf(t.components) !== undefined ? { headerText: headerTextOf(t.components) } : {}),
+          ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
           ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
           ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),
           isCarousel: isCarouselOf(t.components),

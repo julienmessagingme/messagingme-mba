@@ -91,7 +91,16 @@ describe('route media', () => {
     await server.close();
   });
 
-  it('POST dataUrl invalide (pas image) -> 400', async () => {
+  it('POST vidéo mp4 -> 200 {handle}, mime video/mp4', async () => {
+    const { server, cap } = app();
+    const mp4 = 'data:video/mp4;base64,' + Buffer.from([0, 0, 0, 24]).toString('base64');
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/media', ...h(adminTok), payload: { dataUrl: mp4 } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.mime).toBe('video/mp4');
+    await server.close();
+  });
+
+  it('POST dataUrl invalide (pas image/vidéo) -> 400', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/media', ...h(adminTok), payload: { dataUrl: 'data:text/plain;base64,QQ==' } });
     expect(res.statusCode).toBe(400);

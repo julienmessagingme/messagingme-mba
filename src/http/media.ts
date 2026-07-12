@@ -13,16 +13,18 @@ function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): str
   return authTenant ?? tenantId;
 }
 
-const DATA_URL_RE = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/;
-const MAX_BYTES = 5 * 1024 * 1024; // 5 Mo (Meta limite les images d'en-tête ; le front redimensionne avant)
+// Média accepté pour un en-tête (carousel = image ; en-tête simple = image ou vidéo). Data URL base64.
+const DATA_URL_RE = /^data:(image\/(?:png|jpeg)|video\/mp4);base64,([A-Za-z0-9+/=]+)$/;
+const IMG_MAX = 5 * 1024 * 1024; // 5 Mo (limite en-tête image Meta ; le front redimensionne avant)
+const VIDEO_MAX = 16 * 1024 * 1024; // 16 Mo (limite en-tête vidéo Meta)
 
 /**
- * Upload d'image (admin) pour les headers de cartes carousel. Accepte un data URL base64
- * (`data:image/png;base64,...`), décode, valide le type/poids, renvoie le handle Meta. GROUPE
- * admin-only via `guard`. bodyLimit de route élevé (l'image transite en base64).
+ * Upload média (admin) : image (headers carousel + en-tête simple) et vidéo mp4 (en-tête simple). Accepte
+ * un data URL base64, décode, valide type/poids, renvoie le handle Meta (resumable upload). GROUPE admin-only.
+ * bodyLimit élevé (le média transite en base64, +33% -> ~22 Mo pour une vidéo de 16 Mo).
  */
 export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, guard?: Guard): void {
-  const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 7 * 1024 * 1024 };
+  const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 24 * 1024 * 1024 };
 
   app.post('/tenants/:tenantId/media', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -31,12 +33,13 @@ export function registerMedia(app: FastifyInstance, deps: MediaRouteDeps, guard?
     const dataUrl = (req.body as { dataUrl?: unknown } | null)?.dataUrl;
     if (typeof dataUrl !== 'string') return reply.code(400).send({ error: 'dataUrl requis' });
     const m = DATA_URL_RE.exec(dataUrl);
-    if (!m) return reply.code(400).send({ error: 'image invalide (data URL base64 image/png ou image/jpeg attendu)' });
+    if (!m) return reply.code(400).send({ error: 'média invalide (data URL base64 image/png, image/jpeg ou video/mp4 attendu)' });
 
     const mime = m[1]!;
     const bytes = Buffer.from(m[2]!, 'base64');
-    if (bytes.length === 0) return reply.code(400).send({ error: 'image vide' });
-    if (bytes.length > MAX_BYTES) return reply.code(400).send({ error: 'image trop lourde (max 5 Mo)' });
+    if (bytes.length === 0) return reply.code(400).send({ error: 'média vide' });
+    const max = mime.startsWith('video/') ? VIDEO_MAX : IMG_MAX;
+    if (bytes.length > max) return reply.code(400).send({ error: `média trop lourd (max ${Math.round(max / 1024 / 1024)} Mo)` });
 
     const handle = await deps.uploadImage(bytes, mime);
     return reply.code(200).send({ handle });

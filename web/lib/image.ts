@@ -34,3 +34,13 @@ export async function resizeToDataUrl(file: File, max = 1024, quality = 0.82): P
 export function dataUrlBase64Length(dataUrl: string): number {
   return dataUrl.replace(/^data:image\/[a-z]+;base64,/i, '').length;
 }
+
+/** Lit un fichier en data URL base64 tel quel (sans transformation) — pour la vidéo (pas de resize canvas). */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('fichier illisible'));
+    reader.readAsDataURL(file);
+  });
+}

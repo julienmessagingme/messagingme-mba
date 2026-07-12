@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard } from '../meta/templates';
+import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader } from '../meta/templates';
 import type { CampaignStatus } from '../campaign/types';
 
 export interface TemplateRouteDeps {
@@ -51,7 +51,29 @@ function validButtons(v: unknown): v is TemplateButton[] | undefined {
 }
 
 /** Champs qui déterminent les components d'un template (partagés create + edit ; name/language exclus). */
-type TemplateFields = Pick<CreateTemplateInput, 'category' | 'body' | 'example' | 'buttons' | 'carousel'>;
+type TemplateFields = Pick<CreateTemplateInput, 'category' | 'header' | 'body' | 'example' | 'footer' | 'buttons' | 'carousel'>;
+
+const HEADER_MAX = 60;
+const FOOTER_MAX = 60;
+
+/** Valide l'en-tête (texte / média). null = pas d'en-tête. {error} ou {header}. */
+function parseHeader(hRaw: unknown): { error: string } | { header?: TemplateHeader } {
+  if (hRaw === undefined || hRaw === null) return { header: undefined };
+  const hh = hRaw as { format?: unknown; text?: unknown; handle?: unknown; example?: unknown };
+  if (hh.format === 'TEXT') {
+    if (!nonEmpty(hh.text)) return { error: 'en-tête texte requis' };
+    if (hh.text.length > HEADER_MAX) return { error: `en-tête texte trop long (max ${HEADER_MAX})` };
+    // V1 : pas de variable dans l'en-tête texte. Le pipeline d'envoi (campagnes + inbox) ne sait pas fournir
+    // un paramètre de header -> Meta rejetterait l'envoi (#132000). On bloque à la source (template inenvoyable).
+    if (/\{\{\s*\d+\s*\}\}/.test(hh.text)) return { error: 'variable non supportée dans l\'en-tête (V1) : utilise un texte fixe' };
+    return { header: { format: 'TEXT', text: hh.text.trim() } };
+  }
+  if (hh.format === 'IMAGE' || hh.format === 'VIDEO' || hh.format === 'DOCUMENT') {
+    if (!nonEmpty(hh.handle)) return { error: 'en-tête média : handle requis (uploader le fichier d\'abord)' };
+    return { header: { format: hh.format, handle: hh.handle } };
+  }
+  return { error: 'en-tête : format invalide (TEXT|IMAGE|VIDEO|DOCUMENT)' };
+}
 
 /**
  * Validation SYNCHRONE commune à la création et à l'édition : category, body, boutons, carousel, exemples.
@@ -87,6 +109,18 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
     carousel = { cards: cards as CarouselCard[] };
   }
 
+  // En-tête (texte / image / vidéo). Ignoré si carousel (le carousel a ses en-têtes par carte).
+  const h = parseHeader(b.header);
+  if ('error' in h) return { error: h.error };
+
+  // Pied de page (texte court, sans variable).
+  let footer: string | undefined;
+  if (b.footer !== undefined && b.footer !== null && b.footer !== '') {
+    if (!nonEmpty(b.footer)) return { error: 'pied de page invalide' };
+    if (b.footer.length > FOOTER_MAX) return { error: `pied de page trop long (max ${FOOTER_MAX})` };
+    footer = b.footer.trim();
+  }
+
   // Nb de variables {{n}} dans le corps -> exiger autant d'exemples.
   const varCount = new Set(((b.body as string).match(/\{\{\s*\d+\s*\}\}/g) ?? [])).size;
   const example = Array.isArray(b.example) ? b.example.map(String) : [];
@@ -98,6 +132,8 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
     fields: {
       category: b.category as 'MARKETING' | 'UTILITY',
       body: b.body as string,
+      ...(!carousel && h.header ? { header: h.header } : {}),
+      ...(!carousel && footer ? { footer } : {}),
       ...(varCount > 0 ? { example: example.slice(0, varCount) } : {}),
       // Un carousel a ses boutons PAR CARTE : on ignore d'éventuels boutons top-level s'il est présent.
       ...(carousel ? { carousel } : Array.isArray(b.buttons) ? { buttons: b.buttons as TemplateButton[] } : {}),
@@ -191,6 +227,8 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const res = await deps.templates.update(existing.id, {
       category: parsed.fields.category,
       body: parsed.fields.body,
+      ...(parsed.fields.header ? { header: parsed.fields.header } : {}),
+      ...(parsed.fields.footer ? { footer: parsed.fields.footer } : {}),
       ...(parsed.fields.example ? { example: parsed.fields.example } : {}),
       ...(parsed.fields.buttons ? { buttons: parsed.fields.buttons } : {}),
     });
