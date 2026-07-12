@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
+import { sendSupportMessage } from '@/lib/api';
 
 export default function SupportPage() {
   return <AppShell active="support">{(session) => <SupportInner session={session} />}</AppShell>;
@@ -12,11 +13,21 @@ function SupportInner({ session }: { session: Session }) {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    // Câblage d'envoi (Resend) prévu en phase ultérieure ; pour l'instant on confirme la réception UI.
-    setSent(true);
+    setBusy(true);
+    setError(null);
+    try {
+      await sendSupportMessage(session.tenantId, { subject: subject.trim(), message: message.trim(), email: session.email });
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Envoi impossible pour le moment.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
@@ -43,7 +54,14 @@ function SupportInner({ session }: { session: Session }) {
             <label className="mb-1 block text-xs font-medium text-ink-600">Message</label>
             <textarea required rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder="Décris ta demande…" />
           </div>
-          <button type="submit" className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600">Envoyer</button>
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          <button
+            type="submit"
+            disabled={busy || subject.trim() === '' || message.trim() === ''}
+            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+          >
+            {busy ? 'Envoi…' : 'Envoyer'}
+          </button>
         </form>
       )}
     </div>

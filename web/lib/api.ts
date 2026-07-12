@@ -376,6 +376,12 @@ export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<Tena
   return request<TenantSettings>(`/tenants/${tenantId}/settings`, { method: 'PUT', body: JSON.stringify({ mbaEnabled }) });
 }
 
+// --- Support (formulaire de contact -> email Resend) ---
+
+export function sendSupportMessage(tenantId: string, input: { subject: string; message: string; email?: string }): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/tenants/${tenantId}/support`, { method: 'POST', body: JSON.stringify(input) });
+}
+
 // --- Admin (gestion des comptes) ---
 
 export type UserRole = 'admin' | 'agent';

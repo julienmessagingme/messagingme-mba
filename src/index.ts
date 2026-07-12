@@ -11,6 +11,7 @@ import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { rangeToUnix } from './stats/range';
+import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
@@ -135,6 +136,30 @@ async function main(): Promise<void> {
       listFields: (tenant) => fieldStore.list(tenant),
       updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
       deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
+    },
+    support: {
+      enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
+      sendSupport: async ({ tenantId, userId, email, subject, message }) => {
+        const client = new ResendClient(config.RESEND_API_KEY);
+        const text = [
+          'Nouveau message de support (console MBA)',
+          '',
+          `Tenant : ${tenantId}`,
+          `User : ${userId ?? 'inconnu'}`,
+          `Email : ${email ?? 'non fourni'}`,
+          '',
+          `Sujet : ${subject}`,
+          '',
+          message,
+        ].join('\n');
+        await client.send({
+          from: config.SUPPORT_FROM,
+          to: config.SUPPORT_TO,
+          subject: `[Support MBA] ${subject}`,
+          text,
+          ...(email ? { replyTo: email } : {}),
+        });
+      },
     },
   });
 

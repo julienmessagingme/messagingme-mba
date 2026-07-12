@@ -31,6 +31,13 @@ const schema = z.object({
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
+  /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
+  RESEND_API_KEY: z.string().default(''),
+  /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :
+   *  n'envoie QU'à l'adresse du compte Resend). Domaine vérifié -> `support@messagingme.app`. */
+  SUPPORT_FROM: z.string().default('onboarding@resend.dev'),
+  /** Destinataire des messages du formulaire de support. Vide -> support indisponible (503). */
+  SUPPORT_TO: z.string().default(''),
 }).superRefine((c, ctx) => {
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
