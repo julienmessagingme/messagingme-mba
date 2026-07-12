@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { DailyChart } from '@/components/DailyChart';
-import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
-import { getStats, getSettings, putSettings, getTemplateStats, getDeliveryFunnel, type DashboardStats, type TemplateStats, type DeliveryFunnel, type StatsRange } from '@/lib/api';
+import { getStats, getTemplateStats, getDeliveryFunnel, type DashboardStats, type TemplateStats, type DeliveryFunnel, type StatsRange } from '@/lib/api';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
 
 export default function DashboardPage() {
@@ -33,26 +32,21 @@ function DashboardInner({ session }: { session: Session }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
   const [funnel, setFunnel] = useState<DeliveryFunnel | null>(null);
-  const [mbaEnabled, setMbaEnabled] = useState(false);
-  const [savingMba, setSavingMba] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const isAdmin = session.role === 'admin';
   const today = todayParis();
   const activePreset = range.to === today ? PRESETS.find((d) => range.from === addDays(today, -(d - 1))) ?? null : null;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, cfg, ts, fn] = await Promise.all([
+      const [s, ts, fn] = await Promise.all([
         getStats(session.tenantId, range),
-        getSettings(session.tenantId),
         getTemplateStats(session.tenantId, range),
         getDeliveryFunnel(session.tenantId, range),
       ]);
       setStats(s);
-      setMbaEnabled(cfg.mbaEnabled);
       setTemplateStats(ts);
       setFunnel(fn);
     } catch (err) {
@@ -76,21 +70,7 @@ function DashboardInner({ session }: { session: Session }) {
     if (draftFrom && draftTo && draftFrom <= draftTo) setRange({ from: draftFrom, to: draftTo });
   }
 
-  async function toggleMba() {
-    if (!isAdmin) return;
-    const next = !mbaEnabled;
-    setSavingMba(true);
-    setMbaEnabled(next); // optimiste
-    try {
-      await putSettings(session.tenantId, next);
-    } catch {
-      setMbaEnabled(!next); // rollback
-    } finally {
-      setSavingMba(false);
-    }
-  }
-
-  const inputCls = 'rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  const inputCls ='rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
   return (
     <div className="space-y-4">
@@ -124,26 +104,6 @@ function DashboardInner({ session }: { session: Session }) {
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-      {/* Carte MBA */}
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
-        <Logo className="h-11 w-11 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
-          <p className="text-xs text-ink-500">
-            {mbaEnabled ? "Activé : l'agent IA répondra quand Meta ouvrira la fonctionnalité sur ton numéro." : "Désactivé. Active-le pour préparer l'agent IA WhatsApp."}
-            <span className="ml-1 text-ink-400">En attente d'ouverture Meta (mur ToS Business AI).</span>
-          </p>
-        </div>
-        <button
-          onClick={toggleMba}
-          disabled={!isAdmin || savingMba}
-          title={isAdmin ? '' : 'Réservé aux admins'}
-          className={`relative h-7 w-12 shrink-0 rounded-full transition ${mbaEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${!isAdmin ? 'cursor-not-allowed opacity-60' : ''}`}
-        >
-          <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${mbaEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-        </button>
-      </div>
 
       {loading ? (
         <p className="text-sm text-ink-500">Chargement des statistiques...</p>

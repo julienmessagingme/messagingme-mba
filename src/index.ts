@@ -20,7 +20,10 @@ import { MetaTemplateClient } from './meta/templates';
 import { MetaFlowClient } from './meta/flows';
 import { MetaMediaClient } from './meta/media';
 import { MetaPricingClient } from './meta/pricing';
+import { MetaPhoneNumberClient } from './meta/phone-number';
 import { MetaClient } from './meta/client';
+import { PgPhoneStatusStore } from './account/store.pg';
+import { pullFromInfo, pullFromError } from './account/pull';
 import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
@@ -39,6 +42,8 @@ async function main(): Promise<void> {
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
   const flowStore = new PgFlowStore(pool);
+  const phoneStatusStore = new PgPhoneStatusStore(pool);
+  const phoneClient = new MetaPhoneNumberClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const transport = new FetchTransport();
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const flowClient = new MetaFlowClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION, config.META_FLOW_JSON_VERSION);
@@ -143,6 +148,19 @@ async function main(): Promise<void> {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
       listUserFields: (tenant) => fieldStore.list(tenant),
     },
+    account: {
+      getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
+      pullStatus: async (phoneNumberId) => {
+        if (!config.META_ACCESS_TOKEN) return null; // pas de token -> pas de pull live (statut sur le dernier connu)
+        try {
+          return pullFromInfo(await phoneClient.get(phoneNumberId));
+        } catch (err) {
+          return pullFromError(err);
+        }
+      },
+      saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
+    },
+    me: { getUser: (userId) => userStore.getById(userId) },
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
       sendSupport: async ({ tenantId, userId, email, subject, message }) => {

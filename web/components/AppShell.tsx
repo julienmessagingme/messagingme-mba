@@ -7,7 +7,7 @@ import { getSession, clearSession, type Session } from '@/lib/session';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 
-type Tab = 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
+type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -112,7 +112,7 @@ export function AppShell({ active, children }: { active: Tab; children: (session
 
   const SidebarInner = (
     <>
-      <Link href={session.role === 'admin' ? '/dashboard' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title="Accueil" onClick={() => setDrawerOpen(false)}>
+      <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title="Accueil" onClick={() => setDrawerOpen(false)}>
         <Logo className="h-8 w-8" />
         <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
       </Link>

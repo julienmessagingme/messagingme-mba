@@ -15,6 +15,8 @@ import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
 import { registerContacts } from './http/contacts';
+import { registerAccount } from './http/account';
+import { registerMe } from './http/me';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -33,6 +35,8 @@ import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
 import type { SupportRouteDeps } from './http/support';
 import type { ContactsRouteDeps } from './http/contacts';
+import type { AccountRouteDeps } from './http/account';
+import type { MeRouteDeps } from './http/me';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -69,6 +73,10 @@ export interface ServerDeps {
   support?: SupportRouteDeps;
   /** Édition d'un contact (fields/tags depuis la fiche) — réservé aux admins. */
   contacts?: ContactsRouteDeps;
+  /** Statut du compte WhatsApp (page Accueil : numéro + pastille) — réservé aux admins. */
+  account?: AccountRouteDeps;
+  /** Profil de l'utilisateur courant (Accueil : « Bonjour {prénom} ») — tout compte authentifié. */
+  me?: MeRouteDeps;
 }
 
 /**
@@ -77,7 +85,7 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts) && !deps.auth) {
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
     throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
@@ -134,6 +142,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);
   if (deps.support) registerSupport(app, deps.support, requireAuth);
   if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
+  // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
+  // compte authentifié (générique, lit req.auth.userId).
+  if (deps.account) registerAccount(app, deps.account, requireAdmin);
+  if (deps.me) registerMe(app, deps.me, requireAuth);
 
   return app;
 }

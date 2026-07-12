@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { dayKey, dayLabel, hourMin } from '@/lib/day';
 import type { Session } from '@/lib/session';
 import {
   listConversations,
@@ -202,25 +203,37 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
-        {messages.map((m) => (
-          <div key={m.id} className={`flex items-end gap-1.5 ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${
-                m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-800'
-              }`}
-            >
-              {m.type === 'template' ? (
-                <span className="italic opacity-90">📋 {m.body}</span>
-              ) : m.buttonPayload && m.direction === 'in' ? (
-                <InboundPayload body={m.body} payload={m.buttonPayload} />
-              ) : (
-                m.body ?? <span className="italic opacity-70">[{m.type}]</span>
+        {messages.map((m, i) => {
+          // Séparateur de jour (fuseau Paris) quand le jour change vs le message précédent.
+          const showSep = i === 0 || dayKey(m.createdAt) !== dayKey(messages[i - 1]!.createdAt);
+          return (
+            <Fragment key={m.id}>
+              {showSep && (
+                <div className="flex justify-center py-1">
+                  <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-[11px] font-medium text-ink-500">{dayLabel(m.createdAt)}</span>
+                </div>
               )}
-            </div>
-            {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur — legacy ou réponse auto). */}
-            {m.direction === 'out' && m.senderName ? <AgentBadge name={m.senderName} /> : null}
-          </div>
-        ))}
+              <div className={`flex items-end gap-1.5 ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${
+                    m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-800'
+                  }`}
+                >
+                  {m.type === 'template' ? (
+                    <span className="italic opacity-90">📋 {m.body}</span>
+                  ) : m.buttonPayload && m.direction === 'in' ? (
+                    <InboundPayload body={m.body} payload={m.buttonPayload} />
+                  ) : (
+                    m.body ?? <span className="italic opacity-70">[{m.type}]</span>
+                  )}
+                  <div className={`mt-0.5 text-right text-[10px] ${m.direction === 'out' ? 'text-white/70' : 'text-ink-400'}`}>{hourMin(m.createdAt)}</div>
+                </div>
+                {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur — legacy ou réponse auto). */}
+                {m.direction === 'out' && m.senderName ? <AgentBadge name={m.senderName} /> : null}
+              </div>
+            </Fragment>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 

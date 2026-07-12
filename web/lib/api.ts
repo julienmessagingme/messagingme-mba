@@ -400,6 +400,30 @@ export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<Tena
   return request<TenantSettings>(`/tenants/${tenantId}/settings`, { method: 'PUT', body: JSON.stringify({ mbaEnabled }) });
 }
 
+// --- Accueil : profil courant + statut compte WhatsApp ---
+
+export interface MeResponse {
+  email: string;
+  name: string | null;
+  role: string;
+}
+export function getMe(tenantId: string): Promise<MeResponse> {
+  return request<MeResponse>(`/tenants/${tenantId}/me`);
+}
+
+export type AccountDot = 'green' | 'amber' | 'red' | 'grey';
+export interface AccountStatusResponse {
+  hasNumber: boolean;
+  number: string | null;
+  tier: string | null;
+  quality: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
+  numberStatus: string | null;
+  status: { dot: AccountDot; label: string; reason: string };
+}
+export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {
+  return request<AccountStatusResponse>(`/tenants/${tenantId}/account-status`);
+}
+
 // --- Support (formulaire de contact -> email Resend) ---
 
 export function sendSupportMessage(tenantId: string, input: { subject: string; message: string; email?: string }): Promise<{ ok: boolean }> {

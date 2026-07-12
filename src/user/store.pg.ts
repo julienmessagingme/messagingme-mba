@@ -50,6 +50,16 @@ export class PgUserStore {
     return r ? { role: r.role, disabled: r.disabled_at !== null } : null;
   }
 
+  /** Profil de l'utilisateur courant (route /me) : email + nom + rôle. null = compte inconnu. */
+  async getById(userId: string): Promise<{ email: string; name: string | null; role: string } | null> {
+    const res = await this.pool.query<{ email: string; name: string | null; role: string }>(
+      `select email, name, role from users where id = $1`,
+      [userId],
+    );
+    const r = res.rows[0];
+    return r ? { email: r.email, name: r.name, role: r.role } : null;
+  }
+
   async list(tenantId: string): Promise<UserRow[]> {
     const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; disabled_at: Date | null; created_at: Date }>(
       `select id, email, name, role, disabled_at, created_at from users
