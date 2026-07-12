@@ -29,6 +29,31 @@ la console** (template `hello_world`, wamid Meta, livraison remontée). Assets/s
 
 Tests : ~148 unitaires + 10 intégration verts.
 
+## Lot MBA — Contenu/Analytics/Support (2026-07-12) : phases 0-7 LIVE ✅
+
+Grand lot exécuté en feature-loop (plan validé, revue transversale multi-agents + vérif adversariale par
+phase, commit + deploy à chaque phase). Détail des décisions : `documentation.md §Décisions D1-D10`.
+- **Ph 0** dette + aperçu WhatsApp du carousel. **Ph 1** refonte shell (sidebar gauche, pleine largeur,
+  menu Compte à droite, slot Support). **Ph 2** Contenu I : Tags + User fields éditables (répercutés contacts).
+- **Ph 3** Flows riches (texte/image/champ + mapping user field + création inline depuis un template),
+  webhook mapping isolé, **migration 0016** (elements/ref/mapping).
+- **Ph 4** Contenu II : édition/suppression Templates (garde-fou campagne active, header/footer/carousel
+  non éditables) + édition-draft / « dupliquer pour modifier » Flows.
+- **Ph 5** Analytics : plage de dates libre, funnel de lecture (read receipts), coût par campagne.
+- **Ph 6** pastille initiales de l'agent dans l'inbox, **migration 0017** (sender_user_id).
+- **Ph 7** Support : formulaire branché sur Resend.
+
+Tests : **~380 verts**. Aucune régression. 2 migrations appliquées (0016, 0017).
+
+### Suivis ouverts du lot
+- **Support (ph 7)** : en **mode test** Resend (n'envoie qu'à l'adresse du compte `testsuperchatjd@gmail.com`).
+  Pour router vers `julien@messagingme.fr` : vérifier un domaine chez resend.com/domains (records DNS
+  Cloudflare) puis basculer `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans
+  `.env.prod` + `docker compose up -d --force-recreate`. Clé Resend déjà dans `.env.prod` (dormante avant ph 7).
+- **Analytics (ph 5)** : le filet de revue multi-agents a stallé (souci workflow) ; revue manuelle + 32 tests
+  stats clean, déployé pour test par Julien. À re-vérifier si un retour terrain remonte un souci.
+- Coup d'œil navigateur (Julien) sur les visuels des phases 3-7.
+
 ## Prochaine étape
 
 1. ⚠️ **URGENT — remplacer le token temporaire (24 h)** par un token System User permanent

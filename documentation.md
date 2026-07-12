@@ -28,29 +28,82 @@ dégradation du quality rating, fréquence max par contact. C'est là que vivent
   (`db/migrate.ts`, suivi `schema_migrations`). Connexion directe `db.<ref>` en IPv6-only ;
   fallback pooler IPv4 (session mode) documenté dans `.env`. Un Postgres local (Docker) peut
   servir pour des tests isolés si on veut éviter de taper la prod.
-- **Frontend** (à venir) : Next.js (control plane, inbox minimal, 2 rôles admin/agent).
-- **Tests** : vitest.
-- **Hosting** : VPS OVH + Docker en V1 ; décision PaaS (Fly.io/Railway EU) à l'entrée Phase 3.
+- **Frontend** : **Next.js 15 App Router** (`web/`), Tailwind PUR (pas de shadcn), tokens MM
+  (brand/ink/mint/coral/gold/navy). Auth JWT (jose HS256), session côté client. 2 rôles admin/agent.
+  Le front proxifie `/api/backend/*` vers `mba-api` (pas de CORS).
+- **Auth** : login JWT (jose HS256, scrypt async, rate-limit + hash leurre anti-énumération), isolation
+  tenant sur toutes les routes, **RBAC** (`adminOnly = active !== 'inbox'` ; écritures admin-only).
+- **Tests** : vitest (~380 unitaires + intégration).
+- **Hosting** : VPS OVH + Docker. 3 conteneurs (`mba-api` Fastify :8095, `mba-worker` pg-boss+sweeper,
+  `mba-web` Next :3000) sur le réseau `mcp-robot_default`, NPM `mba.messagingme.app`. Cf `DEPLOY.md`.
+- **Email** : Resend (formulaire de support).
 
-## Schéma DB (initial, migration 0001)
+## Schéma DB
 
-Voir `db/migrations/0001_init.sql`. Tables foncières :
+Migrations SQL versionnées `db/migrations/` (suivi `schema_migrations`), appliquées via `npm run migrate`.
+**Migrations NON auto-appliquées** au déploiement : toute migration qui ajoute une colonne écrite par le
+code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0017**.
 
-- `tenants` — les clients de la console.
-- `users` — comptes de la console, `role` ∈ (`admin`, `agent`).
-- `waba` — WhatsApp Business Accounts (id = id Meta), rattachés à un tenant.
-- `phone_numbers` — numéros (id = phone_number_id Meta), rattachés à un WABA.
-- `contacts` — **identité BSUID-native** : `phone_e164` OU `bsuid` (au moins un), unicité par
-  tenant sur chacun. Opt-in tracé. Merge BSUID → numéro via le Phone Number Request CTA.
-- `webhook_events` — log brut des webhooks, `meta_message_id` unique pour l'idempotence.
+Tables :
+- `tenants` / `users` (`role` ∈ admin|agent, `name` nullable 0013, `disabled` 0014) / `waba` / `phone_numbers`.
+- `contacts` — identité BSUID-native (`phone_e164` OU `bsuid`), opt-in tracé, `fields jsonb` (user fields),
+  `tags text[]`. Merge jsonb qui n'écrase jamais une clé absente.
+- `campaigns` (0003) — `template_name`/`template_language` (couplage par CHAÎNE, pas de FK), `category`,
+  `status` ∈ draft|running|paused|completed|failed.
+- `campaign_recipients` (0003+) — `status` interne ∈ pending|sending|sent|failed|skipped, `sent_at`, +
+  **`delivery_status`** (0007) ∈ null|sent|delivered|read|failed (cycle Meta, écrit MONOTONE par message_id).
+- `conversation_messages` (0009) / `conversations` — inbox. `template_category`/`template_name` (0012),
+  **`sender_user_id`** (0017, FK users, on delete set null) = auteur d'une bulle sortante (pastille).
+- `flows` (0015) — id = id Meta, `status` ∈ DRAFT|PUBLISHED, `fields jsonb` (DÉRIVÉ), + **`elements jsonb`,
+  `ref text` (unique), `mapping jsonb`** (0016, modèle riche).
+- `webhook_events` — log brut, `meta_message_id` unique (idempotence). pg-boss = schéma `pgboss` séparé.
 
-Les tables campagnes/templates arrivent avec leur boucle (migrations additives).
-pg-boss crée son propre schéma (`pgboss`), hors de nos migrations.
+## Flows (modèle riche, migration 0016)
+
+`src/meta/flow-json.ts` : un flow = une liste ordonnée d'**éléments** (`heading|subheading|body|caption|
+image|field`). `buildFlowElements(name, elements, version, ref)` rend le flow_json (composants Text*/Image/
+inputs + Footer `complete`) et injecte une **constante `_ref`** dans le payload de complétion (discriminant
+qui identifie le flow au retour du `nfm_reply`, l'id Meta n'étant connu qu'après création). `fields` reste
+DÉRIVÉ (`fieldsOf`) pour les consommateurs. Image = **base64 BRUT** embarqué (pas un media handle carousel).
+`bodyLimit` route relevé à 7 Mo. Édition d'un DRAFT = `POST /{flow_id}/assets` en **multipart** (le create
+est en JSON inline — vérifié live) ; PUBLISHED immuable (409) -> duplication (ref régénéré).
+
+**Mapping webhook (défensif)** : à la réception d'un `nfm_reply`, `webhooks/flow-mapping.processFlowCompletions`
+retrouve le flow par `_ref` (`findByRef`), itère sur NOTRE mapping (clé champ -> clé user field, jamais les
+valeurs brutes -> `_ref`/`flow_token` jamais écrits) et fait un MERGE jsonb sur le contact
+(`mergeFieldsByPhone`, même matching que l'inbox). **Isolé en try/catch, ne throw JAMAIS** : partage le job
+webhook des statuts de livraison, un mapping cassé ne doit pas rejouer/DLQ les statuts.
+
+## Analytics (stats, plage de dates)
+
+`src/stats/range.ts` : `DateRange {from,to}` (YYYY-MM-DD, Europe/Paris), `parseRange` (repli `?days=`,
+400 si from>to / to futur / span>366), `rangeToUnix` (epoch minuit Paris de from..to+1, **DST-aware**, pas
+de `date*86400`). `PgStatsStore` : bornes SQL EXCLUSIVES (`(to+1)@TZ`), `getDeliveryFunnel` (sent/delivered/
+read/failed sur `campaign_recipients`, `IS DISTINCT FROM 'failed'` obligatoire — null souvent). Routes
+`/stats`, `/stats/templates`, `/stats/funnel` (admin-only). Coût par campagne = 100% frontend (réutilise
+`getTemplateStats`, pricing chargé 1× au montage, hors du reload pollé).
+
+## Support (Resend)
+
+`src/support/resend.ts` (`ResendClient.send` -> POST `/emails`) + `src/http/support.ts` (POST
+`/tenants/:id/support`, auth requise, 503 si non configuré, 502 sur erreur d'envoi, destinataire FIXE
+serveur). Env : `RESEND_API_KEY`, `SUPPORT_FROM` (défaut `onboarding@resend.dev` = mode test), `SUPPORT_TO`.
+
+## Décisions actées (lot MBA, D1-D10)
+
+D1 édition template = autoriser + **bloquer si campagne active** (409). D2 clé user field **verrouillée**.
+D3 tags **dérivés** des contacts. D4 mapping flow -> user field (défaut = slug du champ + ensureField, ou cible
+choisie ; merge-si-contact-existe). D5 Analytics = `/dashboard` relabellé ; read receipts **campagnes-only**.
+D6 coût = réutiliser `/stats/templates` (zéro backend). D7 largeur cap `max-w-7xl`. D8 support = form phase 1,
+Resend phase 7. D9 Abonnement/Billing désactivés. D10 flow publié = **dupliquer pour modifier**.
 
 ## Variables d'environnement
 
-Voir `.env.example`. Clés : `PORT`, `META_APP_SECRET` (validation signature webhook),
-`META_VERIFY_TOKEN` (handshake), `DATABASE_URL`.
+Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (signature webhook),
+`META_VERIFY_TOKEN` (handshake), `META_ACCESS_TOKEN` (System User, envoi), `META_GRAPH_VERSION`,
+`META_FLOW_JSON_VERSION`, `META_APP_ID`, `AUTH_SECRET` (fail-fast en prod, >= 32 octets), `DATABASE_URL`,
+`DRY_RUN`, `RESEND_API_KEY` / `SUPPORT_FROM` / `SUPPORT_TO` (support). ⚠️ Un changement de `.env.prod` exige
+`docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
 
 ## Patterns
 
