@@ -3,6 +3,10 @@ export interface MetaErrorBody {
   error_subcode?: number;
   type?: string;
   message?: string;
+  /** Titre lisible destiné à l'utilisateur (souvent plus utile que `message` = « Invalid parameter »). */
+  error_user_title?: string;
+  /** Message lisible destiné à l'utilisateur (ex. « Les exemples de modèles ne peuvent pas être supprimés »). */
+  error_user_msg?: string;
 }
 
 // Premier jeu de codes (extensible, à affiner avec la doc Meta live).
@@ -33,6 +37,8 @@ export class MetaApiError extends Error {
   readonly retryable: boolean;
   /** Délai (ms) issu d'un header Retry-After, si présent. */
   readonly retryAfterMs: number | undefined;
+  /** Message lisible fourni par Meta (`error_user_msg`/`error_user_title`), à préférer pour l'affichage. */
+  readonly userMessage: string | undefined;
 
   constructor(httpStatus: number, body: MetaErrorBody | null, retryAfterMs?: number) {
     super(body?.message ?? `Meta API error (HTTP ${httpStatus})`);
@@ -43,5 +49,7 @@ export class MetaApiError extends Error {
     this.type = body?.type;
     this.retryable = classify(httpStatus, body);
     this.retryAfterMs = retryAfterMs;
+    // Meta joint souvent une explication utilisateur bien plus utile que « Invalid parameter ».
+    this.userMessage = body?.error_user_msg ?? body?.error_user_title ?? undefined;
   }
 }

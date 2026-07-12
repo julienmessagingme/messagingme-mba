@@ -38,4 +38,9 @@ describe('MetaApiError', () => {
     expect(err.retryable).toBe(false);
     expect(err.message).toBe('bad');
   });
+  it('userMessage : préfère error_user_msg, puis error_user_title', () => {
+    expect(new MetaApiError(400, { message: 'Invalid parameter', error_user_msg: 'Explication claire', error_user_title: 'Titre' }).userMessage).toBe('Explication claire');
+    expect(new MetaApiError(400, { message: 'Invalid parameter', error_user_title: 'Titre seul' }).userMessage).toBe('Titre seul');
+    expect(new MetaApiError(400, { message: 'Invalid parameter' }).userMessage).toBeUndefined();
+  });
 });

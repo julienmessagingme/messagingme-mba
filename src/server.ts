@@ -104,8 +104,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // 422 (4xx) et non 502 : Cloudflare/NPM remplacent les 5xx de l'origine par leur propre page
     // « error code: 502 », ce qui masque le message Meta utile. Un 4xx passe tel quel avec le body.
     if (err instanceof MetaApiError) {
-      // Message Meta tronqué (évite d'exposer un blob verbeux / des détails de trace).
-      const detail = err.message.replace(/\s+/g, ' ').trim().slice(0, 200);
+      // Préférer le message UTILISATEUR de Meta (`error_user_msg`) au générique « Invalid parameter » :
+      // ex. suppression d'un exemple de template -> « Les exemples de modèles ne peuvent pas être supprimés ».
+      const friendly = err.userMessage ?? err.message;
+      const detail = friendly.replace(/\s+/g, ' ').trim().slice(0, 200);
       return reply.code(422).send({ error: `Meta: ${detail}` });
     }
     // flow_json refusé par Meta à la création : 422 + les erreurs de validation (pas un 500 opaque).

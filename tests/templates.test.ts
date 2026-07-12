@@ -435,4 +435,22 @@ describe('routes templates — suppression (DELETE)', () => {
     expect(res.statusCode).toBe(403);
     await a.close();
   });
+
+  it('DELETE d\'un exemple Meta -> 422 avec le MESSAGE UTILISATEUR (pas « Invalid parameter »)', async () => {
+    // Cas réel reproduit live : supprimer hello_world -> Meta refuse avec error_user_msg explicite.
+    const { fn } = makeFetch([{
+      ok: false, status: 400, json: { error: {
+        message: 'Invalid parameter', code: 100, error_subcode: 2388094, type: 'OAuthException',
+        error_user_title: 'Le modèle de message ne peut pas être modifié',
+        error_user_msg: 'Les exemples de modèles ne peuvent pas être modifiés ou supprimés.',
+      } },
+    }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'DELETE', url: '/tenants/t1/templates/hello_world', ...h(token) });
+    expect(res.statusCode).toBe(422);
+    const msg = res.json<{ error: string }>().error;
+    expect(msg).toContain('exemples de modèles ne peuvent pas');
+    expect(msg).not.toContain('Invalid parameter');
+    await a.close();
+  });
 });
