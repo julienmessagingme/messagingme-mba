@@ -5,44 +5,76 @@ import { AppShell } from '@/components/AppShell';
 import { DailyChart } from '@/components/DailyChart';
 import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
-import { getStats, getSettings, putSettings, getTemplateStats, type DashboardStats, type TemplateStats } from '@/lib/api';
+import { getStats, getSettings, putSettings, getTemplateStats, getDeliveryFunnel, type DashboardStats, type TemplateStats, type DeliveryFunnel, type StatsRange } from '@/lib/api';
+import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
 
 export default function DashboardPage() {
   return <AppShell active="dashboard">{(session) => <DashboardInner session={session} />}</AppShell>;
 }
 
+/** Date du jour Europe/Paris (YYYY-MM-DD). */
+function todayParis(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+}
+function addDays(dateStr: string, delta: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d) + delta * 86400000).toISOString().slice(0, 10);
+}
+function presetRange(days: number): StatsRange {
+  const to = todayParis();
+  return { from: addDays(to, -(days - 1)), to };
+}
+const PRESETS = [7, 30, 90];
+
 function DashboardInner({ session }: { session: Session }) {
-  const [days, setDays] = useState(30);
+  const [range, setRange] = useState<StatsRange>(() => presetRange(30));
+  const [draftFrom, setDraftFrom] = useState(range.from);
+  const [draftTo, setDraftTo] = useState(range.to);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
+  const [funnel, setFunnel] = useState<DeliveryFunnel | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
   const [savingMba, setSavingMba] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = session.role === 'admin';
+  const today = todayParis();
+  const activePreset = range.to === today ? PRESETS.find((d) => range.from === addDays(today, -(d - 1))) ?? null : null;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, cfg, ts] = await Promise.all([
-        getStats(session.tenantId, days),
+      const [s, cfg, ts, fn] = await Promise.all([
+        getStats(session.tenantId, range),
         getSettings(session.tenantId),
-        getTemplateStats(session.tenantId, days),
+        getTemplateStats(session.tenantId, range),
+        getDeliveryFunnel(session.tenantId, range),
       ]);
       setStats(s);
       setMbaEnabled(cfg.mbaEnabled);
       setTemplateStats(ts);
+      setFunnel(fn);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chargement impossible');
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId, days]);
+  }, [session.tenantId, range]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  function applyPreset(d: number) {
+    const r = presetRange(d);
+    setRange(r);
+    setDraftFrom(r.from);
+    setDraftTo(r.to);
+  }
+  function applyCustom() {
+    if (draftFrom && draftTo && draftFrom <= draftTo) setRange({ from: draftFrom, to: draftTo });
+  }
 
   async function toggleMba() {
     if (!isAdmin) return;
@@ -58,20 +90,36 @@ function DashboardInner({ session }: { session: Session }) {
     }
   }
 
+  const inputCls = 'rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Tableau de bord</h2>
-        <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
-          {[7, 30, 90].map((d) => (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Analytics</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
+            {PRESETS.map((d) => (
+              <button
+                key={d}
+                onClick={() => applyPreset(d)}
+                className={`rounded-md px-2.5 py-1 ${activePreset === d ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+              >
+                {d} j
+              </button>
+            ))}
+          </div>
+          <div className="inline-flex items-center gap-1.5">
+            <input type="date" value={draftFrom} max={draftTo || today} onChange={(e) => setDraftFrom(e.target.value)} className={inputCls} />
+            <span className="text-ink-400">→</span>
+            <input type="date" value={draftTo} min={draftFrom} max={today} onChange={(e) => setDraftTo(e.target.value)} className={inputCls} />
             <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`rounded-md px-2.5 py-1 ${days === d ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+              onClick={applyCustom}
+              disabled={!draftFrom || !draftTo || draftFrom > draftTo}
+              className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-600 disabled:opacity-50"
             >
-              {d} j
+              Appliquer
             </button>
-          ))}
+          </div>
         </div>
       </div>
 
@@ -104,26 +152,32 @@ function DashboardInner({ session }: { session: Session }) {
           <DailyChart
             title="Contacts"
             subtitle="total cumulé"
-            days={days}
+            from={range.from}
+            to={range.to}
             summary="last"
             series={[{ label: 'Contacts', color: '#009AFE', points: stats.contacts }]}
           />
           <DailyChart
             title="Messages échangés"
             subtitle="reçus + réponses (hors template)"
-            days={days}
+            from={range.from}
+            to={range.to}
             series={[{ label: 'Échangés', color: '#6E5AE0', points: stats.exchanged }]}
           />
           <div className="lg:col-span-2">
             <DailyChart
               title="Templates envoyés"
               subtitle="par jour, marketing vs utility"
-              days={days}
+              from={range.from}
+              to={range.to}
               series={[
                 { label: 'Marketing', color: '#0080D6', points: stats.templates.marketing },
                 { label: 'Utility', color: '#17C74E', points: stats.templates.utility },
               ]}
             />
+          </div>
+          <div className="lg:col-span-2">
+            <FunnelCard funnel={funnel} />
           </div>
           <div className="lg:col-span-2">
             <TemplateBreakdownCard data={templateStats} />
@@ -134,9 +188,44 @@ function DashboardInner({ session }: { session: Session }) {
   );
 }
 
-/** Coût affiché : Meta renvoie le coût dans la devise du WABA (sans symbole) -> montant + note. */
-function fmtCost(n: number): string {
-  return n.toFixed(n < 1 ? 4 : 2);
+/** Funnel de livraison des campagnes : envoyés -> délivrés -> lus (accusés de lecture). */
+function FunnelCard({ funnel }: { funnel: DeliveryFunnel | null }) {
+  if (!funnel) return null;
+  const { sent, delivered, read, failed } = funnel;
+  const pct = (n: number) => (sent > 0 ? Math.max(2, Math.round((n / sent) * 100)) : 0);
+  const bars: Array<{ label: string; value: number; color: string; sub?: string }> = [
+    { label: 'Envoyés', value: sent, color: '#009AFE' },
+    { label: 'Délivrés', value: delivered, color: '#17C74E', sub: fmtPct(delivered, sent) },
+    { label: 'Lus (accusés de lecture)', value: read, color: '#6E5AE0', sub: fmtPct(read, sent) },
+  ];
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold tracking-tight text-ink-900">Livraison &amp; lecture</h3>
+        <p className="text-xs text-ink-400">campagnes sur la période · « lus » = accusés de lecture (sous-estimé si le destinataire les a désactivés)</p>
+      </div>
+      {sent === 0 ? (
+        <p className="text-sm text-ink-500">Aucun envoi de campagne sur la période.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {bars.map((b) => (
+            <div key={b.label} className="flex items-center gap-3">
+              <div className="w-40 shrink-0 text-xs text-ink-600">{b.label}</div>
+              <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
+                <div className="flex h-full items-center rounded-md px-2 text-[11px] font-medium text-white" style={{ width: `${pct(b.value)}%`, backgroundColor: b.color }}>
+                  {fmtNum(b.value)}
+                </div>
+              </div>
+              <div className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-500">{b.sub ?? ''}</div>
+            </div>
+          ))}
+          {failed > 0 && (
+            <p className="pt-1 text-xs text-ink-400">Échecs de livraison sur la période : <span className="font-medium text-coral">{fmtNum(failed)}</span></p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Section « Templates envoyés » détaillée : dropdown par template + volume + prix estimé (Meta). */

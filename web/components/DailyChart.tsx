@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { DailyPoint } from '@/lib/api';
+import { fmtNum } from '@/lib/format';
 
 export interface ChartSeries {
   label: string;
@@ -9,25 +10,22 @@ export interface ChartSeries {
   points: DailyPoint[];
 }
 
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-function lastNDays(n: number): string[] {
+/** Dates YYYY-MM-DD de `from` à `to` INCLUS (bornes réelles, PAS ancrées sur aujourd'hui). Arithmétique UTC. */
+function daysBetween(from: string, to: string): string[] {
   const out: string[] = [];
-  const today = new Date();
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    out.push(ymd(d));
+  const [fy, fm, fd] = from.split('-').map(Number) as [number, number, number];
+  const [ty, tm, td] = to.split('-').map(Number) as [number, number, number];
+  let cur = Date.UTC(fy, fm - 1, fd);
+  const end = Date.UTC(ty, tm - 1, td);
+  while (cur <= end) {
+    out.push(new Date(cur).toISOString().slice(0, 10));
+    cur += 86400000;
   }
-  return out;
+  return out.length > 0 ? out : [from];
 }
 function fmtDay(iso: string): string {
   const [, m, d] = iso.split('-');
   return `${d}/${m}`;
-}
-function fmtNum(n: number): string {
-  return n.toLocaleString('fr-FR');
 }
 
 const W = 560;
@@ -67,19 +65,22 @@ function smoothLine(pts: Array<{ x: number; y: number }>): string {
 export function DailyChart({
   title,
   series,
-  days,
+  from,
+  to,
   subtitle,
   summary = 'sum',
 }: {
   title: string;
   series: ChartSeries[];
-  days: number;
+  /** Bornes de l'axe (YYYY-MM-DD, Europe/Paris), `to` inclus. */
+  from: string;
+  to: string;
   subtitle?: string;
   /** Grand chiffre : 'sum' = total période (flux) ; 'last' = dernière valeur (séries CUMULÉES). */
   summary?: 'sum' | 'last';
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const dates = useMemo(() => lastNDays(days), [days]);
+  const dates = useMemo(() => daysBetween(from, to), [from, to]);
 
   const data = useMemo(
     () =>

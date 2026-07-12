@@ -319,8 +319,25 @@ export interface DashboardStats {
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
 }
-export function getStats(tenantId: string, days = 30): Promise<DashboardStats> {
-  return request<DashboardStats>(`/tenants/${tenantId}/stats?days=${days}`);
+/** Plage de dates des stats (YYYY-MM-DD, Europe/Paris). Absente -> le backend retombe sur 30 jours. */
+export interface StatsRange {
+  from: string;
+  to: string;
+}
+function rangeQuery(range?: StatsRange): string {
+  return range ? `?from=${range.from}&to=${range.to}` : '';
+}
+export function getStats(tenantId: string, range?: StatsRange): Promise<DashboardStats> {
+  return request<DashboardStats>(`/tenants/${tenantId}/stats${rangeQuery(range)}`);
+}
+export interface DeliveryFunnel {
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+}
+export function getDeliveryFunnel(tenantId: string, range?: StatsRange): Promise<DeliveryFunnel> {
+  return request<DeliveryFunnel>(`/tenants/${tenantId}/stats/funnel${rangeQuery(range)}`);
 }
 
 export interface TemplateBreakdownRow {
@@ -343,8 +360,8 @@ export interface TemplateStats {
   /** null si Meta indisponible : afficher le volume seul, jamais un faux prix. */
   pricing: PricingSummary | null;
 }
-export function getTemplateStats(tenantId: string, days = 30): Promise<TemplateStats> {
-  return request<TemplateStats>(`/tenants/${tenantId}/stats/templates?days=${days}`);
+export function getTemplateStats(tenantId: string, range?: StatsRange): Promise<TemplateStats> {
+  return request<TemplateStats>(`/tenants/${tenantId}/stats/templates${rangeQuery(range)}`);
 }
 
 export interface TenantSettings {

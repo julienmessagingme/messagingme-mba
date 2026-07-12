@@ -1,14 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import type { DashboardStats, TemplateBreakdownRow } from '../stats/store.pg';
+import type { DashboardStats, TemplateBreakdownRow, DeliveryFunnel } from '../stats/store.pg';
 import type { PricingSummary } from '../meta/pricing';
+import { parseRange } from '../stats/range';
+import type { DateRange } from '../stats/range';
 
 export interface StatsRouteDeps {
-  getDashboard(tenantId: string, days: number): Promise<DashboardStats>;
+  getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
   /** Volume par template envoyé (dropdown dashboard). */
-  getTemplateBreakdown(tenantId: string, days: number): Promise<TemplateBreakdownRow[]>;
+  getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]>;
   /** Prix Meta (pricing_analytics) par catégorie ; null si indisponible (le front affiche le volume seul). */
-  getPricing(tenantId: string, days: number): Promise<PricingSummary | null>;
+  getPricing(tenantId: string, range: DateRange): Promise<PricingSummary | null>;
+  /** Funnel de livraison (envoyés/délivrés/lus/échecs) des campagnes sur la plage. */
+  getDeliveryFunnel(tenantId: string, range: DateRange): Promise<DeliveryFunnel>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -18,14 +22,17 @@ function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): str
   return authTenant ?? tenantId;
 }
 
-/** Stats du dashboard (séries 1 pt/jour). Lecture ouverte à tout compte authentifié. */
+/** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (guard passé par server.ts). Plage de dates
+ *  via ?from&?to (YYYY-MM-DD, Europe/Paris) ou repli ?days= ; invalide/futur/span>366 -> 400. */
 export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
   app.get('/tenants/:tenantId/stats', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send(await deps.getDashboard(tenant, parseDays(req)));
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getDashboard(tenant, r.range));
   });
 
   // Breakdown par template + prix Meta (pricing_analytics). Séparé de /stats : peut appeler Meta
@@ -33,14 +40,18 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
   app.get('/tenants/:tenantId/stats/templates', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    const days = parseDays(req);
-    const [breakdown, pricing] = await Promise.all([deps.getTemplateBreakdown(tenant, days), deps.getPricing(tenant, days)]);
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    const [breakdown, pricing] = await Promise.all([deps.getTemplateBreakdown(tenant, r.range), deps.getPricing(tenant, r.range)]);
     return reply.code(200).send({ breakdown, pricing });
   });
-}
 
-function parseDays(req: { query: unknown }): number {
-  const q = req.query as { days?: string };
-  const parsed = q.days ? Number(q.days) : 30;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+  // Funnel de livraison/lecture (read receipts agrégés sur les campagnes).
+  app.get('/tenants/:tenantId/stats/funnel', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getDeliveryFunnel(tenant, r.range));
+  });
 }

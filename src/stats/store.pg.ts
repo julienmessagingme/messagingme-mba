@@ -1,8 +1,18 @@
 import type { Pool } from 'pg';
+import { STATS_TZ } from './range';
+import type { DateRange } from './range';
 
 export interface DailyPoint {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
   count: number;
+}
+
+/** Funnel de livraison (campagnes) sur une plage : envoyés -> délivrés -> lus (accusés), + échecs de livraison. */
+export interface DeliveryFunnel {
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
 }
 
 export interface DashboardStats {
@@ -19,71 +29,78 @@ export interface TemplateBreakdownRow {
   count: number;
 }
 
-const TZ = 'Europe/Paris';
+const TZ = STATS_TZ;
 
-/** Séries « 1 point par jour » pour le dashboard. Buckets jour en tz Europe/Paris. */
+/** Séries « 1 point par jour » pour le dashboard. Buckets jour en tz Europe/Paris.
+ *  Plage `range` (from..to INCLUS, Europe/Paris) : bornes SQL calculées via bounds CTE (DST-safe),
+ *  borne haute EXCLUSIVE = minuit Paris de (to+1). Params partout : [tenantId, from, to, TZ]. */
 export class PgStatsStore {
   constructor(private readonly pool: Pool) {}
 
-  async getDashboard(tenantId: string, days: number): Promise<DashboardStats> {
-    const window = Math.min(Math.max(days, 1), 365);
-    const since = new Date(Date.now() - window * 24 * 3600 * 1000);
+  async getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats> {
+    const { from, to } = range;
 
-    // 1) Contacts CUMULÉS / jour : total courant = baseline (contacts créés AVANT la fenêtre) +
-    //    somme courante des nouveaux/jour. Série DENSE (generate_series en tz Europe/Paris) pour que
-    //    les jours sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
+    // 1) Contacts CUMULÉS / jour : total courant = baseline (contacts créés AVANT la plage) +
+    //    somme courante des nouveaux/jour. Série DENSE (generate_series de from à to) pour que les jours
+    //    sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
     const contacts = await this.pool.query<{ d: string; count: string }>(
       `with bounds as (
-         select date_trunc('day', $2::timestamptz at time zone $3) as start_day,
-                date_trunc('day', now() at time zone $3) as end_day
+         select ($2::date)::timestamp at time zone $4 as start_ts,
+                (($3::date) + 1)::timestamp at time zone $4 as end_ts
        ),
        series as (
-         select generate_series((select start_day from bounds), (select end_day from bounds), interval '1 day')::date as day
+         select generate_series($2::date, $3::date, interval '1 day')::date as day
        ),
        baseline as (
          select count(*)::int as n from contacts
-         where tenant_id = $1 and (created_at at time zone $3) < (select start_day from bounds)
+         where tenant_id = $1 and created_at < (select start_ts from bounds)
        ),
        daily as (
-         select date_trunc('day', created_at at time zone $3)::date as day, count(*)::int as n
-         from contacts
-         where tenant_id = $1 and (created_at at time zone $3) >= (select start_day from bounds)
+         select date_trunc('day', created_at at time zone $4)::date as day, count(*)::int as n
+         from contacts, bounds b
+         where tenant_id = $1 and created_at >= b.start_ts and created_at < b.end_ts
          group by 1
        )
        select to_char(s.day, 'YYYY-MM-DD') as d,
               ((select n from baseline) + coalesce(sum(dl.n) over (order by s.day), 0))::int as count
        from series s left join daily dl on dl.day = s.day
        order by s.day`,
-      [tenantId, since, TZ],
+      [tenantId, from, to, TZ],
     );
 
     // 2) Templates envoyés / jour, par catégorie : campagnes (campaign_recipients + campaigns.category)
     //    + envois template depuis l'inbox (conversation_messages.template_category).
     const templates = await this.pool.query<{ d: string; category: string | null; count: string }>(
-      `select d, category, sum(cnt)::int as count from (
-         select to_char(date_trunc('day', r.sent_at at time zone $3), 'YYYY-MM-DD') d, c.category, count(*) cnt
-         from campaign_recipients r join campaigns c on c.id = r.campaign_id
-         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= $2
+      `with bounds as (
+         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
+       )
+       select d, category, sum(cnt)::int as count from (
+         select to_char(date_trunc('day', r.sent_at at time zone $4), 'YYYY-MM-DD') d, c.category, count(*) cnt
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by d, c.category
          union all
-         select to_char(date_trunc('day', m.created_at at time zone $3), 'YYYY-MM-DD') d, m.template_category, count(*) cnt
-         from conversation_messages m join conversations cv on cv.id = m.conversation_id
+         select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') d, m.template_category, count(*) cnt
+         from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
          where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
-           and m.template_category is not null and m.created_at >= $2
+           and m.template_category is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
          group by d, m.template_category
        ) x group by d, category order by d`,
-      [tenantId, since, TZ],
+      [tenantId, from, to, TZ],
     );
 
     // 3) Messages échangés hors template / jour : reçus + réponses texte sortantes.
     const exchanged = await this.pool.query<{ d: string; count: string }>(
-      `select to_char(date_trunc('day', m.created_at at time zone $3), 'YYYY-MM-DD') as d, count(*)::int as count
-       from conversation_messages m join conversations cv on cv.id = m.conversation_id
-       where cv.tenant_id = $1 and m.created_at >= $2
+      `with bounds as (
+         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
+       )
+       select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d, count(*)::int as count
+       from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
+       where cv.tenant_id = $1 and m.created_at >= b.start_ts and m.created_at < b.end_ts
          and (m.direction = 'in' or (m.direction = 'out' and m.type is distinct from 'template'))
        group by d order by d`,
-      [tenantId, since, TZ],
+      [tenantId, from, to, TZ],
     );
 
     const utility: DailyPoint[] = [];
@@ -105,25 +122,58 @@ export class PgStatsStore {
    * Volume par template envoyé sur la période (campagnes + envois inbox), pour le dropdown du
    * dashboard et le prix estimé. Exclut les livraisons en échec (delivery_status='failed').
    */
-  async getTemplateBreakdown(tenantId: string, days: number): Promise<TemplateBreakdownRow[]> {
-    const window = Math.min(Math.max(days, 1), 365);
-    const since = new Date(Date.now() - window * 24 * 3600 * 1000);
+  async getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]> {
+    const { from, to } = range;
     const res = await this.pool.query<{ name: string; category: string | null; count: string }>(
-      `select name, category, sum(cnt)::int as count from (
+      `with bounds as (
+         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
+       )
+       select name, category, sum(cnt)::int as count from (
          select c.template_name as name, c.category as category, count(*) cnt
-         from campaign_recipients r join campaigns c on c.id = r.campaign_id
-         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= $2
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by c.template_name, c.category
          union all
          select m.template_name as name, m.template_category as category, count(*) cnt
-         from conversation_messages m join conversations cv on cv.id = m.conversation_id
+         from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
          where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
-           and m.template_name is not null and m.created_at >= $2
+           and m.template_name is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
          group by m.template_name, m.template_category
        ) x group by name, category order by count desc`,
-      [tenantId, since],
+      [tenantId, from, to, TZ],
     );
     return res.rows.map((r) => ({ name: r.name, category: r.category, count: Number(r.count) }));
+  }
+
+  /**
+   * Funnel de livraison des CAMPAGNES sur la plage (ancré sur `sent_at`). Monotone read⊆delivered⊆sent :
+   * delivered = delivery_status in ('delivered','read'). `IS DISTINCT FROM 'failed'` (pas `<> 'failed'`) car
+   * delivery_status est souvent null (NULL <> 'failed' = NULL = faux, exclurait à tort du dénominateur).
+   * L'ancre sent_at exclut les échecs d'ENVOI (sent_at null) -> `failed` = échecs de LIVRAISON. V1 campagne-only
+   * (conversation_messages n'a pas de delivery_status). Lecture pure : ne touche jamais le chemin webhook.
+   */
+  async getDeliveryFunnel(tenantId: string, range: DateRange): Promise<DeliveryFunnel> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ sent: string; delivered: string; read: string; failed: string }>(
+      `with bounds as (
+         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
+       )
+       select
+         count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed')::int as sent,
+         count(r.id) filter (where r.delivery_status in ('delivered', 'read'))::int as delivered,
+         count(r.id) filter (where r.delivery_status = 'read')::int as read,
+         count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed')::int as failed
+       from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+       where c.tenant_id = $1 and r.sent_at >= b.start_ts and r.sent_at < b.end_ts`,
+      [tenantId, from, to, TZ],
+    );
+    const row = res.rows[0];
+    return {
+      sent: Number(row?.sent ?? 0),
+      delivered: Number(row?.delivered ?? 0),
+      read: Number(row?.read ?? 0),
+      failed: Number(row?.failed ?? 0),
+    };
   }
 }

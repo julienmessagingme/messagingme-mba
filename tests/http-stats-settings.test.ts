@@ -25,6 +25,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724 }),
+    getDeliveryFunnel: async () => ({ sent: 10, delivered: 8, read: 5, failed: 1 }),
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
@@ -90,6 +91,56 @@ describe('stats route', () => {
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/templates', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ pricing: unknown }>().pricing).toBeNull();
+    await a.close();
+  });
+
+  it('GET /stats/funnel -> {sent,delivered,read,failed}', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/funnel?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, failed: 1 });
+    await a.close();
+  });
+
+  it('GET /stats/funnel agent -> 403 (admin-only)', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/funnel', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('GET /stats?from&to valides -> 200', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats?from=2026-01-01&to=2026-01-31', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('GET /stats to dans le futur -> 400', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats?from=2020-01-01&to=2999-01-01', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('GET /stats from > to -> 400', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats?from=2026-02-01&to=2026-01-01', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('GET /stats span > 366j -> 400', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats?from=2024-01-01&to=2026-01-01', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('GET /stats un seul de from/to -> 400', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats?from=2026-01-01', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
     await a.close();
   });
 });

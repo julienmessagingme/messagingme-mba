@@ -10,6 +10,7 @@ import { ensureField } from './crm/fields';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
+import { rangeToUnix } from './stats/range';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
@@ -92,15 +93,15 @@ async function main(): Promise<void> {
       },
     },
     stats: {
-      getDashboard: (tenant, days) => statsStore.getDashboard(tenant, days),
-      getTemplateBreakdown: (tenant, days) => statsStore.getTemplateBreakdown(tenant, days),
-      getPricing: async (tenant, days) => {
+      getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
+      getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
+      getPricing: async (tenant, range) => {
         const wabaId = await repo.getTenantWabaId(tenant);
         if (!wabaId) return null;
-        const endTs = Math.floor(Date.now() / 1000);
-        const startTs = endTs - Math.min(Math.max(days, 1), 365) * 24 * 3600;
+        const { startTs, endTs } = rangeToUnix(range);
         return pricingClient.getPricingAnalytics(wabaId, startTs, endTs);
       },
+      getDeliveryFunnel: (tenant, range) => statsStore.getDeliveryFunnel(tenant, range),
     },
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),

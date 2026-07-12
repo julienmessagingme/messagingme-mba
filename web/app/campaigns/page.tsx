@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
+import { fmtCost } from '@/lib/format';
 import {
   listCampaigns,
   getCampaign,
@@ -13,13 +14,23 @@ import {
   runCampaign,
   listTemplates,
   listAllContacts,
+  getTemplateStats,
   type CampaignSummary,
   type CampaignDetail,
+  type CampaignCategory,
   type PhoneNumber,
+  type PricingSummary,
   type TemplateParam,
   type TemplateSummary,
   type Contact,
 } from '@/lib/api';
+
+/** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
+ *  indisponible. Sur-estime l'utility en fenêtre de service gratuite -> à présenter comme « ~ estimé ». */
+function estimateCampaignCost(sent: number, category: CampaignCategory, pricing: PricingSummary | null): number | null {
+  const rate = pricing?.byCategory[category]?.ratePerMessage;
+  return rate == null ? null : sent * rate;
+}
 
 export default function CampaignsPage() {
   return <AppShell active="campagnes">{(session) => <CampaignsInner session={session} />}</AppShell>;
@@ -52,6 +63,12 @@ function CampaignsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [mode, setMode] = useState<'list' | 'create'>('list');
+  // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
+  const [pricing, setPricing] = useState<PricingSummary | null>(null);
+
+  useEffect(() => {
+    getTemplateStats(session.tenantId).then((ts) => setPricing(ts.pricing)).catch(() => setPricing(null));
+  }, [session.tenantId]);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -117,7 +134,16 @@ function CampaignsInner({ session }: { session: Session }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Campagnes ({campaigns.length})</h2>
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">Campagnes ({campaigns.length})</h2>
+          {pricing ? (
+            <p className="mt-0.5 text-xs text-ink-500">
+              coût estimé total ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0))}</span> <span className="text-ink-400">(devise du compte)</span>
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs text-ink-400">coût estimé indisponible (tarif Meta)</p>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {polling ? (
             <span className="flex items-center gap-1.5 text-xs text-ink-400">
@@ -163,6 +189,14 @@ function CampaignsInner({ session }: { session: Session }) {
                       {c.counts.pending > 0 && <> · {c.counts.pending} en attente</>}
                       {c.counts.skipped > 0 && <> · {c.counts.skipped} ignorés</>}
                     </p>
+                    {(() => {
+                      const cost = estimateCampaignCost(c.counts.sent, c.category, pricing);
+                      return (
+                        <p className="mt-1 text-xs text-ink-400">
+                          coût estimé {cost != null ? <>≈ <span className="font-medium text-ink-700">{fmtCost(cost)}</span> (devise du compte)</> : 'indisponible'}
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <button
@@ -182,7 +216,7 @@ function CampaignsInner({ session }: { session: Session }) {
                 </div>
                 {detail?.id === c.id && (
                   <div className="mt-3">
-                    <DetailPanel detail={detail} onClose={() => setDetail(null)} />
+                    <DetailPanel detail={detail} pricing={pricing} onClose={() => setDetail(null)} />
                   </div>
                 )}
               </li>
@@ -193,13 +227,15 @@ function CampaignsInner({ session }: { session: Session }) {
   );
 }
 
-function DetailPanel({ detail, onClose }: { detail: CampaignDetail; onClose: () => void }) {
+function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pricing: PricingSummary | null; onClose: () => void }) {
+  const cost = estimateCampaignCost(detail.counts.sent, detail.category, pricing);
   return (
     <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
+          <span className="text-xs text-ink-400">coût estimé {cost != null ? `≈ ${fmtCost(cost)} (devise du compte)` : 'indisponible'}</span>
         </div>
         <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
       </div>
