@@ -10,10 +10,13 @@ export interface Campaign {
   tenantId: string;
   phoneNumberId: string;
   category: CampaignCategory;
+  /** Template à envoyer ('' pour une campagne workflow). */
   templateName: string;
   templateLanguage: string;
   paramMapping: TemplateParam[];
   status: CampaignStatus;
+  /** Si présent : la campagne DÉMARRE ce workflow par destinataire (au lieu d'envoyer un template). */
+  workflowId: string | null;
 }
 
 export interface Recipient {

@@ -10,11 +10,14 @@ export interface CreateCampaignInput {
   phoneNumberId: string;
   name: string;
   category: CampaignCategory;
+  /** '' pour une campagne workflow (pas de template propre). */
   templateName: string;
   templateLanguage: string;
   paramMapping: TemplateParam[];
   /** Restreint les destinataires à ces contacts. Absent/vide -> tous les contacts éligibles. */
   contactIds?: string[];
+  /** Campagne workflow : démarre ce workflow par destinataire au lieu d'envoyer un template. */
+  workflowId?: string;
 }
 
 export interface RecipientCounts {
@@ -59,19 +62,22 @@ export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
 
   async insertCampaign(input: CreateCampaignInput): Promise<string> {
+    // Campagne workflow : pas de template propre -> template_name/language null.
+    const isWorkflow = !!input.workflowId;
     const res = await this.pool.query<{ id: string }>(
       `insert into campaigns
-         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb)
+         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
        returning id`,
       [
         input.tenantId,
         input.phoneNumberId,
         input.name,
         input.category,
-        input.templateName,
-        input.templateLanguage,
+        isWorkflow ? null : input.templateName,
+        isWorkflow ? null : input.templateLanguage,
         JSON.stringify(input.paramMapping),
+        input.workflowId ?? null,
       ],
     );
     const id = res.rows[0]?.id;
@@ -85,13 +91,14 @@ export class PgCampaignRepo {
       tenant_id: string;
       phone_number_id: string;
       category: CampaignCategory;
-      template_name: string;
-      template_language: string;
+      template_name: string | null;
+      template_language: string | null;
       param_mapping: TemplateParam[];
       status: CampaignStatus;
+      workflow_id: string | null;
     }>(
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
-              param_mapping, status
+              param_mapping, status, workflow_id
        from campaigns where id = $1`,
       [id],
     );
@@ -102,10 +109,11 @@ export class PgCampaignRepo {
       tenantId: r.tenant_id,
       phoneNumberId: r.phone_number_id,
       category: r.category,
-      templateName: r.template_name,
-      templateLanguage: r.template_language,
+      templateName: r.template_name ?? '',
+      templateLanguage: r.template_language ?? '',
       paramMapping: r.param_mapping,
       status: r.status,
+      workflowId: r.workflow_id,
     };
   }
 
@@ -251,7 +259,7 @@ export class PgCampaignRepo {
 
   private toSummary(r: {
     id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-    phone_number_id: string; template_name: string; template_language: string; created_at: Date;
+    phone_number_id: string; template_name: string | null; template_language: string | null; created_at: Date;
     total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
   }): CampaignSummary {
     return {
@@ -260,8 +268,9 @@ export class PgCampaignRepo {
       category: r.category,
       status: r.status,
       phoneNumberId: r.phone_number_id,
-      templateName: r.template_name,
-      templateLanguage: r.template_language,
+      // null (campagne workflow) -> '' : CampaignSummary.templateName promet un string.
+      templateName: r.template_name ?? '',
+      templateLanguage: r.template_language ?? '',
       createdAt: r.created_at.toISOString(),
       counts: {
         total: Number(r.total),
@@ -307,14 +316,17 @@ export class PgCampaignRepo {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      // Campagne workflow : pas de template propre -> template_name/language null + workflow_id posé.
+      const isWorkflow = !!input.workflowId;
       const cRes = await client.query<{ id: string }>(
         `insert into campaigns
-           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb)
+           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
          returning id`,
         [
           input.tenantId, input.phoneNumberId, input.name, input.category,
-          input.templateName, input.templateLanguage, JSON.stringify(input.paramMapping),
+          isWorkflow ? null : input.templateName, isWorkflow ? null : input.templateLanguage,
+          JSON.stringify(input.paramMapping), input.workflowId ?? null,
         ],
       );
       const campaignId = cRes.rows[0]?.id;

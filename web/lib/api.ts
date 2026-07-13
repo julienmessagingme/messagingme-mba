@@ -178,11 +178,14 @@ export interface CreateCampaignInput {
   phoneNumberId: string;
   name: string;
   category: CampaignCategory;
-  templateName: string;
-  templateLanguage: string;
-  paramMapping: TemplateParam[];
+  /** Template à envoyer (campagne template). Absent si campagne workflow. */
+  templateName?: string;
+  templateLanguage?: string;
+  paramMapping?: TemplateParam[];
   /** Contacts choisis. Absent -> tous les contacts éligibles. */
   contactIds?: string[];
+  /** Campagne workflow : démarre ce workflow par destinataire (au lieu d'un template). */
+  workflowId?: string;
 }
 
 export function listCampaigns(tenantId: string): Promise<{ campaigns: CampaignSummary[] }> {

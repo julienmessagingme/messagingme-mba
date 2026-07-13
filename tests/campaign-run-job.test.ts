@@ -62,7 +62,7 @@ class FakeQuality implements QualityProvider {
 
 const campaign: Campaign = {
   id: 'c1', tenantId: 't1', phoneNumberId: 'pn1', category: 'marketing',
-  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft',
+  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null,
 };
 
 function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }): RunJobDeps {

@@ -14,6 +14,7 @@ import {
   runCampaign,
   listTemplates,
   listAllContacts,
+  listWorkflows,
   getTemplateStats,
   type CampaignSummary,
   type CampaignDetail,
@@ -23,6 +24,7 @@ import {
   type TemplateParam,
   type TemplateSummary,
   type Contact,
+  type WorkflowSummary,
 } from '@/lib/api';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
@@ -284,6 +286,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const [templateName, setTemplateName] = useState('');
   const [templateLanguage, setTemplateLanguage] = useState('fr');
   const [vars, setVars] = useState<VarRow[]>([]);
+  // Quoi envoyer : un template direct OU un workflow (bot builder).
+  const [mode, setMode] = useState<'template' | 'workflow'>('template');
+  const [workflowId, setWorkflowId] = useState('');
+  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -304,9 +310,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     let alive = true;
     (async () => {
       try {
-        const [t, c] = await Promise.all([listTemplates(tenantId), listAllContacts(tenantId)]);
+        const [t, c, w] = await Promise.all([listTemplates(tenantId), listAllContacts(tenantId), listWorkflows(tenantId)]);
         if (!alive) return;
         setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
+        setWorkflows(w.workflows);
         const withPhone = c.filter((x) => x.phoneE164);
         setContacts(withPhone);
         setSelected(new Set(withPhone.map((x) => x.id))); // tout coché par défaut
@@ -388,19 +395,17 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     setError(null);
     setOk(null);
     try {
-      const res = await createCampaign(tenantId, {
-        phoneNumberId,
-        name,
-        category,
-        templateName,
-        templateLanguage,
-        paramMapping: toParamMapping(),
-        contactIds: [...selected],
-      });
+      const res = await createCampaign(
+        tenantId,
+        mode === 'workflow'
+          ? { phoneNumberId, name, category, workflowId, contactIds: [...selected] }
+          : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] },
+      );
       setOk(`Campagne créée : ${res.recipientCount} destinataires. Clique « Lancer » pour envoyer.`);
       setName('');
       setTemplateName('');
       setVars([]);
+      setWorkflowId('');
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Création impossible');
@@ -414,7 +419,8 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const varsComplete = vars.every((v) =>
     v.source === 'field' ? v.key.trim() !== '' : v.source === 'literal' ? v.value.trim() !== '' : true,
   );
-  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && templateName !== '' && selected.size > 0 && varsComplete && !busy;
+  const contentReady = mode === 'workflow' ? workflowId !== '' : (templateName !== '' && varsComplete);
+  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0 && !busy;
 
   return (
     <section className="h-fit rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
@@ -435,70 +441,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         )}
       </Field>
 
-      {/* 1. Choix du template (approuvés uniquement) */}
-      <Field label="Template">
-        {loadingRefs ? (
-          <p className="text-xs text-ink-400">Chargement des templates...</p>
-        ) : templates.length === 0 ? (
-          <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans l&apos;onglet Templates et attends la validation Meta.</p>
-        ) : (
-          <select value={templateName} onChange={(e) => chooseTemplate(e.target.value)} className={inputCls}>
-            <option value="">Choisir un template...</option>
-            {templates.map((t) => (
-              <option key={`${t.name}-${t.language}`} value={t.name}>
-                {t.name} ({t.language}, {t.category?.toLowerCase()})
-              </option>
-            ))}
-          </select>
-        )}
-        {selectedTemplate?.body && (
-          <div className="mt-3">
-            <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
-          </div>
-        )}
-      </Field>
-
-      {/* 2. Variables du template (auto-déduites du corps) */}
-      {vars.length > 0 && (
-        <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
-          <div className="space-y-2">
-            {vars.map((v, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <span className="w-8 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
-                <select
-                  value={v.source}
-                  onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
-                  className={`${inputCls} flex-1`}
-                >
-                  <option value="name">Nom du contact</option>
-                  <option value="phone">Téléphone</option>
-                  <option value="field">Champ perso</option>
-                  <option value="literal">Texte fixe</option>
-                </select>
-                {v.source === 'field' && (
-                  <input
-                    value={v.key}
-                    onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
-                    className={`${inputCls} w-24`}
-                    placeholder="clé (ex ville)"
-                  />
-                )}
-                {v.source === 'literal' && (
-                  <input
-                    value={v.value}
-                    onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
-                    className={`${inputCls} w-24`}
-                    placeholder="valeur"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 3. Choix des contacts */}
+      {/* 1. Choix des contacts (D'ABORD : la cible est indépendante de ce qu'on envoie) */}
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between">
           <label className="text-sm font-medium text-ink-700">Destinataires</label>
@@ -569,7 +512,102 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         )}
       </div>
 
-      {/* 4. Libellé de la campagne */}
+      {/* 2. Quoi envoyer : un template direct OU un workflow (bot builder) */}
+      <div className="mt-4">
+        <label className="mb-1 block text-sm font-medium text-ink-700">Que veux-tu leur envoyer ?</label>
+        <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
+          <button type="button" onClick={() => setMode('template')} className={`rounded-md px-3 py-1 ${mode === 'template' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>Un template</button>
+          <button type="button" onClick={() => setMode('workflow')} className={`rounded-md px-3 py-1 ${mode === 'workflow' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>Un workflow</button>
+        </div>
+      </div>
+
+      {mode === 'template' ? (
+        <>
+          <Field label="Template">
+            {loadingRefs ? (
+              <p className="text-xs text-ink-400">Chargement des templates...</p>
+            ) : templates.length === 0 ? (
+              <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans l&apos;onglet Templates et attends la validation Meta.</p>
+            ) : (
+              <select value={templateName} onChange={(e) => chooseTemplate(e.target.value)} className={inputCls}>
+                <option value="">Choisir un template...</option>
+                {templates.map((t) => (
+                  <option key={`${t.name}-${t.language}`} value={t.name}>
+                    {t.name} ({t.language}, {t.category?.toLowerCase()})
+                  </option>
+                ))}
+              </select>
+            )}
+            {selectedTemplate?.body && (
+              <div className="mt-3">
+                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
+              </div>
+            )}
+          </Field>
+
+          {vars.length > 0 && (
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
+              <div className="space-y-2">
+                {vars.map((v, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="w-8 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
+                    <select
+                      value={v.source}
+                      onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
+                      className={`${inputCls} flex-1`}
+                    >
+                      <option value="name">Nom du contact</option>
+                      <option value="phone">Téléphone</option>
+                      <option value="field">Champ perso</option>
+                      <option value="literal">Texte fixe</option>
+                    </select>
+                    {v.source === 'field' && (
+                      <input
+                        value={v.key}
+                        onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
+                        className={`${inputCls} w-24`}
+                        placeholder="clé (ex ville)"
+                      />
+                    )}
+                    {v.source === 'literal' && (
+                      <input
+                        value={v.value}
+                        onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+                        className={`${inputCls} w-24`}
+                        placeholder="valeur"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <Field label="Catégorie (pour l'opt-in)">
+            <select value={category} onChange={(e) => setCategory(e.target.value as 'marketing' | 'utility')} className={inputCls}>
+              <option value="marketing">Marketing (opt-in requis)</option>
+              <option value="utility">Utility</option>
+            </select>
+          </Field>
+          <Field label="Workflow">
+            {workflows.length === 0 ? (
+              <p className="text-xs text-amber-700">Aucun workflow. Crée-en un dans le menu « Flow » à gauche.</p>
+            ) : (
+              <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value)} className={inputCls}>
+                <option value="">Choisir un workflow…</option>
+                {workflows.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name} ({w.graph.nodes.length} bloc{w.graph.nodes.length > 1 ? 's' : ''})</option>
+                ))}
+              </select>
+            )}
+          </Field>
+        </>
+      )}
+
+      {/* 3. Libellé de la campagne */}
       <Field label="Nom de la campagne (interne)">
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Promo été" />
       </Field>

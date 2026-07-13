@@ -79,7 +79,7 @@ class FakeQuality implements QualityProvider {
 
 const campaign: Campaign = {
   id: 'c1', tenantId: 't1', phoneNumberId: 'pn1', category: 'marketing',
-  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft',
+  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null,
 };
 function rec(id: string, to: string, status: Recipient['status'] = 'pending'): Recipient {
   return { id, contactId: `ct-${id}`, toE164: to, resolvedParams: ['X'], status };
@@ -168,6 +168,21 @@ describe('runCampaign', () => {
     // Le code Meta (131049) est isolé et transmis à markResult -> alimente le breakdown d'erreurs.
     expect(recipients.results.get('r1')).toMatchObject({ status: 'failed', errorCode: 131049 });
     expect(recipients.results.get('r2')).toMatchObject({ status: 'sent' });
+  });
+
+  it('campagne WORKFLOW : démarre le workflow par destinataire (pas d\'envoi template direct), marque sent', async () => {
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const sender = new FakeSender();
+    const started: string[] = [];
+    const wfCampaign = { ...campaign, workflowId: 'wf1', templateName: '' };
+    const report = await runCampaign(wfCampaign, deps({
+      recipients, sender,
+      startWorkflow: async (_t, wf, waId, cid) => { started.push(`${wf}:${waId}:${cid}`); },
+    }));
+    expect(report).toMatchObject({ sent: 2, failed: 0 });
+    expect(sender.calls).toEqual([]); // aucun envoi de template en direct : c'est le workflow qui envoie
+    expect(started).toEqual(['wf1:33611:ct-r1', 'wf1:33622:ct-r2']); // waId = chiffres, contactId transmis
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
   });
 
   it('taux d échec au-delà du seuil -> pause moteur + arrêt des destinataires restants', async () => {

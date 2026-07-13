@@ -344,6 +344,22 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.getById(id, tenantId)).toBeNull();
   });
 
+  it('PgCampaignRepo : campagne WORKFLOW (workflow_id + template null) round-trip', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'WF campagne', { nodes: [], edges: [] });
+    // Chemin RÉEL de création (via createWithRecipients, pas insertCampaign) : il DOIT persister workflow_id.
+    const { campaignId: campId } = await repo.createWithRecipients({
+      tenantId, phoneNumberId: 'pn-wf', name: 'Camp WF', category: 'marketing',
+      templateName: '', templateLanguage: '', paramMapping: [], workflowId: wfId,
+    }, []);
+    const camp = await repo.getCampaign(campId);
+    expect(camp).toMatchObject({ workflowId: wfId, templateName: '', templateLanguage: '', category: 'marketing' });
+    // template_name est bien NULL en base (pas '').
+    const row = (await pool.query<{ template_name: string | null }>(`select template_name from campaigns where id = $1`, [campId])).rows[0]!;
+    expect(row.template_name).toBeNull();
+  });
+
   it('WorkflowExecutor (E2E DB) : start pose le tag + persiste le run ; reply -> inbox', async () => {
     const wfStore = new PgWorkflowStore(pool);
     const runStore = new PgWorkflowRunStore(pool);

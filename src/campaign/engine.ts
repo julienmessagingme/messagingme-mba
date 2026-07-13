@@ -47,6 +47,8 @@ export interface EngineDeps {
   frequency: FrequencyStore;
   quality: QualityProvider;
   rateLimiter?: RateGate;
+  /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template). */
+  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string) => Promise<void>;
   now?: () => number;
   thresholds?: GuardrailThresholds;
 }
@@ -101,19 +103,27 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     if (!(await deps.recipients.claim(r.id))) continue;
 
     if (deps.rateLimiter) await deps.rateLimiter.acquire();
-    const tpl: TemplateSpec = {
-      name: campaign.templateName,
-      language: campaign.templateLanguage,
-      components: buildComponents(r.resolvedParams),
-    };
 
     // Envoi isolé : SEULE une erreur du sender (Meta) marque le destinataire `failed`.
     let res: SendResult;
     try {
-      res =
-        campaign.category === 'marketing'
-          ? await deps.sender.sendMarketing({ to: r.toE164, template: tpl })
-          : await deps.sender.sendTemplate(r.toE164, tpl);
+      if (campaign.workflowId) {
+        // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
+        // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
+        if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
+        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, r.toE164.replace(/[^0-9]/g, ''), r.contactId);
+        res = { messageId: `wf-${campaign.workflowId}` };
+      } else {
+        const tpl: TemplateSpec = {
+          name: campaign.templateName,
+          language: campaign.templateLanguage,
+          components: buildComponents(r.resolvedParams),
+        };
+        res =
+          campaign.category === 'marketing'
+            ? await deps.sender.sendMarketing({ to: r.toE164, template: tpl })
+            : await deps.sender.sendTemplate(r.toE164, tpl);
+      }
     } catch (err) {
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
       const errorCode = err instanceof MetaApiError && typeof err.code === 'number' ? err.code : undefined;

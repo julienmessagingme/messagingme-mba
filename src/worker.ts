@@ -92,6 +92,11 @@ async function main(): Promise<void> {
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
+      // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
+      startWorkflow: async (tenant, workflowId, waId, contactId) => {
+        const wf = await workflowStore.getById(workflowId, tenant);
+        if (wf) await workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId });
+      },
     });
   });
 

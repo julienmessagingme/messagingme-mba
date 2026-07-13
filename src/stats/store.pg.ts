@@ -151,7 +151,8 @@ export class PgStatsStore {
        select name, category, sum(cnt)::int as count from (
          select c.template_name as name, c.category as category, count(*) cnt
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
-         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
+         where c.tenant_id = $1 and c.template_name is not null and r.status = 'sent'
+           and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by c.template_name, c.category
          union all

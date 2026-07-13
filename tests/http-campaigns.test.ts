@@ -48,6 +48,7 @@ const validBody = {
 
 interface Deps {
   ownsNumber?: boolean;
+  ownsWorkflow?: boolean;
   campaignTenant?: string; // tenant propriétaire de 'known'
   queue?: FakeQueue;
 }
@@ -59,6 +60,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       repo,
       queue: d.queue ?? new FakeQueue(),
       phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
+      workflowBelongsToTenant: async () => d.ownsWorkflow ?? true,
       campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
       listCampaigns: async (tenant) => [
         { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
@@ -113,6 +115,32 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     const repo = new FakeRepo(contacts);
     const app = appWith(repo, { ownsNumber: false });
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('campagne WORKFLOW (workflowId, sans template) -> 201', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { ownsWorkflow: true });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('ni template ni workflow -> 400', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo);
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '' } });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('workflow d\'un autre tenant -> 400', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { ownsWorkflow: false });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wfX' } });
     expect(res.statusCode).toBe(400);
     expect(repo.created).toHaveLength(0);
     await app.close();

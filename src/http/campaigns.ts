@@ -15,6 +15,8 @@ export interface CampaignRouteDeps {
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
+  /** Le workflow appartient-il au tenant ? (campagne workflow : refuse un workflow d'un autre tenant.) */
+  workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
   listCampaigns(tenantId: string): Promise<CampaignSummary[]>;
   getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
@@ -77,13 +79,22 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       templateLanguage: string;
       paramMapping: unknown;
       contactIds: unknown;
+      workflowId: string;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
     if (!nonEmpty(b.phoneNumberId)) return reply.code(400).send({ error: 'phoneNumberId requis' });
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName requis' });
-    if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
+    // Une campagne envoie SOIT un template SOIT un workflow (exactement un des deux).
+    const isWorkflow = nonEmpty(b.workflowId);
+    if (isWorkflow) {
+      if (!(await deps.workflowBelongsToTenant(b.workflowId as string, effectiveTenant))) {
+        return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
+      }
+    } else {
+      if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName ou workflowId requis' });
+      if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
+    }
 
     // Sélection de contacts optionnelle : tableau de chaînes non vides. Absent -> tous les contacts.
     let contactIds: string[] | undefined;
@@ -99,9 +110,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(400).send({ error: 'phoneNumberId inconnu pour ce tenant' });
     }
 
-    // Valider paramMapping AVANT toute écriture : positions 1..N contiguës + sources bien
-    // formées. Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
-    const paramMapping = validateParamMapping(b.paramMapping ?? []);
+    // Valider paramMapping AVANT toute écriture (template seul ; un workflow n'a pas de variable propre).
+    // Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
+    const paramMapping = isWorkflow ? [] : validateParamMapping(b.paramMapping ?? []);
     if (paramMapping === null) {
       return reply.code(400).send({ error: 'paramMapping invalide (positions 1..N contiguës, sources valides)' });
     }
@@ -111,10 +122,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       phoneNumberId: b.phoneNumberId,
       name: b.name,
       category: b.category,
-      templateName: b.templateName,
-      templateLanguage: b.templateLanguage,
+      templateName: isWorkflow ? '' : (b.templateName as string),
+      templateLanguage: isWorkflow ? '' : (b.templateLanguage as string),
       paramMapping,
       ...(contactIds ? { contactIds } : {}),
+      ...(isWorkflow ? { workflowId: b.workflowId as string } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     return reply.code(201).send(result);

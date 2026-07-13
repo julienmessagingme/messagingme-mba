@@ -18,6 +18,8 @@ export interface RunJobDeps {
   frequency: FrequencyStore;
   quality: QualityProvider;
   rateLimiter?: RateGate;
+  /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'un envoi template). */
+  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string) => Promise<void>;
   thresholds?: GuardrailThresholds;
 }
 
@@ -40,6 +42,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     frequency: deps.frequency,
     quality: deps.quality,
     ...(deps.rateLimiter ? { rateLimiter: deps.rateLimiter } : {}),
+    ...(deps.startWorkflow ? { startWorkflow: deps.startWorkflow } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
   });
 }
