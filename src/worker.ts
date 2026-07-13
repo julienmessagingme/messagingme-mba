@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
     applyTag: async (tenant, waId, tag) => { await contactStore.addTagsByPhone(tenant, waId, [tag]); },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
-    sendTemplate: async (tenant, waId, name, language) => {
+    sendTemplate: async (tenant, waId, name, language, buttons) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       const pn = await repo.getTenantPhoneNumberId(tenant);
       if (!pn) {
@@ -59,7 +59,13 @@ async function main(): Promise<void> {
         return;
       }
       const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
-      await client.sendTemplate(waId, { name, language });
+      // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui
+      // sélectionne la branche (sourceHandle) de façon déterministe (pas de pari sur le comportement Meta).
+      const components = buttons
+        .map((b, i) => ({ b, i }))
+        .filter(({ b }) => b.type === 'QUICK_REPLY')
+        .map(({ i }) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `btn:${i}` }] }));
+      await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
     },
   });
 
@@ -67,7 +73,7 @@ async function main(): Promise<void> {
     await handleWebhookJob(
       data, eventStore, recipientStore, inboxStore,
       { lookup: flowStore, writer: contactStore },
-      { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m) => workflowExecutor.advance(t, w, m) },
+      { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp) },
       // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
       (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName).then(() => {}),

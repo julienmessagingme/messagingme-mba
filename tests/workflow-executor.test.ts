@@ -5,6 +5,7 @@ import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
 
 const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
 const e = (id: string, source: string, target: string) => ({ id, source, target });
+const eh = (id: string, source: string, target: string, sourceHandle: string) => ({ id, source, target, sourceHandle });
 
 class FakeRuns {
   run: WorkflowRunRow | null = null;
@@ -81,5 +82,39 @@ describe('WorkflowExecutor', () => {
   it('advance sans run en attente -> no-op', async () => {
     const { ex } = make(linear);
     await expect(ex.advance('t1', '33600', 'm1')).resolves.toBeUndefined();
+  });
+
+  // template à 2 boutons quick-reply -> 2 branches (btn:0 -> tag oui, btn:1 -> tag non).
+  const branched: WorkflowGraph = {
+    nodes: [
+      n('tpl', 'template', { templateName: 'promo', language: 'fr', templateButtons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'QUICK_REPLY', text: 'Non' }] }),
+      n('ta', 'tag', { tag: 'oui' }), n('tb', 'tag', { tag: 'non' }), n('ib', 'inbox'),
+    ],
+    edges: [eh('e0', 'tpl', 'ta', 'btn:0'), eh('e1', 'tpl', 'tb', 'btn:1'), e('e2', 'ta', 'ib'), e('e3', 'tb', 'ib')],
+  };
+
+  it('advance BRANCHE par bouton : btn:1 -> suit l\'arête de CE bouton', async () => {
+    const { ex, runs, calls } = make(branched);
+    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+    await ex.advance('t1', '33600', 'm1', 'btn:1'); // tape « Non »
+    expect(calls).toContain('tag:non');
+    expect(calls).not.toContain('tag:oui');
+    expect(runs.run).toMatchObject({ status: 'inbox' });
+  });
+
+  it('advance REPLI : réponse texte (buttonPayload null) -> 1re arête sortante', async () => {
+    const { ex, calls } = make(branched);
+    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm2', null);
+    expect(calls).toContain('tag:oui'); // 1re arête (btn:0)
+    expect(calls).not.toContain('tag:non');
+  });
+
+  it('advance REPLI : bouton non câblé (btn:9) -> 1re arête sortante', async () => {
+    const { ex, calls } = make(branched);
+    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm3', 'btn:9');
+    expect(calls).toContain('tag:oui'); // repli : aucun handle btn:9 -> nextNode
   });
 });

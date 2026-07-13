@@ -38,18 +38,61 @@ function summaryOf(data: Record<string, unknown>): string {
   return 'la conversation arrive en inbox';
 }
 
-/** Bloc du workflow : carré stylisé gris clair, handle cible (haut, sur le titre) + source (bas). */
+/** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` expose UNE SORTIE PAR BOUTON
+ *  quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire sont montrés grisés, non
+ *  reliables (ils sortent de WhatsApp). Les autres types de bloc ont une seule sortie (bas). */
 function WFNode({ data, selected }: NodeProps) {
-  const meta = NODE_META[(data.wfType as WorkflowNodeType) ?? 'template'];
+  const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
+  const meta = NODE_META[wfType];
+  const buttons = wfType === 'template' && Array.isArray(data.templateButtons)
+    ? (data.templateButtons as Array<{ type?: string; text?: string }>)
+    : [];
+  const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
   return (
-    <div className={`w-40 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
+    <div className={`w-44 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
       <div className="flex items-center gap-1.5 rounded-t-xl border-b border-ink-200 bg-white px-2 py-1">
         <span className="text-xs">{meta.emoji}</span>
         <span className="truncate text-[11px] font-semibold text-ink-800">{meta.label}</span>
       </div>
       <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data)}</div>
-      <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title="Tirer une flèche" />
+      {hasQR ? (
+        // Au moins un bouton quick-reply -> une SORTIE par bouton (QR = handle reliable à droite ; URL/flow grisé).
+        <div className="border-t border-ink-200">
+          {buttons.map((b, i) => {
+            const isQR = b.type === 'QUICK_REPLY';
+            const icon = b.type === 'URL' ? '🔗' : b.type === 'FLOW' ? '📋' : '↩︎';
+            const fallback = b.type === 'URL' ? 'Lien' : b.type === 'FLOW' ? 'Formulaire' : 'Réponse';
+            return (
+              <div key={i} className={`relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] first:border-t-0 ${isQR ? 'text-ink-700' : 'text-ink-400'}`}>
+                <span className="shrink-0">{icon}</span>
+                <span className="truncate">{b.text || fallback}</span>
+                {isQR ? (
+                  <Handle type="source" id={`btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={`Relier « ${b.text || fallback} »`} />
+                ) : (
+                  <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title="Bouton URL / formulaire : sort de WhatsApp, non reliable" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Aucun quick-reply (0 bouton, ou seulement URL/formulaire) -> une seule sortie bas (le bloc peut
+        // quand même mener au suivant après réponse). Les boutons URL/flow sont montrés grisés pour contexte.
+        <>
+          {buttons.length > 0 && (
+            <div className="border-t border-ink-200">
+              {buttons.map((b, i) => (
+                <div key={i} className="flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-400 first:border-t-0">
+                  <span className="shrink-0">{b.type === 'URL' ? '🔗' : '📋'}</span>
+                  <span className="truncate">{b.text || (b.type === 'URL' ? 'Lien' : 'Formulaire')}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title="Tirer une flèche" />
+        </>
+      )}
     </div>
   );
 }
@@ -118,7 +161,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     listUserFields(tenantId).then((r) => setFields(r.fields)).catch(() => {});
   }, [tenantId]);
 
-  const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge({ ...c, id: uid(), ...EDGE_OPTS }, eds)), [setEdges]);
+  // Une seule cible par SORTIE : relier depuis un handle déjà relié remplace l'arête existante de ce
+  // (source, sourceHandle) — un bouton mène à un seul bloc suivant.
+  const onConnect = useCallback((c: Connection) => setEdges((eds) => addEdge(
+    { ...c, id: uid(), ...EDGE_OPTS },
+    eds.filter((e) => !(e.source === c.source && (e.sourceHandle ?? null) === (c.sourceHandle ?? null))),
+  )), [setEdges]);
 
   const addNode = useCallback((wfType: WorkflowNodeType) => {
     const id = uid();
@@ -261,10 +309,13 @@ function ConfigPanel({
       {wfType === 'template' && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">Template à envoyer</label>
-          <select value={(d.templateName as string) ?? ''} onChange={(e) => { const t = templates.find((x) => x.name === e.target.value); onPatch({ templateName: e.target.value, language: t?.language ?? 'fr' }); }} className={`${cls} bg-white`}>
+          <select value={(d.templateName as string) ?? ''} onChange={(e) => { const t = templates.find((x) => x.name === e.target.value); onPatch({ templateName: e.target.value, language: t?.language ?? 'fr', templateButtons: t?.buttons ?? [] }); }} className={`${cls} bg-white`}>
             <option value="">Choisir…</option>
             {templates.map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
           </select>
+          {Array.isArray(d.templateButtons) && (d.templateButtons as unknown[]).length > 0 && (
+            <p className="mt-1 text-[11px] text-ink-400">Chaque bouton de réponse rapide devient une <b>sortie</b> à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.</p>
+          )}
         </div>
       )}
       {wfType === 'flow' && (

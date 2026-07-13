@@ -7,10 +7,14 @@ import type { WorkflowGraph, WorkflowNode } from './graph';
  * humaine). V1 volontairement simple : pas de branche par bouton (réservé plus tard via sourceHandle).
  */
 
+/** Bouton d'un template (dénormalisé sur le node à la sélection) : sert à envoyer un payload contrôlé par
+ *  bouton quick-reply (branche déterministe) et à afficher les sorties dans l'éditeur. */
+export interface WorkflowButton { type: string; text: string }
+
 export type WorkflowAction =
   | { kind: 'tag'; tag: string }
   | { kind: 'field'; key: string; value: string }
-  | { kind: 'sendTemplate'; templateName: string; language: string };
+  | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] };
 
 export type WalkRest =
   | { status: 'waiting'; nodeId: string } // en attente d'une réponse (après un template ou un formulaire)
@@ -35,6 +39,12 @@ export function nextNode(graph: WorkflowGraph, nodeId: string): string | null {
   return graph.edges.find((e) => e.source === nodeId)?.target ?? null;
 }
 
+/** Le bloc suivant POUR un handle de sortie donné (branche par bouton : sourceHandle = `btn:<index>`).
+ *  null si aucune arête ne part de ce handle. */
+export function nextNodeByHandle(graph: WorkflowGraph, nodeId: string, handle: string): string | null {
+  return graph.edges.find((e) => e.source === nodeId && e.sourceHandle === handle)?.target ?? null;
+}
+
 function actionOf(node: WorkflowNode): WorkflowAction | null {
   if (node.type === 'tag') {
     const tag = String(node.data.tag ?? '').trim();
@@ -46,7 +56,13 @@ function actionOf(node: WorkflowNode): WorkflowAction | null {
   }
   if (node.type === 'template') {
     const templateName = String(node.data.templateName ?? '').trim();
-    return templateName ? { kind: 'sendTemplate', templateName, language: String(node.data.language ?? 'fr') } : null;
+    if (!templateName) return null;
+    const raw = Array.isArray(node.data.templateButtons) ? node.data.templateButtons : [];
+    const buttons: WorkflowButton[] = raw.map((b) => ({
+      type: String((b as { type?: unknown }).type ?? ''),
+      text: String((b as { text?: unknown }).text ?? ''),
+    }));
+    return { kind: 'sendTemplate', templateName, language: String(node.data.language ?? 'fr'), buttons };
   }
   return null;
 }

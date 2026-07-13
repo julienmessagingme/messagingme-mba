@@ -41,4 +41,21 @@ describe('processWorkflowAdvance', () => {
     });
     expect(calls).toEqual([]);
   });
+
+  it('transmet le bouton tapé à advance (type button -> payload) ; texte -> null', async () => {
+    const seen: Array<{ w: string; bp: string | null }> = [];
+    const p = { entry: [{ changes: [{ field: 'messages', value: {
+      metadata: { phone_number_id: 'PN1' },
+      contacts: [{ wa_id: '33600' }],
+      messages: [
+        { id: 'm1', from: '33600', type: 'text', text: { body: 'oui' } },
+        { id: 'm2', from: '33602', type: 'button', button: { text: 'Non', payload: 'btn:1' } },
+      ],
+    } }] }] };
+    await processWorkflowAdvance(p, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, w, _m, bp) => { seen.push({ w, bp }); },
+    });
+    expect(seen).toEqual([{ w: '33600', bp: null }, { w: '33602', bp: 'btn:1' }]);
+  });
 });

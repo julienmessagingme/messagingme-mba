@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { walk, entryNode, nextNode } from '../src/workflow/engine';
+import { walk, entryNode, nextNode, nextNodeByHandle } from '../src/workflow/engine';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 
 const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}): WorkflowGraph['nodes'][number] => ({ id, type, position: { x: 0, y: 0 }, data });
 const e = (id: string, source: string, target: string) => ({ id, source, target });
+const eh = (id: string, source: string, target: string, sourceHandle: string) => ({ id, source, target, sourceHandle });
 
 // tag(vip) -> template(promo) -> inbox
 const linear: WorkflowGraph = {
@@ -24,12 +25,38 @@ describe('entryNode / nextNode', () => {
   });
 });
 
+describe('nextNodeByHandle', () => {
+  const g: WorkflowGraph = {
+    nodes: [n('tpl', 'template', { templateName: 'p' }), n('a', 'tag', { tag: 'a' }), n('b', 'tag', { tag: 'b' })],
+    edges: [eh('e0', 'tpl', 'a', 'btn:0'), eh('e1', 'tpl', 'b', 'btn:1')],
+  };
+  it('suit l\'arête du handle demandé', () => {
+    expect(nextNodeByHandle(g, 'tpl', 'btn:0')).toBe('a');
+    expect(nextNodeByHandle(g, 'tpl', 'btn:1')).toBe('b');
+  });
+  it('handle inconnu -> null (le repli nextNode est géré par l\'appelant)', () => {
+    expect(nextNodeByHandle(g, 'tpl', 'btn:9')).toBeNull();
+    expect(nextNode(g, 'tpl')).toBe('a'); // repli = 1re arête
+  });
+});
+
+describe('walk : action sendTemplate porte les boutons du template', () => {
+  it('template avec boutons -> action { buttons }', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr', templateButtons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Site', url: 'https://x' }] })],
+      edges: [],
+    };
+    const r = walk(g, 'tpl');
+    expect(r.actions).toEqual([{ kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Site' }] }]);
+  });
+});
+
 describe('walk', () => {
   it('depuis l\'entrée : applique le tag SYNCHRONE puis s\'arrête au template (waiting)', () => {
     const r = walk(linear, entryNode(linear)!);
     expect(r.actions).toEqual([
       { kind: 'tag', tag: 'vip' },
-      { kind: 'sendTemplate', templateName: 'promo', language: 'fr' },
+      { kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [] },
     ]);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'tpl' });
   });

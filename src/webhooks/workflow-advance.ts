@@ -4,14 +4,14 @@ import { extractInbound } from './inbound';
 export interface WorkflowAdvanceDeps {
   /** Tenant propriétaire du numéro business (mappe le message à un tenant). null si inconnu. */
   phoneNumberTenant(phoneNumberId: string): Promise<string | null>;
-  /** Avance le run en attente de ce contact (no-op si aucun / message déjà traité). */
-  advance(tenantId: string, waId: string, messageId: string): Promise<void>;
+  /** Avance le run en attente de ce contact. `buttonPayload` = bouton tapé (branche par bouton). */
+  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null): Promise<void>;
 }
 
 /**
  * Avance les workflows sur les messages entrants (une réponse du contact = un pas dans le graphe). ISOLÉ
- * dans le handler (ne doit JAMAIS faire échouer le job webhook partagé avec les statuts/inbox/flow). V1 :
- * n'importe quelle réponse fait avancer le run en attente (pas de branche par bouton).
+ * dans le handler (ne doit JAMAIS faire échouer le job webhook partagé avec les statuts/inbox/flow). Le
+ * bouton tapé (`m.buttonPayload`) sélectionne la branche ; une réponse texte suit la 1re arête sortante.
  */
 export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdvanceDeps): Promise<void> {
   for (const m of extractInbound(payload)) {
@@ -19,7 +19,7 @@ export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdv
     // du même webhook (Meta peut batcher plusieurs messages). Calqué sur processFlowCompletions.
     try {
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
-      if (tenantId) await deps.advance(tenantId, m.waId, m.messageId);
+      if (tenantId) await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processWorkflowAdvance: message ignoré:', err instanceof Error ? err.message : err);

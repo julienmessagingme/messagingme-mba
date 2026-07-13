@@ -1,5 +1,5 @@
-import { walk, entryNode, nextNode } from './engine';
-import type { WorkflowAction, WalkRest } from './engine';
+import { walk, entryNode, nextNode, nextNodeByHandle } from './engine';
+import type { WorkflowAction, WalkRest, WorkflowButton } from './engine';
 import type { WorkflowGraph } from './graph';
 import type { RunState, WorkflowRunRow } from './run-store.pg';
 
@@ -12,7 +12,8 @@ export interface WorkflowExecutorDeps {
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   applyTag(tenantId: string, waId: string, tag: string): Promise<void>;
   setField(tenantId: string, waId: string, key: string, value: string): Promise<void>;
-  sendTemplate(tenantId: string, waId: string, templateName: string, language: string): Promise<void>;
+  /** `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton). */
+  sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[]): Promise<void>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -34,7 +35,7 @@ export class WorkflowExecutor {
     for (const a of actions) {
       if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
-      else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language);
+      else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons);
     }
   }
 
@@ -48,12 +49,18 @@ export class WorkflowExecutor {
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
   }
 
-  /** Avance le run en attente d'un contact quand il répond. No-op si aucun run / message déjà traité. */
-  async advance(tenantId: string, waId: string, messageId: string): Promise<void> {
+  /**
+   * Avance le run en attente d'un contact quand il répond. No-op si aucun run / message déjà traité.
+   * `buttonPayload` = bouton quick-reply tapé (`btn:<index>`) : si une arête part de ce handle on la suit
+   * (branche par bouton), sinon on retombe sur la 1re arête sortante (réponse texte, ou bouton non câblé).
+   */
+  async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
     const graph = run.currentNode ? await this.deps.getGraph(run.workflowId, tenantId) : null;
-    const next = graph && run.currentNode ? nextNode(graph, run.currentNode) : null;
+    const next = graph && run.currentNode
+      ? ((buttonPayload ? nextNodeByHandle(graph, run.currentNode, buttonPayload) : null) ?? nextNode(graph, run.currentNode))
+      : null;
     if (!graph || !next) {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
       return;

@@ -141,6 +141,18 @@ n'a pas commencé à remonter). Au 1er BSUID réel : (1) confirmer le format Met
 et est délivré ; (3) vérifier que la fiche auto-créée + le matching merge/tag/conversation collent au format
 réel. Cf `documentation.md §Identité`.
 
+## Suites builder Lot 5 — node à sorties par bouton (V2, non bloquant)
+
+Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeur) :
+- **Snapshot des boutons figé** : le node template mémorise `templateButtons` à la sélection. Si on ÉDITE
+  ensuite le template (réordonner/renommer les boutons) sans ré-ouvrir le node, le workflow garde l'ancien
+  ordre -> un bouton pourrait brancher vers la mauvaise cible (le payload `btn:<i>` reste posé sur l'index i).
+  Fix possible : re-fetch les boutons courants du template à l'exécution, ou invalider/re-valider le node quand
+  le template change. Conditionnel (édition après câblage), pas bloquant.
+- **Arêtes orphelines à la re-sélection** : changer le template d'un node déjà câblé ne purge pas les arêtes des
+  anciens `sourceHandle` disparus ; combiné au repli `nextNode` (1re arête), une arête morte pourrait être
+  choisie. Fix : purger les arêtes du node dont le `sourceHandle` n'existe plus au changement de template.
+
 ## Suites builder Lot 3 (V2, non bloquant)
 
 - **Branche par bouton quick-reply** : PB2 avance aujourd'hui sur N'IMPORTE QUELLE réponse inbound. Pour un
