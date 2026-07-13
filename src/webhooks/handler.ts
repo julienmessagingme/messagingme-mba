@@ -2,9 +2,11 @@ import { parseWebhook } from './parse';
 import { processStatuses } from './delivery';
 import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
+import { processWorkflowAdvance } from './workflow-advance';
 import type { DeliveryStore } from './delivery';
 import type { InboxStore } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
+import type { WorkflowAdvanceDeps } from './workflow-advance';
 import type { EventStore } from './store';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
@@ -25,6 +27,7 @@ export async function handleWebhookJob(
   delivery?: DeliveryStore,
   inbox?: InboxStore,
   flowMapping?: FlowMappingDeps,
+  workflowAdvance?: WorkflowAdvanceDeps,
 ): Promise<void> {
   const events = parseWebhook(raw);
   for (const ev of events) {
@@ -40,6 +43,15 @@ export async function handleWebhookJob(
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: mapping flow ignoré:', err instanceof Error ? err.message : err);
+    }
+  }
+  // Avance des workflows sur les réponses. ISOLÉ également (même raison : ne pas DLQ le webhook partagé).
+  if (workflowAdvance) {
+    try {
+      await processWorkflowAdvance(raw, workflowAdvance);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handleWebhookJob: avance workflow ignorée:', err instanceof Error ? err.message : err);
     }
   }
 }

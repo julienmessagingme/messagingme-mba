@@ -15,6 +15,8 @@ import {
 import { PgStatsStore } from '../../src/stats/store.pg';
 import { PgOpsStore } from '../../src/ops/store.pg';
 import { PgWorkflowStore } from '../../src/workflow/store.pg';
+import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
+import { WorkflowExecutor } from '../../src/workflow/executor';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -340,6 +342,50 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.remove(id, '00000000-0000-0000-0000-000000000000')).toBe(false);
     expect(await store.remove(id, tenantId)).toBe(true);
     expect(await store.getById(id, tenantId)).toBeNull();
+  });
+
+  it('WorkflowExecutor (E2E DB) : start pose le tag + persiste le run ; reply -> inbox', async () => {
+    const wfStore = new PgWorkflowStore(pool);
+    const runStore = new PgWorkflowRunStore(pool);
+    const contactStore = new PgContactStore(pool);
+    const phone = '+33600000070';
+    const waId = '33600000070';
+    await pool.query(`insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in')`, [tenantId, phone]);
+
+    // tag(atelier) -> template(promo) -> inbox
+    const graph = {
+      nodes: [
+        { id: 't', type: 'tag' as const, position: { x: 0, y: 0 }, data: { tag: 'atelier' } },
+        { id: 'tpl', type: 'template' as const, position: { x: 0, y: 0 }, data: { templateName: 'promo', language: 'fr' } },
+        { id: 'ib', type: 'inbox' as const, position: { x: 0, y: 0 }, data: {} },
+      ],
+      edges: [{ id: 'e1', source: 't', target: 'tpl' }, { id: 'e2', source: 'tpl', target: 'ib' }],
+    };
+    const { id: wfId } = await wfStore.insert(tenantId, 'Atelier', graph);
+
+    const sends: string[] = [];
+    const ex = new WorkflowExecutor({
+      runs: runStore,
+      getGraph: async (id, t) => (await wfStore.getById(id, t))?.graph ?? null,
+      applyTag: (t, w, tag) => contactStore.addTagsByPhone(t, w, [tag]).then(() => undefined),
+      setField: (t, w, k, v) => contactStore.mergeFieldsByPhone(t, w, { [k]: v }).then(() => undefined),
+      sendTemplate: async (_t, _w, name) => { sends.push(name); },
+    });
+
+    await ex.start(tenantId, wfId, graph, { waId, contactId: null });
+    // tag posé sur le VRAI contact + template envoyé + run en attente au template.
+    const tagsRow = (await pool.query<{ tags: string[] }>(`select tags from contacts where tenant_id = $1 and phone_e164 = $2`, [tenantId, phone])).rows[0]!;
+    expect(tagsRow.tags).toContain('atelier');
+    expect(sends).toEqual(['promo']);
+    const waiting = await runStore.findWaitingByWaId(tenantId, waId);
+    expect(waiting).toMatchObject({ status: 'waiting', currentNode: 'tpl', workflowId: wfId });
+
+    // le contact répond -> avance jusqu'à inbox (terminal).
+    await ex.advance(tenantId, waId, 'wamid.1');
+    expect(await runStore.findWaitingByWaId(tenantId, waId)).toBeNull(); // plus en attente
+    const st = (await pool.query<{ status: string }>(`select status from workflow_runs where workflow_id = $1`, [wfId])).rows[0]!;
+    expect(st.status).toBe('inbox');
+    expect(sends).toEqual(['promo']); // pas de nouvel envoi
   });
 
   it('PgQualityProvider : UNKNOWN si numéro absent, lit le rating sinon', async () => {

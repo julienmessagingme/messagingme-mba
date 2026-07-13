@@ -1,0 +1,85 @@
+import { describe, it, expect } from 'vitest';
+import { WorkflowExecutor } from '../src/workflow/executor';
+import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
+import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
+
+const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
+const e = (id: string, source: string, target: string) => ({ id, source, target });
+
+class FakeRuns {
+  run: WorkflowRunRow | null = null;
+  async start(tenantId: string, workflowId: string, waId: string, _contactId: string | null, state: RunState): Promise<{ id: string }> {
+    this.run = { id: 'r1', workflowId, tenantId, waId, currentNode: state.currentNode, status: state.status, lastMessageId: null };
+    return { id: 'r1' };
+  }
+  async findWaitingByWaId(_t: string, waId: string): Promise<WorkflowRunRow | null> {
+    return this.run && this.run.status === 'waiting' && this.run.waId === waId ? this.run : null;
+  }
+  async setState(id: string, state: RunState): Promise<void> {
+    if (this.run && this.run.id === id) this.run = { ...this.run, currentNode: state.currentNode, status: state.status, lastMessageId: state.lastMessageId ?? this.run.lastMessageId };
+  }
+}
+
+function make(graph: WorkflowGraph) {
+  const runs = new FakeRuns();
+  const calls: string[] = [];
+  const ex = new WorkflowExecutor({
+    runs,
+    getGraph: async () => graph,
+    applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
+    setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
+    sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
+  });
+  return { ex, runs, calls };
+}
+
+describe('WorkflowExecutor', () => {
+  // tag -> template -> inbox
+  const linear: WorkflowGraph = {
+    nodes: [n('t', 'tag', { tag: 'vip' }), n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
+    edges: [e('e1', 't', 'tpl'), e('e2', 'tpl', 'ib')],
+  };
+
+  it('start : pose le tag, envoie le template, run en attente au template', async () => {
+    const { ex, runs, calls } = make(linear);
+    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:vip', 'tpl:promo']);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+  });
+
+  it('advance : le contact répond -> la conversation arrive en inbox (run terminé)', async () => {
+    const { ex, runs, calls } = make(linear);
+    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'msg1');
+    expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
+    expect(calls).toEqual(['tag:vip', 'tpl:promo']); // pas de nouvel envoi (inbox n'a pas d'action)
+  });
+
+  it('workflow 100% synchrone (tag seul) : action appliquée, AUCUN run persistant', async () => {
+    const g: WorkflowGraph = { nodes: [n('t', 'tag', { tag: 'x' })], edges: [] };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:x']);
+    expect(runs.run).toBeNull();
+  });
+
+  it('advance idempotent : un même message ne fait pas avancer 2 fois', async () => {
+    // tag -> tpl1 -> tpl2 -> inbox : après la 1re réponse, run attend au tpl2.
+    const g: WorkflowGraph = {
+      nodes: [n('t', 'tag', { tag: 'a' }), n('tpl1', 'template', { templateName: 't1', language: 'fr' }), n('tpl2', 'template', { templateName: 't2', language: 'fr' }), n('ib', 'inbox')],
+      edges: [e('e1', 't', 'tpl1'), e('e2', 'tpl1', 'tpl2'), e('e3', 'tpl2', 'ib')],
+    };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:a', 'tpl:t1']);
+    await ex.advance('t1', '33600', 'm1'); // -> envoie t2, attend au tpl2
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl2', lastMessageId: 'm1' });
+    await ex.advance('t1', '33600', 'm1'); // MÊME message -> no-op
+    expect(calls).toEqual(['tag:a', 'tpl:t1', 'tpl:t2']); // pas de 2e envoi de t2
+  });
+
+  it('advance sans run en attente -> no-op', async () => {
+    const { ex } = make(linear);
+    await expect(ex.advance('t1', '33600', 'm1')).resolves.toBeUndefined();
+  });
+});

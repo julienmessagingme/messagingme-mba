@@ -72,6 +72,26 @@ export class PgContactStore implements ContactStore {
     return res.rowCount ?? 0;
   }
 
+  /**
+   * Ajoute des tags (union dédupliquée) au contact d'un numéro (bloc « ajout de tag » d'un workflow). Même
+   * matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus, 1 contact). Merge-only : ne crée pas de
+   * fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
+   */
+  async addTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
+    const clean = [...new Set(tags.map((t) => t.trim()).filter((t) => t !== ''))];
+    if (clean.length === 0) return 0;
+    const res = await this.pool.query(
+      `update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now()
+       where id = (
+         select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1
+       )`,
+      [tenantId, waId, clean],
+    );
+    return res.rowCount ?? 0;
+  }
+
   private static rowToContact(r: {
     id: string; phone_e164: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date;

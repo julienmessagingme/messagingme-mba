@@ -15,6 +15,9 @@ import { campaignRunJob } from './campaign/run-job';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
+import { PgWorkflowStore } from './workflow/store.pg';
+import { PgWorkflowRunStore } from './workflow/run-store.pg';
+import { WorkflowExecutor } from './workflow/executor';
 import { MetaClient } from './meta/client';
 import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
@@ -35,17 +38,40 @@ async function main(): Promise<void> {
   const inboxStore = new PgInboxStore(pool);
   const flowStore = new PgFlowStore(pool);
   const contactStore = new PgContactStore(pool);
-  await queue.work('webhook', async (data) => {
-    await handleWebhookJob(data, eventStore, recipientStore, inboxStore, {
-      lookup: flowStore,
-      writer: contactStore,
-    });
-  });
-
-  // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).
   const repo = new PgCampaignRepo(pool);
   const transport = new FetchTransport();
   const dryRun = config.DRY_RUN === 'true';
+
+  // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).
+  const workflowStore = new PgWorkflowStore(pool);
+  const runStore = new PgWorkflowRunStore(pool);
+  const workflowExecutor = new WorkflowExecutor({
+    runs: runStore,
+    getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
+    applyTag: async (tenant, waId, tag) => { await contactStore.addTagsByPhone(tenant, waId, [tag]); },
+    setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
+    sendTemplate: async (tenant, waId, name, language) => {
+      if (dryRun) return; // DRY_RUN : aucun appel Meta
+      const pn = await repo.getTenantPhoneNumberId(tenant);
+      if (!pn) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendTemplate: aucun numéro pour le tenant ${tenant}, template « ${name} » non envoyé`);
+        return;
+      }
+      const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+      await client.sendTemplate(waId, { name, language });
+    },
+  });
+
+  await queue.work('webhook', async (data) => {
+    await handleWebhookJob(
+      data, eventStore, recipientStore, inboxStore,
+      { lookup: flowStore, writer: contactStore },
+      { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m) => workflowExecutor.advance(t, w, m) },
+    );
+  });
+
+  // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).
   const dryRunSender = new DryRunSender();
   const senderFor = (campaign: Campaign): MessageSender =>
     dryRun
