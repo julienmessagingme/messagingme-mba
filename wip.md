@@ -124,6 +124,39 @@ Quatre demandes de Julien + l'encapsulation d'identité BSUID. Revue transversal
   le 1er contact BSUID) -> `messagingTarget` en source unique ; (2) « Lancer » caché aussi pour `paused`
   (campagne pausée par le quality gate non relançable) -> bouton « Reprendre ».
 
+## Lot 6 — Refonte auth + onboarding (2026-07-13) : 5 phases LIVE ✅
+
+Plan `.loop/lot6-auth.md`, feature-loop (reviewer séparé + 🔴/🟡 fermés + commit/deploy par phase). **Migration
+0026** (`auth_tokens` + `tenants.status`) appliquée avant deploy.
+- **Ph 1** fondations : `PgAuthTokenStore` (create/consume atomique, token sha256), `createTenantWithAdmin`
+  transactionnel, `createPending`/`setPassword`, `getAuthState` + `tenantStatus`, crochet `locked`->403 (inerte).
+- **Ph 2** inscription libre (`/signup` -> nouvel espace + admin), mot de passe perdu (`/forgot`, anti-énum),
+  reset (`/reset/[token]`), changement (`/compte`). 🔴 fermé : `hashPassword` SYNC sur route publique ->
+  event-loop DoS (le webhook tourne dans le même process) -> passé en async + `hashPasswordSync` pour seed/tests.
+- **Ph 3** invitations (Resend) : `POST /invitations` (pending + token + email), accept (pose le mdp, rôle/tenant
+  depuis la base pas le body). Front InviteCard + badge « invité » + `/invite/[token]`.
+- **Ph 4** Google : `verifyGoogleIdToken` (jose + JWKS Google, **pas de nouvelle dépendance**), `POST /auth/google`
+  (login/signup/invite par email vérifié), `GET /auth/config`, bouton GIS sur login/signup/invite. GOOGLE_CLIENT_ID
+  posé au `.env.prod`. Julien a ajouté l'origine JS + publié l'app Google.
+- **Ph 5** onboarding accueil : espace sans numéro -> zone grisée « Connecter ton numéro » (placeholder futur
+  Embedded Signup). Pur front, « jamais de faux vert ».
+
+## Lot 7 — variables template + bot builder + fiche contact (2026-07-13) : LIVE ✅
+
+7 demandes de Julien. Exploration parallèle (7 agents) puis revue adversariale par chantier (6 agents) : **1 🔴 +
+3 🟡 fermés**, 🔴 re-vérifié PASS. **Aucune migration** (réutilise `template_param_hints` 0025). 565 unit (+19).
+- **C7 (bug 132000)** : une campagne via workflow dont le 1er node est un template envoyait **0 variable** ->
+  rejet Meta. Fix : la closure `sendTemplate` (worker.ts) résout les `{{n}}` avec les attributs du contact (indices
+  `template_param_hints`), repli exemple, fournit TOUJOURS N params. `buildWorkflowTemplateComponents` (PURE,
+  testée), `resolveHintParams`, `getResolvableByPhone`, N via `list()` Meta caché 5 min.
+- **C1** : corps du template en **chips lisibles** (`VariableBodyEditor` contentEditable, sérialise en `{{n}}`,
+  caret-safe). 🔴 fermé : numérotation par MAX+1 (pas de collision après suppression d'une variable) + canonicalise
+  1..N au submit ; 🟡 panneau exemples piloté par positions réelles.
+- **C2** drag une flèche dans le vide -> crée un node (`onConnectEnd`). **C5** ✕ de suppression sur chaque node.
+- **C3** vraie image dans la miniature (object URL local, révoqué). **C4** édition/suppression champs + Nom/Prénom
+  sur la fiche (tél + BSUID lecture seule ; champ orphelin supprimable). **C6** tag du node « ajout de tag »
+  déclaré dans Contenus > Tags (à la sauvegarde + au runtime, best-effort).
+
 ### Suivis ouverts (lots 1 + 2 + 3 + 4)
 - **Envoi vers un BSUID non prouvé en prod** : le code route bien `recipient`, mais aucun contact BSUID
   n'existe encore (zéro trafic post-octobre). À valider au 1er BSUID réel (et confirmer l'heuristique
@@ -132,9 +165,9 @@ Quatre demandes de Julien + l'encapsulation d'identité BSUID. Revue transversal
   une itération V2 si un cas réel l'exige.
 - **Funnel campagnes workflow** : delivered/read/replied = 0 (message_id synthétique `wf-<id>`, la livraison
   Meta n'est pas suivie pour ces envois). Limitation V1 assumée.
-- **Refonte auth** (invitations Resend + gestion du mot de passe + « mot de passe perdu » + Google OAuth) :
-  demandée, PAS commencée. Email DÉBLOQUÉ (Resend hors mode test, cf ci-dessous) ; reste gated sur un client
-  OAuth Google (action Julien) pour le « se connecter avec Google ». Cf `todo.md`.
+- ✅ **Refonte auth : FAITE (Lot 6, 2026-07-13)** : inscription libre + Google + invitations Resend + mot de passe
+  perdu/reset/changement, tous LIVE. Reste un raffinement V2 non bloquant (invariant admin excluant les pending,
+  cf `todo.md`).
 - ✅ **Resend HORS mode test (2026-07-13)** : domaine `messagingme.app` **vérifié** dans un compte Resend dédié
   (region eu-west-1). `.env.prod` du VPS basculé : `RESEND_API_KEY` = clé de CE compte (⚠️ PAS l'ancienne clé du
   compte de test), `SUPPORT_FROM=support@messagingme.app`, `SUPPORT_TO=julien@messagingme.fr` ; conteneurs

@@ -128,17 +128,10 @@ acceptée). Non exploitable (self-block + un pending ne peut pas s'authentifier)
 ajouter `and password_hash is not null` aux 3 sous-requêtes pour qu'un admin invité jamais activé ne compte pas
 comme « admin actif ». Défense en profondeur, à faire à froid (touche du SQL d'invariant sécurité).
 
-## Refonte auth (demandée, PAS commencée)
+## Refonte auth — ✅ FAITE (Lot 6, 2026-07-13)
 
-Objectif : ouvrir la console à une équipe cliente sans que l'admin fabrique les mots de passe.
-- **Invitations par email** (Resend) : l'admin invite un membre -> email avec lien pour qu'il choisisse
-  son mot de passe (au lieu du mot de passe posé par l'admin aujourd'hui).
-- **Gestion du mot de passe** : « mot de passe perdu » (lien de réinitialisation par email) + changement de
-  mot de passe.
-- **Google** : « se connecter avec Google » (sign-in ET sign-up).
-- **Gates externes (Julien)** : (1) **vérifier le domaine Resend** (mêmes DNS Cloudflare que le support,
-  cf suivi Resend ci-dessous) pour sortir du mode test ; (2) créer un **client OAuth Google** (Google Cloud
-  Console) et fournir client_id/secret. Rien de codable côté serveur sans ces deux-là.
+Inscription libre + Google + invitations Resend + mot de passe perdu/reset/changement, tous LIVE. Détail :
+`wip.md §Lot 6`. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
 
 ## Vérifier l'identité BSUID au 1er trafic réel (lot 4)
 

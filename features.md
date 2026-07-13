@@ -11,6 +11,20 @@ Admin : **Inbox · Contacts · Campagnes · Flow · Contenu (Templates / Formula
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*, Billing*, Déconnexion ;
 *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 
+## Comptes & authentification
+
+- ✅ **Inscription libre** (`/signup`) : n'importe qui crée **son propre espace** (nom d'espace + email + mot de
+  passe) et en devient l'**admin**. Redirige vers l'accueil (connecter le numéro).
+- ✅ **Se connecter avec Google** (bouton sur `/login`, `/signup`, `/invite`) : vérif du jeton côté serveur ;
+  liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace, comme un signup).
+- ✅ **Invitations d'équipe** (admin) : inviter un membre par email (Resend) -> il pose son mot de passe (ou
+  Google) via un lien, puis rejoint l'espace avec le rôle défini. Le compte reste « invité » tant qu'il n'a pas
+  activé. (Remplace le mot de passe posé par l'admin.)
+- ✅ **Mot de passe** : « oublié » (`/forgot`, lien de réinitialisation par email, réponse toujours générique
+  anti-énumération) + changement depuis le compte (`/compte`).
+- ✅ **Crochet paiement (inerte)** : chaque espace a un statut (`trial|active|locked`) ; un espace `locked`
+  serait bloqué (403). Pas de Stripe pour l'instant, le contrôle est en place mais neutre.
+
 ## Contacts & CRM
 
 - ✅ **Contacts / opt-in** : import CSV (reconnaissance de colonnes, normalisation E.164, mapping des
@@ -18,8 +32,13 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   client qui n'a pas partagé son numéro, post-octobre) : la colonne « Identifiant » et la fiche affichent l'un
   ou l'autre. Un client qui **écrit** à l'entreprise crée automatiquement sa fiche (par numéro ou BSUID),
   opt-in « inconnu » (donc hors marketing tant qu'il n'a pas consenti).
+- ✅ **Fiche contact éditable** : sur la fiche, on **modifie ou supprime** la valeur de chaque champ perso en
+  place, et on édite le **Nom** et le **Prénom**. Le **téléphone et le BSUID restent en lecture seule** (ce sont
+  les identités qui routent les messages WhatsApp). Un champ « orphelin » (dont la définition a été supprimée)
+  reste supprimable.
 - ✅ **Tags** (menu Contenu) : renommer (re-dédup si la cible existe), supprimer -> répercuté sur tous
-  les contacts. Dérivés des contacts (pas de table dédiée).
+  les contacts. Un tag saisi dans un bloc « ajout de tag » du bot builder **apparaît aussi ici** (déclaré à la
+  sauvegarde du workflow). Dérivés des contacts + tags déclarés.
 - ✅ **User fields** (menu Contenu) : éditer le libellé / le type, supprimer. La **clé est verrouillée**
   (renommer la clé casserait le mapping des campagnes) -> on édite label/type seulement.
 
@@ -27,10 +46,13 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 
 - ✅ **Création** : template simple (corps + variables + boutons quick-reply / URL / **Flow**) ou
   **carousel** (2-10 cartes image + texte + boutons identiques). Soumission à validation Meta, suivi du statut.
-- ✅ **Sélecteur de variable** : bouton « + Variable » à droite du corps → on choisit un champ (Nom, Téléphone
-  + champs perso) au lieu de taper `{{n}}` ; l'aperçu affiche « Bonjour [Prénom] » (variable encadrée) et
-  **l'exemple exigé par Meta se remplit tout seul**. Le lien variable→champ est mémorisé : à la création d'une
-  campagne avec ce template, le mapping est **déjà pré-rempli** (modifiable).
+- ✅ **Sélecteur de variable + chips dans le corps** : bouton « + Variable » → on choisit un champ (Nom,
+  Téléphone + champs perso) au lieu de taper `{{n}}`. La variable s'affiche **directement dans la zone d'édition
+  comme une puce lisible `[Prénom]`** (plus de `{{1}}`), et **l'exemple exigé par Meta se remplit tout seul**.
+  Supprimer une puce puis en réinsérer une ne casse pas la numérotation (renumérotée proprement à l'envoi). Le
+  lien variable→champ est mémorisé : à la création d'une campagne avec ce template, le mapping est **déjà
+  pré-rempli** (modifiable).
+- ✅ **En-tête image** : l'image uploadée s'affiche pour de vrai dans l'aperçu WhatsApp (plus juste une icône).
 - ✅ **Édition** (templates simples) : corps / boutons / catégorie. Avertissement « repasse en validation Meta ».
   **Bloquée** si le template a un en-tête/pied de page/carousel (Meta les supprimerait), ou s'il est utilisé
   par une **campagne active** (garde-fou anti envoi cassé). Nom et langue non modifiables (immuables chez Meta).
@@ -59,6 +81,12 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   `+` / poubelle sur chaque flèche pour insérer ou couper, bouton « + Créer un bloc », panneau de config par
   bloc. Blocs : **envoi de template**, **inbox** (remonte la conversation à un humain), **formulaire** (envoie
   un WhatsApp Flow), **ajout de tag**, **ajout de champ**. (Éditeur React Flow.)
+  - **Tirer une flèche dans le vide crée un bloc** à cet endroit (relié), puis on choisit son type dans le
+    panneau de droite. Un **✕** en coin de chaque bloc le supprime directement (avec ses flèches).
+- ✅ **Variables du template collées automatiquement** : quand un bloc « envoi template » part (au lancement OU
+  au fil du workflow), les variables du template sont **remplies avec les attributs du contact** (ex. `{{1}}`
+  relié à Prénom -> le prénom du contact), avec repli sur l'exemple du template. Plus besoin de re-saisir la
+  variable ; corrige l'erreur Meta « nombre de variables ».
 - ✅ **Sortie par bouton** : un bloc « envoi template » affiche **une sortie par bouton de réponse rapide**
   (à relier vers le bloc suivant) ; les boutons lien/formulaire sont montrés grisés (ils sortent de WhatsApp,
   non reliables). Un bloc sans réponse rapide garde une sortie unique.
@@ -104,13 +132,17 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 ## Support (menu Support)
 
 - ✅ **Formulaire de contact** : sujet + message -> email à l'équipe via Resend (reply-to = email de l'auteur).
-  Mode test tant que le domaine n'est pas vérifié (envoi limité à l'adresse du compte Resend).
+  Domaine `messagingme.app` **vérifié** (hors mode test) : les emails partent réellement (support, invitations,
+  réinitialisation de mot de passe).
 
 ## Accueil (clic logo)
 
 - ✅ **Page d'accueil** `/accueil` (clic sur le logo, admin) : « Bonjour {prénom} », **statut du compte
   WhatsApp** (pastille vert/ambre/rouge/gris, jamais de faux vert), **numéro** + qualité + palier d'envoi,
   et la carte **MBA actif/inactif** (déplacée hors du Dashboard).
+- ✅ **Onboarding « Connecter ton numéro »** : un espace **sans numéro rattaché** (typiquement fraîchement créé)
+  voit, à la place de la carte de statut, une **zone grisée « Connecter ton numéro »** (bouton placeholder =
+  futur Embedded Signup Meta). Ne s'affiche jamais pendant une panne Meta transitoire (un vrai numéro reste actif).
 
 ## Exploitation `/ops` (interne, hors console client)
 
