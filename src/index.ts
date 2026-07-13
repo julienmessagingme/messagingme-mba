@@ -57,6 +57,12 @@ async function main(): Promise<void> {
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const flowClient = new MetaFlowClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION, config.META_FLOW_JSON_VERSION);
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
+  // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
+  const sendAuthEmail = config.RESEND_API_KEY
+    ? async ({ to, subject, text }: { to: string; subject: string; text: string }) => {
+        await new ResendClient(config.RESEND_API_KEY).send({ from: `MessagingMe <${config.SUPPORT_FROM}>`, to, subject, text });
+      }
+    : undefined;
   const app = buildServer({
     queue,
     auth: {
@@ -68,17 +74,11 @@ async function main(): Promise<void> {
       createTenantWithAdmin: (name, admin) => userStore.createTenantWithAdmin(name, admin),
       setPassword: (userId, hash) => userStore.setPassword(userId, hash),
       getPasswordHash: (userId) => userStore.getPasswordHash(userId),
+      sessionUser: (userId) => userStore.getSessionUser(userId),
       tokens: authTokenStore,
       appUrl: config.APP_URL,
       resetTtlMs: config.RESET_TOKEN_TTL_MS,
-      // Emails (liens reset/invitation) : seulement si Resend est configuré, sinon forgot-password répond 200 sans envoi.
-      ...(config.RESEND_API_KEY
-        ? {
-            sendEmail: async ({ to, subject, text }: { to: string; subject: string; text: string }) => {
-              await new ResendClient(config.RESEND_API_KEY).send({ from: `MessagingMe <${config.SUPPORT_FROM}>`, to, subject, text });
-            },
-          }
-        : {}),
+      ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
     import: {
       contacts: contactStore,
@@ -161,6 +161,10 @@ async function main(): Promise<void> {
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
       setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
       deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),
+      createPendingUser: (tenant, email, role) => userStore.createPending(tenant, email, role),
+      createInviteToken: (userId) => authTokenStore.create('invite', userId, config.INVITE_TOKEN_TTL_MS),
+      appUrl: config.APP_URL,
+      ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
     flows: {
       flows: flowClient,

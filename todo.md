@@ -120,6 +120,14 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
   et testés au niveau claim ; un test « 2 runs concurrents -> zéro double-envoi » sous vraie course
   reste à ajouter (nice-to-have, pas un bug connu).
 
+## Raffinement invariant admin (lot 6 P3, non bloquant)
+
+Les sous-requêtes « ≥1 admin actif » de `PgUserStore.setRole/setDisabled/deleteUser` comptent
+`role='admin' and disabled_at is null` SANS exclure les comptes **pending** (password_hash null, invitation non
+acceptée). Non exploitable (self-block + un pending ne peut pas s'authentifier), mais correctness-of-intent :
+ajouter `and password_hash is not null` aux 3 sous-requêtes pour qu'un admin invité jamais activé ne compte pas
+comme « admin actif ». Défense en profondeur, à faire à froid (touche du SQL d'invariant sécurité).
+
 ## Refonte auth (demandée, PAS commencée)
 
 Objectif : ouvrir la console à une équipe cliente sans que l'admin fabrique les mots de passe.

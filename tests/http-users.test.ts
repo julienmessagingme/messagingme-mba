@@ -17,22 +17,32 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, createdAt: '2026-07-01T00:00:00.000Z' };
+const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, pending: false, createdAt: '2026-07-01T00:00:00.000Z' };
 
 interface Captured {
   created: Array<{ tenant: string; input: CreateUserInput }>;
   roleSet: Array<{ tenant: string; userId: string; role: string }>;
   disabledSet: Array<{ tenant: string; userId: string; disabled: boolean }>;
   deleted: Array<{ tenant: string; userId: string }>;
+  invited: Array<{ tenant: string; email: string; role: string }>;
+  emails: string[];
 }
 
 function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
-  const cap: Captured = { created: [], roleSet: [], disabledSet: [], deleted: [] };
+  const cap: Captured = { created: [], roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [] };
   const deps: UsersRouteDeps = {
     listUsers: async () => [EXISTING],
+    createPendingUser: async (tenant, email, role) => {
+      if (email === 'taken@demo.test') throw new DuplicateEmailError();
+      cap.invited.push({ tenant, email, role });
+      return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z' };
+    },
+    createInviteToken: async () => 'INVITE_RAW',
+    sendEmail: async (e) => { cap.emails.push(e.text); },
+    appUrl: 'https://mba.messagingme.app',
     createUser: async (tenant, input) => {
       cap.created.push({ tenant, input });
-      return { id: 'new', email: input.email, name: input.name, role: input.role, disabled: false, createdAt: '2026-07-10T00:00:00.000Z' };
+      return { id: 'new', email: input.email, name: input.name, role: input.role, disabled: false, pending: false, createdAt: '2026-07-10T00:00:00.000Z' };
     },
     setUserRole: async (tenant, userId, role) => {
       cap.roleSet.push({ tenant, userId, role });
@@ -279,6 +289,37 @@ describe('users route — suppression', () => {
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/users/known', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
     expect(cap.deleted).toHaveLength(0);
+    await server.close();
+  });
+});
+
+describe('users route — invitation', () => {
+  it('POST /invitations admin -> 201, compte en attente créé + email envoyé', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'New@Demo.test', role: 'agent' } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ emailSent: boolean; user: { pending: boolean } }>()).toMatchObject({ emailSent: true, user: { pending: true } });
+    expect(cap.invited).toEqual([{ tenant: 't1', email: 'new@demo.test', role: 'agent' }]); // email normalisé
+    expect(cap.emails[0]).toContain('/invite/INVITE_RAW');
+  });
+  it('POST /invitations email déjà pris -> 409', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'taken@demo.test', role: 'agent' } });
+    expect(res.statusCode).toBe(409);
+    await server.close();
+  });
+  it('POST /invitations email/role invalide -> 400', async () => {
+    const { server } = app();
+    const bad = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'x', role: 'agent' } });
+    const role = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'a@b.co', role: 'root' } });
+    expect([bad.statusCode, role.statusCode]).toEqual([400, 400]);
+    await server.close();
+  });
+  it('POST /invitations agent -> 403 (admin-only)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(agentTok), payload: { email: 'a@b.co', role: 'agent' } });
+    expect(res.statusCode).toBe(403);
+    expect(cap.invited).toHaveLength(0);
     await server.close();
   });
 });

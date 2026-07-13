@@ -13,6 +13,14 @@ export interface UsersRouteDeps {
   setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
   /** Supprime définitivement un compte. Refusé si dernier admin actif. */
   deleteUser(tenantId: string, userId: string): Promise<UserMutation>;
+  /** Invitation : crée un compte EN ATTENTE (sans mdp). Absent -> invitations indisponibles (503). */
+  createPendingUser?(tenantId: string, email: string, role: string): Promise<UserRow>;
+  /** Génère un token d'invitation à usage unique pour ce compte, renvoie le token en clair. */
+  createInviteToken?(userId: string): Promise<string>;
+  /** Envoi de l'email d'invitation (Resend). Absent -> l'invitation est créée mais aucun email n'est envoyé. */
+  sendEmail?(input: { to: string; subject: string; text: string }): Promise<void>;
+  /** Base URL du front pour le lien d'invitation. */
+  appUrl?: string;
 }
 
 const ROLES = new Set(['admin', 'agent']);
@@ -64,6 +72,40 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
         passwordHash: await hashPassword(b.password),
       });
       return reply.code(201).send({ user });
+    } catch (err) {
+      if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'email déjà utilisé' });
+      throw err;
+    }
+  });
+
+  // Inviter un membre : crée un compte EN ATTENTE (sans mot de passe) + envoie un lien pour qu'il choisisse le sien.
+  app.post('/tenants/:tenantId/invitations', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.createPendingUser || !deps.createInviteToken) return reply.code(503).send({ error: 'invitations indisponibles' });
+
+    const b = (req.body ?? {}) as Partial<{ email: unknown; role: unknown }>;
+    const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
+    if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
+    if (typeof b.role !== 'string' || !ROLES.has(b.role)) return reply.code(400).send({ error: 'role invalide (admin|agent)' });
+
+    try {
+      const user = await deps.createPendingUser(tenant, email, b.role);
+      const raw = await deps.createInviteToken(user.id);
+      let emailSent = false;
+      if (deps.sendEmail && deps.appUrl) {
+        try {
+          await deps.sendEmail({
+            to: email,
+            subject: 'Tu es invité sur MessagingMe',
+            text: `Tu as été invité à rejoindre un espace sur MessagingMe.\n\nClique sur ce lien pour choisir ton mot de passe et activer ton compte (valide 7 jours) :\n${deps.appUrl}/invite/${raw}`,
+          });
+          emailSent = true;
+        } catch {
+          // L'invitation (compte + lien) est déjà créée ; l'admin pourra ré-inviter si l'email a échoué.
+        }
+      }
+      return reply.code(201).send({ user, emailSent });
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'email déjà utilisé' });
       throw err;

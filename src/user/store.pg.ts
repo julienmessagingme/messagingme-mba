@@ -7,6 +7,8 @@ export interface UserRow {
   role: string;
   /** true = compte révoqué (login bloqué), réversible. */
   disabled: boolean;
+  /** true = invitation en attente (pas encore de mot de passe posé). */
+  pending: boolean;
   createdAt: string;
 }
 
@@ -68,8 +70,8 @@ export class PgUserStore {
   }
 
   async list(tenantId: string): Promise<UserRow[]> {
-    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; disabled_at: Date | null; created_at: Date }>(
-      `select id, email, name, role, disabled_at, created_at from users
+    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; disabled_at: Date | null; pending: boolean; created_at: Date }>(
+      `select id, email, name, role, disabled_at, (password_hash is null) as pending, created_at from users
        where tenant_id = $1 order by created_at asc`,
       [tenantId],
     );
@@ -79,8 +81,19 @@ export class PgUserStore {
       name: r.name,
       role: r.role,
       disabled: r.disabled_at !== null,
+      pending: r.pending,
       createdAt: r.created_at.toISOString(),
     }));
+  }
+
+  /** {tenantId, role, email} d'un compte par id : sert à émettre une session après acceptation d'invitation. */
+  async getSessionUser(userId: string): Promise<{ tenantId: string; role: string; email: string } | null> {
+    const res = await this.pool.query<{ tenant_id: string; role: string; email: string }>(
+      `select tenant_id, role, email from users where id = $1`,
+      [userId],
+    );
+    const r = res.rows[0];
+    return r ? { tenantId: r.tenant_id, role: r.role, email: r.email } : null;
   }
 
   async create(tenantId: string, input: CreateUserInput): Promise<UserRow> {
@@ -92,7 +105,7 @@ export class PgUserStore {
         [tenantId, input.email, input.name, input.role, input.passwordHash],
       );
       const r = res.rows[0]!;
-      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, createdAt: r.created_at.toISOString() };
+      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, pending: false, createdAt: r.created_at.toISOString() };
     } catch (err) {
       // 23505 = unique_violation : email déjà pris (index global users_email_lower_unique ou (tenant,email)).
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') {
@@ -113,7 +126,7 @@ export class PgUserStore {
         [tenantId, email, role],
       );
       const r = res.rows[0]!;
-      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, createdAt: r.created_at.toISOString() };
+      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, pending: true, createdAt: r.created_at.toISOString() };
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') throw new DuplicateEmailError();
       throw err;

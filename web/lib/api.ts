@@ -544,10 +544,20 @@ export interface AdminUser {
   role: UserRole;
   /** true = compte révoqué (login bloqué). */
   disabled: boolean;
+  /** true = invitation en attente (mot de passe pas encore choisi). */
+  pending: boolean;
   createdAt: string;
 }
 export function listUsers(tenantId: string): Promise<{ users: AdminUser[] }> {
   return request<{ users: AdminUser[] }>(`/tenants/${tenantId}/users`);
+}
+/** Invite un membre (crée un compte en attente + envoie un lien pour choisir son mot de passe). */
+export function inviteMember(tenantId: string, email: string, role: UserRole): Promise<{ user: AdminUser; emailSent: boolean }> {
+  return request(`/tenants/${tenantId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) });
+}
+/** Accepte une invitation : pose le mot de passe et connecte (renvoie une session comme le login). */
+export function acceptInvitation(token: string, password: string): Promise<LoginResult> {
+  return request<LoginResult>('/auth/invitations/accept', { method: 'POST', body: JSON.stringify({ token, password }) });
 }
 export interface CreateUserInput {
   email: string;

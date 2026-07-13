@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, createUser, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, createUser, inviteMember, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -73,6 +73,7 @@ function AdminInner({ session }: { session: Session }) {
       <h2 className="text-base font-semibold tracking-tight text-ink-900">Compte</h2>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
+      <InviteCard tenantId={session.tenantId} onInvited={load} />
       <CreateUserCard tenantId={session.tenantId} onCreated={load} />
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
@@ -114,6 +115,8 @@ function AdminInner({ session }: { session: Session }) {
                     <td className="px-5 py-3">
                       {u.disabled ? (
                         <span className="inline-flex items-center rounded-full bg-coral/10 px-2 py-0.5 text-xs font-medium text-coral">Révoqué</span>
+                      ) : u.pending ? (
+                        <span className="inline-flex items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs font-medium text-gold" title="A été invité mais n'a pas encore choisi son mot de passe">Invité</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">Actif</span>
                       )}
@@ -146,6 +149,54 @@ function AdminInner({ session }: { session: Session }) {
         )}
       </div>
     </div>
+  );
+}
+
+function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () => void }) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<UserRole>('agent');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    setBusy(true);
+    try {
+      const res = await inviteMember(tenantId, email.trim(), role);
+      setMsg({ kind: 'ok', text: res.emailSent ? `Invitation envoyée à ${email.trim()}.` : `Invitation créée pour ${email.trim()} (email non envoyé, vérifie la config).` });
+      setEmail('');
+      setRole('agent');
+      onInvited();
+    } catch (err) {
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Invitation impossible' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
+      <div className="text-sm font-semibold text-ink-900">Inviter un membre</div>
+      <p className="text-xs text-ink-500">Il reçoit un email pour choisir son mot de passe et rejoindre l&apos;espace.</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[200px] flex-1">
+          <label className="mb-1 block text-xs font-medium text-ink-600">Email</label>
+          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" placeholder="membre@entreprise.fr" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Rôle</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
+            <option value="agent">Agent (inbox)</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button type="submit" disabled={busy} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
+          {busy ? 'Envoi…' : 'Inviter'}
+        </button>
+      </div>
+      {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
+    </form>
   );
 }
 

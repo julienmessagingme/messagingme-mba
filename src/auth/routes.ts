@@ -21,6 +21,8 @@ export interface AuthRouteDeps {
   setPassword?(userId: string, hash: string): Promise<boolean>;
   /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
   getPasswordHash?(userId: string): Promise<string | null>;
+  /** {tenantId, role, email} d'un compte par id : émettre une session après acceptation d'invitation. */
+  sessionUser?(userId: string): Promise<{ tenantId: string; role: string; email: string } | null>;
   /** Tokens à usage unique (reset / invite). */
   tokens?: {
     create(purpose: 'reset' | 'invite', userId: string, ttlMs: number): Promise<string>;
@@ -52,6 +54,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   const signupLimiter = new RateLimiter(10, 60_000);
   const forgotLimiter = new RateLimiter(5, 60_000);
   const resetLimiter = new RateLimiter(10, 60_000);
+  const acceptLimiter = new RateLimiter(10, 60_000);
 
   app.post('/auth/login', async (req, reply) => {
     if (!limiter.take(req.ip)) {
@@ -134,6 +137,24 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     if (!userId) return reply.code(400).send({ error: 'lien invalide ou expiré' });
     await deps.setPassword(userId, await hashPassword(password));
     return reply.code(200).send({ ok: true });
+  });
+
+  // Acceptation d'invitation : consomme le token (usage unique), pose le mot de passe, connecte directement.
+  app.post('/auth/invitations/accept', async (req, reply) => {
+    if (!deps.tokens || !deps.setPassword || !deps.sessionUser) return reply.code(503).send({ error: 'invitations indisponibles' });
+    if (!acceptLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    const b = (req.body ?? {}) as { token?: unknown; password?: unknown };
+    const token = str(b.token);
+    const password = str(b.password);
+    if (token === '') return reply.code(400).send({ error: 'token requis' });
+    if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    const userId = await deps.tokens.consume('invite', token);
+    if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
+    const su = await deps.sessionUser(userId);
+    if (!su) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
+    await deps.setPassword(userId, await hashPassword(password));
+    const jwt = await signSession({ userId, tenantId: su.tenantId, role: su.role }, deps.secret);
+    return reply.code(200).send({ token: jwt, user: { email: su.email, role: su.role, tenantId: su.tenantId } });
   });
 
   // Changement de mot de passe (compte connecté) : vérifie le mdp courant.

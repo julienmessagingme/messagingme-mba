@@ -25,6 +25,7 @@ function app(over: Partial<AuthRouteDeps> = {}) {
     createTenantWithAdmin: async (name, admin) => { if (admin.email === 'taken@x.fr') throw new DuplicateEmailError(); cap.created.push({ name, email: admin.email }); return { tenantId: 'tNew', userId: 'uNew' }; },
     setPassword: async (userId) => { cap.setPass.push(userId); return true; },
     getPasswordHash: async () => KNOWN_HASH,
+    sessionUser: async (uid) => (uid === 'u1' ? { tenantId: 't1', role: 'agent', email: 'invited@x.fr' } : null),
     tokens: { create: async (p, uid) => { cap.tokens.push({ p, uid }); return 'RAWTOKEN'; }, consume: async (_p, raw) => (raw === 'GOOD' ? 'u1' : null) },
     sendEmail: async (e) => { cap.emails.push({ to: e.to, text: e.text }); },
     appUrl: 'https://mba.messagingme.app',
@@ -105,6 +106,32 @@ describe('POST /auth/reset-password', () => {
   it('mot de passe trop court -> 400', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/reset-password', ...j, payload: { token: 'GOOD', password: 'court' } });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+});
+
+describe('POST /auth/invitations/accept', () => {
+  it('token valide -> pose le mdp + connecte (200 + token + rôle de l\'invitation)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/auth/invitations/accept', ...j, payload: { token: 'GOOD', password: 'nouveaupass1' } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ token: string; user: { role: string; tenantId: string } }>();
+    expect(body.token).toBeTruthy();
+    expect(body.user).toMatchObject({ role: 'agent', tenantId: 't1' });
+    expect(cap.setPass).toEqual(['u1']);
+    await server.close();
+  });
+  it('token invalide -> 400, aucun mdp posé', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/auth/invitations/accept', ...j, payload: { token: 'BAD', password: 'nouveaupass1' } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.setPass).toHaveLength(0);
+    await server.close();
+  });
+  it('mot de passe trop court -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/auth/invitations/accept', ...j, payload: { token: 'GOOD', password: 'court' } });
     expect(res.statusCode).toBe(400);
     await server.close();
   });
