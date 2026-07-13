@@ -141,7 +141,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
   // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
   const requireAdmin = requireAuth ? [requireAuth, makeRequireRole(['admin'])] : undefined;
-  if (deps.auth) registerAuth(app, deps.auth);
+  if (deps.auth) registerAuth(app, deps.auth, requireAuth);
   if (deps.import) registerImport(app, deps.import, requireAdmin);
   if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin);
   // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer

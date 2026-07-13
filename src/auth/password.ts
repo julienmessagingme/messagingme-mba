@@ -6,11 +6,23 @@ const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: n
 const KEYLEN = 64;
 const PREFIX = 'scrypt';
 
-/** Hash un mot de passe (scrypt + sel aléatoire). Format : `scrypt$<sel hex>$<hash hex>`. */
-export function hashPassword(plain: string): string {
+/**
+ * Hash un mot de passe (scrypt + sel aléatoire), Format : `scrypt$<sel hex>$<hash hex>`. ASYNCHRONE
+ * (threadpool libuv) comme verifyPassword : `scryptSync` gèlerait l'event loop mono-thread, et le hachage est
+ * désormais sur des routes PUBLIQUES (signup/reset) -> un flux de requêtes saturerait le CPU (DoS, impacte aussi
+ * la réception webhook Meta dans le même process). À utiliser sur tout chemin de requête.
+ */
+export async function hashPassword(plain: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(plain, salt, KEYLEN);
+  const hash = await scrypt(plain, salt, KEYLEN);
   return `${PREFIX}$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+/** Version SYNCHRONE (bloque l'event loop) : réservée aux usages HORS chemin de requête, ex. le hash leurre
+ *  calculé UNE fois au chargement du module. NE PAS utiliser par requête. */
+export function hashPasswordSync(plain: string): string {
+  const salt = randomBytes(16);
+  return `${PREFIX}$${salt.toString('hex')}$${scryptSync(plain, salt, KEYLEN).toString('hex')}`;
 }
 
 /**

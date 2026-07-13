@@ -16,6 +16,7 @@ import { ResendClient } from './support/resend';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
+import { PgAuthTokenStore } from './auth/token-store.pg';
 import { PgFlowStore } from './flow/store.pg';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaTemplateClient } from './meta/templates';
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
   const statsStore = new PgStatsStore(pool);
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
+  const authTokenStore = new PgAuthTokenStore(pool);
   const flowStore = new PgFlowStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
@@ -62,6 +64,21 @@ async function main(): Promise<void> {
       secret: config.AUTH_SECRET,
       // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
       getUserState: (userId) => userStore.getAuthState(userId),
+      // Refonte auth : inscription libre, reset/changement de mot de passe.
+      createTenantWithAdmin: (name, admin) => userStore.createTenantWithAdmin(name, admin),
+      setPassword: (userId, hash) => userStore.setPassword(userId, hash),
+      getPasswordHash: (userId) => userStore.getPasswordHash(userId),
+      tokens: authTokenStore,
+      appUrl: config.APP_URL,
+      resetTtlMs: config.RESET_TOKEN_TTL_MS,
+      // Emails (liens reset/invitation) : seulement si Resend est configuré, sinon forgot-password répond 200 sans envoi.
+      ...(config.RESEND_API_KEY
+        ? {
+            sendEmail: async ({ to, subject, text }: { to: string; subject: string; text: string }) => {
+              await new ResendClient(config.RESEND_API_KEY).send({ from: `MessagingMe <${config.SUPPORT_FROM}>`, to, subject, text });
+            },
+          }
+        : {}),
     },
     import: {
       contacts: contactStore,

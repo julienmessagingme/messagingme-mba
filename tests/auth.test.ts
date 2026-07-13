@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashPassword, verifyPassword } from '../src/auth/password';
+import { hashPassword, hashPasswordSync, verifyPassword } from '../src/auth/password';
 import { signSession, verifySession } from '../src/auth/token';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -9,17 +9,17 @@ const SECRET = 'test-secret-please-change';
 
 describe('password', () => {
   it('hash puis vérifie le bon mot de passe', async () => {
-    const h = hashPassword('s3cret!');
+    const h = await hashPassword('s3cret!');
     expect(h.startsWith('scrypt$')).toBe(true);
     expect(await verifyPassword('s3cret!', h)).toBe(true);
   });
   it('rejette un mauvais mot de passe ou un hash malformé', async () => {
-    const h = hashPassword('s3cret!');
+    const h = await hashPassword('s3cret!');
     expect(await verifyPassword('wrong', h)).toBe(false);
     expect(await verifyPassword('x', 'pas-un-hash')).toBe(false);
   });
-  it('deux hash du même mot de passe diffèrent (sel aléatoire)', () => {
-    expect(hashPassword('a')).not.toBe(hashPassword('a'));
+  it('deux hash du même mot de passe diffèrent (sel aléatoire)', async () => {
+    expect(await hashPassword('a')).not.toBe(await hashPassword('a'));
   });
 });
 
@@ -49,7 +49,7 @@ describe('POST /auth/login', () => {
   function appWith(users: AuthUser[]) {
     return buildServer({ queue: new FakeQueue(), auth: { users: new FakeUsers(users), secret: SECRET } });
   }
-  const admin: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPassword('pw') };
+  const admin: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPasswordSync('pw') };
 
   it('identifiants valides -> 200 + token exploitable', async () => {
     const app = appWith([admin]);

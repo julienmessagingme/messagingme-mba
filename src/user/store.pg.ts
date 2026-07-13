@@ -51,6 +51,12 @@ export class PgUserStore {
     return r ? { role: r.role, disabled: r.disabled_at !== null, tenantStatus: r.tenant_status } : null;
   }
 
+  /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mot de passe. */
+  async getPasswordHash(userId: string): Promise<string | null> {
+    const res = await this.pool.query<{ password_hash: string | null }>(`select password_hash from users where id = $1`, [userId]);
+    return res.rows[0]?.password_hash ?? null;
+  }
+
   /** Profil de l'utilisateur courant (route /me) : email + nom + rôle. null = compte inconnu. */
   async getById(userId: string): Promise<{ email: string; name: string | null; role: string } | null> {
     const res = await this.pool.query<{ email: string; name: string | null; role: string }>(

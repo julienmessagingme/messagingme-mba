@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { login } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
@@ -70,6 +71,10 @@ export default function LoginPage() {
           >
             {loading ? 'Connexion...' : 'Se connecter'}
           </button>
+          <div className="flex items-center justify-between text-xs text-ink-400">
+            <Link href="/forgot" className="hover:text-brand-600">Mot de passe oublié ?</Link>
+            <Link href="/signup" className="font-medium text-brand-600 hover:underline">Créer un espace</Link>
+          </div>
         </form>
       </div>
     </main>

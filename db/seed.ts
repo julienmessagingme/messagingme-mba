@@ -5,7 +5,7 @@
 import 'dotenv/config';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
-import { hashPassword } from '../src/auth/password';
+import { hashPasswordSync } from '../src/auth/password';
 
 // Garde-fou anti footgun de prod : pas de creds démo par défaut. Il faut SOIT fournir
 // SEED_PASSWORD explicitement, SOIT opter pour les défauts démo via SEED_DEMO=true.
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
       // idempotent même à la casse près, cohérent avec « un email = un compte ».
       `insert into users (tenant_id, email, role, password_hash) values ($1, $2, 'admin', $3)
        on conflict (lower(email)) do update set password_hash = excluded.password_hash, tenant_id = excluded.tenant_id`,
-      [tenantId, EMAIL, hashPassword(PASSWORD)],
+      [tenantId, EMAIL, hashPasswordSync(PASSWORD)],
     );
 
     // eslint-disable-next-line no-console
