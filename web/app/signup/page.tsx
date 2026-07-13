@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { signup } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
+import { GoogleButton } from '@/components/GoogleButton';
 
 const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
@@ -66,6 +67,8 @@ export default function SignupPage() {
             {loading ? 'Création...' : 'Créer mon espace'}
           </button>
           <p className="text-center text-xs text-ink-400">Déjà un compte ? <Link href="/login" className="font-medium text-brand-600 hover:underline">Se connecter</Link></p>
+
+          <GoogleButton onError={setError} />
         </form>
       </div>
     </main>

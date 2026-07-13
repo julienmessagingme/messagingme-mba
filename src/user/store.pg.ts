@@ -86,6 +86,17 @@ export class PgUserStore {
     }));
   }
 
+  /** Un compte par email, TOUT statut (y compris pending sans mot de passe) : pour le login Google (lié par
+   *  email). Distinct de PgUserAuthStore.findByEmail qui exige un mot de passe (login classique). */
+  async getByEmail(email: string): Promise<{ id: string; tenantId: string; role: string; disabled: boolean } | null> {
+    const res = await this.pool.query<{ id: string; tenant_id: string; role: string; disabled_at: Date | null }>(
+      `select id, tenant_id, role, disabled_at from users where lower(email) = lower($1) limit 1`,
+      [email],
+    );
+    const r = res.rows[0];
+    return r ? { id: r.id, tenantId: r.tenant_id, role: r.role, disabled: r.disabled_at !== null } : null;
+  }
+
   /** {tenantId, role, email} d'un compte par id : sert à émettre une session après acceptation d'invitation. */
   async getSessionUser(userId: string): Promise<{ tenantId: string; role: string; email: string } | null> {
     const res = await this.pool.query<{ tenant_id: string; role: string; email: string }>(

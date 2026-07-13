@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { login } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
+import { GoogleButton } from '@/components/GoogleButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -75,6 +76,8 @@ export default function LoginPage() {
             <Link href="/forgot" className="hover:text-brand-600">Mot de passe oublié ?</Link>
             <Link href="/signup" className="font-medium text-brand-600 hover:underline">Créer un espace</Link>
           </div>
+
+          <GoogleButton onError={setError} />
         </form>
       </div>
     </main>

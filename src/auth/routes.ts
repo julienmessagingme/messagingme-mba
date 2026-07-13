@@ -5,6 +5,7 @@ import { signSession } from './token';
 import { RateLimiter } from './rate-limit';
 import type { UserAuthStore } from './store';
 import type { UserStateLoader, Guard } from './middleware';
+import type { GoogleIdentity } from './google';
 import { DuplicateEmailError } from '../user/store.pg';
 
 export interface AuthRouteDeps {
@@ -15,14 +16,20 @@ export interface AuthRouteDeps {
   /** Re-vérification par requête de l'état du compte (révoqué/supprimé/rôle frais). Optionnel :
    *  absent en test (JWT seul). Voir makeRequireAuth. */
   getUserState?: UserStateLoader;
-  /** Inscription libre : crée un espace + admin. Absent -> signup indisponible (503). */
-  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string }): Promise<{ tenantId: string; userId: string }>;
+  /** Inscription libre : crée un espace + admin. `passwordHash` null = compte Google-only. Absent -> 503. */
+  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }>;
   /** Pose (écrase) le hash de mot de passe d'un compte (reset / changement). */
   setPassword?(userId: string, hash: string): Promise<boolean>;
   /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
   getPasswordHash?(userId: string): Promise<string | null>;
   /** {tenantId, role, email} d'un compte par id : émettre une session après acceptation d'invitation. */
   sessionUser?(userId: string): Promise<{ tenantId: string; role: string; email: string } | null>;
+  /** Client OAuth Google (public) : exposé via GET /auth/config, sert au front pour le bouton. */
+  googleClientId?: string;
+  /** Vérifie un jeton ID Google -> identité (email vérifié), ou null si invalide. */
+  verifyGoogle?(idToken: string): Promise<GoogleIdentity | null>;
+  /** Un compte par email, TOUT statut (login Google lié par email). */
+  getUserByEmail?(email: string): Promise<{ id: string; tenantId: string; role: string; disabled: boolean } | null>;
   /** Tokens à usage unique (reset / invite). */
   tokens?: {
     create(purpose: 'reset' | 'invite', userId: string, ttlMs: number): Promise<string>;
@@ -55,6 +62,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   const forgotLimiter = new RateLimiter(5, 60_000);
   const resetLimiter = new RateLimiter(10, 60_000);
   const acceptLimiter = new RateLimiter(10, 60_000);
+  const googleLimiter = new RateLimiter(20, 60_000);
 
   app.post('/auth/login', async (req, reply) => {
     if (!limiter.take(req.ip)) {
@@ -75,6 +83,36 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
 
     const token = await signSession({ userId: user.id, tenantId: user.tenantId, role: user.role }, deps.secret);
     return reply.code(200).send({ token, user: { email: user.email, role: user.role, tenantId: user.tenantId } });
+  });
+
+  // Config publique : le front en a besoin pour afficher (ou non) le bouton Google.
+  app.get('/auth/config', async (_req, reply) => {
+    return reply.code(200).send({ googleClientId: deps.googleClientId ?? '', googleEnabled: !!deps.googleClientId });
+  });
+
+  // Se connecter avec Google : vérifie le jeton ID, connecte un compte existant OU crée un espace (inconnu).
+  app.post('/auth/google', async (req, reply) => {
+    if (!deps.verifyGoogle || !deps.getUserByEmail || !deps.createTenantWithAdmin) return reply.code(503).send({ error: 'connexion Google indisponible' });
+    if (!googleLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    const idToken = str((req.body as { idToken?: unknown } | undefined)?.idToken);
+    if (idToken === '') return reply.code(400).send({ error: 'idToken requis' });
+    const identity = await deps.verifyGoogle(idToken);
+    if (!identity || !identity.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
+    const existing = await deps.getUserByEmail(identity.email);
+    if (existing) {
+      // Compte existant (actif OU invitation en attente) : Google fait foi (liaison par email vérifié).
+      if (existing.disabled) return reply.code(403).send({ error: 'compte révoqué' });
+      const jwt = await signSession({ userId: existing.id, tenantId: existing.tenantId, role: existing.role }, deps.secret);
+      return reply.code(200).send({ token: jwt, user: { email: identity.email, role: existing.role, tenantId: existing.tenantId }, isNew: false });
+    }
+    // Email inconnu -> inscription libre via Google : nouvel espace + admin, SANS mot de passe (Google-only).
+    // `name` borné : évite qu'un nom Google délirant remplisse le champ workspace (défense de surface, la base tronque de toute façon).
+    const gname = (identity.name ?? '').slice(0, 60).trim();
+    const workspaceName = gname !== '' ? `Espace de ${gname}` : 'Mon espace';
+    const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email: identity.email, name: identity.name, passwordHash: null });
+    const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
+    // isNew:true -> le front envoie vers /accueil (onboarding « connecter ton numéro »), comme le signup email.
+    return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
   });
 
   // Inscription LIBRE : crée un nouvel espace + admin, connecte directement.

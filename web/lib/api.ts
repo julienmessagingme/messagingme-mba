@@ -53,6 +53,18 @@ export function resetPassword(token: string, password: string): Promise<{ ok: bo
 export function changePassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean }> {
   return request('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
 }
+/** Config publique d'auth : le front l'utilise pour afficher (ou non) le bouton Google. */
+export function getAuthConfig(): Promise<{ googleClientId: string; googleEnabled: boolean }> {
+  return request('/auth/config', { method: 'GET' });
+}
+/** Résultat Google : session + `isNew` (email inconnu -> nouvel espace créé -> onboarding /accueil). */
+export interface GoogleResult extends LoginResult {
+  isNew: boolean;
+}
+/** Se connecter avec Google : envoie le jeton ID au serveur, renvoie une session (login OU nouvel espace). */
+export function loginWithGoogle(idToken: string): Promise<GoogleResult> {
+  return request<GoogleResult>('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
+}
 
 export interface Contact {
   id: string;

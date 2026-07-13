@@ -17,6 +17,7 @@ import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
+import { verifyGoogleIdToken } from './auth/google';
 import { PgFlowStore } from './flow/store.pg';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaTemplateClient } from './meta/templates';
@@ -78,6 +79,10 @@ async function main(): Promise<void> {
       tokens: authTokenStore,
       appUrl: config.APP_URL,
       resetTtlMs: config.RESET_TOKEN_TTL_MS,
+      // Se connecter avec Google : client public (bouton front) + vérif serveur du jeton ID + liaison par email.
+      googleClientId: config.GOOGLE_CLIENT_ID,
+      verifyGoogle: (idToken) => verifyGoogleIdToken(idToken, config.GOOGLE_CLIENT_ID),
+      getUserByEmail: (email) => userStore.getByEmail(email),
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
     import: {
