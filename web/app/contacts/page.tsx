@@ -476,8 +476,60 @@ function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value
   return <input type={inputType} value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={type === 'url' ? 'https://…' : 'valeur'} />;
 }
 
-/** Fiche détail d'un contact : attributs, champs perso (libellé + valeur), tags. Éditable : ajouter un
- *  champ (valeur), affecter/retirer un tag. */
+/**
+ * Valeur éditable EN PLACE (Nom, Prénom, champs perso) : affichage + « modifier »/« supprimer » au survol,
+ * bascule en input avec ✓/✗. `type` fourni -> input typé (FieldValueInput) ; sinon input texte simple (Nom).
+ * `onDelete` absent -> non supprimable. onSave/onDelete renvoient un booléen de succès (reste en édition si échec).
+ */
+function EditableField({ value, type, mono, busy, editable = true, onSave, onDelete }: {
+  value: string;
+  type?: UserFieldKind;
+  mono?: boolean;
+  busy: boolean;
+  /** false -> valeur en lecture seule (pas de « modifier ») ; la suppression reste possible si onDelete fourni.
+   *  Sert aux champs « orphelins » (sans définition) : les éditer échouerait en 400, mais on peut les retirer. */
+  editable?: boolean;
+  onSave: (v: string) => Promise<boolean>;
+  onDelete?: () => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const begin = () => { setDraft(value); setEditing(true); };
+  const commit = async () => { if (await onSave(draft)) setEditing(false); };
+  if (editing) {
+    return (
+      <span className="flex items-center gap-1.5">
+        {type ? (
+          <FieldValueInput type={type} value={draft} onChange={setDraft} />
+        ) : (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void commit(); if (e.key === 'Escape') setEditing(false); }}
+            className="min-w-0 flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          />
+        )}
+        <button onClick={() => void commit()} disabled={busy} className="shrink-0 text-brand-600 hover:text-brand-700 disabled:opacity-50" aria-label="Enregistrer">✓</button>
+        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-700" aria-label="Annuler">×</button>
+      </span>
+    );
+  }
+  return (
+    <span className="group flex items-center gap-2">
+      <span className={`${mono ? 'font-mono ' : ''}break-words text-ink-900`}>{value !== '' ? value : '-'}</span>
+      {editable && (
+        <button onClick={begin} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-brand-600 group-hover:opacity-100" aria-label="Modifier">modifier</button>
+      )}
+      {onDelete && value !== '' && (
+        <button onClick={() => void onDelete()} disabled={busy} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-coral group-hover:opacity-100 disabled:opacity-50" aria-label="Supprimer">supprimer</button>
+      )}
+    </span>
+  );
+}
+
+/** Fiche détail d'un contact : attributs, champs perso (libellé + valeur), tags. Éditable : Nom, Prénom, valeurs
+ *  de champs (modif/suppression), ajout d'un champ, affecter/retirer un tag. Téléphone + BSUID en lecture seule. */
 function ContactDetail({
   contact,
   userFields,
@@ -517,7 +569,7 @@ function ContactDetail({
 
   const selectedDef = defByKey.get(newKey);
 
-  async function apply(patch: { fields?: Record<string, string>; addTags?: string[]; removeTags?: string[] }) {
+  async function apply(patch: { fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[]; profileName?: string | null }) {
     setBusy(true);
     setError(null);
     try {
@@ -530,6 +582,19 @@ function ContactDetail({
     } finally {
       setBusy(false);
     }
+  }
+
+  // Enregistre une valeur de champ en s'assurant que le user field existe (sinon la route répond « champ
+  // inconnu »). Sert au Prénom d'un contact créé par inbound (pas d'import -> pas encore de champ prenom).
+  // Valeur vide -> on supprime la valeur (pas de champ vide côté serveur).
+  async function saveFieldEnsuringDef(key: string, label: string, value: string): Promise<boolean> {
+    const v = value.trim();
+    if (v === '') return apply({ removeFields: [key] });
+    if (!defByKey.has(key)) {
+      try { const def = await createUserField(tenantId, { label, type: 'text' }); onFieldCreated(def); }
+      catch { /* course : le champ peut déjà exister -> on tente l'apply quand même */ }
+    }
+    return apply({ fields: { [key]: v } });
   }
 
   async function addField() {
@@ -576,17 +641,17 @@ function ContactDetail({
           <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
         </div>
 
-        <div className="mt-4 grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 text-sm">
+        <div className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
           <span className="text-ink-400">Nom</span>
-          <span className="text-ink-900">{contact.profileName ?? '-'}</span>
+          <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
           <span className="text-ink-400">Prénom</span>
-          <span className="text-ink-900">{fieldValue(contact, 'prenom') ?? '-'}</span>
+          <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveFieldEnsuringDef('prenom', 'Prénom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
           <span className="text-ink-400">Téléphone</span>
-          <span className="font-mono text-ink-900">{contact.phoneE164 ?? '-'}</span>
+          <span className="font-mono text-ink-900" title="Le numéro (identité/routage WhatsApp) n'est pas modifiable">{contact.phoneE164 ?? '-'}</span>
           {contact.bsuid && (
             <>
               <span className="text-ink-400">Compte WhatsApp</span>
-              <span className="font-mono text-ink-900" title="BSUID : identifiant WhatsApp d'un client qui n'a pas partagé son numéro">{contact.bsuid}</span>
+              <span className="font-mono text-ink-900" title="BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro (non modifiable)">{contact.bsuid}</span>
             </>
           )}
           <span className="text-ink-400">Consentement</span>
@@ -629,9 +694,16 @@ function ContactDetail({
           ) : (
             <div className="overflow-hidden rounded-lg border border-ink-200">
               {fieldEntries.map(([k, v], i) => (
-                <div key={k} className={`grid grid-cols-[130px_1fr] gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
+                <div key={k} className={`grid grid-cols-[130px_1fr] items-center gap-3 px-3 py-1.5 text-sm ${i % 2 ? 'bg-ink-50' : 'bg-white'}`}>
                   <span className="truncate text-ink-500">{defByKey.get(k)?.label ?? k}</span>
-                  <span className="break-words text-ink-900">{String(v)}</span>
+                  <EditableField
+                    value={String(v)}
+                    type={defByKey.get(k)?.type ?? 'text'}
+                    busy={busy}
+                    editable={defByKey.has(k)}
+                    onSave={(nv) => (nv.trim() === '' ? apply({ removeFields: [k] }) : apply({ fields: { [k]: nv.trim() } }))}
+                    onDelete={() => apply({ removeFields: [k] })}
+                  />
                 </div>
               ))}
             </div>

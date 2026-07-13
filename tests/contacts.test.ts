@@ -27,10 +27,10 @@ const FIELDS: UserFieldDef[] = [
   { key: 'date_rdv', label: 'Date RDV', type: 'date' },
 ];
 
-interface Cap { merged: Array<Record<string, string>>; added: string[][]; removed: string[][] }
+interface Cap { merged: Array<Record<string, string>>; added: string[][]; removed: string[][]; removedFields: string[][]; names: Array<string | null> }
 
 function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow | null } = {}) {
-  const cap: Cap = { merged: [], added: [], removed: [] };
+  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [] };
   const deps: ContactsRouteDeps = {
     applyEdits: async (_t, _id, edits) => {
       const result = opts.contact === undefined ? CONTACT : opts.contact;
@@ -38,6 +38,8 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
       if (Object.keys(edits.fields).length) cap.merged.push(edits.fields);
       if (edits.addTags.length) cap.added.push(edits.addTags);
       if (edits.removeTags.length) cap.removed.push(edits.removeTags);
+      if (edits.removeFields && edits.removeFields.length) cap.removedFields.push(edits.removeFields);
+      if (edits.profileName !== undefined) cap.names.push(edits.profileName);
       return result;
     },
     listUserFields: async () => FIELDS,
@@ -91,6 +93,54 @@ describe('routes contacts — édition fiche', () => {
     const { server } = app();
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('PATCH removeFields (clé connue) -> 200, suppression transmise', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { removeFields: ['prenom'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.removedFields).toEqual([['prenom']]);
+    await server.close();
+  });
+
+  it('PATCH removeFields accepte une clé SANS définition (champ orphelin, doit rester supprimable)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { removeFields: ['metier_orphelin'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.removedFields).toEqual([['metier_orphelin']]);
+    await server.close();
+  });
+
+  it('PATCH removeFields vide (que des espaces) -> 400 (rien à modifier)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { removeFields: ['  ', ''] } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.removedFields).toHaveLength(0);
+    await server.close();
+  });
+
+  it('PATCH profileName (Nom) -> 200, transmis', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { profileName: 'Marc Dupont' } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.names).toEqual(['Marc Dupont']);
+    await server.close();
+  });
+
+  it('PATCH profileName vide -> null (on vide le Nom)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { profileName: '   ' } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.names).toEqual([null]);
+    await server.close();
+  });
+
+  it('PATCH mise à jour en place d\'un champ déjà rempli (prenom) -> 200, merge écrase', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { prenom: 'Marco' } } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.merged).toEqual([{ prenom: 'Marco' }]);
     await server.close();
   });
 

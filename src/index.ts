@@ -219,6 +219,8 @@ async function main(): Promise<void> {
       getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
       updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),
       deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
+      // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
+      declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },
     },
     ops: {
       getTenantOverview: () => opsStore.getTenantOverview(),

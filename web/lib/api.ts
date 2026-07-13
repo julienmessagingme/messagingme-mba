@@ -90,12 +90,13 @@ export function listContacts(tenantId: string, opts?: { limit?: number; offset?:
   return request<{ contacts: Contact[] }>(`/tenants/${tenantId}/contacts${suffix}`);
 }
 
-/** Édite un contact (fiche) : ajoute/met à jour des valeurs de user fields + affecte/retire des tags.
- *  MERGE côté serveur (n'écrase pas les autres champs). Renvoie le contact à jour. */
+/** Édite un contact (fiche) : ajoute/met à jour/supprime des valeurs de user fields, édite le Nom (profileName,
+ *  '' -> vide), affecte/retire des tags. MERGE côté serveur (n'écrase pas les autres champs). Le téléphone et le
+ *  BSUID (identité/routage) restent en lecture seule. Renvoie le contact à jour. */
 export function updateContact(
   tenantId: string,
   contactId: string,
-  patch: { fields?: Record<string, string>; addTags?: string[]; removeTags?: string[] },
+  patch: { fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[]; profileName?: string | null },
 ): Promise<{ contact: Contact }> {
   return request<{ contact: Contact }>(`/tenants/${tenantId}/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }

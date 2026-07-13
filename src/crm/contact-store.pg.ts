@@ -120,6 +120,26 @@ export class PgContactStore implements ContactStore {
     return res.rows[0]?.created ? 'created' : 'updated';
   }
 
+  /**
+   * Résout un contact par wa_id pour COLLER ses attributs dans les variables d'un template (envoi via workflow).
+   * Même matching que mergeFieldsByPhone/addTagsByPhone (E.164 exact `'+' || wa_id` PUIS chiffres nus PUIS bsuid,
+   * 1 contact, préférence à l'exact). Renvoie {phone_e164, profile_name, fields} (forme ResolvableContact), ou null
+   * si le numéro est hors base -> l'appelant retombe sur les exemples du template (jamais de throw).
+   */
+  async getResolvableByPhone(
+    tenantId: string,
+    waId: string,
+  ): Promise<{ phone_e164: string | null; profile_name: string | null; fields: Record<string, unknown> } | null> {
+    const res = await this.pool.query<{ phone_e164: string | null; profile_name: string | null; fields: Record<string, unknown> | null }>(
+      `select phone_e164, profile_name, fields from contacts where tenant_id = $1
+         and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+       order by (phone_e164 = '+' || $2) desc limit 1`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r ? { phone_e164: r.phone_e164, profile_name: r.profile_name, fields: r.fields ?? {} } : null;
+  }
+
   private static rowToContact(r: {
     id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
@@ -148,7 +168,7 @@ export class PgContactStore implements ContactStore {
   async applyEdits(
     tenantId: string,
     contactId: string,
-    edits: { fields: Record<string, string>; addTags: string[]; removeTags: string[] },
+    edits: { fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[]; profileName?: string | null },
   ): Promise<ContactRow | null> {
     const client = await this.pool.connect();
     try {
@@ -159,7 +179,16 @@ export class PgContactStore implements ContactStore {
         return null;
       }
       if (Object.keys(edits.fields).length > 0) {
+        // MERGE : n'écrase que les clés fournies (mise à jour en place d'une valeur = fournir la clé).
         await client.query('update contacts set fields = fields || $3::jsonb, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, JSON.stringify(edits.fields)]);
+      }
+      if (edits.removeFields && edits.removeFields.length > 0) {
+        // Retire les clés jsonb (opérateur `- text[]`, PG 10+) : purge la valeur du champ SUR CE contact (pas la définition).
+        await client.query('update contacts set fields = fields - $3::text[], updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, edits.removeFields]);
+      }
+      if (edits.profileName !== undefined) {
+        // Nom (profile_name) éditable ; null = vider. Le téléphone et le BSUID (clés d'identité/routage) restent hors édition.
+        await client.query('update contacts set profile_name = $3, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, edits.profileName]);
       }
       if (edits.addTags.length > 0) {
         await client.query(`update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.addTags]);

@@ -25,13 +25,14 @@ const sampleRow = (over: Partial<WorkflowRow> = {}): WorkflowRow => ({
 });
 
 function app(over: Partial<WorkflowRouteDeps> = {}) {
-  const cap = { created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>, deleted: [] as string[] };
+  const cap = { created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>, deleted: [] as string[], declared: [] as string[][] };
   const deps: WorkflowRouteDeps = {
     createWorkflow: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
     listWorkflows: async () => [sampleRow()],
     getWorkflow: async (id) => (id === 'w1' ? sampleRow() : null),
     updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return id === 'w1'; },
     deleteWorkflow: async (id) => { cap.deleted.push(id); return id === 'w1'; },
+    declareTags: async (_t, tags) => { cap.declared.push(tags); },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, workflows: deps }), cap };
@@ -89,6 +90,29 @@ describe('routes workflows', () => {
     expect(bad.statusCode).toBe(400);
     const badStatus = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { status: 'zzz' } });
     expect(badStatus.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('POST déclare les tags des blocs « ajout de tag » (Contenus > Tags)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'Onb', graph: validGraph } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.declared).toEqual([['vip']]); // le node tag 'vip', pas le node template
+    await server.close();
+  });
+
+  it('PATCH graph déclare aussi les tags du graphe', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: validGraph } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.declared).toEqual([['vip']]);
+    await server.close();
+  });
+
+  it('déclaration best-effort : un échec de declareTags ne casse pas la sauvegarde', async () => {
+    const { server } = app({ declareTags: async () => { throw new Error('boom'); } });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'Onb', graph: validGraph } });
+    expect(res.statusCode).toBe(201);
     await server.close();
   });
 

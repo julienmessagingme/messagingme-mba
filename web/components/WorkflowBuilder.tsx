@@ -7,6 +7,7 @@ import {
   BaseEdge, EdgeLabelRenderer, getBezierPath,
   useNodesState, useEdgesState, addEdge,
   type Node, type Edge, type Connection, type NodeProps, type EdgeProps, type NodeTypes, type EdgeTypes,
+  type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
   updateWorkflow, listTemplates, listFlows, listTags, listUserFields,
@@ -41,7 +42,7 @@ function summaryOf(data: Record<string, unknown>): string {
 /** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` expose UNE SORTIE PAR BOUTON
  *  quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire sont montrés grisés, non
  *  reliables (ils sortent de WhatsApp). Les autres types de bloc ont une seule sortie (bas). */
-function WFNode({ data, selected }: NodeProps) {
+function WFNode({ id, data, selected }: NodeProps) {
   const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
   const meta = NODE_META[wfType];
   const buttons = wfType === 'template' && Array.isArray(data.templateButtons)
@@ -49,8 +50,16 @@ function WFNode({ data, selected }: NodeProps) {
     : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
   return (
-    <div className={`w-44 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
+    <div className={`relative w-44 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
+      {/* Suppression directe du bloc (sans passer par le menu de droite). nodrag + stopPropagation : ne déclenche ni
+          le drag ni la sélection du bloc. Même pattern que le ✕ des arêtes (CustomEvent -> listener parent). */}
+      <button
+        className="nodrag absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-coral shadow hover:bg-red-50"
+        title="Supprimer le bloc"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('wf-node-delete', { detail: id })); }}
+      >✕</button>
       <div className="flex items-center gap-1.5 rounded-t-xl border-b border-ink-200 bg-white px-2 py-1">
         <span className="text-xs">{meta.emoji}</span>
         <span className="truncate text-[11px] font-semibold text-ink-800">{meta.label}</span>
@@ -174,6 +183,38 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     setSelectedId(id);
   }, [setNodes]);
 
+  // Instance React Flow capturée à l'init (pas de ReactFlowProvider parent -> useReactFlow() indisponible) :
+  // sert à screenToFlowPosition pour placer le bloc créé au lâcher de flèche.
+  const rfRef = useRef<ReactFlowInstance<RFNode, RFEdge> | null>(null);
+
+  // Crée un bloc connecté (à typer ensuite via le panneau de droite). Partagé par le drop de flèche.
+  // Réplique l'invariant « une seule arête par (source, sourceHandle) » de onConnect.
+  const createConnectedNode = useCallback((wfType: WorkflowNodeType, position: { x: number; y: number }, sourceId: string, sourceHandle?: string) => {
+    const nid = uid();
+    setNodes((ns) => [...ns, { id: nid, type: 'wf', position, data: { wfType } }]);
+    setEdges((eds) => addEdge(
+      { id: uid(), source: sourceId, target: nid, ...(sourceHandle ? { sourceHandle } : {}), ...EDGE_OPTS },
+      eds.filter((e) => !(e.source === sourceId && (e.sourceHandle ?? null) === (sourceHandle ?? null))),
+    ));
+    setSelectedId(nid);
+  }, [setNodes, setEdges]);
+
+  // Lâcher une flèche dans le VIDE crée un bloc à cet endroit, relié, et le sélectionne -> le panneau de droite
+  // s'ouvre sur « Type de bloc » (l'utilisateur choisit le type). Un lâcher sur un handle valide est déjà géré
+  // par onConnect (state.isValid) -> on ne double pas. On n'étend que depuis une SORTIE (fromHandle.type source).
+  const onConnectEnd = useCallback<OnConnectEnd>((event, state) => {
+    if (state.isValid) return;
+    const from = state.fromNode;
+    const handle = state.fromHandle;
+    if (!from || handle?.type !== 'source') return;
+    const rf = rfRef.current;
+    if (!rf) return;
+    const pt = 'changedTouches' in event ? event.changedTouches[0] : event;
+    if (!pt) return;
+    const p = rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY });
+    createConnectedNode('template', { x: p.x - 88, y: p.y - 20 }, from.id, handle.id ?? undefined);
+  }, [createConnectedNode]);
+
   // `nodes` lu via une ref pour enregistrer les listeners UNE seule fois (pas de ré-abonnement à chaque drag).
   const nodesRef = useRef(nodes);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
@@ -203,10 +244,22 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
       const edgeId = (ev as CustomEvent).detail as string;
       setEdges((eds) => eds.filter((e) => e.id !== edgeId));
     };
+    // Suppression d'un bloc via son ✕ : retire le node ET ses arêtes ; déselectionne si c'était lui.
+    const onNodeDelete = (ev: Event) => {
+      const nodeId = (ev as CustomEvent).detail as string;
+      setNodes((ns) => ns.filter((n) => n.id !== nodeId));
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      setSelectedId((cur) => (cur === nodeId ? null : cur));
+    };
     window.addEventListener('wf-edge-insert', onInsert);
     window.addEventListener('wf-edge-delete', onDelete);
-    return () => { window.removeEventListener('wf-edge-insert', onInsert); window.removeEventListener('wf-edge-delete', onDelete); };
-  }, [setEdges, setNodes]);
+    window.addEventListener('wf-node-delete', onNodeDelete);
+    return () => {
+      window.removeEventListener('wf-edge-insert', onInsert);
+      window.removeEventListener('wf-edge-delete', onDelete);
+      window.removeEventListener('wf-node-delete', onNodeDelete);
+    };
+  }, [setEdges, setNodes, setSelectedId]);
 
   const patchSelected = useCallback((p: Record<string, unknown>) => {
     setNodes((ns) => ns.map((n) => (n.id === selectedId ? { ...n, data: { ...n.data, ...p } } : n)));
@@ -257,6 +310,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
+            onInit={(inst) => { rfRef.current = inst; }}
             onNodeClick={(_, n) => setSelectedId(n.id)}
             onPaneClick={() => setSelectedId(null)}
             nodeTypes={nodeTypes}
@@ -272,7 +327,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
 
         <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
           {!selected ? (
-            <p className="text-sm text-ink-400">Clique un bloc pour le configurer, ou tire une flèche depuis le point bas d&apos;un bloc vers un autre.</p>
+            <p className="text-sm text-ink-400">Clique un bloc pour le configurer. Tire une flèche depuis le point d&apos;un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d&apos;un bloc le supprime.</p>
           ) : (
             <ConfigPanel node={selected} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} />
           )}

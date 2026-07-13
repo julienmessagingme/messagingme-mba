@@ -11,6 +11,20 @@ export interface WorkflowRouteDeps {
   getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
   updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph; status?: 'draft' | 'active' }): Promise<boolean>;
   deleteWorkflow(id: string, tenantId: string): Promise<boolean>;
+  /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort).
+   *  Absent -> pas de déclaration (rétro-compatible). */
+  declareTags?(tenantId: string, tags: string[]): Promise<void>;
+}
+
+/** Tags saisis dans les blocs `tag` du graphe (dédupliqués, trim + tronqués à 64 comme la route Tags). */
+function tagsInGraph(graph: WorkflowGraph): string[] {
+  const out = new Set<string>();
+  for (const n of graph.nodes) {
+    if (n.type !== 'tag') continue;
+    const t = String((n.data as { tag?: unknown }).tag ?? '').trim().slice(0, 64);
+    if (t !== '') out.add(t);
+  }
+  return [...out];
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -39,6 +53,9 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const graph = b.graph === undefined ? { nodes: [], edges: [] } : parseGraph(b.graph);
     if (graph === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
     const { id } = await deps.createWorkflow(tenant, b.name.trim(), graph);
+    // Rend les tags des blocs « ajout de tag » visibles tout de suite dans Contenus > Tags (best-effort : ne
+    // fait jamais échouer la sauvegarde du workflow).
+    if (deps.declareTags) { try { await deps.declareTags(tenant, tagsInGraph(graph)); } catch { /* best-effort */ } }
     return reply.code(201).send({ id, name: b.name.trim(), status: 'draft', graph });
   });
 
@@ -82,6 +99,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
 
     const ok = await deps.updateWorkflow(id, tenant, patch);
     if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
+    if (ok && patch.graph && deps.declareTags) { try { await deps.declareTags(tenant, tagsInGraph(patch.graph)); } catch { /* best-effort */ } }
     return reply.code(200).send({ id, ...patch });
   });
 

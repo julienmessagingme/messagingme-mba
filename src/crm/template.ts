@@ -107,3 +107,28 @@ export function resolveTemplateParams(params: TemplateParam[], contact: Resolvab
     return s ?? p.fallback ?? '';
   });
 }
+
+/**
+ * Résout les N variables du corps d'un template à partir d'indices SPARSE (variable {{position}} -> champ, posés
+ * au design d'un template). Contrairement à resolveTemplateParams (positions 1..N contiguës exigées, throw), on
+ * part du NOMBRE de variables `count` connu du template live et on remplit CHAQUE position 1..count : indice mappé
+ * -> valeur du contact (repli exemple du template / ''), sinon exemple du template / ''. Renvoie TOUJOURS
+ * exactement `count` valeurs -> le compte fourni à Meta correspond (évite l'erreur 132000). C'est ce qui « colle
+ * automatiquement le prénom » sans re-demander : si {{1}} est mappé sur prenom, on met le prénom du contact.
+ */
+export function resolveHintParams(
+  hints: Array<{ position: number; source: ParamSource }>,
+  count: number,
+  contact: ResolvableContact,
+  examples?: string[],
+): string[] {
+  const byPos = new Map(hints.map((h) => [h.position, h.source]));
+  const out: string[] = [];
+  for (let pos = 1; pos <= count; pos += 1) {
+    const src = byPos.get(pos);
+    const mapped = src ? valueOf(src, contact) : undefined;
+    const s = mapped === null || mapped === undefined || mapped === '' ? undefined : String(mapped);
+    out.push(s ?? examples?.[pos - 1] ?? '');
+  }
+  return out;
+}

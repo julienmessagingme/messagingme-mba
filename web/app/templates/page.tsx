@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/VariableBodyEditor';
 import { CarouselForm } from '@/components/CarouselForm';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
@@ -282,6 +283,10 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
   const [headerText, setHeaderText] = useState(initial?.headerText ?? '');
   const [headerHandle, setHeaderHandle] = useState('');
   const [headerFileName, setHeaderFileName] = useState('');
+  // Source affichable (object URL) du média choisi -> vrai visuel dans l'aperçu (l'upload ne renvoie qu'un handle
+  // Meta opaque, non affichable). Gérée via une ref pour révoquer l'ancienne URL (pas de fuite mémoire).
+  const [headerPreviewUrl, setHeaderPreviewUrl] = useState('');
+  const headerPreviewRef = useRef<string>('');
   const [headerUploading, setHeaderUploading] = useState(false);
   const [footer, setFooter] = useState(initial?.footer ?? '');
   const headerFileRef = useRef<HTMLInputElement>(null);
@@ -290,7 +295,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
   const [ok, setOk] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodyEditorRef = useRef<VariableBodyEditorHandle>(null);
   const [pubFlows, setPubFlows] = useState<FlowSummary[]>([]);
   const [creatingFlow, setCreatingFlow] = useState(false);
   const hasFlow = buttons.some((b) => b.type === 'FLOW');
@@ -331,39 +336,28 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     ...userFields.map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type })),
   ];
 
-  // Nombre de variables {{n}} distinctes dans le corps.
-  const varCount = useMemo(() => new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size, [body]);
+  // Positions de variables réellement présentes dans le corps (distinctes, triées). Après suppression d'une
+  // variable du milieu le corps n'est plus forcément 1..N contigu -> on pilote la numérotation, les exemples et
+  // les indices là-dessus (pas sur un simple compte, qui provoquerait des collisions de {{n}}).
+  const bodyPositions = useMemo(
+    () => [...new Set([...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1])))].sort((a, b) => a - b),
+    [body],
+  );
 
   function insertEmoji(emoji: string) {
-    const ta = bodyRef.current;
-    const start = ta?.selectionStart ?? body.length;
-    const end = ta?.selectionEnd ?? body.length;
-    setBody(body.slice(0, start) + emoji + body.slice(end));
-    requestAnimationFrame(() => {
-      if (!ta) return;
-      ta.focus();
-      const pos = start + emoji.length;
-      ta.setSelectionRange(pos, pos);
-    });
+    // Insertion au curseur dans l'éditeur riche (chips) -> onChange met à jour `body`.
+    bodyEditorRef.current?.insertToken(emoji);
   }
 
-  // Insère la variable suivante ({{N+1}}) au curseur, rattachée au champ choisi, et pré-remplit son exemple.
+  // Insère une NOUVELLE variable au curseur (chip lisible), rattachée au champ choisi, exemple pré-rempli. Numéro =
+  // MAX des positions présentes + 1 (jamais le simple compte : après suppression d'un {{1}}, réutiliser 2 créerait
+  // une collision {{2}}/{{2}}). La canonicalisation au submit compacte ensuite les trous.
   function insertVariable(opt: { source: ParamSource; label: string; fieldType?: string }) {
-    const n = varCount; // nb de variables AVANT insertion -> la nouvelle est la n+1e (index n)
-    const token = `{{${n + 1}}}`;
-    const ta = bodyRef.current;
-    const start = ta?.selectionStart ?? body.length;
-    const end = ta?.selectionEnd ?? body.length;
-    setBody(body.slice(0, start) + token + body.slice(end));
-    setVarSources((vs) => { const c = [...vs]; c[n] = { source: opt.source, label: opt.label }; return c; });
-    setExamples((ex) => { const c = [...ex]; c[n] = deterministicExample(opt.source, opt.fieldType); return c; });
+    const next = (bodyPositions.length ? Math.max(...bodyPositions) : 0) + 1;
+    bodyEditorRef.current?.insertToken(`{{${next}}}`, opt.label);
+    setVarSources((vs) => { const c = [...vs]; c[next - 1] = { source: opt.source, label: opt.label }; return c; });
+    setExamples((ex) => { const c = [...ex]; c[next - 1] = deterministicExample(opt.source, opt.fieldType); return c; });
     setFieldPickerOpen(false);
-    requestAnimationFrame(() => {
-      if (!ta) return;
-      ta.focus();
-      const pos = start + token.length;
-      ta.setSelectionRange(pos, pos);
-    });
   }
 
   function buildHeader(): TemplateHeaderInput | undefined {
@@ -371,6 +365,18 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     if (headerType === 'IMAGE' || headerType === 'VIDEO') return headerHandle ? { format: headerType, handle: headerHandle } : undefined;
     return undefined;
   }
+
+  // Vide le média du header (handle + nom + aperçu) et révoque l'object URL courant. Appelé au changement de type
+  // d'en-tête et après soumission.
+  function clearHeaderMedia() {
+    if (headerPreviewRef.current) URL.revokeObjectURL(headerPreviewRef.current);
+    headerPreviewRef.current = '';
+    setHeaderPreviewUrl('');
+    setHeaderHandle('');
+    setHeaderFileName('');
+  }
+  // Révoque l'object URL au démontage (pas de fuite).
+  useEffect(() => () => { if (headerPreviewRef.current) URL.revokeObjectURL(headerPreviewRef.current); }, []);
 
   async function onHeaderFile(file: File | undefined) {
     if (!file) return;
@@ -382,6 +388,11 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       const { handle } = await uploadMedia(tenantId, dataUrl);
       setHeaderHandle(handle);
       setHeaderFileName(file.name);
+      // Aperçu local (object URL, léger) : montre le vrai média dans la miniature. Révoque l'ancien d'abord.
+      const preview = URL.createObjectURL(file);
+      if (headerPreviewRef.current) URL.revokeObjectURL(headerPreviewRef.current);
+      headerPreviewRef.current = preview;
+      setHeaderPreviewUrl(preview);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload du média impossible');
     } finally {
@@ -394,10 +405,23 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     setError(null);
     setOk(null);
     try {
-      const example = varCount > 0 ? examples.slice(0, varCount).map((e) => e || 'exemple') : undefined;
-      // Indices variable->champ (seulement les variables insérées via le sélecteur, dans la limite du nb réel).
-      const paramHints: TemplateParamHint[] = varSources
-        .map((v, i): TemplateParamHint | null => (v && i < varCount ? { position: i + 1, source: v.source } : null))
+      // Canonicalise les variables du corps : renumérote en 1..N contigu par ordre d'apparition (au cas où une
+      // variable du milieu a été supprimée -> Meta EXIGE une suite sans trou) et réaligne sources + exemples.
+      const order: number[] = [];
+      const seen = new Set<number>();
+      for (const mm of body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
+        const p = Number(mm[1]);
+        if (!seen.has(p)) { seen.add(p); order.push(p); }
+      }
+      const remap = new Map(order.map((old, i) => [old, i + 1]));
+      const canonBody = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_s, d) => `{{${remap.get(Number(d))}}}`);
+      const canonSources = order.map((old) => varSources[old - 1]);
+      const canonExamples = order.map((old) => examples[old - 1] ?? '');
+
+      const example = order.length > 0 ? canonExamples.map((e) => e || 'exemple') : undefined;
+      // Indices variable->champ (seulement les variables rattachées à un champ via le sélecteur), positions canoniques.
+      const paramHints: TemplateParamHint[] = canonSources
+        .map((v, i): TemplateParamHint | null => (v ? { position: i + 1, source: v.source } : null))
         .filter((h): h is TemplateParamHint => h !== null);
       const header = buildHeader();
       const foot = footer.trim() || undefined;
@@ -406,7 +430,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
         await updateTemplate(tenantId, initial.name, {
           language: initial.language,
           category,
-          body,
+          body: canonBody,
           ...(header ? { header } : {}),
           ...(foot ? { footer: foot } : {}),
           ...(example ? { example } : {}),
@@ -421,7 +445,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
         name: name.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
         category,
         language,
-        body,
+        body: canonBody,
         ...(header ? { header } : {}),
         ...(foot ? { footer: foot } : {}),
         ...(example ? { example } : {}),
@@ -436,8 +460,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       setButtons([]);
       setHeaderType('none');
       setHeaderText('');
-      setHeaderHandle('');
-      setHeaderFileName('');
+      clearHeaderMedia();
       setFooter('');
       onCreated();
     } catch (err) {
@@ -487,7 +510,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={headerType}
-                onChange={(e) => { setHeaderType(e.target.value as 'none' | 'TEXT' | 'IMAGE' | 'VIDEO'); setHeaderHandle(''); setHeaderFileName(''); }}
+                onChange={(e) => { setHeaderType(e.target.value as 'none' | 'TEXT' | 'IMAGE' | 'VIDEO'); clearHeaderMedia(); }}
                 className={`${inputCls} max-w-[150px]`}
               >
                 <option value="none">Aucun</option>
@@ -513,13 +536,13 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
           <div className="mt-3">
             <label className="mb-1 block text-sm font-medium text-ink-700">Corps du message</label>
             <div className="relative">
-              <textarea
-                ref={bodyRef}
+              <VariableBodyEditor
+                ref={bodyEditorRef}
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
-                rows={5}
+                varLabels={varSources.map((v) => v?.label)}
+                onChange={setBody}
+                placeholder={'Bonjour [Prénom], voici notre offre 🎉'}
                 className={`${inputCls} pr-28`}
-                placeholder={'Bonjour {{1}}, voici notre offre 🎉'}
               />
               <div className="absolute bottom-2 right-2 flex items-center gap-1">
                 <button
@@ -550,19 +573,21 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
             <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder="Petit texte en bas (60 car. max, sans variable)" className={inputCls} />
           </div>
 
-          {varCount > 0 && (
+          {bodyPositions.length > 0 && (
             <div className="mt-2">
               <label className="mb-1 block text-sm font-medium text-ink-700">Exemples de variables (requis par Meta)</label>
               <div className="space-y-2">
-                {Array.from({ length: varCount }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-2">
+                {/* Piloté par les positions RÉELLES du corps (index pos-1), pas un compte séquentiel : après
+                    suppression d'une variable du milieu, chaque ligne reste alignée avec sa source/exemple. */}
+                {bodyPositions.map((pos) => (
+                  <div key={pos} className="flex items-center gap-2">
                     <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-400">
-                      {`{{${i + 1}}}`}
-                      {varSources[i] && <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{varSources[i]!.label}</span>}
+                      {`{{${pos}}}`}
+                      {varSources[pos - 1] && <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{varSources[pos - 1]!.label}</span>}
                     </span>
                     <input
-                      value={examples[i] ?? ''}
-                      onChange={(e) => setExamples((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
+                      value={examples[pos - 1] ?? ''}
+                      onChange={(e) => setExamples((x) => { const c = [...x]; c[pos - 1] = e.target.value; return c; })}
                       className={`${inputCls} flex-1`}
                       placeholder="ex. Julie"
                     />
@@ -677,7 +702,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                   ? headerText.trim()
                     ? { format: 'TEXT', text: headerText }
                     : null
-                  : { format: headerType }
+                  : { format: headerType, ...(headerPreviewUrl ? { mediaUrl: headerPreviewUrl } : {}) }
             }
             footer={footer}
           />

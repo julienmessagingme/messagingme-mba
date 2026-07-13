@@ -15,10 +15,14 @@ import { campaignRunJob } from './campaign/run-job';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
+import { PgTagStore } from './crm/tag-store.pg';
+import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { WorkflowExecutor } from './workflow/executor';
+import { buildWorkflowTemplateComponents } from './workflow/template-send';
 import { MetaClient } from './meta/client';
+import { MetaTemplateClient } from './meta/templates';
 import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
 import type { MessageSender } from './campaign/engine';
@@ -45,10 +49,44 @@ async function main(): Promise<void> {
   // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).
   const workflowStore = new PgWorkflowStore(pool);
   const runStore = new PgWorkflowRunStore(pool);
+  const tagStore = new PgTagStore(pool);
+  const hintStore = new PgTemplateHintStore(pool);
+
+  // Cache court du corps live d'un template (nb de variables N + exemples) par WABA|nom|langue : évite un appel
+  // Meta list() par destinataire d'une campagne workflow. TTL court -> tolère un template édité en cours de route.
+  const tplVarCache = new Map<string, { at: number; count: number; examples: string[] }>();
+  const TPL_CACHE_MS = 5 * 60_000;
+  const VAR_RE = /\{\{\s*\d+\s*\}\}/g;
+  const templateVarInfo = async (tenant: string, name: string, language: string): Promise<{ count: number; examples: string[] } | null> => {
+    const waba = await repo.getTenantWabaId(tenant);
+    if (!waba) return null;
+    const key = `${waba}|${name}|${language}`;
+    const cached = tplVarCache.get(key);
+    if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count, examples: cached.examples };
+    const tplClient = new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
+    const list = await tplClient.list(waba);
+    // Exact (nom + langue), sinon repli sur le nom seul (langue par défaut d'un template mono-langue).
+    const tpl = list.find((t) => t.name === name && t.language === language) ?? list.find((t) => t.name === name);
+    if (!tpl) return null;
+    const count = new Set(tpl.body.match(VAR_RE) ?? []).size;
+    const examples = tpl.example ?? [];
+    tplVarCache.set(key, { at: Date.now(), count, examples });
+    return { count, examples };
+  };
+
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
-    applyTag: async (tenant, waId, tag) => { await contactStore.addTagsByPhone(tenant, waId, [tag]); },
+    // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime — y compris par
+    // un ancien workflow non re-sauvegardé — atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.
+    applyTag: async (tenant, waId, tag) => {
+      // Même valeur normalisée (trim + slice 64) posée SUR le contact ET déclarée dans le référentiel -> pas de
+      // doublon 'vip ' vs 'vip' ni tag>64 tronqué d'un côté seulement (Contenus > Tags = union des deux sources).
+      const clean = tag.trim().slice(0, 64);
+      if (clean === '') return;
+      await contactStore.addTagsByPhone(tenant, waId, [clean]);
+      try { await tagStore.create(tenant, clean); } catch { /* déclaration best-effort */ }
+    },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
     sendTemplate: async (tenant, waId, name, language, buttons) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
@@ -59,12 +97,29 @@ async function main(): Promise<void> {
         return;
       }
       const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
-      // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui
-      // sélectionne la branche (sourceHandle) de façon déterministe (pas de pari sur le comportement Meta).
-      const components = buttons
-        .map((b, i) => ({ b, i }))
-        .filter(({ b }) => b.type === 'QUICK_REPLY')
-        .map(({ i }) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `btn:${i}` }] }));
+      // Variables du corps : on résout les {{n}} avec les attributs du contact (indices template_param_hints ->
+      // champ, ex. {{1}}=prenom), repli sur les exemples du template. On fournit EXACTEMENT N params -> plus de 132000.
+      let varCount = 0;
+      let examples: string[] = [];
+      let hints: Awaited<ReturnType<typeof hintStore.get>> = [];
+      let contact = null as Awaited<ReturnType<typeof contactStore.getResolvableByPhone>>;
+      try {
+        const info = await templateVarInfo(tenant, name, language);
+        if (info && info.count > 0) {
+          varCount = info.count;
+          examples = info.examples;
+          [hints, contact] = await Promise.all([
+            hintStore.get(tenant, name, language),
+            contactStore.getResolvableByPhone(tenant, waId),
+          ]);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendTemplate: résolution des variables échouée pour « ${name} »:`, err instanceof Error ? err.message : err);
+      }
+      // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui sélectionne
+      // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
+      const components = buildWorkflowTemplateComponents({ hints, varCount, contact: contact ?? {}, examples, buttons });
       await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
     },
   });

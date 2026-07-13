@@ -69,8 +69,9 @@ export interface WhatsAppPreviewProps {
    *  Absent -> substitution par exemple (comportement campagne/aperçu). */
   varLabels?: Array<string | undefined>;
   buttons: TemplateButtonInput[];
-  /** En-tête : texte (rendu tel quel) ou média (bloc placeholder image/vidéo/document). */
-  header?: { format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; text?: string } | null;
+  /** En-tête : texte (rendu tel quel) ou média (image/vidéo/document). `mediaUrl` = source affichable locale (data
+   *  URL / object URL du fichier choisi) ; si fournie pour une IMAGE/VIDEO, on l'affiche, sinon un placeholder. */
+  header?: { format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; text?: string; mediaUrl?: string } | null;
   /** Pied de page : petit texte gris sous le corps. */
   footer?: string;
   /** Nom affiché dans l'en-tête (défaut = le nom vérifié du WABA). */
@@ -85,6 +86,8 @@ const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', string> = { IMAGE: '�
 export function WhatsAppPreview({ body, examples, varLabels, buttons, header, footer, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
   const mediaHeader = header && header.format !== 'TEXT' ? header.format : null;
   const textHeader = header && header.format === 'TEXT' && header.text?.trim() ? header.text : null;
+  // Source média affichable (image/vidéo uploadée localement) : on montre le vrai visuel plutôt que l'icône.
+  const mediaUrl = header && header.format !== 'TEXT' ? header.mediaUrl : undefined;
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-ink-500">Aperçu WhatsApp</p>
@@ -100,9 +103,16 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
           <div className="max-w-[88%]">
             <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
               {mediaHeader && (
-                <div className="-mx-2.5 -mt-1.5 mb-1.5 flex h-24 items-center justify-center rounded-t-lg bg-ink-100 text-3xl text-ink-400">
-                  {MEDIA_ICON[mediaHeader]}
-                </div>
+                mediaUrl && mediaHeader === 'IMAGE' ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={mediaUrl} alt="" className="-mx-2.5 -mt-1.5 mb-1.5 h-28 w-[calc(100%+1.25rem)] max-w-none rounded-t-lg object-cover" />
+                ) : mediaUrl && mediaHeader === 'VIDEO' ? (
+                  <video src={mediaUrl} muted className="-mx-2.5 -mt-1.5 mb-1.5 h-28 w-[calc(100%+1.25rem)] max-w-none rounded-t-lg bg-black object-cover" />
+                ) : (
+                  <div className="-mx-2.5 -mt-1.5 mb-1.5 flex h-24 items-center justify-center rounded-t-lg bg-ink-100 text-3xl text-ink-400">
+                    {MEDIA_ICON[mediaHeader]}
+                  </div>
+                )
               )}
               {textHeader && <div className="mb-1 break-words text-[13px] font-semibold text-ink-900">{textHeader}</div>}
               <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
