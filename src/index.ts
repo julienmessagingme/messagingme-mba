@@ -26,6 +26,7 @@ import { MetaClient } from './meta/client';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
+import { PgWorkflowStore } from './workflow/store.pg';
 import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
@@ -46,6 +47,7 @@ async function main(): Promise<void> {
   const flowStore = new PgFlowStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
+  const workflowStore = new PgWorkflowStore(pool);
   const phoneClient = new MetaPhoneNumberClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const transport = new FetchTransport();
   const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
@@ -178,6 +180,13 @@ async function main(): Promise<void> {
       saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
     },
     me: { getUser: (userId) => userStore.getById(userId) },
+    workflows: {
+      createWorkflow: (tenant, name, graph) => workflowStore.insert(tenant, name, graph),
+      listWorkflows: (tenant) => workflowStore.list(tenant),
+      getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
+      updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),
+      deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
+    },
     ops: {
       getTenantOverview: () => opsStore.getTenantOverview(),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),

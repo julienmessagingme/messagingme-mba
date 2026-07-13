@@ -594,6 +594,49 @@ export function publishFlow(tenantId: string, flowId: string): Promise<{ id: str
   return request(`/tenants/${tenantId}/flows/${flowId}/publish`, { method: 'POST' });
 }
 
+// --- Workflows (bot builder : graphe de blocs) ---
+
+export type WorkflowNodeType = 'template' | 'inbox' | 'flow' | 'tag' | 'field';
+export interface WorkflowNode {
+  id: string;
+  type: WorkflowNodeType;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+}
+export interface WorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+}
+export interface WorkflowGraph {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+}
+export interface WorkflowSummary {
+  id: string;
+  name: string;
+  status: 'draft' | 'active';
+  graph: WorkflowGraph;
+  createdAt: string;
+  updatedAt: string;
+}
+export function listWorkflows(tenantId: string): Promise<{ workflows: WorkflowSummary[] }> {
+  return request<{ workflows: WorkflowSummary[] }>(`/tenants/${tenantId}/workflows`);
+}
+export function createWorkflow(tenantId: string, name: string, graph?: WorkflowGraph): Promise<{ id: string; name: string; status: string; graph: WorkflowGraph }> {
+  return request(`/tenants/${tenantId}/workflows`, { method: 'POST', body: JSON.stringify({ name, ...(graph ? { graph } : {}) }) });
+}
+export function getWorkflow(tenantId: string, id: string): Promise<{ workflow: WorkflowSummary }> {
+  return request<{ workflow: WorkflowSummary }>(`/tenants/${tenantId}/workflows/${id}`);
+}
+export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph; status?: 'draft' | 'active' }): Promise<unknown> {
+  return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteWorkflow(tenantId: string, id: string): Promise<unknown> {
+  return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'DELETE' });
+}
+
 // --- Contenu : Tags + User fields (édition) ---
 
 export interface TagCount {

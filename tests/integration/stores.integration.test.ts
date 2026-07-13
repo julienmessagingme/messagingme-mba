@@ -14,6 +14,7 @@ import {
 } from '../../src/campaign/store.pg';
 import { PgStatsStore } from '../../src/stats/store.pg';
 import { PgOpsStore } from '../../src/ops/store.pg';
+import { PgWorkflowStore } from '../../src/workflow/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -300,6 +301,45 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(q.active).toBeGreaterThanOrEqual(0);
       expect(q.failed).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it('PgWorkflowStore : insert/list/getById/update (graphe jsonb round-trip)/remove', async () => {
+    const store = new PgWorkflowStore(pool);
+    const graph = {
+      nodes: [
+        { id: 'n1', type: 'tag' as const, position: { x: 0, y: 0 }, data: { tag: 'vip' } },
+        { id: 'n2', type: 'template' as const, position: { x: 200, y: 0 }, data: { templateName: 'promo' } },
+      ],
+      edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+    };
+    const { id } = await store.insert(tenantId, 'Onboarding', graph);
+    expect(id).toBeTruthy();
+
+    const list = await store.list(tenantId);
+    const mine = list.find((w) => w.id === id);
+    expect(mine).toBeDefined();
+    expect(mine!.status).toBe('draft');
+    expect(mine!.graph).toEqual(graph); // round-trip jsonb intact
+
+    const one = await store.getById(id, tenantId);
+    expect(one!.graph.nodes).toHaveLength(2);
+
+    // update partiel : seul le status change, le graphe est préservé (coalesce).
+    expect(await store.update(id, tenantId, { status: 'active' })).toBe(true);
+    const afterStatus = await store.getById(id, tenantId);
+    expect(afterStatus!.status).toBe('active');
+    expect(afterStatus!.graph).toEqual(graph); // graphe non écrasé
+
+    // update du graphe.
+    const g2 = { nodes: [{ id: 'n1', type: 'inbox' as const, position: { x: 5, y: 5 }, data: {} }], edges: [] };
+    expect(await store.update(id, tenantId, { graph: g2 })).toBe(true);
+    expect((await store.getById(id, tenantId))!.graph).toEqual(g2);
+
+    // scope tenant : un autre tenant ne peut ni voir ni supprimer.
+    expect(await store.getById(id, '00000000-0000-0000-0000-000000000000')).toBeNull();
+    expect(await store.remove(id, '00000000-0000-0000-0000-000000000000')).toBe(false);
+    expect(await store.remove(id, tenantId)).toBe(true);
+    expect(await store.getById(id, tenantId)).toBeNull();
   });
 
   it('PgQualityProvider : UNKNOWN si numéro absent, lit le rating sinon', async () => {

@@ -18,6 +18,7 @@ import { registerContacts } from './http/contacts';
 import { registerAccount } from './http/account';
 import { registerMe } from './http/me';
 import { registerOps } from './http/ops';
+import { registerWorkflows } from './http/workflows';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { MetaApiError } from './meta/errors';
@@ -39,6 +40,7 @@ import type { ContactsRouteDeps } from './http/contacts';
 import type { AccountRouteDeps } from './http/account';
 import type { MeRouteDeps } from './http/me';
 import type { OpsRouteDeps } from './http/ops';
+import type { WorkflowRouteDeps } from './http/workflows';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -83,6 +85,8 @@ export interface ServerDeps {
   ops?: OpsRouteDeps;
   /** Secret de `/ops`. Défaut : config.OPS_TOKEN. Vide -> /ops répond 401. Injectable en test. */
   opsToken?: string;
+  /** Bot builder (workflows) — réservé aux admins. */
+  workflows?: WorkflowRouteDeps;
 }
 
 /**
@@ -91,7 +95,7 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me) && !deps.auth) {
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
     throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
@@ -154,6 +158,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);
   if (deps.support) registerSupport(app, deps.support, requireAuth);
   if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
+  if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
   // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
   // compte authentifié (générique, lit req.auth.userId).
   if (deps.account) registerAccount(app, deps.account, requireAdmin);

@@ -7,7 +7,7 @@ import { getSession, clearSession, type Session } from '@/lib/session';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 
-type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
+type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -20,6 +20,7 @@ const icons = {
   campaign: 'M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 11-5.8-1.6',
   content: 'M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z',
   analytics: 'M3 3v18h18M8 17V9M13 17V5M18 17v-6',
+  flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
   support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
 };
 
@@ -30,6 +31,7 @@ const NAV_ADMIN: NavItem[] = [
   { key: 'inbox', href: '/inbox', label: 'Inbox', d: icons.inbox },
   { key: 'contacts', href: '/contacts', label: 'Contacts', d: icons.contacts },
   { key: 'campagnes', href: '/campaigns', label: 'Campagnes', d: icons.campaign },
+  { key: 'workflows', href: '/workflows', label: 'Flow', d: icons.flow },
   { key: 'contenu', label: 'Contenu', d: icons.content, children: [
     { key: 'templates', href: '/templates', label: 'Templates' },
     { key: 'flows', href: '/flows', label: 'Formulaires' },
