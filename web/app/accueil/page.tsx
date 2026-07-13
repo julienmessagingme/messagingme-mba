@@ -87,36 +87,40 @@ function AccueilInner({ session }: { session: Session }) {
         <p className="text-sm text-ink-500">Chargement…</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* Carte Numéro + statut compte */}
-          <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold tracking-tight text-ink-900">Numéro WhatsApp</h3>
-              {account && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX[account.status.dot] }} />
-                  {account.status.label}
-                </span>
-              )}
-            </div>
-            <div className="font-mono text-lg font-semibold text-ink-900">
-              {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : 'Aucun numéro'}
-            </div>
-            {account && <p className="mt-1 text-xs text-ink-500">{account.status.reason}</p>}
-            {account?.hasNumber && (
-              <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-ink-100 pt-3 text-xs">
-                <div>
-                  <div className="font-medium uppercase tracking-wide text-ink-400">Qualité</div>
-                  <div className="mt-0.5 text-sm font-semibold text-ink-800">{qualityLabel(account.quality)}</div>
-                </div>
-                {account.tier && (
-                  <div>
-                    <div className="font-medium uppercase tracking-wide text-ink-400">Palier d&apos;envoi</div>
-                    <div className="mt-0.5 text-sm font-semibold text-ink-800">{tierLabel(account.tier)}</div>
-                  </div>
+          {/* Espace sans numéro (self-signup) -> onboarding grisé ; sinon carte statut opérationnelle. */}
+          {account && !account.hasNumber ? (
+            <ConnectNumberZone />
+          ) : (
+            <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold tracking-tight text-ink-900">Numéro WhatsApp</h3>
+                {account && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX[account.status.dot] }} />
+                    {account.status.label}
+                  </span>
                 )}
               </div>
-            )}
-          </div>
+              <div className="font-mono text-lg font-semibold text-ink-900">
+                {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : 'Aucun numéro'}
+              </div>
+              {account && <p className="mt-1 text-xs text-ink-500">{account.status.reason}</p>}
+              {account?.hasNumber && (
+                <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-ink-100 pt-3 text-xs">
+                  <div>
+                    <div className="font-medium uppercase tracking-wide text-ink-400">Qualité</div>
+                    <div className="mt-0.5 text-sm font-semibold text-ink-800">{qualityLabel(account.quality)}</div>
+                  </div>
+                  {account.tier && (
+                    <div>
+                      <div className="font-medium uppercase tracking-wide text-ink-400">Palier d&apos;envoi</div>
+                      <div className="mt-0.5 text-sm font-semibold text-ink-800">{tierLabel(account.tier)}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Carte MBA (déplacée depuis Analytics) */}
           <div className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
@@ -146,6 +150,49 @@ function AccueilInner({ session }: { session: Session }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Onboarding d'un espace SANS numéro (self-signup) : zone grisée « Connecter ton numéro ». Remplace la carte de
+ * statut opérationnelle tant qu'aucun numéro n'est rattaché. Le CTA est un placeholder inactif : c'est le futur
+ * point d'entrée de l'Embedded Signup Meta (activable quand MessagingMe sera Tech Partner).
+ */
+function ConnectNumberZone() {
+  return (
+    <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold tracking-tight text-ink-500">Numéro WhatsApp</h3>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-500">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX.grey }} />
+          Non connecté
+        </span>
+      </div>
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-400" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-lg font-semibold text-ink-700">Connecter ton numéro</div>
+          <p className="mt-0.5 text-xs text-ink-500">
+            Première étape : rattache ton numéro WhatsApp Business pour activer l&apos;envoi de messages et de campagnes.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-3 border-t border-ink-200 pt-3">
+        <button
+          type="button"
+          disabled
+          title="Bientôt disponible"
+          className="cursor-not-allowed rounded-lg bg-ink-200 px-3 py-2 text-sm font-semibold text-ink-500"
+        >
+          Connecter ton numéro
+        </button>
+        <span className="text-xs text-ink-400">Disponible prochainement</span>
+      </div>
     </div>
   );
 }
