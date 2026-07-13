@@ -45,7 +45,7 @@ Migrations SQL versionnées `db/migrations/` (suivi `schema_migrations`), appliq
 code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0025**
 (`phone_numbers.status`/`messaging_limit_tier` 0019, `campaign_recipients.error_code` 0020, `flows.cta` 0021,
 table `workflows` 0022, table `workflow_runs` 0023, `campaigns.workflow_id` + template nullable 0024,
-table `template_param_hints` 0025).
+table `template_param_hints` 0025, table `auth_tokens` + `tenants.status` 0026).
 
 Tables :
 - `tenants` / `users` (`role` ∈ admin|agent, `name` nullable 0013, `disabled` 0014) / `waba` / `phone_numbers`.
