@@ -10,6 +10,8 @@ export interface CreateFlowInput {
   elements: FlowElement[];
   /** Discriminant du flow, figé dans le payload complete (identifie le flow au retour nfm_reply). */
   ref: string;
+  /** Libellé du bouton final (Footer). Défaut « Envoyer ». */
+  cta?: string;
 }
 
 export interface FlowSummary {
@@ -54,7 +56,7 @@ export class MetaFlowClient {
 
   /** POST /{waba}/flows — name + categories:['LEAD_GENERATION'] + flow_json (STRING). Statut initial DRAFT. */
   async create(wabaId: string, input: CreateFlowInput): Promise<{ id: string; status: string }> {
-    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref);
+    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref, input.cta);
     const json = (await this.call(`${this.baseUrl}/${this.version}/${wabaId}/flows`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -72,7 +74,7 @@ export class MetaFlowClient {
    * chez Meta (refusé) : la route amont doit garantir status=DRAFT (409 sinon). Relit validation_errors.
    */
   async updateDraft(flowId: string, input: CreateFlowInput): Promise<void> {
-    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref);
+    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref, input.cta);
     const fd = new FormData();
     fd.append('asset_type', 'FLOW_JSON');
     fd.append('name', 'flow.json');

@@ -3,26 +3,31 @@ import { deriveElements, fieldsOf, buildFlowElements, flowFieldToUserFieldType, 
 import { isUserFieldType } from '../src/crm/fields';
 
 describe('isFlowFieldType', () => {
-  it('reconnaît les types de champ valides, rejette le reste', () => {
+  it('reconnaît les types de champ valides (dont choix + optin), rejette le reste', () => {
     expect(isFlowFieldType('email')).toBe(true);
     expect(isFlowFieldType('date')).toBe(true);
-    expect(isFlowFieldType('checkbox')).toBe(false);
+    expect(isFlowFieldType('checkbox')).toBe(true);
+    expect(isFlowFieldType('dropdown')).toBe(true);
+    expect(isFlowFieldType('optin')).toBe(true);
+    expect(isFlowFieldType('passcode')).toBe(true);
+    expect(isFlowFieldType('foobar')).toBe(false);
     expect(isFlowFieldType(42)).toBe(false);
   });
 });
 
 describe('flowFieldToUserFieldType', () => {
-  it('email/phone/textarea/text -> text ; number -> number ; date -> date', () => {
+  it('text-like -> text ; number -> number ; date -> date ; optin -> boolean', () => {
     expect(flowFieldToUserFieldType('email')).toBe('text');
-    expect(flowFieldToUserFieldType('phone')).toBe('text');
-    expect(flowFieldToUserFieldType('textarea')).toBe('text');
-    expect(flowFieldToUserFieldType('text')).toBe('text');
+    expect(flowFieldToUserFieldType('passcode')).toBe('text');
+    expect(flowFieldToUserFieldType('dropdown')).toBe('text');
+    expect(flowFieldToUserFieldType('checkbox')).toBe('text');
     expect(flowFieldToUserFieldType('number')).toBe('number');
     expect(flowFieldToUserFieldType('date')).toBe('date');
+    expect(flowFieldToUserFieldType('optin')).toBe('boolean');
   });
 
   it('renvoie TOUJOURS un UserFieldType valide (jamais un type que ensureField rejetterait)', () => {
-    for (const t of ['text', 'email', 'phone', 'number', 'textarea', 'date'] as const) {
+    for (const t of ['text', 'email', 'phone', 'number', 'passcode', 'textarea', 'date', 'dropdown', 'radio', 'checkbox', 'optin'] as const) {
       expect(isUserFieldType(flowFieldToUserFieldType(t))).toBe(true);
     }
   });
@@ -69,5 +74,42 @@ describe('flow riche (elements + _ref)', () => {
     const a = JSON.stringify(buildFlowElements('C', deriveElements(input), '7.2', 'r'));
     const b = JSON.stringify(buildFlowElements('C', deriveElements(input), '7.2', 'r'));
     expect(a).toBe(b);
+  });
+});
+
+describe('flow riche : nouveaux composants + bouton final', () => {
+  function children(elements: FlowElementInput[], cta?: string): any[] {
+    const j = buildFlowElements('F', deriveElements(elements), '7.2', 'r', cta) as any;
+    return j.screens[0].layout.children;
+  }
+
+  it('choix -> Dropdown/RadioButtonsGroup/CheckboxGroup avec data-source [{id,title}]', () => {
+    const kids = children([
+      { kind: 'field', label: 'Ville', type: 'dropdown', required: true, options: ['Lyon', 'Nice'] },
+      { kind: 'field', label: 'Canal', type: 'radio', required: false, options: ['Mail', 'SMS'] },
+      { kind: 'field', label: 'Centres', type: 'checkbox', required: false, options: ['Sport', 'Ciné'] },
+    ]);
+    expect(kids[0]).toMatchObject({ type: 'Dropdown', name: 'ville', 'data-source': [{ id: 'Lyon', title: 'Lyon' }, { id: 'Nice', title: 'Nice' }] });
+    expect(kids[1]).toMatchObject({ type: 'RadioButtonsGroup', name: 'canal' });
+    expect(kids[2]).toMatchObject({ type: 'CheckboxGroup', name: 'centres' });
+  });
+
+  it('optin -> OptIn (pas de input-type) ; passcode -> TextInput input-type passcode', () => {
+    const kids = children([
+      { kind: 'field', label: 'J\'accepte', type: 'optin', required: true },
+      { kind: 'field', label: 'Code', type: 'passcode', required: true },
+    ]);
+    expect(kids[0]).toMatchObject({ type: 'OptIn', name: 'j_accepte', required: true });
+    expect(kids[0]['input-type']).toBeUndefined();
+    expect(kids[1]).toMatchObject({ type: 'TextInput', name: 'code', 'input-type': 'passcode' });
+  });
+
+  it('bouton final : libellé personnalisé, défaut « Envoyer », tronqué à 30', () => {
+    const withCta = children([{ kind: 'field', label: 'Nom', type: 'text', required: true }], 'Je réserve');
+    expect(withCta.at(-1)).toMatchObject({ type: 'Footer', label: 'Je réserve' });
+    const noCta = children([{ kind: 'field', label: 'Nom', type: 'text', required: true }]);
+    expect(noCta.at(-1).label).toBe('Envoyer');
+    const long = children([{ kind: 'field', label: 'Nom', type: 'text', required: true }], 'x'.repeat(50));
+    expect(long.at(-1).label.length).toBe(30);
   });
 });

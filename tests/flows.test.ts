@@ -96,7 +96,7 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { inserted: Array<{ id: string; name: string; ref: string }>; published: string[]; metaCalls: string[]; updated: Array<{ id: string; name: string; ref: string }> }
+interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; updated: Array<{ id: string; name: string; ref: string }> }
 
 function app(
   over: Partial<FlowRouteDeps> = {},
@@ -111,8 +111,8 @@ function app(
   const deps: FlowRouteDeps = {
     flows: new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch),
     getWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId),
-    insertFlow: async (_t, id, name, _elements, ref) => { cap.inserted.push({ id, name, ref }); },
-    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], elements: null, ref: null, mapping: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
+    insertFlow: async (_t, id, name, _elements, ref, mapping) => { cap.inserted.push({ id, name, ref, mapping }); },
+    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], elements: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
     belongsTo: async () => opts.belongs !== false,
     markPublished: async (id) => { cap.published.push(id); return true; },
     // Mime la vraie ensureField : rejette un type qui n'est PAS un UserFieldType (text|number|date|boolean|url).
@@ -133,7 +133,7 @@ function draftFlow(over: Partial<FlowRow> = {}): FlowRow {
     id: 'fdraft', tenantId: 't1', name: 'Contact', status: 'DRAFT',
     fields: [{ label: 'Nom', type: 'text', required: true, key: 'nom' }],
     elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true, key: 'nom' }],
-    ref: 'ref-source', mapping: { nom: 'nom' },
+    ref: 'ref-source', mapping: { nom: 'nom' }, cta: null,
     createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z',
     ...over,
   };
@@ -174,11 +174,33 @@ describe('routes flows — création', () => {
   it('POST aucun champ / type invalide -> 400', async () => {
     const { server } = app();
     const r1 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [] } });
-    const r2 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [{ kind: 'field', label: 'A', type: 'checkbox', required: false }] } });
+    const r2 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [{ kind: 'field', label: 'A', type: 'checkbox', required: false }] } }); // choix SANS options -> 400
     const r3 = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', elements: [{ kind: 'heading', text: 'Bonjour' }] } }); // texte seul, 0 champ -> rien à collecter
     expect(r1.statusCode).toBe(400);
     expect(r2.statusCode).toBe(400);
     expect(r3.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('POST champ de choix AVEC >= 2 options + cta -> 201', async () => {
+    const { server } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'Sondage', cta: 'Je valide', elements: [{ kind: 'field', label: 'Ville', type: 'dropdown', required: true, options: ['Lyon', 'Nice'] }] },
+    });
+    expect(res.statusCode).toBe(201);
+    await server.close();
+  });
+
+  it('POST optin : le saveTo fourni est IGNORÉ (consentement -> champ booléen dédié, jamais un autre champ)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'newsletter' }] },
+    });
+    expect(res.statusCode).toBe(201);
+    // mapping par défaut (clé = clé du champ), PAS 'newsletter' : le booléen ne fuit pas dans un autre champ.
+    expect(cap.inserted[0]!.mapping!['j_accepte']).toBe('j_accepte');
     await server.close();
   });
 

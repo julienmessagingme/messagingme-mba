@@ -13,6 +13,8 @@ export interface FlowRow {
   ref: string | null;
   /** Mapping champ -> user field du contact (clé champ -> clé user field). */
   mapping: Record<string, string> | null;
+  /** Libellé du bouton final (Footer). null = défaut « Envoyer ». */
+  cta: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -31,21 +33,21 @@ export interface FlowMappingRow {
 export class PgFlowStore {
   constructor(private readonly pool: Pool) {}
 
-  async insert(input: { id: string; tenantId: string; name: string; elements: FlowElement[]; ref: string; mapping: Record<string, string> }): Promise<void> {
+  async insert(input: { id: string; tenantId: string; name: string; elements: FlowElement[]; ref: string; mapping: Record<string, string>; cta?: string }): Promise<void> {
     await this.pool.query(
-      `insert into flows (id, tenant_id, name, fields, elements, ref, mapping)
-       values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb)`,
-      [input.id, input.tenantId, input.name, JSON.stringify(fieldsOf(input.elements)), JSON.stringify(input.elements), input.ref, JSON.stringify(input.mapping)],
+      `insert into flows (id, tenant_id, name, fields, elements, ref, mapping, cta)
+       values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8)`,
+      [input.id, input.tenantId, input.name, JSON.stringify(fieldsOf(input.elements)), JSON.stringify(input.elements), input.ref, JSON.stringify(input.mapping), input.cta ?? null],
     );
   }
 
   async list(tenantId: string): Promise<FlowRow[]> {
     const res = await this.pool.query<{
       id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
-      fields: FlowField[]; elements: FlowElement[] | null; ref: string | null; mapping: Record<string, string> | null;
+      fields: FlowField[]; elements: FlowElement[] | null; ref: string | null; mapping: Record<string, string> | null; cta: string | null;
       created_at: Date; updated_at: Date;
     }>(
-      `select id, tenant_id, name, status, fields, elements, ref, mapping, created_at, updated_at from flows
+      `select id, tenant_id, name, status, fields, elements, ref, mapping, cta, created_at, updated_at from flows
        where tenant_id = $1 order by created_at desc`,
       [tenantId],
     );
@@ -58,6 +60,7 @@ export class PgFlowStore {
       elements: r.elements,
       ref: r.ref,
       mapping: r.mapping,
+      cta: r.cta,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
     }));
@@ -67,10 +70,10 @@ export class PgFlowStore {
   async getById(id: string, tenantId: string): Promise<FlowRow | null> {
     const res = await this.pool.query<{
       id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
-      fields: FlowField[]; elements: FlowElement[] | null; ref: string | null; mapping: Record<string, string> | null;
+      fields: FlowField[]; elements: FlowElement[] | null; ref: string | null; mapping: Record<string, string> | null; cta: string | null;
       created_at: Date; updated_at: Date;
     }>(
-      `select id, tenant_id, name, status, fields, elements, ref, mapping, created_at, updated_at from flows
+      `select id, tenant_id, name, status, fields, elements, ref, mapping, cta, created_at, updated_at from flows
        where id = $1 and tenant_id = $2 limit 1`,
       [id, tenantId],
     );
@@ -85,6 +88,7 @@ export class PgFlowStore {
       elements: r.elements,
       ref: r.ref,
       mapping: r.mapping,
+      cta: r.cta,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
     };
@@ -95,11 +99,11 @@ export class PgFlowStore {
    * diverger des elements. WHERE status='DRAFT' : 2e barrière SQL contre l'écriture d'un PUBLISHED (immuable
    * chez Meta). Renvoie true si une ligne DRAFT du tenant a été mise à jour.
    */
-  async update(id: string, tenantId: string, patch: { name: string; elements: FlowElement[]; ref: string; mapping: Record<string, string> }): Promise<boolean> {
+  async update(id: string, tenantId: string, patch: { name: string; elements: FlowElement[]; ref: string; mapping: Record<string, string>; cta?: string }): Promise<boolean> {
     const res = await this.pool.query(
-      `update flows set name = $3, fields = $4::jsonb, elements = $5::jsonb, ref = $6, mapping = $7::jsonb, updated_at = now()
+      `update flows set name = $3, fields = $4::jsonb, elements = $5::jsonb, ref = $6, mapping = $7::jsonb, cta = $8, updated_at = now()
        where id = $1 and tenant_id = $2 and status = 'DRAFT'`,
-      [id, tenantId, patch.name, JSON.stringify(fieldsOf(patch.elements)), JSON.stringify(patch.elements), patch.ref, JSON.stringify(patch.mapping)],
+      [id, tenantId, patch.name, JSON.stringify(fieldsOf(patch.elements)), JSON.stringify(patch.elements), patch.ref, JSON.stringify(patch.mapping), patch.cta ?? null],
     );
     return (res.rowCount ?? 0) > 0;
   }

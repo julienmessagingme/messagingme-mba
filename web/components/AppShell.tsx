@@ -32,7 +32,7 @@ const NAV_ADMIN: NavItem[] = [
   { key: 'campagnes', href: '/campaigns', label: 'Campagnes', d: icons.campaign },
   { key: 'contenu', label: 'Contenu', d: icons.content, children: [
     { key: 'templates', href: '/templates', label: 'Templates' },
-    { key: 'flows', href: '/flows', label: 'Flows' },
+    { key: 'flows', href: '/flows', label: 'Formulaires' },
     { key: 'tags', href: '/tags', label: 'Tags' },
     { key: 'fields', href: '/fields', label: 'Champs' },
   ] },

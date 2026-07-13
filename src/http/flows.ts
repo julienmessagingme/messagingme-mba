@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { deriveElements, fieldsOf, isFlowFieldType, flowFieldToUserFieldType, DuplicateFieldKeyError } from '../meta/flow-json';
-import type { FlowElementInput, FlowElement } from '../meta/flow-json';
+import { deriveElements, fieldsOf, isFlowFieldType, isChoiceFieldType, flowFieldToUserFieldType, DuplicateFieldKeyError } from '../meta/flow-json';
+import type { FlowElementInput, FlowElement, FlowFieldElInput } from '../meta/flow-json';
 import type { MetaFlowClient } from '../meta/flows';
 import type { FlowRow } from '../flow/store.pg';
 import type { UserFieldType } from '../crm/types';
@@ -10,7 +10,7 @@ import type { Guard } from '../auth/middleware';
 export interface FlowRouteDeps {
   flows: MetaFlowClient;
   getWabaId(tenantId: string): Promise<string | null>;
-  insertFlow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>): Promise<void>;
+  insertFlow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
   listFlows(tenantId: string): Promise<FlowRow[]>;
   belongsTo(flowId: string, tenantId: string): Promise<boolean>;
   markPublished(flowId: string, tenantId: string): Promise<boolean>;
@@ -19,7 +19,7 @@ export interface FlowRouteDeps {
   /** Un flow par id, scopé tenant (édition/duplication : lire status + elements). null si absent. */
   getFlow(flowId: string, tenantId: string): Promise<FlowRow | null>;
   /** Met à jour un flow DRAFT en base (fields re-dérivé côté store). true si une ligne DRAFT a bougé. */
-  updateFlowRow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>): Promise<boolean>;
+  updateFlowRow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -55,8 +55,18 @@ function parseFlowBody(v: unknown): { elements: FlowElementInput[]; saveTos: Arr
       elements.push({ kind: 'image', src });
     } else if (el.kind === 'field') {
       if (!nonEmpty(el.label) || !isFlowFieldType(el.type)) return null;
-      elements.push({ kind: 'field', label: el.label.trim(), type: el.type, required: el.required === true });
-      saveTos.push(nonEmpty(el.saveTo) ? el.saveTo.trim() : undefined);
+      const field: FlowFieldElInput = { kind: 'field', label: el.label.trim(), type: el.type, required: el.required === true };
+      if (isChoiceFieldType(el.type)) {
+        // Un champ de choix (dropdown/radio/checkbox) exige >= 2 options distinctes non vides.
+        const raw = (el as { options?: unknown }).options;
+        const opts = Array.isArray(raw) ? [...new Set(raw.map((o) => String(o).trim()).filter((o) => o !== ''))] : [];
+        if (opts.length < 2) return null;
+        field.options = opts;
+      }
+      elements.push(field);
+      // Un consentement (optin) se range TOUJOURS dans un champ booléen dédié : on ignore tout saveTo
+      // fourni (défense en profondeur contre un appel API direct qui écrirait le booléen ailleurs).
+      saveTos.push(field.type !== 'optin' && nonEmpty(el.saveTo) ? el.saveTo.trim() : undefined);
       fieldCount += 1;
     } else {
       return null;
@@ -116,10 +126,11 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
 
-    const b = (req.body ?? {}) as { name?: unknown; elements?: unknown };
+    const b = (req.body ?? {}) as { name?: unknown; elements?: unknown; cta?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     const parsed = parseFlowBody(b.elements);
     if (parsed === null) return reply.code(400).send({ error: INVALID_ELEMENTS });
+    const cta = nonEmpty(b.cta) ? b.cta.trim() : undefined;
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
@@ -129,8 +140,8 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
 
     const ref = randomUUID();
     const name = b.name.trim();
-    const { id, status } = await deps.flows.create(wabaId, { name, elements: mapped.derived, ref });
-    await deps.insertFlow(tenant, id, name, mapped.derived, ref, mapped.mapping);
+    const { id, status } = await deps.flows.create(wabaId, { name, elements: mapped.derived, ref, ...(cta ? { cta } : {}) });
+    await deps.insertFlow(tenant, id, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(201).send({ id, status, name, fields: mapped.fields });
   });
 
@@ -140,10 +151,11 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { flowId } = req.params as { flowId: string };
 
-    const b = (req.body ?? {}) as { name?: unknown; elements?: unknown };
+    const b = (req.body ?? {}) as { name?: unknown; elements?: unknown; cta?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     const parsed = parseFlowBody(b.elements);
     if (parsed === null) return reply.code(400).send({ error: INVALID_ELEMENTS });
+    const cta = nonEmpty(b.cta) ? b.cta.trim() : undefined;
 
     const existing = await deps.getFlow(flowId, tenant);
     if (!existing) return reply.code(404).send({ error: 'flow inconnu' });
@@ -163,8 +175,8 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     // On GARDE le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
     const ref = existing.ref ?? randomUUID();
     const name = b.name.trim();
-    await deps.flows.updateDraft(flowId, { name, elements: mapped.derived, ref }); // Meta AVANT store
-    await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping);
+    await deps.flows.updateDraft(flowId, { name, elements: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta AVANT store
+    await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: mapped.fields });
   });
 
@@ -189,8 +201,9 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     let name = `${source.name} (copie)`;
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
     const mapping = source.mapping ?? {};
-    const { id, status } = await deps.flows.create(wabaId, { name, elements: source.elements, ref });
-    await deps.insertFlow(tenant, id, name, source.elements, ref, mapping);
+    const cta = source.cta ?? undefined;
+    const { id, status } = await deps.flows.create(wabaId, { name, elements: source.elements, ref, ...(cta ? { cta } : {}) });
+    await deps.insertFlow(tenant, id, name, source.elements, ref, mapping, cta);
     return reply.code(201).send({ id, status, name, fields: fieldsOf(source.elements) });
   });
 

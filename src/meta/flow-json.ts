@@ -5,28 +5,42 @@ import type { UserFieldType } from '../crm/types';
  *  (vérifié live : c'est l'id d'écran, PAS un mot réservé type FIRST_ENTRY_SCREEN). */
 export const FLOW_ENTRY_SCREEN = 'FORM';
 
-export type FlowFieldType = 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'date';
+export type FlowFieldType =
+  | 'text' | 'email' | 'phone' | 'number' | 'passcode' // TextInput (input-type)
+  | 'textarea' // TextArea
+  | 'date' // DatePicker
+  | 'dropdown' | 'radio' | 'checkbox' // choix à options (Dropdown / RadioButtonsGroup / CheckboxGroup)
+  | 'optin'; // OptIn (consentement, booléen)
 
-export const FLOW_FIELD_TYPES: readonly FlowFieldType[] = ['text', 'email', 'phone', 'number', 'textarea', 'date'];
+export const FLOW_FIELD_TYPES: readonly FlowFieldType[] = ['text', 'email', 'phone', 'number', 'passcode', 'textarea', 'date', 'dropdown', 'radio', 'checkbox', 'optin'];
 export function isFlowFieldType(t: unknown): t is FlowFieldType {
   return typeof t === 'string' && (FLOW_FIELD_TYPES as readonly string[]).includes(t);
 }
 
+/** Types de champ Flow qui EXIGENT une liste d'options (data-source). */
+export const CHOICE_FIELD_TYPES: readonly FlowFieldType[] = ['dropdown', 'radio', 'checkbox'];
+export function isChoiceFieldType(t: FlowFieldType): boolean {
+  return (CHOICE_FIELD_TYPES as readonly string[]).includes(t);
+}
+
 /**
  * Convertit un type de champ Flow vers le type de user field du contact. Les types Flow `email`/`phone`/
- * `textarea` n'existent PAS dans UserFieldType (`text|number|date|boolean|url`) : sans cette normalisation,
- * `ensureField` lève « type de champ invalide » -> 500 sur le mapping par défaut d'un champ email/téléphone.
+ * `textarea`/choix n'existent PAS dans UserFieldType (`text|number|date|boolean|url`) : sans cette
+ * normalisation, `ensureField` lève « type de champ invalide » -> 500 sur le mapping par défaut.
  */
 export function flowFieldToUserFieldType(t: FlowFieldType): UserFieldType {
   if (t === 'number') return 'number';
   if (t === 'date') return 'date';
-  return 'text'; // text | email | phone | textarea -> text
+  if (t === 'optin') return 'boolean';
+  return 'text'; // text | email | phone | passcode | textarea | dropdown | radio | checkbox -> text
 }
 
 export interface FlowFieldInput {
   label: string;
   type: FlowFieldType;
   required: boolean;
+  /** Options d'un champ de choix (dropdown/radio/checkbox). Ignoré pour les autres types. */
+  options?: string[];
 }
 
 /** Champ avec sa clé dérivée (slug du libellé). La clé sert de `name` du composant + de clé du payload. */
@@ -99,10 +113,11 @@ function elementComponent(el: FlowElement): Record<string, unknown> {
  * `complete` dont le payload renvoie chaque champ (`${form.<key>}`) ET une constante `_ref` (discriminant
  * pour identifier le flow au retour du nfm_reply). Pur et déterministe. `ref` figé à la création.
  */
-export function buildFlowElements(name: string, elements: FlowElement[], version: string, ref: string): Record<string, unknown> {
+export function buildFlowElements(name: string, elements: FlowElement[], version: string, ref: string, cta?: string): Record<string, unknown> {
   const payload: Record<string, string> = {};
   for (const f of fieldsOf(elements)) payload[f.key] = `\${form.${f.key}}`;
   payload[FLOW_REF_KEY] = ref;
+  const label = (cta ?? '').trim().slice(0, 30) || 'Envoyer';
   return {
     version,
     screens: [
@@ -114,7 +129,7 @@ export function buildFlowElements(name: string, elements: FlowElement[], version
         data: {},
         layout: {
           type: 'SingleColumnLayout',
-          children: [...elements.map(elementComponent), { type: 'Footer', label: 'Envoyer', 'on-click-action': { name: 'complete', payload } }],
+          children: [...elements.map(elementComponent), { type: 'Footer', label, 'on-click-action': { name: 'complete', payload } }],
         },
       },
     ],
@@ -123,8 +138,16 @@ export function buildFlowElements(name: string, elements: FlowElement[], version
 
 /** Composant Flow JSON d'un champ selon son type. */
 function componentFor(f: FlowField): Record<string, unknown> {
-  if (f.type === 'textarea') return { type: 'TextArea', name: f.key, label: f.label, required: f.required };
-  if (f.type === 'date') return { type: 'DatePicker', name: f.key, label: f.label, required: f.required };
-  const inputType = f.type; // text | email | phone | number -> input-type TextInput
-  return { type: 'TextInput', name: f.key, label: f.label, 'input-type': inputType, required: f.required };
+  const base = { name: f.key, label: f.label, required: f.required };
+  if (f.type === 'textarea') return { type: 'TextArea', ...base };
+  if (f.type === 'date') return { type: 'DatePicker', ...base };
+  if (f.type === 'optin') return { type: 'OptIn', ...base };
+  if (isChoiceFieldType(f.type)) {
+    // Meta attend un `data-source` [{id,title}]. id = title -> la valeur renvoyée est le libellé lisible.
+    const dataSource = (f.options ?? []).map((o) => ({ id: o, title: o }));
+    const type = f.type === 'dropdown' ? 'Dropdown' : f.type === 'radio' ? 'RadioButtonsGroup' : 'CheckboxGroup';
+    return { type, ...base, 'data-source': dataSource };
+  }
+  // text | email | phone | number | passcode -> TextInput input-type
+  return { type: 'TextInput', ...base, 'input-type': f.type };
 }

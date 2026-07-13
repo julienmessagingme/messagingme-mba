@@ -140,13 +140,13 @@ async function main(): Promise<void> {
     flows: {
       flows: flowClient,
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
-      insertFlow: (tenantId, id, name, elements, ref, mapping) => flowStore.insert({ id, tenantId, name, elements, ref, mapping }),
+      insertFlow: (tenantId, id, name, elements, ref, mapping, cta) => flowStore.insert({ id, tenantId, name, elements, ref, mapping, ...(cta ? { cta } : {}) }),
       listFlows: (tenant) => flowStore.list(tenant),
       belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
       markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
       ensureUserField: async (tenant, label, type) => { await ensureField(fieldStore, tenant, label, type); },
       getFlow: (flowId, tenant) => flowStore.getById(flowId, tenant),
-      updateFlowRow: (tenant, id, name, elements, ref, mapping) => flowStore.update(id, tenant, { name, elements, ref, mapping }),
+      updateFlowRow: (tenant, id, name, elements, ref, mapping, cta) => flowStore.update(id, tenant, { name, elements, ref, mapping, ...(cta ? { cta } : {}) }),
     },
     media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
     tags: {

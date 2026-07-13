@@ -64,8 +64,8 @@ function FlowsInner({ session }: { session: Session }) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Flows</h2>
-        <p className="mt-1 text-sm text-ink-500">Formulaires de collecte riches (titres, images, champs) : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l&apos;inbox. Attache un formulaire publié à un template via un bouton « Flow ».</p>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Formulaires</h2>
+        <p className="mt-1 text-sm text-ink-500">Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l&apos;inbox. Attache un formulaire publié à un template via un bouton « Flow ».</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -83,6 +83,7 @@ function FlowsInner({ session }: { session: Session }) {
             initialName={editing.name}
             initialElements={editing.elements}
             initialMapping={editing.mapping}
+            initialCta={editing.cta}
             onCreated={() => { void load(); setEditing(null); }}
           />
         </div>
@@ -182,7 +183,7 @@ function FlowThumbnail({ flow }: { flow: FlowSummary }) {
         {fields.length > 3 && <div className="text-[10px] text-ink-400">+{fields.length - 3} champ(s)</div>}
         {fields.length === 0 && !heading && !text && <div className="text-[10px] text-ink-400">écran sans champ</div>}
       </div>
-      <div className="border-t border-ink-100 bg-brand-50 py-1 text-center text-[10px] font-medium text-brand-600">Envoyer</div>
+      <div className="border-t border-ink-100 bg-brand-50 py-1 text-center text-[10px] font-medium text-brand-600">{flow.cta?.trim() || 'Envoyer'}</div>
     </div>
   );
 }

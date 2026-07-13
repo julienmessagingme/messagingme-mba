@@ -535,15 +535,21 @@ export function deleteUser(tenantId: string, userId: string): Promise<{ id: stri
 
 // --- Flows (constructeur de formulaire RICHE : texte / image / champ) ---
 
-export type FlowFieldType = 'text' | 'email' | 'phone' | 'number' | 'textarea' | 'date';
+export type FlowFieldType =
+  | 'text' | 'email' | 'phone' | 'number' | 'passcode'
+  | 'textarea' | 'date'
+  | 'dropdown' | 'radio' | 'checkbox' | 'optin';
 export type FlowTextKind = 'heading' | 'subheading' | 'body' | 'caption';
+/** Types de champ qui exigent une liste d'options (dropdown/radio/checkbox). */
+export const FLOW_CHOICE_TYPES: FlowFieldType[] = ['dropdown', 'radio', 'checkbox'];
 
 /** Élément riche envoyé à la création d'un flow, dans l'ordre. `saveTo` (sur un champ) : clé du user field
- *  cible ; absent -> le serveur crée un user field d'après le libellé (mapping par défaut). */
+ *  cible ; absent -> le serveur crée un user field d'après le libellé (mapping par défaut). `options` :
+ *  requis pour les champs de choix (dropdown/radio/checkbox). */
 export type FlowElementInput =
   | { kind: FlowTextKind; text: string }
   | { kind: 'image'; src: string }
-  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; saveTo?: string };
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; saveTo?: string; options?: string[] };
 
 export interface FlowField {
   label: string;
@@ -555,7 +561,7 @@ export interface FlowField {
 export type FlowElement =
   | { kind: FlowTextKind; text: string }
   | { kind: 'image'; src: string }
-  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; key: string };
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; key: string; options?: string[] };
 export interface FlowSummary {
   id: string;
   name: string;
@@ -566,16 +572,18 @@ export interface FlowSummary {
   elements?: FlowElement[] | null;
   /** Mapping clé champ -> clé user field — pour restaurer le « enregistrer dans » à l'édition. */
   mapping?: Record<string, string> | null;
+  /** Libellé du bouton final (Footer) — null/absent = défaut « Envoyer ». */
+  cta?: string | null;
   createdAt: string;
 }
 export function listFlows(tenantId: string): Promise<{ flows: FlowSummary[] }> {
   return request<{ flows: FlowSummary[] }>(`/tenants/${tenantId}/flows`);
 }
-export function createFlow(tenantId: string, input: { name: string; elements: FlowElementInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+export function createFlow(tenantId: string, input: { name: string; elements: FlowElementInput[]; cta?: string }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
   return request(`/tenants/${tenantId}/flows`, { method: 'POST', body: JSON.stringify(input) });
 }
 /** Édite un flow DRAFT (réécrit le flow_json). 409 si le flow est PUBLISHED (immuable). */
-export function updateFlow(tenantId: string, flowId: string, input: { name: string; elements: FlowElementInput[] }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+export function updateFlow(tenantId: string, flowId: string, input: { name: string; elements: FlowElementInput[]; cta?: string }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
   return request(`/tenants/${tenantId}/flows/${flowId}`, { method: 'PATCH', body: JSON.stringify(input) });
 }
 /** « Dupliquer pour modifier » : clone un flow (publié ou draft) en un nouveau DRAFT éditable. */
