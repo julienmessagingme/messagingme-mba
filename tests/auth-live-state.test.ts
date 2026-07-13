@@ -72,4 +72,19 @@ describe('requireAuth — état du compte relu en base', () => {
     expect(inb.statusCode).toBe(200); // agent garde l'inbox
     await a.close();
   });
+
+  it('crochet paiement : espace LOCKED -> 403 partout (compte pourtant actif)', async () => {
+    const a = app(async () => ({ role: 'admin', disabled: false, tenantStatus: 'locked' }));
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...h(adminTok) });
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ code?: string }>().code).toBe('tenant_locked');
+    await a.close();
+  });
+
+  it('espace ACTIVE (ou statut absent) -> accès normal (crochet inerte)', async () => {
+    const a = app(async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }));
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    await a.close();
+  });
 });

@@ -4,6 +4,8 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
+import { PgUserStore, DuplicateEmailError } from '../../src/user/store.pg';
+import { PgAuthTokenStore } from '../../src/auth/token-store.pg';
 import { PgUserFieldStore } from '../../src/crm/field-store.pg';
 import { PgTagStore } from '../../src/crm/tag-store.pg';
 import {
@@ -96,6 +98,52 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(byBsuid).toBeTruthy();
     expect(byBsuid.phoneE164).toBeNull();
     expect(byBsuid.profileName).toBe('Sans Numero');
+  });
+
+  it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
+    const users = new PgUserStore(pool);
+    const email = `admin.itest.${Date.now()}@exemple.fr`;
+    const { tenantId: newTenant, userId } = await users.createTenantWithAdmin('Espace itest', { email, name: 'Admin', passwordHash: 'scrypt$aa$bb' });
+    try {
+      // tenant + admin créés en base.
+      const tRow = (await pool.query<{ status: string }>(`select status from tenants where id = $1`, [newTenant])).rows[0]!;
+      expect(tRow.status).toBe('active'); // défaut du crochet paiement
+      const state = await users.getAuthState(userId);
+      expect(state).toMatchObject({ role: 'admin', disabled: false, tenantStatus: 'active' });
+      // email GLOBALEMENT unique : réutiliser l'email -> DuplicateEmailError (et rollback : pas de tenant orphelin).
+      const tenantsBefore = (await pool.query<{ n: string }>(`select count(*) n from tenants`)).rows[0]!.n;
+      await expect(users.createTenantWithAdmin('Doublon', { email, name: null, passwordHash: null })).rejects.toBeInstanceOf(DuplicateEmailError);
+      const tenantsAfter = (await pool.query<{ n: string }>(`select count(*) n from tenants`)).rows[0]!.n;
+      expect(tenantsAfter).toBe(tenantsBefore); // rollback -> aucun tenant créé pour rien
+      // createPending (invitation) : user sans mot de passe -> setPassword le finalise.
+      const pending = await users.createPending(newTenant, `invite.itest.${Date.now()}@exemple.fr`, 'agent');
+      expect(await users.setPassword(pending.id, 'scrypt$cc$dd')).toBe(true);
+      const pw = (await pool.query<{ password_hash: string | null }>(`select password_hash from users where id = $1`, [pending.id])).rows[0]!;
+      expect(pw.password_hash).toBe('scrypt$cc$dd');
+    } finally {
+      await pool.query('delete from tenants where id = $1', [newTenant]); // cascade users + auth_tokens
+    }
+  });
+
+  it('PgAuthTokenStore : create renvoie le token en clair, consume valide/atomique/usage-unique/expiration', async () => {
+    const users = new PgUserStore(pool);
+    const tokens = new PgAuthTokenStore(pool);
+    const { tenantId: newTenant, userId } = await users.createTenantWithAdmin('Espace tok', { email: `tok.itest.${Date.now()}@exemple.fr`, name: null, passwordHash: null });
+    try {
+      const raw = await tokens.create('reset', userId, 60_000);
+      expect(typeof raw).toBe('string');
+      // le token en clair n'est PAS en base (seul le hash).
+      expect((await pool.query<{ n: string }>(`select count(*) n from auth_tokens where token_hash = $1`, [raw])).rows[0]!.n).toBe('0');
+      // consume valide -> user_id ; 2e consume -> null (usage unique) ; mauvais purpose -> null.
+      expect(await tokens.consume('invite', raw)).toBeNull(); // mauvais purpose
+      expect(await tokens.consume('reset', raw)).toBe(userId);
+      expect(await tokens.consume('reset', raw)).toBeNull(); // déjà utilisé
+      // token expiré -> null.
+      const expired = await tokens.create('reset', userId, -1000);
+      expect(await tokens.consume('reset', expired)).toBeNull();
+    } finally {
+      await pool.query('delete from tenants where id = $1', [newTenant]);
+    }
   });
 
   it('PgTemplateHintStore : save REMPLACE les indices, get les relit, removeByName purge', async () => {

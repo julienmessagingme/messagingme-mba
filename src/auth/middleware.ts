@@ -14,8 +14,9 @@ export type PreHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<v
  *  court-circuite dès qu'un maillon répond). Sert à composer [requireAuth, requireRole]. */
 export type Guard = PreHandler | PreHandler[];
 
-/** Relit l'état d'auth courant du compte en base. null = compte supprimé. */
-export type UserStateLoader = (userId: string, tenantId: string) => Promise<{ role: string; disabled: boolean } | null>;
+/** Relit l'état d'auth courant du compte en base. null = compte supprimé. `tenantStatus` (optionnel) porte le
+ *  statut de l'espace pour le crochet de barrage (locked -> accès coupé). */
+export type UserStateLoader = (userId: string, tenantId: string) => Promise<{ role: string; disabled: boolean; tenantStatus?: string } | null>;
 
 /**
  * Garde de rôle à utiliser DANS un handler déjà authentifié : renvoie true (et répond 403)
@@ -93,6 +94,12 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader): Pr
       const state = await loadState(session.userId, session.tenantId);
       if (!state || state.disabled) {
         await reply.code(401).send({ error: 'session révoquée' });
+        return;
+      }
+      // Crochet barrage de paiement : un espace `locked` coupe l'accès à toutes les routes gardées. Inerte tant
+      // qu'aucun espace n'est verrouillé (défaut 'active'). On ne bloque QUE sur 'locked' explicite.
+      if (state.tenantStatus === 'locked') {
+        await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
         return;
       }
       session.role = state.role; // rôle frais : les changements de rôle sont immédiats

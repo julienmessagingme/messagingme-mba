@@ -41,13 +41,14 @@ export class PgUserStore {
    * rôle FRAIS + révoqué ? null = compte supprimé. Ferme la fenêtre de staleness du JWT : une
    * révocation/suppression/changement de rôle prend effet immédiatement, la base fait foi.
    */
-  async getAuthState(userId: string): Promise<{ role: string; disabled: boolean } | null> {
-    const res = await this.pool.query<{ role: string; disabled_at: Date | null }>(
-      `select role, disabled_at from users where id = $1`,
+  async getAuthState(userId: string): Promise<{ role: string; disabled: boolean; tenantStatus: string } | null> {
+    const res = await this.pool.query<{ role: string; disabled_at: Date | null; tenant_status: string }>(
+      `select u.role, u.disabled_at, t.status as tenant_status
+       from users u join tenants t on t.id = u.tenant_id where u.id = $1`,
       [userId],
     );
     const r = res.rows[0];
-    return r ? { role: r.role, disabled: r.disabled_at !== null } : null;
+    return r ? { role: r.role, disabled: r.disabled_at !== null, tenantStatus: r.tenant_status } : null;
   }
 
   /** Profil de l'utilisateur courant (route /me) : email + nom + rôle. null = compte inconnu. */
@@ -92,6 +93,56 @@ export class PgUserStore {
         throw new DuplicateEmailError();
       }
       throw err;
+    }
+  }
+
+  /** Crée un compte EN ATTENTE (invitation) : sans mot de passe (login impossible tant que non finalisé via le
+   *  lien). L'invité posera son mdp à l'acceptation. 409 (DuplicateEmailError) si l'email est déjà pris. */
+  async createPending(tenantId: string, email: string, role: string): Promise<UserRow> {
+    try {
+      const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; created_at: Date }>(
+        `insert into users (tenant_id, email, name, role, password_hash)
+         values ($1, $2, null, $3, null)
+         returning id, email, name, role, created_at`,
+        [tenantId, email, role],
+      );
+      const r = res.rows[0]!;
+      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, createdAt: r.created_at.toISOString() };
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') throw new DuplicateEmailError();
+      throw err;
+    }
+  }
+
+  /** Pose (ou écrase) le hash de mot de passe d'un compte : finalisation d'invitation, reset. true si le user existe. */
+  async setPassword(userId: string, passwordHash: string): Promise<boolean> {
+    const res = await this.pool.query(`update users set password_hash = $2 where id = $1`, [userId, passwordHash]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Inscription LIBRE : crée un espace (tenant) + son admin en UNE transaction (jamais de tenant orphelin sans
+   * admin). `passwordHash` null = compte Google-only (login mot de passe impossible, Google OK). 409 si l'email
+   * est déjà pris (rollback -> pas de tenant créé pour rien).
+   */
+  async createTenantWithAdmin(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }): Promise<{ tenantId: string; userId: string }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const t = await client.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [workspaceName]);
+      const tenantId = t.rows[0]!.id;
+      const u = await client.query<{ id: string }>(
+        `insert into users (tenant_id, email, name, role, password_hash) values ($1, $2, $3, 'admin', $4) returning id`,
+        [tenantId, admin.email, admin.name, admin.passwordHash],
+      );
+      await client.query('commit');
+      return { tenantId, userId: u.rows[0]!.id };
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') throw new DuplicateEmailError();
+      throw err;
+    } finally {
+      client.release();
     }
   }
 

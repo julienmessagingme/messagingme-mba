@@ -40,6 +40,14 @@ const schema = z.object({
   SUPPORT_FROM: z.string().default('onboarding@resend.dev'),
   /** Destinataire des messages du formulaire de support. Vide -> support indisponible (503). */
   SUPPORT_TO: z.string().default(''),
+  /** Client OAuth Google (public) pour « se connecter avec Google ». Vide -> bouton Google masqué (pas de crash). */
+  GOOGLE_CLIENT_ID: z.string().default(''),
+  /** URL publique du front (base des liens dans les emails invitation/reset), ex. https://mba.messagingme.app. */
+  APP_URL: z.string().default('https://mba.messagingme.app'),
+  /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
+  INVITE_TOKEN_TTL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
+  /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */
+  RESET_TOKEN_TTL_MS: z.coerce.number().default(60 * 60 * 1000),
 }).superRefine((c, ctx) => {
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
