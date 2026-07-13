@@ -92,6 +92,19 @@ Tests : **~490 unit + 21 intégration**. 4 migrations (0021-0024) appliquées av
 -> le contact répond -> avance -> inbox. ⚠️ mba LIVE (`DRY_RUN=false`) : tester une campagne workflow sur son
 propre numéro avant un envoi large.
 
+## Lot 5 — Builder v2 + variables + branche par bouton (2026-07-13) : LIVE ✅
+
+6 modifs en feature-loop (plan `.loop/lot5-builder.md`, 3 phases, reviewer + 🔴 fermés + commit/deploy par phase).
+- **P1 (layout)** : bot builder plein écran + nodes compacts (AppShell `fullBleed`), galerie de miniatures
+  Formulaires, colonnes contact tél/BSUID/email, inbox plein écran.
+- **P2 (variables)** : sélecteur « + Variable » (chip `[Prénom]`) + exemples Meta déterministes + **propagation
+  malin** (table `template_param_hints` mig 0025, campagne pré-remplit son mapping). 🔴 fermé (clé paramHints
+  absente n'efface plus les indices).
+- **P3 (branche par bouton)** : node template à une sortie par bouton quick-reply, moteur `nextNodeByHandle` +
+  `advance(+buttonPayload)` (repli 1re arête), envoi payload CONTRÔLÉ `btn:<index>`. 🔴 fermé (template sans
+  quick-reply exposait 0 sortie -> repli sortie bas). ⚠️ **check LIVE Julien** : taper un bouton -> bonne branche.
+- 516 unit + 24 intégration. 1 migration (0025). ⚠️ V2 (todo) : snapshot boutons figé + arêtes orphelines.
+
 ## Lot 4 — Retouches builder + identité BSUID (2026-07-13) : LIVE ✅
 
 Quatre demandes de Julien + l'encapsulation d'identité BSUID. Revue transversale (agent séparé) : 2 🔴 fermés

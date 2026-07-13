@@ -25,8 +25,12 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 
 ## Templates (menu Contenu)
 
-- ✅ **Création** : template simple (corps + variables `{{n}}` + boutons quick-reply / URL / **Flow**) ou
+- ✅ **Création** : template simple (corps + variables + boutons quick-reply / URL / **Flow**) ou
   **carousel** (2-10 cartes image + texte + boutons identiques). Soumission à validation Meta, suivi du statut.
+- ✅ **Sélecteur de variable** : bouton « + Variable » à droite du corps → on choisit un champ (Nom, Téléphone
+  + champs perso) au lieu de taper `{{n}}` ; l'aperçu affiche « Bonjour [Prénom] » (variable encadrée) et
+  **l'exemple exigé par Meta se remplit tout seul**. Le lien variable→champ est mémorisé : à la création d'une
+  campagne avec ce template, le mapping est **déjà pré-rempli** (modifiable).
 - ✅ **Édition** (templates simples) : corps / boutons / catégorie. Avertissement « repasse en validation Meta ».
   **Bloquée** si le template a un en-tête/pied de page/carousel (Meta les supprimerait), ou s'il est utilisé
   par une **campagne active** (garde-fou anti envoi cassé). Nom et langue non modifiables (immuables chez Meta).
@@ -55,11 +59,13 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   `+` / poubelle sur chaque flèche pour insérer ou couper, bouton « + Créer un bloc », panneau de config par
   bloc. Blocs : **envoi de template**, **inbox** (remonte la conversation à un humain), **formulaire** (envoie
   un WhatsApp Flow), **ajout de tag**, **ajout de champ**. (Éditeur React Flow.)
+- ✅ **Sortie par bouton** : un bloc « envoi template » affiche **une sortie par bouton de réponse rapide**
+  (à relier vers le bloc suivant) ; les boutons lien/formulaire sont montrés grisés (ils sortent de WhatsApp,
+  non reliables). Un bloc sans réponse rapide garde une sortie unique.
 - ✅ **Exécution réelle par contact** : lancé depuis une campagne, le workflow s'exécute vraiment pour chaque
   destinataire : les blocs tag/champ s'appliquent au passage (visibles sur la fiche), un bloc template/formulaire
-  envoie puis attend la réponse du contact, et à la réponse le parcours avance jusqu'au bloc inbox (terminal).
-  La suite des blocs détermine ce qui se passe. ⚠️ V1 : l'avance se déclenche sur **toute** réponse du contact
-  (pas encore de branche par bouton de réponse rapide).
+  envoie puis attend la réponse, et **le bouton tapé choisit la branche** suivie (une réponse texte suit la 1re
+  sortie). Le parcours avance jusqu'au bloc inbox (terminal). La suite des blocs détermine ce qui se passe.
 
 ## Campagnes
 

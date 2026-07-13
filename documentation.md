@@ -42,9 +42,10 @@ dégradation du quality rating, fréquence max par contact. C'est là que vivent
 
 Migrations SQL versionnées `db/migrations/` (suivi `schema_migrations`), appliquées via `npm run migrate`.
 **Migrations NON auto-appliquées** au déploiement : toute migration qui ajoute une colonne écrite par le
-code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0024**
+code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0025**
 (`phone_numbers.status`/`messaging_limit_tier` 0019, `campaign_recipients.error_code` 0020, `flows.cta` 0021,
-table `workflows` 0022, table `workflow_runs` 0023, `campaigns.workflow_id` + template nullable 0024).
+table `workflows` 0022, table `workflow_runs` 0023, `campaigns.workflow_id` + template nullable 0024,
+table `template_param_hints` 0025).
 
 Tables :
 - `tenants` / `users` (`role` ∈ admin|agent, `name` nullable 0013, `disabled` 0014) / `waba` / `phone_numbers`.
@@ -137,6 +138,31 @@ BSUID en prod aujourd'hui -> à confirmer au 1er BSUID réel). Miroir front `web
 Route `DELETE /flows/:id` : getFlow (404) -> Meta (deprecate si PUBLISHED sinon delete) -> `PgFlowStore.remove`.
 **Meta AVANT store** : un refus Meta (flow rattaché à un template) remonte en 422 et conserve la ligne locale
 (pas d'orphelin). Front : retrait optimiste + rollback sur erreur.
+
+## Lot 5 — sélecteur de variable (hints) + branche par bouton
+
+**Variable picker + propagation (hints)** : à la création de template, le front (`web/app/templates/page.tsx`)
+insère `{{n}}` via un sélecteur de champ et pose des `paramHints` (`{position, source}`, source = `ParamSource`).
+Persistés dans **`template_param_hints`** (migration 0025, PK tenant+name+language+position) via
+`PgTemplateHintStore` (`save` = REMPLACE transactionnel). `src/http/templates.ts` : `parseParamHints` (sparse,
+pas de 1..N contigu), 400 si malformé AVANT Meta, `saveHintsSafe` best-effort ; ⚠️ **clé `paramHints` ABSENTE =
+on NE touche PAS aux indices** (un PATCH hors-variables ne les efface pas ; seul un tableau explicite remplace).
+Route `GET /templates/:name/param-hints?language=`. La campagne (`chooseTemplate`) lit les hints pour
+pré-remplir son mapping (anti-course `chooseSeq`). `WhatsAppPreview` : `renderBody` rend un chip `[Label]` si
+`varLabels` fourni, sinon substitution par exemple. Exemples déterministes = **front** (`deterministicExample`,
+par clé connue puis par type), jamais vide (garde serveur).
+
+**Branche par bouton (workflow)** : le node `template` dénormalise ses boutons (`node.data.templateButtons`, via
+`TemplateSummary.buttons`). L'éditeur (`WorkflowBuilder.tsx`) expose un handle source `id="btn:<index>"` par
+bouton quick-reply (URL/flow grisés non-reliables) ; sans quick-reply -> une seule sortie bas (repli).
+`onConnect` dédup par (source, sourceHandle). Moteur : `engine.nextNodeByHandle(graph, node, handle)` ;
+`executor.advance(tenant, waId, msgId, buttonPayload)` = `(buttonPayload ? nextNodeByHandle : null) ?? nextNode`
+(repli 1re arête sur texte / bouton non câblé) ; `workflow-advance` relaie `m.buttonPayload`. **Envoi
+déterministe** : `worker.ts` pose un payload CONTRÔLÉ sur chaque quick-reply (`components` :
+`{type:'button', sub_type:'quick_reply', index:String(i), parameters:[{type:'payload', payload:'btn:'+i}]}`) ->
+le webhook renvoie `btn:<index>`, la branche est sûre (pas de pari sur le défaut Meta). Aucune migration
+(sourceHandle déjà dans le modèle/jsonb). ⚠️ V2 (todo) : snapshot des boutons figé + arêtes orphelines à la
+re-sélection de template.
 
 ## Analytics (stats, plage de dates)
 
