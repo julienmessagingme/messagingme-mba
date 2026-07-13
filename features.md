@@ -14,7 +14,10 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 ## Contacts & CRM
 
 - ✅ **Contacts / opt-in** : import CSV (reconnaissance de colonnes, normalisation E.164, mapping des
-  colonnes vers des user fields), opt-in tracé, tags. Identité **BSUID-native** (E.164 OU username).
+  colonnes vers des user fields), opt-in tracé, tags. **Identité = numéro OU BSUID** (compte WhatsApp d'un
+  client qui n'a pas partagé son numéro, post-octobre) : la colonne « Identifiant » et la fiche affichent l'un
+  ou l'autre. Un client qui **écrit** à l'entreprise crée automatiquement sa fiche (par numéro ou BSUID),
+  opt-in « inconnu » (donc hors marketing tant qu'il n'a pas consenti).
 - ✅ **Tags** (menu Contenu) : renommer (re-dédup si la cible existe), supprimer -> répercuté sur tous
   les contacts. Dérivés des contacts (pas de table dédiée).
 - ✅ **User fields** (menu Contenu) : éditer le libellé / le type, supprimer. La **clé est verrouillée**
@@ -34,7 +37,8 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 - ✅ **Constructeur visuel, tous les composants** : éléments ordonnables : titres (grand / sous-titre) /
   paragraphe / légende / **image** / saisies (texte, e-mail, téléphone, nombre, code, zone de texte, **date**) /
   **choix** (liste déroulante, boutons radio, cases à cocher) / **consentement (OptIn)** / **bouton final au
-  libellé personnalisable**. Aperçu en direct pendant la construction.
+  libellé personnalisable**. **Aperçu fidèle de l'écran WhatsApp** en direct (le même rendu s'ouvre en cliquant
+  sur le nom d'un formulaire dans la liste).
 - ✅ Chaque **champ de saisie se range dans un user field du contact** (« Nouveau champ » d'après le libellé,
   ou un user field existant). Le consentement OptIn se range dans un champ booléen dédié. À la réception du
   formulaire rempli, les valeurs atterrissent dans la fiche contact + la réponse apparaît dans l'inbox.
@@ -42,6 +46,8 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   déjà publié, puis l'attache au template (bouton FLOW exclusif).
 - ✅ **Édition / duplication** : un DRAFT s'édite ; un flow PUBLISHED est immuable -> « Dupliquer pour modifier »
   crée une copie éditable.
+- ✅ **Suppression** : un brouillon est supprimé, un formulaire publié est déprécié (Meta ne permet pas de le
+  supprimer). Si le formulaire est encore rattaché à un template, Meta refuse et le message est affiché.
 
 ## Automatisations (menu « Flow »)
 
@@ -62,7 +68,9 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   chaque destinataire). Lancement, suivi des destinataires (statut interne + cycle de livraison Meta),
   auto-refresh. (Suivi de livraison Meta non câblé pour les campagnes workflow en V1.)
 - ✅ **Garde-fous** : opt-in requis, fréquence max par contact (marketing), coupure sur quality rating, claim
-  atomique anti double-envoi, idempotence.
+  atomique anti double-envoi, idempotence. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise
+  en pause par le quality gate montre **« Reprendre »** (relance les destinataires restants) ; une campagne en
+  cours / terminée / en échec n'a pas de bouton.
 - ✅ **Coût estimé par campagne** : « ≈ X (devise du compte) » par campagne + total, dérivé du tarif Meta
   (pricing_analytics) × nb envoyés facturables. « indisponible » si le prix Meta ne remonte pas (jamais 0).
 

@@ -92,7 +92,29 @@ Tests : **~490 unit + 21 intégration**. 4 migrations (0021-0024) appliquées av
 -> le contact répond -> avance -> inbox. ⚠️ mba LIVE (`DRY_RUN=false`) : tester une campagne workflow sur son
 propre numéro avant un envoi large.
 
-### Suivis ouverts (lots 1 + 2 + 3)
+## Lot 4 — Retouches builder + identité BSUID (2026-07-13) : LIVE ✅
+
+Quatre demandes de Julien + l'encapsulation d'identité BSUID. Revue transversale (agent séparé) : 2 🔴 fermés
++ vérifs. 501 unit + 23 intégration. Aucune migration (colonnes `bsuid`/`opt_in_source` déjà en 0001).
+- **A. Aperçu Flow FIDÈLE** : composant partagé `web/components/FlowScreen.tsx` (écran WhatsApp réel : champs
+  Material à label flottant, choix en lignes, bouton vert), utilisé par le builder (aperçu live) ET la popup au
+  clic sur le nom. Colonne « Aperçu » du tableau retirée. Ancien rendu grossier supprimé.
+- **B. Supprimer un formulaire** : Meta DRAFT->delete / PUBLISHED->deprecate, route DELETE (Meta avant store,
+  422 si rattaché à un template), bouton + confirm.
+- **C. Bouton campagne** : « Lancer » (brouillon) / « Reprendre » (en pause, relance les restants) seulement ;
+  plus rien sur en cours / terminée / échec.
+- **D. Identité BSUID** : `src/crm/identity.ts` (`classifyWaId`, `contactIdentity`) + `messagingTarget` (envoi
+  `to` numéro / `recipient` BSUID). `bsuid` exposé (fiche, liste « Identifiant », campagne). Auto-création de
+  fiche depuis l'inbound (numéro OU BSUID, isolée, opt-in 'unknown'). Matching étendu au bsuid
+  (merge/tag/conversation). `buildRecipients` cible `phone ?? bsuid`. Détail : `documentation.md §Identité`.
+- **2 🔴 fermés à la revue** : (1) l'envoi mettait le BSUID dans `to` au lieu de `recipient` (feature cassée dès
+  le 1er contact BSUID) -> `messagingTarget` en source unique ; (2) « Lancer » caché aussi pour `paused`
+  (campagne pausée par le quality gate non relançable) -> bouton « Reprendre ».
+
+### Suivis ouverts (lots 1 + 2 + 3 + 4)
+- **Envoi vers un BSUID non prouvé en prod** : le code route bien `recipient`, mais aucun contact BSUID
+  n'existe encore (zéro trafic post-octobre). À valider au 1er BSUID réel (et confirmer l'heuristique
+  `classifyWaId`). Cf `todo.md`.
 - **PB2 avance sur n'importe quelle réponse** du contact (pas de branche par bouton quick-reply) : réservé à
   une itération V2 si un cas réel l'exige.
 - **Funnel campagnes workflow** : delivered/read/replied = 0 (message_id synthétique `wf-<id>`, la livraison

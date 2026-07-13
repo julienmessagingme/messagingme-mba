@@ -132,6 +132,15 @@ Objectif : ouvrir la console à une équipe cliente sans que l'admin fabrique le
   cf suivi Resend ci-dessous) pour sortir du mode test ; (2) créer un **client OAuth Google** (Google Cloud
   Console) et fournir client_id/secret. Rien de codable côté serveur sans ces deux-là.
 
+## Vérifier l'identité BSUID au 1er trafic réel (lot 4)
+
+L'envoi route déjà un BSUID en `recipient` (vs `to` pour un numéro) via `messagingTarget`, et l'inbound
+auto-crée les fiches (numéro OU BSUID). Mais **aucun contact BSUID n'existe encore** (le BSUID post-octobre
+n'a pas commencé à remonter). Au 1er BSUID réel : (1) confirmer le format Meta et l'heuristique
+`classifyWaId` (7-15 chiffres = numéro, sinon BSUID) ; (2) vérifier qu'un template part bien via `recipient`
+et est délivré ; (3) vérifier que la fiche auto-créée + le matching merge/tag/conversation collent au format
+réel. Cf `documentation.md §Identité`.
+
 ## Suites builder Lot 3 (V2, non bloquant)
 
 - **Branche par bouton quick-reply** : PB2 avance aujourd'hui sur N'IMPORTE QUELLE réponse inbound. Pour un
