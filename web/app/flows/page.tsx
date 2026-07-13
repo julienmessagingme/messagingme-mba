@@ -112,7 +112,7 @@ function FlowsInner({ session }: { session: Session }) {
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
                 <th className="px-5 py-2 font-medium">Nom</th>
-                <th className="px-5 py-2 font-medium">Champs</th>
+                <th className="px-5 py-2 font-medium">Aperçu</th>
                 <th className="px-5 py-2 font-medium">Statut</th>
                 <th className="px-5 py-2 text-right font-medium">Actions</th>
               </tr>
@@ -123,7 +123,7 @@ function FlowsInner({ session }: { session: Session }) {
                   <td className="px-5 py-3">
                     <button onClick={() => setPreview(f)} className="font-medium text-brand-600 hover:underline" title="Voir l'aperçu">{f.name}</button>
                   </td>
-                  <td className="px-5 py-3 text-ink-500">{f.fields.map((x) => x.label).join(', ') || '—'}</td>
+                  <td className="px-5 py-3"><button onClick={() => setPreview(f)} title="Voir l'aperçu"><FlowThumbnail flow={f} /></button></td>
                   <td className="px-5 py-3">
                     {f.status === 'PUBLISHED' ? (
                       <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">Publié</span>
@@ -157,6 +157,35 @@ function FlowsInner({ session }: { session: Session }) {
 }
 
 const TEXT_KINDS: Record<string, string> = { heading: 'Titre', subheading: 'Sous-titre', body: 'Paragraphe', caption: 'Légende' };
+
+/** Miniature visuelle d'un formulaire (mini écran WhatsApp Flow) rendue depuis ses éléments. */
+function FlowThumbnail({ flow }: { flow: FlowSummary }) {
+  const els = flow.elements ?? [];
+  if (els.length === 0) {
+    return <span className="text-xs text-ink-400">{flow.fields.map((x) => x.label).join(', ') || 'aperçu indisponible'}</span>;
+  }
+  const hasImage = els.some((e) => e.kind === 'image');
+  const heading = els.find((e) => e.kind === 'heading');
+  const text = els.find((e) => e.kind === 'subheading' || e.kind === 'body' || e.kind === 'caption');
+  const fields = els.filter((e) => e.kind === 'field');
+  return (
+    <div className="w-40 overflow-hidden rounded-lg border border-ink-200 bg-white text-left shadow-sm transition hover:border-brand-300 hover:shadow">
+      {hasImage && <div className="flex h-9 items-center justify-center bg-ink-100 text-base">🖼️</div>}
+      <div className="space-y-1 px-2 py-1.5">
+        {heading && 'text' in heading && <div className="truncate text-[11px] font-semibold text-ink-800">{heading.text}</div>}
+        {text && 'text' in text && <div className="truncate text-[10px] text-ink-500">{text.text}</div>}
+        {fields.slice(0, 3).map((f, i) => (
+          <div key={i} className="truncate rounded border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] text-ink-600">
+            {'label' in f ? f.label : ''}
+          </div>
+        ))}
+        {fields.length > 3 && <div className="text-[10px] text-ink-400">+{fields.length - 3} champ(s)</div>}
+        {fields.length === 0 && !heading && !text && <div className="text-[10px] text-ink-400">écran sans champ</div>}
+      </div>
+      <div className="border-t border-ink-100 bg-brand-50 py-1 text-center text-[10px] font-medium text-brand-600">Envoyer</div>
+    </div>
+  );
+}
 
 /** Aperçu read-only d'un formulaire au clic sur son nom : les éléments dans l'ordre (texte/image/champ). */
 function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () => void }) {

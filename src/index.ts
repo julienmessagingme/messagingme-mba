@@ -63,7 +63,7 @@ async function main(): Promise<void> {
       contacts: contactStore,
       userFields: fieldStore,
       defaultCountry: config.DEFAULT_COUNTRY as CountryCode,
-      listContacts: (tenantId, limit, offset) => contactStore.list(tenantId, limit, offset),
+      listContacts: (tenantId, limit, offset, tag) => contactStore.list(tenantId, limit, offset, tag),
     },
     campaigns: {
       repo,

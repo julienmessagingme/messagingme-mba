@@ -132,8 +132,11 @@ export class PgContactStore implements ContactStore {
   }
 
   /** Liste paginée des contacts d'un tenant (les plus récents d'abord). */
-  async list(tenantId: string, limit = 100, offset = 0): Promise<ContactRow[]> {
+  async list(tenantId: string, limit = 100, offset = 0, tag?: string): Promise<ContactRow[]> {
     const capped = Math.min(Math.max(limit, 1), 500);
+    const hasTag = typeof tag === 'string' && tag.trim() !== '';
+    const params: unknown[] = [tenantId, capped, Math.max(offset, 0)];
+    if (hasTag) params.push(tag!.trim());
     const res = await this.pool.query<{
       id: string;
       phone_e164: string | null;
@@ -144,10 +147,10 @@ export class PgContactStore implements ContactStore {
       created_at: Date;
     }>(
       `select id, phone_e164, profile_name, opt_in_status, fields, tags, created_at
-       from contacts where tenant_id = $1
+       from contacts where tenant_id = $1${hasTag ? ' and tags @> array[$4]::text[]' : ''}
        order by created_at desc
        limit $2 offset $3`,
-      [tenantId, capped, Math.max(offset, 0)],
+      params,
     );
     return res.rows.map((r) => ({
       id: r.id,

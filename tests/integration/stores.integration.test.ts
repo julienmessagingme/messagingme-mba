@@ -64,6 +64,14 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const lea = rows.find((r) => r.phoneE164 === phone)!;
     expect([...lea.tags].sort()).toEqual(['prospect', 'salon-2026', 'vip']); // union, aucun doublon, rien perdu
     expect(lea.fields).toMatchObject({ ville: 'Nice' }); // le 3e import a bien mergé les fields
+
+    // Filtre par tag (clic sur le nombre dans l'onglet Tags) : $4 = any(tags).
+    const bySalon = await store.list(tenantId, 500, 0, 'salon-2026');
+    expect(bySalon.some((r) => r.phoneE164 === phone)).toBe(true);
+    const byVip = await store.list(tenantId, 500, 0, 'vip');
+    expect(byVip.some((r) => r.phoneE164 === phone)).toBe(true);
+    const byNone = await store.list(tenantId, 500, 0, 'tag-inexistant-xyz');
+    expect(byNone.some((r) => r.phoneE164 === phone)).toBe(false);
   });
 
   it('PgContactStore.applyEdits : MERGE fields + tags add/remove en transaction, scoping tenant', async () => {

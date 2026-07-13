@@ -9,6 +9,7 @@ import {
   importCsv,
   updateContact,
   listUserFields,
+  createUserField,
   listTags,
   type Contact,
   type ImportReport,
@@ -58,6 +59,10 @@ function ContactsInner({ session }: { session: Session }) {
     setDetail(updated);
     setContacts((list) => list.map((c) => (c.id === updated.id ? updated : c)));
   }
+  // Un champ créé depuis la fiche s'ajoute aux définitions (dispo tout de suite + pour les autres contacts).
+  function onFieldCreated(def: UserFieldDef) {
+    setUserFields((defs) => (defs.some((d) => d.key === def.key) ? defs : [...defs, def]));
+  }
 
   if (mode === 'import') {
     return (
@@ -93,6 +98,7 @@ function ContactsInner({ session }: { session: Session }) {
           tagSuggestions={tagSuggestions}
           tenantId={session.tenantId}
           onUpdated={onContactUpdated}
+          onFieldCreated={onFieldCreated}
           onClose={() => setDetail(null)}
         />
       )}
@@ -469,6 +475,7 @@ function ContactDetail({
   tagSuggestions,
   tenantId,
   onUpdated,
+  onFieldCreated,
   onClose,
 }: {
   contact: Contact;
@@ -476,6 +483,7 @@ function ContactDetail({
   tagSuggestions: string[];
   tenantId: string;
   onUpdated: (c: Contact) => void;
+  onFieldCreated: (def: UserFieldDef) => void;
   onClose: () => void;
 }) {
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
@@ -490,6 +498,13 @@ function ContactDetail({
   const [newKey, setNewKey] = useState('');
   const [newVal, setNewVal] = useState('');
   const [newTag, setNewTag] = useState('');
+  // Création d'un NOUVEAU champ (pas seulement piocher dans l'existant) depuis la fiche.
+  const [creatingField, setCreatingField] = useState(false);
+  const [cLabel, setCLabel] = useState('');
+  const [cType, setCType] = useState<UserFieldKind>('text');
+  const [cVal, setCVal] = useState('');
+  // Champ déjà créé mais dont la pose de valeur a échoué : on le réutilise au retry (évite un 409).
+  const [createdRef, setCreatedRef] = useState<UserFieldDef | null>(null);
 
   const selectedDef = defByKey.get(newKey);
 
@@ -511,6 +526,29 @@ function ContactDetail({
   async function addField() {
     if (!newKey || newVal.trim() === '') return;
     if (await apply({ fields: { [newKey]: newVal.trim() } })) { setNewKey(''); setNewVal(''); }
+  }
+  // Crée un nouveau user field (POST) PUIS pose sa valeur sur ce contact, en une fois. Si la pose de
+  // valeur échoue (ex. valeur invalide pour le type), on garde le champ créé : un retry corrige juste la
+  // valeur sans recréer le champ (donc pas de 409 « existe déjà »).
+  async function createAndAddField() {
+    const label = cLabel.trim();
+    if (label === '' || cVal.trim() === '') return;
+    setBusy(true);
+    setError(null);
+    try {
+      let def = createdRef && createdRef.label === label ? createdRef : null;
+      if (!def) {
+        def = await createUserField(tenantId, { label, type: cType });
+        onFieldCreated(def);
+        setCreatedRef(def);
+      }
+      const ok = await apply({ fields: { [def.key]: cVal.trim() } });
+      if (ok) { setCreatingField(false); setCLabel(''); setCVal(''); setCType('text'); setCreatedRef(null); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Création du champ impossible');
+    } finally {
+      setBusy(false);
+    }
   }
   async function addTag() {
     const t = newTag.trim();
@@ -583,20 +621,43 @@ function ContactDetail({
               ))}
             </div>
           )}
-          {addable.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
-                <option value="">Ajouter un champ…</option>
-                {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-              </select>
-              {selectedDef && (
-                <>
-                  <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
-                  <button onClick={addField} disabled={busy || newVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Ajouter</button>
-                </>
-              )}
-            </div>
-          )}
+          <div className="mt-2 space-y-2">
+            {addable.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
+                  <option value="">Ajouter un champ existant…</option>
+                  {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+                </select>
+                {selectedDef && (
+                  <>
+                    <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
+                    <button onClick={addField} disabled={busy || newVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Ajouter</button>
+                  </>
+                )}
+              </div>
+            )}
+            {!creatingField ? (
+              <button onClick={() => setCreatingField(true)} className="text-sm font-medium text-brand-600 hover:text-brand-700">+ Créer un nouveau champ</button>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder="Nom du champ (ex. Métier)" className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+                  <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
+                    <option value="text">texte</option>
+                    <option value="number">nombre</option>
+                    <option value="date">date</option>
+                    <option value="boolean">oui/non</option>
+                    <option value="url">lien</option>
+                  </select>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
+                  <button onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Créer et ajouter</button>
+                  <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-400 hover:text-ink-700">Annuler</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

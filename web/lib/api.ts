@@ -49,10 +49,11 @@ export interface Contact {
   tags: string[];
   createdAt: string;
 }
-export function listContacts(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<{ contacts: Contact[] }> {
+export function listContacts(tenantId: string, opts?: { limit?: number; offset?: number; tag?: string }): Promise<{ contacts: Contact[] }> {
   const qs = new URLSearchParams();
   if (opts?.limit != null) qs.set('limit', String(opts.limit));
   if (opts?.offset != null) qs.set('offset', String(opts.offset));
+  if (opts?.tag) qs.set('tag', opts.tag);
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   return request<{ contacts: Contact[] }>(`/tenants/${tenantId}/contacts${suffix}`);
 }

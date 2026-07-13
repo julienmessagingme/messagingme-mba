@@ -9,7 +9,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 
 export interface ImportRouteDeps extends ImportDeps {
-  listContacts(tenantId: string, limit?: number, offset?: number): Promise<ContactRow[]>;
+  listContacts(tenantId: string, limit?: number, offset?: number, tag?: string): Promise<ContactRow[]>;
 }
 
 /** Construit un mapping par défaut depuis la reconnaissance de colonnes. */
@@ -40,10 +40,11 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    const q = req.query as { limit?: string; offset?: string };
+    const q = req.query as { limit?: string; offset?: string; tag?: string };
     const limit = q.limit ? Number(q.limit) : undefined;
     const offset = q.offset ? Number(q.offset) : undefined;
-    const contacts = await deps.listContacts(effectiveTenant, limit, offset);
+    const tag = typeof q.tag === 'string' && q.tag.trim() !== '' ? q.tag.trim() : undefined;
+    const contacts = await deps.listContacts(effectiveTenant, limit, offset, tag);
     return reply.code(200).send({ contacts });
   });
 

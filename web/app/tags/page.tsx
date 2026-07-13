@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listTags, createTag, renameTag, deleteTag, type TagCount } from '@/lib/api';
+import { listTags, createTag, renameTag, deleteTag, listContacts, type TagCount, type Contact } from '@/lib/api';
 
 export default function TagsPage() {
   return <AppShell active="tags">{(session) => <TagsInner session={session} />}</AppShell>;
@@ -16,6 +16,7 @@ function TagsInner({ session }: { session: Session }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [newTag, setNewTag] = useState('');
+  const [contactsOf, setContactsOf] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -119,7 +120,13 @@ function TagsInner({ session }: { session: Session }) {
                       <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{t.tag}</span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-ink-500">{t.count}</td>
+                  <td className="px-5 py-3">
+                    {t.count > 0 ? (
+                      <button onClick={() => setContactsOf(t.tag)} className="font-medium text-brand-600 hover:underline" title="Voir les contacts">{t.count}</button>
+                    ) : (
+                      <span className="text-ink-400">0</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-3">
                       {editing === t.tag ? (
@@ -141,6 +148,59 @@ function TagsInner({ session }: { session: Session }) {
           </table>
         )}
       </div>
+
+      {contactsOf && <TagContactsModal tenantId={session.tenantId} tag={contactsOf} onClose={() => setContactsOf(null)} />}
     </div>
   );
+}
+
+/** Liste des contacts portant un tag (clic sur le nombre). Lecture seule. */
+function TagContactsModal({ tenantId, tag, onClose }: { tenantId: string; tag: string; onClose: () => void }) {
+  const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listContacts(tenantId, { tag, limit: 500 })
+      .then((r) => { if (alive) setContacts(r.contacts); })
+      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'Chargement impossible'); });
+    return () => { alive = false; };
+  }, [tenantId, tag]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-ink-900">Contacts du tag</h3>
+            <p className="text-xs text-ink-400"><span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">{tag}</span></p>
+          </div>
+          <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
+        </div>
+        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {!contacts ? (
+          <p className="text-sm text-ink-500">Chargement…</p>
+        ) : contacts.length === 0 ? (
+          <p className="text-sm text-ink-500">Aucun contact avec ce tag.</p>
+        ) : (
+          <>
+            <div className="divide-y divide-ink-100">
+              {contacts.map((c) => (
+                <div key={c.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="truncate font-medium text-ink-900">{c.profileName ?? (fieldValueOf(c, 'prenom') ?? '-')}</span>
+                  <span className="shrink-0 font-mono text-xs text-ink-500">{c.phoneE164 ?? '-'}</span>
+                </div>
+              ))}
+            </div>
+            {contacts.length === 500 && <p className="mt-2 text-[11px] text-ink-400">Affichage limité aux 500 premiers contacts.</p>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function fieldValueOf(c: Contact, key: string): string | null {
+  const v = (c.fields ?? {})[key] ?? (c.fields ?? {})[key.toLowerCase()];
+  return v == null || String(v).trim() === '' ? null : String(v);
 }
