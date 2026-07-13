@@ -423,12 +423,14 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
     );
   return (
     <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
-      <table className="w-full min-w-[520px] text-sm">
+      <table className="w-full min-w-[760px] text-sm">
         <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
           <tr>
             <th className="px-4 py-2.5 font-medium">Nom</th>
             <th className="px-4 py-2.5 font-medium">Prénom</th>
-            <th className="px-4 py-2.5 font-medium">Identifiant</th>
+            <th className="px-4 py-2.5 font-medium">Téléphone</th>
+            <th className="px-4 py-2.5 font-medium">BSUID</th>
+            <th className="px-4 py-2.5 font-medium">Email</th>
             <th className="px-4 py-2.5 font-medium">Opt-in</th>
           </tr>
         </thead>
@@ -439,14 +441,13 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
               <tr key={c.id} onClick={() => onSelect(c)} className="cursor-pointer transition hover:bg-brand-50">
                 <td className="px-4 py-2.5 font-medium text-ink-900">{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5">{fieldValue(c, 'prenom') ?? <span className="text-ink-400">-</span>}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">{c.phoneE164 ?? <span className="text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5 font-mono text-xs">
-                  {c.phoneE164 ?? (c.bsuid ? (
-                    <span className="inline-flex items-center gap-1">
-                      <span className="truncate">{c.bsuid}</span>
-                      <span className="rounded bg-mint-50 px-1 py-0.5 text-[10px] font-sans font-medium text-mint-700" title="Compte WhatsApp (client sans numéro)">WhatsApp</span>
-                    </span>
-                  ) : <span className="text-ink-400">-</span>)}
+                  {c.bsuid
+                    ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={c.bsuid}>{c.bsuid}</span></span>
+                    : <span className="text-ink-400">-</span>}
                 </td>
+                <td className="px-4 py-2.5 text-xs text-ink-700">{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span>
                 </td>

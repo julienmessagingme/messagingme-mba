@@ -48,7 +48,7 @@ const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: 'Inbox', d:
  * + contenu pleine largeur. RBAC : seule l'inbox est ouverte à l'agent ; tout le reste exige admin (la
  * vraie autorité reste le serveur, on évite juste d'afficher une page interdite).
  */
-export function AppShell({ active, children }: { active: Tab; children: (session: Session) => React.ReactNode }) {
+export function AppShell({ active, fullBleed = false, children }: { active: Tab; fullBleed?: boolean; children: (session: Session) => React.ReactNode }) {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -123,7 +123,7 @@ export function AppShell({ active, children }: { active: Tab; children: (session
   );
 
   return (
-    <div className="min-h-screen bg-[#F7F8FB] lg:flex">
+    <div className={`bg-[#F7F8FB] lg:flex ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
       {/* Sidebar desktop */}
       <aside className="hidden w-60 shrink-0 border-r border-ink-200 bg-white lg:block">
         <div className="sticky top-0">{SidebarInner}</div>
@@ -146,7 +146,7 @@ export function AppShell({ active, children }: { active: Tab; children: (session
             <AccountMenu session={session} onLogout={logout} />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">{children(session)}</main>
+        <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
       </div>
     </div>
   );

@@ -42,14 +42,14 @@ function summaryOf(data: Record<string, unknown>): string {
 function WFNode({ data, selected }: NodeProps) {
   const meta = NODE_META[(data.wfType as WorkflowNodeType) ?? 'template'];
   return (
-    <div className={`w-48 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
+    <div className={`w-40 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
-      <div className="flex items-center gap-2 rounded-t-xl border-b border-ink-200 bg-white px-2.5 py-1.5">
-        <span className="text-sm">{meta.emoji}</span>
-        <span className="truncate text-xs font-semibold text-ink-800">{meta.label}</span>
+      <div className="flex items-center gap-1.5 rounded-t-xl border-b border-ink-200 bg-white px-2 py-1">
+        <span className="text-xs">{meta.emoji}</span>
+        <span className="truncate text-[11px] font-semibold text-ink-800">{meta.label}</span>
       </div>
-      <div className="truncate px-2.5 py-2 text-[11px] text-ink-500">{summaryOf(data)}</div>
-      <Handle type="source" position={Position.Bottom} className="!h-3 !w-3 !border-2 !border-white !bg-brand-500" title="Tirer une flèche" />
+      <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data)}</div>
+      <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title="Tirer une flèche" />
     </div>
   );
 }
@@ -187,7 +187,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3 lg:h-full">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-ink-500">+ Créer un bloc :</span>
         {NODE_ORDER.map((t) => (
@@ -201,8 +201,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
-        <div className="h-[560px] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6]">
+      <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:flex-row">
+        <div className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -222,7 +222,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
           </ReactFlow>
         </div>
 
-        <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
           {!selected ? (
             <p className="text-sm text-ink-400">Clique un bloc pour le configurer, ou tire une flèche depuis le point bas d&apos;un bloc vers un autre.</p>
           ) : (

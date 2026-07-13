@@ -116,63 +116,62 @@ function FlowsInner({ session }: { session: Session }) {
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-ink-100 px-5 py-3">
+      <div>
+        <div className="mb-3 flex items-center justify-between">
           <span className="text-sm font-semibold text-ink-900">Formulaires ({flows.length})</span>
           {!creating && !editing && (
             <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">+ Créer un formulaire</button>
           )}
         </div>
         {loading ? (
-          <p className="px-5 py-6 text-sm text-ink-500">Chargement…</p>
+          <p className="text-sm text-ink-500">Chargement…</p>
         ) : flows.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">Aucun formulaire pour l&apos;instant.</p>
+          <p className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">Aucun formulaire pour l&apos;instant.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-                <th className="px-5 py-2 font-medium">Nom</th>
-                <th className="px-5 py-2 font-medium">Statut</th>
-                <th className="px-5 py-2 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {flows.map((f) => (
-                <tr key={f.id} className="border-b border-ink-50 last:border-0">
-                  <td className="px-5 py-3">
-                    <button onClick={() => setPreview(f)} className="font-medium text-brand-600 hover:underline" title="Voir l'aperçu">{f.name}</button>
-                  </td>
-                  <td className="px-5 py-3">
-                    {f.status === 'PUBLISHED' ? (
-                      <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">Publié</span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs font-medium text-gold">Brouillon</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      {f.status === 'DRAFT' ? (
-                        <>
-                          {f.elements && f.elements.length > 0 ? (
-                            <button onClick={() => setEditing(f)} className="font-medium text-brand-600 hover:text-brand-700">Éditer</button>
-                          ) : (
-                            <span className="text-ink-300" title="Formulaire antérieur au modèle riche : à recréer">Éditer</span>
-                          )}
-                          <button onClick={() => publish(f)} className="font-medium text-brand-600 hover:text-brand-700">Publier</button>
-                        </>
-                      ) : (
-                        <button onClick={() => duplicate(f)} className="font-medium text-brand-600 hover:text-brand-700" title="Un formulaire publié est immuable : on en crée une copie modifiable">Dupliquer pour modifier</button>
-                      )}
-                      <button onClick={() => remove(f)} className="font-medium text-coral hover:text-red-700" title="Supprimer ce formulaire">Supprimer</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => setEditing(f)} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
+          </div>
         )}
       </div>
       {preview && <FlowPreviewModal flow={preview} onClose={() => setPreview(null)} />}
+    </div>
+  );
+}
+
+/** Carte de la galerie : miniature du vrai écran WhatsApp (peek du haut), nom dessous, statut + actions. */
+function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete }: {
+  flow: FlowSummary;
+  onPreview: () => void; onEdit: () => void; onPublish: () => void; onDuplicate: () => void; onDelete: () => void;
+}) {
+  const hasElements = !!f.elements && f.elements.length > 0;
+  return (
+    <div className="flex flex-col rounded-2xl border border-ink-200 bg-white p-3 shadow-sm transition hover:border-brand-300">
+      <button onClick={onPreview} title="Voir l'aperçu" className="mb-2 block overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+        <div className="pointer-events-none h-44 overflow-hidden">
+          {hasElements
+            ? <FlowScreen elements={fromFlowElements(f.elements!)} cta={f.cta} title={f.name} />
+            : <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-ink-400">Aperçu indisponible (formulaire ancien)</div>}
+        </div>
+      </button>
+      <div className="flex items-center gap-2">
+        <button onClick={onPreview} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-ink-900 hover:text-brand-600" title={f.name}>{f.name}</button>
+        {f.status === 'PUBLISHED'
+          ? <span className="shrink-0 rounded-full bg-mint-50 px-2 py-0.5 text-[11px] font-medium text-mint-700">Publié</span>
+          : <span className="shrink-0 rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-medium text-gold">Brouillon</span>}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        {f.status === 'DRAFT' ? (
+          <>
+            {hasElements
+              ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">Éditer</button>
+              : <span className="text-ink-300" title="Formulaire antérieur au modèle riche : à recréer">Éditer</span>}
+            <button onClick={onPublish} className="font-medium text-brand-600 hover:text-brand-700">Publier</button>
+          </>
+        ) : (
+          <button onClick={onDuplicate} className="font-medium text-brand-600 hover:text-brand-700" title="Un formulaire publié est immuable : on en crée une copie modifiable">Dupliquer</button>
+        )}
+        <button onClick={onDelete} className="font-medium text-coral hover:text-red-700">Supprimer</button>
+      </div>
     </div>
   );
 }

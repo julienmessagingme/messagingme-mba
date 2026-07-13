@@ -7,7 +7,7 @@ import type { Session } from '@/lib/session';
 import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, type WorkflowSummary } from '@/lib/api';
 
 export default function WorkflowsPage() {
-  return <AppShell active="workflows">{(session) => <WorkflowsInner session={session} />}</AppShell>;
+  return <AppShell active="workflows" fullBleed>{(session) => <WorkflowsInner session={session} />}</AppShell>;
 }
 
 function WorkflowsInner({ session }: { session: Session }) {
@@ -64,19 +64,21 @@ function WorkflowsInner({ session }: { session: Session }) {
 
   if (editing) {
     return (
-      <div className="space-y-4">
+      <div className="flex flex-col gap-3 p-3 lg:h-full">
         <div className="flex items-center justify-between">
           <button onClick={() => { setEditing(null); void load(); }} className="text-sm text-brand-600 hover:underline">← Retour aux workflows</button>
           <h2 className="text-base font-semibold tracking-tight text-ink-900">{editing.name}</h2>
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} />
+        <div className="min-h-0 flex-1">
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-ink-900">Flow</h2>
         <p className="mt-1 text-sm text-ink-500">Construis des automatisations en blocs : ajout de tag, envoi d&apos;un template, formulaire, arrivée en inbox. Un workflow s&apos;attache à une campagne (bientôt) et s&apos;exécute pour chaque contact.</p>

@@ -17,7 +17,7 @@ import {
 } from '@/lib/api';
 
 export default function InboxPage() {
-  return <AppShell active="inbox">{(session) => <InboxInner session={session} />}</AppShell>;
+  return <AppShell active="inbox" fullBleed>{(session) => <InboxInner session={session} />}</AppShell>;
 }
 
 /** Réponse de formulaire Flow (nfm_reply) : le payload est un objet JSON {champ: valeur}. Renvoie les
@@ -99,8 +99,8 @@ function InboxInner({ session }: { session: Session }) {
   }, [reload]);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-      <section>
+    <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[320px_1fr]">
+      <section className="lg:flex lg:min-h-0 lg:flex-col">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900">Conversations ({conversations.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
@@ -113,7 +113,7 @@ function InboxInner({ session }: { session: Session }) {
             Aucune conversation. Elles apparaissent quand un client répond à une campagne.
           </div>
         ) : (
-          <ul className="space-y-1.5">
+          <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
             {conversations.map((c) => (
               <li key={c.id}>
                 <button
@@ -134,7 +134,7 @@ function InboxInner({ session }: { session: Session }) {
         )}
       </section>
 
-      <section>
+      <section className="lg:min-h-0">
         {selected ? (
           <Thread key={selected.id} session={session} conversation={selected} onSent={reload} />
         ) : (
@@ -191,7 +191,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   }
 
   return (
-    <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white shadow-sm">
+    <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white shadow-sm lg:h-full">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
         <div>
           <span className="text-sm font-semibold">{conversation.profileName ?? `+${conversation.waId}`}</span>
