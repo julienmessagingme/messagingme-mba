@@ -68,6 +68,9 @@ async function main(): Promise<void> {
       data, eventStore, recipientStore, inboxStore,
       { lookup: flowStore, writer: contactStore },
       { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m) => workflowExecutor.advance(t, w, m) },
+      // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
+      // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
+      (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName).then(() => {}),
     );
   });
 

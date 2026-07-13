@@ -41,6 +41,22 @@ describe('MetaClient.sendTemplate', () => {
       template: { name: 'welcome', language: { code: 'fr' } },
     });
   });
+
+  it('numéro E.164 -> champ `to`', async () => {
+    const t = new FakeTransport([okBody('wamid.2a')]);
+    await client(t).sendTemplate('+33600000000', { name: 'welcome', language: 'fr' });
+    const body = t.requests[0]!.body as Record<string, unknown>;
+    expect(body['to']).toBe('+33600000000');
+    expect(body).not.toHaveProperty('recipient');
+  });
+
+  it('BSUID (non numéro) -> champ `recipient`, jamais `to`', async () => {
+    const t = new FakeTransport([okBody('wamid.2b')]);
+    await client(t).sendTemplate('BSUID_abc123', { name: 'welcome', language: 'fr' });
+    const body = t.requests[0]!.body as Record<string, unknown>;
+    expect(body['recipient']).toBe('BSUID_abc123');
+    expect(body).not.toHaveProperty('to');
+  });
 });
 
 const liteClient = (transport: HttpTransport) =>

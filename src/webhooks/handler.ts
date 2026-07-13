@@ -4,7 +4,7 @@ import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
 import type { DeliveryStore } from './delivery';
-import type { InboxStore } from './inbound';
+import type { InboxStore, InboundContactUpsert } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
 import type { WorkflowAdvanceDeps } from './workflow-advance';
 import type { EventStore } from './store';
@@ -28,13 +28,14 @@ export async function handleWebhookJob(
   inbox?: InboxStore,
   flowMapping?: FlowMappingDeps,
   workflowAdvance?: WorkflowAdvanceDeps,
+  inboundContactUpsert?: InboundContactUpsert,
 ): Promise<void> {
   const events = parseWebhook(raw);
   for (const ev of events) {
     await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
   }
   if (delivery) await processStatuses(events, delivery);
-  if (inbox) await processInbound(raw, inbox);
+  if (inbox) await processInbound(raw, inbox, inboundContactUpsert);
   // Report Flow -> user fields. ISOLÉ : ne doit JAMAIS faire échouer le job (partagé avec les statuts de
   // livraison + l'inbox). Un throw ici rejouerait/DLQ tout le webhook, donc aussi les statuts déjà traités.
   if (flowMapping) {

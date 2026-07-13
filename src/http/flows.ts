@@ -20,6 +20,8 @@ export interface FlowRouteDeps {
   getFlow(flowId: string, tenantId: string): Promise<FlowRow | null>;
   /** Met à jour un flow DRAFT en base (fields re-dérivé côté store). true si une ligne DRAFT a bougé. */
   updateFlowRow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
+  /** Retire le flow du store local (après suppression/dépréciation Meta). true si supprimé. */
+  removeFlowRow(flowId: string, tenantId: string): Promise<boolean>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -221,5 +223,20 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     await deps.flows.publish(flowId);
     await deps.markPublished(flowId, tenant);
     return reply.code(200).send({ id: flowId, status: 'PUBLISHED' });
+  });
+
+  // Suppression : un DRAFT se supprime (DELETE), un PUBLISHED se déprécie (immuable, on le retire de l'usage).
+  // Meta AVANT le store : si Meta refuse (flow encore rattaché à un template approuvé), on remonte SON message
+  // (errorHandler global) et on ne touche pas la base -> pas d'orphelin « supprimé chez nous, vivant chez Meta ».
+  app.delete('/tenants/:tenantId/flows/:flowId', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { flowId } = req.params as { flowId: string };
+    const flow = await deps.getFlow(flowId, tenant);
+    if (!flow) return reply.code(404).send({ error: 'flow inconnu' });
+    if (flow.status === 'PUBLISHED') await deps.flows.deprecate(flowId);
+    else await deps.flows.delete(flowId);
+    await deps.removeFlowRow(flowId, tenant);
+    return reply.code(200).send({ id: flowId, deleted: true });
   });
 }

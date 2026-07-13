@@ -2,6 +2,7 @@ import type { HttpTransport, RetryOpts } from './http';
 import { withRetry, RateLimiter, parseRetryAfter } from './http';
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
+import { messagingTarget } from './types';
 import type { SendResult, TemplateSpec, MarketingParams } from './types';
 
 export interface MetaClientOpts {
@@ -92,9 +93,10 @@ export class MetaClient {
   }
 
   async sendTemplate(to: string, tpl: TemplateSpec): Promise<SendResult> {
+    // `to` peut être un numéro E.164 OU un BSUID : Meta route via `to` (numéro) vs `recipient` (BSUID).
     const json = await this.call('messages', {
       messaging_product: 'whatsapp',
-      to,
+      ...messagingTarget(to),
       type: 'template',
       template: templatePayload(tpl),
     });

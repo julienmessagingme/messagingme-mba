@@ -283,22 +283,24 @@ export class PgCampaignRepo {
     };
   }
 
-  /** Contacts du tenant prêts pour buildRecipients (id, phone, name, fields, opt-in). */
+  /** Contacts du tenant prêts pour buildRecipients (id, phone, bsuid, name, fields, opt-in). */
   async listContactsForBuild(tenantId: string): Promise<BuildContact[]> {
     const res = await this.pool.query<{
       id: string;
       phone_e164: string | null;
+      bsuid: string | null;
       profile_name: string | null;
       fields: Record<string, unknown>;
       opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
     }>(
-      `select id, phone_e164, profile_name, fields, opt_in_status
+      `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
        from contacts where tenant_id = $1`,
       [tenantId],
     );
     return res.rows.map((r) => ({
       id: r.id,
       phone_e164: r.phone_e164,
+      bsuid: r.bsuid,
       profile_name: r.profile_name,
       fields: r.fields,
       optInStatus: r.opt_in_status,

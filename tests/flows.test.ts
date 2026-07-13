@@ -96,13 +96,13 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; updated: Array<{ id: string; name: string; ref: string }> }
+interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[] }
 
 function app(
   over: Partial<FlowRouteDeps> = {},
   opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null } = {},
 ) {
-  const cap: Cap = { inserted: [], published: [], metaCalls: [], updated: [] };
+  const cap: Cap = { inserted: [], published: [], metaCalls: [], updated: [], removed: [] };
   const fakeFetch: FetchLike = async (url) => {
     cap.metaCalls.push(String(url));
     const ok = opts.metaOk !== false;
@@ -122,6 +122,7 @@ function app(
     },
     getFlow: async () => (opts.flow === undefined ? null : opts.flow),
     updateFlowRow: async (_t, id, name, _elements, ref) => { cap.updated.push({ id, name, ref }); return true; },
+    removeFlowRow: async (id) => { cap.removed.push(id); return true; },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, flows: deps }), cap };
@@ -279,6 +280,51 @@ describe('routes flows — liste + publication', () => {
   it('POST publish agent -> 403', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/f1/publish', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+});
+
+describe('routes flows — suppression', () => {
+  it('DELETE un DRAFT -> 200 (Meta DELETE /{flow}) + retrait du store', async () => {
+    const { server, cap } = app({}, { flow: draftFlow({ id: 'fdraft' }) });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fdraft', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ deleted: boolean }>().deleted).toBe(true);
+    expect(cap.metaCalls.some((u) => u.endsWith('/fdraft'))).toBe(true); // DELETE /{flow}
+    expect(cap.removed).toEqual(['fdraft']);
+    await server.close();
+  });
+
+  it('DELETE un PUBLISHED -> 200 (Meta deprecate, pas delete) + retrait du store', async () => {
+    const { server, cap } = app({}, { flow: draftFlow({ id: 'fpub', status: 'PUBLISHED' }) });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fpub', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(cap.metaCalls.some((u) => u.includes('/fpub/deprecate'))).toBe(true);
+    expect(cap.removed).toEqual(['fpub']);
+    await server.close();
+  });
+
+  it('DELETE flow inconnu -> 404 ET aucun appel Meta / aucun retrait', async () => {
+    const { server, cap } = app({}, { flow: null });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/ghost', ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    expect(cap.metaCalls).toHaveLength(0);
+    expect(cap.removed).toHaveLength(0);
+    await server.close();
+  });
+
+  it('DELETE Meta refuse -> 422 ET le store n\'est PAS touché (pas d\'orphelin)', async () => {
+    const { server, cap } = app({}, { flow: draftFlow({ id: 'fdraft' }), metaOk: false });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fdraft', ...h(adminTok) });
+    expect(res.statusCode).toBe(422);
+    expect(cap.removed).toHaveLength(0); // Meta AVANT store : refus Meta -> ligne conservée
+    await server.close();
+  });
+
+  it('DELETE agent -> 403', async () => {
+    const { server } = app({}, { flow: draftFlow() });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/flows/fdraft', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
     await server.close();
   });

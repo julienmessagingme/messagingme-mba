@@ -11,6 +11,7 @@ import {
   listUserFields,
   createUserField,
   listTags,
+  contactIdentity,
   type Contact,
   type ImportReport,
   type ImportPreview,
@@ -427,7 +428,7 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
           <tr>
             <th className="px-4 py-2.5 font-medium">Nom</th>
             <th className="px-4 py-2.5 font-medium">Prénom</th>
-            <th className="px-4 py-2.5 font-medium">Téléphone</th>
+            <th className="px-4 py-2.5 font-medium">Identifiant</th>
             <th className="px-4 py-2.5 font-medium">Opt-in</th>
           </tr>
         </thead>
@@ -438,7 +439,14 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
               <tr key={c.id} onClick={() => onSelect(c)} className="cursor-pointer transition hover:bg-brand-50">
                 <td className="px-4 py-2.5 font-medium text-ink-900">{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5">{fieldValue(c, 'prenom') ?? <span className="text-ink-400">-</span>}</td>
-                <td className="px-4 py-2.5 font-mono text-xs">{c.phoneE164 ?? '-'}</td>
+                <td className="px-4 py-2.5 font-mono text-xs">
+                  {c.phoneE164 ?? (c.bsuid ? (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="truncate">{c.bsuid}</span>
+                      <span className="rounded bg-mint-50 px-1 py-0.5 text-[10px] font-sans font-medium text-mint-700" title="Compte WhatsApp (client sans numéro)">WhatsApp</span>
+                    </span>
+                  ) : <span className="text-ink-400">-</span>)}
+                </td>
                 <td className="px-4 py-2.5">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span>
                 </td>
@@ -561,8 +569,8 @@ function ContactDetail({
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{contact.profileName ?? `+${contact.phoneE164 ?? ''}`}</h3>
-            <p className="font-mono text-xs text-ink-400">{contact.phoneE164 ?? '-'}</p>
+            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{contact.profileName ?? contactIdentity(contact) ?? '-'}</h3>
+            <p className="font-mono text-xs text-ink-400">{contactIdentity(contact) ?? '-'}</p>
           </div>
           <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
         </div>
@@ -574,6 +582,12 @@ function ContactDetail({
           <span className="text-ink-900">{fieldValue(contact, 'prenom') ?? '-'}</span>
           <span className="text-ink-400">Téléphone</span>
           <span className="font-mono text-ink-900">{contact.phoneE164 ?? '-'}</span>
+          {contact.bsuid && (
+            <>
+              <span className="text-ink-400">Compte WhatsApp</span>
+              <span className="font-mono text-ink-900" title="BSUID : identifiant WhatsApp d'un client qui n'a pas partagé son numéro">{contact.bsuid}</span>
+            </>
+          )}
           <span className="text-ink-400">Consentement</span>
           <span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span></span>
           <span className="text-ink-400">Ajouté le</span>

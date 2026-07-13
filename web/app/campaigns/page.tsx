@@ -16,6 +16,7 @@ import {
   listAllContacts,
   listWorkflows,
   getTemplateStats,
+  contactIdentity,
   type CampaignSummary,
   type CampaignDetail,
   type CampaignCategory,
@@ -201,13 +202,18 @@ function CampaignsInner({ session }: { session: Session }) {
                     })()}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <button
-                      onClick={() => run(c.id)}
-                      disabled={polling}
-                      className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-                    >
-                      Lancer
-                    </button>
+                    {/* « Lancer » pour un brouillon (jamais envoyée) ; « Reprendre » pour une campagne mise
+                        en pause par le quality gate (elle relance ses destinataires restants). Une campagne
+                        en cours / terminée / en échec ne se (re)lance pas depuis la liste. */}
+                    {(c.status === 'draft' || c.status === 'paused') && (
+                      <button
+                        onClick={() => run(c.id)}
+                        disabled={polling}
+                        className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                      >
+                        {c.status === 'paused' ? 'Reprendre' : 'Lancer'}
+                      </button>
+                    )}
                     <button
                       onClick={() => (detail?.id === c.id ? setDetail(null) : openDetail(c.id))}
                       className="text-xs text-brand-600 hover:underline"
@@ -248,7 +254,7 @@ function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pri
         <table className="w-full min-w-[520px] text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
-              <th className="px-4 py-2 font-medium">Téléphone</th>
+              <th className="px-4 py-2 font-medium">Destinataire</th>
               <th className="px-4 py-2 font-medium">Envoi</th>
               <th className="px-4 py-2 font-medium">Livraison</th>
               <th className="px-4 py-2 font-medium">Détail</th>
@@ -314,9 +320,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         if (!alive) return;
         setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
         setWorkflows(w.workflows);
-        const withPhone = c.filter((x) => x.phoneE164);
-        setContacts(withPhone);
-        setSelected(new Set(withPhone.map((x) => x.id))); // tout coché par défaut
+        // Contacts joignables = ceux qui ont une identité (numéro OU BSUID).
+        const reachable = c.filter((x) => contactIdentity(x) !== null);
+        setContacts(reachable);
+        setSelected(new Set(reachable.map((x) => x.id))); // tout coché par défaut
       } catch {
         // silencieux : l'erreur de création reste affichée si l'envoi échoue
       } finally {
@@ -354,7 +361,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     if (tagFilter.size > 0 && !(c.tags ?? []).some((t) => tagFilter.has(t))) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    const hay = [c.profileName ?? '', c.phoneE164 ?? '', ...(c.tags ?? []), ...Object.values(c.fields ?? {}).map(String)]
+    const hay = [c.profileName ?? '', c.phoneE164 ?? '', c.bsuid ?? '', ...(c.tags ?? []), ...Object.values(c.fields ?? {}).map(String)]
       .join(' ')
       .toLowerCase();
     return hay.includes(q);
@@ -452,7 +459,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         {loadingRefs ? (
           <p className="text-xs text-ink-400">Chargement des contacts...</p>
         ) : contacts.length === 0 ? (
-          <p className="text-xs text-amber-700">Aucun contact avec numéro. Importe des contacts dans l&apos;onglet Contacts.</p>
+          <p className="text-xs text-amber-700">Aucun contact joignable. Importe des contacts dans l&apos;onglet Contacts.</p>
         ) : (
           <div>
             {allTags.length > 0 && (
@@ -492,11 +499,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
               {filteredContacts.map((c) => (
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
-                  <span className="truncate text-sm">{c.profileName ?? c.phoneE164}</span>
+                  <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
                   {(c.tags ?? []).slice(0, 3).map((t) => (
                     <span key={t} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{t}</span>
                   ))}
-                  <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164 ?? <span title="Compte WhatsApp (sans numéro)">{c.bsuid}</span>}</span>
                   {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
                 </label>
               ))}

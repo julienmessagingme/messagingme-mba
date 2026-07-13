@@ -14,6 +14,7 @@ import {
   type UserFieldDef,
 } from '@/lib/api';
 import { resizeToDataUrl, dataUrlBase64Length } from '@/lib/image';
+import { FlowScreen, type FlowScreenElement } from '@/components/FlowScreen';
 
 const TYPE_LABELS: Record<FlowFieldType, string> = {
   text: 'Texte', email: 'Email', phone: 'Téléphone', number: 'Nombre', passcode: 'Code secret',
@@ -35,6 +36,15 @@ const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-non
 
 function toDataUrl(src: string): string {
   return src.startsWith('data:') ? src : `data:image/jpeg;base64,${src}`;
+}
+
+/** Éléments d'édition (BElem) -> éléments d'écran WhatsApp (rendu d'aperçu partagé). */
+function bElemsToScreen(list: BElem[]): FlowScreenElement[] {
+  return list.map((e): FlowScreenElement => {
+    if (e.kind === 'image') return { kind: 'image', src: e.src || null };
+    if (e.kind === 'field') return { kind: 'field', label: e.label, type: e.type, required: e.required, options: e.options };
+    return { kind: e.kind, text: e.text };
+  });
 }
 
 function toBElems(elements: FlowElement[], mapping: Record<string, string>, startUid: number): { elems: BElem[]; nextUid: number } {
@@ -340,88 +350,10 @@ export function FlowBuilder({
 
       {/* Colonne aperçu (collante) */}
       <div className="lg:sticky lg:top-4 lg:h-fit">
-        <FlowScreenPreview elements={elements} cta={cta} />
+        <p className="mb-2 text-xs font-medium text-ink-500">Aperçu du formulaire (vue client WhatsApp)</p>
+        <FlowScreen elements={bElemsToScreen(elements)} cta={cta} title={name} />
       </div>
     </div>
   );
 }
 
-/** Aperçu en direct de l'écran WhatsApp Flow (rendu fidèle des composants + bouton final). */
-function FlowScreenPreview({ elements, cta }: { elements: BElem[]; cta: string }) {
-  return (
-    <div>
-      <p className="mb-2 text-xs font-medium text-ink-500">Aperçu du formulaire</p>
-      <div className="overflow-hidden rounded-[26px] border-[6px] border-ink-800 bg-white shadow-md">
-        <div className="bg-[#075E54] px-3 py-2 text-xs font-medium text-white">Formulaire</div>
-        <div className="max-h-[520px] space-y-3 overflow-y-auto px-3 py-3">
-          {elements.length === 0 && <p className="text-xs text-ink-400">Ajoute des éléments à gauche…</p>}
-          {elements.map((e) => (
-            <div key={e.uid}>
-              {e.kind === 'heading' && <div className="text-[15px] font-bold text-ink-900">{e.text || 'Titre'}</div>}
-              {e.kind === 'subheading' && <div className="text-[13px] font-semibold text-ink-800">{e.text || 'Sous-titre'}</div>}
-              {e.kind === 'body' && <div className="whitespace-pre-wrap text-[13px] text-ink-700">{e.text || 'Paragraphe'}</div>}
-              {e.kind === 'caption' && <div className="text-[11px] text-ink-400">{e.text || 'Légende'}</div>}
-              {e.kind === 'image' && (
-                e.src
-                  // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={e.src} alt="" className="h-28 w-full rounded-lg object-cover" />
-                  : <div className="flex h-24 items-center justify-center rounded-lg bg-ink-100 text-xl text-ink-400">🖼️</div>
-              )}
-              {e.kind === 'field' && <PreviewField field={e} />}
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-ink-100 p-2.5">
-          <div className="rounded-lg bg-[#00a884] py-2 text-center text-[13px] font-semibold text-white">{cta.trim() || 'Envoyer'}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PreviewField({ field: f }: { field: Extract<BElem, { kind: 'field' }> }) {
-  const label = (f.label || 'Champ') + (f.required ? ' *' : '');
-  const opts = f.options.map((o) => o.trim()).filter((o) => o !== '');
-  if (f.type === 'optin') {
-    return (
-      <label className="flex items-start gap-2 text-[12px] text-ink-700">
-        <input type="checkbox" disabled className="mt-0.5" />
-        <span>{f.label || 'Consentement'}</span>
-      </label>
-    );
-  }
-  if (f.type === 'radio' || f.type === 'checkbox') {
-    return (
-      <div>
-        <div className="mb-1 text-[12px] font-medium text-ink-700">{label}</div>
-        <div className="space-y-1">
-          {(opts.length ? opts : ['Option 1', 'Option 2']).map((o, i) => (
-            <label key={i} className="flex items-center gap-2 text-[12px] text-ink-600">
-              <input type={f.type === 'radio' ? 'radio' : 'checkbox'} disabled />
-              <span>{o}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (f.type === 'dropdown') {
-    return (
-      <div>
-        <div className="mb-1 text-[12px] font-medium text-ink-700">{label}</div>
-        <div className="flex items-center justify-between rounded-lg border border-ink-300 px-2.5 py-1.5 text-[12px] text-ink-400">
-          <span>{opts[0] ?? 'Choisir…'}</span><span>▾</span>
-        </div>
-      </div>
-    );
-  }
-  const tall = f.type === 'textarea';
-  return (
-    <div>
-      <div className="mb-1 text-[12px] font-medium text-ink-700">{label}</div>
-      <div className={`rounded-lg border border-ink-300 px-2.5 text-[12px] text-ink-300 ${tall ? 'py-4' : 'py-1.5'}`}>
-        {f.type === 'date' ? 'jj/mm/aaaa' : f.type === 'passcode' ? '••••' : `Saisir ${(f.label || '').toLowerCase() || 'ici'}…`}
-      </div>
-    </div>
-  );
-}

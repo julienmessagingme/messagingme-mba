@@ -18,7 +18,7 @@ const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null>
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const CONTACT: ContactRow = {
-  id: 'c1', phoneE164: '+33611', profileName: 'Marc', optInStatus: 'opted_in',
+  id: 'c1', phoneE164: '+33611', bsuid: null, profileName: 'Marc', optInStatus: 'opted_in',
   fields: { prenom: 'Marc' }, tags: ['vip'], createdAt: '2026-07-10T00:00:00.000Z',
 };
 const FIELDS: UserFieldDef[] = [

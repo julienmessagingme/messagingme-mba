@@ -42,21 +42,26 @@ dégradation du quality rating, fréquence max par contact. C'est là que vivent
 
 Migrations SQL versionnées `db/migrations/` (suivi `schema_migrations`), appliquées via `npm run migrate`.
 **Migrations NON auto-appliquées** au déploiement : toute migration qui ajoute une colonne écrite par le
-code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0020**
-(`phone_numbers.status`/`messaging_limit_tier` 0019, `campaign_recipients.error_code` 0020).
+code doit être passée sur le VPS AVANT de déployer ce code (sinon INSERT 500). Dernière : **0024**
+(`phone_numbers.status`/`messaging_limit_tier` 0019, `campaign_recipients.error_code` 0020, `flows.cta` 0021,
+table `workflows` 0022, table `workflow_runs` 0023, `campaigns.workflow_id` + template nullable 0024).
 
 Tables :
 - `tenants` / `users` (`role` ∈ admin|agent, `name` nullable 0013, `disabled` 0014) / `waba` / `phone_numbers`.
 - `contacts` — identité BSUID-native (`phone_e164` OU `bsuid`), opt-in tracé, `fields jsonb` (user fields),
   `tags text[]`. Merge jsonb qui n'écrase jamais une clé absente.
-- `campaigns` (0003) — `template_name`/`template_language` (couplage par CHAÎNE, pas de FK), `category`,
-  `status` ∈ draft|running|paused|completed|failed.
+- `campaigns` (0003) — `template_name`/`template_language` (**nullable** depuis 0024, couplage par CHAÎNE,
+  pas de FK), `category`, `status` ∈ draft|running|paused|completed|failed, + **`workflow_id`** (0024, FK
+  `workflows` on delete set null) = campagne déclencheur de workflow (XOR template).
 - `campaign_recipients` (0003+) — `status` interne ∈ pending|sending|sent|failed|skipped, `sent_at`, +
   **`delivery_status`** (0007) ∈ null|sent|delivered|read|failed (cycle Meta, écrit MONOTONE par message_id).
 - `conversation_messages` (0009) / `conversations` — inbox. `template_category`/`template_name` (0012),
   **`sender_user_id`** (0017, FK users, on delete set null) = auteur d'une bulle sortante (pastille).
 - `flows` (0015) — id = id Meta, `status` ∈ DRAFT|PUBLISHED, `fields jsonb` (DÉRIVÉ), + **`elements jsonb`,
-  `ref text` (unique), `mapping jsonb`** (0016, modèle riche).
+  `ref text` (unique), `mapping jsonb`** (0016, modèle riche), + **`cta text`** (0021, libellé du bouton final).
+- `workflows` (0022) — `name`, `status` ∈ draft|active, **`graph jsonb`** `{nodes[], edges[]}` (scope tenant).
+- `workflow_runs` (0023) — état d'exécution PAR contact : `workflow_id`, `contact_id`, `wa_id`, `current_node`,
+  `status` ∈ waiting|inbox|done, `last_message_id` (dédup d'avance). Index partiel sur les runs `waiting`.
 - `webhook_events` — log brut, `meta_message_id` unique (idempotence). pg-boss = schéma `pgboss` séparé.
 
 ## Flows (modèle riche, migration 0016)
@@ -74,6 +79,37 @@ retrouve le flow par `_ref` (`findByRef`), itère sur NOTRE mapping (clé champ 
 valeurs brutes -> `_ref`/`flow_token` jamais écrits) et fait un MERGE jsonb sur le contact
 (`mergeFieldsByPhone`, même matching que l'inbox). **Isolé en try/catch, ne throw JAMAIS** : partage le job
 webhook des statuts de livraison, un mapping cassé ne doit pas rejouer/DLQ les statuts.
+
+## Builder de formulaires (A) + Workflow builder (B) — lot 3
+
+**Dépendance front** : **`@xyflow/react`** (React Flow, ^12, MIT) pour l'éditeur de graphe de blocs.
+Seule lib ajoutée du lot ; tout le reste reste Tailwind pur.
+
+**(A) Formulaires WhatsApp** (`web/components/FlowBuilder.tsx`) : builder visuel de TOUS les composants d'un
+écran Flow — textes (heading/subheading/body/caption), image, saisies (`text|email|phone|number|passcode`,
+textarea, date), **choix à options** (`Dropdown`/`RadioButtonsGroup`/`CheckboxGroup`, data-source `id=title`),
+**OptIn** (consentement -> **champ booléen dédié**), **Footer = bouton final au libellé personnalisable** (`cta`).
+Aperçu en direct (`FlowScreenPreview`). ⚠️ RGPD : un champ basculé en `optin` **réinitialise son `saveTo`**
+(front `changeType`/submit + back `parseFlowBody`) pour qu'un booléen de consentement ne puisse jamais écraser
+un autre user field.
+
+**(B) Workflow builder** (`src/workflow/`, menu gauche « Flow ») :
+- **Modèle** `graph.ts` : `parseGraph` PUR (sanitise, intégrité référentielle arête->node, caps 200 nodes /
+  400 edges). Types de bloc : `template` | `inbox` | `flow` | `tag` | `field`.
+- **Moteur** `engine.ts` : `walk(graph, startNodeId)` LINÉAIRE — blocs `tag`/`field` = action synchrone puis on
+  continue ; `template`/`flow` = envoi puis **attente** ; `inbox` = terminal (conversation remontée à l'humain) ;
+  anti-cycle. `executor.ts` : `start` applique les actions + persiste le run ; `advance` quand le contact répond,
+  **dédup par `last_message_id`**.
+- **Avance** branchée sur le webhook inbound (`webhooks/workflow-advance.processWorkflowAdvance`), **ISOLÉ en
+  try/catch par message** (comme le flow-mapping : ne throw jamais, partage le job webhook des statuts).
+  ⚠️ V1 : avance sur **n'importe quelle** réponse inbound (pas de branche par bouton quick-reply -> réservé).
+- **Déclencheur = campagne** (`campaign/engine.ts`) : si `campaign.workflow_id`, le run de campagne appelle
+  `startWorkflow` (executor.start) par destinataire **au lieu d'un envoi template**, en réutilisant l'infra
+  campagne (claim atomique anti double-envoi, quality gate, fréquence marketing) — **pas de nouvelle file ni
+  rate gate**. message_id synthétique `wf-<id>` (la livraison/lecture Meta n'est donc PAS suivie pour ces
+  campagnes -> funnel delivered/read=0, limitation V1 assumée). Route create = **Template XOR Workflow**
+  (`workflowBelongsToTenant` valide l'appartenance). `getTemplateBreakdown` exclut les campagnes workflow
+  (`template_name is not null`).
 
 ## Analytics (stats, plage de dates)
 

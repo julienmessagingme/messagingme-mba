@@ -5,6 +5,8 @@ import type { CampaignCategory } from './types';
 
 export interface BuildContact extends ResolvableContact {
   id: string;
+  /** BSUID (identité sans numéro). Le destinataire = phone_e164 sinon bsuid. */
+  bsuid?: string | null;
   optInStatus: 'opted_in' | 'opted_out' | 'unknown';
 }
 
@@ -16,7 +18,7 @@ export interface BuiltRecipient {
 
 /**
  * Construit la liste des destinataires d'une campagne : filtre l'opt-in (marketing),
- * exige un numéro, dédup par numéro, et résout les variables du template par contact.
+ * exige une identité (numéro OU BSUID), dédup par identité, et résout les variables du template par contact.
  */
 export function buildRecipients(
   category: CampaignCategory,
@@ -26,12 +28,12 @@ export function buildRecipients(
   const seen = new Set<string>();
   const out: BuiltRecipient[] = [];
   for (const c of contacts) {
-    const phone = c.phone_e164;
-    if (!phone) continue; // campagne outbound -> numéro requis
+    const to = c.phone_e164 ?? c.bsuid ?? null; // destinataire = numéro sinon BSUID
+    if (!to) continue; // campagne outbound -> identité requise
     if (!optInAllows(category, c)) continue;
-    if (seen.has(phone)) continue;
-    seen.add(phone);
-    out.push({ contactId: c.id, toE164: phone, resolvedParams: resolveTemplateParams(paramMapping, c) });
+    if (seen.has(to)) continue;
+    seen.add(to);
+    out.push({ contactId: c.id, toE164: to, resolvedParams: resolveTemplateParams(paramMapping, c) });
   }
   return out;
 }

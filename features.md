@@ -7,7 +7,7 @@ WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · Contacts · Campagnes · Contenu (Templates / Flows / Tags / Champs) · Analytics · Support**.
+Admin : **Inbox · Contacts · Campagnes · Flow · Contenu (Templates / Formulaires / Tags / Champs) · Analytics · Support**.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*, Billing*, Déconnexion ;
 *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 
@@ -29,21 +29,38 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   par une **campagne active** (garde-fou anti envoi cassé). Nom et langue non modifiables (immuables chez Meta).
 - ✅ **Suppression** : par nom (toutes langues) ; bloquée si une campagne active l'utilise.
 
-## Flows (formulaires WhatsApp, menu Contenu)
+## Formulaires (WhatsApp Flows, menu Contenu)
 
-- ✅ **Constructeur riche** : éléments ordonnables (titre / paragraphe / légende / image / champ de saisie).
-  Chaque **champ se range dans un user field du contact** (« Nouveau champ » d'après le libellé, ou un user
-  field existant). À la réception du formulaire rempli, les valeurs atterrissent dans la fiche contact + la
-  réponse apparaît dans l'inbox.
+- ✅ **Constructeur visuel, tous les composants** : éléments ordonnables : titres (grand / sous-titre) /
+  paragraphe / légende / **image** / saisies (texte, e-mail, téléphone, nombre, code, zone de texte, **date**) /
+  **choix** (liste déroulante, boutons radio, cases à cocher) / **consentement (OptIn)** / **bouton final au
+  libellé personnalisable**. Aperçu en direct pendant la construction.
+- ✅ Chaque **champ de saisie se range dans un user field du contact** (« Nouveau champ » d'après le libellé,
+  ou un user field existant). Le consentement OptIn se range dans un champ booléen dédié. À la réception du
+  formulaire rempli, les valeurs atterrissent dans la fiche contact + la réponse apparaît dans l'inbox.
 - ✅ **Depuis un template** : le bouton « + Flow » crée un formulaire inline (publié aussitôt) OU en choisit un
   déjà publié, puis l'attache au template (bouton FLOW exclusif).
 - ✅ **Édition / duplication** : un DRAFT s'édite ; un flow PUBLISHED est immuable -> « Dupliquer pour modifier »
   crée une copie éditable.
 
+## Automatisations (menu « Flow »)
+
+- ✅ **Constructeur de workflow visuel** : graphe de blocs reliés par des flèches courbées (drag-and-drop),
+  `+` / poubelle sur chaque flèche pour insérer ou couper, bouton « + Créer un bloc », panneau de config par
+  bloc. Blocs : **envoi de template**, **inbox** (remonte la conversation à un humain), **formulaire** (envoie
+  un WhatsApp Flow), **ajout de tag**, **ajout de champ**. (Éditeur React Flow.)
+- ✅ **Exécution réelle par contact** : lancé depuis une campagne, le workflow s'exécute vraiment pour chaque
+  destinataire : les blocs tag/champ s'appliquent au passage (visibles sur la fiche), un bloc template/formulaire
+  envoie puis attend la réponse du contact, et à la réponse le parcours avance jusqu'au bloc inbox (terminal).
+  La suite des blocs détermine ce qui se passe. ⚠️ V1 : l'avance se déclenche sur **toute** réponse du contact
+  (pas encore de branche par bouton de réponse rapide).
+
 ## Campagnes
 
-- ✅ **Envoi** : choix d'un template approuvé + mapping des variables sur les attributs/champs contact, sélection
-  d'audience, lancement, suivi des destinataires (statut interne + cycle de livraison Meta), auto-refresh.
+- ✅ **Envoi** : on choisit **d'abord les destinataires**, PUIS on décide **Template** (template approuvé +
+  mapping des variables sur les attributs/champs contact) **OU Workflow** (déclenche le workflow choisi pour
+  chaque destinataire). Lancement, suivi des destinataires (statut interne + cycle de livraison Meta),
+  auto-refresh. (Suivi de livraison Meta non câblé pour les campagnes workflow en V1.)
 - ✅ **Garde-fous** : opt-in requis, fréquence max par contact (marketing), coupure sur quality rating, claim
   atomique anti double-envoi, idempotence.
 - ✅ **Coût estimé par campagne** : « ≈ X (devise du compte) » par campagne + total, dérivé du tarif Meta

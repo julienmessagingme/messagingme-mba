@@ -15,6 +15,7 @@ import { MetaApiError } from '../src/meta/errors';
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
   readonly marketingCalls: string[] = [];
+  readonly marketingParams: MarketingParams[] = [];
   readonly templateCalls: string[] = [];
   failFor: Set<string> = new Set();
   async sendMarketing(p: MarketingParams): Promise<SendResult> {
@@ -22,6 +23,7 @@ class FakeSender implements MessageSender {
     if (this.failFor.has(to)) throw new MetaApiError(400, { code: 131049, message: 'blocked' });
     this.calls.push(to);
     this.marketingCalls.push(to);
+    this.marketingParams.push(p);
     return { messageId: `m-${to}` };
   }
   async sendTemplate(to: string, _tpl: TemplateSpec): Promise<SendResult> {
@@ -105,6 +107,28 @@ describe('runCampaign', () => {
     expect(sender.calls).toEqual(['+33611', '+33622']);
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent', messageId: 'm-+33611' });
     expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  it('destinataire BSUID (marketing) -> routé en `recipient`, jamais `to`', async () => {
+    const sender = new FakeSender();
+    // r1 = numéro E.164 -> to ; r2 = BSUID -> recipient.
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
+    await runCampaign(campaign, deps({ recipients, sender }));
+    expect(sender.marketingParams[0]).toMatchObject({ to: '+33611' });
+    expect(sender.marketingParams[0]!.recipient).toBeUndefined();
+    expect(sender.marketingParams[1]).toMatchObject({ recipient: 'BSUID_xyz' });
+    expect(sender.marketingParams[1]!.to).toBeUndefined();
+  });
+
+  it('campagne WORKFLOW : le wa_id passé = chiffres nus pour un numéro, BSUID intact', async () => {
+    const started: Array<{ waId: string }> = [];
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
+    await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async (_t, _w, waId) => { started.push({ waId }); },
+    }));
+    expect(started.map((s) => s.waId)).toEqual(['33611', 'BSUID_xyz']); // numéro -> chiffres nus, BSUID intact
   });
 
   it('fréquence : un contact envoyé récemment est skippé', async () => {

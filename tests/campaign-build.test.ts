@@ -23,4 +23,23 @@ describe('buildRecipients', () => {
     const r = buildRecipients('utility', mapping, contacts);
     expect(r.map((x) => x.contactId)).toEqual(['c1', 'c2']); // c3 doublon, c4 sans tel
   });
+
+  it('cible un contact SANS numéro par son BSUID (destinataire = bsuid)', () => {
+    const withBsuid: BuildContact[] = [
+      { id: 'b1', phone_e164: null, bsuid: 'BS_123', profile_name: 'Anon', optInStatus: 'opted_in' },
+    ];
+    const r = buildRecipients('marketing', mapping, withBsuid);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ contactId: 'b1', toE164: 'BS_123' });
+  });
+
+  it('numéro prioritaire sur le BSUID ; dédup par identité', () => {
+    const mixed: BuildContact[] = [
+      { id: 'p1', phone_e164: '+33699999999', bsuid: 'BS_A', profile_name: 'A', optInStatus: 'opted_in' },
+      { id: 'b2', phone_e164: null, bsuid: 'BS_B', profile_name: 'B', optInStatus: 'opted_in' },
+      { id: 'b3', phone_e164: null, bsuid: 'BS_B', profile_name: 'Doublon BSUID', optInStatus: 'opted_in' },
+    ];
+    const r = buildRecipients('marketing', mapping, mixed);
+    expect(r.map((x) => x.toE164)).toEqual(['+33699999999', 'BS_B']); // p1 par numéro, b3 = doublon de b2
+  });
 });

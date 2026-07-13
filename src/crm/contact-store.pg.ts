@@ -1,9 +1,12 @@
 import type { Pool } from 'pg';
 import type { ContactStore, ContactUpsert } from './import';
+import { classifyWaId } from './identity';
 
 export interface ContactRow {
   id: string;
   phoneE164: string | null;
+  /** Identité BSUID (business-scoped user id) quand le contact n'a pas de numéro. */
+  bsuid: string | null;
   profileName: string | null;
   optInStatus: string;
   fields: Record<string, unknown>;
@@ -64,7 +67,7 @@ export class PgContactStore implements ContactStore {
       `update contacts set fields = fields || $3::jsonb, updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2)
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
          order by (phone_e164 = '+' || $2) desc limit 1
        )`,
       [tenantId, waId, JSON.stringify(values)],
@@ -84,7 +87,7 @@ export class PgContactStore implements ContactStore {
       `update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2)
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
          order by (phone_e164 = '+' || $2) desc limit 1
        )`,
       [tenantId, waId, clean],
@@ -92,17 +95,42 @@ export class PgContactStore implements ContactStore {
     return res.rowCount ?? 0;
   }
 
+  /**
+   * Auto-crée (ou rafraîchit) une fiche contact depuis un message ENTRANT. Le `wa_id` est classé en numéro
+   * OU BSUID (règle `classifyWaId`). Upsert par l'index unique correspondant : ne régresse JAMAIS l'opt-in
+   * (posé à 'unknown' seulement à la création, source 'inbound'), et ne met à jour que le nom de profil
+   * (coalesce, jamais écrasé par null). Best-effort : à appeler en isolation (ne doit pas casser l'inbox).
+   * Renvoie 'created' | 'updated' | 'skipped' (wa_id vide).
+   */
+  async upsertFromInbound(tenantId: string, waId: string, profileName: string | null): Promise<'created' | 'updated' | 'skipped'> {
+    const { phoneE164, bsuid } = classifyWaId(waId);
+    if (!phoneE164 && !bsuid) return 'skipped';
+    // Deux index uniques partiels distincts (phone / bsuid) -> le ON CONFLICT doit cibler le bon.
+    const conflict = phoneE164
+      ? 'on conflict (tenant_id, phone_e164) where phone_e164 is not null'
+      : 'on conflict (tenant_id, bsuid) where bsuid is not null';
+    const res = await this.pool.query<{ created: boolean }>(
+      `insert into contacts (tenant_id, phone_e164, bsuid, profile_name, opt_in_status, opt_in_source)
+       values ($1, $2, $3, $4, 'unknown', 'inbound')
+       ${conflict}
+       do update set profile_name = coalesce(excluded.profile_name, contacts.profile_name), updated_at = now()
+       returning (xmax = 0) as created`,
+      [tenantId, phoneE164 ?? null, bsuid ?? null, profileName],
+    );
+    return res.rows[0]?.created ? 'created' : 'updated';
+  }
+
   private static rowToContact(r: {
-    id: string; phone_e164: string | null; profile_name: string | null; opt_in_status: string;
+    id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
   }): ContactRow {
     return {
-      id: r.id, phoneE164: r.phone_e164, profileName: r.profile_name, optInStatus: r.opt_in_status,
+      id: r.id, phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
       fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
     };
   }
   private static readonly SELECT_ONE =
-    'select id, phone_e164, profile_name, opt_in_status, fields, tags, created_at from contacts where id = $1 and tenant_id = $2';
+    'select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at from contacts where id = $1 and tenant_id = $2';
 
   /** Un contact par id, scopé tenant. null si absent/autre tenant. */
   async getById(tenantId: string, contactId: string): Promise<ContactRow | null> {
@@ -160,13 +188,14 @@ export class PgContactStore implements ContactStore {
     const res = await this.pool.query<{
       id: string;
       phone_e164: string | null;
+      bsuid: string | null;
       profile_name: string | null;
       opt_in_status: string;
       fields: Record<string, unknown>;
       tags: string[] | null;
       created_at: Date;
     }>(
-      `select id, phone_e164, profile_name, opt_in_status, fields, tags, created_at
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at
        from contacts where tenant_id = $1${hasTag ? ' and tags @> array[$4]::text[]' : ''}
        order by created_at desc
        limit $2 offset $3`,
@@ -175,6 +204,7 @@ export class PgContactStore implements ContactStore {
     return res.rows.map((r) => ({
       id: r.id,
       phoneE164: r.phone_e164,
+      bsuid: r.bsuid,
       profileName: r.profile_name,
       optInStatus: r.opt_in_status,
       fields: r.fields,

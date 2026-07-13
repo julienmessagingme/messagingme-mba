@@ -120,6 +120,27 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
   et testés au niveau claim ; un test « 2 runs concurrents -> zéro double-envoi » sous vraie course
   reste à ajouter (nice-to-have, pas un bug connu).
 
+## Refonte auth (demandée, PAS commencée)
+
+Objectif : ouvrir la console à une équipe cliente sans que l'admin fabrique les mots de passe.
+- **Invitations par email** (Resend) : l'admin invite un membre -> email avec lien pour qu'il choisisse
+  son mot de passe (au lieu du mot de passe posé par l'admin aujourd'hui).
+- **Gestion du mot de passe** : « mot de passe perdu » (lien de réinitialisation par email) + changement de
+  mot de passe.
+- **Google** : « se connecter avec Google » (sign-in ET sign-up).
+- **Gates externes (Julien)** : (1) **vérifier le domaine Resend** (mêmes DNS Cloudflare que le support,
+  cf suivi Resend ci-dessous) pour sortir du mode test ; (2) créer un **client OAuth Google** (Google Cloud
+  Console) et fournir client_id/secret. Rien de codable côté serveur sans ces deux-là.
+
+## Suites builder Lot 3 (V2, non bloquant)
+
+- **Branche par bouton quick-reply** : PB2 avance aujourd'hui sur N'IMPORTE QUELLE réponse inbound. Pour un
+  vrai arbre (bouton A -> bloc X, bouton B -> bloc Y), mapper les arêtes sortantes d'un bloc template sur ses
+  boutons (`sourceHandle` déjà prévu dans le modèle de graphe). À faire quand un scénario réel le réclame.
+- **Livraison/lecture des campagnes workflow** : message_id synthétique `wf-<id>` -> le funnel affiche
+  delivered/read/replied = 0 pour ces campagnes. Câbler un vrai suivi imposerait de relier le wamid du 1er
+  template envoyé par le workflow au destinataire de campagne. Limitation V1 assumée.
+
 ## Décisions ouvertes
 
 - **OTP post-octobre** : espérer un équivalent WABA-only en ES v4 ; sinon construire le

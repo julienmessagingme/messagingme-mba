@@ -92,6 +92,16 @@ export class MetaFlowClient {
     await this.call(`${this.baseUrl}/${this.version}/${flowId}/publish`, { method: 'POST' });
   }
 
+  /** DELETE /{flow} — supprime un flow DRAFT (Meta n'autorise la suppression QUE sur un DRAFT). */
+  async delete(flowId: string): Promise<void> {
+    await this.call(`${this.baseUrl}/${this.version}/${flowId}`, { method: 'DELETE' });
+  }
+
+  /** POST /{flow}/deprecate — déprécie un flow PUBLISHED (immuable : pas de delete, on le retire de l'usage). */
+  async deprecate(flowId: string): Promise<void> {
+    await this.call(`${this.baseUrl}/${this.version}/${flowId}/deprecate`, { method: 'POST' });
+  }
+
   /** GET /{waba}/flows — suit paging.next (calque templates.list). Non branché sur la route GET (qui
    *  sert le store local) ; utile pour un futur script de réconciliation/ops. */
   async list(wabaId: string): Promise<FlowSummary[]> {

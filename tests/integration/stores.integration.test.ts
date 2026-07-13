@@ -77,6 +77,37 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(byNone.some((r) => r.phoneE164 === phone)).toBe(false);
   });
 
+  it('PgContactStore.upsertFromInbound : crée par numéro OU BSUID, expose le bsuid, opt-in unknown (pas de consentement)', async () => {
+    const store = new PgContactStore(pool);
+    // wa_id de 11 chiffres -> numéro. 2e message = update (pas de recréation), nom rafraîchi.
+    expect(await store.upsertFromInbound(tenantId, '33600000031', 'Inbound Phone')).toBe('created');
+    expect(await store.upsertFromInbound(tenantId, '33600000031', 'Inbound Phone 2')).toBe('updated');
+    // wa_id de 19 chiffres -> BSUID (contact sans numéro).
+    const bsuid = '1234567890123456789';
+    expect(await store.upsertFromInbound(tenantId, bsuid, 'Sans Numero')).toBe('created');
+
+    const rows = await store.list(tenantId, 500);
+    const byPhone = rows.find((r) => r.phoneE164 === '+33600000031')!;
+    expect(byPhone.profileName).toBe('Inbound Phone 2'); // nom rafraîchi (coalesce)
+    expect(byPhone.optInStatus).toBe('unknown'); // un message entrant N'est PAS un consentement
+    expect(byPhone.bsuid).toBeNull();
+    const byBsuid = rows.find((r) => r.bsuid === bsuid)!;
+    expect(byBsuid).toBeTruthy();
+    expect(byBsuid.phoneE164).toBeNull();
+    expect(byBsuid.profileName).toBe('Sans Numero');
+  });
+
+  it('PgContactStore.mergeFieldsByPhone / addTagsByPhone : atteignent un contact identifié par BSUID', async () => {
+    const store = new PgContactStore(pool);
+    const bsuid = '9876543210987654321';
+    await pool.query(`insert into contacts (tenant_id, bsuid, opt_in_status) values ($1, $2, 'opted_in')`, [tenantId, bsuid]);
+    expect(await store.mergeFieldsByPhone(tenantId, bsuid, { ville: 'Paris' })).toBe(1);
+    expect(await store.addTagsByPhone(tenantId, bsuid, ['vip-bsuid'])).toBe(1);
+    const row = (await store.list(tenantId, 500)).find((r) => r.bsuid === bsuid)!;
+    expect(row.fields).toMatchObject({ ville: 'Paris' });
+    expect(row.tags).toContain('vip-bsuid');
+  });
+
   it('PgContactStore.applyEdits : MERGE fields + tags add/remove en transaction, scoping tenant', async () => {
     const store = new PgContactStore(pool);
     const contactId = (await pool.query<{ id: string }>(

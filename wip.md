@@ -61,7 +61,44 @@ commit + deploy à chaque phase). Détail usage : `features.md`. Détail techniq
 
 Tests : **441 unit + 18 intégration**. 2 migrations (0019, 0020) appliquées avant deploy. Aucune régression.
 
-### Suivis ouverts (lots 1 + 2)
+## Lot 3 — Builder visuel (A formulaires + B automatisation) (2026-07-13) : LIVE ✅
+
+Troisième grand lot en feature-loop (plan `.loop/lot3-builder.md`, revue transversale + fixes par phase,
+commit + deploy à chaque phase). Deux builders DISTINCTS + le déclencheur campagne. Détail usage :
+`features.md`. Détail technique : `documentation.md §Builder`.
+- **Fix + quick wins** : bug suppression template (surface le `error_user_msg` de Meta au lieu de « Invalid
+  parameter »), tag -> clic sur le compteur ouvre la **liste des contacts** taggés, **créer un nouveau champ
+  depuis la fiche** contact, **miniature** de flow.
+- **PA — Formulaires WhatsApp, TOUS les composants** : Dropdown/RadioButtonsGroup/CheckboxGroup, OptIn
+  (consentement), passcode, date, **bouton final personnalisable**. Aperçu en direct. Menu Contenu>Flow
+  renommé « **Formulaires** ». **Migration 0021** (`flows.cta`). 🔴 fermé (optin ne peut plus écraser un autre
+  champ, défense front+back, RGPD).
+- **PB1 — Workflow builder (modèle + éditeur visuel, SANS exécution)** : nouveau menu gauche « **Flow** »,
+  éditeur **React Flow** (`@xyflow/react`), blocs template/inbox/flow/tag/field, flèches courbées drag,
+  `+`/poubelle sur chaque arête, config par bloc. **Migration 0022** (table `workflows`).
+- **PB2 — Moteur d'exécution** : `engine.ts` (`walk` linéaire), `executor.ts` (start applique les actions +
+  persiste ; advance quand le contact répond, dédup `last_message_id`), avance branchée sur le webhook
+  **isolée par message**. **Migration 0023** (table `workflow_runs`). 🔴 fermé (isolation par message).
+- **PB3 — Déclencheur campagne (Template OU Workflow)** : le run de campagne DÉMARRE le workflow par
+  destinataire au lieu d'un envoi template, en réutilisant l'infra campagne (claim/quality/fréquence), pas de
+  nouvelle file. Front : contacts choisis d'ABORD, puis Template OU Workflow. **Migration 0024**
+  (`campaigns.workflow_id` + template nullable). 🔴 fermé, **le plus sérieux** : le VRAI chemin de création
+  `createWithRecipients` ne persistait PAS `workflow_id` (feature cassée en prod) alors que le test visait
+  `insertCampaign`, une méthode sœur non branchée -> faux vert ; corrigé + test d'intégration remis sur le
+  chemin réel. + 1 🟡 (toSummary null->'').
+
+Tests : **~490 unit + 21 intégration**. 4 migrations (0021-0024) appliquées avant deploy. Aucune régression.
+**BUILDER (A + B) TERMINÉ**, flux E2E vivant : campagne -> contacts -> workflow -> tag posé -> template envoyé
+-> le contact répond -> avance -> inbox. ⚠️ mba LIVE (`DRY_RUN=false`) : tester une campagne workflow sur son
+propre numéro avant un envoi large.
+
+### Suivis ouverts (lots 1 + 2 + 3)
+- **PB2 avance sur n'importe quelle réponse** du contact (pas de branche par bouton quick-reply) : réservé à
+  une itération V2 si un cas réel l'exige.
+- **Funnel campagnes workflow** : delivered/read/replied = 0 (message_id synthétique `wf-<id>`, la livraison
+  Meta n'est pas suivie pour ces envois). Limitation V1 assumée.
+- **Refonte auth** (invitations Resend + gestion du mot de passe + « mot de passe perdu » + Google OAuth) :
+  demandée, PAS commencée, gated sur la vérif du domaine Resend + un client OAuth Google (actions Julien). Cf `todo.md`.
 - **Support** : toujours en **mode test** Resend (n'envoie qu'à l'adresse du compte `testsuperchatjd@gmail.com`).
   Pour router vers `julien@messagingme.fr` : vérifier un domaine chez resend.com/domains (records DNS
   Cloudflare) puis basculer `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans
@@ -71,8 +108,9 @@ Tests : **441 unit + 18 intégration**. 2 migrations (0019, 0020) appliquées av
 - **Resend** : basculer le support hors mode test (vérifier le domaine chez resend.com/domains -> DNS
   Cloudflare -> `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans `.env.prod`
   + `up -d --force-recreate`). Action Julien.
-- **Coup d'œil navigateur (Julien)** sur les visuels des lots 1 (ph 3-7) et 2 (A-F : `/accueil`, dates inbox,
-  cartes analytics, table `/ops`).
+- **Coup d'œil navigateur (Julien)** sur les visuels des lots 1 (ph 3-7), 2 (A-F : `/accueil`, dates inbox,
+  cartes analytics, table `/ops`) et 3 (**Contenu>Formulaires** builder tous composants, menu **Flow** éditeur
+  de workflow, **Campagnes** switch Template/Workflow).
 
 ## Prochaine étape
 

@@ -43,11 +43,17 @@ export function login(email: string, password: string): Promise<LoginResult> {
 export interface Contact {
   id: string;
   phoneE164: string | null;
+  /** Identité BSUID (compte WhatsApp) quand le contact n'a pas de numéro. */
+  bsuid: string | null;
   profileName: string | null;
   optInStatus: string;
   fields: Record<string, unknown>;
   tags: string[];
   createdAt: string;
+}
+/** Identité messageable d'un contact : le numéro s'il existe, sinon le BSUID. null si aucun. */
+export function contactIdentity(c: Pick<Contact, 'phoneE164' | 'bsuid'>): string | null {
+  return c.phoneE164 ?? c.bsuid ?? null;
 }
 export function listContacts(tenantId: string, opts?: { limit?: number; offset?: number; tag?: string }): Promise<{ contacts: Contact[] }> {
   const qs = new URLSearchParams();
@@ -595,6 +601,10 @@ export function duplicateFlow(tenantId: string, flowId: string): Promise<{ id: s
 }
 export function publishFlow(tenantId: string, flowId: string): Promise<{ id: string; status: string }> {
   return request(`/tenants/${tenantId}/flows/${flowId}/publish`, { method: 'POST' });
+}
+/** Supprime un formulaire : un DRAFT est supprimé, un PUBLISHED est déprécié côté Meta (immuable). */
+export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: string; deleted: boolean }> {
+  return request(`/tenants/${tenantId}/flows/${flowId}`, { method: 'DELETE' });
 }
 
 // --- Workflows (bot builder : graphe de blocs) ---

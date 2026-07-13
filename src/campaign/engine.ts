@@ -1,5 +1,6 @@
 import type { Campaign, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
 import { frequencyAllows, qualityGate, buildComponents } from './guardrails';
+import { messagingTarget } from '../meta/types';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError } from '../meta/errors';
 
@@ -110,8 +111,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       if (campaign.workflowId) {
         // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
         // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
+        // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).
         if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
-        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, r.toE164.replace(/[^0-9]/g, ''), r.contactId);
+        const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
+        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId);
         res = { messageId: `wf-${campaign.workflowId}` };
       } else {
         const tpl: TemplateSpec = {
@@ -119,9 +122,11 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           language: campaign.templateLanguage,
           components: buildComponents(r.resolvedParams),
         };
+        // Numéro E.164 -> `to`, BSUID -> `recipient` (source unique messagingTarget). sendTemplate route
+        // de la même façon en interne, donc l'utility passe l'identité brute.
         res =
           campaign.category === 'marketing'
-            ? await deps.sender.sendMarketing({ to: r.toE164, template: tpl })
+            ? await deps.sender.sendMarketing({ ...messagingTarget(r.toE164), template: tpl })
             : await deps.sender.sendTemplate(r.toE164, tpl);
       }
     } catch (err) {

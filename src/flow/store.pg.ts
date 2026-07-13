@@ -138,4 +138,10 @@ export class PgFlowStore {
     );
     return (res.rowCount ?? 0) > 0;
   }
+
+  /** Retire le flow du store local (scopé tenant), après suppression/dépréciation côté Meta. true si supprimé. */
+  async remove(flowId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(`delete from flows where id = $1 and tenant_id = $2`, [flowId, tenantId]);
+    return (res.rowCount ?? 0) > 0;
+  }
 }

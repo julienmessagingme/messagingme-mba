@@ -154,10 +154,26 @@ export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
   return out;
 }
 
-/** Mappe chaque message entrant à son tenant et l'enregistre. */
-export async function processInbound(payload: unknown, store: InboxStore): Promise<void> {
+/** Auto-création d'une fiche contact depuis un message entrant (par numéro OU BSUID). */
+export type InboundContactUpsert = (tenantId: string, m: InboundMessage) => Promise<void>;
+
+/**
+ * Mappe chaque message entrant à son tenant et l'enregistre. Si `upsertContact` est fourni, crée/rafraîchit
+ * la fiche contact AVANT `recordInbound` (pour que la conversation se lie au contact). L'auto-création est
+ * ISOLÉE (best-effort) : un échec ne casse pas l'enregistrement inbox (cœur du webhook).
+ */
+export async function processInbound(payload: unknown, store: InboxStore, upsertContact?: InboundContactUpsert): Promise<void> {
   for (const m of extractInbound(payload)) {
     const tenantId = await store.phoneNumberTenant(m.phoneNumberId);
-    if (tenantId) await store.recordInbound(tenantId, m);
+    if (!tenantId) continue;
+    if (upsertContact) {
+      try {
+        await upsertContact(tenantId, m);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('processInbound: auto-création contact ignorée:', err instanceof Error ? err.message : err);
+      }
+    }
+    await store.recordInbound(tenantId, m);
   }
 }
