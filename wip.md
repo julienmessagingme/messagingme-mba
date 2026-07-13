@@ -120,16 +120,15 @@ Quatre demandes de Julien + l'encapsulation d'identité BSUID. Revue transversal
 - **Funnel campagnes workflow** : delivered/read/replied = 0 (message_id synthétique `wf-<id>`, la livraison
   Meta n'est pas suivie pour ces envois). Limitation V1 assumée.
 - **Refonte auth** (invitations Resend + gestion du mot de passe + « mot de passe perdu » + Google OAuth) :
-  demandée, PAS commencée, gated sur la vérif du domaine Resend + un client OAuth Google (actions Julien). Cf `todo.md`.
-- **Support** : toujours en **mode test** Resend (n'envoie qu'à l'adresse du compte `testsuperchatjd@gmail.com`).
-  Pour router vers `julien@messagingme.fr` : vérifier un domaine chez resend.com/domains (records DNS
-  Cloudflare) puis basculer `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans
-  `.env.prod` + `docker compose up -d --force-recreate`. Clé Resend déjà dans `.env.prod` (dormante avant ph 7).
+  demandée, PAS commencée. Email DÉBLOQUÉ (Resend hors mode test, cf ci-dessous) ; reste gated sur un client
+  OAuth Google (action Julien) pour le « se connecter avec Google ». Cf `todo.md`.
+- ✅ **Resend HORS mode test (2026-07-13)** : domaine `messagingme.app` **vérifié** dans un compte Resend dédié
+  (region eu-west-1). `.env.prod` du VPS basculé : `RESEND_API_KEY` = clé de CE compte (⚠️ PAS l'ancienne clé du
+  compte de test), `SUPPORT_FROM=support@messagingme.app`, `SUPPORT_TO=julien@messagingme.fr` ; conteneurs
+  `mba-api`/`mba-worker` recréés (`up -d --force-recreate`). Envoi réel confirmé (Resend id retourné). Sauvegarde
+  `.env.prod.bak.*` sur le VPS. La clé vit UNIQUEMENT dans `.env.prod` (jamais le repo).
 - **Analytics (ph 5)** : le filet de revue multi-agents a stallé (souci workflow) ; revue manuelle + 32 tests
   stats clean, déployé pour test par Julien. À re-vérifier si un retour terrain remonte un souci.
-- **Resend** : basculer le support hors mode test (vérifier le domaine chez resend.com/domains -> DNS
-  Cloudflare -> `SUPPORT_FROM=support@messagingme.app` + `SUPPORT_TO=julien@messagingme.fr` dans `.env.prod`
-  + `up -d --force-recreate`). Action Julien.
 - **Coup d'œil navigateur (Julien)** sur les visuels des lots 1 (ph 3-7), 2 (A-F : `/accueil`, dates inbox,
   cartes analytics, table `/ops`) et 3 (**Contenu>Formulaires** builder tous composants, menu **Flow** éditeur
   de workflow, **Campagnes** switch Template/Workflow).
