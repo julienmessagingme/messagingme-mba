@@ -6,7 +6,7 @@ import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { CarouselForm } from '@/components/CarouselForm';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
-import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, uploadMedia, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary } from '@/lib/api';
+import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, uploadMedia, listUserFields, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 
 export default function TemplatesPage() {
@@ -27,6 +27,38 @@ const EMOJIS = [
   '🏷️','🛍️','🛒','💳','💰','🤑','📦','🚚','🚀','🎯','📈','📊','💬','💭','📞','📲',
   '✉️','📧','📝','🔗','➡️','👉','👀','🤗',
 ];
+
+/** Une variable {{n}} rattachée à un champ (via le sélecteur) : source (pour l'indice) + libellé (chip). */
+interface VarSource { source: ParamSource; label: string }
+
+/** Exemple déterministe (jamais vide) exigé par Meta, selon le champ choisi. Zéro IA : valeur plausible par
+ *  clé connue, sinon par type de champ. */
+function deterministicExample(source: ParamSource, fieldType?: string): string {
+  if (source.type === 'attribute') return source.key === 'phone' ? '+33 6 12 34 56 78' : 'Marie Martin';
+  if (source.type === 'literal') return source.value?.trim() || 'exemple';
+  const key = (source.key ?? '').toLowerCase();
+  const byKey: Record<string, string> = {
+    prenom: 'Marie', firstname: 'Marie', nom: 'Martin', lastname: 'Martin',
+    email: 'marie@exemple.fr', mail: 'marie@exemple.fr', ville: 'Lyon', city: 'Lyon',
+    societe: 'Dupont SARL', entreprise: 'Dupont SARL', company: 'Dupont SARL',
+    telephone: '+33 6 12 34 56 78', tel: '+33 6 12 34 56 78',
+  };
+  if (byKey[key]) return byKey[key]!;
+  switch (fieldType) {
+    case 'number': return '42';
+    case 'date': return '2026-01-15';
+    case 'url': return 'https://exemple.fr';
+    case 'boolean': return 'oui';
+    default: return 'Marie';
+  }
+}
+
+/** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). */
+function labelForSource(source: ParamSource, fields: UserFieldDef[]): string {
+  if (source.type === 'attribute') return source.key === 'phone' ? 'Téléphone' : 'Nom';
+  if (source.type === 'literal') return 'Texte fixe';
+  return fields.find((f) => f.key === source.key)?.label ?? source.key ?? 'Champ';
+}
 
 function TemplatesInner({ session }: { session: Session }) {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -218,6 +250,25 @@ function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose
   );
 }
 
+/** Sélecteur de champ : insère une variable rattachée au champ choisi (nom/téléphone + champs perso). */
+function FieldPicker({ options, onPick, onClose }: {
+  options: Array<{ source: ParamSource; label: string; fieldType?: string }>;
+  onPick: (o: { source: ParamSource; label: string; fieldType?: string }) => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <button type="button" aria-label="Fermer" className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
+      <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-lg">
+        <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">Insérer un champ</div>
+        {options.map((o, i) => (
+          <button type="button" key={`${o.label}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50">{o.label}</button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCreated: () => void; initial?: TemplateSummary }) {
   const isEdit = !!initial;
   const [name, setName] = useState(initial?.name ?? '');
@@ -238,16 +289,47 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [pubFlows, setPubFlows] = useState<FlowSummary[]>([]);
   const [creatingFlow, setCreatingFlow] = useState(false);
   const hasFlow = buttons.some((b) => b.type === 'FLOW');
+  // Champs dispo dans le sélecteur de variable + source par variable ({{n}} -> varSources[n-1]).
+  const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
+  const [varSources, setVarSources] = useState<Array<VarSource | undefined>>([]);
 
   useEffect(() => {
     listFlows(tenantId)
       .then(({ flows }) => setPubFlows(flows.filter((f) => f.status === 'PUBLISHED')))
       .catch(() => setPubFlows([]));
   }, [tenantId]);
+
+  // Champs perso (pour le sélecteur) + restauration des indices variable->champ à l'édition (chips + re-save).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [uf, hints] = await Promise.all([
+        listUserFields(tenantId).then((r) => r.fields).catch(() => [] as UserFieldDef[]),
+        initial ? getTemplateHints(tenantId, initial.name, initial.language).then((r) => r.hints).catch(() => [] as TemplateParamHint[]) : Promise.resolve([] as TemplateParamHint[]),
+      ]);
+      if (!alive) return;
+      setUserFields(uf);
+      if (hints.length > 0) {
+        setVarSources((prev) => {
+          const next = [...prev];
+          for (const h of hints) next[h.position - 1] = { source: h.source, label: labelForSource(h.source, uf) };
+          return next;
+        });
+      }
+    })();
+    return () => { alive = false; };
+  }, [tenantId, initial]);
+
+  const fieldOptions: Array<{ source: ParamSource; label: string; fieldType?: string }> = [
+    { source: { type: 'attribute', key: 'name' }, label: 'Nom' },
+    { source: { type: 'attribute', key: 'phone' }, label: 'Téléphone' },
+    ...userFields.map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type })),
+  ];
 
   // Nombre de variables {{n}} distinctes dans le corps.
   const varCount = useMemo(() => new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size, [body]);
@@ -261,6 +343,25 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       if (!ta) return;
       ta.focus();
       const pos = start + emoji.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  }
+
+  // Insère la variable suivante ({{N+1}}) au curseur, rattachée au champ choisi, et pré-remplit son exemple.
+  function insertVariable(opt: { source: ParamSource; label: string; fieldType?: string }) {
+    const n = varCount; // nb de variables AVANT insertion -> la nouvelle est la n+1e (index n)
+    const token = `{{${n + 1}}}`;
+    const ta = bodyRef.current;
+    const start = ta?.selectionStart ?? body.length;
+    const end = ta?.selectionEnd ?? body.length;
+    setBody(body.slice(0, start) + token + body.slice(end));
+    setVarSources((vs) => { const c = [...vs]; c[n] = { source: opt.source, label: opt.label }; return c; });
+    setExamples((ex) => { const c = [...ex]; c[n] = deterministicExample(opt.source, opt.fieldType); return c; });
+    setFieldPickerOpen(false);
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      const pos = start + token.length;
       ta.setSelectionRange(pos, pos);
     });
   }
@@ -294,6 +395,10 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     setOk(null);
     try {
       const example = varCount > 0 ? examples.slice(0, varCount).map((e) => e || 'exemple') : undefined;
+      // Indices variable->champ (seulement les variables insérées via le sélecteur, dans la limite du nb réel).
+      const paramHints: TemplateParamHint[] = varSources
+        .map((v, i): TemplateParamHint | null => (v && i < varCount ? { position: i + 1, source: v.source } : null))
+        .filter((h): h is TemplateParamHint => h !== null);
       const header = buildHeader();
       const foot = footer.trim() || undefined;
       if (isEdit && initial) {
@@ -306,6 +411,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
           ...(foot ? { footer: foot } : {}),
           ...(example ? { example } : {}),
           ...(buttons.length > 0 ? { buttons } : {}),
+          ...(paramHints.length > 0 ? { paramHints } : {}),
         });
         setOk('Modifications envoyées. Le template repasse en validation Meta.');
         onCreated();
@@ -320,11 +426,13 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
         ...(foot ? { footer: foot } : {}),
         ...(example ? { example } : {}),
         ...(buttons.length > 0 ? { buttons } : {}),
+        ...(paramHints.length > 0 ? { paramHints } : {}),
       });
       setOk(`Template soumis (statut : ${res.status}). Il passe en revue Meta.`);
       setName('');
       setBody('');
       setExamples([]);
+      setVarSources([]);
       setButtons([]);
       setHeaderType('none');
       setHeaderText('');
@@ -410,20 +518,31 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={5}
-                className={`${inputCls} pr-10`}
+                className={`${inputCls} pr-28`}
                 placeholder={'Bonjour {{1}}, voici notre offre 🎉'}
               />
-              <button
-                type="button"
-                onClick={() => setEmojiOpen((o) => !o)}
-                className="absolute bottom-2 right-2 rounded-md p-1 text-lg leading-none hover:bg-ink-100"
-                aria-label="Insérer un emoji"
-              >
-                😊
-              </button>
+              <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => { setFieldPickerOpen((o) => !o); setEmojiOpen(false); }}
+                  className="rounded-md border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
+                  title="Insérer une variable (champ du contact)"
+                >
+                  + Variable
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmojiOpen((o) => !o); setFieldPickerOpen(false); }}
+                  className="rounded-md p-1 text-lg leading-none hover:bg-ink-100"
+                  aria-label="Insérer un emoji"
+                >
+                  😊
+                </button>
+              </div>
               {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
+              {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
             </div>
-            <p className="mt-1 text-xs text-ink-400">Utilise {'{{1}}'}, {'{{2}}'}... pour les variables (mappées sur les champs contact à la campagne).</p>
+            <p className="mt-1 text-xs text-ink-400">Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l&apos;exemple exigé par Meta se remplit tout seul.</p>
           </div>
 
           <div className="mt-3">
@@ -437,7 +556,10 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
               <div className="space-y-2">
                 {Array.from({ length: varCount }).map((_, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="w-8 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
+                    <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-400">
+                      {`{{${i + 1}}}`}
+                      {varSources[i] && <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{varSources[i]!.label}</span>}
+                    </span>
                     <input
                       value={examples[i] ?? ''}
                       onChange={(e) => setExamples((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
@@ -546,6 +668,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
           <WhatsAppPreview
             body={body}
             examples={examples}
+            varLabels={varSources.map((v) => v?.label)}
             buttons={buttons}
             header={
               headerType === 'none'

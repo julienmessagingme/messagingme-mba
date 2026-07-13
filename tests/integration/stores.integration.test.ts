@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
+import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
 import { PgUserFieldStore } from '../../src/crm/field-store.pg';
 import { PgTagStore } from '../../src/crm/tag-store.pg';
 import {
@@ -95,6 +96,31 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(byBsuid).toBeTruthy();
     expect(byBsuid.phoneE164).toBeNull();
     expect(byBsuid.profileName).toBe('Sans Numero');
+  });
+
+  it('PgTemplateHintStore : save REMPLACE les indices, get les relit, removeByName purge', async () => {
+    const store = new PgTemplateHintStore(pool);
+    const name = 'promo_hints_itest';
+    await store.save(tenantId, name, 'fr', [
+      { position: 1, source: { type: 'field', key: 'prenom' } },
+      { position: 2, source: { type: 'attribute', key: 'name' } },
+    ]);
+    let hints = await store.get(tenantId, name, 'fr');
+    expect(hints).toEqual([
+      { position: 1, source: { type: 'field', key: 'prenom' } },
+      { position: 2, source: { type: 'attribute', key: 'name' } },
+    ]);
+    // save = REMPLACE (le corps du template a changé) : ne cumule pas.
+    await store.save(tenantId, name, 'fr', [{ position: 1, source: { type: 'attribute', key: 'phone' } }]);
+    hints = await store.get(tenantId, name, 'fr');
+    expect(hints).toEqual([{ position: 1, source: { type: 'attribute', key: 'phone' } }]);
+    // scope langue : une autre langue est indépendante.
+    await store.save(tenantId, name, 'en', [{ position: 1, source: { type: 'field', key: 'city' } }]);
+    expect(await store.get(tenantId, name, 'fr')).toHaveLength(1);
+    // removeByName purge toutes les langues.
+    await store.removeByName(tenantId, name);
+    expect(await store.get(tenantId, name, 'fr')).toEqual([]);
+    expect(await store.get(tenantId, name, 'en')).toEqual([]);
   });
 
   it('PgContactStore.mergeFieldsByPhone / addTagsByPhone : atteignent un contact identifié par BSUID', async () => {

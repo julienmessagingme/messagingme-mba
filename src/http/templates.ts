@@ -3,6 +3,8 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader } from '../meta/templates';
 import type { CampaignStatus } from '../campaign/types';
+import { parseParamHints } from '../crm/template';
+import type { ParamSource } from '../crm/template';
 
 export interface TemplateRouteDeps {
   templates: MetaTemplateClient;
@@ -18,6 +20,28 @@ export interface TemplateRouteDeps {
     templateName: string,
     templateLanguage?: string,
   ): Promise<Array<{ id: string; name: string; status: CampaignStatus; templateLanguage: string }>>;
+  /** Indices « variable -> champ » posés au design (sélecteur de champ) : persistés pour pré-remplir la
+   *  campagne. Optionnels : absents -> feature de propagation désactivée (le template se crée quand même). */
+  saveParamHints?(tenantId: string, name: string, language: string, hints: Array<{ position: number; source: ParamSource }>): Promise<void>;
+  getParamHints?(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
+  removeParamHints?(tenantId: string, name: string): Promise<void>;
+}
+
+/** Persistance best-effort des indices variable->champ : un hoquet DB ne doit pas faire échouer un template
+ *  DÉJÀ créé chez Meta (la propagation se dégrade juste : la campagne ne pré-remplira pas). */
+async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: string, language: string, raw: unknown): Promise<void> {
+  if (!deps.saveParamHints) return;
+  // Clé ABSENTE (undefined) = « ne touche pas aux indices » (un PATCH qui ne concerne pas les variables ne
+  // doit PAS effacer les indices existants). Seul un tableau EXPLICITE (même vide) remplace.
+  if (raw === undefined) return;
+  const hints = parseParamHints(raw);
+  if (hints === null) return; // déjà validé en 400 en amont ; garde défensive
+  try {
+    await deps.saveParamHints(tenant, name, language, hints);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('saveParamHints ignoré:', err instanceof Error ? err.message : err);
+  }
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -170,6 +194,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     if (!nonEmpty(b.language)) return reply.code(400).send({ error: 'language requis' });
     const parsed = parseTemplateFields(b);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
+    if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
@@ -179,7 +204,19 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
     const input: CreateTemplateInput = { name: b.name, language: b.language, ...parsed.fields };
     const res = await deps.templates.create(wabaId, input);
+    await saveHintsSafe(deps, tenant, b.name, b.language, b.paramHints);
     return reply.code(201).send(res);
+  });
+
+  // Indices variable -> champ d'un template (pour pré-remplir le mapping d'une campagne). Lecture seule.
+  app.get('/tenants/:tenantId/templates/:templateName/param-hints', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { templateName } = req.params as { templateName: string };
+    const q = req.query as { language?: string };
+    if (!nonEmpty(q.language)) return reply.code(400).send({ error: 'language requis (query)' });
+    const hints = deps.getParamHints ? await deps.getParamHints(tenant, decodeURIComponent(templateName), q.language) : [];
+    return reply.code(200).send({ hints });
   });
 
   // Édition d'un template SIMPLE (body/boutons/category). Carousel non supporté (header_handle non récupérable).
@@ -195,6 +232,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const language = b.language;
     const parsed = parseTemplateFields(b);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
+    if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
     if (parsed.fields.carousel) return reply.code(422).send({ error: 'édition d\'un carousel non supportée' });
 
     const wabaId = await deps.getWabaId(tenant);
@@ -232,6 +270,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       ...(parsed.fields.example ? { example: parsed.fields.example } : {}),
       ...(parsed.fields.buttons ? { buttons: parsed.fields.buttons } : {}),
     });
+    await saveHintsSafe(deps, tenant, name, language, b.paramHints);
     return reply.code(200).send({ ...res, status: 'PENDING' });
   });
 
@@ -252,6 +291,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
     const res = await deps.templates.remove(wabaId, name);
+    if (deps.removeParamHints) await deps.removeParamHints(tenant, name).catch(() => {});
     return reply.code(200).send(res);
   });
 }

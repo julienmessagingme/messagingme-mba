@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { TemplateButtonInput } from '@/lib/api';
 
 /** Rendu du formatage WhatsApp (*gras*, _italique_, ~barré~, `mono`) en noeuds React. */
@@ -32,10 +33,41 @@ const ReplyIcon = () => (
   </svg>
 );
 
+/**
+ * Rendu du corps : les runs de texte passent par formatInline, chaque `{{n}}` devient soit un CHIP `[Label]`
+ * (si `varLabels[n-1]` fourni — mode création de template : on identifie la variable), soit sa valeur
+ * d'exemple (sinon `{{n}}`). Les chips ne s'affichent que si des labels sont passés ; ailleurs (campagne,
+ * aperçu), on garde la substitution par exemple.
+ */
+function renderBody(body: string, examples: string[], varLabels?: Array<string | undefined>): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  const re = /\{\{\s*(\d+)\s*\}\}/g;
+  let last = 0;
+  let key = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > last) nodes.push(<Fragment key={`t${key++}`}>{formatInline(body.slice(last, m.index))}</Fragment>);
+    const n = Number(m[1]);
+    const label = varLabels?.[n - 1];
+    if (label) {
+      nodes.push(<span key={`v${key++}`} className="mx-0.5 inline-flex items-center rounded bg-brand-100 px-1.5 py-0.5 text-[12px] font-medium text-brand-700">{label}</span>);
+    } else {
+      const v = examples[n - 1];
+      nodes.push(<Fragment key={`e${key++}`}>{v && v.trim() ? v : `{{${n}}}`}</Fragment>);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) nodes.push(<Fragment key={`t${key++}`}>{formatInline(body.slice(last))}</Fragment>);
+  return nodes;
+}
+
 export interface WhatsAppPreviewProps {
   body: string;
   /** Valeurs des variables {{n}} ; si absent/vide, la variable reste affichée `{{n}}`. */
   examples: string[];
+  /** Libellés de champ par position ({{1}} -> varLabels[0]) : affiche un chip `[Label]` au lieu de l'exemple.
+   *  Absent -> substitution par exemple (comportement campagne/aperçu). */
+  varLabels?: Array<string | undefined>;
   buttons: TemplateButtonInput[];
   /** En-tête : texte (rendu tel quel) ou média (bloc placeholder image/vidéo/document). */
   header?: { format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; text?: string } | null;
@@ -50,11 +82,7 @@ export interface WhatsAppPreviewProps {
 const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', string> = { IMAGE: '🖼️', VIDEO: '🎬', DOCUMENT: '📄' };
 
 /** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). Partagé Templates + Campagnes. */
-export function WhatsAppPreview({ body, examples, buttons, header, footer, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
-  const text = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n: string) => {
-    const v = examples[Number(n) - 1];
-    return v && v.trim() ? v : `{{${n}}}`;
-  });
+export function WhatsAppPreview({ body, examples, varLabels, buttons, header, footer, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
   const mediaHeader = header && header.format !== 'TEXT' ? header.format : null;
   const textHeader = header && header.format === 'TEXT' && header.text?.trim() ? header.text : null;
   return (
@@ -78,7 +106,7 @@ export function WhatsAppPreview({ body, examples, buttons, header, footer, sende
               )}
               {textHeader && <div className="mb-1 break-words text-[13px] font-semibold text-ink-900">{textHeader}</div>}
               <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
-                {body.trim() ? formatInline(text) : <span className="text-ink-400">Le message apparaîtra ici…</span>}
+                {body.trim() ? renderBody(body, examples, varLabels) : <span className="text-ink-400">Le message apparaîtra ici…</span>}
               </div>
               {footer?.trim() && <div className="mt-1 break-words text-[11px] leading-snug text-ink-400">{footer}</div>}
               <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">

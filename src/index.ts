@@ -17,6 +17,7 @@ import { PgTenantSettingsStore } from './settings/store.pg';
 import { PgUserAuthStore } from './auth/store';
 import { PgUserStore } from './user/store.pg';
 import { PgFlowStore } from './flow/store.pg';
+import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaFlowClient } from './meta/flows';
 import { MetaMediaClient } from './meta/media';
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
 
   const repo = new PgCampaignRepo(pool);
   const contactStore = new PgContactStore(pool);
+  const templateHintStore = new PgTemplateHintStore(pool);
   const fieldStore = new PgUserFieldStore(pool);
   const tagStore = new PgTagStore(pool);
   const inboxStore = new PgInboxStore(pool);
@@ -82,6 +84,9 @@ async function main(): Promise<void> {
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
       getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
       listActiveCampaignsForTemplate: (tenant, name, language) => repo.listActiveCampaignsForTemplate(tenant, name, language),
+      saveParamHints: (tenant, name, language, hints) => templateHintStore.save(tenant, name, language, hints),
+      getParamHints: (tenant, name, language) => templateHintStore.get(tenant, name, language),
+      removeParamHints: (tenant, name) => templateHintStore.removeByName(tenant, name),
     },
     inbox: {
       listConversations: (tenant) => inboxStore.listConversations(tenant),

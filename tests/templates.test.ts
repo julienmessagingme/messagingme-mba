@@ -454,3 +454,86 @@ describe('routes templates — suppression (DELETE)', () => {
     await a.close();
   });
 });
+
+describe('routes templates — indices variable->champ (paramHints)', () => {
+  interface HintCap { saved: Array<{ name: string; language: string; hints: unknown }>; removed: string[] }
+  function appHints(fetchImpl: FetchLike, cap: HintCap, getHints?: (t: string, n: string, l: string) => Promise<Array<{ position: number; source: unknown }>>) {
+    return buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: {
+        templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl),
+        getWabaId: async () => 'waba1',
+        saveParamHints: async (_t, name, language, hints) => { cap.saved.push({ name, language, hints }); },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        getParamHints: (getHints ?? (async () => [])) as any,
+        removeParamHints: async (_t, name) => { cap.removed.push(name); },
+      },
+    });
+  }
+
+  it('POST avec paramHints -> template créé + saveParamHints reçoit les indices parsés', async () => {
+    const cap: HintCap = { saved: [], removed: [] };
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'tid', status: 'PENDING' } }]);
+    const server = appHints(fn, cap);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: {
+      name: 'promo', language: 'fr', category: 'MARKETING', body: 'Bonjour {{1}}', example: ['Marie'],
+      paramHints: [{ position: 1, source: { type: 'field', key: 'prenom' } }],
+    } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.saved).toEqual([{ name: 'promo', language: 'fr', hints: [{ position: 1, source: { type: 'field', key: 'prenom' } }] }]);
+    await server.close();
+  });
+
+  it('POST avec paramHints MALFORMÉS -> 400, aucun appel Meta, aucun hint sauvé', async () => {
+    const cap: HintCap = { saved: [], removed: [] };
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tid', status: 'PENDING' } }]);
+    const server = appHints(fn, cap);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: {
+      name: 'promo', language: 'fr', category: 'MARKETING', body: 'Bonjour {{1}}', example: ['Marie'],
+      paramHints: [{ position: 0, source: { type: 'field', key: 'prenom' } }],
+    } });
+    expect(res.statusCode).toBe(400);
+    expect(calls).toHaveLength(0);
+    expect(cap.saved).toHaveLength(0);
+    await server.close();
+  });
+
+  it('GET param-hints -> renvoie les indices du store', async () => {
+    const cap: HintCap = { saved: [], removed: [] };
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const server = appHints(fn, cap, async () => [{ position: 1, source: { type: 'attribute', key: 'name' } }]);
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/templates/promo/param-hints?language=fr', ...h(token) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ hints: unknown[] }>().hints).toEqual([{ position: 1, source: { type: 'attribute', key: 'name' } }]);
+    await server.close();
+  });
+
+  it('POST SANS paramHints -> saveParamHints PAS appelé (rien à effacer par mégarde)', async () => {
+    const cap: HintCap = { saved: [], removed: [] };
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'tid', status: 'PENDING' } }]);
+    const server = appHints(fn, cap);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: {
+      name: 'promo', language: 'fr', category: 'MARKETING', body: 'Bonjour {{1}}', example: ['Marie'],
+    } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.saved).toHaveLength(0); // clé absente = on ne touche pas aux indices
+    await server.close();
+  });
+
+  it('PATCH SANS paramHints -> n\'EFFACE PAS les indices existants (clé absente = on ne touche pas)', async () => {
+    const cap: HintCap = { saved: [], removed: [] };
+    // 1) list (résout l'id + éditable BODY-only), 2) update.
+    const { fn } = makeFetch([
+      { ok: true, status: 200, json: { data: [{ id: 'T1', name: 'promo', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Bonjour {{1}}' }] }] } },
+      { ok: true, status: 200, json: { id: 'T1', success: true } },
+    ]);
+    const server = appHints(fn, cap);
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: {
+      language: 'fr', category: 'MARKETING', body: 'Bonjour {{1}} !', example: ['Marie'],
+    } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.saved).toHaveLength(0); // aucun paramHints -> save NON appelé -> indices préservés
+    await server.close();
+  });
+});

@@ -53,6 +53,29 @@ export function validateParamMapping(raw: unknown): TemplateParam[] | null {
   return params;
 }
 
+/**
+ * Valide des « indices » variable -> champ (posés au design d'un template). Contrairement à
+ * validateParamMapping, ils sont SPARSE (seules les variables insérées via le sélecteur ont un indice ; les
+ * `{{n}}` tapés à la main n'en ont pas) : on n'exige donc PAS une suite 1..N contiguë. Chaque entrée = une
+ * position entière >= 1 (unique) + une source bien formée. Retourne les indices typés, ou null si malformé.
+ */
+export function parseParamHints(raw: unknown): Array<{ position: number; source: ParamSource }> | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) return null;
+  const out: Array<{ position: number; source: ParamSource }> = [];
+  const seen = new Set<number>();
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) return null;
+    const h = item as { position?: unknown; source?: unknown };
+    if (typeof h.position !== 'number' || !Number.isInteger(h.position) || h.position < 1) return null;
+    if (!isValidSource(h.source)) return null;
+    if (seen.has(h.position)) return null; // une position ne peut pas avoir deux sources
+    seen.add(h.position);
+    out.push({ position: h.position, source: h.source });
+  }
+  return out;
+}
+
 function valueOf(source: ParamSource, c: ResolvableContact): unknown {
   switch (source.type) {
     case 'literal':

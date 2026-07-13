@@ -265,6 +265,13 @@ export interface CreateTemplateInput {
   buttons?: TemplateButtonInput[];
   /** Template CAROUSEL : corps commun (body) + 2-10 cartes. */
   carousel?: { cards: CarouselCardInput[] };
+  /** Indices « variable {{n}} -> champ » posés via le sélecteur (pour pré-remplir la campagne). */
+  paramHints?: TemplateParamHint[];
+}
+/** Indice de mapping variable -> champ posé au design d'un template. */
+export interface TemplateParamHint {
+  position: number;
+  source: ParamSource;
 }
 export function listTemplates(tenantId: string): Promise<{ templates: TemplateSummary[] }> {
   return request<{ templates: TemplateSummary[] }>(`/tenants/${tenantId}/templates`);
@@ -281,9 +288,14 @@ export interface UpdateTemplateInput {
   example?: string[];
   footer?: string;
   buttons?: TemplateButtonInput[];
+  paramHints?: TemplateParamHint[];
 }
 export function updateTemplate(tenantId: string, name: string, input: UpdateTemplateInput): Promise<{ success: boolean; status: string }> {
   return request(`/tenants/${tenantId}/templates/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify(input) });
+}
+/** Indices variable -> champ d'un template (pour pré-remplir le mapping d'une campagne). */
+export function getTemplateHints(tenantId: string, name: string, language: string): Promise<{ hints: TemplateParamHint[] }> {
+  return request(`/tenants/${tenantId}/templates/${encodeURIComponent(name)}/param-hints?language=${encodeURIComponent(language)}`);
 }
 export function deleteTemplate(tenantId: string, name: string): Promise<{ success: boolean }> {
   return request(`/tenants/${tenantId}/templates/${encodeURIComponent(name)}`, { method: 'DELETE' });

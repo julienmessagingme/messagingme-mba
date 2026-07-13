@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import type { Session } from '@/lib/session';
@@ -16,6 +16,7 @@ import {
   listAllContacts,
   listWorkflows,
   getTemplateStats,
+  getTemplateHints,
   contactIdentity,
   type CampaignSummary,
   type CampaignDetail,
@@ -299,6 +300,8 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  // Anti-course : ne pas appliquer les indices d'un template si l'utilisateur en a choisi un autre entre-temps.
+  const chooseSeq = useRef(0);
 
   // Templates approuvés + contacts (chargés une fois, indépendamment du polling des campagnes).
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -343,15 +346,36 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       : '',
   );
 
-  function chooseTemplate(nm: string) {
+  async function chooseTemplate(nm: string) {
     setTemplateName(nm);
     const t = templates.find((x) => x.name === nm);
     if (!t) { setVars([]); return; }
     setTemplateLanguage(t.language);
     setCategory((t.category ?? '').toUpperCase() === 'MARKETING' ? 'marketing' : 'utility');
     const n = new Set((t.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+    // Défaut immédiat : chaque variable -> Nom. On affine ensuite avec les indices posés à la création du template.
     setVars(Array.from({ length: n }, () => ({ source: 'name', key: '', value: '' })));
     if (name.trim() === '') setName(nm);
+    if (n === 0) return;
+    const seq = ++chooseSeq.current;
+    try {
+      const { hints } = await getTemplateHints(tenantId, nm, t.language);
+      if (seq !== chooseSeq.current) return; // un autre template a été choisi entre-temps
+      if (hints.length === 0) return;
+      setVars((prev) => {
+        if (prev.length !== n) return prev;
+        const rows = [...prev];
+        for (const h of hints) {
+          const i = h.position - 1;
+          if (i < 0 || i >= n) continue;
+          const s = h.source;
+          if (s.type === 'attribute') rows[i] = { source: s.key === 'phone' ? 'phone' : 'name', key: '', value: '' };
+          else if (s.type === 'field') rows[i] = { source: 'field', key: s.key ?? '', value: '' };
+          else if (s.type === 'literal') rows[i] = { source: 'literal', key: '', value: s.value ?? '' };
+        }
+        return rows;
+      });
+    } catch { /* pas d'indices -> on garde le défaut */ }
   }
 
   // Tous les tags présents (pour les filtres). Requête = filtre par tag(s) + recherche texte
@@ -536,7 +560,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             ) : templates.length === 0 ? (
               <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans l&apos;onglet Templates et attends la validation Meta.</p>
             ) : (
-              <select value={templateName} onChange={(e) => chooseTemplate(e.target.value)} className={inputCls}>
+              <select value={templateName} onChange={(e) => { void chooseTemplate(e.target.value); }} className={inputCls}>
                 <option value="">Choisir un template...</option>
                 {templates.map((t) => (
                   <option key={`${t.name}-${t.language}`} value={t.name}>
