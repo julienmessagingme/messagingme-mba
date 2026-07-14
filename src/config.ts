@@ -67,6 +67,10 @@ const schema = z.object({
   LLM_MODEL: z.string().default(''),
   /** max_tokens de la réponse d'analyse (petit JSON). */
   LLM_MAX_TOKENS: z.coerce.number().default(1024),
+  /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est INERTE (aucun job enfilé). */
+  CONNECTOR_PUSH_URL: z.string().default(''),
+  /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */
+  CONNECTOR_PUSH_SECRET: z.string().default(''),
 }).superRefine((c, ctx) => {
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
@@ -96,6 +100,10 @@ const schema = z.object({
       if (c.LLM_MODEL === '') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['LLM_MODEL'], message: 'LLM_MODEL requis quand CONVERSATION_ANALYSIS_ENABLED=true (ex. claude-haiku-4-5)' });
       }
+    }
+    // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
+    if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CONNECTOR_PUSH_SECRET'], message: 'CONNECTOR_PUSH_SECRET requis quand CONNECTOR_PUSH_URL est défini' });
     }
   }
 });

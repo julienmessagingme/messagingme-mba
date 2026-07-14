@@ -1,5 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+/** Signe un corps brut : `sha256=<hex>` (HMAC-SHA256). Utilisé pour signer le push d'analyse vers le connecteur mm-hubspot. */
+export function signHmac(secret: string, raw: Buffer | string): string {
+  return `sha256=${createHmac('sha256', secret).update(raw).digest('hex')}`;
+}
+
 /**
  * Valide la signature Meta d'un webhook (X-Hub-Signature-256).
  * HMAC-SHA256 du corps brut avec l'app secret, comparaison timing-safe.

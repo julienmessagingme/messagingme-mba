@@ -26,7 +26,9 @@ import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
 import { createLlmClient } from './analysis/llm-client';
-import { noopOnAnalyzed } from './analysis/events';
+import { getEnrichment } from './analysis/enrichment';
+import { pushAnalysisJob } from './analysis/push-job';
+import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { MetaClient } from './meta/client';
 import { MetaTemplateClient } from './meta/templates';
 import { FetchTransport } from './meta/http';
@@ -183,13 +185,31 @@ async function main(): Promise<void> {
       { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY, model: config.LLM_MODEL, maxTokens: config.LLM_MAX_TOKENS },
       transport,
     );
+    // Point de sortie (Pièce 2) : pousser l'analyse au connecteur mm-hubspot via un job SÉPARÉ `push-analysis`
+    // (durable + DLQ). INERTE si CONNECTOR_PUSH_URL vide -> onAnalyzed = no-op, aucune file push, zéro appel réseau.
+    const pushEnabled = config.CONNECTOR_PUSH_URL !== '';
+    if (pushEnabled) {
+      await queue.work('push-analysis', (data) =>
+        pushAnalysisJob(data, {
+          getEnrichment: (id) => getEnrichment(pool, id),
+          post: (event) => postAnalysis(event, { url: config.CONNECTOR_PUSH_URL, secret: config.CONNECTOR_PUSH_SECRET, transport }),
+        }),
+      );
+    }
+    const onAnalyzed = makeOnAnalyzed({
+      enabled: pushEnabled,
+      enqueue: (stored) => queue.enqueue('push-analysis', stored),
+      // eslint-disable-next-line no-console
+      onError: (err) => console.error('push-analysis enqueue échoué (best-effort):', err instanceof Error ? err.message : err),
+    });
+
     const onConversationReady = (conversationId: string, tenantId: string): Promise<void> =>
       queue.enqueue('analyze-conversation', { conversationId, tenantId }, { singletonKey: conversationId });
     await queue.work('analyze-conversation', (data) =>
       analyzeConversationJob(data, {
         store: analysisStore,
         llm: llmClient,
-        onAnalyzed: noopOnAnalyzed, // point de branchement futur (connecteur HubSpot + onglet tendances)
+        onAnalyzed, // Pièce 2 : push connecteur (inerte si URL vide) ; consommé aussi par la pièce 3 plus tard
         model: { provider: config.LLM_PROVIDER, model: config.LLM_MODEL },
       }),
     );
@@ -232,7 +252,12 @@ async function main(): Promise<void> {
     await pool.end();
   });
 
-  const files = ['webhook', 'campaign-run', ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : [])];
+  const files = [
+    'webhook',
+    'campaign-run',
+    ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : []),
+    ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '' ? ['push-analysis'] : []),
+  ];
   // eslint-disable-next-line no-console
   console.log(`messagingme-mba worker démarré (files: ${files.join(', ')})${dryRun ? ' [DRY_RUN]' : ''}`);
 }
