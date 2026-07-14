@@ -1,5 +1,28 @@
 # wip.md — travail en cours
 
+## Pièce 1 — passe d'analyse : durcissement du balayage (2026-07-14) ✅
+
+Enquête sur un symptôme d'activation (une conversation coincée en `analysis_status='queued'` sans
+job pgboss, auto-réparée à 15 min). **La cause supposée (« 1er `enqueue` sur file pg-boss neuve
+no-op silencieusement, bug de cache pg-boss ») était fausse**, disprouvée par repro contre un vrai
+Postgres (4 scénarios, schéma jetable) : l'enqueue crée le job à tous les coups, et `send()` sur
+file absente **lève** (jamais de silence). Détail + règles réutilisables : `brain/LEARNINGS.md`
+(2026-07-14).
+
+Vrai point faible corrigé : `analysisSweep` basculait tout un lot en `queued` (`claimForAnalysis`)
+puis enqueue un par un ; un enqueue qui lève orphelinait le reste du lot jusqu'au reclaim (15 min).
+Extraction testable `src/analysis/sweep.ts` (`runAnalysisSweep`) : enqueue **isolé par
+conversation** (un échec ne bloque plus le lot) + `reclaimQueued(id)` qui relâche aussitôt la
+conversation en `pending` (reprise en secondes au tour suivant, pas 15 min). Store :
+`PgConversationAnalysisStore.reclaimQueued` (gardé `WHERE status='queued'`). Tests : 4 unitaires
+(`tests/analysis-sweep.test.ts`) + 2 intégration (`reclaimQueued` + garde). Bannière de démarrage
+du worker corrigée (liste `analyze-conversation` quand la file est active).
+
+Décisions actées (pas de code en plus) : (1) ré-tenter chaque tour sur transient est voulu, pas de
+boucle serrée possible (un échec réel est global et fait aussi échouer le claim) ; (2) l'edge
+« insert commité mais `send` rejette » est absorbé par `singletonKey` + idempotence du job + la
+garde `reclaimQueued`.
+
 ## État (2026-07-06) : V1 LIVE — 1er envoi WhatsApp réel fait ✅
 
 `mba.messagingme.app` est en **prod LIVE** (`DRY_RUN=false`). Un numéro **Zadarma**

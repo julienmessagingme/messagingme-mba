@@ -57,6 +57,22 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(status).toBe('pending');
   });
 
+  it('reclaimQueued : relâche UNE conversation queued en pending', async () => {
+    const store = new PgConversationAnalysisStore(pool);
+    const stuck = await insertConv('33600100012', { status: 'queued', queuedAgeMin: 0 }); // fraîche : reclaimStaleQueued NE la prendrait pas
+    await store.reclaimQueued(stuck);
+    const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [stuck])).rows[0]!.analysis_status;
+    expect(status).toBe('pending');
+  });
+
+  it('reclaimQueued : ne piétine pas une conversation qui n\'est plus queued (garde)', async () => {
+    const store = new PgConversationAnalysisStore(pool);
+    const done = await insertConv('33600100013', { status: 'done' });
+    await store.reclaimQueued(done);
+    const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [done])).rows[0]!.analysis_status;
+    expect(status).toBe('done'); // garde sur analysis_status='queued' -> le done reste done
+  });
+
   it('getContext : messages + signaux (humain = sortant avec sender ; automatisé = sortant sans)', async () => {
     const store = new PgConversationAnalysisStore(pool);
     const conv = await insertConv('33600100020');

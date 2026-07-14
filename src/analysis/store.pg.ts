@@ -46,6 +46,18 @@ export class PgConversationAnalysisStore {
   }
 
   /**
+   * Relâche immédiatement UNE conversation `queued` en `pending` (compensation d'un enqueue échoué : la conversation a
+   * été réclamée mais n'a pas de job -> reprise au prochain balayage au lieu d'attendre le reclaim périmé). Gardé sur
+   * `analysis_status = 'queued'` : on ne piétine jamais une transition concurrente (done/failed/pending déjà posée).
+   */
+  async reclaimQueued(conversationId: string): Promise<void> {
+    await this.pool.query(
+      `update conversations set analysis_status = 'pending' where id = $1 and analysis_status = 'queued'`,
+      [conversationId],
+    );
+  }
+
+  /**
    * Contexte d'analyse d'une conversation : messages depuis la dernière analyse (bornés) + signaux déterministes.
    * Depuis la Pièce 0, les envois automatisés (campagne/workflow) sont dans conversation_messages -> les signaux se
    * lisent directement des messages (humain = sortant avec sender_user_id ; automatisé = sortant sans). null si la

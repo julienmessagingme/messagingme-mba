@@ -24,6 +24,7 @@ import { WorkflowExecutor } from './workflow/executor';
 import { buildWorkflowTemplateComponents } from './workflow/template-send';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
+import { runAnalysisSweep } from './analysis/sweep';
 import { createLlmClient } from './analysis/llm-client';
 import { noopOnAnalyzed } from './analysis/events';
 import { MetaClient } from './meta/client';
@@ -192,18 +193,18 @@ async function main(): Promise<void> {
         model: { provider: config.LLM_PROVIDER, model: config.LLM_MODEL },
       }),
     );
-    const analysisSweep = async (): Promise<void> => {
-      try {
-        const reclaimed = await analysisStore.reclaimStaleQueued(config.CONVERSATION_ANALYSIS_STALE_MS);
+    const analysisSweep = (): Promise<void> =>
+      runAnalysisSweep({
+        store: analysisStore,
+        enqueue: onConversationReady,
+        staleMs: config.CONVERSATION_ANALYSIS_STALE_MS,
+        inactivityMs: config.CONVERSATION_INACTIVITY_MS,
+        batch: config.CONVERSATION_ANALYSIS_BATCH,
         // eslint-disable-next-line no-console
-        if (reclaimed > 0) console.log(`analyse: ${reclaimed} conversation(s) 'queued' bloquée(s) -> 'pending'`);
-        const claimed = await analysisStore.claimForAnalysis(config.CONVERSATION_INACTIVITY_MS, config.CONVERSATION_ANALYSIS_BATCH);
-        for (const c of claimed) await onConversationReady(c.conversationId, c.tenantId);
-      } catch (err) {
+        log: (m) => console.log(m),
         // eslint-disable-next-line no-console
-        console.error('analyse balayage erreur:', err instanceof Error ? err.message : err);
-      }
-    };
+        onError: (m, err) => console.error(`${m}:`, err instanceof Error ? err.message : err),
+      });
     void analysisSweep();
     analysisSweeper = setInterval(() => void analysisSweep(), config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS);
     analysisSweeper.unref();
@@ -231,8 +232,9 @@ async function main(): Promise<void> {
     await pool.end();
   });
 
+  const files = ['webhook', 'campaign-run', ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : [])];
   // eslint-disable-next-line no-console
-  console.log(`messagingme-mba worker démarré (files: webhook, campaign-run)${dryRun ? ' [DRY_RUN]' : ''}`);
+  console.log(`messagingme-mba worker démarré (files: ${files.join(', ')})${dryRun ? ' [DRY_RUN]' : ''}`);
 }
 
 main().catch((err) => {
