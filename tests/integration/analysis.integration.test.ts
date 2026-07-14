@@ -81,14 +81,14 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
       sentiment: 'positif', intent: 'demande_devis', topic: 'devis', resolved: false, entities: { quantite: 50 },
       action_suggestion: 'creer_devis', confidence: 0.9, justification: 'veut un devis', handled_by: 'humain', exchanges_count: 3,
     };
-    await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'claude-haiku-4-5' }, new Date());
+    await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'claude-haiku-4-5' }, new Date().toISOString());
     const row = (await pool.query<{ intent: string; handled_by: string; llm_model: string }>(`select intent, handled_by, llm_model from conversation_analysis where conversation_id = $1`, [conv])).rows[0]!;
     expect(row).toMatchObject({ intent: 'demande_devis', handled_by: 'humain', llm_model: 'claude-haiku-4-5' });
     const convRow = (await pool.query<{ analysis_status: string; analyzed_at: Date | null }>(`select analysis_status, analyzed_at from conversations where id = $1`, [conv])).rows[0]!;
     expect(convRow.analysis_status).toBe('done'); // aucun message plus récent -> done
     expect(convRow.analyzed_at).not.toBeNull();
     // Upsert : une 2e sauvegarde remplace, pas de doublon.
-    await store.save(conv, tenantId, { ...a, intent: 'sav' }, { provider: 'anthropic', model: 'm2' }, new Date());
+    await store.save(conv, tenantId, { ...a, intent: 'sav' }, { provider: 'anthropic', model: 'm2' }, new Date().toISOString());
     const cnt = (await pool.query<{ n: string }>(`select count(*)::int as n from conversation_analysis where conversation_id = $1`, [conv])).rows[0]!.n;
     expect(Number(cnt)).toBe(1);
   });
@@ -98,7 +98,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const conv = await insertConv('33600100035', { status: 'queued' });
     // message arrivé PENDANT l'analyse (created_at = maintenant), donc postérieur à la borne passée à save
     await pool.query(`insert into conversation_messages (conversation_id, direction, type, body) values ($1,'in','text','arrivé pendant analyse')`, [conv]);
-    const windowEnd = new Date(Date.now() - 60_000); // borne = il y a 1 min (avant l'insertion du message)
+    const windowEnd = new Date(Date.now() - 60_000).toISOString(); // borne = il y a 1 min (avant l'insertion du message)
     const a: ConversationAnalysis = {
       sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true, entities: {},
       action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 0,
@@ -106,6 +106,24 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, windowEnd);
     const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [conv])).rows[0]!.analysis_status;
     expect(status).toBe('pending'); // repris au prochain sweep au lieu d'être enterré sous une borne now()
+  });
+
+  it('save : borne = created_at MICROSECONDE exact du dernier message -> done, PAS de boucle de réanalyse', async () => {
+    // Régression : un round-trip created_at via Date JS tronque aux ms -> la borne retombe sous le dernier message
+    // (µs non nuls) qui repasse `> borne` -> réanalyse en boucle. windowEnd doit être la chaîne texte exacte.
+    const store = new PgConversationAnalysisStore(pool);
+    const conv = await insertConv('33600100037', { status: 'queued' });
+    // created_at avec des microsecondes NON nulles (le cas qui piégeait la version Date)
+    await pool.query(`insert into conversation_messages (conversation_id, direction, type, body, created_at) values ($1,'in','text','micros', '2026-07-12 14:04:28.611789+00')`, [conv]);
+    const ctx = await store.getContext(conv);
+    expect(ctx!.windowEnd).not.toBeNull();
+    const a: ConversationAnalysis = {
+      sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true, entities: {},
+      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 1,
+    };
+    await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, ctx!.windowEnd ?? null);
+    const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [conv])).rows[0]!.analysis_status;
+    expect(status).toBe('done'); // borne µs-exacte : le dernier message n'est PAS > borne
   });
 
   it('réouverture : un nouvel inbound sur une conversation done repasse en pending', async () => {

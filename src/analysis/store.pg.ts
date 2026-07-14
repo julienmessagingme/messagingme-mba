@@ -57,8 +57,11 @@ export class PgConversationAnalysisStore {
       [conversationId],
     );
     if ((conv.rowCount ?? 0) === 0) return null;
-    const rows = await this.pool.query<{ direction: 'in' | 'out'; body: string | null; type: string | null; sender_user_id: string | null; created_at: Date }>(
-      `select direction, body, type, sender_user_id, created_at from conversation_messages
+    // created_at::text : on garde la précision MICROSECONDE de Postgres. Un round-trip via `Date` JS tronque aux
+    // millisecondes -> la borne retomberait quelques µs SOUS le dernier message, qui repasserait alors `> borne` à
+    // chaque passe (réanalyse en boucle). On thread donc la borne comme chaîne texte, jamais comme Date.
+    const rows = await this.pool.query<{ direction: 'in' | 'out'; body: string | null; type: string | null; sender_user_id: string | null; created_at: string }>(
+      `select direction, body, type, sender_user_id, created_at::text as created_at from conversation_messages
        where conversation_id = $1 and created_at > coalesce((select analyzed_at from conversations where id = $1), '-infinity'::timestamptz)
        order by created_at asc, id asc
        limit 500`,
@@ -76,8 +79,9 @@ export class PgConversationAnalysisStore {
    * Persiste l'analyse (upsert 1 ligne/conversation) + avance `analyzed_at` jusqu'à `windowEnd` (borne des messages
    * réellement analysés, PAS now()) + repasse la conversation en `pending` s'il reste des messages plus récents que la
    * borne (arrivés pendant l'analyse) sinon `done`. Le tout en 1 transaction. `windowEnd` null -> pas d'avancée de borne.
+   * `windowEnd` = chaîne texte timestamptz (précision µs préservée, cf. getContext), pas un Date JS tronqué.
    */
-  async save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: Date | null): Promise<void> {
+  async save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');

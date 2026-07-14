@@ -18,7 +18,7 @@ class Llm implements LlmClient {
   }
 }
 
-interface Cap { saved: Array<{ id: string; a: ConversationAnalysis; windowEnd: Date | null }>; failed: string[]; done: string[] }
+interface Cap { saved: Array<{ id: string; a: ConversationAnalysis; windowEnd: string | null }>; failed: string[]; done: string[] }
 function fakeStore(ctx: AnalysisContext | null): { store: AnalyzeStore; cap: Cap } {
   const cap: Cap = { saved: [], failed: [], done: [] };
   const store: AnalyzeStore = {
@@ -30,7 +30,7 @@ function fakeStore(ctx: AnalysisContext | null): { store: AnalyzeStore; cap: Cap
   return { store, cap };
 }
 
-const windowEnd = new Date('2026-01-01T00:00:00Z');
+const windowEnd = '2026-01-01 00:00:00.123456+00'; // borne = chaîne texte timestamptz (précision µs), pas un Date
 const ctx: AnalysisContext = { messages: [{ direction: 'in', body: 'devis ?', type: 'text' }], signals: { hasHumanOutbound: false, hasAutomated: false }, windowEnd };
 const model = { provider: 'anthropic', model: 'm' };
 

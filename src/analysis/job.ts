@@ -6,7 +6,7 @@ import type { ConversationAnalysis } from './schema';
 /** IO du job (injectée -> testable sans DB/réseau). Sous-ensemble de PgConversationAnalysisStore. */
 export interface AnalyzeStore {
   getContext(conversationId: string): Promise<AnalysisContext | null>;
-  save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: Date | null): Promise<void>;
+  save(conversationId: string, tenantId: string, a: ConversationAnalysis, model: { provider: string; model: string }, windowEnd: string | null): Promise<void>;
   markDone(conversationId: string): Promise<void>;
   markFailed(conversationId: string): Promise<void>;
 }

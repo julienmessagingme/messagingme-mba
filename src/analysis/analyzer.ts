@@ -14,11 +14,12 @@ export interface AnalysisContext {
   messages: AnalysisMessage[];
   signals: HandledBySignals;
   /**
-   * Borne de la fenêtre analysée = created_at du DERNIER message lu (null si aucun). Sert à la persistance : on
-   * n'avance `analyzed_at` que jusqu'ici (PAS jusqu'à now()), sinon un message arrivé pendant l'analyse (statut encore
-   * 'queued' -> la réouverture inbox ne le touche pas) passerait sous la borne et ne serait jamais réanalysé.
+   * Borne de la fenêtre analysée = created_at du DERNIER message lu, en CHAÎNE TEXTE timestamptz (précision µs
+   * préservée ; un Date JS tronquerait aux ms et ferait boucler la réanalyse), null si aucun. Sert à la persistance :
+   * on n'avance `analyzed_at` que jusqu'ici (PAS jusqu'à now()), sinon un message arrivé pendant l'analyse (statut
+   * encore 'queued' -> la réouverture inbox ne le touche pas) passerait sous la borne et ne serait jamais réanalysé.
    */
-  windowEnd?: Date | null;
+  windowEnd?: string | null;
 }
 
 /**
