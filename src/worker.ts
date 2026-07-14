@@ -13,6 +13,7 @@ import {
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
 import { PgInboxStore } from './inbox/store.pg';
+import { logTemplateSent } from './inbox/outbound-log';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
@@ -120,7 +121,9 @@ async function main(): Promise<void> {
       // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui sélectionne
       // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
       const components = buildWorkflowTemplateComponents({ hints, varCount, contact: contact ?? {}, examples, buttons });
-      await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
+      const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
+      // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
+      await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
     },
   });
 
@@ -161,6 +164,8 @@ async function main(): Promise<void> {
         const wf = await workflowStore.getById(workflowId, tenant);
         if (wf) await workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId });
       },
+      // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
+      recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
     });
   });
 

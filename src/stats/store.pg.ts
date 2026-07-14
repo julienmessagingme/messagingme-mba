@@ -105,6 +105,13 @@ export class PgStatsStore {
          from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
          where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
            and m.template_category is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
+           -- Anti double-compte : un template de campagne DIRECTE est déjà compté via campaign_recipients (Pièce 0
+           -- le logge aussi dans conversation_messages, même wamid) -> on l'exclut ici. Les envois inbox manuels
+           -- (jamais dans campaign_recipients) et workflow (message_id synthétique wf-..., jamais le vrai wamid) sont gardés.
+           and not exists (
+             select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+             where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
+           )
          group by d, m.template_category
        ) x group by d, category order by d`,
       [tenantId, from, to, TZ],
@@ -160,6 +167,11 @@ export class PgStatsStore {
          from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
          where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
            and m.template_name is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
+           -- Anti double-compte : template de campagne directe déjà compté via campaign_recipients (même wamid).
+           and not exists (
+             select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+             where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
+           )
          group by m.template_name, m.template_category
        ) x group by name, category order by count desc`,
       [tenantId, from, to, TZ],

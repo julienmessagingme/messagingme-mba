@@ -20,6 +20,12 @@ export interface RunJobDeps {
   rateLimiter?: RateGate;
   /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'un envoi template). */
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string) => Promise<void>;
+  /** Journalise l'envoi sortant dans le fil de conversation (best-effort). */
+  recordOutbound?: (
+    tenantId: string,
+    waId: string,
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
+  ) => Promise<void>;
   thresholds?: GuardrailThresholds;
 }
 
@@ -43,6 +49,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     quality: deps.quality,
     ...(deps.rateLimiter ? { rateLimiter: deps.rateLimiter } : {}),
     ...(deps.startWorkflow ? { startWorkflow: deps.startWorkflow } : {}),
+    ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
   });
 }

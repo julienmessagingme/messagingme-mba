@@ -248,3 +248,46 @@ describe('runCampaign', () => {
     expect(recipients.results.get('r1')).toBeUndefined(); // ni 'sent' ni 'failed' persisté
   });
 });
+
+type OutboundCall = { tenantId: string; waId: string; msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null } };
+
+describe('runCampaign — journal du sortant (recordOutbound)', () => {
+  function capture(): { calls: OutboundCall[]; recordOutbound: NonNullable<EngineDeps['recordOutbound']> } {
+    const calls: OutboundCall[] = [];
+    return { calls, recordOutbound: async (tenantId, waId, msg) => { calls.push({ tenantId, waId, msg }); } };
+  }
+
+  it('envoi template DIRECT réussi -> logue le sortant (wa_id chiffres nus, template, messageId réel)', async () => {
+    const { calls, recordOutbound } = capture();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(campaign, deps({ recipients, recordOutbound }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ tenantId: 't1', waId: '33611' }); // '+33611' -> chiffres nus (aligné avec l'inbound)
+    expect(calls[0]!.msg).toMatchObject({ type: 'template', templateName: 'promo', templateCategory: 'marketing', messageId: 'm-+33611' });
+    expect(calls[0]!.msg.body).toContain('promo');
+  });
+
+  it('campagne WORKFLOW -> NE logue PAS ici (le vrai template est loggé par le worker)', async () => {
+    const { calls, recordOutbound } = capture();
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(wf, deps({ recipients, recordOutbound, startWorkflow: async () => {} }));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('envoi ÉCHOUÉ -> pas de log', async () => {
+    const { calls, recordOutbound } = capture();
+    const sender = new FakeSender();
+    sender.failFor = new Set(['+33611']);
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(campaign, deps({ recipients, sender, recordOutbound }));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('log BEST-EFFORT : un recordOutbound qui throw ne casse pas l\'envoi (sent quand même)', async () => {
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({ recipients, recordOutbound: async () => { throw new Error('log down'); } }));
+    expect(report.sent).toBe(1);
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
+  });
+});

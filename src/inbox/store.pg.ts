@@ -32,11 +32,14 @@ export class PgInboxStore implements InboxStore {
     return res.rows[0]?.tenant_id ?? null;
   }
 
-  async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
-    const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
-    // Upsert la conversation ; lie le contact si son identité correspond. Le wa_id est en chiffres
-    // nus (numéro) OU un BSUID : on tente '+wa_id' (E.164 exact), PUIS les seuls chiffres (tolère un
-    // formatage différent), PUIS le bsuid (contact sans numéro).
+  /**
+   * Upsert la conversation par (tenant, wa_id), lie le contact si son identité correspond, avance last_message_at +
+   * last_preview, renvoie l'id. Le wa_id est en chiffres nus (numéro) OU un BSUID : on tente '+wa_id' (E.164 exact),
+   * PUIS les seuls chiffres (tolère un formatage différent), PUIS le bsuid (contact sans numéro). Partagé par
+   * l'inbound (webhook) et les envois sortants automatisés (campagne / workflow) -> même conversation, jamais de
+   * doublon.
+   */
+  private async upsertConversationByWaId(tenantId: string, waId: string, preview: string): Promise<string> {
     const conv = await this.pool.query<{ id: string }>(
       `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview)
        values ($1, $2, (select id from contacts where tenant_id = $1
@@ -47,14 +50,39 @@ export class PgInboxStore implements InboxStore {
          last_preview = excluded.last_preview,
          contact_id = coalesce(conversations.contact_id, excluded.contact_id)
        returning id`,
-      [tenantId, m.waId, preview],
+      [tenantId, waId, preview],
     );
-    const conversationId = conv.rows[0]!.id;
+    return conv.rows[0]!.id;
+  }
+
+  async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
+    const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
+    const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview);
     await this.pool.query(
       `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id)
        values ($1, 'in', $2, $3, $4, $5)
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
       [conversationId, m.type, m.body, m.buttonPayload, m.messageId],
+    );
+  }
+
+  /**
+   * Journalise un envoi sortant AUTOMATISÉ (template de campagne ou de workflow) par wa_id : upsert la conversation
+   * + insère le message 'out' avec `sender_user_id = null` (pas un humain -> pas de pastille agent). Idempotent sur
+   * `meta_message_id`. Sans ça, les envois campagne/workflow n'apparaissaient PAS dans le fil d'inbox et manquaient
+   * au transcript d'analyse. À appeler en BEST-EFFORT côté appelant (un échec de log ne doit pas casser l'envoi Meta).
+   */
+  async recordOutboundByWaId(
+    tenantId: string,
+    waId: string,
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
+  ): Promise<void> {
+    const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body);
+    await this.pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id)
+       values ($1, 'out', $2, $3, $4, $5, $6, null)
+       on conflict (meta_message_id) where meta_message_id is not null do nothing`,
+      [conversationId, msg.type ?? 'template', msg.body, msg.messageId, msg.templateCategory ?? null, msg.templateName ?? null],
     );
   }
 

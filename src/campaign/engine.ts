@@ -50,6 +50,12 @@ export interface EngineDeps {
   rateLimiter?: RateGate;
   /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template). */
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string) => Promise<void>;
+  /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
+  recordOutbound?: (
+    tenantId: string,
+    waId: string,
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
+  ) => Promise<void>;
   now?: () => number;
   thresholds?: GuardrailThresholds;
 }
@@ -145,6 +151,25 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     report.sent += 1;
     await deps.recipients.markResult(r.id, { status: 'sent', messageId: res.messageId, sentAt: at });
     await deps.frequency.record(campaign.tenantId, r.toE164, at);
+
+    // Journalise le template envoyé dans le fil de conversation (fil d'inbox complet + transcript d'analyse).
+    // UNIQUEMENT pour un envoi template DIRECT : la branche workflow a un messageId synthétique `wf-...`, le vrai
+    // template est loggé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise pas l'envoi.
+    if (deps.recordOutbound && !campaign.workflowId) {
+      const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
+      const body = `Template « ${campaign.templateName} »${r.resolvedParams.length > 0 ? ` (${r.resolvedParams.join(', ')})` : ''}`;
+      try {
+        await deps.recordOutbound(campaign.tenantId, waId, {
+          body,
+          messageId: res.messageId,
+          type: 'template',
+          templateCategory: campaign.category,
+          templateName: campaign.templateName,
+        });
+      } catch {
+        /* log best-effort : ne casse jamais l'envoi Meta réussi */
+      }
+    }
   }
 
   await deps.campaigns.setStatus(campaign.id, 'completed');
