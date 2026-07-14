@@ -22,6 +22,10 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { WorkflowExecutor } from './workflow/executor';
 import { buildWorkflowTemplateComponents } from './workflow/template-send';
+import { PgConversationAnalysisStore } from './analysis/store.pg';
+import { analyzeConversationJob } from './analysis/job';
+import { createLlmClient } from './analysis/llm-client';
+import { noopOnAnalyzed } from './analysis/events';
 import { MetaClient } from './meta/client';
 import { MetaTemplateClient } from './meta/templates';
 import { FetchTransport } from './meta/http';
@@ -169,6 +173,42 @@ async function main(): Promise<void> {
     });
   });
 
+  // File analyze-conversation (Pièce 1). INERTE tant que CONVERSATION_ANALYSIS_ENABLED != 'true' : aucun worker,
+  // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).
+  let analysisSweeper: NodeJS.Timeout | null = null;
+  if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
+    const analysisStore = new PgConversationAnalysisStore(pool);
+    const llmClient = createLlmClient(
+      { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY, model: config.LLM_MODEL, maxTokens: config.LLM_MAX_TOKENS },
+      transport,
+    );
+    const onConversationReady = (conversationId: string, tenantId: string): Promise<void> =>
+      queue.enqueue('analyze-conversation', { conversationId, tenantId }, { singletonKey: conversationId });
+    await queue.work('analyze-conversation', (data) =>
+      analyzeConversationJob(data, {
+        store: analysisStore,
+        llm: llmClient,
+        onAnalyzed: noopOnAnalyzed, // point de branchement futur (connecteur HubSpot + onglet tendances)
+        model: { provider: config.LLM_PROVIDER, model: config.LLM_MODEL },
+      }),
+    );
+    const analysisSweep = async (): Promise<void> => {
+      try {
+        const reclaimed = await analysisStore.reclaimStaleQueued(config.CONVERSATION_ANALYSIS_STALE_MS);
+        // eslint-disable-next-line no-console
+        if (reclaimed > 0) console.log(`analyse: ${reclaimed} conversation(s) 'queued' bloquée(s) -> 'pending'`);
+        const claimed = await analysisStore.claimForAnalysis(config.CONVERSATION_INACTIVITY_MS, config.CONVERSATION_ANALYSIS_BATCH);
+        for (const c of claimed) await onConversationReady(c.conversationId, c.tenantId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('analyse balayage erreur:', err instanceof Error ? err.message : err);
+      }
+    };
+    void analysisSweep();
+    analysisSweeper = setInterval(() => void analysisSweep(), config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS);
+    analysisSweeper.unref();
+  }
+
   // Sweeper : récupère périodiquement les destinataires bloqués en 'sending'.
   const sweep = async (): Promise<void> => {
     try {
@@ -186,6 +226,7 @@ async function main(): Promise<void> {
 
   installGracefulShutdown(async () => {
     clearInterval(sweeper);
+    if (analysisSweeper) clearInterval(analysisSweeper);
     await queue.stop();
     await pool.end();
   });

@@ -48,6 +48,25 @@ const schema = z.object({
   INVITE_TOKEN_TTL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
   /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */
   RESET_TOKEN_TTL_MS: z.coerce.number().default(60 * 60 * 1000),
+  /** Analyse de conversation (Pièce 1) : INERTE par défaut. 'true' -> le worker analyse les conversations closes. */
+  CONVERSATION_ANALYSIS_ENABLED: z.string().default('false'),
+  /** Inactivité (ms) au-delà de laquelle une conversation est considérée close et analysable. Défaut 25 min. */
+  CONVERSATION_INACTIVITY_MS: z.coerce.number().default(25 * 60 * 1000),
+  /** Une conversation bloquée en `queued` plus vieille que ça est ramenée à `pending` (worker mort). Défaut 15 min. */
+  CONVERSATION_ANALYSIS_STALE_MS: z.coerce.number().default(15 * 60 * 1000),
+  /** Intervalle du balayage d'analyse (ms). Défaut 5 min. */
+  CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
+  /** Nombre max de conversations réclamées par passage de balayage. */
+  CONVERSATION_ANALYSIS_BATCH: z.coerce.number().default(20),
+  /** Provider LLM de l'analyse. 'anthropic' (défaut) = Claude. Factory `createLlmClient` (throw si inconnu). */
+  LLM_PROVIDER: z.string().default('anthropic'),
+  /** Clé API du provider LLM. Vide -> analyse non activable (fail-fast prod si ENABLED). */
+  LLM_API_KEY: z.string().default(''),
+  /** Id de modèle LLM (ex. claude-haiku-4-5 pour ce classifieur haut-volume, ou claude-opus-4-8 pour la qualité).
+   *  À fixer au déploiement — JAMAIS d'id daté figé en dur. Vide -> analyse non activable. */
+  LLM_MODEL: z.string().default(''),
+  /** max_tokens de la réponse d'analyse (petit JSON). */
+  LLM_MAX_TOKENS: z.coerce.number().default(1024),
 }).superRefine((c, ctx) => {
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
@@ -68,6 +87,15 @@ const schema = z.object({
         path: ['OPS_TOKEN'],
         message: 'OPS_TOKEN, si défini en production, doit faire >= 32 octets aléatoires',
       });
+    }
+    // L'analyse activée sans clé/modèle LLM appellerait le provider à vide -> échecs en boucle. Fail-fast au boot.
+    if (c.CONVERSATION_ANALYSIS_ENABLED === 'true') {
+      if (c.LLM_API_KEY === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['LLM_API_KEY'], message: 'LLM_API_KEY requis quand CONVERSATION_ANALYSIS_ENABLED=true' });
+      }
+      if (c.LLM_MODEL === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['LLM_MODEL'], message: 'LLM_MODEL requis quand CONVERSATION_ANALYSIS_ENABLED=true (ex. claude-haiku-4-5)' });
+      }
     }
   }
 });

@@ -48,7 +48,10 @@ export class PgInboxStore implements InboxStore {
        on conflict (tenant_id, wa_id) do update set
          last_message_at = now(),
          last_preview = excluded.last_preview,
-         contact_id = coalesce(conversations.contact_id, excluded.contact_id)
+         contact_id = coalesce(conversations.contact_id, excluded.contact_id),
+         -- Un nouveau message ROUVRE l'analyse : une conversation déjà analysée (done/failed) qui reçoit un message
+         -- redevient 'pending' -> ré-analysée à la prochaine inactivité (sinon un contact qui revient n'est jamais réanalysé).
+         analysis_status = case when conversations.analysis_status in ('done', 'failed') then 'pending' else conversations.analysis_status end
        returning id`,
       [tenantId, waId, preview],
     );
@@ -166,7 +169,12 @@ export class PgInboxStore implements InboxStore {
     templateName: string | null = null,
     senderUserId: string | null = null,
   ): Promise<void> {
-    await this.pool.query(`update conversations set last_message_at = now(), last_preview = $2 where id = $1`, [conversationId, body]);
+    await this.pool.query(
+      `update conversations set last_message_at = now(), last_preview = $2,
+         analysis_status = case when analysis_status in ('done', 'failed') then 'pending' else analysis_status end
+       where id = $1`,
+      [conversationId, body],
+    );
     await this.pool.query(
       `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id)
        values ($1, 'out', $4, $2, $3, $5, $6, $7)`,

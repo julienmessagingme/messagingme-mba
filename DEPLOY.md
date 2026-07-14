@@ -63,6 +63,15 @@ Via l'UI http://146.59.233.252:81 ou l'API (cf CLAUDE.md) :
 
 ## Redéploiement
 
+⚠️ **Migrations d'abord.** `mba-api`/`mba-worker` écrivent des colonnes ajoutées par migration : si le nouveau
+code est déployé AVANT que sa migration ait tourné, le chemin LIVE (webhook inbound, envois) plante en boucle
+(`column ... does not exist`). Les migrations ne sont PAS auto-appliquées. Avant `up --build`, appliquer les
+migrations en attente sur la base partagée :
+
 ```bash
-cd /home/ubuntu/mba && git pull && docker compose up -d --build
+cd /home/ubuntu/mba && git pull
+sudo docker compose run --rm --no-deps mba-api npm run migrate   # applique les migrations en attente (idempotent)
+sudo docker compose up -d --build
 ```
+
+(En dev, `npm run migrate` local pointe la même base prod via `.env` ; « à jour, rien à appliquer » = rien en attente.)

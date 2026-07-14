@@ -1,5 +1,3 @@
-import { MetaApiError } from './errors';
-
 export interface HttpResponse {
   status: number;
   json: unknown;
@@ -54,10 +52,12 @@ const NETWORK_CODES = new Set([
   'UND_ERR_SOCKET',
 ]);
 
-/** Rejouable ? MetaApiError.retryable, OU erreur réseau RECONNAISSABLE uniquement
- * (on ne rejoue pas un bug de programmation qui se déguiserait en throw). */
+/** Rejouable ? un flag `retryable === true` sur l'erreur (MetaApiError, LlmApiError, ...), OU une erreur réseau
+ * RECONNAISSABLE uniquement (on ne rejoue pas un bug de programmation qui se déguiserait en throw). Le duck-typing
+ * `retryable` préserve le comportement de MetaApiError (dont `retryable` est déjà un booléen) et généralise à tout
+ * client réseau du repo. */
 function isRetryable(err: unknown): boolean {
-  if (err instanceof MetaApiError) return err.retryable;
+  if (err && typeof err === 'object' && (err as { retryable?: unknown }).retryable === true) return true;
   const code =
     (err as { cause?: { code?: string } })?.cause?.code ?? (err as { code?: string })?.code;
   if (code && NETWORK_CODES.has(code)) return true;
@@ -94,7 +94,7 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): 
       return await fn();
     } catch (err) {
       if (!isRetryable(err) || attempt >= maxRetries) throw err;
-      const retryAfter = err instanceof MetaApiError ? err.retryAfterMs : undefined;
+      const retryAfter = (err as { retryAfterMs?: number } | null)?.retryAfterMs;
       const capped = Math.min(cap, base * factor ** attempt);
       const backoff = Math.round(capped * (0.5 + random() * 0.5)); // jitter 50-100%
       await sleep(retryAfter ?? backoff);
