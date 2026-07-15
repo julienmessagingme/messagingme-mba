@@ -550,8 +550,15 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       <div className="mt-4">
         <label className="mb-1 block text-sm font-medium text-ink-700">Que veux-tu leur envoyer ?</label>
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
-          <button type="button" onClick={() => setMode('template')} className={`rounded-md px-3 py-1 ${mode === 'template' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>Un template</button>
-          <button type="button" onClick={() => setMode('workflow')} className={`rounded-md px-3 py-1 ${mode === 'workflow' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>Un workflow</button>
+          {([
+            { m: 'template', label: 'Un template', tip: 'Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL.' },
+            { m: 'workflow', label: 'Un workflow', tip: 'Privilégiez cette méthode pour un scénario : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un WhatsApp Flow, ...).' },
+          ] as const).map(({ m, label, tip }) => (
+            <span key={m} className="group relative">
+              <button type="button" onClick={() => setMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
+              <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-64 -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg group-hover:block">{tip}</span>
+            </span>
+          ))}
         </div>
       </div>
 

@@ -10,7 +10,7 @@ import {
   type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
-  updateWorkflow, listTemplates, listFlows, listTags, listUserFields,
+  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
 
@@ -169,6 +169,15 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     listTags(tenantId).then((r) => setTags(r.tags)).catch(() => {});
     listUserFields(tenantId).then((r) => setFields(r.fields)).catch(() => {});
   }, [tenantId]);
+
+  // Persiste un tag saisi inline dans un nœud « ajout de tag » (au blur) -> il apparaît tout de suite dans Contenus >
+  // Tags ET dans l'autocomplétion, sans attendre l'enregistrement du workflow (best-effort ; declareTags au save = filet).
+  const commitTag = useCallback(async (raw: string) => {
+    const clean = raw.trim().slice(0, 64);
+    if (!clean || tags.some((t) => t.tag === clean)) return;
+    try { await createTag(tenantId, clean); } catch { /* best-effort */ }
+    listTags(tenantId).then((r) => setTags(r.tags)).catch(() => {});
+  }, [tenantId, tags]);
 
   // Une seule cible par SORTIE : relier depuis un handle déjà relié remplace l'arête existante de ce
   // (source, sourceHandle) — un bouton mène à un seul bloc suivant.
@@ -329,7 +338,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
           {!selected ? (
             <p className="text-sm text-ink-400">Clique un bloc pour le configurer. Tire une flèche depuis le point d&apos;un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d&apos;un bloc le supprime.</p>
           ) : (
-            <ConfigPanel node={selected} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} />
+            <ConfigPanel node={selected} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -340,10 +349,11 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
 const cls = 'w-full rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 function ConfigPanel({
-  node, onPatch, onDelete, templates, flows, tags, fields,
+  node, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
 }: {
   node: RFNode; onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
+  onCommitTag: (tag: string) => void;
 }) {
   const d = node.data as Record<string, unknown>;
   const wfType = (d.wfType as WorkflowNodeType) ?? 'template';
@@ -386,8 +396,17 @@ function ConfigPanel({
       {wfType === 'tag' && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">Tag à ajouter</label>
-          <input list="wf-tags" value={(d.tag as string) ?? ''} onChange={(e) => onPatch({ tag: e.target.value })} className={cls} placeholder="vip, prospect…" />
+          <input
+            list="wf-tags"
+            value={(d.tag as string) ?? ''}
+            onChange={(e) => onPatch({ tag: e.target.value })}
+            onBlur={(e) => onCommitTag(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onCommitTag((e.target as HTMLInputElement).value); } }}
+            className={cls}
+            placeholder="vip, prospect…"
+          />
           <datalist id="wf-tags">{tags.map((t) => <option key={t.tag} value={t.tag} />)}</datalist>
+          <p className="mt-1 text-[11px] text-ink-400">Le tag est ajouté à Contenus &gt; Tags dès que tu quittes le champ.</p>
         </div>
       )}
       {wfType === 'field' && (

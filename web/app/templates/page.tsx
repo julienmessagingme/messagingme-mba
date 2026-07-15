@@ -625,36 +625,50 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
             </div>
             <div className="space-y-2">
               {buttons.map((b, i) => (
-                <div key={i} className="flex items-center gap-1.5">
-                  <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? 'lien' : b.type === 'FLOW' ? 'flow' : 'réponse'}</span>
-                  <input
-                    value={b.text}
-                    onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                    className={`${inputCls} flex-1`}
-                    placeholder="Texte du bouton"
-                  />
-                  {b.type === 'URL' && (
+                b.type === 'FLOW' ? (
+                  // Bouton FLOW = exclusif : sur sa propre ligne, libellé PLEINE LARGEUR (bien visible) + choix du formulaire dessous.
+                  <div key={i} className="space-y-1.5 rounded-lg border border-ink-100 bg-ink-50/50 p-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-ink-400">Bouton du formulaire</span>
+                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
+                    </div>
                     <input
-                      value={b.url ?? ''}
-                      onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
-                      className={`${inputCls} w-28`}
-                      placeholder="https://..."
+                      value={b.text}
+                      onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                      className={`${inputCls} w-full`}
+                      placeholder="Texte affiché sur le bouton (ex. Ouvrir le formulaire)"
                     />
-                  )}
-                  {b.type === 'FLOW' && (
                     <select
                       value={b.flowId ?? ''}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, flowId: e.target.value } : x)))}
-                      className={`${inputCls} w-40`}
+                      className={`${inputCls} w-full`}
                     >
                       <option value="">Choisir un formulaire…</option>
                       {pubFlows.map((f) => (
                         <option key={f.id} value={f.id}>{f.name}</option>
                       ))}
                     </select>
-                  )}
-                  <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
-                </div>
+                  </div>
+                ) : (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? 'lien' : 'réponse'}</span>
+                    <input
+                      value={b.text}
+                      onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                      className={`${inputCls} flex-1`}
+                      placeholder="Texte du bouton"
+                    />
+                    {b.type === 'URL' && (
+                      <input
+                        value={b.url ?? ''}
+                        onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
+                        className={`${inputCls} w-28`}
+                        placeholder="https://..."
+                      />
+                    )}
+                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
+                  </div>
+                )
               ))}
             </div>
 

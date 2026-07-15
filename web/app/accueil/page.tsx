@@ -109,7 +109,10 @@ function AccueilInner({ session }: { session: Session }) {
                 <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-ink-100 pt-3 text-xs">
                   <div>
                     <div className="font-medium uppercase tracking-wide text-ink-400">Qualité</div>
-                    <div className="mt-0.5 text-sm font-semibold text-ink-800">{qualityLabel(account.quality)}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-ink-800">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: qualityHex(account.quality) }} />
+                      {qualityLabel(account.quality)}
+                    </div>
                   </div>
                   {account.tier && (
                     <div>
@@ -197,6 +200,9 @@ function ConnectNumberZone() {
   );
 }
 
+function qualityHex(q: AccountStatusResponse['quality']): string {
+  return q === 'GREEN' ? DOT_HEX.green : q === 'YELLOW' ? DOT_HEX.amber : q === 'RED' ? DOT_HEX.red : DOT_HEX.grey;
+}
 function qualityLabel(q: AccountStatusResponse['quality']): string {
   return q === 'GREEN' ? 'Verte' : q === 'YELLOW' ? 'Moyenne' : q === 'RED' ? 'Rouge' : 'Non évaluée';
 }
