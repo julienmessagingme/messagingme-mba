@@ -19,7 +19,8 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace, comme un signup).
 - ✅ **Invitations d'équipe** (admin) : inviter un membre par email (Resend) -> il pose son mot de passe (ou
   Google) via un lien, puis rejoint l'espace avec le rôle défini. Le compte reste « invité » tant qu'il n'a pas
-  activé. (Remplace le mot de passe posé par l'admin.)
+  activé. (Remplace le mot de passe posé par l'admin.) L'email est un **HTML brandé** (logo Messaging Me,
+  couleurs de marque) et **personnalisé** (« X t'invite à rejoindre l'espace Y »).
 - ✅ **Mot de passe** : « oublié » (`/forgot`, lien de réinitialisation par email, réponse toujours générique
   anti-énumération) + changement depuis le compte (`/compte`).
 - ✅ **Crochet paiement (inerte)** : chaque espace a un statut (`trial|active|locked`) ; un espace `locked`
@@ -37,8 +38,8 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   les identités qui routent les messages WhatsApp). Un champ « orphelin » (dont la définition a été supprimée)
   reste supprimable.
 - ✅ **Tags** (menu Contenu) : renommer (re-dédup si la cible existe), supprimer -> répercuté sur tous
-  les contacts. Un tag saisi dans un bloc « ajout de tag » du bot builder **apparaît aussi ici** (déclaré à la
-  sauvegarde du workflow). Dérivés des contacts + tags déclarés.
+  les contacts. Un tag saisi dans un bloc « ajout de tag » du bot builder **apparaît aussi ici dès qu'on quitte
+  le champ** (persisté au blur, sans attendre l'enregistrement du workflow). Dérivés des contacts + tags déclarés.
 - ✅ **User fields** (menu Contenu) : éditer le libellé / le type, supprimer. La **clé est verrouillée**
   (renommer la clé casserait le mapping des campagnes) -> on édite label/type seulement.
 
@@ -46,12 +47,14 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 
 - ✅ **Création** : template simple (corps + variables + boutons quick-reply / URL / **Flow**) ou
   **carousel** (2-10 cartes image + texte + boutons identiques). Soumission à validation Meta, suivi du statut.
-- ✅ **Sélecteur de variable + chips dans le corps** : bouton « + Variable » → on choisit un champ (Nom,
-  Téléphone + champs perso) au lieu de taper `{{n}}`. La variable s'affiche **directement dans la zone d'édition
-  comme une puce lisible `[Prénom]`** (plus de `{{1}}`), et **l'exemple exigé par Meta se remplit tout seul**.
-  Supprimer une puce puis en réinsérer une ne casse pas la numérotation (renumérotée proprement à l'envoi). Le
-  lien variable→champ est mémorisé : à la création d'une campagne avec ce template, le mapping est **déjà
-  pré-rempli** (modifiable).
+- ✅ **Sélecteur de variable + chips dans le corps** : bouton « + Variable » → on choisit une source (**Nom du
+  profil WhatsApp**, Téléphone + champs perso comme **Prénom / Nom**, bien distincts) au lieu de taper `{{n}}`.
+  La variable s'affiche **directement dans la zone d'édition comme une puce lisible `[Prénom]`** (plus de `{{1}}`),
+  et **l'exemple exigé par Meta se remplit tout seul**. **Chaque variable DOIT être rattachée à une source :
+  l'enregistrement est bloqué sinon** (fini le `{{n}}` tapé à la main qui partirait vide et se ferait rejeter par
+  Meta). Supprimer une puce puis en réinsérer une ne casse pas la numérotation (renumérotée proprement à l'envoi).
+  Le lien variable→champ est mémorisé : à la création d'une campagne avec ce template, le mapping est **déjà
+  pré-rempli** (modifiable). Le texte d'un **bouton** est limité à **25 caractères** (limite Meta).
 - ✅ **En-tête image** : l'image uploadée s'affiche pour de vrai dans l'aperçu WhatsApp (plus juste une icône).
 - ✅ **Édition** (templates simples) : corps / boutons / catégorie. Avertissement « repasse en validation Meta ».
   **Bloquée** si le template a un en-tête/pied de page/carousel (Meta les supprimerait), ou s'il est utilisé
@@ -99,8 +102,14 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 
 - ✅ **Envoi** : on choisit **d'abord les destinataires**, PUIS on décide **Template** (template approuvé +
   mapping des variables sur les attributs/champs contact) **OU Workflow** (déclenche le workflow choisi pour
-  chaque destinataire). Lancement, suivi des destinataires (statut interne + cycle de livraison Meta),
-  auto-refresh. (Suivi de livraison Meta non câblé pour les campagnes workflow en V1.)
+  chaque destinataire). Un **tooltip au survol** explique quand privilégier chacun. Lancement, suivi des
+  destinataires (statut interne + cycle de livraison Meta), auto-refresh. (Suivi de livraison Meta non câblé
+  pour les campagnes workflow en V1 : leur statut « envoyé » ne reflète pas la livraison réelle.)
+- ✅ **Variables associées à la création** : que ce soit un template direct OU un **workflow** (dans ce cas on
+  vérifie que le **1er nœud est un envoi de template**, sinon bloqué, et on remonte SES variables), on associe
+  chaque variable à sa source dans le formulaire de campagne. Les valeurs sont résolues **par contact** : un
+  contact à qui il manque une valeur (ex. prénom absent) est **sauté et signalé (« X contacts sautés »)**,
+  l'envoi part aux contacts complets. Plus jamais de « envoyé » alors que rien ne part.
 - ✅ **Garde-fous** : opt-in requis, fréquence max par contact (marketing), coupure sur quality rating, claim
   atomique anti double-envoi, idempotence. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise
   en pause par le quality gate montre **« Reprendre »** (relance les destinataires restants) ; une campagne en
@@ -138,8 +147,13 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 ## Accueil (clic logo)
 
 - ✅ **Page d'accueil** `/accueil` (clic sur le logo, admin) : « Bonjour {prénom} », **statut du compte
-  WhatsApp** (pastille vert/ambre/rouge/gris, jamais de faux vert), **numéro** + qualité + palier d'envoi,
-  et la carte **MBA actif/inactif** (déplacée hors du Dashboard).
+  WhatsApp** (pastille vert/ambre/rouge/gris, jamais de faux vert), **numéro** + **qualité en pastille de couleur**
+  (plus le texte « Verte »), **débit chiffré** (80 msg/s en standard, 1 000/s en high) et **cap réel** (N clients
+  par 24 h selon le palier), et la carte **MBA actif/inactif** (déplacée hors du Dashboard).
+- ✅ **État HubSpot par numéro** : si le connecteur HubSpot est branché pour le numéro -> « connecté au portail
+  <nom ou id> » + un **toggle** qui coupe/active l'envoi des analyses de conversation à HubSpot. Si aucun portail
+  -> un bouton **« Connecter HubSpot »** qui lance l'installation OAuth et relie ce numéro. (Pont : mba lit le
+  portail du connecteur mm-hubspot en cross-schema, même Supabase.)
 - ✅ **Onboarding « Connecter ton numéro »** : un espace **sans numéro rattaché** (typiquement fraîchement créé)
   voit, à la place de la carte de statut, une **zone grisée « Connecter ton numéro »** (bouton placeholder =
   futur Embedded Signup Meta). Ne s'affiche jamais pendant une panne Meta transitoire (un vrai numéro reste actif).

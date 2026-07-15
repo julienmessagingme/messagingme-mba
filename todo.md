@@ -206,6 +206,22 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 - 🟡 **Loop 5 / quality rating** : `PgQualityProvider` lit `phone_numbers.quality_rating` (défaut
   UNKNOWN). Câbler l'alimentation par webhook `phone_number_quality_update` (feature, pas un bug).
 
+## À durcir / suites (2026-07-15)
+
+- 🔒 **Durcir `/oauth/install?tenant=` du connecteur** : il fait aujourd'hui confiance à un **UUID de tenant nu**
+  (signé dans le state, mais l'UUID lui-même n'est pas prouvé). Un tiers qui connaîtrait l'UUID d'un autre tenant
+  pourrait relier SON portail HubSpot à ce tenant (détourner ses analyses). Inoffensif au pilote (1 tenant, UUID non
+  exposés, bouton rendu au seul admin du tenant). Quand multi-tenant : mba émet un **ticket signé court-lived** que
+  le connecteur vérifie, au lieu de l'UUID nu. (Repéré par le reviewer, sous le seuil bloquant.)
+- 📊 **Tracking réel de livraison des campagnes WORKFLOW** : remplacer le message_id synthétique `wf-<id>` par le vrai
+  wamid du 1er template (rapproché des webhooks de statut) -> funnel delivered/read non figé à 0. Limitation V1 connue.
+- 🧩 **Bouton FLOW dans l'envoi workflow** : `buildWorkflowTemplateComponents` ne gère que les boutons **quick-reply**
+  (payload contrôlé). Un template dont un bouton est un **Flow** part sans son component flow -> à vérifier/gérer si on
+  déclenche un WhatsApp Flow depuis un template envoyé par workflow.
+- ⚠️ **Variables de template non contiguës** (`{{1}}` + `{{3}}` sans `{{2}}`) : le front compte les positions distinctes
+  (Set) alors que le backend attend 1..N contigu -> désalignement possible. Pré-existant (mode direct), pas introduit
+  ce lot ; à corriger si un template non contigu apparaît.
+
 ## Bugs connus
 
 (aucun pour l'instant)

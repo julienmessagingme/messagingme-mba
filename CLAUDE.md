@@ -98,4 +98,22 @@ passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` pui
   Nom (`profile_name`), Prénom et les user fields sont éditables ; suppression de champ via `fields - text[]` (accepte
   une clé orpheline sans définition).
 - **Tag d'un bloc « ajout de tag » déclaré dans le référentiel** à la sauvegarde du workflow (`declareTags`,
-  best-effort) ET au runtime (`applyTag` upsert), même normalisation (trim + slice 64) que la route Tags.
+  best-effort) ET au runtime (`applyTag` upsert), même normalisation (trim + slice 64) que la route Tags. Aussi
+  persisté **au blur** du champ dans le bot builder (`createTag`) -> visible tout de suite dans Contenu > Tags.
+
+### Gotchas / décisions (2026-07-15)
+- **Campagne WORKFLOW : « statut envoyé ≠ livré ».** La branche workflow de l'engine marque le destinataire `sent`
+  avec un **message_id synthétique `wf-<id>`** (fire-and-forget `startWorkflow`) -> le funnel delivered/read reste à 0
+  ET un envoi réel sauté en aval ne se voit pas. Parade câblée : on **associe + résout les variables du 1er template
+  À LA CRÉATION** (buildRecipients -> `resolvedParams` passés jusqu'à l'envoi via `startWorkflow`/`executor.start`/
+  `sendTemplate explicitParams`) et on **saute + avertit** (« X contacts sautés ») au lieu d'un skip runtime silencieux.
+  Détail transversal : `brain/LEARNINGS.md` 2026-07-15. **Reste à faire** : le vrai tracking de livraison (todo).
+- **Campagne workflow : le 1er nœud DOIT être un template** (validé côté route via `getWorkflowGraph` + `entryNode`,
+  400 sinon). Le mapping du 1er template est stocké sur la campagne (`param_mapping`), pas sur le template global.
+- **Débit Meta : `throughput_level` ≠ `messaging_limit_tier`.** throughput = débit d'envoi (STANDARD 80 msg/s, HIGH
+  1000/s) ; messaging_limit_tier = **cap de clients uniques par 24 h** (TIER_250/1K/10K/100K/UNLIMITED). Deux infos
+  distinctes à afficher séparément (`web/lib/format.ts` `throughputLabel`/`tierLabel`).
+- **État HubSpot d'un numéro = lecture CROSS-SCHEMA** : mba lit `mmhs.tenant_portals`/`mmhs.portals` (schéma du
+  connecteur mm-hubspot, même Supabase) via `getHubspotPortal` (best-effort, catch -> non connecté, jamais de 500).
+  Le toggle par-numéro (`phone_numbers.hubspot_connected`) gate le push d'analyse. Bouton « Connecter HubSpot » =
+  lien `mm-hubspot.messagingme.app/oauth/install?tenant=<tenantId>`.
