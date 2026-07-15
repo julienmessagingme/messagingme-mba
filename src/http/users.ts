@@ -3,6 +3,7 @@ import { hashPassword } from '../auth/password';
 import { DuplicateEmailError } from '../user/store.pg';
 import type { UserRow, CreateUserInput, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
+import { renderInvitationEmail } from '../support/email-templates';
 
 export interface UsersRouteDeps {
   listUsers(tenantId: string): Promise<UserRow[]>;
@@ -18,7 +19,11 @@ export interface UsersRouteDeps {
   /** Génère un token d'invitation à usage unique pour ce compte, renvoie le token en clair. */
   createInviteToken?(userId: string): Promise<string>;
   /** Envoi de l'email d'invitation (Resend). Absent -> l'invitation est créée mais aucun email n'est envoyé. */
-  sendEmail?(input: { to: string; subject: string; text: string }): Promise<void>;
+  sendEmail?(input: { to: string; subject: string; text: string; html?: string }): Promise<void>;
+  /** Nom (ou email de repli) de l'invitant, pour personnaliser l'email. Absent/null -> phrase générique. */
+  getInviterName?(userId: string): Promise<string | null>;
+  /** Nom de l'espace de travail (tenant), pour personnaliser l'email. Absent/null -> phrase générique. */
+  getWorkspaceName?(tenantId: string): Promise<string | null>;
   /** Base URL du front pour le lien d'invitation. */
   appUrl?: string;
 }
@@ -94,11 +99,25 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
       const raw = await deps.createInviteToken(user.id);
       let emailSent = false;
       if (deps.sendEmail && deps.appUrl) {
+        const acceptUrl = `${deps.appUrl}/invite/${raw}`;
+        // Personnalisation best-effort : le nom de l'invitant (req.auth.userId) et de l'espace (tenant).
+        // Une panne de lookup ne bloque JAMAIS l'invitation -> repli sur une formulation générique.
+        const inviterName = req.auth?.userId && deps.getInviterName ? await deps.getInviterName(req.auth.userId).catch(() => null) : null;
+        const workspaceName = deps.getWorkspaceName ? await deps.getWorkspaceName(tenant).catch(() => null) : null;
+        const html = renderInvitationEmail({ inviterName, workspaceName, acceptUrl, role: b.role });
+        // Repli TEXTE brut pour les clients qui ne rendent pas le HTML (personnalisé si dispo).
+        const intro = inviterName && workspaceName
+          ? `${inviterName} t'invite à rejoindre l'espace ${workspaceName} sur Messaging Me.`
+          : workspaceName
+            ? `Tu es invité à rejoindre l'espace ${workspaceName} sur Messaging Me.`
+            : `Tu es invité à rejoindre un espace de travail sur Messaging Me.`;
+        const subject = workspaceName ? `Rejoins ${workspaceName} sur Messaging Me` : 'Tu es invité sur Messaging Me';
         try {
           await deps.sendEmail({
             to: email,
-            subject: 'Tu es invité sur MessagingMe',
-            text: `Tu as été invité à rejoindre un espace sur MessagingMe.\n\nClique sur ce lien pour choisir ton mot de passe et activer ton compte (valide 7 jours) :\n${deps.appUrl}/invite/${raw}`,
+            subject,
+            text: `${intro}\n\nClique sur ce lien pour choisir ton mot de passe et activer ton compte (valide 7 jours) :\n${acceptUrl}`,
+            html,
           });
           emailSent = true;
         } catch {

@@ -19,6 +19,8 @@ export interface SendEmailInput {
   to: string;
   subject: string;
   text: string;
+  /** Corps HTML (facultatif). Fourni -> les clients qui le rendent l'affichent, `text` reste le repli. */
+  html?: string;
   /** Adresse de réponse (l'expéditeur réel du message de support). */
   replyTo?: string;
 }
@@ -39,6 +41,7 @@ export class ResendClient {
         to: [input.to],
         subject: input.subject,
         text: input.text,
+        ...(input.html ? { html: input.html } : {}),
         ...(input.replyTo ? { reply_to: input.replyTo } : {}),
       }),
     });

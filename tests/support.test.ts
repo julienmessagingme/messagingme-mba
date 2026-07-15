@@ -50,6 +50,23 @@ describe('ResendClient.send', () => {
     const client = new ResendClient('key', fn);
     await expect(client.send({ from: 'a@x.fr', to: 'b@y.fr', subject: 'Hi', text: 'body' })).rejects.toMatchObject({ name: 'ResendError', status: 403 });
   });
+
+  it('inclut `html` dans le body POST quand fourni', async () => {
+    const { fn, calls } = makeFetch({ ok: true, status: 200, json: { id: 'em2' } });
+    const client = new ResendClient('key', fn);
+    await client.send({ from: 'a@x.fr', to: 'b@y.fr', subject: 'Hi', text: 'body', html: '<h1>Coucou</h1>' });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(body.html).toBe('<h1>Coucou</h1>');
+    expect(body.text).toBe('body');
+  });
+
+  it('omet `html` quand non fourni', async () => {
+    const { fn, calls } = makeFetch({ ok: true, status: 200, json: { id: 'em3' } });
+    const client = new ResendClient('key', fn);
+    await client.send({ from: 'a@x.fr', to: 'b@y.fr', subject: 'Hi', text: 'body' });
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect('html' in body).toBe(false);
+  });
 });
 
 describe('routes support', () => {

@@ -36,7 +36,7 @@ export interface AuthRouteDeps {
     consume(purpose: 'reset' | 'invite', raw: string): Promise<string | null>;
   };
   /** Envoi d'email (Resend) pour les liens. Absent -> forgot-password répond 200 sans rien envoyer. */
-  sendEmail?(input: { to: string; subject: string; text: string }): Promise<void>;
+  sendEmail?(input: { to: string; subject: string; text: string; html?: string }): Promise<void>;
   /** Base URL du front pour les liens d'email. */
   appUrl?: string;
   /** Durée de validité d'un lien de reset (ms). */

@@ -60,8 +60,8 @@ async function main(): Promise<void> {
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
   const sendAuthEmail = config.RESEND_API_KEY
-    ? async ({ to, subject, text }: { to: string; subject: string; text: string }) => {
-        await new ResendClient(config.RESEND_API_KEY).send({ from: `MessagingMe <${config.SUPPORT_FROM}>`, to, subject, text });
+    ? async ({ to, subject, text, html }: { to: string; subject: string; text: string; html?: string }) => {
+        await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, to, subject, text, ...(html ? { html } : {}) });
       }
     : undefined;
   const app = buildServer({
@@ -168,6 +168,12 @@ async function main(): Promise<void> {
       deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),
       createPendingUser: (tenant, email, role) => userStore.createPending(tenant, email, role),
       createInviteToken: (userId) => authTokenStore.create('invite', userId, config.INVITE_TOKEN_TTL_MS),
+      // Personnalisation de l'email d'invitation : nom de l'invitant (repli email) + nom de l'espace.
+      getInviterName: async (userId) => {
+        const u = await userStore.getById(userId);
+        return u ? (u.name ?? u.email) : null;
+      },
+      getWorkspaceName: (tenantId) => userStore.getTenantName(tenantId),
       appUrl: config.APP_URL,
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },

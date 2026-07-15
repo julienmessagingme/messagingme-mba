@@ -26,10 +26,11 @@ interface Captured {
   deleted: Array<{ tenant: string; userId: string }>;
   invited: Array<{ tenant: string; email: string; role: string }>;
   emails: string[];
+  emailObjs: Array<{ to: string; subject: string; text: string; html?: string }>;
 }
 
 function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
-  const cap: Captured = { created: [], roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [] };
+  const cap: Captured = { created: [], roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [] };
   const deps: UsersRouteDeps = {
     listUsers: async () => [EXISTING],
     createPendingUser: async (tenant, email, role) => {
@@ -38,7 +39,9 @@ function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof bu
       return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z' };
     },
     createInviteToken: async () => 'INVITE_RAW',
-    sendEmail: async (e) => { cap.emails.push(e.text); },
+    sendEmail: async (e) => { cap.emails.push(e.text); cap.emailObjs.push(e); },
+    getInviterName: async () => 'Julien',
+    getWorkspaceName: async () => 'Acme Corp',
     appUrl: 'https://mba.messagingme.app',
     createUser: async (tenant, input) => {
       cap.created.push({ tenant, input });
@@ -301,6 +304,14 @@ describe('users route — invitation', () => {
     expect(res.json<{ emailSent: boolean; user: { pending: boolean } }>()).toMatchObject({ emailSent: true, user: { pending: true } });
     expect(cap.invited).toEqual([{ tenant: 't1', email: 'new@demo.test', role: 'agent' }]); // email normalisé
     expect(cap.emails[0]).toContain('/invite/INVITE_RAW');
+    // Email HTML brandé + personnalisé (invitant + espace), sans jamais « UChat ».
+    const sent = cap.emailObjs[0]!;
+    expect(sent.html).toBeDefined();
+    expect(sent.html).toContain('Julien');
+    expect(sent.html).toContain('Acme Corp');
+    expect(sent.html).toContain('/invite/INVITE_RAW');
+    expect(sent.html!.toLowerCase()).not.toContain('uchat');
+    expect(sent.subject).toContain('Acme Corp');
   });
   it('POST /invitations email déjà pris -> 409', async () => {
     const { server } = app();

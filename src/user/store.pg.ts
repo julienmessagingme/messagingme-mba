@@ -69,6 +69,12 @@ export class PgUserStore {
     return r ? { email: r.email, name: r.name, role: r.role } : null;
   }
 
+  /** Nom d'un espace de travail (tenant) par id : sert à personnaliser l'email d'invitation. null si inconnu. */
+  async getTenantName(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ name: string }>(`select name from tenants where id = $1`, [tenantId]);
+    return res.rows[0]?.name ?? null;
+  }
+
   async list(tenantId: string): Promise<UserRow[]> {
     const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; disabled_at: Date | null; pending: boolean; created_at: Date }>(
       `select id, email, name, role, disabled_at, (password_hash is null) as pending, created_at from users
