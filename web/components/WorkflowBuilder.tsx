@@ -286,7 +286,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     setMsg(null);
     try {
       await updateWorkflow(tenantId, workflowId, { graph: fromRF(nodes, edges) });
-      setMsg('Workflow enregistré.');
+      setMsg('Scénario enregistré.');
     } catch (err) {
       setMsg(err instanceof Error ? err.message : 'Enregistrement impossible');
     } finally {

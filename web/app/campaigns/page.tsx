@@ -610,7 +610,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
           {([
             { m: 'template', label: 'Un template', tip: 'Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL.' },
-            { m: 'workflow', label: 'Un workflow', tip: 'Privilégiez cette méthode pour un scénario : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un WhatsApp Flow, ...).' },
+            { m: 'workflow', label: 'Un scénario', tip: 'Privilégiez cette méthode pour enchaîner plusieurs étapes : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un formulaire, ...).' },
           ] as const).map(({ m, label, tip }) => (
             <span key={m} className="group relative">
               <button type="button" onClick={() => chooseMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
@@ -654,12 +654,12 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
               <option value="utility">Utility</option>
             </select>
           </Field>
-          <Field label="Workflow">
+          <Field label="Scénario">
             {workflows.length === 0 ? (
-              <p className="text-xs text-amber-700">Aucun workflow. Crée-en un dans le menu « Flow » à gauche.</p>
+              <p className="text-xs text-amber-700">Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.</p>
             ) : (
               <select value={workflowId} onChange={(e) => { void chooseWorkflow(e.target.value); }} className={inputCls}>
-                <option value="">Choisir un workflow…</option>
+                <option value="">Choisir un scénario…</option>
                 {workflows.map((w) => (
                   <option key={w.id} value={w.id}>{w.name} ({w.graph.nodes.length} bloc{w.graph.nodes.length > 1 ? 's' : ''})</option>
                 ))}
@@ -669,7 +669,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             {wfError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{wfError}</p>}
             {!wfError && selectedTemplate?.body && (
               <div className="mt-3">
-                <p className="mb-1 text-xs text-ink-500">1er template envoyé par le workflow : <b>{templateName}</b></p>
+                <p className="mb-1 text-xs text-ink-500">1er template envoyé par le scénario : <b>{templateName}</b></p>
                 <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
               </div>
             )}

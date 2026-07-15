@@ -406,6 +406,12 @@ const OPT_IN_LABEL: Record<string, { text: string; cls: string }> = {
   unknown: { text: 'inconnu', cls: 'bg-ink-100 text-ink-600' },
 };
 
+/** WhatsApp ID (wa_id) : la clé de routage WhatsApp = les chiffres du numéro sans « + », sinon le BSUID. */
+function waIdOf(c: Contact): string | null {
+  if (c.phoneE164) return c.phoneE164.replace(/[^0-9]/g, '');
+  return c.bsuid ?? null;
+}
+
 /** Valeur d'un champ perso (insensible à la casse pour les clés type prenom/prénom). */
 function fieldValue(c: Contact, key: string): string | null {
   const f = c.fields ?? {};
@@ -423,13 +429,14 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
     );
   return (
     <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[880px] text-sm">
         <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
           <tr>
             <th className="px-4 py-2.5 font-medium">Nom</th>
             <th className="px-4 py-2.5 font-medium">Prénom</th>
             <th className="px-4 py-2.5 font-medium">Téléphone</th>
             <th className="px-4 py-2.5 font-medium">BSUID</th>
+            <th className="px-4 py-2.5 font-medium">WhatsApp ID</th>
             <th className="px-4 py-2.5 font-medium">Email</th>
             <th className="px-4 py-2.5 font-medium">Opt-in</th>
           </tr>
@@ -437,6 +444,7 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
         <tbody className="divide-y divide-ink-100">
           {contacts.map((c) => {
             const badge = OPT_IN_LABEL[c.optInStatus] ?? OPT_IN_LABEL.unknown!;
+            const waId = waIdOf(c);
             return (
               <tr key={c.id} onClick={() => onSelect(c)} className="cursor-pointer transition hover:bg-brand-50">
                 <td className="px-4 py-2.5 font-medium text-ink-900">{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
@@ -445,6 +453,11 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
                 <td className="px-4 py-2.5 font-mono text-xs">
                   {c.bsuid
                     ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={c.bsuid}>{c.bsuid}</span></span>
+                    : <span className="text-ink-400">-</span>}
+                </td>
+                <td className="px-4 py-2.5 font-mono text-xs">
+                  {waId
+                    ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={waId}>{waId}</span></span>
                     : <span className="text-ink-400">-</span>}
                 </td>
                 <td className="px-4 py-2.5 text-xs text-ink-700">{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>

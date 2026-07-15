@@ -31,7 +31,7 @@ const NAV_ADMIN: NavItem[] = [
   { key: 'inbox', href: '/inbox', label: 'Inbox', d: icons.inbox },
   { key: 'contacts', href: '/contacts', label: 'Contacts', d: icons.contacts },
   { key: 'campagnes', href: '/campaigns', label: 'Campagnes', d: icons.campaign },
-  { key: 'workflows', href: '/workflows', label: 'Flow', d: icons.flow },
+  { key: 'workflows', href: '/workflows', label: 'Scénario', d: icons.flow },
   { key: 'contenu', label: 'Contenu', d: icons.content, children: [
     { key: 'templates', href: '/templates', label: 'Templates' },
     { key: 'flows', href: '/flows', label: 'Formulaires' },

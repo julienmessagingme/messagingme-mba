@@ -52,7 +52,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     }
   }
   async function remove(w: WorkflowSummary) {
-    if (!window.confirm(`Supprimer le workflow « ${w.name} » ?`)) return;
+    if (!window.confirm(`Supprimer le scénario « ${w.name} » ?`)) return;
     setError(null);
     try {
       await deleteWorkflow(session.tenantId, w.id);
@@ -66,7 +66,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     return (
       <div className="flex flex-col gap-3 p-3 lg:h-full">
         <div className="flex items-center justify-between">
-          <button onClick={() => { setEditing(null); void load(); }} className="text-sm text-brand-600 hover:underline">← Retour aux workflows</button>
+          <button onClick={() => { setEditing(null); void load(); }} className="text-sm text-brand-600 hover:underline">← Retour aux scénarios</button>
           <h2 className="text-base font-semibold tracking-tight text-ink-900">{editing.name}</h2>
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -80,8 +80,8 @@ function WorkflowsInner({ session }: { session: Session }) {
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Flow</h2>
-        <p className="mt-1 text-sm text-ink-500">Construis des automatisations en blocs : ajout de tag, envoi d&apos;un template, formulaire, arrivée en inbox. Un workflow s&apos;attache à une campagne (bientôt) et s&apos;exécute pour chaque contact.</p>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Scénarios</h2>
+        <p className="mt-1 text-sm text-ink-500">Construis des automatisations en blocs : ajout de tag, envoi d&apos;un template, formulaire, arrivée en inbox. Un scénario s&apos;attache à une campagne et s&apos;exécute pour chaque contact.</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -90,18 +90,18 @@ function WorkflowsInner({ session }: { session: Session }) {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void create(); }}
-          placeholder="Nom du workflow…"
+          placeholder="Nom du scénario…"
           className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <button onClick={create} disabled={newName.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">Créer un workflow</button>
+        <button onClick={create} disabled={newName.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">Créer un scénario</button>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
-        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Workflows ({workflows.length})</div>
+        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Scénarios ({workflows.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">Chargement…</p>
         ) : workflows.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">Aucun workflow. Crée-en un ci-dessus.</p>
+          <p className="px-5 py-6 text-sm text-ink-500">Aucun scénario. Crée-en un ci-dessus.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
