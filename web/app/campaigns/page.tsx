@@ -302,12 +302,15 @@ function selToSource(sel: string, value: string): TemplateParam['source'] {
   return { type: 'field', key: sel.slice('field:'.length) };
 }
 
-/** ParamSource (indice de template stocké) -> option à présélectionner dans le sélecteur. */
-function sourceToSel(s: TemplateParam['source']): string {
+/** ParamSource (indice de template stocké) -> option à présélectionner. `customFields` = les champs perso RÉELS :
+ *  un indice vers un champ inexistant (ex. indice périmé « nom » d'un champ supprimé) retombe sur « Nom » — sinon
+ *  le `<select>` afficherait la 1re option (« Nom ») tout en gardant en interne un `sel` fantôme qui saute le contact. */
+function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]): string {
   if (s.type === 'literal') return 'literal';
   if (s.type === 'attribute') return `sys:${s.key ?? 'name'}`;
   const key = s.key ?? '';
-  return isSystemFieldKey(key) ? `sys:${key}` : `field:${key}`; // prenom/email = champ système
+  if (isSystemFieldKey(key)) return `sys:${key}`; // prenom/email = champ système
+  return customFields.some((f) => f.key === key) ? `field:${key}` : 'sys:name';
 }
 
 /** Bloc d'entrée d'un workflow = un bloc SANS arête entrante (défaut : le 1er bloc). null si vide.
@@ -400,7 +403,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         for (const h of hints) {
           const i = h.position - 1;
           if (i < 0 || i >= n) continue;
-          rows[i] = { sel: sourceToSel(h.source), value: h.source.type === 'literal' ? (h.source.value ?? '') : '' };
+          rows[i] = { sel: selForSource(h.source, userFields), value: h.source.type === 'literal' ? (h.source.value ?? '') : '' };
         }
         return rows;
       });
@@ -498,10 +501,17 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
           ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected] }
           : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] },
       );
+      // 0 destinataire = TOUS sautés (la variable du template n'a aucune valeur sur les fiches choisies) : la campagne
+      // serait vide et « Lancer » n'enverrait à personne. Avertissement ROUGE + on RESTE sur le formulaire (pas de
+      // navigation, pas de reset) pour corriger la source de la variable ou les fiches. Cf. bug « ça n'envoie à personne ».
+      if (res.recipientCount === 0) {
+        setError(`Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`);
+        return; // le finally remet busy à false
+      }
       // Avertissement : contacts sautés faute d'une variable de template (ex. prénom absent de la fiche). L'envoi part
       // quand même aux valides ; ces contacts-là auraient fait échouer Meta -> on les écarte et on le dit.
       const skippedMsg = res.skipped.length > 0 ? ` ${res.skipped.length} contact(s) sautés (variable de template manquante, ex. prénom absent de la fiche).` : '';
-      setOk(`Campagne créée : ${res.recipientCount} destinataires.${skippedMsg} Clique « Lancer » pour envoyer.`);
+      setOk(`Campagne créée : ${res.recipientCount} destinataire(s).${skippedMsg} Clique « Lancer » pour envoyer.`);
       setName('');
       setTemplateName('');
       setVars([]);
@@ -731,6 +741,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.Dispatch<React.SetStateAction<VarRow[]>>; fields: UserFieldDef[] }) {
   if (vars.length === 0) return null;
   const custom = customFieldsOnly(fields);
+  // Ids d'options valides : sert de filet -> si un `sel` n'y est pas (ex. champ perso supprimé), on l'affiche
+  // explicitement (« à re-sélectionner ») au lieu de laisser le <select> montrer la 1re option en douce.
+  const validIds = new Set<string>([...SYSTEM_FIELDS.map((f) => `sys:${f.key}`), ...custom.map((f) => `field:${f.key}`), 'literal']);
   return (
     <div className="mt-3">
       <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
@@ -743,6 +756,7 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
               onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, sel: e.target.value } : x)))}
               className={`${inputCls} flex-1`}
             >
+              {!validIds.has(v.sel) && <option value={v.sel}>⚠ champ à re-sélectionner</option>}
               <optgroup label="Champs de base">
                 {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{f.label}</option>)}
               </optgroup>
