@@ -117,4 +117,40 @@ describe('WorkflowExecutor', () => {
     await ex.advance('t1', '33600', 'm3', 'btn:9');
     expect(calls).toContain('tag:oui'); // repli : aucun handle btn:9 -> nextNode
   });
+
+  // Capture le 6e arg (explicitParams) de sendTemplate pour vérifier le câblage campagne workflow.
+  function makeCapturing(graph: WorkflowGraph) {
+    const runs = new FakeRuns();
+    const captured: Array<string[] | undefined> = [];
+    const ex = new WorkflowExecutor({
+      runs,
+      getGraph: async () => graph,
+      applyTag: async () => {},
+      setField: async () => {},
+      sendTemplate: async (_t, _w, _name, _lang, _btns, explicitParams) => { captured.push(explicitParams); },
+    });
+    return { ex, captured };
+  }
+
+  it('start avec firstTemplateParams : le 1er sendTemplate reçoit ces params (campagne workflow, pas de re-résolution)', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
+      edges: [e('e1', 'tpl', 'ib')],
+    };
+    const { ex, captured } = makeCapturing(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, ['Julie']);
+    expect(captured).toEqual([['Julie']]);
+  });
+
+  it('advance : sendTemplate SANS explicitParams (hints stockés -> comportement inchangé)', async () => {
+    // tpl1 -> tpl2 -> inbox : start envoie tpl1 AVEC params, l\'advance envoie tpl2 SANS params (undefined).
+    const g: WorkflowGraph = {
+      nodes: [n('tpl1', 'template', { templateName: 't1', language: 'fr' }), n('tpl2', 'template', { templateName: 't2', language: 'fr' }), n('ib', 'inbox')],
+      edges: [e('e1', 'tpl1', 'tpl2'), e('e2', 'tpl2', 'ib')],
+    };
+    const { ex, captured } = makeCapturing(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, ['Julie']);
+    await ex.advance('t1', '33600', 'm1');
+    expect(captured).toEqual([['Julie'], undefined]);
+  });
 });

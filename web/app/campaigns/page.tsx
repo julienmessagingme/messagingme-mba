@@ -27,6 +27,8 @@ import {
   type TemplateSummary,
   type Contact,
   type WorkflowSummary,
+  type WorkflowGraph,
+  type WorkflowNode,
 } from '@/lib/api';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
@@ -286,6 +288,14 @@ interface VarRow {
   value: string;
 }
 
+/** Bloc d'entrée d'un workflow = un bloc SANS arête entrante (défaut : le 1er bloc). null si vide.
+ *  Miroir de `entryNode` côté serveur : sert à vérifier que le workflow commence par un envoi de template. */
+function entryNodeOf(graph: WorkflowGraph): WorkflowNode | null {
+  if (graph.nodes.length === 0) return null;
+  const hasIncoming = new Set(graph.edges.map((e) => e.target));
+  return graph.nodes.find((nn) => !hasIncoming.has(nn.id)) ?? graph.nodes[0] ?? null;
+}
+
 function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void }) {
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [name, setName] = useState('');
@@ -297,6 +307,8 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const [mode, setMode] = useState<'template' | 'workflow'>('template');
   const [workflowId, setWorkflowId] = useState('');
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  // Message bloquant si le 1er bloc du workflow choisi n'est pas un envoi de template (pas de cible au mapping).
+  const [wfError, setWfError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -346,21 +358,19 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       : '',
   );
 
-  async function chooseTemplate(nm: string) {
-    setTemplateName(nm);
+  // Charge les variables d'un template (corps -> nb de {{n}}) et pré-remplit chaque ligne via les indices posés au
+  // design (hints). Réutilisé par le mode template DIRECT et par le 1er template d'un workflow. Ne touche NI la
+  // catégorie NI le nom de campagne (le workflow choisit sa catégorie à part).
+  async function loadTemplateVars(nm: string, language: string) {
     const t = templates.find((x) => x.name === nm);
-    if (!t) { setVars([]); return; }
-    setTemplateLanguage(t.language);
-    setCategory((t.category ?? '').toUpperCase() === 'MARKETING' ? 'marketing' : 'utility');
-    const n = new Set((t.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+    const n = new Set((t?.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
     // Défaut immédiat : chaque variable -> Nom. On affine ensuite avec les indices posés à la création du template.
     setVars(Array.from({ length: n }, () => ({ source: 'name', key: '', value: '' })));
-    if (name.trim() === '') setName(nm);
     if (n === 0) return;
     const seq = ++chooseSeq.current;
     try {
-      const { hints } = await getTemplateHints(tenantId, nm, t.language);
-      if (seq !== chooseSeq.current) return; // un autre template a été choisi entre-temps
+      const { hints } = await getTemplateHints(tenantId, nm, language);
+      if (seq !== chooseSeq.current) return; // un autre template/workflow a été choisi entre-temps
       if (hints.length === 0) return;
       setVars((prev) => {
         if (prev.length !== n) return prev;
@@ -376,6 +386,49 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         return rows;
       });
     } catch { /* pas d'indices -> on garde le défaut */ }
+  }
+
+  async function chooseTemplate(nm: string) {
+    setTemplateName(nm);
+    const t = templates.find((x) => x.name === nm);
+    if (!t) { setVars([]); return; }
+    setTemplateLanguage(t.language);
+    setCategory((t.category ?? '').toUpperCase() === 'MARKETING' ? 'marketing' : 'utility');
+    if (name.trim() === '') setName(nm);
+    await loadTemplateVars(nm, t.language);
+  }
+
+  // Choix d'un workflow : on VÉRIFIE que le 1er bloc est un envoi de template (sinon le mapping n'a pas de cible ->
+  // message bloquant, comme côté serveur), puis on remonte ce template + ses variables dans le MÊME sélecteur que
+  // le mode direct. Le mapping collecté part avec la campagne (résolu par contact, contacts sans la valeur sautés).
+  async function chooseWorkflow(id: string) {
+    setWorkflowId(id);
+    setWfError(null);
+    setTemplateName('');
+    setVars([]);
+    if (id === '') return;
+    const wf = workflows.find((w) => w.id === id);
+    if (!wf) return;
+    const entry = entryNodeOf(wf.graph);
+    const tplName = entry && entry.type === 'template' ? String(entry.data.templateName ?? '').trim() : '';
+    if (!entry || entry.type !== 'template' || tplName === '') {
+      setWfError('Le workflow doit commencer par un envoi de template.');
+      return;
+    }
+    const language = String(entry.data.language ?? 'fr');
+    setTemplateName(tplName);
+    setTemplateLanguage(language);
+    await loadTemplateVars(tplName, language);
+  }
+
+  // Bascule template <-> workflow : on repart d'un état propre (variables/erreurs/choix précédents) pour ne pas
+  // mélanger le mapping d'un template direct avec celui du 1er template d'un workflow.
+  function chooseMode(m: 'template' | 'workflow') {
+    setMode(m);
+    setWfError(null);
+    setVars([]);
+    setTemplateName('');
+    setWorkflowId('');
   }
 
   // Tous les tags présents (pour les filtres). Requête = filtre par tag(s) + recherche texte
@@ -429,7 +482,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       const res = await createCampaign(
         tenantId,
         mode === 'workflow'
-          ? { phoneNumberId, name, category, workflowId, contactIds: [...selected] }
+          ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected] }
           : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] },
       );
       // Avertissement : contacts sautés faute d'une variable de template (ex. prénom absent de la fiche). L'envoi part
@@ -440,6 +493,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       setTemplateName('');
       setVars([]);
       setWorkflowId('');
+      setWfError(null);
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Création impossible');
@@ -453,7 +507,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const varsComplete = vars.every((v) =>
     v.source === 'field' ? v.key.trim() !== '' : v.source === 'literal' ? v.value.trim() !== '' : true,
   );
-  const contentReady = mode === 'workflow' ? workflowId !== '' : (templateName !== '' && varsComplete);
+  // Workflow : prêt si un workflow valide est choisi (1er bloc = template, donc pas de wfError) ET le mapping de ses
+  // variables est complet. Le 1er template sans variable a vars=[] -> varsComplete=true.
+  const contentReady = mode === 'workflow'
+    ? (workflowId !== '' && wfError === null && varsComplete)
+    : (templateName !== '' && varsComplete);
   const canSubmit = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0 && !busy;
 
   return (
@@ -555,7 +613,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             { m: 'workflow', label: 'Un workflow', tip: 'Privilégiez cette méthode pour un scénario : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un WhatsApp Flow, ...).' },
           ] as const).map(({ m, label, tip }) => (
             <span key={m} className="group relative">
-              <button type="button" onClick={() => setMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
+              <button type="button" onClick={() => chooseMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
               <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-64 -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg group-hover:block">{tip}</span>
             </span>
           ))}
@@ -586,44 +644,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             )}
           </Field>
 
-          {vars.length > 0 && (
-            <div className="mt-3">
-              <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
-              <div className="space-y-2">
-                {vars.map((v, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <span className="w-8 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
-                    <select
-                      value={v.source}
-                      onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
-                      className={`${inputCls} flex-1`}
-                    >
-                      <option value="name">Nom du contact</option>
-                      <option value="phone">Téléphone</option>
-                      <option value="field">Champ perso</option>
-                      <option value="literal">Texte fixe</option>
-                    </select>
-                    {v.source === 'field' && (
-                      <input
-                        value={v.key}
-                        onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
-                        className={`${inputCls} w-24`}
-                        placeholder="clé (ex ville)"
-                      />
-                    )}
-                    {v.source === 'literal' && (
-                      <input
-                        value={v.value}
-                        onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
-                        className={`${inputCls} w-24`}
-                        placeholder="valeur"
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <VarsEditor vars={vars} setVars={setVars} />
         </>
       ) : (
         <>
@@ -637,14 +658,25 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             {workflows.length === 0 ? (
               <p className="text-xs text-amber-700">Aucun workflow. Crée-en un dans le menu « Flow » à gauche.</p>
             ) : (
-              <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value)} className={inputCls}>
+              <select value={workflowId} onChange={(e) => { void chooseWorkflow(e.target.value); }} className={inputCls}>
                 <option value="">Choisir un workflow…</option>
                 {workflows.map((w) => (
                   <option key={w.id} value={w.id}>{w.name} ({w.graph.nodes.length} bloc{w.graph.nodes.length > 1 ? 's' : ''})</option>
                 ))}
               </select>
             )}
+            {/* Le 1er bloc du workflow doit être un envoi de template : c'est lui qui porte les variables à associer. */}
+            {wfError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{wfError}</p>}
+            {!wfError && selectedTemplate?.body && (
+              <div className="mt-3">
+                <p className="mb-1 text-xs text-ink-500">1er template envoyé par le workflow : <b>{templateName}</b></p>
+                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
+              </div>
+            )}
           </Field>
+
+          {/* Association des variables du 1er template du workflow (même sélecteur que pour un template direct). */}
+          {!wfError && <VarsEditor vars={vars} setVars={setVars} />}
         </>
       )}
 
@@ -677,6 +709,50 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="mt-3">
       <label className="mb-1 block text-sm font-medium text-ink-700">{label}</label>
       {children}
+    </div>
+  );
+}
+
+/** Sélecteur d'association des variables d'un template (Prénom / Téléphone / champ perso / texte fixe). Partagé
+ *  par le mode template DIRECT et le 1er template d'un workflow. Rien à afficher si le template n'a pas de variable. */
+function VarsEditor({ vars, setVars }: { vars: VarRow[]; setVars: React.Dispatch<React.SetStateAction<VarRow[]>> }) {
+  if (vars.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
+      <div className="space-y-2">
+        {vars.map((v, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="w-8 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
+            <select
+              value={v.source}
+              onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
+              className={`${inputCls} flex-1`}
+            >
+              <option value="name">Nom du contact</option>
+              <option value="phone">Téléphone</option>
+              <option value="field">Champ perso</option>
+              <option value="literal">Texte fixe</option>
+            </select>
+            {v.source === 'field' && (
+              <input
+                value={v.key}
+                onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
+                className={`${inputCls} w-24`}
+                placeholder="clé (ex ville)"
+              />
+            )}
+            {v.source === 'literal' && (
+              <input
+                value={v.value}
+                onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+                className={`${inputCls} w-24`}
+                placeholder="valeur"
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

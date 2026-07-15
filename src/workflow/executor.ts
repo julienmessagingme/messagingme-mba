@@ -12,8 +12,13 @@ export interface WorkflowExecutorDeps {
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   applyTag(tenantId: string, waId: string, tag: string): Promise<void>;
   setField(tenantId: string, waId: string, key: string, value: string): Promise<void>;
-  /** `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton). */
-  sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[]): Promise<void>;
+  /**
+   * `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton).
+   * `explicitParams` (optionnel) = variables du corps DÉJÀ résolues (campagne workflow, 1er template) : si fourni,
+   * l'envoi utilise ces valeurs directement au lieu de re-résoudre via les hints. Absent (advance/webhook) ->
+   * comportement inchangé (hints stockés).
+   */
+  sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[], explicitParams?: string[]): Promise<void>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -31,20 +36,29 @@ function restToState(rest: WalkRest): RunState {
 export class WorkflowExecutor {
   constructor(private readonly deps: WorkflowExecutorDeps) {}
 
-  private async apply(tenantId: string, waId: string, actions: WorkflowAction[]): Promise<void> {
+  /**
+   * `firstTemplateParams` (optionnel) : variables du corps déjà résolues, transmises à l'envoi de template. Un
+   * `walk` depuis un seul point d'entrée s'arrête au 1er bloc template/flow (bloquant) -> il produit AU PLUS une
+   * action `sendTemplate`, donc ces params ne s'appliquent qu'à ce 1er envoi (jamais à un template ultérieur).
+   */
+  private async apply(tenantId: string, waId: string, actions: WorkflowAction[], firstTemplateParams?: string[]): Promise<void> {
     for (const a of actions) {
       if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
-      else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons);
+      else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
     }
   }
 
-  /** Démarre un run : parcourt depuis l'entrée, applique les actions, persiste l'état (sauf 100% synchrone -> done). */
-  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }): Promise<void> {
+  /**
+   * Démarre un run : parcourt depuis l'entrée, applique les actions, persiste l'état (sauf 100% synchrone -> done).
+   * `firstTemplateParams` (campagne workflow) = variables du 1er template déjà résolues par contact -> passées à
+   * l'envoi du 1er template SANS re-résolution via les hints stockés.
+   */
+  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, firstTemplateParams?: string[]): Promise<void> {
     const entry = entryNode(graph);
     if (!entry) return;
     const { actions, rest } = walk(graph, entry);
-    await this.apply(tenantId, contact.waId, actions);
+    await this.apply(tenantId, contact.waId, actions, firstTemplateParams);
     const state = restToState(rest);
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
   }

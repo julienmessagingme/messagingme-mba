@@ -5,6 +5,8 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
+import { entryNode } from '../workflow/engine';
+import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 
@@ -15,8 +17,12 @@ export interface CampaignRouteDeps {
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
-  /** Le workflow appartient-il au tenant ? (campagne workflow : refuse un workflow d'un autre tenant.) */
-  workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
+  /**
+   * Graphe du workflow du tenant (campagne workflow). null si inconnu/autre tenant (le scope tenant vaut le
+   * contrôle de propriété : un workflow d'un autre tenant renvoie null -> 400). Sert aussi à vérifier que le
+   * bloc d'entrée est bien un envoi de template.
+   */
+  getWorkflowGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   listCampaigns(tenantId: string): Promise<CampaignSummary[]>;
   getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
@@ -88,8 +94,16 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // Une campagne envoie SOIT un template SOIT un workflow (exactement un des deux).
     const isWorkflow = nonEmpty(b.workflowId);
     if (isWorkflow) {
-      if (!(await deps.workflowBelongsToTenant(b.workflowId as string, effectiveTenant))) {
+      const graph = await deps.getWorkflowGraph(b.workflowId as string, effectiveTenant);
+      if (!graph) {
         return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
+      }
+      // Le 1er bloc (entrée) DOIT être un envoi de template : c'est lui qui porte les variables mappées à la
+      // campagne. Sinon le mapping n'a pas de cible et l'envoi partirait sans être personnalisé -> on bloque.
+      const entryId = entryNode(graph);
+      const entry = entryId ? graph.nodes.find((n) => n.id === entryId) : undefined;
+      if (!entry || entry.type !== 'template') {
+        return reply.code(400).send({ error: 'Le workflow doit commencer par un envoi de template.' });
       }
     } else {
       if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName ou workflowId requis' });
@@ -110,9 +124,10 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       return reply.code(400).send({ error: 'phoneNumberId inconnu pour ce tenant' });
     }
 
-    // Valider paramMapping AVANT toute écriture (template seul ; un workflow n'a pas de variable propre).
-    // Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
-    const paramMapping = isWorkflow ? [] : validateParamMapping(b.paramMapping ?? []);
+    // Valider paramMapping AVANT toute écriture. Pour un workflow AUSSI : le mapping cible les variables du 1er
+    // template du workflow (résolues par contact -> pré-validation via buildRecipients, contacts sans la valeur
+    // sautés). Invalide -> 400 déterministe (indépendant du nb de contacts), pas un 500.
+    const paramMapping = validateParamMapping(b.paramMapping ?? []);
     if (paramMapping === null) {
       return reply.code(400).send({ error: 'paramMapping invalide (positions 1..N contiguës, sources valides)' });
     }

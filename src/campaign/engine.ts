@@ -48,8 +48,12 @@ export interface EngineDeps {
   frequency: FrequencyStore;
   quality: QualityProvider;
   rateLimiter?: RateGate;
-  /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template). */
-  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string) => Promise<void>;
+  /**
+   * Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template).
+   * `firstTemplateParams` = variables du 1er template DÉJÀ résolues par contact (buildRecipients à partir du
+   * paramMapping de la campagne) -> l'executor les passe telles quelles au 1er envoi (pas de re-résolution).
+   */
+  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -120,7 +124,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).
         if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
         const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
-        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId);
+        // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
+        // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
+        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, r.resolvedParams);
         res = { messageId: `wf-${campaign.workflowId}` };
       } else {
         const tpl: TemplateSpec = {

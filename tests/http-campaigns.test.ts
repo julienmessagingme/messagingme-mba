@@ -6,6 +6,7 @@ import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
+import type { WorkflowGraph } from '../src/workflow/graph';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -46,9 +47,16 @@ const validBody = {
   paramMapping: [],
 };
 
+// Graphe par défaut d'un workflow valide : bloc d'entrée = envoi de template (exigé par la route).
+const TEMPLATE_ENTRY_GRAPH: WorkflowGraph = {
+  nodes: [{ id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'promo', language: 'fr' } }],
+  edges: [],
+};
+
 interface Deps {
   ownsNumber?: boolean;
   ownsWorkflow?: boolean;
+  workflowGraph?: WorkflowGraph; // override du graphe renvoyé (pour tester le bloc d'entrée non-template)
   campaignTenant?: string; // tenant propriétaire de 'known'
   queue?: FakeQueue;
 }
@@ -60,7 +68,8 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       repo,
       queue: d.queue ?? new FakeQueue(),
       phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
-      workflowBelongsToTenant: async () => d.ownsWorkflow ?? true,
+      // Workflow non détenu -> null (comme un getById cross-tenant) ; sinon le graphe (override ou défaut).
+      getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
       campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
       listCampaigns: async (tenant) => [
         { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
@@ -143,6 +152,49 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wfX' } });
     expect(res.statusCode).toBe(400);
     expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('workflow dont le 1er bloc n\'est PAS un template -> 400, rien inséré', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {
+      workflowGraph: { nodes: [{ id: 'n1', type: 'tag', position: { x: 0, y: 0 }, data: { tag: 'vip' } }], edges: [] },
+    });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/commencer par un envoi de template/);
+    expect(repo.created).toHaveLength(0);
+    await app.close();
+  });
+
+  it('campagne WORKFLOW avec paramMapping : résout les variables du 1er template + saute les contacts sans la valeur', async () => {
+    // Le mapping cible {{1}} = champ « prenom » du 1er template du workflow : Julie l'a, Marc ne l'a pas.
+    const list: BuildContact[] = [
+      { id: 'ok', phone_e164: '+33611', profile_name: 'Julie', fields: { prenom: 'Julie' }, optInStatus: 'opted_in' },
+      { id: 'ko', phone_e164: '+33622', profile_name: 'Marc', fields: {}, optInStatus: 'opted_in' },
+    ];
+    const repo = new FakeRepo(list);
+    const app = appWith(repo);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/campaigns',
+      ...auth(),
+      payload: {
+        ...validBody,
+        templateName: '',
+        templateLanguage: '',
+        workflowId: 'wf1',
+        paramMapping: [{ position: 1, source: { type: 'field', key: 'prenom' } }],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ recipientCount: number; skipped: Array<{ contactId: string; missing: number[] }> }>();
+    expect(body.recipientCount).toBe(1);
+    expect(body.skipped).toEqual([{ contactId: 'ko', toE164: '+33622', reason: 'missing_variable', missing: [1] }]);
+    // Le paramMapping est stocké sur la campagne workflow (plus vidé) ET resolvedParams est calculé par contact.
+    expect(repo.created[0]?.workflowId).toBe('wf1');
+    expect(repo.created[0]?.paramMapping).toEqual([{ position: 1, source: { type: 'field', key: 'prenom' } }]);
+    expect(repo.lastRecipients).toEqual([{ contactId: 'ok', toE164: '+33611', resolvedParams: ['Julie'] }]);
     await app.close();
   });
 

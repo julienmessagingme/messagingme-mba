@@ -131,6 +131,18 @@ describe('runCampaign', () => {
     expect(started.map((s) => s.waId)).toEqual(['33611', 'BSUID_xyz']); // numéro -> chiffres nus, BSUID intact
   });
 
+  it('campagne WORKFLOW : passe r.resolvedParams (variables du 1er template) à startWorkflow', async () => {
+    // rec() pose resolvedParams: ['X'] -> chaque destinataire doit transmettre SES params résolus au 5e arg.
+    const captured: string[][] = [];
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async (_t, _w, _waId, _cid, params) => { captured.push(params); },
+    }));
+    expect(captured).toEqual([['X'], ['X']]);
+  });
+
   it('fréquence : un contact envoyé récemment est skippé', async () => {
     const sender = new FakeSender();
     const frequency = new FakeFreq();

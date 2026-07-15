@@ -75,4 +75,32 @@ describe('buildWorkflowTemplateComponents (chemin envoi workflow)', () => {
     const types = components.map((x) => (x as { type?: string }).type);
     expect(types.indexOf('body')).toBeLessThan(types.indexOf('button'));
   });
+
+  // Campagne workflow, 1er template : les variables sont DÉJÀ résolues par contact -> explicitParams court-circuite
+  // la résolution par hints (chemin identique aux campagnes template directes).
+  it('explicitParams : utilise les valeurs fournies directement (aucune résolution par hints)', () => {
+    const { components, missing } = buildWorkflowTemplateComponents({
+      hints: [{ position: 1, source: { type: 'field', key: 'prenom' } }], // ignorés
+      varCount: 1, contact, buttons: [], explicitParams: ['Valeur explicite'],
+    });
+    expect(bodyOf(components)).toEqual([{ type: 'text', text: 'Valeur explicite' }]);
+    expect(missing).toEqual([]);
+  });
+
+  it('explicitParams avec une valeur vide -> position missing (l\'appelant saute, jamais text:\'\')', () => {
+    const { missing } = buildWorkflowTemplateComponents({ hints: [], varCount: 2, contact, buttons: [], explicitParams: ['Léa', ''] });
+    expect(missing).toEqual([2]);
+  });
+
+  it('explicitParams: [] -> aucun component body, aucun manquant', () => {
+    const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: 0, contact, buttons: [], explicitParams: [] });
+    expect(components.find((x) => (x as { type?: string }).type === 'body')).toBeUndefined();
+    expect(missing).toEqual([]);
+  });
+
+  it('explicitParams : boutons quick-reply toujours ajoutés (payload contrôlé)', () => {
+    const { components } = buildWorkflowTemplateComponents({ hints: [], varCount: 1, contact, buttons: qrButtons, explicitParams: ['X'] });
+    const btns = components.filter((x) => (x as { type?: string }).type === 'button') as Array<{ index: string }>;
+    expect(btns.map((b) => b.index)).toEqual(['0', '2']); // le bouton URL (index 1) est exclu
+  });
 });

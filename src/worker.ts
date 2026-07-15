@@ -98,7 +98,7 @@ async function main(): Promise<void> {
       try { await tagStore.create(tenant, clean); } catch { /* déclaration best-effort */ }
     },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
-    sendTemplate: async (tenant, waId, name, language, buttons) => {
+    sendTemplate: async (tenant, waId, name, language, buttons, explicitParams) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       const pn = await repo.getTenantPhoneNumberId(tenant);
       if (!pn) {
@@ -107,6 +107,24 @@ async function main(): Promise<void> {
         return;
       }
       const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+
+      // Campagne workflow : les variables du 1er template sont DÉJÀ résolues par contact (paramMapping de la campagne,
+      // via buildRecipients). On les utilise directement, sans relire le corps live du template ni les hints (chemin
+      // identique aux campagnes template DIRECTES). `explicitParams` DÉFINI (même `[]` = template sans variable) ->
+      // ce chemin ; `undefined` = envoi via `advance` (réponse webhook) -> chemin hints stockés ci-dessous.
+      // Garde-fou : une valeur vide fait sauter l'envoi (jamais `text:''`).
+      if (explicitParams !== undefined) {
+        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams });
+        if (missing.length > 0) {
+          // eslint-disable-next-line no-console
+          console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
+          return;
+        }
+        const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
+        await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
+        return;
+      }
+
       // Variables du corps : on résout les {{n}} avec les attributs du contact (indices template_param_hints ->
       // champ, ex. {{1}}=prenom). On NE devine PAS : si les variables sont indéterminables (info null) ou si une
       // valeur manque, on NE PAS envoyer (évite 132000 « nb de variables » et 132012 « text:'' »).
@@ -177,9 +195,10 @@ async function main(): Promise<void> {
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
-      startWorkflow: async (tenant, workflowId, waId, contactId) => {
+      // firstTemplateParams = variables du 1er template déjà résolues par contact (paramMapping de la campagne).
+      startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) => {
         const wf = await workflowStore.getById(workflowId, tenant);
-        if (wf) await workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId });
+        if (wf) await workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams);
       },
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),

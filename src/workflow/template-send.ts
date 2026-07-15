@@ -18,8 +18,16 @@ export function buildWorkflowTemplateComponents(opts: {
   varCount: number;
   contact: ResolvableContact;
   buttons: WorkflowButton[];
+  /**
+   * Variables du corps DÉJÀ résolues (campagne workflow, 1er template) : si fourni, on court-circuite la résolution
+   * par hints et on utilise ces valeurs directement. Une valeur vide -> position `missing` (l'appelant saute :
+   * jamais de `text:''`). Absent -> résolution par hints (chemin advance/webhook, inchangé).
+   */
+  explicitParams?: string[];
 }): { components: unknown[]; missing: number[] } {
-  const resolved = opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact) : { values: [], missing: [] };
+  const resolved = opts.explicitParams !== undefined
+    ? { values: opts.explicitParams, missing: opts.explicitParams.flatMap((v, i) => (v === '' ? [i + 1] : [])) }
+    : opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact) : { values: [], missing: [] };
   const bodyComponents = resolved.values.length > 0 ? buildTemplateComponents({ bodyParams: resolved.values }) : [];
   const buttonComponents = opts.buttons
     .map((b, i) => ({ b, i }))

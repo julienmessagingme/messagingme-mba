@@ -122,6 +122,24 @@ describe('campaignRunJob', () => {
     expect(recipients.results.get('r2')).toMatchObject({ status: 'sent' });
   });
 
+  it('campagne WORKFLOW : startWorkflow reçoit les params résolus du 1er template (5e arg)', async () => {
+    const captured: string[][] = [];
+    const wf: Campaign = { ...campaign, workflowId: 'wf1', templateName: '' };
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: ['Julie'], status: 'pending' },
+    ]);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => wf,
+        recipients,
+        startWorkflow: async (_t, _w, _waId, _cid, params) => { captured.push(params); },
+      }),
+    );
+    expect(report.sent).toBe(1);
+    expect(captured).toEqual([['Julie']]);
+  });
+
   it('campagne inconnue -> throw', async () => {
     await expect(
       campaignRunJob({ campaignId: 'nope' }, deps({ getCampaign: async () => null })),
