@@ -167,6 +167,7 @@ function app(over: Partial<AccountRouteDeps> = {}) {
     pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K', displayPhoneNumber: '+33 5 25 68 02 50' }),
     saveStatus: async (id, patch) => { saved.push({ id, patch }); },
     setHubspotConnected: async (id, tenant, connected) => { hubspotCalls.push({ id, tenant, connected }); return true; },
+    getHubspotPortal: async () => ({ connected: false }),
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, account: deps }), saved, hubspotCalls };
@@ -248,6 +249,22 @@ describe('route account-status', () => {
     expect(body.hubspotConnected).toBe(false); // vient du record (pas du pull)
     expect(body.nameStatus).toBe('APPROVED'); // frais prime le persisté PENDING_REVIEW
     expect(body).toMatchObject({ codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme', wabaHealthStatus: 'AVAILABLE' });
+    await server.close();
+  });
+
+  it('expose hubspotPortal : portail lié -> connected + hubDomain', async () => {
+    const { server } = app({ getHubspotPortal: async () => ({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' }) });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    const body = res.json<{ hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null } }>();
+    expect(body.hubspotPortal).toEqual({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' });
+    await server.close();
+  });
+
+  it('hubspotPortal par défaut non connecté ; un échec de lecture NE casse pas la route (best-effort)', async () => {
+    const { server } = app({ getHubspotPortal: async () => { throw new Error('mmhs down'); } });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ hubspotPortal: { connected: boolean } }>().hubspotPortal).toEqual({ connected: false });
     await server.close();
   });
 });

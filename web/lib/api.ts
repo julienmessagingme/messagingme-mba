@@ -510,6 +510,8 @@ export interface AccountStatusResponse {
   accountReviewStatus: string | null;
   businessVerificationStatus: string | null;
   hubspotConnected: boolean;
+  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ». */
+  hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null };
   status: { dot: AccountDot; label: string; reason: string };
 }
 export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {

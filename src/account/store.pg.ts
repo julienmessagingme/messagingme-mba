@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { PhoneNumberRecord } from '../http/account';
+import type { PhoneNumberRecord, HubspotPortalLink } from '../http/account';
 
 /** Accès en lecture/écriture au statut d'un numéro (page Accueil : numéro + pastille de statut). */
 export class PgPhoneStatusStore {
@@ -91,6 +91,26 @@ export class PgPhoneStatusStore {
       [phoneNumberId, tenantId, connected],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Portail HubSpot lié à CE tenant, lu CROSS-SCHEMA dans le connecteur mm-hubspot (schéma `mmhs`, même base/pool).
+   * Jointure tenant_portals -> portals pour ramener le hub_id + le domaine du portail. `{ connected: false }` si le
+   * tenant n'est mappé à aucun portail (la console proposera « Connecter HubSpot »). Lecture seule : ne touche RIEN
+   * dans mmhs (le mapping du pilote reste intact).
+   */
+  async getHubspotPortal(tenantId: string): Promise<HubspotPortalLink> {
+    const res = await this.pool.query<{ hub_id: string; hub_domain: string | null }>(
+      `select p.hub_id, p.hub_domain
+         from mmhs.tenant_portals tp
+         join mmhs.portals p on p.hub_id = tp.hub_id
+        where tp.tenant_id = $1
+        limit 1`,
+      [tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return { connected: false };
+    return { connected: true, hubId: r.hub_id, hubDomain: r.hub_domain };
   }
 
   /**

@@ -22,6 +22,17 @@ export interface PhoneNumberRecord {
   hubspotConnected: boolean;
 }
 
+/**
+ * Lien vers le portail HubSpot du tenant (mapping mmhs.tenant_portals). `connected=false` -> aucun portail installé
+ * pour ce tenant (la console propose « Connecter HubSpot »). `hubDomain` = nom/domaine du portail (peut être null si
+ * le portail a été installé avant la colonne hub_domain, ou domaine non renvoyé) -> l'UI retombe sur `hubId`.
+ */
+export interface HubspotPortalLink {
+  connected: boolean;
+  hubId?: string;
+  hubDomain?: string | null;
+}
+
 /** Sous-ensemble de champs persistables au pull (tout optionnel : coalesce à l'écriture). */
 export type StatusPatch = {
   status?: string; qualityRating?: string; messagingLimitTier?: string;
@@ -38,6 +49,8 @@ export interface AccountRouteDeps {
   saveStatus(phoneNumberId: string, patch: StatusPatch): Promise<void>;
   /** Active/coupe la synchro HubSpot d'un numéro (scopé tenant). false si le numéro n'appartient pas au tenant. */
   setHubspotConnected(phoneNumberId: string, tenantId: string, connected: boolean): Promise<boolean>;
+  /** Portail HubSpot lié à ce tenant (lecture cross-schema mmhs). `{ connected: false }` si aucun mapping. */
+  getHubspotPortal(tenantId: string): Promise<HubspotPortalLink>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -71,6 +84,8 @@ export interface AccountStatusResponse {
   businessVerificationStatus: string | null;
   /** Synchro HubSpot active pour le numéro principal (pastille + toggle). */
   hubspotConnected: boolean;
+  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). Sert à afficher le portail branché ou le CTA « Connecter HubSpot ». */
+  hubspotPortal: HubspotPortalLink;
   status: ReturnType<typeof computeAccountStatus>;
 }
 
@@ -85,6 +100,10 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
   app.get('/tenants/:tenantId/account-status', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+
+    // Portail HubSpot du tenant (lecture cross-schema mmhs). Best-effort : un échec (mmhs indisponible, colonne
+    // pas encore migrée) NE fait JAMAIS échouer la route -> on retombe sur « non connecté », comme le pull.
+    const hubspotPortal = await deps.getHubspotPortal(tenant).catch(() => ({ connected: false as const }));
 
     const pn = await deps.getPhoneNumber(tenant);
     if (!pn) {
@@ -103,6 +122,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
         accountReviewStatus: null,
         businessVerificationStatus: null,
         hubspotConnected: false,
+        hubspotPortal,
         status: { dot: 'grey', label: 'Aucun numéro', reason: "Aucun numéro WhatsApp n'est rattaché à ce compte." },
       };
       return reply.code(200).send(body);
@@ -170,6 +190,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
       accountReviewStatus: accountReviewStatus ?? null,
       businessVerificationStatus: businessVerificationStatus ?? null,
       hubspotConnected: pn.hubspotConnected,
+      hubspotPortal,
       status: computeAccountStatus(signals),
     };
     return reply.code(200).send(body);

@@ -223,6 +223,7 @@ async function main(): Promise<void> {
       },
       saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
       setHubspotConnected: (id, tenant, connected) => phoneStatusStore.setHubspotConnected(id, tenant, connected),
+      getHubspotPortal: (tenant) => phoneStatusStore.getHubspotPortal(tenant),
     },
     me: { getUser: (userId) => userStore.getById(userId) },
     workflows: {

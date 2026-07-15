@@ -635,8 +635,9 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                     <input
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                      maxLength={25}
                       className={`${inputCls} w-full`}
-                      placeholder="Texte affiché sur le bouton (ex. Ouvrir le formulaire)"
+                      placeholder="Texte affiché sur le bouton (25 car. max)"
                     />
                     <select
                       value={b.flowId ?? ''}
@@ -655,8 +656,9 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                     <input
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
+                      maxLength={25}
                       className={`${inputCls} flex-1`}
-                      placeholder="Texte du bouton"
+                      placeholder="Texte du bouton (25 car. max)"
                     />
                     {b.type === 'URL' && (
                       <input

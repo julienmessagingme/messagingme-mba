@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
-import { fmtNum, fmtCost } from '@/lib/format';
+import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
   getStats, getTemplateStats, getCostSeries,
@@ -190,32 +190,64 @@ function AccueilInner({ session }: { session: Session }) {
                   {account.wabaHealthStatus && <Field label="Santé du compte" value={wabaHealthLabel(account.wabaHealthStatus)} />}
                 </div>
               )}
-              {account?.hasNumber && (
-                <div className="mt-4 flex items-center justify-between border-t border-ink-100 pt-3">
+              {account?.hasNumber && account.hubspotPortal?.connected && (
+                // Portail relié : on affiche SUR QUEL portail, puis le toggle de synchro PAR numéro (qui gate le push).
+                <div className="mt-4 border-t border-ink-100 pt-3">
+                  <div className="text-sm font-semibold text-ink-800">
+                    HubSpot : connecté au portail{' '}
+                    <span className="font-mono text-brand-700">{account.hubspotPortal.hubDomain ?? account.hubspotPortal.hubId}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink-800">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: account.hubspotConnected ? DOT_HEX.green : DOT_HEX.grey }}
+                        />
+                        {account.hubspotConnected ? 'Synchronisation activée' : 'Synchronisation coupée'}
+                      </div>
+                      <p className="mt-0.5 text-xs text-ink-500">
+                        {account.hubspotConnected
+                          ? "Les analyses de conversation sont synchronisées vers HubSpot."
+                          : "La synchronisation vers HubSpot est coupée pour ce numéro."}
+                      </p>
+                    </div>
+                    {isAdmin && account.phoneNumberId && (
+                      <button
+                        onClick={toggleHubspot}
+                        disabled={savingHubspot}
+                        title="Activer/couper la synchro HubSpot"
+                        aria-pressed={account.hubspotConnected}
+                        className={`relative h-7 w-12 shrink-0 rounded-full transition ${account.hubspotConnected ? 'bg-brand-500' : 'bg-ink-300'} ${savingHubspot ? 'opacity-60' : ''}`}
+                      >
+                        <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${account.hubspotConnected ? 'left-[22px]' : 'left-0.5'}`} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {account?.hasNumber && account.hubspotPortal && !account.hubspotPortal.connected && (
+                // Aucun portail relié : on ne montre PAS le toggle par numéro (pousser sans portail ne fait rien).
+                // Le CTA lance l'install OAuth du connecteur en liant CE tenant (admin uniquement).
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-sm font-semibold text-ink-800">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: account.hubspotConnected ? DOT_HEX.green : DOT_HEX.grey }}
-                      />
-                      {account.hubspotConnected ? 'HubSpot connecté' : 'HubSpot non connecté'}
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX.grey }} />
+                      HubSpot non connecté
                     </div>
                     <p className="mt-0.5 text-xs text-ink-500">
-                      {account.hubspotConnected
-                        ? "Les analyses de conversation sont synchronisées vers HubSpot."
-                        : "La synchronisation vers HubSpot est coupée pour ce numéro."}
+                      Aucun portail HubSpot n&apos;est relié à ce compte. Connecte-le pour synchroniser les analyses de conversation.
                     </p>
                   </div>
-                  {isAdmin && account.phoneNumberId && (
-                    <button
-                      onClick={toggleHubspot}
-                      disabled={savingHubspot}
-                      title="Activer/couper la synchro HubSpot"
-                      aria-pressed={account.hubspotConnected}
-                      className={`relative h-7 w-12 shrink-0 rounded-full transition ${account.hubspotConnected ? 'bg-brand-500' : 'bg-ink-300'} ${savingHubspot ? 'opacity-60' : ''}`}
+                  {isAdmin && (
+                    <a
+                      href={`https://mm-hubspot.messagingme.app/oauth/install?tenant=${encodeURIComponent(session.tenantId)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
                     >
-                      <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${account.hubspotConnected ? 'left-[22px]' : 'left-0.5'}`} />
-                    </button>
+                      Connecter HubSpot
+                    </a>
                   )}
                 </div>
               )}
@@ -314,20 +346,6 @@ function qualityLabel(q: AccountStatusResponse['quality']): string {
   return q === 'GREEN' ? 'Verte' : q === 'YELLOW' ? 'Moyenne' : q === 'RED' ? 'Rouge' : 'Non évaluée';
 }
 
-/** Palier de messagerie Meta -> cap en clair (nombre de conversations business par 24 h). */
-function tierLabel(tier: string): string {
-  const map: Record<string, string> = {
-    TIER_50: '50 / 24 h',
-    TIER_250: '250 / 24 h',
-    TIER_1K: '1 000 / 24 h',
-    TIER_10K: '10 000 / 24 h',
-    TIER_100K: '100 000 / 24 h',
-    TIER_UNLIMITED: 'Illimité',
-    UNLIMITED: 'Illimité',
-  };
-  return map[tier.toUpperCase()] ?? tier;
-}
-
 /** Statut du nom d'affichage (name_status Graph) -> libellé humain. */
 function nameStatusLabel(s: string): string {
   const map: Record<string, string> = {
@@ -340,12 +358,6 @@ function nameStatusLabel(s: string): string {
     EXPIRED: 'Expiré',
   };
   return map[s.toUpperCase()] ?? s;
-}
-
-/** Débit d'envoi (throughput.level) -> libellé humain. */
-function throughputLabel(level: string): string {
-  const map: Record<string, string> = { STANDARD: 'Standard', HIGH: 'Élevé', NOT_APPLICABLE: 'Non applicable' };
-  return map[level.toUpperCase()] ?? level;
 }
 
 /** Santé du WABA (health_status.can_send_message) -> libellé humain. */
