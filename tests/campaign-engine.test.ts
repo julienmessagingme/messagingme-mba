@@ -143,17 +143,31 @@ describe('runCampaign', () => {
     expect(captured).toEqual([['X'], ['X']]);
   });
 
-  it('fréquence : un contact envoyé récemment est skippé', async () => {
+  it('fréquence : un contact envoyé récemment est skippé QUAND le cap est activé (fenêtre > 0)', async () => {
+    // Le cap est désactivé par défaut (DEFAULT_THRESHOLDS.frequencyWindowMs = 0) : on l'active explicitement
+    // ici pour valider que le garde-fou saute bien un contact récent quand une fenêtre est configurée.
     const sender = new FakeSender();
     const frequency = new FakeFreq();
     frequency.map.set('+33611', 1_000_000_000 - 1000); // < 24h
+    const thresholds: GuardrailThresholds = { frequencyWindowMs: 24 * 3600 * 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 20 };
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
-    const report = await runCampaign(campaign, deps({ recipients, sender, frequency }));
+    const report = await runCampaign(campaign, deps({ recipients, sender, frequency, thresholds }));
     expect(report).toMatchObject({ sent: 1, skipped: 1 });
     expect(sender.calls).toEqual(['+33622']);
     // Skip fréquence TRANSITOIRE : non persisté (reste 'pending' pour un futur run).
     expect(recipients.results.has('r1')).toBe(false);
     expect(recipients.claimed).toEqual(['r2']); // r1 non claimé (skippé avant le claim)
+  });
+
+  it('fréquence : DÉSACTIVÉE par défaut -> un contact récent est quand même envoyé', async () => {
+    // DEFAULT_THRESHOLDS.frequencyWindowMs = 0 (pilote) : même un envoi marketing récent ne bloque plus.
+    const sender = new FakeSender();
+    const frequency = new FakeFreq();
+    frequency.map.set('+33611', 1_000_000_000 - 1000); // envoi récent, mais cap désactivé
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const report = await runCampaign(campaign, deps({ recipients, sender, frequency }));
+    expect(report).toMatchObject({ sent: 2, skipped: 0 });
+    expect(sender.calls).toEqual(['+33611', '+33622']);
   });
 
   it('claim échoue (run concurrent) : le destinataire est sauté, aucun envoi', async () => {

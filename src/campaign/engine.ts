@@ -65,7 +65,10 @@ export interface EngineDeps {
 }
 
 const DEFAULT_THRESHOLDS: GuardrailThresholds = {
-  frequencyWindowMs: 24 * 3600 * 1000,
+  // Cap anti-répétition marketing DÉSACTIVÉ par défaut (pilote, décision 2026-07-15) : l'opérateur choisit
+  // explicitement ses destinataires -> un plafond 24h silencieux laissait des contacts « en attente » sans
+  // explication (cf. bug campagne workflow). 0 = désactivé (court-circuité). Mettre >0 (ex. 24*3600*1000) le réactive.
+  frequencyWindowMs: 0,
   maxFailureRate: 0.3,
   minSendsForFailureCheck: 20,
 };
@@ -100,9 +103,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       return report;
     }
 
-    // Fréquence : garde-fou MARKETING uniquement. Les messages utility relèvent de la
-    // fenêtre de service et ne doivent pas être supprimés par un plafond marketing.
-    if (campaign.category === 'marketing') {
+    // Fréquence : garde-fou MARKETING uniquement, et seulement si une fenêtre > 0 est configurée (désactivé par
+    // défaut, cf. DEFAULT_THRESHOLDS). Fenêtre 0 -> court-circuit : aucune requête, aucun saut, l'envoi part.
+    // Les messages utility relèvent de la fenêtre de service et ne sont jamais soumis à ce plafond.
+    if (campaign.category === 'marketing' && t.frequencyWindowMs > 0) {
       const last = await deps.frequency.lastSentAt(campaign.tenantId, r.toE164);
       if (!frequencyAllows(last, now(), t.frequencyWindowMs)) {
         report.skipped += 1;
