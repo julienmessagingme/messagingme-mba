@@ -114,7 +114,7 @@ async function main(): Promise<void> {
       // ce chemin ; `undefined` = envoi via `advance` (réponse webhook) -> chemin hints stockés ci-dessous.
       // Garde-fou : une valeur vide fait sauter l'envoi (jamais `text:''`).
       if (explicitParams !== undefined) {
-        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams });
+        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}` });
         if (missing.length > 0) {
           // eslint-disable-next-line no-console
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
       }
       // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui sélectionne
       // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
-      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons });
+      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}` });
       if (missing.length > 0) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);

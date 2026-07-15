@@ -24,15 +24,25 @@ export function buildWorkflowTemplateComponents(opts: {
    * jamais de `text:''`). Absent -> résolution par hints (chemin advance/webhook, inchangé).
    */
   explicitParams?: string[];
+  /**
+   * Jeton de session pour un bouton FLOW (formulaire). Meta l'EXIGE non vide à l'envoi d'un template NAVIGATE
+   * (sinon #131009 « Parameter value is not valid »). La corrélation de la réponse côté mba passe par `_ref` baké
+   * dans le flow_json, PAS par ce jeton -> n'importe quelle valeur non vide convient (le worker en passe un unique).
+   */
+  flowToken?: string;
 }): { components: unknown[]; missing: number[] } {
   const resolved = opts.explicitParams !== undefined
     ? { values: opts.explicitParams, missing: opts.explicitParams.flatMap((v, i) => (v === '' ? [i + 1] : [])) }
     : opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact) : { values: [], missing: [] };
   const bodyComponents = resolved.values.length > 0 ? buildTemplateComponents({ bodyParams: resolved.values }) : [];
-  const buttonComponents = opts.buttons
-    .map((b, i) => ({ b, i }))
-    .filter(({ b }) => b.type === 'QUICK_REPLY')
-    .map(({ i }) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `btn:${i}` }] }));
+  const flowToken = opts.flowToken && opts.flowToken !== '' ? opts.flowToken : 'mba-flow';
+  // Un composant par bouton, à l'INDEX du template (préservé) : quick-reply -> payload contrôlé (`btn:<i>`) ;
+  // FLOW -> action + flow_token (requis par Meta pour un template à bouton formulaire) ; URL statique -> rien.
+  const buttonComponents = opts.buttons.flatMap((b, i): unknown[] => {
+    if (b.type === 'QUICK_REPLY') return [{ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `btn:${i}` }] }];
+    if (b.type === 'FLOW') return [{ type: 'button', sub_type: 'flow', index: String(i), parameters: [{ type: 'action', action: { flow_token: flowToken } }] }];
+    return [];
+  });
   // `missing` non vide -> l'appelant (worker) SAUTE l'envoi (pas de `text:''` -> pas de 132012).
   return { components: [...bodyComponents, ...buttonComponents], missing: resolved.missing };
 }

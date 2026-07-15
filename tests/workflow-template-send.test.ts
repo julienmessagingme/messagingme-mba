@@ -103,4 +103,28 @@ describe('buildWorkflowTemplateComponents (chemin envoi workflow)', () => {
     const btns = components.filter((x) => (x as { type?: string }).type === 'button') as Array<{ index: string }>;
     expect(btns.map((b) => b.index)).toEqual(['0', '2']); // le bouton URL (index 1) est exclu
   });
+
+  // Bouton FLOW (formulaire) : Meta exige un composant sub_type=flow + flow_token à l'envoi (sinon #131009). Vérifié
+  // empiriquement contre l'API Cloud (template test1507, message accepté).
+  it('bouton FLOW -> composant sub_type flow avec flow_token (répare #131009), index préservé', () => {
+    const { components } = buildWorkflowTemplateComponents({
+      hints: [], varCount: 1, contact, buttons: [{ type: 'FLOW', text: 'Formulaire' }], explicitParams: ['Julien'], flowToken: 'tok-123',
+    });
+    const btn = components.find((x) => (x as { sub_type?: string }).sub_type === 'flow') as { index: string; parameters: Array<{ type: string; action: { flow_token: string } }> };
+    expect(btn.index).toBe('0');
+    expect(btn.parameters[0]).toEqual({ type: 'action', action: { flow_token: 'tok-123' } });
+  });
+
+  it('boutons mixtes URL/QUICK_REPLY/FLOW -> composants corrects, index de template préservé', () => {
+    const buttons: WorkflowButton[] = [{ type: 'URL', text: 'Site' }, { type: 'QUICK_REPLY', text: 'Oui' }, { type: 'FLOW', text: 'Form' }];
+    const { components } = buildWorkflowTemplateComponents({ hints: [], varCount: 0, contact, buttons });
+    const btns = components.filter((x) => (x as { type?: string }).type === 'button') as Array<{ sub_type: string; index: string }>;
+    expect(btns.map((b) => `${b.sub_type}:${b.index}`)).toEqual(['quick_reply:1', 'flow:2']); // URL (index 0) exclu
+  });
+
+  it('bouton FLOW sans flowToken -> jeton par défaut NON vide (jamais un flow_token vide rejeté par Meta)', () => {
+    const { components } = buildWorkflowTemplateComponents({ hints: [], varCount: 0, contact, buttons: [{ type: 'FLOW', text: 'F' }] });
+    const btn = components.find((x) => (x as { sub_type?: string }).sub_type === 'flow') as { parameters: Array<{ action: { flow_token: string } }> };
+    expect(btn.parameters[0]!.action.flow_token).not.toBe('');
+  });
 });
