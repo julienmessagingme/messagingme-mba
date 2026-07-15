@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
+import { fmtNum, fmtCost } from '@/lib/format';
 import {
-  getMe, getSettings, putSettings, getAccountStatus,
+  getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
+  getStats, getTemplateStats, getCostSeries,
   type MeResponse, type AccountStatusResponse, type AccountDot,
 } from '@/lib/api';
 
@@ -24,11 +26,22 @@ function firstNameOf(me: MeResponse | null): string {
   return local ?? '';
 }
 
+/** Total KPI sur 30 j, calculés à partir des mêmes endpoints que la page Analytics (pas de recalcul divergent). */
+interface Kpis {
+  contacts: number;      // total cumulé de contacts (dernière valeur de la série cumulative)
+  exchanged: number;     // messages échangés (hors template) sur 30 j
+  templates: number;     // templates envoyés sur 30 j
+  cost: number;          // coût estimé sur 30 j
+  hasRates: boolean;     // false -> Meta n'a fourni aucun tarif : afficher « — » plutôt qu'un faux 0
+}
+
 function AccueilInner({ session }: { session: Session }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [account, setAccount] = useState<AccountStatusResponse | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
   const [savingMba, setSavingMba] = useState(false);
+  const [savingHubspot, setSavingHubspot] = useState(false);
+  const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,9 +65,27 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }, [session.tenantId]);
 
+  // KPIs 30 j : chargés à part (non bloquants). Un hoquet des stats/coût n'efface pas la carte statut.
+  const loadKpis = useCallback(async () => {
+    try {
+      const [stats, tpl, cost] = await Promise.all([
+        getStats(session.tenantId),
+        getTemplateStats(session.tenantId),
+        getCostSeries(session.tenantId),
+      ]);
+      const contacts = stats.contacts.length ? (stats.contacts[stats.contacts.length - 1]?.count ?? 0) : 0;
+      const exchanged = stats.exchanged.reduce((s, p) => s + p.count, 0);
+      const templates = tpl.breakdown.reduce((s, r) => s + r.count, 0);
+      setKpis({ contacts, exchanged, templates, cost: cost.total, hasRates: cost.hasRates });
+    } catch {
+      // Silencieux : les KPIs sont un plus, pas un bloquant. On laisse la rangée en « — ».
+    }
+  }, [session.tenantId]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadKpis();
+  }, [load, loadKpis]);
 
   async function toggleMba() {
     if (!isAdmin) return;
@@ -70,7 +101,30 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
+  async function toggleHubspot() {
+    if (!isAdmin || !account?.phoneNumberId) return;
+    const next = !account.hubspotConnected;
+    setSavingHubspot(true);
+    setAccount((a) => (a ? { ...a, hubspotConnected: next } : a)); // optimiste
+    try {
+      await setHubspotConnected(session.tenantId, account.phoneNumberId, next);
+    } catch {
+      setAccount((a) => (a ? { ...a, hubspotConnected: !next } : a)); // rollback
+    } finally {
+      setSavingHubspot(false);
+    }
+  }
+
   const firstName = firstNameOf(me);
+  const kpiRow = useMemo(
+    () => [
+      { label: 'Contacts', value: kpis ? fmtNum(kpis.contacts) : '—' },
+      { label: 'Messages échangés', value: kpis ? fmtNum(kpis.exchanged) : '—' },
+      { label: 'Templates envoyés', value: kpis ? fmtNum(kpis.templates) : '—' },
+      { label: 'Coût estimé', value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost) : '—') : '—' },
+    ],
+    [kpis],
+  );
 
   return (
     <div className="space-y-5">
@@ -82,6 +136,19 @@ function AccueilInner({ session }: { session: Session }) {
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      {/* Rangée de KPIs (30 derniers jours) — mêmes chiffres que la page Analytics. */}
+      <div>
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-400">30 derniers jours</div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {kpiRow.map((k) => (
+            <div key={k.label} className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+              <div className="text-xs font-medium uppercase tracking-wide text-ink-400">{k.label}</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-ink-900">{k.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {loading ? (
         <p className="text-sm text-ink-500">Chargement…</p>
@@ -104,9 +171,10 @@ function AccueilInner({ session }: { session: Session }) {
               <div className="font-mono text-lg font-semibold text-ink-900">
                 {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : 'Aucun numéro'}
               </div>
+              {account?.verifiedName && <div className="mt-0.5 text-xs text-ink-500">{account.verifiedName}</div>}
               {account && <p className="mt-1 text-xs text-ink-500">{account.status.reason}</p>}
               {account?.hasNumber && (
-                <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-ink-100 pt-3 text-xs">
+                <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink-100 pt-3 text-xs">
                   <div>
                     <div className="font-medium uppercase tracking-wide text-ink-400">Qualité</div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-ink-800">
@@ -115,10 +183,39 @@ function AccueilInner({ session }: { session: Session }) {
                     </div>
                   </div>
                   {account.tier && (
-                    <div>
-                      <div className="font-medium uppercase tracking-wide text-ink-400">Palier d&apos;envoi</div>
-                      <div className="mt-0.5 text-sm font-semibold text-ink-800">{tierLabel(account.tier)}</div>
+                    <Field label="Cap d'envoi" value={tierLabel(account.tier)} />
+                  )}
+                  {account.nameStatus && <Field label="Nom" value={nameStatusLabel(account.nameStatus)} />}
+                  {account.throughputLevel && <Field label="Débit" value={throughputLabel(account.throughputLevel)} />}
+                  {account.wabaHealthStatus && <Field label="Santé du compte" value={wabaHealthLabel(account.wabaHealthStatus)} />}
+                </div>
+              )}
+              {account?.hasNumber && (
+                <div className="mt-4 flex items-center justify-between border-t border-ink-100 pt-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-sm font-semibold text-ink-800">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: account.hubspotConnected ? DOT_HEX.green : DOT_HEX.grey }}
+                      />
+                      {account.hubspotConnected ? 'HubSpot connecté' : 'HubSpot non connecté'}
                     </div>
+                    <p className="mt-0.5 text-xs text-ink-500">
+                      {account.hubspotConnected
+                        ? "Les analyses de conversation sont synchronisées vers HubSpot."
+                        : "La synchronisation vers HubSpot est coupée pour ce numéro."}
+                    </p>
+                  </div>
+                  {isAdmin && account.phoneNumberId && (
+                    <button
+                      onClick={toggleHubspot}
+                      disabled={savingHubspot}
+                      title="Activer/couper la synchro HubSpot"
+                      aria-pressed={account.hubspotConnected}
+                      className={`relative h-7 w-12 shrink-0 rounded-full transition ${account.hubspotConnected ? 'bg-brand-500' : 'bg-ink-300'} ${savingHubspot ? 'opacity-60' : ''}`}
+                    >
+                      <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${account.hubspotConnected ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
                   )}
                 </div>
               )}
@@ -153,6 +250,16 @@ function AccueilInner({ session }: { session: Session }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Petit champ étiquette + valeur (rangée de détails du numéro). */
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="font-medium uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold text-ink-800">{value}</div>
     </div>
   );
 }
@@ -207,16 +314,42 @@ function qualityLabel(q: AccountStatusResponse['quality']): string {
   return q === 'GREEN' ? 'Verte' : q === 'YELLOW' ? 'Moyenne' : q === 'RED' ? 'Rouge' : 'Non évaluée';
 }
 
-/** Palier de messagerie Meta -> libellé humain (nombre de conversations business par 24 h). */
+/** Palier de messagerie Meta -> cap en clair (nombre de conversations business par 24 h). */
 function tierLabel(tier: string): string {
   const map: Record<string, string> = {
-    TIER_50: '50 / jour',
-    TIER_250: '250 / jour',
-    TIER_1K: '1 000 / jour',
-    TIER_10K: '10 000 / jour',
-    TIER_100K: '100 000 / jour',
+    TIER_50: '50 / 24 h',
+    TIER_250: '250 / 24 h',
+    TIER_1K: '1 000 / 24 h',
+    TIER_10K: '10 000 / 24 h',
+    TIER_100K: '100 000 / 24 h',
     TIER_UNLIMITED: 'Illimité',
     UNLIMITED: 'Illimité',
   };
   return map[tier.toUpperCase()] ?? tier;
+}
+
+/** Statut du nom d'affichage (name_status Graph) -> libellé humain. */
+function nameStatusLabel(s: string): string {
+  const map: Record<string, string> = {
+    APPROVED: 'Approuvé',
+    AVAILABLE_WITHOUT_REVIEW: 'Approuvé',
+    PENDING_REVIEW: 'En revue',
+    PENDING: 'En revue',
+    DECLINED: 'Refusé',
+    NONE: 'Aucun',
+    EXPIRED: 'Expiré',
+  };
+  return map[s.toUpperCase()] ?? s;
+}
+
+/** Débit d'envoi (throughput.level) -> libellé humain. */
+function throughputLabel(level: string): string {
+  const map: Record<string, string> = { STANDARD: 'Standard', HIGH: 'Élevé', NOT_APPLICABLE: 'Non applicable' };
+  return map[level.toUpperCase()] ?? level;
+}
+
+/** Santé du WABA (health_status.can_send_message) -> libellé humain. */
+function wabaHealthLabel(s: string): string {
+  const map: Record<string, string> = { AVAILABLE: 'Disponible', LIMITED: 'Limitée', BLOCKED: 'Bloquée' };
+  return map[s.toUpperCase()] ?? s;
 }

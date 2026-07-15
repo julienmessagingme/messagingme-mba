@@ -30,6 +30,7 @@ import { createLlmClient } from './analysis/llm-client';
 import { getEnrichment } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
+import { PgPhoneStatusStore } from './account/store.pg';
 import { MetaClient } from './meta/client';
 import { MetaTemplateClient } from './meta/templates';
 import { FetchTransport } from './meta/http';
@@ -198,10 +199,15 @@ async function main(): Promise<void> {
     // (durable + DLQ). INERTE si CONNECTOR_PUSH_URL vide -> onAnalyzed = no-op, aucune file push, zéro appel réseau.
     const pushEnabled = config.CONNECTOR_PUSH_URL !== '';
     if (pushEnabled) {
+      const phoneStatusStore = new PgPhoneStatusStore(pool);
       await queue.work('push-analysis', (data) =>
         pushAnalysisJob(data, {
           getEnrichment: (id) => getEnrichment(pool, id),
+          // GATE par numéro : ne pousse au connecteur mm-hubspot QUE si la ligne du tenant est hubspot_connected=true.
+          isHubspotConnected: (tenantId, line) => phoneStatusStore.isHubspotConnectedForNumber(tenantId, line),
           post: (event) => postAnalysis(event, { url: config.CONNECTOR_PUSH_URL, secret: config.CONNECTOR_PUSH_SECRET, transport }),
+          // eslint-disable-next-line no-console
+          log: (m) => console.log(m),
         }),
       );
     }

@@ -14,9 +14,9 @@ const enr: Enrichment = {
 };
 
 describe('pushAnalysisJob', () => {
-  it('succès -> post appelé avec l\'événement construit', async () => {
+  it('succès (numéro connecté HubSpot) -> post appelé avec l\'événement construit', async () => {
     const posted: EnrichedAnalyzedEvent[] = [];
-    await pushAnalysisJob(stored, { getEnrichment: async () => enr, post: async (e) => { posted.push(e); } });
+    await pushAnalysisJob(stored, { getEnrichment: async () => enr, isHubspotConnected: async () => true, post: async (e) => { posted.push(e); } });
     expect(posted).toHaveLength(1);
     expect(posted[0]!.eventId).toBe(`c1:${enr.analyzedAt}`);
     expect(posted[0]!.contactE164).toBe('+33600000001');
@@ -24,11 +24,26 @@ describe('pushAnalysisJob', () => {
 
   it('conversation disparue (enrichment null) -> aucun post', async () => {
     let posts = 0;
-    await pushAnalysisJob(stored, { getEnrichment: async () => null, post: async () => { posts += 1; } });
+    await pushAnalysisJob(stored, { getEnrichment: async () => null, isHubspotConnected: async () => true, post: async () => { posts += 1; } });
     expect(posts).toBe(0);
   });
 
+  it('GATE : numéro NON connecté à HubSpot -> skip (aucun post), log émis', async () => {
+    let posts = 0;
+    const logs: string[] = [];
+    const checked: Array<{ tenantId: string; line: string }> = [];
+    await pushAnalysisJob(stored, {
+      getEnrichment: async () => enr,
+      isHubspotConnected: async (tenantId, line) => { checked.push({ tenantId, line }); return false; },
+      post: async () => { posts += 1; },
+      log: (m) => logs.push(m),
+    });
+    expect(posts).toBe(0); // synchro coupée pour ce numéro
+    expect(checked).toEqual([{ tenantId: 't1', line: '+33525680250' }]); // gate interrogé avec le bon tenant + ligne
+    expect(logs.some((l) => /skip/.test(l))).toBe(true);
+  });
+
   it('payload invalide -> throw (pg-boss ne rejoue pas indéfiniment un job cassé... via DLQ)', async () => {
-    await expect(pushAnalysisJob({}, { getEnrichment: async () => enr, post: async () => {} })).rejects.toThrow(/invalide/);
+    await expect(pushAnalysisJob({}, { getEnrichment: async () => enr, isHubspotConnected: async () => true, post: async () => {} })).rejects.toThrow(/invalide/);
   });
 });

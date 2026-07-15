@@ -202,15 +202,21 @@ async function main(): Promise<void> {
     },
     account: {
       getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
-      pullStatus: async (phoneNumberId) => {
+      pullStatus: async (phoneNumberId, tenant) => {
         if (!config.META_ACCESS_TOKEN) return null; // pas de token -> pas de pull live (statut sur le dernier connu)
         try {
-          return pullFromInfo(await phoneClient.get(phoneNumberId));
+          const info = await phoneClient.get(phoneNumberId);
+          // Santé WABA : 2e appel Graph, best-effort. Un échec (droits/état) ne casse pas le pull du numéro :
+          // on retombe sur le statut du numéro seul (les champs WABA restent sur leur dernier connu via coalesce).
+          const wabaId = await repo.getTenantWabaId(tenant);
+          const waba = wabaId ? await phoneClient.getWabaHealth(wabaId).catch(() => undefined) : undefined;
+          return pullFromInfo(info, waba);
         } catch (err) {
           return pullFromError(err);
         }
       },
       saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
+      setHubspotConnected: (id, tenant, connected) => phoneStatusStore.setHubspotConnected(id, tenant, connected),
     },
     me: { getUser: (userId) => userStore.getById(userId) },
     workflows: {

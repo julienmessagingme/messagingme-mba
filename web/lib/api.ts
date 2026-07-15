@@ -496,14 +496,31 @@ export function getMe(tenantId: string): Promise<MeResponse> {
 export type AccountDot = 'green' | 'amber' | 'red' | 'grey';
 export interface AccountStatusResponse {
   hasNumber: boolean;
+  /** Id Meta du numéro principal (requis pour le PATCH du toggle HubSpot). */
+  phoneNumberId: string | null;
   number: string | null;
   tier: string | null;
   quality: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
   numberStatus: string | null;
+  nameStatus: string | null;
+  codeVerificationStatus: string | null;
+  throughputLevel: string | null;
+  verifiedName: string | null;
+  wabaHealthStatus: string | null;
+  accountReviewStatus: string | null;
+  businessVerificationStatus: string | null;
+  hubspotConnected: boolean;
   status: { dot: AccountDot; label: string; reason: string };
 }
 export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {
   return request<AccountStatusResponse>(`/tenants/${tenantId}/account-status`);
+}
+/** Active/coupe la synchro HubSpot d'un numéro (toggle admin). Coupe/active vraiment le push d'analyse. */
+export function setHubspotConnected(tenantId: string, phoneNumberId: string, connected: boolean): Promise<{ phoneNumberId: string; hubspotConnected: boolean }> {
+  return request(`/tenants/${tenantId}/phone-numbers/${encodeURIComponent(phoneNumberId)}/hubspot`, {
+    method: 'PATCH',
+    body: JSON.stringify({ connected }),
+  });
 }
 
 // --- Surface d'exploitation cross-tenant (/ops) : token SÉPARÉ (x-ops-token), PAS la session JWT ---
