@@ -19,6 +19,17 @@ export function isUserFieldType(t: string): t is UserFieldType {
   return (USER_FIELD_TYPES as readonly string[]).includes(t);
 }
 
+/**
+ * Clés des champs de BASE (« système ») : toujours proposés, non supprimables ni renommables par l'utilisateur.
+ * Attributs du contact (name/phone/bsuid/wa_id, résolus hors `contacts.fields`) + champs socles (prenom/email).
+ * Miroir côté front : `web/lib/fields.ts` (SYSTEM_FIELDS). Sert de garde sur PATCH/DELETE d'un user field.
+ */
+export const SYSTEM_FIELD_KEYS: readonly string[] = ['name', 'phone', 'bsuid', 'wa_id', 'prenom', 'email'];
+
+export function isSystemFieldKey(key: string): boolean {
+  return (SYSTEM_FIELD_KEYS as readonly string[]).includes(key);
+}
+
 export interface UserFieldStore {
   list(tenantId: string): Promise<UserFieldDef[]>;
   upsert(tenantId: string, def: UserFieldDef): Promise<void>;

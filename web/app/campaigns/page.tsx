@@ -15,9 +15,11 @@ import {
   listTemplates,
   listAllContacts,
   listWorkflows,
+  listUserFields,
   getTemplateStats,
   getTemplateHints,
   contactIdentity,
+  type UserFieldDef,
   type CampaignSummary,
   type CampaignDetail,
   type CampaignCategory,
@@ -30,6 +32,7 @@ import {
   type WorkflowGraph,
   type WorkflowNode,
 } from '@/lib/api';
+import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample } from '@/lib/fields';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
  *  indisponible. Sur-estime l'utility en fenêtre de service gratuite -> à présenter comme « ~ estimé ». */
@@ -283,9 +286,28 @@ function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pri
 }
 
 interface VarRow {
-  source: 'name' | 'phone' | 'field' | 'literal';
-  key: string;
+  /** Option choisie dans le sélecteur : 'sys:<key>' (champ de base), 'field:<key>' (champ perso), ou 'literal'. */
+  sel: string;
+  /** Valeur saisie (uniquement pour 'literal'). */
   value: string;
+}
+
+/** Option choisie -> ParamSource envoyée au backend. */
+function selToSource(sel: string, value: string): TemplateParam['source'] {
+  if (sel === 'literal') return { type: 'literal', value };
+  if (sel.startsWith('sys:')) {
+    const f = SYSTEM_FIELDS.find((s) => `sys:${s.key}` === sel);
+    return f ? f.source : { type: 'attribute', key: 'name' };
+  }
+  return { type: 'field', key: sel.slice('field:'.length) };
+}
+
+/** ParamSource (indice de template stocké) -> option à présélectionner dans le sélecteur. */
+function sourceToSel(s: TemplateParam['source']): string {
+  if (s.type === 'literal') return 'literal';
+  if (s.type === 'attribute') return `sys:${s.key ?? 'name'}`;
+  const key = s.key ?? '';
+  return isSystemFieldKey(key) ? `sys:${key}` : `field:${key}`; // prenom/email = champ système
 }
 
 /** Bloc d'entrée d'un workflow = un bloc SANS arête entrante (défaut : le 1er bloc). null si vide.
@@ -315,9 +337,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   // Anti-course : ne pas appliquer les indices d'un template si l'utilisateur en a choisi un autre entre-temps.
   const chooseSeq = useRef(0);
 
-  // Templates approuvés + contacts (chargés une fois, indépendamment du polling des campagnes).
+  // Templates approuvés + contacts + champs perso (chargés une fois, indépendamment du polling des campagnes).
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
@@ -331,10 +354,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     let alive = true;
     (async () => {
       try {
-        const [t, c, w] = await Promise.all([listTemplates(tenantId), listAllContacts(tenantId), listWorkflows(tenantId)]);
+        const [t, c, w, uf] = await Promise.all([listTemplates(tenantId), listAllContacts(tenantId), listWorkflows(tenantId), listUserFields(tenantId)]);
         if (!alive) return;
         setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
         setWorkflows(w.workflows);
+        setUserFields(uf.fields);
         // Contacts joignables = ceux qui ont une identité (numéro OU BSUID).
         const reachable = c.filter((x) => contactIdentity(x) !== null);
         setContacts(reachable);
@@ -351,11 +375,9 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const selectedTemplate = templates.find((t) => t.name === templateName);
   // Valeurs d'aperçu par variable (échantillon lisible selon le mapping) pour la miniature WhatsApp.
   const previewExamples = vars.map((v) =>
-    v.source === 'literal' ? (v.value.trim() || '…')
-      : v.source === 'name' ? 'Julie'
-      : v.source === 'phone' ? '+33 6 12 34 56 78'
-      : v.source === 'field' ? `[${v.key || 'champ'}]`
-      : '',
+    v.sel === 'literal' ? (v.value.trim() || '…')
+      : v.sel.startsWith('sys:') ? systemFieldExample(v.sel.slice('sys:'.length))
+      : `[${v.sel.slice('field:'.length) || 'champ'}]`,
   );
 
   // Charge les variables d'un template (corps -> nb de {{n}}) et pré-remplit chaque ligne via les indices posés au
@@ -365,7 +387,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     const t = templates.find((x) => x.name === nm);
     const n = new Set((t?.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
     // Défaut immédiat : chaque variable -> Nom. On affine ensuite avec les indices posés à la création du template.
-    setVars(Array.from({ length: n }, () => ({ source: 'name', key: '', value: '' })));
+    setVars(Array.from({ length: n }, () => ({ sel: 'sys:name', value: '' })));
     if (n === 0) return;
     const seq = ++chooseSeq.current;
     try {
@@ -378,10 +400,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         for (const h of hints) {
           const i = h.position - 1;
           if (i < 0 || i >= n) continue;
-          const s = h.source;
-          if (s.type === 'attribute') rows[i] = { source: s.key === 'phone' ? 'phone' : 'name', key: '', value: '' };
-          else if (s.type === 'field') rows[i] = { source: 'field', key: s.key ?? '', value: '' };
-          else if (s.type === 'literal') rows[i] = { source: 'literal', key: '', value: s.value ?? '' };
+          rows[i] = { sel: sourceToSel(h.source), value: h.source.type === 'literal' ? (h.source.value ?? '') : '' };
         }
         return rows;
       });
@@ -465,13 +484,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   }
 
   function toParamMapping(): TemplateParam[] {
-    return vars.map((v, i) => {
-      const position = i + 1;
-      if (v.source === 'name') return { position, source: { type: 'attribute', key: 'name' } };
-      if (v.source === 'phone') return { position, source: { type: 'attribute', key: 'phone' } };
-      if (v.source === 'field') return { position, source: { type: 'field', key: v.key } };
-      return { position, source: { type: 'literal', value: v.value } };
-    });
+    return vars.map((v, i) => ({ position: i + 1, source: selToSource(v.sel, v.value) }));
   }
 
   async function submit() {
@@ -502,11 +515,9 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     }
   }
 
-  // Une variable « champ perso » sans clé ou « texte fixe » vide serait rejetée en 400 par le
-  // backend : on bloque en amont pour un message clair plutôt qu'une erreur technique.
-  const varsComplete = vars.every((v) =>
-    v.source === 'field' ? v.key.trim() !== '' : v.source === 'literal' ? v.value.trim() !== '' : true,
-  );
+  // Le sélecteur garantit une source valide (champ de base ou champ perso réel) : seul « Texte fixe » exige
+  // une valeur saisie. On bloque l'envoi tant qu'un texte fixe est vide (sinon 400 côté backend).
+  const varsComplete = vars.every((v) => (v.sel === 'literal' ? v.value.trim() !== '' : true));
   // Workflow : prêt si un workflow valide est choisi (1er bloc = template, donc pas de wfError) ET le mapping de ses
   // variables est complet. Le 1er template sans variable a vars=[] -> varsComplete=true.
   const contentReady = mode === 'workflow'
@@ -644,7 +655,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             )}
           </Field>
 
-          <VarsEditor vars={vars} setVars={setVars} />
+          <VarsEditor vars={vars} setVars={setVars} fields={userFields} />
         </>
       ) : (
         <>
@@ -676,7 +687,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
           </Field>
 
           {/* Association des variables du 1er template du workflow (même sélecteur que pour un template direct). */}
-          {!wfError && <VarsEditor vars={vars} setVars={setVars} />}
+          {!wfError && <VarsEditor vars={vars} setVars={setVars} fields={userFields} />}
         </>
       )}
 
@@ -713,10 +724,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Sélecteur d'association des variables d'un template (Prénom / Téléphone / champ perso / texte fixe). Partagé
- *  par le mode template DIRECT et le 1er template d'un workflow. Rien à afficher si le template n'a pas de variable. */
-function VarsEditor({ vars, setVars }: { vars: VarRow[]; setVars: React.Dispatch<React.SetStateAction<VarRow[]>> }) {
+/** Sélecteur d'association des variables d'un template : chaque variable pointe vers un champ de BASE (Nom, Prénom,
+ *  Téléphone, BSUID, WhatsApp ID, Email), un CHAMP PERSO réel (Contenu > Champs) ou un TEXTE FIXE. Plus de clé tapée
+ *  à la main -> plus de mapping vers un champ inexistant. Partagé par le mode template direct et le 1er template d'un
+ *  workflow. Rien à afficher si le template n'a pas de variable. */
+function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.Dispatch<React.SetStateAction<VarRow[]>>; fields: UserFieldDef[] }) {
   if (vars.length === 0) return null;
+  const custom = customFieldsOnly(fields);
   return (
     <div className="mt-3">
       <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
@@ -725,34 +739,36 @@ function VarsEditor({ vars, setVars }: { vars: VarRow[]; setVars: React.Dispatch
           <div key={i} className="flex items-center gap-1.5">
             <span className="w-8 shrink-0 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
             <select
-              value={v.source}
-              onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, source: e.target.value as VarRow['source'] } : x)))}
+              value={v.sel}
+              onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, sel: e.target.value } : x)))}
               className={`${inputCls} flex-1`}
             >
-              <option value="name">Nom du contact</option>
-              <option value="phone">Téléphone</option>
-              <option value="field">Champ perso</option>
-              <option value="literal">Texte fixe</option>
+              <optgroup label="Champs de base">
+                {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{f.label}</option>)}
+              </optgroup>
+              {custom.length > 0 && (
+                <optgroup label="Mes champs">
+                  {custom.map((f) => <option key={f.key} value={`field:${f.key}`}>{f.label}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="Autre">
+                <option value="literal">Texte fixe</option>
+              </optgroup>
             </select>
-            {v.source === 'field' && (
-              <input
-                value={v.key}
-                onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
-                className={`${inputCls} w-24`}
-                placeholder="clé (ex ville)"
-              />
-            )}
-            {v.source === 'literal' && (
+            {v.sel === 'literal' && (
               <input
                 value={v.value}
                 onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
-                className={`${inputCls} w-24`}
+                className={`${inputCls} w-32`}
                 placeholder="valeur"
               />
             )}
           </div>
         ))}
       </div>
+      <p className="mt-1.5 text-[11px] text-ink-400">
+        D&apos;où vient chaque variable. « Mes champs » = tes champs de Contenu &gt; Champs. Un contact sans la valeur choisie est sauté (et signalé).
+      </p>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { isUserFieldType, slugify } from '../crm/fields';
+import { isUserFieldType, isSystemFieldKey, slugify } from '../crm/fields';
 import type { UserFieldDef, UserFieldType } from '../crm/types';
 
 export interface FieldsRouteDeps {
@@ -39,6 +39,8 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
     if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label requis' });
     if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|boolean|url)' });
     const def: UserFieldDef = { key: slugify(b.label.trim()), label: b.label.trim(), type: b.type };
+    // La clé dérivée ne doit pas fantômiser un champ de base (ex. « BSUID » -> 'bsuid', « Prénom » -> 'prenom').
+    if (isSystemFieldKey(def.key)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
     const res = await deps.createField(tenant, def);
     if (res === 'exists') return reply.code(409).send({ error: `un champ existe déjà pour cette clé (${def.key})` });
     return reply.code(201).send(def);
@@ -48,6 +50,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { key } = req.params as { key: string };
+    if (isSystemFieldKey(key)) return reply.code(403).send({ error: 'champ système (non modifiable)' });
     const b = (req.body ?? {}) as { label?: unknown; type?: unknown };
     const patch: { label?: string; type?: UserFieldType } = {};
     if (b.label !== undefined) {
@@ -68,6 +71,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { key } = req.params as { key: string };
+    if (isSystemFieldKey(key)) return reply.code(403).send({ error: 'champ système (non supprimable)' });
     const ok = await deps.deleteField(tenant, key);
     if (!ok) return reply.code(404).send({ error: 'champ inconnu' });
     return reply.code(200).send({ key, deleted: true });

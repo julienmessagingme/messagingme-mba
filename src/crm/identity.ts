@@ -13,6 +13,15 @@ export function contactIdentity(phoneE164: string | null | undefined, bsuid: str
 }
 
 /**
+ * WhatsApp ID (wa_id) d'un contact : les chiffres du numéro SANS « + » s'il existe, sinon le BSUID. C'est la clé
+ * de routage WhatsApp telle que Meta l'émet (cf. `classifyWaId` : un numéro est stocké `'+' + chiffres`). null si aucun.
+ */
+export function waIdOf(phoneE164: string | null | undefined, bsuid: string | null | undefined): string | null {
+  if (phoneE164) return phoneE164.replace(/[^0-9]/g, '');
+  return bsuid ?? null;
+}
+
+/**
  * Classe le `wa_id` d'un message entrant en numéro OU BSUID. Un `wa_id` de 7 à 15 chiffres est un numéro
  * (E.164, max 15 chiffres) -> on le stocke `'+' + chiffres` (cohérent avec le matching `'+' || wa_id`
  * de l'inbox). Tout le reste (plus long, ou non numérique) est traité comme un BSUID opaque.

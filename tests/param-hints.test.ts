@@ -15,6 +15,14 @@ describe('parseParamHints', () => {
     expect(parseParamHints(raw)).toEqual(raw); // sparse OK (pas de 1..N contigu exigé)
   });
 
+  it('accepte les attributs système bsuid et wa_id', () => {
+    const raw = [
+      { position: 1, source: { type: 'attribute', key: 'bsuid' } },
+      { position: 2, source: { type: 'attribute', key: 'wa_id' } },
+    ];
+    expect(parseParamHints(raw)).toEqual(raw);
+  });
+
   it('rejette : non-tableau, position non entière / < 1, source invalide, position en double', () => {
     expect(parseParamHints('x')).toBeNull();
     expect(parseParamHints([{ position: 1.5, source: { type: 'attribute', key: 'name' } }])).toBeNull();

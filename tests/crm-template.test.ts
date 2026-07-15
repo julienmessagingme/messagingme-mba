@@ -35,6 +35,21 @@ describe('resolveTemplateParams', () => {
     expect(resolveTemplateParams(params, contact)).toEqual({ values: ['+33612345678'], missing: [] });
   });
 
+  it('attribute wa_id (chiffres du numéro sans « + ») et bsuid', () => {
+    // wa_id depuis un numéro = chiffres nus.
+    expect(resolveTemplateParams([{ position: 1, source: { type: 'attribute', key: 'wa_id' } }], contact))
+      .toEqual({ values: ['33612345678'], missing: [] });
+    // Contact SANS numéro (BSUID seul) : bsuid résolu, et wa_id retombe sur le bsuid.
+    const bsuidOnly = { phone_e164: null, bsuid: 'BSU_ab12', profile_name: 'X', fields: {} };
+    expect(resolveTemplateParams(
+      [
+        { position: 1, source: { type: 'attribute', key: 'bsuid' } },
+        { position: 2, source: { type: 'attribute', key: 'wa_id' } },
+      ],
+      bsuidOnly,
+    )).toEqual({ values: ['BSU_ab12', 'BSU_ab12'], missing: [] });
+  });
+
   it('0 et false ne sont pas écrasés en chaîne vide', () => {
     const c = { fields: { n: 0, b: false } };
     const params: TemplateParam[] = [

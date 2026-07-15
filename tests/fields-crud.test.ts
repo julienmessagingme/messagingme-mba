@@ -108,6 +108,26 @@ describe('routes user-fields (CRUD)', () => {
     await server.close();
   });
 
+  it('POST dont le slug percute une clé système (« Prénom » -> prenom) -> 409, jamais créé', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(adminTok), payload: { label: 'Prénom', type: 'text' } });
+    expect(res.statusCode).toBe(409);
+    expect(cap.created).toHaveLength(0);
+    await server.close();
+  });
+
+  it('PATCH/DELETE champ SYSTÈME (prenom) -> 403, jamais délégué au store', async () => {
+    // Les champs de base (name/phone/bsuid/wa_id/prenom/email) sont non modifiables/supprimables.
+    const { server, cap } = app();
+    const p = await server.inject({ method: 'PATCH', url: '/tenants/t1/user-fields/prenom', ...h(adminTok), payload: { label: 'X' } });
+    const d = await server.inject({ method: 'DELETE', url: '/tenants/t1/user-fields/email', ...h(adminTok) });
+    expect(p.statusCode).toBe(403);
+    expect(d.statusCode).toBe(403);
+    expect(cap.updated).toHaveLength(0);
+    expect(cap.deleted).toHaveLength(0);
+    await server.close();
+  });
+
   it('PATCH/DELETE agent -> 403', async () => {
     const { server, cap } = app();
     const p = await server.inject({ method: 'PATCH', url: '/tenants/t1/user-fields/ville', ...h(agentTok), payload: { label: 'X' } });

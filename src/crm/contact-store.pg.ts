@@ -123,21 +123,22 @@ export class PgContactStore implements ContactStore {
   /**
    * Résout un contact par wa_id pour COLLER ses attributs dans les variables d'un template (envoi via workflow).
    * Même matching que mergeFieldsByPhone/addTagsByPhone (E.164 exact `'+' || wa_id` PUIS chiffres nus PUIS bsuid,
-   * 1 contact, préférence à l'exact). Renvoie {phone_e164, profile_name, fields} (forme ResolvableContact), ou null
-   * si le numéro est hors base -> l'appelant retombe sur les exemples du template (jamais de throw).
+   * 1 contact, préférence à l'exact). Renvoie {phone_e164, bsuid, profile_name, fields} (forme ResolvableContact),
+   * ou null si le numéro est hors base -> l'appelant retombe sur les exemples du template (jamais de throw).
+   * `bsuid` est inclus : les sources de variable système `bsuid`/`wa_id` doivent se résoudre AUSSI sur la voie workflow.
    */
   async getResolvableByPhone(
     tenantId: string,
     waId: string,
-  ): Promise<{ phone_e164: string | null; profile_name: string | null; fields: Record<string, unknown> } | null> {
-    const res = await this.pool.query<{ phone_e164: string | null; profile_name: string | null; fields: Record<string, unknown> | null }>(
-      `select phone_e164, profile_name, fields from contacts where tenant_id = $1
+  ): Promise<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; fields: Record<string, unknown> } | null> {
+    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; fields: Record<string, unknown> | null }>(
+      `select phone_e164, bsuid, profile_name, fields from contacts where tenant_id = $1
          and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
        order by (phone_e164 = '+' || $2) desc limit 1`,
       [tenantId, waId],
     );
     const r = res.rows[0];
-    return r ? { phone_e164: r.phone_e164, profile_name: r.profile_name, fields: r.fields ?? {} } : null;
+    return r ? { phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields ?? {} } : null;
   }
 
   private static rowToContact(r: {

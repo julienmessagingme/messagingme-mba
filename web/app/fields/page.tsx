@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listUserFields, createUserField, updateUserField, deleteUserField, type UserFieldDef, type UserFieldKind } from '@/lib/api';
+import { SYSTEM_FIELDS, customFieldsOnly } from '@/lib/fields';
 
 const TYPES: { value: UserFieldKind; label: string }[] = [
   { value: 'text', label: 'Texte' },
@@ -81,13 +82,34 @@ function FieldsInner({ session }: { session: Session }) {
     }
   }
 
+  const custom = customFieldsOnly(fields);
+
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Champs personnalisés</h2>
-        <p className="mt-1 text-sm text-ink-500">Crée un champ, ou modifie son libellé/type. La clé technique est verrouillée (référencée par les campagnes et les valeurs des contacts).</p>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">Champs</h2>
+        <p className="mt-1 text-sm text-ink-500">Les champs de base sont toujours là (non supprimables). Ajoute tes propres champs, ou modifie leur libellé/type. La clé technique est verrouillée (référencée par les campagnes et les valeurs des contacts).</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      {/* Champs de BASE (système) : toujours présents, non supprimables. Utilisables comme variables de template. */}
+      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2 border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
+          Champs de base
+          <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-500">système</span>
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {SYSTEM_FIELDS.map((f) => (
+              <tr key={f.key} className="border-b border-ink-50 last:border-0">
+                <td className="px-5 py-2.5"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code></td>
+                <td className="px-5 py-2.5 font-medium text-ink-800">{f.label}</td>
+                <td className="px-5 py-2.5 text-right text-xs text-ink-400">non supprimable</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -104,11 +126,11 @@ function FieldsInner({ session }: { session: Session }) {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
-        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Champs ({fields.length})</div>
+        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">Mes champs ({custom.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">Chargement…</p>
-        ) : fields.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">Aucun champ. Ils se créent à l&apos;import CSV (colonnes personnalisées) ou via un formulaire Flow.</p>
+        ) : custom.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-ink-500">Aucun champ perso. Crée-en un ci-dessus, ou ils apparaissent à l&apos;import CSV (colonnes personnalisées) ou via un formulaire.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -120,7 +142,7 @@ function FieldsInner({ session }: { session: Session }) {
               </tr>
             </thead>
             <tbody>
-              {fields.map((f) => (
+              {custom.map((f) => (
                 <tr key={f.key} className="border-b border-ink-50 last:border-0">
                   <td className="px-5 py-3"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code></td>
                   <td className="px-5 py-3">

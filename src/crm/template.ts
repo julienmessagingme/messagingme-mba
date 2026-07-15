@@ -1,6 +1,8 @@
+import { waIdOf } from './identity';
+
 export type ParamSource =
   | { type: 'field'; key: string }
-  | { type: 'attribute'; key: 'name' | 'phone' }
+  | { type: 'attribute'; key: 'name' | 'phone' | 'bsuid' | 'wa_id' }
   | { type: 'literal'; value: string };
 
 export interface TemplateParam {
@@ -13,6 +15,7 @@ export interface TemplateParam {
 
 export interface ResolvableContact {
   phone_e164?: string | null;
+  bsuid?: string | null;
   profile_name?: string | null;
   fields?: Record<string, unknown>;
 }
@@ -22,7 +25,7 @@ function isValidSource(s: unknown): s is ParamSource {
   const src = s as { type?: unknown; key?: unknown; value?: unknown };
   if (src.type === 'literal') return typeof src.value === 'string';
   if (src.type === 'field') return typeof src.key === 'string' && src.key !== '';
-  if (src.type === 'attribute') return src.key === 'name' || src.key === 'phone';
+  if (src.type === 'attribute') return src.key === 'name' || src.key === 'phone' || src.key === 'bsuid' || src.key === 'wa_id';
   return false;
 }
 
@@ -81,7 +84,18 @@ function valueOf(source: ParamSource, c: ResolvableContact): unknown {
     case 'literal':
       return source.value;
     case 'attribute':
-      return source.key === 'name' ? c.profile_name : c.phone_e164;
+      // Switch EXHAUSTIF par clé : un ternaire binaire ferait retomber bsuid/wa_id sur le téléphone (bug muet).
+      switch (source.key) {
+        case 'name':
+          return c.profile_name;
+        case 'phone':
+          return c.phone_e164;
+        case 'bsuid':
+          return c.bsuid;
+        case 'wa_id':
+          return waIdOf(c.phone_e164, c.bsuid);
+      }
+      return undefined;
     case 'field':
       return c.fields?.[source.key];
   }
