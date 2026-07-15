@@ -14,23 +14,23 @@ const contacts: BuildContact[] = [
 
 describe('buildRecipients', () => {
   it('marketing : opt-in filtré, dédup par numéro, params résolus', () => {
-    const r = buildRecipients('marketing', mapping, contacts);
-    expect(r.map((x) => x.contactId)).toEqual(['c1']); // c2 non opt-in, c3 doublon, c4 sans tel
-    expect(r[0]?.resolvedParams).toEqual(['Julie']);
+    const { recipients } = buildRecipients('marketing', mapping, contacts);
+    expect(recipients.map((x) => x.contactId)).toEqual(['c1']); // c2 non opt-in, c3 doublon, c4 sans tel
+    expect(recipients[0]?.resolvedParams).toEqual(['Julie']);
   });
 
   it('utility : inclut les contacts sans opt-in explicite', () => {
-    const r = buildRecipients('utility', mapping, contacts);
-    expect(r.map((x) => x.contactId)).toEqual(['c1', 'c2']); // c3 doublon, c4 sans tel
+    const { recipients } = buildRecipients('utility', mapping, contacts);
+    expect(recipients.map((x) => x.contactId)).toEqual(['c1', 'c2']); // c3 doublon, c4 sans tel
   });
 
   it('cible un contact SANS numéro par son BSUID (destinataire = bsuid)', () => {
     const withBsuid: BuildContact[] = [
       { id: 'b1', phone_e164: null, bsuid: 'BS_123', profile_name: 'Anon', optInStatus: 'opted_in' },
     ];
-    const r = buildRecipients('marketing', mapping, withBsuid);
-    expect(r).toHaveLength(1);
-    expect(r[0]).toMatchObject({ contactId: 'b1', toE164: 'BS_123' });
+    const { recipients } = buildRecipients('marketing', mapping, withBsuid);
+    expect(recipients).toHaveLength(1);
+    expect(recipients[0]).toMatchObject({ contactId: 'b1', toE164: 'BS_123' });
   });
 
   it('numéro prioritaire sur le BSUID ; dédup par identité', () => {
@@ -39,7 +39,19 @@ describe('buildRecipients', () => {
       { id: 'b2', phone_e164: null, bsuid: 'BS_B', profile_name: 'B', optInStatus: 'opted_in' },
       { id: 'b3', phone_e164: null, bsuid: 'BS_B', profile_name: 'Doublon BSUID', optInStatus: 'opted_in' },
     ];
-    const r = buildRecipients('marketing', mapping, mixed);
-    expect(r.map((x) => x.toE164)).toEqual(['+33699999999', 'BS_B']); // p1 par numéro, b3 = doublon de b2
+    const { recipients } = buildRecipients('marketing', mapping, mixed);
+    expect(recipients.map((x) => x.toE164)).toEqual(['+33699999999', 'BS_B']); // p1 par numéro, b3 = doublon de b2
+  });
+
+  it('variable manquante (prénom absent) -> destinataire SAUTÉ + recensé dans skipped (jamais un envoi vide)', () => {
+    const prenom: TemplateParam[] = [{ position: 1, source: { type: 'field', key: 'prenom' } }];
+    const list: BuildContact[] = [
+      { id: 'ok', phone_e164: '+33611111111', fields: { prenom: 'Marie' }, optInStatus: 'opted_in' },
+      { id: 'ko', phone_e164: '+33622222222', fields: {}, optInStatus: 'opted_in' },
+    ];
+    const { recipients, skipped } = buildRecipients('marketing', prenom, list);
+    expect(recipients.map((x) => x.contactId)).toEqual(['ok']);
+    expect(recipients[0]?.resolvedParams).toEqual(['Marie']);
+    expect(skipped).toEqual([{ contactId: 'ko', toE164: '+33622222222', reason: 'missing_variable', missing: [1] }]);
   });
 });

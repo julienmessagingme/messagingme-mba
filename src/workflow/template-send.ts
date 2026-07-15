@@ -17,14 +17,14 @@ export function buildWorkflowTemplateComponents(opts: {
   hints: ParamHint[];
   varCount: number;
   contact: ResolvableContact;
-  examples: string[];
   buttons: WorkflowButton[];
-}): unknown[] {
-  const bodyParams = opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact, opts.examples) : [];
-  const bodyComponents = bodyParams.length > 0 ? buildTemplateComponents({ bodyParams }) : [];
+}): { components: unknown[]; missing: number[] } {
+  const resolved = opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact) : { values: [], missing: [] };
+  const bodyComponents = resolved.values.length > 0 ? buildTemplateComponents({ bodyParams: resolved.values }) : [];
   const buttonComponents = opts.buttons
     .map((b, i) => ({ b, i }))
     .filter(({ b }) => b.type === 'QUICK_REPLY')
     .map(({ i }) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `btn:${i}` }] }));
-  return [...bodyComponents, ...buttonComponents];
+  // `missing` non vide -> l'appelant (worker) SAUTE l'envoi (pas de `text:''` -> pas de 132012).
+  return { components: [...bodyComponents, ...buttonComponents], missing: resolved.missing };
 }

@@ -33,9 +33,21 @@ describe('createCampaignWithRecipients', () => {
       { id: 'c2', phone_e164: '+33622', profile_name: 'Marc', fields: {}, optInStatus: 'unknown' },
     ]);
     const out = await createCampaignWithRecipients(input, repo);
-    expect(out).toEqual({ campaignId: 'camp-x', recipientCount: 1 });
+    expect(out).toEqual({ campaignId: 'camp-x', recipientCount: 1, skipped: [] });
     expect(repo.lastRecipients).toHaveLength(1);
     expect(repo.lastRecipients[0]).toMatchObject({ contactId: 'c1', toE164: '+33611', resolvedParams: ['Julie'] });
+  });
+
+  it('variable manquante -> contact SAUTÉ (skipped) + non persisté (pré-validation)', async () => {
+    const repo = new FakeRepo([
+      { id: 'ok', phone_e164: '+33611', fields: { prenom: 'Marie' }, optInStatus: 'opted_in' },
+      { id: 'ko', phone_e164: '+33622', fields: {}, optInStatus: 'opted_in' },
+    ]);
+    const prenomInput: CreateCampaignInput = { ...input, paramMapping: [{ position: 1, source: { type: 'field', key: 'prenom' } }] };
+    const out = await createCampaignWithRecipients(prenomInput, repo);
+    expect(out.recipientCount).toBe(1);
+    expect(out.skipped).toEqual([{ contactId: 'ko', toE164: '+33622', reason: 'missing_variable', missing: [1] }]);
+    expect(repo.lastRecipients.map((r) => r.contactId)).toEqual(['ok']);
   });
 
   it('utility : inclut les contacts sans opt-in explicite', async () => {

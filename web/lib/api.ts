@@ -230,7 +230,13 @@ export function getCampaign(tenantId: string, campaignId: string): Promise<Campa
 export function listPhoneNumbers(tenantId: string): Promise<{ phoneNumbers: PhoneNumber[] }> {
   return request<{ phoneNumbers: PhoneNumber[] }>(`/tenants/${tenantId}/phone-numbers`);
 }
-export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<{ campaignId: string; recipientCount: number }> {
+export interface CampaignCreated {
+  campaignId: string;
+  recipientCount: number;
+  /** Destinataires écartés à la création (variable de template manquante, ex. prénom absent) -> avertissement UI. */
+  skipped: Array<{ contactId: string; toE164: string; reason: string; missing: number[] }>;
+}
+export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<CampaignCreated> {
   return request(`/tenants/${tenantId}/campaigns`, { method: 'POST', body: JSON.stringify(input) });
 }
 export function runCampaign(campaignId: string): Promise<{ enqueued: boolean }> {

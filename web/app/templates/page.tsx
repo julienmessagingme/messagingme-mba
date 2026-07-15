@@ -56,7 +56,7 @@ function deterministicExample(source: ParamSource, fieldType?: string): string {
 
 /** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). */
 function labelForSource(source: ParamSource, fields: UserFieldDef[]): string {
-  if (source.type === 'attribute') return source.key === 'phone' ? 'Téléphone' : 'Nom';
+  if (source.type === 'attribute') return source.key === 'phone' ? 'Téléphone' : 'Nom du profil WhatsApp';
   if (source.type === 'literal') return 'Texte fixe';
   return fields.find((f) => f.key === source.key)?.label ?? source.key ?? 'Champ';
 }
@@ -330,8 +330,10 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     return () => { alive = false; };
   }, [tenantId, initial]);
 
+  // « Nom du profil WhatsApp » = le profile_name (souvent vide en import CSV) -> clairement distinct des champs
+  // Prénom / Nom importés (qui apparaissent ci-dessous via userFields). Fin de la confusion « Nom / Nom et prénom ».
   const fieldOptions: Array<{ source: ParamSource; label: string; fieldType?: string }> = [
-    { source: { type: 'attribute', key: 'name' }, label: 'Nom' },
+    { source: { type: 'attribute', key: 'name' }, label: 'Nom du profil WhatsApp' },
     { source: { type: 'attribute', key: 'phone' }, label: 'Téléphone' },
     ...userFields.map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type })),
   ];
@@ -417,6 +419,15 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       const canonBody = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_s, d) => `{{${remap.get(Number(d))}}}`);
       const canonSources = order.map((old) => varSources[old - 1]);
       const canonExamples = order.map((old) => examples[old - 1] ?? '');
+
+      // Décision « forcer le sélecteur » : toute variable {{n}} doit être rattachée à un champ via « + Variable ».
+      // Une variable tapée à la main (sans source) partirait vide à l'envoi et se ferait rejeter par Meta -> on bloque ici.
+      const unmapped = canonSources.map((v, i) => (v ? null : i + 1)).filter((p): p is number => p !== null);
+      if (unmapped.length > 0) {
+        setError(`Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) : ${unmapped.map((p) => `{{${p}}}`).join(', ')}. Supprime-les puis réinsère-les avec le sélecteur.`);
+        setBusy(false);
+        return;
+      }
 
       const example = order.length > 0 ? canonExamples.map((e) => e || 'exemple') : undefined;
       // Indices variable->champ (seulement les variables rattachées à un champ via le sélecteur), positions canoniques.

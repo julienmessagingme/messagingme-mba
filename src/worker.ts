@@ -18,6 +18,7 @@ import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
+import { countTemplateVariables } from './crm/template';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { WorkflowExecutor } from './workflow/executor';
@@ -62,24 +63,24 @@ async function main(): Promise<void> {
 
   // Cache court du corps live d'un template (nb de variables N + exemples) par WABA|nom|langue : évite un appel
   // Meta list() par destinataire d'une campagne workflow. TTL court -> tolère un template édité en cours de route.
-  const tplVarCache = new Map<string, { at: number; count: number; examples: string[] }>();
+  const tplVarCache = new Map<string, { at: number; count: number }>();
   const TPL_CACHE_MS = 5 * 60_000;
-  const VAR_RE = /\{\{\s*\d+\s*\}\}/g;
-  const templateVarInfo = async (tenant: string, name: string, language: string): Promise<{ count: number; examples: string[] } | null> => {
+  // `count` = MAX des positions {{n}} (cf. countTemplateVariables) : « {{1}} ... {{3}} » attend 3 params pour Meta,
+  // pas 2. null = indéterminable (WABA absent / template introuvable / réseau) -> l'appelant NE PAS envoyer.
+  const templateVarInfo = async (tenant: string, name: string, language: string): Promise<{ count: number } | null> => {
     const waba = await repo.getTenantWabaId(tenant);
     if (!waba) return null;
     const key = `${waba}|${name}|${language}`;
     const cached = tplVarCache.get(key);
-    if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count, examples: cached.examples };
+    if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count };
     const tplClient = new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
     const list = await tplClient.list(waba);
     // Exact (nom + langue), sinon repli sur le nom seul (langue par défaut d'un template mono-langue).
     const tpl = list.find((t) => t.name === name && t.language === language) ?? list.find((t) => t.name === name);
     if (!tpl) return null;
-    const count = new Set(tpl.body.match(VAR_RE) ?? []).size;
-    const examples = tpl.example ?? [];
-    tplVarCache.set(key, { at: Date.now(), count, examples });
-    return { count, examples };
+    const count = countTemplateVariables(tpl.body);
+    tplVarCache.set(key, { at: Date.now(), count });
+    return { count };
   };
 
   const workflowExecutor = new WorkflowExecutor({
@@ -106,28 +107,36 @@ async function main(): Promise<void> {
       }
       const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
       // Variables du corps : on résout les {{n}} avec les attributs du contact (indices template_param_hints ->
-      // champ, ex. {{1}}=prenom), repli sur les exemples du template. On fournit EXACTEMENT N params -> plus de 132000.
-      let varCount = 0;
-      let examples: string[] = [];
-      let hints: Awaited<ReturnType<typeof hintStore.get>> = [];
-      let contact = null as Awaited<ReturnType<typeof contactStore.getResolvableByPhone>>;
+      // champ, ex. {{1}}=prenom). On NE devine PAS : si les variables sont indéterminables (info null) ou si une
+      // valeur manque, on NE PAS envoyer (évite 132000 « nb de variables » et 132012 « text:'' »).
+      let info: { count: number } | null = null;
       try {
-        const info = await templateVarInfo(tenant, name, language);
-        if (info && info.count > 0) {
-          varCount = info.count;
-          examples = info.examples;
-          [hints, contact] = await Promise.all([
-            hintStore.get(tenant, name, language),
-            contactStore.getResolvableByPhone(tenant, waId),
-          ]);
-        }
+        info = await templateVarInfo(tenant, name, language);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error(`workflow sendTemplate: résolution des variables échouée pour « ${name} »:`, err instanceof Error ? err.message : err);
+        console.error(`workflow sendTemplate: variables de « ${name} » indéterminables:`, err instanceof Error ? err.message : err);
+      }
+      if (info === null) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendTemplate: variables de « ${name} » indéterminables (WABA/template/réseau) -> non envoyé à ${waId}`);
+        return;
+      }
+      let hints: Awaited<ReturnType<typeof hintStore.get>> = [];
+      let contact = null as Awaited<ReturnType<typeof contactStore.getResolvableByPhone>>;
+      if (info.count > 0) {
+        [hints, contact] = await Promise.all([
+          hintStore.get(tenant, name, language),
+          contactStore.getResolvableByPhone(tenant, waId),
+        ]);
       }
       // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui sélectionne
       // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
-      const components = buildWorkflowTemplateComponents({ hints, varCount, contact: contact ?? {}, examples, buttons });
+      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons });
+      if (missing.length > 0) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
+        return;
+      }
       const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
       // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
       await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);

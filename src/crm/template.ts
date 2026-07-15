@@ -88,11 +88,39 @@ function valueOf(source: ParamSource, c: ResolvableContact): unknown {
 }
 
 /**
- * Résout les variables d'un template pour un contact : renvoie les valeurs ordonnées
- * par position. Valeur manquante -> fallback -> chaîne vide. C'est la glue « coller les
- * infos du CRM dans les templates ».
+ * Résultat de résolution : les valeurs ordonnées par position (`values`) + les positions dont la valeur est
+ * MANQUANTE (`missing`, 1-based). Une variable manquante ne doit JAMAIS partir à Meta en `text:''` (rejet 132012) :
+ * le destinataire est sauté en amont (cf. `buildRecipients`, worker). On ne remplit PAS avec l'exemple Meta du
+ * template (échantillon de design, ex. « Jean » -> l'envoyer à tout le monde serait faux).
  */
-export function resolveTemplateParams(params: TemplateParam[], contact: ResolvableContact): string[] {
+export interface ResolvedParams {
+  values: string[];
+  missing: number[];
+}
+
+/**
+ * Nombre de variables d'un corps de template = MAX des positions `{{n}}` (Meta attend des params pour 1..N). Le simple
+ * nombre de `{{n}}` distincts sous-compterait un corps non contigu (`{{1}} ... {{3}}` = 3 params attendus, pas 2 ->
+ * évite 132000). 0 si aucune variable.
+ */
+export function countTemplateVariables(body: string): number {
+  const positions = [...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]));
+  return positions.length > 0 ? Math.max(...positions) : 0;
+}
+
+/** Valeur d'une source pour un contact : non-vide -> string, sinon `undefined` (déclenche `missing`). `fallback` = défaut design explicite, compte comme rempli. */
+function resolveOne(source: ParamSource, contact: ResolvableContact, fallback?: string): string | undefined {
+  const v = valueOf(source, contact);
+  const s = v === null || v === undefined || v === '' ? undefined : String(v);
+  const withFallback = s ?? (fallback !== undefined && fallback !== '' ? fallback : undefined);
+  return withFallback;
+}
+
+/**
+ * Résout les variables d'un template pour un contact (voie directe : mapping 1..N contigu). Valeur absente ->
+ * position marquée `missing` (jamais `''` envoyé). C'est la glue « coller les infos du CRM dans les templates ».
+ */
+export function resolveTemplateParams(params: TemplateParam[], contact: ResolvableContact): ResolvedParams {
   const sorted = [...params].sort((a, b) => a.position - b.position);
   // Les params WhatsApp sont positionnels : on exige 1..N contigus et uniques,
   // sinon l'array résolu (indexé par ordre) désalignerait les variables.
@@ -101,34 +129,36 @@ export function resolveTemplateParams(params: TemplateParam[], contact: Resolvab
       throw new Error('positions de template invalides (attendu 1..N contigu, sans doublon)');
     }
   });
-  return sorted.map((p) => {
-    const v = valueOf(p.source, contact);
-    const s = v === null || v === undefined || v === '' ? undefined : String(v);
-    return s ?? p.fallback ?? '';
+  const values: string[] = [];
+  const missing: number[] = [];
+  sorted.forEach((p) => {
+    const resolved = resolveOne(p.source, contact, p.fallback);
+    if (resolved === undefined) missing.push(p.position);
+    values.push(resolved ?? '');
   });
+  return { values, missing };
 }
 
 /**
- * Résout les N variables du corps d'un template à partir d'indices SPARSE (variable {{position}} -> champ, posés
- * au design d'un template). Contrairement à resolveTemplateParams (positions 1..N contiguës exigées, throw), on
- * part du NOMBRE de variables `count` connu du template live et on remplit CHAQUE position 1..count : indice mappé
- * -> valeur du contact (repli exemple du template / ''), sinon exemple du template / ''. Renvoie TOUJOURS
- * exactement `count` valeurs -> le compte fourni à Meta correspond (évite l'erreur 132000). C'est ce qui « colle
- * automatiquement le prénom » sans re-demander : si {{1}} est mappé sur prenom, on met le prénom du contact.
+ * Résout les `count` variables du corps d'un template à partir d'indices SPARSE (variable {{position}} -> champ,
+ * posés au design). On part du NOMBRE de variables connu du template live et on remplit CHAQUE position 1..count :
+ * indice mappé -> valeur du contact, sinon position marquée `missing`. Renvoie TOUJOURS `count` valeurs (le compte
+ * fourni à Meta correspond -> pas de 132000) MAIS toute position `missing` doit faire SAUTER le destinataire en
+ * amont (pas d'envoi `text:''` -> pas de 132012). C'est ce qui « colle le prénom » sans re-demander.
  */
 export function resolveHintParams(
   hints: Array<{ position: number; source: ParamSource }>,
   count: number,
   contact: ResolvableContact,
-  examples?: string[],
-): string[] {
+): ResolvedParams {
   const byPos = new Map(hints.map((h) => [h.position, h.source]));
-  const out: string[] = [];
+  const values: string[] = [];
+  const missing: number[] = [];
   for (let pos = 1; pos <= count; pos += 1) {
     const src = byPos.get(pos);
-    const mapped = src ? valueOf(src, contact) : undefined;
-    const s = mapped === null || mapped === undefined || mapped === '' ? undefined : String(mapped);
-    out.push(s ?? examples?.[pos - 1] ?? '');
+    const resolved = src ? resolveOne(src, contact) : undefined;
+    if (resolved === undefined) missing.push(pos);
+    values.push(resolved ?? '');
   }
-  return out;
+  return { values, missing };
 }

@@ -80,8 +80,8 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     const app = appWith(repo);
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ campaignId: string; recipientCount: number }>();
-    expect(body).toEqual({ campaignId: 'camp-1', recipientCount: 1 }); // c2 non opt-in exclu
+    const body = res.json<{ campaignId: string; recipientCount: number; skipped: unknown[] }>();
+    expect(body).toEqual({ campaignId: 'camp-1', recipientCount: 1, skipped: [] }); // c2 non opt-in exclu
     expect(repo.created[0]?.tenantId).toBe('t1');
     await app.close();
   });

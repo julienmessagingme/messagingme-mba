@@ -1,5 +1,5 @@
 import { buildRecipients } from './build';
-import type { BuildContact, BuiltRecipient } from './build';
+import type { BuildContact, BuiltRecipient, SkippedRecipient } from './build';
 import type { CreateCampaignInput } from './store.pg';
 
 /** Sous-ensemble du repo requis pour créer une campagne (fakable en test). */
@@ -20,12 +20,14 @@ export interface CampaignRepoLike {
 export async function createCampaignWithRecipients(
   input: CreateCampaignInput,
   repo: CampaignRepoLike,
-): Promise<{ campaignId: string; recipientCount: number }> {
+): Promise<{ campaignId: string; recipientCount: number; skipped: SkippedRecipient[] }> {
   const all = await repo.listContactsForBuild(input.tenantId);
   // Restreindre aux contacts choisis si une sélection est fournie (sinon tous). L'opt-in + le
   // numéro requis restent appliqués par buildRecipients : choisir un contact ne force pas l'envoi.
   const ids = input.contactIds && input.contactIds.length > 0 ? new Set(input.contactIds) : null;
   const contacts = ids ? all.filter((c) => ids.has(c.id)) : all;
-  const recipients = buildRecipients(input.category, input.paramMapping, contacts);
-  return repo.createWithRecipients(input, recipients);
+  // recipients = envoyables ; skipped = variable manquante (ex. prénom absent) -> remontés pour l'avertissement.
+  const { recipients, skipped } = buildRecipients(input.category, input.paramMapping, contacts);
+  const result = await repo.createWithRecipients(input, recipients);
+  return { ...result, skipped };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveTemplateParams } from '../src/crm/template';
+import { resolveTemplateParams, countTemplateVariables } from '../src/crm/template';
 import type { TemplateParam } from '../src/crm/template';
 
 const contact = {
@@ -15,24 +15,24 @@ describe('resolveTemplateParams', () => {
       { position: 1, source: { type: 'attribute', key: 'name' } },
       { position: 3, source: { type: 'literal', value: 'PROMO10' } },
     ];
-    expect(resolveTemplateParams(params, contact)).toEqual(['Julie', 'Lyon', 'PROMO10']);
+    expect(resolveTemplateParams(params, contact)).toEqual({ values: ['Julie', 'Lyon', 'PROMO10'], missing: [] });
   });
 
-  it('valeur manquante -> fallback', () => {
+  it('valeur manquante -> fallback (défaut design explicite = rempli, pas manquant)', () => {
     const params: TemplateParam[] = [
       { position: 1, source: { type: 'field', key: 'inexistant' }, fallback: 'cher client' },
     ];
-    expect(resolveTemplateParams(params, contact)).toEqual(['cher client']);
+    expect(resolveTemplateParams(params, contact)).toEqual({ values: ['cher client'], missing: [] });
   });
 
-  it('valeur manquante sans fallback -> chaîne vide', () => {
+  it('valeur manquante sans fallback -> position MANQUANTE (jamais un envoi vide)', () => {
     const params: TemplateParam[] = [{ position: 1, source: { type: 'field', key: 'inexistant' } }];
-    expect(resolveTemplateParams(params, contact)).toEqual(['']);
+    expect(resolveTemplateParams(params, contact)).toEqual({ values: [''], missing: [1] });
   });
 
   it('attribute phone', () => {
     const params: TemplateParam[] = [{ position: 1, source: { type: 'attribute', key: 'phone' } }];
-    expect(resolveTemplateParams(params, contact)).toEqual(['+33612345678']);
+    expect(resolveTemplateParams(params, contact)).toEqual({ values: ['+33612345678'], missing: [] });
   });
 
   it('0 et false ne sont pas écrasés en chaîne vide', () => {
@@ -41,7 +41,7 @@ describe('resolveTemplateParams', () => {
       { position: 1, source: { type: 'field', key: 'n' } },
       { position: 2, source: { type: 'field', key: 'b' } },
     ];
-    expect(resolveTemplateParams(params, c)).toEqual(['0', 'false']);
+    expect(resolveTemplateParams(params, c)).toEqual({ values: ['0', 'false'], missing: [] });
   });
 
   it('positions non contiguës ou dupliquées -> throw (désalignement évité)', () => {
@@ -63,5 +63,14 @@ describe('resolveTemplateParams', () => {
         contact,
       ),
     ).toThrow(/positions de template invalides/);
+  });
+});
+
+describe('countTemplateVariables', () => {
+  it('MAX des positions (corps non contigu compté correctement -> évite 132000)', () => {
+    expect(countTemplateVariables('Bonjour {{1}}, code {{3}}')).toBe(3); // pas 2 (nb de {{n}} distincts)
+    expect(countTemplateVariables('{{1}} {{2}} {{3}}')).toBe(3);
+    expect(countTemplateVariables('Aucune variable ici')).toBe(0);
+    expect(countTemplateVariables('{{ 2 }} avec espaces')).toBe(2);
   });
 });

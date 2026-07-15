@@ -432,7 +432,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
           ? { phoneNumberId, name, category, workflowId, contactIds: [...selected] }
           : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] },
       );
-      setOk(`Campagne créée : ${res.recipientCount} destinataires. Clique « Lancer » pour envoyer.`);
+      // Avertissement : contacts sautés faute d'une variable de template (ex. prénom absent de la fiche). L'envoi part
+      // quand même aux valides ; ces contacts-là auraient fait échouer Meta -> on les écarte et on le dit.
+      const skippedMsg = res.skipped.length > 0 ? ` ${res.skipped.length} contact(s) sautés (variable de template manquante, ex. prénom absent de la fiche).` : '';
+      setOk(`Campagne créée : ${res.recipientCount} destinataires.${skippedMsg} Clique « Lancer » pour envoyer.`);
       setName('');
       setTemplateName('');
       setVars([]);
