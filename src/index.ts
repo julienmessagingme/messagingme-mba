@@ -30,6 +30,9 @@ import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
+import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
+import { PgEmbeddedSignupStore } from './account/es-store.pg';
+import { encryptSecret } from './crypto/secretbox';
 import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
@@ -206,6 +209,25 @@ async function main(): Promise<void> {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
       listUserFields: (tenant) => fieldStore.list(tenant),
     },
+    embeddedSignup: (() => {
+      const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+      const esStore = new PgEmbeddedSignupStore(pool);
+      return {
+        configId: config.META_ES_CONFIG_ID,
+        appId: config.META_APP_ID,
+        graphVersion: config.META_GRAPH_VERSION,
+        exchangeCode: (code: string) => esClient.exchangeCode(code),
+        getPhone: (pn: string, tok: string) => esClient.getPhone(pn, tok),
+        subscribeApp: (waba: string, tok: string) => esClient.subscribeApp(waba, tok),
+        register: (pn: string, tok: string, pin: string) => esClient.register(pn, tok, pin),
+        verifyWaba: (waba: string, tok: string) => esClient.verifyWaba(waba, tok),
+        link: (input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }) => esStore.linkTenant(input),
+        // Chiffrement au repos ICI (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY. Token ET pin
+        // (PIN 2FA du numéro = secret Meta) chiffrés.
+        saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
+          esStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
+      };
+    })(),
     account: {
       getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
       pullStatus: async (phoneNumberId, tenant) => {

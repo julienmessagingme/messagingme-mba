@@ -761,3 +761,27 @@ export function updateUserField(tenantId: string, key: string, patch: { label?: 
 export function deleteUserField(tenantId: string, key: string): Promise<unknown> {
   return request(`/tenants/${tenantId}/user-fields/${encodeURIComponent(key)}`, { method: 'DELETE' });
 }
+
+/** Embedded Signup Meta (connexion du numéro WhatsApp, Tech Provider). */
+export interface EsConfig {
+  enabled: boolean;
+  appId: string;
+  configId: string;
+  graphVersion: string;
+}
+export function getEsConfig(tenantId: string): Promise<EsConfig> {
+  return request<EsConfig>(`/tenants/${tenantId}/embedded-signup/config`);
+}
+export interface EsCompleteResult {
+  connected: boolean;
+  wabaId: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string | null;
+  warnings?: string[];
+}
+export function completeEmbeddedSignup(
+  tenantId: string,
+  input: { code: string; wabaId: string; phoneNumberId: string },
+): Promise<EsCompleteResult> {
+  return request<EsCompleteResult>(`/tenants/${tenantId}/embedded-signup/complete`, { method: 'POST', body: JSON.stringify(input) });
+}

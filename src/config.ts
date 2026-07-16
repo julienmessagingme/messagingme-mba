@@ -19,6 +19,11 @@ const schema = z.object({
    * à 'true' seulement une fois le BM onboardé MM Lite.
    */
   META_MM_LITE: z.string().default('false'),
+  /** Configuration Embedded Signup (Facebook Login for Business) : l'id de configuration du dashboard Meta.
+   *  Vide -> bouton « Connecter » inactif au front et route de complétion en 503 (feature OFF). */
+  META_ES_CONFIG_ID: z.string().default(''),
+  /** Clé AES-256-GCM (64 hex = 32 octets) du chiffrement au repos des tokens business ES. Requise si ES activé. */
+  ENCRYPTION_KEY: z.string().default(''),
   /** Pays par défaut pour normaliser les numéros à l'import CSV. */
   DEFAULT_COUNTRY: z.string().default('FR'),
   /** Secret HMAC de signature des JWT de session (login console). */
@@ -104,6 +109,11 @@ const schema = z.object({
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
     if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CONNECTOR_PUSH_SECRET'], message: 'CONNECTOR_PUSH_SECRET requis quand CONNECTOR_PUSH_URL est défini' });
+    }
+    // Embedded Signup activé sans clé de chiffrement = tokens business stockables en clair OU crash au premier
+    // onboarding. Fail-fast au boot : 64 hex exigés.
+    if (c.META_ES_CONFIG_ID !== '' && !/^[0-9a-fA-F]{64}$/.test(c.ENCRYPTION_KEY)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY (64 hex) requise quand META_ES_CONFIG_ID est défini' });
     }
   }
 });

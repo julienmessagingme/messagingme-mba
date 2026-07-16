@@ -1,14 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
 import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
-  getStats, getTemplateStats, getCostSeries,
-  type MeResponse, type AccountStatusResponse, type AccountDot,
+  getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
+  type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
 
 export default function AccueilPage() {
@@ -165,7 +165,7 @@ function AccueilInner({ session }: { session: Session }) {
         <div className="grid gap-4 lg:grid-cols-2">
           {/* Espace sans numéro (self-signup) -> onboarding grisé ; sinon carte statut opérationnelle. */}
           {account && !account.hasNumber ? (
-            <ConnectNumberZone />
+            <ConnectNumberZone tenantId={session.tenantId} isAdmin={isAdmin} onConnected={() => { setLoading(true); void load(); }} />
           ) : (
             <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
@@ -308,12 +308,134 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** SDK JS Facebook (Embedded Signup). Chargé à la demande, une seule fois. */
+declare global {
+  interface Window {
+    FB?: {
+      init(opts: { appId: string; autoLogAppEvents?: boolean; xfbml?: boolean; version: string }): void;
+      login(cb: (resp: FbLoginResponse) => void, opts: Record<string, unknown>): void;
+    };
+  }
+}
+interface FbLoginResponse {
+  authResponse?: { code?: string } | null;
+  status?: string;
+}
+
+let fbSdkLoading: Promise<void> | null = null;
+function loadFbSdk(appId: string, version: string): Promise<void> {
+  if (window.FB) return Promise.resolve();
+  if (fbSdkLoading) return fbSdkLoading;
+  fbSdkLoading = new Promise<void>((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://connect.facebook.net/en_US/sdk.js';
+    s.async = true;
+    s.defer = true;
+    s.onload = () => {
+      if (!window.FB) { fbSdkLoading = null; reject(new Error('SDK Facebook indisponible')); return; }
+      window.FB.init({ appId, autoLogAppEvents: false, xfbml: false, version });
+      resolve();
+    };
+    s.onerror = () => { fbSdkLoading = null; reject(new Error('chargement du SDK Facebook impossible (bloqueur de pub ?)')); };
+    document.head.appendChild(s);
+  });
+  return fbSdkLoading;
+}
+
+/** Attend qu'une valeur apparaisse (session info postMessage), sinon null au timeout. */
+function waitFor<T>(get: () => T | undefined, timeoutMs: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const t = setInterval(() => {
+      const v = get();
+      if (v !== undefined) { clearInterval(t); resolve(v); }
+      else if (Date.now() - start > timeoutMs) { clearInterval(t); resolve(null); }
+    }, 200);
+  });
+}
+
 /**
- * Onboarding d'un espace SANS numéro (self-signup) : zone grisée « Connecter ton numéro ». Remplace la carte de
- * statut opérationnelle tant qu'aucun numéro n'est rattaché. Le CTA est un placeholder inactif : c'est le futur
- * point d'entrée de l'Embedded Signup Meta (activable quand MessagingMe sera Tech Partner).
+ * Onboarding d'un espace SANS numéro : point d'entrée de l'**Embedded Signup Meta** (Tech Provider).
+ * Le bouton ouvre la popup Meta (SDK FB + config_id) ; la popup renvoie (1) un `code` échangeable (TTL 30 s,
+ * via le callback FB.login) et (2) `waba_id` + `phone_number_id` (via postMessage `WA_EMBEDDED_SIGNUP`).
+ * On poste les trois au backend qui échange, rattache et abonne. Si META_ES_CONFIG_ID n'est pas posé côté
+ * serveur, le bouton reste le placeholder « bientôt disponible ».
  */
-function ConnectNumberZone() {
+function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: string; isAdmin: boolean; onConnected: () => void }) {
+  const [cfg, setCfg] = useState<EsConfig | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  // waba_id / phone_number_id arrivent par postMessage, PAS par le callback FB.login -> stash dans une ref.
+  const idsRef = useRef<{ wabaId: string; phoneNumberId: string } | undefined>(undefined);
+
+  useEffect(() => {
+    getEsConfig(tenantId).then(setCfg).catch(() => setCfg({ enabled: false, appId: '', configId: '', graphVersion: '' }));
+  }, [tenantId]);
+
+  useEffect(() => {
+    // Origine ANCRÉE sur la frontière de point : accepte www./business.facebook.com, REJETTE evilfacebook.com
+    // (endsWith('facebook.com') l'aurait laissé passer -> injection d'ids forgés via postMessage).
+    const FB_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*facebook\.com$/;
+    function onMsg(e: MessageEvent) {
+      if (typeof e.origin !== 'string' || !FB_ORIGIN.test(e.origin)) return;
+      try {
+        const d = JSON.parse(typeof e.data === 'string' ? e.data : '') as { type?: string; event?: string; data?: Record<string, unknown> } & Record<string, unknown>;
+        if (d?.type !== 'WA_EMBEDDED_SIGNUP') return;
+        if (d.event === 'FINISH' || d.event === 'FINISH_ONLY_WABA') {
+          const p = (d.data ?? d) as { waba_id?: unknown; phone_number_id?: unknown };
+          const wabaId = typeof p.waba_id === 'string' ? p.waba_id : undefined;
+          const phoneNumberId = typeof p.phone_number_id === 'string' ? p.phone_number_id : undefined;
+          if (wabaId !== undefined && phoneNumberId !== undefined) idsRef.current = { wabaId, phoneNumberId };
+        }
+      } catch { /* messages non-JSON du SDK : ignorés */ }
+    }
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  async function connect() {
+    if (!cfg?.enabled || busy) return;
+    setBusy(true);
+    setError(null);
+    setWarnings([]);
+    idsRef.current = undefined;
+    try {
+      await loadFbSdk(cfg.appId, cfg.graphVersion);
+      window.FB!.login(
+        (resp) => {
+          void (async () => {
+            try {
+              const code = resp?.authResponse?.code;
+              if (typeof code !== 'string' || code === '') {
+                setError('Connexion Meta annulée ou refusée.');
+                return;
+              }
+              // La session info (waba/numéro) peut arriver juste après le callback : on lui laisse 6 s.
+              const ids = await waitFor(() => idsRef.current, 6000);
+              if (!ids) {
+                setError('La popup n’a pas renvoyé le compte WhatsApp sélectionné. Réessaie.');
+                return;
+              }
+              const res = await completeEmbeddedSignup(tenantId, { code, ...ids });
+              setWarnings(res.warnings ?? []);
+              onConnected();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Connexion impossible');
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+        { config_id: cfg.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {} } },
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Connexion impossible');
+      setBusy(false);
+    }
+  }
+
+  const ready = cfg?.enabled === true && isAdmin;
   return (
     <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
@@ -330,22 +452,42 @@ function ConnectNumberZone() {
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-lg font-semibold text-ink-700">Connecter ton numéro</div>
+          <div className="text-lg font-semibold text-ink-700">Connecter ton compte WhatsApp</div>
           <p className="mt-0.5 text-xs text-ink-500">
-            Première étape : rattache ton numéro WhatsApp Business pour activer l&apos;envoi de messages et de campagnes.
+            Rattache ton compte WhatsApp Business (Meta) pour activer l&apos;envoi de messages et de campagnes. Tu choisis le
+            business et le numéro dans la fenêtre Meta, on s&apos;occupe du reste.
           </p>
         </div>
       </div>
+      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {warnings.length > 0 && (
+        <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Connecté, avec avertissement{warnings.length > 1 ? 's' : ''} : {warnings.join(' · ')}
+        </div>
+      )}
       <div className="mt-4 flex items-center gap-3 border-t border-ink-200 pt-3">
-        <button
-          type="button"
-          disabled
-          title="Bientôt disponible"
-          className="cursor-not-allowed rounded-lg bg-ink-200 px-3 py-2 text-sm font-semibold text-ink-500"
-        >
-          Connecter ton numéro
-        </button>
-        <span className="text-xs text-ink-400">Disponible prochainement</span>
+        {ready ? (
+          <button
+            type="button"
+            onClick={() => { void connect(); }}
+            disabled={busy}
+            className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+          >
+            {busy ? 'Connexion en cours…' : 'Connecter mon compte WhatsApp'}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled
+              title={isAdmin ? 'Bientôt disponible' : 'Réservé aux admins'}
+              className="cursor-not-allowed rounded-lg bg-ink-200 px-3 py-2 text-sm font-semibold text-ink-500"
+            >
+              Connecter mon compte WhatsApp
+            </button>
+            <span className="text-xs text-ink-400">{isAdmin ? 'Disponible prochainement' : 'Réservé aux admins'}</span>
+          </>
+        )}
       </div>
     </div>
   );
