@@ -121,6 +121,7 @@ function TagsInner({ session }: { session: Session }) {
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">{tc.tag}</span>
                     )}
+                    {tc.code && <div className="mt-0.5 font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{tc.code}</div>}
                   </td>
                   <td className="px-5 py-3">
                     {tc.count > 0 ? (

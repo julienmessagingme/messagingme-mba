@@ -4,6 +4,8 @@ export interface UserFieldDef {
   key: string;
   label: string;
   type: UserFieldType;
+  /** Code public « fld_<client>_<ulid> » (schéma A). Absent/null tant que le backfill n'a pas tourné (champs anciens). */
+  code?: string | null;
 }
 
 /** Cible d'une colonne CSV : attribut standard, champ perso, ou ignorée. */

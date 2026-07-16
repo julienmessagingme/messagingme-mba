@@ -1,10 +1,14 @@
 import type { Pool } from 'pg';
 import type { WorkflowGraph } from './graph';
+import { makeCode } from '../ids/code';
+import { resolveTenantCode } from '../ids/tenant-code';
 
 export interface WorkflowRow {
   id: string;
   tenantId: string;
   name: string;
+  /** Code public « scn_<client>_<ulid> » (schéma A). null tant que le backfill n'a pas tourné (lignes anciennes). */
+  code?: string | null;
   graph: WorkflowGraph;
   createdAt: string;
   updatedAt: string;
@@ -17,16 +21,17 @@ export class PgWorkflowStore {
   constructor(private readonly pool: Pool) {}
 
   async insert(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }> {
+    const code = makeCode('scn', await resolveTenantCode(this.pool, tenantId));
     const res = await this.pool.query<{ id: string }>(
-      `insert into workflows (tenant_id, name, graph) values ($1, $2, $3::jsonb) returning id`,
-      [tenantId, name, JSON.stringify(graph)],
+      `insert into workflows (tenant_id, name, graph, code) values ($1, $2, $3::jsonb, $4) returning id`,
+      [tenantId, name, JSON.stringify(graph), code],
     );
     return { id: res.rows[0]!.id };
   }
 
   async list(tenantId: string): Promise<WorkflowRow[]> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, graph, created_at, updated_at from workflows
+      `select id, tenant_id, name, code, graph, created_at, updated_at from workflows
        where tenant_id = $1 order by created_at desc`,
       [tenantId],
     );
@@ -35,7 +40,7 @@ export class PgWorkflowStore {
 
   async getById(id: string, tenantId: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, graph, created_at, updated_at from workflows
+      `select id, tenant_id, name, code, graph, created_at, updated_at from workflows
        where id = $1 and tenant_id = $2 limit 1`,
       [id, tenantId],
     );
@@ -64,7 +69,7 @@ export class PgWorkflowStore {
 }
 
 interface Row {
-  id: string; tenant_id: string; name: string;
+  id: string; tenant_id: string; name: string; code: string | null;
   graph: WorkflowGraph | null; created_at: Date; updated_at: Date;
 }
 function toRow(r: Row): WorkflowRow {
@@ -72,6 +77,7 @@ function toRow(r: Row): WorkflowRow {
     id: r.id,
     tenantId: r.tenant_id,
     name: r.name,
+    code: r.code,
     graph: r.graph ?? EMPTY_GRAPH,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),

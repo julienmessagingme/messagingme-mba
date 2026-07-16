@@ -148,7 +148,7 @@ function FieldsInner({ session }: { session: Session }) {
             <tbody>
               {custom.map((f) => (
                 <tr key={f.key} className="border-b border-ink-50 last:border-0">
-                  <td className="px-5 py-3"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code></td>
+                  <td className="px-5 py-3"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{f.code && <div className="mt-0.5 font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{f.code}</div>}</td>
                   <td className="px-5 py-3">
                     <input
                       value={f.label}

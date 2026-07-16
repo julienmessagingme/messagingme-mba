@@ -580,6 +580,8 @@ export interface AdminUser {
   email: string;
   name: string | null;
   role: UserRole;
+  /** Code public « usr_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
+  code?: string | null;
   /** true = compte révoqué (login bloqué). */
   disabled: boolean;
   /** true = invitation en attente (mot de passe pas encore choisi). */
@@ -694,6 +696,8 @@ export interface WorkflowGraph {
 export interface WorkflowSummary {
   id: string;
   name: string;
+  /** Code public « scn_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
+  code?: string | null;
   graph: WorkflowGraph;
   createdAt: string;
   updatedAt: string;
@@ -720,6 +724,8 @@ export function deleteWorkflow(tenantId: string, id: string): Promise<unknown> {
 export interface TagCount {
   tag: string;
   count: number;
+  /** Code public « tag_<client>_<ulid> » (schéma A). null pour un tag utilisé mais jamais déclaré, ou avant backfill. */
+  code?: string | null;
 }
 export function listTags(tenantId: string): Promise<{ tags: TagCount[] }> {
   return request<{ tags: TagCount[] }>(`/tenants/${tenantId}/tags`);
@@ -739,6 +745,8 @@ export interface UserFieldDef {
   key: string;
   label: string;
   type: UserFieldKind;
+  /** Code public « fld_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
+  code?: string | null;
 }
 export function listUserFields(tenantId: string): Promise<{ fields: UserFieldDef[] }> {
   return request<{ fields: UserFieldDef[] }>(`/tenants/${tenantId}/user-fields`);

@@ -118,6 +118,7 @@ function WorkflowsInner({ session }: { session: Session }) {
                 <tr key={w.id} className="border-b border-ink-50 last:border-0">
                   <td className="px-5 py-3">
                     <button onClick={() => open(w)} className="font-medium text-brand-600 hover:underline">{w.name}</button>
+                    {w.code && <div className="font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{w.code}</div>}
                   </td>
                   <td className="px-5 py-3 text-ink-500">{w.graph.nodes.length}</td>
                   <td className="px-5 py-3 text-right">

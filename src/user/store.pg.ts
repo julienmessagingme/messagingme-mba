@@ -1,10 +1,14 @@
 import type { Pool } from 'pg';
+import { makeCode, deriveTenantCode } from '../ids/code';
+import { resolveTenantCode } from '../ids/tenant-code';
 
 export interface UserRow {
   id: string;
   email: string;
   name: string | null;
   role: string;
+  /** Code public « usr_<client>_<ulid> » (schéma A). null tant que le backfill n'a pas tourné. */
+  code?: string | null;
   /** true = compte révoqué (login bloqué), réversible. */
   disabled: boolean;
   /** true = invitation en attente (pas encore de mot de passe posé). */
@@ -69,8 +73,8 @@ export class PgUserStore {
   }
 
   async list(tenantId: string): Promise<UserRow[]> {
-    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; disabled_at: Date | null; pending: boolean; created_at: Date }>(
-      `select id, email, name, role, disabled_at, (password_hash is null) as pending, created_at from users
+    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; code: string | null; disabled_at: Date | null; pending: boolean; created_at: Date }>(
+      `select id, email, name, role, code, disabled_at, (password_hash is null) as pending, created_at from users
        where tenant_id = $1 order by created_at asc`,
       [tenantId],
     );
@@ -79,6 +83,7 @@ export class PgUserStore {
       email: r.email,
       name: r.name,
       role: r.role,
+      code: r.code,
       disabled: r.disabled_at !== null,
       pending: r.pending,
       createdAt: r.created_at.toISOString(),
@@ -109,15 +114,16 @@ export class PgUserStore {
   /** Crée un compte EN ATTENTE (invitation) : sans mot de passe (login impossible tant que non finalisé via le
    *  lien). L'invité posera son mdp à l'acceptation. 409 (DuplicateEmailError) si l'email est déjà pris. */
   async createPending(tenantId: string, email: string, role: string): Promise<UserRow> {
+    const code = makeCode('usr', await resolveTenantCode(this.pool, tenantId));
     try {
       const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; created_at: Date }>(
-        `insert into users (tenant_id, email, name, role, password_hash)
-         values ($1, $2, null, $3, null)
+        `insert into users (tenant_id, email, name, role, password_hash, code)
+         values ($1, $2, null, $3, null, $4)
          returning id, email, name, role, created_at`,
-        [tenantId, email, role],
+        [tenantId, email, role, code],
       );
       const r = res.rows[0]!;
-      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, pending: true, createdAt: r.created_at.toISOString() };
+      return { id: r.id, email: r.email, name: r.name, role: r.role, code, disabled: false, pending: true, createdAt: r.created_at.toISOString() };
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') throw new DuplicateEmailError();
       throw err;
@@ -141,9 +147,12 @@ export class PgUserStore {
       await client.query('begin');
       const t = await client.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [workspaceName]);
       const tenantId = t.rows[0]!.id;
+      // Racine « code client » posée à la création (déterministe depuis l'uuid, immuable) + code du 1er admin.
+      const tcode = deriveTenantCode(tenantId);
+      await client.query(`update tenants set public_code = $2 where id = $1`, [tenantId, tcode]);
       const u = await client.query<{ id: string }>(
-        `insert into users (tenant_id, email, name, role, password_hash) values ($1, $2, $3, 'admin', $4) returning id`,
-        [tenantId, admin.email, admin.name, admin.passwordHash],
+        `insert into users (tenant_id, email, name, role, password_hash, code) values ($1, $2, $3, 'admin', $4, $5) returning id`,
+        [tenantId, admin.email, admin.name, admin.passwordHash, makeCode('usr', tcode)],
       );
       await client.query('commit');
       return { tenantId, userId: u.rows[0]!.id };
