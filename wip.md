@@ -235,7 +235,11 @@ bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
   dans node.data.code, code valide conservé = stabilité, étranger/malformé re-minté = anti-forge), champs
   SYSTÈME déterministes (`fld_<client>_sys_<key>`), backfill nodes (1 graphe). ZÉRO migration. **Socle #12/#13
   COMPLET** ; endpoints API publics = chantier dédié (todo).
-- Tests : **705 unit** (681 → 705 : +24 nets). Migrations 0030-0031 appliquées. Baseline verte à chaque lot.
+- **G (= 6) — i18n anglais COMPLET** : bug `<html lang>` fermé, day/format locale-REQUIS (Today/Yesterday,
+  1,000, 42%, customers…), 0 `fr-FR` hors libs, `LocaleToggle` pré-login (5 pages). Sweep 11 agents parallèles.
+  ⚠️ 2 leçons : test hors-sweep cassait le tsc racine (attrapé par le reviewer) + **gate pipé = exit masqué**
+  (cf `brain/LEARNINGS.md`). Gates relancés exit codes réels.
+- Tests : **707 unit** (681 → 707 : +26 nets). Migrations 0030-0031 appliquées. Baseline verte à chaque lot.
 
 ## Prochaine étape
 
@@ -244,9 +248,9 @@ bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
    Provider) + App Review SOUMISES le 2026-07-16, en review** (~5 j / ~20 j). Rien à faire côté produit d'ici là :
    le jour où les 2 feux passent au vert, le bouton marche de bout en bout et on tourne la vraie vidéo de démo.
    Surveiller mails Meta + onglet Required actions. Voir `todo.md` (refresh token, envoi via token par-client).
-3. **Programme 16 features, lots restants** (cf `todo.md §Programme`) : **6** i18n anglais complet (html lang,
-   dates fr-FR en dur, bug setLocale) · **7** Flow avancé (multi-pages + conditionnels, sondes Meta) + fix node
-   `flow` no-op · **HubSpot import #14** (multi-repo) · chantier dédié **endpoints API publics** (4b fait).
+3. **Programme 16 features, lots restants** (cf `todo.md §Programme`) : **7** Flow avancé (multi-pages +
+   conditionnels, sondes Meta) + fix node `flow` no-op · **HubSpot import #14** (multi-repo) · chantier dédié
+   **endpoints API publics** (4b et 6 faits).
 
 ## En attente (dépendances externes)
 

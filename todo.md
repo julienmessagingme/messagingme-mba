@@ -19,9 +19,8 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
 - ✅ **Lot 4b — fin du socle identifiants : FAIT (2026-07-16)** (codes des NODES mintés serveur + champs système
   déterministes + backfill, cf `.loop/lotF-identifiants-4b.md`). Reste le chantier DÉDIÉ **endpoints API publics**
   adressés par code (API keys, auth consommateur externe, scopes, rate limiting -> cadrage produit).
-- **Lot 6 — i18n anglais COMPLET (#2)** : `<html lang>`/metadata localisés, `web/lib/day.ts` + `format.ts`
-  hardcodés `fr-FR` (7 appelants), bug `i18n.tsx` (setLocaleState au lieu de setLocale → lang non resynchronisée),
-  switcher pré-login à trancher. Cartographie faite (session 2026-07-16).
+- ✅ **Lot 6 — i18n anglais COMPLET : FAIT (2026-07-16)** (bug lang resync fermé, day/format locale-requis,
+  toggle pré-login sur les 5 pages auth, cf `.loop/lotG-i18n-anglais.md`).
 - **Lot 7 — Flow avancé (#6b/#6c)** : multi-pages (screens + navigate + data-passing, ⚠️ SONDE LIVE obligatoire)
   + champs conditionnels (`visible` + piège du caché-mais-requis, sonde aussi) + **fix node `flow` no-op** du
   builder de scénario (atteint mais n'envoie RIEN, run bloqué → envoi interactif flow à sonder). Rappel : #5

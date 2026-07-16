@@ -10,8 +10,11 @@ WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
 Admin : **Inbox · Contacts · Campagnes · Scénario · Contenu (Templates / Formulaires / Tags / Champs) · Analytics · Support**.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
-- ✅ **Interface bilingue FR/EN** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais (mémorisé par
-  navigateur, défaut français). Pour les clients internationaux (Dubaï) et le screencast d'App Review Meta.
+- ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
+  (mémorisé par navigateur, défaut français), **y compris les dates (« Today/Yesterday/12 July 2026 »), les
+  nombres (« 1,000 »), les débits/paliers (« 80 messages / second », « Unlimited ») et les pourcentages**. Le
+  toggle est aussi disponible **avant connexion** (login, inscription, mot de passe oublié, invitation). Pour
+  les clients internationaux (Dubaï) et le screencast d'App Review Meta.
 - ✅ **Après connexion, un admin arrive sur l'Accueil (Home)** (numéro + statut du compte), plus sur Analytics.
 
 ## Comptes & authentification
