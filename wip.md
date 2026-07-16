@@ -231,7 +231,11 @@ bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
   4b (nodes + champs système + endpoints) différé.
 - **E — Analytics erreurs** : par TEMPLATE (dropdown, agrégation client) + par période (plage globale). 🔴 réel
   attrapé par le reviewer : wiring `index.ts` perdait le 3e arg → corrigé.
-- Tests : **698 unit** (681 → 698 : +17 nets). Migrations 0030-0031 appliquées. Baseline verte à chaque lot.
+- **F (= 4b) — fin du socle identifiants** : codes des NODES mintés CÔTÉ SERVEUR au save (`nod_<client>_<ulid>`
+  dans node.data.code, code valide conservé = stabilité, étranger/malformé re-minté = anti-forge), champs
+  SYSTÈME déterministes (`fld_<client>_sys_<key>`), backfill nodes (1 graphe). ZÉRO migration. **Socle #12/#13
+  COMPLET** ; endpoints API publics = chantier dédié (todo).
+- Tests : **705 unit** (681 → 705 : +24 nets). Migrations 0030-0031 appliquées. Baseline verte à chaque lot.
 
 ## Prochaine étape
 
@@ -240,9 +244,9 @@ bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
    Provider) + App Review SOUMISES le 2026-07-16, en review** (~5 j / ~20 j). Rien à faire côté produit d'ici là :
    le jour où les 2 feux passent au vert, le bouton marche de bout en bout et on tourne la vraie vidéo de démo.
    Surveiller mails Meta + onglet Required actions. Voir `todo.md` (refresh token, envoi via token par-client).
-3. **Programme 16 features, lots restants** (cf `todo.md §Programme`) : **4b** codes nodes/champs système +
-   endpoints API · **6** i18n anglais complet (html lang, dates fr-FR en dur, bug setLocale) · **7** Flow avancé
-   (multi-pages + conditionnels, sondes Meta) + fix node `flow` no-op · **HubSpot import #14** (multi-repo).
+3. **Programme 16 features, lots restants** (cf `todo.md §Programme`) : **6** i18n anglais complet (html lang,
+   dates fr-FR en dur, bug setLocale) · **7** Flow avancé (multi-pages + conditionnels, sondes Meta) + fix node
+   `flow` no-op · **HubSpot import #14** (multi-repo) · chantier dédié **endpoints API publics** (4b fait).
 
 ## En attente (dépendances externes)
 

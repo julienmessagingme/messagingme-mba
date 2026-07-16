@@ -50,9 +50,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   utilisables comme sources de variable partout.
 - ✅ **Colonne « WhatsApp ID »** dans le tableau contacts (à côté du BSUID) : les chiffres du numéro sans « + »
   (la clé de routage que Meta émet), ou le BSUID si le contact n'a pas de numéro.
-- ✅ **Codes publics (socle API)** : chaque **scénario, champ perso et tag** porte un code unique lié au client
-  (ex. `scn_by5p57_01KXNV…`), affiché discrètement sous son nom. C'est l'identifiant stable qu'une future API
-  utilisera. (Les nodes de scénario et les champs système suivront, Lot 4b.)
+- ✅ **Codes publics (socle API) COMPLET** : chaque **scénario, bloc de scénario (node), champ (perso ET de base)
+  et tag** porte un code unique lié au client (ex. `scn_by5p57_01KXNV…`, `nod_…`, `fld_…_sys_email`), affiché
+  discrètement (liste des scénarios, panneau de config d'un bloc, page Champs, page Tags). C'est l'identifiant
+  stable qu'une future API utilisera. Les codes des blocs sont posés côté serveur à l'enregistrement (un code
+  existant n'est jamais changé).
 
 ## Templates (menu Contenu)
 
