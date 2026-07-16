@@ -5,6 +5,7 @@ import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselC
 import type { CampaignStatus } from '../campaign/types';
 import { parseParamHints } from '../crm/template';
 import type { ParamSource } from '../crm/template';
+import { isValidTemplateLanguage } from '../meta/languages';
 
 export interface TemplateRouteDeps {
   templates: MetaTemplateClient;
@@ -192,6 +193,9 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const b = (req.body ?? {}) as Record<string, unknown>;
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     if (!nonEmpty(b.language)) return reply.code(400).send({ error: 'language requis' });
+    // Langue = code Meta valide (whitelist). Le sélecteur front ne propose que des codes valides ; on garde le
+    // garde-fou serveur pour un appel API direct (une langue invalide serait rejetée par Meta plus loin, sans message clair).
+    if (!isValidTemplateLanguage(b.language)) return reply.code(400).send({ error: 'language non supportée (hors liste WhatsApp)' });
     const parsed = parseTemplateFields(b);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });

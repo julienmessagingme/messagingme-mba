@@ -131,7 +131,7 @@ function CampaignsInner({ session }: { session: Session }) {
   // Écran de création (ouvert via « Ajouter une campagne »).
   if (mode === 'create') {
     return (
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-6xl">
         <button onClick={() => setMode('list')} className="mb-4 flex items-center gap-1 text-sm text-brand-600 hover:underline">
           ← {t('Retour aux campagnes', 'Back to campaigns')}
         </button>
@@ -554,26 +554,43 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const canSubmit = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0 && !busy;
 
   return (
-    <section className="h-fit rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+    <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
       <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouvelle campagne', 'New campaign')}</h2>
       <p className="mt-1 text-xs text-ink-500">{t("Choisis un template approuvé et les contacts, puis lance l'envoi.", 'Choose an approved template and contacts, then launch the send.')}</p>
 
-      <Field label={t('Numéro expéditeur', 'Sender number')}>
-        {numbers.length === 0 ? (
-          <p className="text-xs text-amber-700">{t('Aucun numéro provisionné pour ce tenant.', 'No number provisioned for this tenant.')}</p>
-        ) : (
-          <select value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className={inputCls}>
-            {numbers.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.displayPhoneNumber ?? n.id} {n.verifiedName ? `(${n.verifiedName})` : ''}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
+      {/* Nom de la campagne : au-dessus des 3 zones */}
+      <div className="mt-4">
+        <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom de la campagne (interne)', 'Campaign name (internal)')}</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} max-w-md`} placeholder={t('Promo été', 'Summer promo')} />
+      </div>
 
-      {/* 1. Choix des contacts (D'ABORD : la cible est indépendante de ce qu'on envoie) */}
-      <div className="mt-3">
+      {/* 3 zones côte à côte (empilées sur mobile) : Expéditeur | Destinataires | Message */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)]">
+        {/* ZONE 1 — Expéditeur (un seul numéro en général) */}
+        <div className="rounded-xl border border-ink-200 bg-ink-50/30 p-4">
+          <h3 className="text-sm font-semibold text-ink-800">{t('Expéditeur', 'Sender')}</h3>
+          <div className="mt-2">
+            {numbers.length === 0 ? (
+              <p className="text-xs text-amber-700">{t('Aucun numéro provisionné pour ce tenant.', 'No number provisioned for this tenant.')}</p>
+            ) : numbers.length === 1 ? (
+              <div className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800">
+                <div className="font-medium">{numbers[0]!.displayPhoneNumber ?? numbers[0]!.id}</div>
+                {numbers[0]!.verifiedName && <div className="text-xs text-ink-400">{numbers[0]!.verifiedName}</div>}
+              </div>
+            ) : (
+              <select value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className={inputCls}>
+                {numbers.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.displayPhoneNumber ?? n.id} {n.verifiedName ? `(${n.verifiedName})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {/* ZONE 2 — Destinataires */}
+        <div className="rounded-xl border border-ink-200 p-4">
         <div className="mb-1 flex items-center justify-between">
           <label className="text-sm font-medium text-ink-700">{t('Destinataires', 'Recipients')}</label>
           {contacts.length > 0 && (
@@ -619,7 +636,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
                 </button>
               )}
             </div>
-            <div className="max-h-48 divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
+            <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
               {filteredContacts.map((c) => (
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
@@ -643,8 +660,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         )}
       </div>
 
-      {/* 2. Quoi envoyer : un template direct OU un workflow (bot builder) */}
-      <div className="mt-4">
+        {/* ZONE 3 — Message : un template direct OU un scénario (bot builder) */}
+        <div className="rounded-xl border border-ink-200 p-4">
+          <h3 className="mb-2 text-sm font-semibold text-ink-800">{t('Message', 'Message')}</h3>
+          <div className="mt-1">
         <label className="mb-1 block text-sm font-medium text-ink-700">{t('Que veux-tu leur envoyer ?', 'What do you want to send them?')}</label>
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
           {([
@@ -678,7 +697,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             )}
             {selectedTemplate?.body && (
               <div className="mt-3">
-                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
+                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={selectedTemplate?.buttons ?? []} hideNote />
               </div>
             )}
           </Field>
@@ -709,20 +728,17 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             {!wfError && selectedTemplate?.body && (
               <div className="mt-3">
                 <p className="mb-1 text-xs text-ink-500">{t('1er template envoyé par le scénario :', 'First template sent by the scenario:')} <b>{templateName}</b></p>
-                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
+                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={selectedTemplate?.buttons ?? []} hideNote />
               </div>
             )}
           </Field>
 
-          {/* Association des variables du 1er template du workflow (même sélecteur que pour un template direct). */}
+          {/* Association des variables du 1er template du scénario (même sélecteur que pour un template direct). */}
           {!wfError && <VarsEditor vars={vars} setVars={setVars} fields={userFields} />}
         </>
       )}
-
-      {/* 3. Libellé de la campagne */}
-      <Field label={t('Nom de la campagne (interne)', 'Campaign name (internal)')}>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder={t('Promo été', 'Summer promo')} />
-      </Field>
+        </div>
+      </div>
 
       {!varsComplete && <p className="mt-3 text-xs text-amber-600">{t('Complète les valeurs des variables (champ perso / texte fixe).', 'Complete the variable values (custom field / fixed text).')}</p>}
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

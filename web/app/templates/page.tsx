@@ -10,6 +10,8 @@ import type { Session } from '@/lib/session';
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, uploadMedia, listUserFields, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 import { useT } from '@/lib/i18n';
+import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
+import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -36,7 +38,8 @@ interface VarSource { source: ParamSource; label: string }
 /** Exemple déterministe (jamais vide) exigé par Meta, selon le champ choisi. Zéro IA : valeur plausible par
  *  clé connue, sinon par type de champ. */
 function deterministicExample(source: ParamSource, fieldType?: string): string {
-  if (source.type === 'attribute') return source.key === 'phone' ? '+33 6 12 34 56 78' : 'Marie Martin';
+  // Champ de base (attribut) : exemple propre par clé (Nom, Téléphone, BSUID, WhatsApp ID) via la source commune.
+  if (source.type === 'attribute') return systemFieldExample(source.key ?? '');
   if (source.type === 'literal') return source.value?.trim() || 'exemple';
   const key = (source.key ?? '').toLowerCase();
   const byKey: Record<string, string> = {
@@ -55,10 +58,12 @@ function deterministicExample(source: ParamSource, fieldType?: string): string {
   }
 }
 
-/** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). */
+/** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). Aligné sur la source commune
+ *  SYSTEM_FIELDS (mêmes libellés que la campagne) : un attribut bsuid/wa_id n'est plus mal étiqueté « Nom ». */
 function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (fr: string, en?: string) => string): string {
-  if (source.type === 'attribute') return source.key === 'phone' ? t('Téléphone', 'Phone') : t('Nom du profil WhatsApp', 'WhatsApp profile name');
   if (source.type === 'literal') return t('Texte fixe', 'Fixed text');
+  const sys = SYSTEM_FIELDS.find((f) => f.source.type === source.type && f.source.key === source.key);
+  if (sys) return sys.label;
   return fields.find((f) => f.key === source.key)?.label ?? source.key ?? t('Champ', 'Field');
 }
 
@@ -255,21 +260,37 @@ function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose
   );
 }
 
-/** Sélecteur de champ : insère une variable rattachée au champ choisi (nom/téléphone + champs perso). */
+/** Une option du sélecteur de variable : champ de BASE (group 'base') ou champ perso (group 'custom'). */
+interface FieldOption { source: ParamSource; label: string; fieldType?: string; group: 'base' | 'custom' }
+
+/** Sélecteur de champ : insère une variable rattachée au champ choisi. Deux groupes (Champs de base / Mes champs)
+ *  pour rester COHÉRENT avec le sélecteur de la campagne (VarsEditor). */
 function FieldPicker({ options, onPick, onClose }: {
-  options: Array<{ source: ParamSource; label: string; fieldType?: string }>;
-  onPick: (o: { source: ParamSource; label: string; fieldType?: string }) => void;
+  options: FieldOption[];
+  onPick: (o: FieldOption) => void;
   onClose: () => void;
 }) {
   const t = useT();
+  const groups: Array<{ id: 'base' | 'custom'; label: string }> = [
+    { id: 'base', label: t('Champs de base', 'Base fields') },
+    { id: 'custom', label: t('Mes champs', 'My fields') },
+  ];
   return (
     <>
       <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
       <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-lg">
-        <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Insérer un champ', 'Insert a field')}</div>
-        {options.map((o, i) => (
-          <button type="button" key={`${o.label}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50">{o.label}</button>
-        ))}
+        {groups.map((g) => {
+          const items = options.filter((o) => o.group === g.id);
+          if (items.length === 0) return null;
+          return (
+            <div key={g.id}>
+              <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">{g.label}</div>
+              {items.map((o, i) => (
+                <button type="button" key={`${g.id}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50">{o.label}</button>
+              ))}
+            </div>
+          );
+        })}
       </div>
     </>
   );
@@ -336,12 +357,12 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     return () => { alive = false; };
   }, [tenantId, initial, t]);
 
-  // « Nom du profil WhatsApp » = le profile_name (souvent vide en import CSV) -> clairement distinct des champs
-  // Prénom / Nom importés (qui apparaissent ci-dessous via userFields). Fin de la confusion « Nom / Nom et prénom ».
-  const fieldOptions: Array<{ source: ParamSource; label: string; fieldType?: string }> = [
-    { source: { type: 'attribute', key: 'name' }, label: t('Nom du profil WhatsApp', 'WhatsApp profile name') },
-    { source: { type: 'attribute', key: 'phone' }, label: t('Téléphone', 'Phone') },
-    ...userFields.map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type })),
+  // Source de vérité COMMUNE (web/lib/fields.ts) : les 6 champs de base (Nom, Prénom, Téléphone, BSUID, WhatsApp ID,
+  // Email) + les champs perso (hors clés système). Exactement la même liste que le sélecteur de la campagne (VarsEditor)
+  // -> cohérence de bout en bout, et on peut enfin rattacher une variable à BSUID / WhatsApp ID à la création.
+  const fieldOptions: FieldOption[] = [
+    ...SYSTEM_FIELDS.map((f) => ({ source: f.source, label: f.label, group: 'base' as const })),
+    ...customFieldsOnly(userFields).map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type, group: 'custom' as const })),
   ];
 
   // Positions de variables réellement présentes dans le corps (distinctes, triées). Après suppression d'une
@@ -518,7 +539,15 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
               </select>
             </Field>
             <Field label={isEdit ? t('Langue (non modifiable)', 'Language (not editable)') : t('Langue', 'Language')}>
-              <input value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="fr" />
+              <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`}>
+                {/* Filet : un template déjà créé avec une langue hors liste (ancien champ libre) garde sa valeur affichée. */}
+                {language !== '' && !META_TEMPLATE_LANGUAGES.some((l) => l.code === language) && (
+                  <option value={language}>{language}</option>
+                )}
+                {META_TEMPLATE_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label} ({l.code})</option>
+                ))}
+              </select>
             </Field>
           </div>
 

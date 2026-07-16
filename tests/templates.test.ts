@@ -105,6 +105,23 @@ describe('routes templates', () => {
     await a.close();
   });
 
+  it('langue hors whitelist -> 400, aucun appel Meta', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'francais', body: 'x' } });
+    expect(res.statusCode).toBe(400);
+    expect(calls).toHaveLength(0);
+    await a.close();
+  });
+
+  it('langue valide hors fr (en_US) -> 201', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'en_US', body: 'x' } });
+    expect(res.statusCode).toBe(201);
+    await a.close();
+  });
+
   it('role agent -> 403', async () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
     const a = app(fn);
