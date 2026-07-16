@@ -5,7 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { dayKey, dayLabel, hourMin } from '@/lib/day';
 import type { Session } from '@/lib/session';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 import {
   listConversations,
   getConversationMessages,
@@ -82,6 +82,7 @@ function InboundPayload({ body, payload }: { body: string | null; payload: strin
 
 function InboxInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +138,7 @@ function InboxInner({ session }: { session: Session }) {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-sm font-medium">{c.profileName ?? `+${c.waId}`}</span>
-                    <span className="shrink-0 text-[11px] text-ink-400">{new Date(c.lastMessageAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
                   <p className="truncate text-xs text-ink-500">{c.lastPreview ?? ''}</p>
                 </button>
@@ -162,6 +163,7 @@ function InboxInner({ session }: { session: Session }) {
 
 function Thread({ session, conversation, onSent }: { session: Session; conversation: Conversation; onSent: () => void }) {
   const t = useT();
+  const { locale } = useLocale();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [windowOpen, setWindowOpen] = useState(true);
   const [text, setText] = useState('');
@@ -240,7 +242,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
             <Fragment key={m.id}>
               {showSep && (
                 <div className="flex justify-center py-1">
-                  <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-[11px] font-medium text-ink-500">{dayLabel(m.createdAt)}</span>
+                  <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-[11px] font-medium text-ink-500">{dayLabel(m.createdAt, locale)}</span>
                 </div>
               )}
               <div className={`flex items-end gap-1.5 ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
@@ -256,7 +258,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
                   ) : (
                     m.body ?? <span className="italic opacity-70">[{m.type}]</span>
                   )}
-                  <div className={`mt-0.5 text-right text-[10px] ${m.direction === 'out' ? 'text-white/70' : 'text-ink-400'}`}>{hourMin(m.createdAt)}</div>
+                  <div className={`mt-0.5 text-right text-[10px] ${m.direction === 'out' ? 'text-white/70' : 'text-ink-400'}`}>{hourMin(m.createdAt, locale)}</div>
                 </div>
                 {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur — legacy ou réponse auto). */}
                 {m.direction === 'out' && m.senderName ? <AgentBadge name={m.senderName} /> : null}

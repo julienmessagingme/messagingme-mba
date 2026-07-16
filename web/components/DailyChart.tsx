@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { DailyPoint } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 
 export interface ChartSeries {
   label: string;
@@ -81,6 +81,7 @@ export function DailyChart({
   summary?: 'sum' | 'last';
 }) {
   const t = useT();
+  const { locale } = useLocale();
   const [hover, setHover] = useState<number | null>(null);
   const dates = useMemo(() => daysBetween(from, to), [from, to]);
 
@@ -130,7 +131,7 @@ export function DailyChart({
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">{title}</div>
           <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-[2.5rem] font-light leading-none tracking-tight text-ink-900 tabular-nums">{fmtNum(hero)}</span>
+            <span className="text-[2.5rem] font-light leading-none tracking-tight text-ink-900 tabular-nums">{fmtNum(hero, locale)}</span>
             {delta !== null && (
               <span
                 className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium ${
@@ -138,7 +139,7 @@ export function DailyChart({
                 }`}
               >
                 {delta > 0 ? '↗' : delta < 0 ? '↘' : '→'} {delta > 0 ? '+' : ''}
-                {fmtNum(delta)}
+                {fmtNum(delta, locale)}
               </span>
             )}
           </div>
@@ -151,14 +152,14 @@ export function DailyChart({
               <span key={s.label} className="flex items-center gap-1.5 text-xs text-ink-500">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
                 {s.label}
-                <span className="font-semibold text-ink-800 tabular-nums">{fmtNum(s.values[s.values.length - 1] ?? 0)}</span>
+                <span className="font-semibold text-ink-800 tabular-nums">{fmtNum(s.values[s.values.length - 1] ?? 0, locale)}</span>
               </span>
             ))}
           </div>
         ) : (
           <div className="flex shrink-0 gap-2">
-            <MiniStat label={t('Pic', 'Peak')} value={fmtNum(peak)} />
-            <MiniStat label={t('Moy.', 'Avg.')} value={fmtNum(avg)} />
+            <MiniStat label={t('Pic', 'Peak')} value={fmtNum(peak, locale)} />
+            <MiniStat label={t('Moy.', 'Avg.')} value={fmtNum(avg, locale)} />
           </div>
         )}
       </div>
@@ -243,7 +244,7 @@ export function DailyChart({
               <div key={s.label} className="flex items-center gap-1.5 whitespace-nowrap">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.color }} />
                 {multi ? `${s.label} ` : ''}
-                <span className="font-semibold tabular-nums">{fmtNum(s.values[hover] ?? 0)}</span>
+                <span className="font-semibold tabular-nums">{fmtNum(s.values[hover] ?? 0, locale)}</span>
               </div>
             ))}
           </div>

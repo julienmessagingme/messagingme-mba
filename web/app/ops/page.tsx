@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, type OpsOverview, type TenantOverviewRow, type QueueLoadRow } from '@/lib/api';
+import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { useLocale, useT } from '@/lib/i18n';
 
 const KEY = 'mba.ops';
 
 export default function OpsPage() {
   const t = useT();
+  const { locale } = useLocale();
   const [token, setToken] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [data, setData] = useState<OpsOverview | null>(null);
@@ -98,9 +100,9 @@ export default function OpsPage() {
         ) : data ? (
           <>
             <div className="grid grid-cols-3 gap-4">
-              <Stat label={t('Clients', 'Clients')} value={fmtNum(data.tenants.length)} />
-              <Stat label={t('Messages', 'Messages')} value={fmtNum(totalMessages)} />
-              <Stat label={t('Contacts', 'Contacts')} value={fmtNum(totalContacts)} />
+              <Stat label={t('Clients', 'Clients')} value={fmtNum(data.tenants.length, locale)} />
+              <Stat label={t('Messages', 'Messages')} value={fmtNum(totalMessages, locale)} />
+              <Stat label={t('Contacts', 'Contacts')} value={fmtNum(totalContacts, locale)} />
             </div>
 
             <QueueCard queues={data.queues} />
@@ -137,6 +139,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 /** Charge des files pg-boss : signal de bascule VPS -> Railway (backlog qui monte = saturation). */
 function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
   const t = useT();
+  const { locale } = useLocale();
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <h3 className="mb-3 text-sm font-semibold tracking-tight text-ink-900">{t('Files de traitement (pg-boss)', 'Processing queues (pg-boss)')}</h3>
@@ -145,9 +148,9 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
           <div key={q.queue} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
             <span className="font-mono text-xs text-ink-700">{q.queue}</span>
             <span className="flex gap-3 text-xs tabular-nums">
-              <span title={t('en attente', 'pending')} className="text-ink-600">{fmtNum(q.backlog)} {t('en file', 'queued')}</span>
-              <span title={t('actifs', 'active')} className="text-brand-600">{fmtNum(q.active)} {t('actifs', 'active')}</span>
-              <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-coral' : 'text-ink-400'}>{fmtNum(q.failed)} {t('échoués', 'failed')}</span>
+              <span title={t('en attente', 'pending')} className="text-ink-600">{fmtNum(q.backlog, locale)} {t('en file', 'queued')}</span>
+              <span title={t('actifs', 'active')} className="text-brand-600">{fmtNum(q.active, locale)} {t('actifs', 'active')}</span>
+              <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-coral' : 'text-ink-400'}>{fmtNum(q.failed, locale)} {t('échoués', 'failed')}</span>
             </span>
           </div>
         ))}
@@ -158,8 +161,9 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
 
 function TenantTable({ tenants }: { tenants: TenantOverviewRow[] }) {
   const t = useT();
+  const { locale } = useLocale();
   const dot = (q: string | null) => (q === 'GREEN' ? '#17C74E' : q === 'YELLOW' ? '#E8A400' : q === 'RED' ? '#FF4D4F' : '#B8BEC9');
-  const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
+  const fmtDate = (iso: string | null) => (iso ? formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
   return (
     <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
       <table className="w-full min-w-[820px] text-sm">
@@ -197,10 +201,10 @@ function TenantTable({ tenants }: { tenants: TenantOverviewRow[] }) {
                   <span className="text-xs text-ink-400">—</span>
                 )}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.users)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.contacts)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.messages)}</td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.templatesUsed)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.users, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.contacts, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.messages, locale)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-ink-700">{fmtNum(tn.templatesUsed, locale)}</td>
               <td className="px-3 py-2.5 text-xs text-ink-500">{fmtDate(tn.lastSendAt)}</td>
             </tr>
           ))}

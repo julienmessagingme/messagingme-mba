@@ -11,7 +11,7 @@ import {
 } from '@/lib/api';
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 
 export default function DashboardPage() {
   return <AppShell active="dashboard">{(session) => <DashboardInner session={session} />}</AppShell>;
@@ -169,6 +169,7 @@ function DashboardInner({ session }: { session: Session }) {
  */
 function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaigns: CampaignSummary[] }) {
   const t = useT();
+  const { locale } = useLocale();
   const [selected, setSelected] = useState<string | null>(null);
   const [funnel, setFunnel] = useState<CampaignFunnel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -193,9 +194,9 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
   const bars = funnel
     ? [
         { label: t('Envoyés', 'Sent'), value: funnel.sent, color: '#009AFE', sub: '' },
-        { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent) },
-        { label: t('Lus', 'Read'), value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent) },
-        { label: t('Répondus', 'Replied'), value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent) },
+        { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent, locale) },
+        { label: t('Lus', 'Read'), value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent, locale) },
+        { label: t('Répondus', 'Replied'), value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent, locale) },
       ]
     : [];
 
@@ -231,14 +232,14 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
               <div className="w-24 shrink-0 text-xs text-ink-600">{b.label}</div>
               <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
                 <div className="flex h-full items-center rounded-md px-2 text-[11px] font-medium text-white" style={{ width: `${pct(b.value)}%`, backgroundColor: b.color }}>
-                  {fmtNum(b.value)}
+                  {fmtNum(b.value, locale)}
                 </div>
               </div>
               <div className="w-12 shrink-0 text-right text-xs tabular-nums text-ink-500">{b.sub}</div>
             </div>
           ))}
           {funnel.failed > 0 && (
-            <p className="pt-1 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed)}</span></p>
+            <p className="pt-1 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
           )}
         </div>
       )}
@@ -249,6 +250,7 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
 /** Breakdown des codes d'erreur Meta sur la période (avec libellé FR). */
 function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
   const t = useT();
+  const { locale } = useLocale();
   const [tpl, setTpl] = useState('');
   // Templates ayant généré des erreurs (pour le filtre). Les erreurs des envois Inbox/Workflow ne sont pas
   // trackées (colonne d'erreur seulement sur campaign_recipients) : ce breakdown couvre les CAMPAGNES.
@@ -282,7 +284,7 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
             <div key={e.code}>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-mono text-xs font-medium text-ink-700">{e.code}</span>
-                <span className="text-xs tabular-nums text-ink-500">{fmtNum(e.count)}</span>
+                <span className="text-xs tabular-nums text-ink-500">{fmtNum(e.count, locale)}</span>
               </div>
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-50">
                 <div className="h-full rounded-full bg-coral" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
@@ -290,7 +292,7 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
               <p className="mt-0.5 text-[11px] text-ink-400">{metaCodeLabel(e.code)}</p>
             </div>
           ))}
-          <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-700">{fmtNum(total)}</span></p>
+          <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-700">{fmtNum(total, locale)}</span></p>
         </div>
       )}
     </div>

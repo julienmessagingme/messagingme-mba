@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
@@ -46,6 +46,7 @@ interface Kpis {
 
 function AccueilInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [account, setAccount] = useState<AccountStatusResponse | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
@@ -128,12 +129,12 @@ function AccueilInner({ session }: { session: Session }) {
   const firstName = firstNameOf(me);
   const kpiRow = useMemo(
     () => [
-      { label: t('Contacts', 'Contacts'), value: kpis ? fmtNum(kpis.contacts) : '—' },
-      { label: t('Messages échangés', 'Messages exchanged'), value: kpis ? fmtNum(kpis.exchanged) : '—' },
-      { label: t('Templates envoyés', 'Templates sent'), value: kpis ? fmtNum(kpis.templates) : '—' },
+      { label: t('Contacts', 'Contacts'), value: kpis ? fmtNum(kpis.contacts, locale) : '—' },
+      { label: t('Messages échangés', 'Messages exchanged'), value: kpis ? fmtNum(kpis.exchanged, locale) : '—' },
+      { label: t('Templates envoyés', 'Templates sent'), value: kpis ? fmtNum(kpis.templates, locale) : '—' },
       { label: t('Coût estimé', 'Estimated cost'), value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost) : '—') : '—' },
     ],
-    [kpis, t],
+    [kpis, t, locale],
   );
 
   return (
@@ -193,10 +194,10 @@ function AccueilInner({ session }: { session: Session }) {
                     </div>
                   </div>
                   {account.tier && (
-                    <Field label={t("Cap d'envoi", 'Sending limit')} value={tierLabel(account.tier)} />
+                    <Field label={t("Cap d'envoi", 'Sending limit')} value={tierLabel(account.tier, locale)} />
                   )}
                   {account.nameStatus && <Field label={t('Nom', 'Name')} value={nameStatusLabel(account.nameStatus, t)} />}
-                  {account.throughputLevel && <Field label={t('Débit', 'Throughput')} value={throughputLabel(account.throughputLevel)} />}
+                  {account.throughputLevel && <Field label={t('Débit', 'Throughput')} value={throughputLabel(account.throughputLevel, locale)} />}
                   {account.wabaHealthStatus && <Field label={t('Santé du compte', 'Account health')} value={wabaHealthLabel(account.wabaHealthStatus, t)} />}
                 </div>
               )}

@@ -7,6 +7,7 @@ import { login } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
+import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 
 export default function LoginPage() {
@@ -33,7 +34,10 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
+    <main className="relative flex min-h-screen items-center justify-center px-4">
+      <div className="absolute right-4 top-4">
+        <LocaleToggle />
+      </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />

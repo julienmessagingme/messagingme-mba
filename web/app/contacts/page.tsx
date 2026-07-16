@@ -19,7 +19,8 @@ import {
   type UserFieldDef,
   type UserFieldKind,
 } from '@/lib/api';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
+import { formatDate } from '@/lib/day';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -574,6 +575,7 @@ function ContactDetail({
   onClose: () => void;
 }) {
   const t = useT();
+  const { locale } = useLocale();
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
   const defByKey = new Map(userFields.map((d) => [d.key, d]));
   // 'prenom' est déjà affiché dans le bloc fixe ci-dessus -> l'exclure de la section Champs (pas de doublon).
@@ -684,7 +686,7 @@ function ContactDetail({
           <span className="text-ink-400">{t('Consentement', 'Consent')}</span>
           <span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span></span>
           <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>
-          <span className="text-ink-900">{new Date(contact.createdAt).toLocaleDateString('fr-FR')}</span>
+          <span className="text-ink-900">{formatDate(contact.createdAt, locale)}</span>
         </div>
 
         {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

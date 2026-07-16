@@ -10,7 +10,8 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
  * Usage dans un composant :  const t = useT();  ...  {t('Bonjour', 'Hello')}
  * Défaut FR ; le choix (menu compte) est mémorisé par navigateur.
  */
-export type Locale = 'fr' | 'en';
+import type { Locale } from './locale';
+export type { Locale } from './locale';
 const STORAGE_KEY = 'mba_locale';
 
 interface LocaleCtx {
@@ -26,7 +27,12 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved === 'fr' || saved === 'en') setLocaleState(saved);
+      if (saved === 'fr' || saved === 'en') {
+        setLocaleState(saved);
+        // Resynchronise AUSSI <html lang> (le layout SSR pose lang="fr" par défaut) : sans ça, une préférence
+        // EN chargée affichait l'app en anglais avec un document déclaré... français.
+        try { document.documentElement.lang = saved; } catch { /* edge */ }
+      }
     } catch { /* localStorage indisponible -> reste FR */ }
   }, []);
   const setLocale = useCallback((l: Locale) => {

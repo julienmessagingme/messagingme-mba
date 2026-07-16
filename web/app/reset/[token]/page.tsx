@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { resetPassword } from '@/lib/api';
 import { Logo } from '@/components/Logo';
+import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 
 const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
@@ -34,7 +35,10 @@ export default function ResetPage({ params }: { params: Promise<{ token: string 
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
+    <main className="relative flex min-h-screen items-center justify-center px-4">
+      <div className="absolute right-4 top-4">
+        <LocaleToggle />
+      </div>
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />
