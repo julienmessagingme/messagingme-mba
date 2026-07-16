@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       const res = await login(email.trim(), password);
       saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-      router.replace(res.user.role === 'agent' ? '/inbox' : '/dashboard');
+      router.replace(res.user.role === 'agent' ? '/inbox' : '/accueil');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Connexion impossible', 'Unable to sign in'));
     } finally {

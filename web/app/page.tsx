@@ -8,7 +8,7 @@ export default function Home() {
   const router = useRouter();
   useEffect(() => {
     const s = getSession();
-    router.replace(!s ? '/login' : s.role === 'agent' ? '/inbox' : '/dashboard');
+    router.replace(!s ? '/login' : s.role === 'agent' ? '/inbox' : '/accueil');
   }, [router]);
   return null;
 }

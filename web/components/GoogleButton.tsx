@@ -91,8 +91,8 @@ export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
             loginWithGoogle(idToken)
               .then((res) => {
                 saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-                // Nouvel espace -> onboarding (connecter le numéro), comme le signup email ; sinon inbox (agent) / dashboard.
-                router.replace(res.isNew ? '/accueil' : res.user.role === 'agent' ? '/inbox' : '/dashboard');
+                // Nouvel espace -> onboarding (connecter le numéro), comme le signup email ; sinon inbox (agent) / accueil (admin).
+                router.replace(res.isNew ? '/accueil' : res.user.role === 'agent' ? '/inbox' : '/accueil');
               })
               .catch((err) => onErrorRef.current?.(err instanceof Error ? err.message : t('Connexion Google impossible', 'Google sign-in failed')));
           },
