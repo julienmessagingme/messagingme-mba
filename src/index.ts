@@ -165,7 +165,6 @@ async function main(): Promise<void> {
     },
     admin: {
       listUsers: (tenant) => userStore.list(tenant),
-      createUser: (tenant, input) => userStore.create(tenant, input),
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
       setUserDisabled: (tenant, userId, disabled) => userStore.setDisabled(tenant, userId, disabled),
       deleteUser: (tenant, userId) => userStore.deleteUser(tenant, userId),

@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import { DuplicateEmailError } from '../src/user/store.pg';
-import type { UserRow, CreateUserInput } from '../src/user/store.pg';
+import type { UserRow } from '../src/user/store.pg';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { UsersRouteDeps } from '../src/http/users';
 
@@ -20,7 +20,6 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, pending: false, createdAt: '2026-07-01T00:00:00.000Z' };
 
 interface Captured {
-  created: Array<{ tenant: string; input: CreateUserInput }>;
   roleSet: Array<{ tenant: string; userId: string; role: string }>;
   disabledSet: Array<{ tenant: string; userId: string; disabled: boolean }>;
   deleted: Array<{ tenant: string; userId: string }>;
@@ -30,7 +29,7 @@ interface Captured {
 }
 
 function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof buildServer>; cap: Captured } {
-  const cap: Captured = { created: [], roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [] };
+  const cap: Captured = { roleSet: [], disabledSet: [], deleted: [], invited: [], emails: [], emailObjs: [] };
   const deps: UsersRouteDeps = {
     listUsers: async () => [EXISTING],
     createPendingUser: async (tenant, email, role) => {
@@ -43,10 +42,6 @@ function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof bu
     getInviterName: async () => 'Julien',
     getWorkspaceName: async () => 'Acme Corp',
     appUrl: 'https://mba.messagingme.app',
-    createUser: async (tenant, input) => {
-      cap.created.push({ tenant, input });
-      return { id: 'new', email: input.email, name: input.name, role: input.role, disabled: false, pending: false, createdAt: '2026-07-10T00:00:00.000Z' };
-    },
     setUserRole: async (tenant, userId, role) => {
       cap.roleSet.push({ tenant, userId, role });
       return userId === 'known' ? 'ok' : 'not_found'; // 'known' existe, tout le reste -> 404
@@ -97,58 +92,11 @@ describe('users route — lecture', () => {
   });
 });
 
-describe('users route — création', () => {
-  it('POST /users admin -> 201, email normalisé + password hashé (jamais en clair)', async () => {
-    const { server, cap } = app();
-    const res = await server.inject({
-      method: 'POST', url: '/tenants/t1/users', ...h(adminTok),
-      payload: { email: '  Agent@Demo.TEST ', password: 'motdepasse123', role: 'agent', name: 'Marie' },
-    });
-    expect(res.statusCode).toBe(201);
-    expect(cap.created).toHaveLength(1);
-    const input = cap.created[0]!.input;
-    expect(input.email).toBe('agent@demo.test'); // trim + lowercase
-    expect(input.role).toBe('agent');
-    expect(input.name).toBe('Marie');
-    expect(input.passwordHash.startsWith('scrypt$')).toBe(true); // hashé, pas en clair
-    expect(input.passwordHash).not.toContain('motdepasse123');
-    await server.close();
-  });
-
-  it('POST /users email invalide -> 400', async () => {
-    const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/users', ...h(adminTok), payload: { email: 'pasunemail', password: 'motdepasse123', role: 'agent' } });
-    expect(res.statusCode).toBe(400);
-    expect(cap.created).toHaveLength(0);
-    await server.close();
-  });
-
-  it('POST /users mot de passe trop court -> 400', async () => {
+describe('users route — création par mot de passe RETIRÉE (invitations only)', () => {
+  it('POST /users -> 404 (route supprimée)', async () => {
     const { server } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/users', ...h(adminTok), payload: { email: 'a@b.fr', password: 'court', role: 'agent' } });
-    expect(res.statusCode).toBe(400);
-    await server.close();
-  });
-
-  it('POST /users role invalide -> 400', async () => {
-    const { server } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/users', ...h(adminTok), payload: { email: 'a@b.fr', password: 'motdepasse123', role: 'superadmin' } });
-    expect(res.statusCode).toBe(400);
-    await server.close();
-  });
-
-  it('POST /users email déjà pris -> 409', async () => {
-    const { server } = app({ createUser: async () => { throw new DuplicateEmailError(); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/users', ...h(adminTok), payload: { email: 'a@b.fr', password: 'motdepasse123', role: 'agent' } });
-    expect(res.statusCode).toBe(409);
-    await server.close();
-  });
-
-  it('POST /users agent -> 403 (ne crée rien)', async () => {
-    const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/users', ...h(agentTok), payload: { email: 'a@b.fr', password: 'motdepasse123', role: 'agent' } });
-    expect(res.statusCode).toBe(403);
-    expect(cap.created).toHaveLength(0);
+    expect(res.statusCode).toBe(404);
     await server.close();
   });
 });

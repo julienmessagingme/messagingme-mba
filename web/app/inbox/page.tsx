@@ -102,6 +102,15 @@ function InboxInner({ session }: { session: Session }) {
     void reload();
   }, [reload]);
 
+  // Auto-refresh de la liste (~15 s), seulement quand l'onglet est visible (pas de martèlement en arrière-plan) ;
+  // reload immédiat au retour de focus. Réutilise l'endpoint existant, aucun changement backend.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') void reload(); };
+    const id = setInterval(tick, 15000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [reload]);
+
   return (
     <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[320px_1fr]">
       <section className="lg:flex lg:min-h-0 lg:flex-col">
@@ -164,7 +173,14 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   const load = useCallback(async () => {
     try {
       const res = await getConversationMessages(session.tenantId, conversation.id);
-      setMessages(res.messages);
+      // GARDE anti-saut de scroll : on ne remplace `messages` (nouvelle référence) QUE si le fil a réellement
+      // changé (nombre de messages ou dernier id). Sinon l'effet scrollIntoView ci-dessous ramènerait le scroll
+      // en bas à chaque tick de poll pendant que l'agent lit l'historique.
+      setMessages((prev) =>
+        prev.length === res.messages.length && prev[prev.length - 1]?.id === res.messages[res.messages.length - 1]?.id
+          ? prev
+          : res.messages,
+      );
       setWindowOpen(res.windowOpen);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
@@ -173,6 +189,15 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // Auto-refresh du fil ouvert (~4 s, chat vivant) tant que l'onglet est visible. Thread est remonté par
+  // conversation (key=selected.id), donc l'interval se recrée proprement à chaque changement de conversation.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') void load(); };
+    const id = setInterval(tick, 4000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [load]);
 
   useEffect(() => {

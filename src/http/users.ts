@@ -1,13 +1,11 @@
 import type { FastifyInstance } from 'fastify';
-import { hashPassword } from '../auth/password';
 import { DuplicateEmailError } from '../user/store.pg';
-import type { UserRow, CreateUserInput, UserMutation } from '../user/store.pg';
+import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
 import { renderInvitationEmail } from '../support/email-templates';
 
 export interface UsersRouteDeps {
   listUsers(tenantId: string): Promise<UserRow[]>;
-  createUser(tenantId: string, input: CreateUserInput): Promise<UserRow>;
   /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
   setUserRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
   /** Révoque (true) ou réactive (false) un compte. Mêmes garde-fous que le rôle. */
@@ -29,7 +27,6 @@ export interface UsersRouteDeps {
 }
 
 const ROLES = new Set(['admin', 'agent']);
-const MIN_PASSWORD = 8;
 // Validation d'email minimale (un @, pas d'espace) : le vrai contrôle d'unicité est en base.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -52,35 +49,6 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ users: await deps.listUsers(tenant) });
-  });
-
-  app.post('/tenants/:tenantId/users', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-
-    const b = (req.body ?? {}) as Partial<{ email: unknown; password: unknown; role: unknown; name: unknown }>;
-    const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
-    if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
-    if (typeof b.password !== 'string' || b.password.length < MIN_PASSWORD) {
-      return reply.code(400).send({ error: `mot de passe requis (min ${MIN_PASSWORD} caractères)` });
-    }
-    if (typeof b.role !== 'string' || !ROLES.has(b.role)) {
-      return reply.code(400).send({ error: 'role invalide (admin|agent)' });
-    }
-    const name = typeof b.name === 'string' && b.name.trim() !== '' ? b.name.trim() : null;
-
-    try {
-      const user = await deps.createUser(tenant, {
-        email,
-        name,
-        role: b.role,
-        passwordHash: await hashPassword(b.password),
-      });
-      return reply.code(201).send({ user });
-    } catch (err) {
-      if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'email déjà utilisé' });
-      throw err;
-    }
   });
 
   // Inviter un membre : crée un compte EN ATTENTE (sans mot de passe) + envoie un lien pour qu'il choisisse le sien.

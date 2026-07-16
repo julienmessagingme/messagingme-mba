@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, createUser, inviteMember, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 
 export default function AdminPage() {
@@ -76,7 +76,6 @@ function AdminInner({ session }: { session: Session }) {
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       <InviteCard tenantId={session.tenantId} onInvited={load} />
-      <CreateUserCard tenantId={session.tenantId} onCreated={load} />
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
@@ -203,94 +202,4 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
   );
 }
 
-function CreateUserCard({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
-  const t = useT();
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('agent');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    setBusy(true);
-    try {
-      await createUser(tenantId, { email: email.trim(), password, role, ...(name.trim() ? { name: name.trim() } : {}) });
-      setMsg({ kind: 'ok', text: t(`Compte ${email.trim()} créé.`, `Account ${email.trim()} created.`) });
-      setEmail('');
-      setName('');
-      setPassword('');
-      setRole('agent');
-      onCreated();
-    } catch (err) {
-      setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Création impossible', 'Unable to create') });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <div className="text-sm font-semibold text-ink-900">{t('Créer un compte', 'Create an account')}</div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom (optionnel)', 'Name (optional)')}</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-            placeholder="Marie Dupont"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Email', 'Email')}</label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-            placeholder="agent@demo.test"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Mot de passe (min 8)', 'Password (min 8)')}</label>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-            placeholder="••••••••"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Rôle', 'Role')}</label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as UserRole)}
-            className="w-full rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          >
-            <option value="agent">{t('Agent (inbox uniquement)', 'Agent (inbox only)')}</option>
-            <option value="admin">{t('Admin (accès complet)', 'Admin (full access)')}</option>
-          </select>
-        </div>
-      </div>
-      {msg && (
-        <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>
-          {msg.text}
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
-      >
-        {busy ? t('Création…', 'Creating…') : t('Créer le compte', 'Create account')}
-      </button>
-    </form>
-  );
-}
+// Création de compte par mot de passe RETIRÉE : on n'ajoute des membres QUE par invitation (InviteCard).

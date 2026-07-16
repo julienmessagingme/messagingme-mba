@@ -84,7 +84,10 @@ function DashboardInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Périodes + sélecteur de date FIGÉS en haut au scroll. top-12 = juste sous la barre de compte AppShell
+          (sticky top-0, ~48px) ; z-20 < z-30 (header) pour ne pas la chevaucher ; bg = fond de page pour masquer
+          les cartes qui défilent dessous. */}
+      <div className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-[#F7F8FB] py-2">
         <h2 className="text-base font-semibold tracking-tight text-ink-900">Analytics</h2>
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">

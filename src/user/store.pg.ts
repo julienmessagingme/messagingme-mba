@@ -15,13 +15,6 @@ export interface UserRow {
 /** Résultat d'une mutation de compte gardée par l'invariant « ≥1 admin actif par tenant ». */
 export type UserMutation = 'ok' | 'last_admin' | 'not_found';
 
-export interface CreateUserInput {
-  email: string;
-  name: string | null;
-  passwordHash: string;
-  role: string;
-}
-
 /** Email déjà pris (violation de l'unicité globale lower(email)). Mappé en 409 côté route. */
 export class DuplicateEmailError extends Error {
   constructor() {
@@ -111,25 +104,6 @@ export class PgUserStore {
     );
     const r = res.rows[0];
     return r ? { tenantId: r.tenant_id, role: r.role, email: r.email } : null;
-  }
-
-  async create(tenantId: string, input: CreateUserInput): Promise<UserRow> {
-    try {
-      const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; created_at: Date }>(
-        `insert into users (tenant_id, email, name, role, password_hash)
-         values ($1, $2, $3, $4, $5)
-         returning id, email, name, role, created_at`,
-        [tenantId, input.email, input.name, input.role, input.passwordHash],
-      );
-      const r = res.rows[0]!;
-      return { id: r.id, email: r.email, name: r.name, role: r.role, disabled: false, pending: false, createdAt: r.created_at.toISOString() };
-    } catch (err) {
-      // 23505 = unique_violation : email déjà pris (index global users_email_lower_unique ou (tenant,email)).
-      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') {
-        throw new DuplicateEmailError();
-      }
-      throw err;
-    }
   }
 
   /** Crée un compte EN ATTENTE (invitation) : sans mot de passe (login impossible tant que non finalisé via le

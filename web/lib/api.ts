@@ -597,15 +597,6 @@ export function inviteMember(tenantId: string, email: string, role: UserRole): P
 export function acceptInvitation(token: string, password: string): Promise<LoginResult> {
   return request<LoginResult>('/auth/invitations/accept', { method: 'POST', body: JSON.stringify({ token, password }) });
 }
-export interface CreateUserInput {
-  email: string;
-  password: string;
-  role: UserRole;
-  name?: string;
-}
-export function createUser(tenantId: string, input: CreateUserInput): Promise<{ user: AdminUser }> {
-  return request<{ user: AdminUser }>(`/tenants/${tenantId}/users`, { method: 'POST', body: JSON.stringify(input) });
-}
 export function setUserRole(tenantId: string, userId: string, role: UserRole): Promise<{ id: string; role: UserRole }> {
   return request(`/tenants/${tenantId}/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
 }
