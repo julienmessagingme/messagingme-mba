@@ -171,8 +171,10 @@ re-sélection de template.
 de `date*86400`). `PgStatsStore` : bornes SQL EXCLUSIVES (`(to+1)@TZ`), `IS DISTINCT FROM 'failed'`
 obligatoire (delivery_status null souvent). Routes (admin-only) : `/stats`, `/stats/templates`,
 `/stats/campaign-funnel?campaignId` (sent/delivered/read/**replied**/failed ; « replied » = inbound après
-sent_at attribué au dernier envoi, join `to_e164`↔`wa_id`), `/stats/errors` (group by `error_code`, ancré
-`coalesce(delivery_updated_at,sent_at,claimed_at)`), `/stats/cost?campaignId&templateName` (coût/jour
+sent_at attribué au dernier envoi, join `to_e164`↔`wa_id`), `/stats/errors?templateName` (group by
+`(error_code, template_name)`, filtre template optionnel côté serveur ; l'UI agrège côté client avec un
+dropdown « Tous les templates », ancré `coalesce(delivery_updated_at,sent_at,claimed_at)` ; portée =
+campagnes, aucune colonne d'erreur sur `conversation_messages`), `/stats/cost?campaignId&templateName` (coût/jour
 estimé). `error_code` (0020) alimenté par `extractDelivery` (webhook) + `markResult` (échec d'envoi,
 `MetaApiError.code`). **Coût = backend** : `getCostVolume` (volume/jour/catégorie, filtrable) × tarif Meta
 (`getPricing`), combinés par `estimateCostSeries` (pur, `src/stats/cost.ts`, jamais de coût sans tarif).
@@ -284,3 +286,38 @@ bouton placeholder). Flux :
 montage → pas de mismatch d'hydratation) + `useT()` → `t('texte FR', 'EN text')` **co-localisé** au point d'appel (pas
 de dictionnaire central). Provider dans `app/layout.tsx`, toggle dans `AccountMenu`. Règle : NE JAMAIS wrapper une
 valeur backend/clé/comparaison dans `t()` ; chaînes au niveau module → déplacer dans le composant ou passer `t`.
+
+## Identifiants publics « schéma A » (Lot 4a, 2026-07-16, migration 0031)
+
+Socle d'une future API : chaque entité porte un **code public** `<type>_<code-client>_<ULID>` (ex.
+`scn_by5p57_01KXNVZD0NP4WY7WAEHA4765G5`). **ADDITIF strict** : colonnes `tenants.public_code` + `code`
+(workflows/users/user_fields/tags) nullables + index uniques PARTIELS ; AUCUNE PK/FK/slug/clé (tenant,name)
+touchée, les uuid internes restent la source de vérité des relations.
+
+- `src/ids/code.ts` (PUR, testé) : `newUlid()` 26 car. Crockford (48 bits temps triable + 80 bits aléa),
+  `makeCode(type, tenantCode)`, `deriveTenantCode(seed)` (6 car. base32 minuscules, déterministe depuis
+  l'uuid tenant → immuable, collision barrée par l'index unique).
+- `src/ids/tenant-code.ts` : `resolveTenantCode(pool, tenantId)` lit `public_code`, le dérive + persiste
+  si absent (**self-heal idempotent**, pose concurrente absorbée).
+- Génération à l'INSERT dans les 4 stores (`scn`/`usr`/`fld`/`tag`) ; `createTenantWithAdmin` pose la racine
+  dans SA transaction. `on conflict do nothing` (champ/tag) = la ligne existante GARDE son code.
+- Backfill one-shot des lignes antérieures : `db/backfill-codes.ts` (idempotent, `where code is null`),
+  lancé APRÈS migrate. Types front : `code?: string | null` sur WorkflowSummary/AdminUser/UserFieldDef/TagCount,
+  affiché discrètement (scénarios/champs/tags). Tags : le code vit sur la table des tags DÉCLARÉS (null pour un
+  tag utilisé mais jamais déclaré).
+- **Lot 4b (différé)** : codes des NODES (mint serveur au save du graphe, dans node.data), champs SYSTÈME
+  (code déterministe réservé), endpoints API publics.
+
+## Workflow : auto-save + node « message rapide » (Lot C, 2026-07-16, migration 0030)
+
+- **Auto-save** (`WorkflowBuilder.tsx`) : debounce ~1,2 s sur `[nodes, edges]` (skip du rendu initial), flush au
+  démontage + `beforeunload` en **keepalive** (`updateWorkflow(..., {keepalive:true})`), planification via
+  `doSaveRef` (changement de langue ≠ save), **saves sérialisés** (un PATCH à la fois, re-save si édité pendant).
+  Indicateur passif « Enregistré à HH:MM » / retry sur échec. Colonne `workflows.status` **droppée** (mig 0030,
+  elle était 100 % cosmétique) — ⚠️ 1re migration DROP du repo : deploy AVANT migrate (cf DEPLOY.md).
+- **Node `quick_message`** : bloquant (attend la réponse) comme template ; `actionOf` → `{kind:'sendQuickMessage',
+  body, buttons}` (null si corps vide ou aucune réponse non vide → no-op, comme un template sans nom) ;
+  `executor.apply` → dep `sendQuickMessage` → `MetaClient.sendInteractive` (interactive/button, filtre les titres
+  vides en PRÉSERVANT l'index `btn:<slot>` → la branche par bouton reste stable, cap Meta 3 boutons/20 car.) ;
+  worker : câblage type sendTemplate (texte littéral V1, log inbox best-effort). Fenêtre 24 h garantie par l'archi
+  (jamais node d'entrée). ⚠️ le node `flow` reste un no-op silencieux (fix différé, lot Flow avancé).

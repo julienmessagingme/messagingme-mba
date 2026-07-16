@@ -213,6 +213,26 @@ Plan `.loop/lot6-auth.md`, feature-loop (reviewer séparé + 🔴/🟡 fermés +
 - **i18n FR/EN** sur toute l'app (moteur `web/lib/i18n.tsx`, toggle menu Compte). Logo Meta Business Agent sur
   l'accueil, landing admin → Home, compte de test reviewer créé.
 
+## Programme 16 features — lots A-E (2026-07-16) : LIVE ✅
+
+Cinq feature-loops enchaînées (cartographie 9 explorers → plan `.loop/lotA..E-*.md` validé par Julien → boucle →
+reviewer séparé → commit + deploy auto). **13 features + le socle API en prod.** Le reviewer a attrapé 4 vrais
+bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
+- **A — Cohérence campagne/template** : variables template = source commune (6 champs de base + persos, comme la
+  campagne), sélecteur de langue (39 langues + whitelist serveur), boutons visibles dans la miniature, écran
+  campagne en 3 zones (nom en haut).
+- **B — UX** : inbox auto-refresh (liste 15s / fil 4s, anti-saut-de-scroll, pause onglet masqué), analytics
+  période FIGÉE en haut, suppression complète de « créer un compte » par mdp (invitations only, -221 lignes).
+- **C — Scénario** : AUTO-SAVE (debounce + flush démontage/beforeunload keepalive + saves sérialisés, statut
+  brouillon droppé mig **0030**, ⚠️ 1re migration DROP = deploy AVANT migrate), node **« message rapide »**
+  (2-3 quick replies, `sendInteractive`, branche par bouton stable). Node `flow` no-op → différé Lot 7.
+- **4a — Identifiants publics (schéma A)** : `<type>_<code-client>_<ULID>` ADDITIFS (mig **0031** + backfill
+  `db/backfill-codes.ts`), racine client immuable, génération à l'INSERT (scn/usr/fld/tag), affichage discret.
+  4b (nodes + champs système + endpoints) différé.
+- **E — Analytics erreurs** : par TEMPLATE (dropdown, agrégation client) + par période (plage globale). 🔴 réel
+  attrapé par le reviewer : wiring `index.ts` perdait le 3e arg → corrigé.
+- Tests : **698 unit** (681 → 698 : +17 nets). Migrations 0030-0031 appliquées. Baseline verte à chaque lot.
+
 ## Prochaine étape
 
 1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.
@@ -220,6 +240,9 @@ Plan `.loop/lot6-auth.md`, feature-loop (reviewer séparé + 🔴/🟡 fermés +
    Provider) + App Review SOUMISES le 2026-07-16, en review** (~5 j / ~20 j). Rien à faire côté produit d'ici là :
    le jour où les 2 feux passent au vert, le bouton marche de bout en bout et on tourne la vraie vidéo de démo.
    Surveiller mails Meta + onglet Required actions. Voir `todo.md` (refresh token, envoi via token par-client).
+3. **Programme 16 features, lots restants** (cf `todo.md §Programme`) : **4b** codes nodes/champs système +
+   endpoints API · **6** i18n anglais complet (html lang, dates fr-FR en dur, bug setLocale) · **7** Flow avancé
+   (multi-pages + conditionnels, sondes Meta) + fix node `flow` no-op · **HubSpot import #14** (multi-repo).
 
 ## En attente (dépendances externes)
 

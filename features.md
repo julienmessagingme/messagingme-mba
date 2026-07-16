@@ -22,8 +22,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace, comme un signup).
 - ✅ **Invitations d'équipe** (admin) : inviter un membre par email (Resend) -> il pose son mot de passe (ou
   Google) via un lien, puis rejoint l'espace avec le rôle défini. Le compte reste « invité » tant qu'il n'a pas
-  activé. (Remplace le mot de passe posé par l'admin.) L'email est un **HTML brandé** (logo Messaging Me,
-  couleurs de marque) et **personnalisé** (« X t'invite à rejoindre l'espace Y »).
+  activé. L'email est un **HTML brandé** (logo Messaging Me, couleurs de marque) et **personnalisé** (« X t'invite
+  à rejoindre l'espace Y »). **La création de compte par mot de passe (posé par l'admin) est SUPPRIMÉE** : on
+  n'ajoute un membre QUE par invitation (front + route + code backend retirés).
 - ✅ **Mot de passe** : « oublié » (`/forgot`, lien de réinitialisation par email, réponse toujours générique
   anti-énumération) + changement depuis le compte (`/compte`).
 - ✅ **Crochet paiement (inerte)** : chaque espace a un statut (`trial|active|locked`) ; un espace `locked`
@@ -49,13 +50,19 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   utilisables comme sources de variable partout.
 - ✅ **Colonne « WhatsApp ID »** dans le tableau contacts (à côté du BSUID) : les chiffres du numéro sans « + »
   (la clé de routage que Meta émet), ou le BSUID si le contact n'a pas de numéro.
+- ✅ **Codes publics (socle API)** : chaque **scénario, champ perso et tag** porte un code unique lié au client
+  (ex. `scn_by5p57_01KXNV…`), affiché discrètement sous son nom. C'est l'identifiant stable qu'une future API
+  utilisera. (Les nodes de scénario et les champs système suivront, Lot 4b.)
 
 ## Templates (menu Contenu)
 
 - ✅ **Création** : template simple (corps + variables + boutons quick-reply / URL / **Flow**) ou
   **carousel** (2-10 cartes image + texte + boutons identiques). Soumission à validation Meta, suivi du statut.
-- ✅ **Sélecteur de variable + chips dans le corps** : bouton « + Variable » → on choisit une source (**Nom du
-  profil WhatsApp**, Téléphone + champs perso comme **Prénom / Nom**, bien distincts) au lieu de taper `{{n}}`.
+- ✅ **Langue = menu déroulant** (39 langues WhatsApp, plus de champ libre) ; une langue hors liste est aussi
+  refusée côté serveur. Une langue existante hors liste (ancien champ libre) reste affichée à l'édition.
+- ✅ **Sélecteur de variable + chips dans le corps** : bouton « + Variable » → on choisit une source dans **deux
+  groupes (« Champs de base » : Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email · « Mes champs » : les champs
+  perso), exactement la même liste que la campagne** au lieu de taper `{{n}}`.
   La variable s'affiche **directement dans la zone d'édition comme une puce lisible `[Prénom]`** (plus de `{{1}}`),
   et **l'exemple exigé par Meta se remplit tout seul**. **Chaque variable DOIT être rattachée à une source :
   l'enregistrement est bloqué sinon** (fini le `{{n}}` tapé à la main qui partirait vide et se ferait rejeter par
@@ -89,8 +96,14 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 - ✅ **Constructeur de workflow visuel** : graphe de blocs reliés par des flèches courbées (drag-and-drop),
   `+` / poubelle sur chaque flèche pour insérer ou couper, bouton « + Créer un bloc », panneau de config par
-  bloc. Blocs : **envoi de template**, **inbox** (remonte la conversation à un humain), **formulaire** (envoie
-  un WhatsApp Flow), **ajout de tag**, **ajout de champ**. (Éditeur React Flow.)
+  bloc. Blocs : **envoi de template**, **message rapide**, **inbox** (remonte la conversation à un humain),
+  **formulaire** (envoie un WhatsApp Flow), **ajout de tag**, **ajout de champ**. (Éditeur React Flow.)
+- ✅ **Enregistrement AUTOMATIQUE** : plus de bouton « Enregistrer » ni de statut « brouillon » : le scénario se
+  sauvegarde tout seul ~1 s après chaque modification (indicateur « Enregistré à HH:MM »), y compris quand on
+  quitte la page ou ferme l'onglet. En cas d'échec réseau : indicateur rouge + « réessayer ».
+- ✅ **Bloc « message rapide »** : un texte + **2-3 réponses rapides**, envoyé SANS template Meta approuvé (message
+  interactif). Chaque réponse devient une **sortie à relier** (branche par bouton, comme un template). Utilisable
+  seulement au fil du scénario (après une réponse du contact, fenêtre 24 h ouverte), jamais en 1er bloc.
   - **Tirer une flèche dans le vide crée un bloc** à cet endroit (relié), puis on choisit son type dans le
     panneau de droite. Un **✕** en coin de chaque bloc le supprime directement (avec ses flèches).
 - ✅ **Variables du template collées automatiquement** : quand un bloc « envoi template » part (au lancement OU
@@ -107,11 +120,14 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Campagnes
 
-- ✅ **Envoi** : on choisit **d'abord les destinataires**, PUIS on décide **Template** (template approuvé +
-  mapping des variables sur les attributs/champs contact) **OU Workflow** (déclenche le workflow choisi pour
-  chaque destinataire). Un **tooltip au survol** explique quand privilégier chacun. Lancement, suivi des
-  destinataires (statut interne + cycle de livraison Meta), auto-refresh. (Suivi de livraison Meta non câblé
-  pour les campagnes workflow en V1 : leur statut « envoyé » ne reflète pas la livraison réelle.)
+- ✅ **Écran de création en 3 zones** : le **nom de la campagne en haut**, puis trois panneaux côte à côte :
+  **Expéditeur** (le numéro, affiché en texte s'il n'y en a qu'un) | **Destinataires** (grande zone : recherche,
+  filtres par tag, liste à cocher agrandie) | **Message** (toggle **Template OU Scénario**, aperçu, variables).
+  Un **tooltip au survol** explique quand privilégier template vs scénario. Empilé sur mobile.
+- ✅ **La miniature du template montre ses BOUTONS** (réponse rapide / lien / formulaire), que ce soit un template
+  direct ou le 1er template d'un scénario. Lancement, suivi des destinataires (statut interne + cycle de livraison
+  Meta), auto-refresh. (Suivi de livraison Meta non câblé pour les campagnes workflow en V1 : leur statut
+  « envoyé » ne reflète pas la livraison réelle.)
 - ✅ **Variables associées à la création** : que ce soit un template direct OU un **workflow** (dans ce cas on
   vérifie que le **1er nœud est un envoi de template**, sinon bloqué, et on remonte SES variables), on associe
   chaque variable à sa source via un **menu déroulant** (« Champs de base » : Nom, Prénom, Téléphone, BSUID,
@@ -131,18 +147,24 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 - ✅ **Conversations** : réponse texte dans la fenêtre de service 24 h ; hors fenêtre, envoi d'un template
   approuvé (seul moyen de re-contacter). Formulaires Flow remplis affichés en clair.
+- ✅ **Rafraîchissement automatique** : la liste (~15 s) et le fil ouvert (~4 s) se mettent à jour tout seuls,
+  en pause quand l'onglet est masqué (reprise au retour). **Le fil ne « saute » pas** pendant qu'on lit
+  l'historique (le scroll ne redescend que sur un vrai nouveau message).
 - ✅ **Pastille agent** : les bulles sortantes portent les **initiales de l'auteur** (survol = nom). Repli
   neutre pour les messages sans auteur (legacy / réponse auto).
 
 ## Analytics (menu Analytics)
 
 - ✅ **Plage de dates libre** : presets 7/30/90 j **+** sélecteur de dates personnalisé (les graphes honorent
-  une plage passée). Séries : contacts (cumul), templates envoyés, messages échangés.
+  une plage passée). Séries : contacts (cumul), templates envoyés, messages échangés. **La barre périodes +
+  dates reste FIGÉE en haut au scroll** (sticky sous la barre de compte).
 - ✅ **Funnel PAR campagne** : sélecteur de campagne, envoyés → délivrés → **lus** → **répondus** + taux
   (+ échecs). « Répondu » = réponse reçue après l'envoi, attribuée au dernier envoi (pas de double-comptage).
   Sous-estimation des « lus » assumée si le destinataire a coupé les accusés. Campagne-only en V1.
-- ✅ **Erreurs Meta par code** : breakdown des codes d'erreur (131049, 131047, 131026...) sur la période,
-  avec libellé FR et volume.
+- ✅ **Erreurs Meta par code ET par template** : breakdown des codes d'erreur (131049, 131047, 131026...) sur la
+  période, avec libellé FR et volume, **filtrable par template** (menu « Tous les templates » / un template précis).
+  La période suit le sélecteur de plage global. (Portée : campagnes ; les envois Inbox/Workflow n'ont pas de suivi
+  d'erreur, cf todo.)
 - ✅ **Graphe de coût estimé** : coût/jour (marketing + utility) sur la période, **filtrable par campagne
   ou par template**, tarif Meta × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
   (jamais de faux coût).

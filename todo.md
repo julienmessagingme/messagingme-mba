@@ -13,6 +13,28 @@
 Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **LIVE** sur
 `mba.messagingme.app` (1er envoi WhatsApp réel le 2026-07-06, numéro Zadarma).
 
+## Programme 16 features (2026-07-16) — lots restants
+
+Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
+- **Lot 4b — fin du socle identifiants** : codes des NODES (mint serveur au save du graphe, `nod_<client>_<ulid>`
+  dans node.data, arêtes par node.id inchangées), codes DÉTERMINISTES des champs système
+  (`fld_<client>_sys_<key>`), puis endpoints API publics adressés par code. Plan de base : `.loop/lotD-identifiants.md`.
+- **Lot 6 — i18n anglais COMPLET (#2)** : `<html lang>`/metadata localisés, `web/lib/day.ts` + `format.ts`
+  hardcodés `fr-FR` (7 appelants), bug `i18n.tsx` (setLocaleState au lieu de setLocale → lang non resynchronisée),
+  switcher pré-login à trancher. Cartographie faite (session 2026-07-16).
+- **Lot 7 — Flow avancé (#6b/#6c)** : multi-pages (screens + navigate + data-passing, ⚠️ SONDE LIVE obligatoire)
+  + champs conditionnels (`visible` + piège du caché-mais-requis, sonde aussi) + **fix node `flow` no-op** du
+  builder de scénario (atteint mais n'envoie RIEN, run bloqué → envoi interactif flow à sonder). Rappel : #5
+  (mapping champ→client) et #6a (choix unique/multiple) sont DÉJÀ en prod.
+- **HubSpot import (#14, parké)** : importer une liste HubSpot comme destinataires de campagne. Multi-repo :
+  scope `crm.lists.read` sur l'app mm-hubspot + RE-CONSENTEMENT du portail cobaye (action Julien), client lists
+  + route service-à-service côté mm-hubspot, proxy + réutilisation `importContacts()` côté mba, opt-in JAMAIS
+  posé à 'opted_in' par défaut (conformité). + (todo #5-tail) proposer les internal names HubSpot dans les
+  sélecteurs de champs.
+- **Analytics palier L (suite #8)** : tracker les erreurs des envois Inbox/Workflow (colonnes d'erreur sur
+  `conversation_messages` + toucher le handler de statuts webhook EN PROD, risqué → à froid).
+- **Drop différés** : rien (0030 a droppé `workflows.status` ; codes = additifs).
+
 ## Post-live — prochaines actions
 
 - ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent
