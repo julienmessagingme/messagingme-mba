@@ -283,9 +283,17 @@ bouton placeholder). Flux :
 ## i18n FR/EN (2026-07-16)
 
 `web/lib/i18n.tsx` : `LocaleProvider` (langue dans un contexte, persistée localStorage, défaut FR, appliquée après
-montage → pas de mismatch d'hydratation) + `useT()` → `t('texte FR', 'EN text')` **co-localisé** au point d'appel (pas
-de dictionnaire central). Provider dans `app/layout.tsx`, toggle dans `AccountMenu`. Règle : NE JAMAIS wrapper une
-valeur backend/clé/comparaison dans `t()` ; chaînes au niveau module → déplacer dans le composant ou passer `t`.
+montage → pas de mismatch d'hydratation ; l'effet de montage resynchronise AUSSI `document.documentElement.lang`) +
+`useT()` → `t('texte FR', 'EN text')` **co-localisé** au point d'appel (pas de dictionnaire central). Provider dans
+`app/layout.tsx`, toggle dans `AccountMenu` + `LocaleToggle` (pill FR/EN) sur les 5 pages pré-login. Règle : NE JAMAIS
+wrapper une valeur backend/clé/comparaison dans `t()` ; chaînes au niveau module → déplacer dans le composant ou passer `t`.
+
+**Lot 6 (2026-07-16), dates/nombres/libellés localisés** : le type `Locale` vit dans `web/lib/locale.ts` (**.ts pur** :
+le tsc racine n'a pas `--jsx`, importer un type depuis `i18n.tsx` casse le build → TS6142 ; i18n.tsx le ré-exporte).
+`day.ts` (`dayLabel`/`hourMin`/`formatDate`) et `format.ts` (`fmtNum`/`fmtPct`/`throughputLabel`/`tierLabel`) prennent
+un `locale` **REQUIS** (pas de défaut : tsc LISTE tous les appelants, aucun oubli possible). Les tags BCP47 (`fr-FR`/
+`en-GB`) sont CONFINÉS à ces 2 libs : grep `fr-FR` = 0 ailleurs dans `web/`. `dayKey` (en-CA = clé ISO de tri) et
+`fmtCost` restent indépendants de la langue.
 
 ## Identifiants publics « schéma A » (Lot 4a, 2026-07-16, migration 0031)
 
@@ -305,8 +313,11 @@ touchée, les uuid internes restent la source de vérité des relations.
   lancé APRÈS migrate. Types front : `code?: string | null` sur WorkflowSummary/AdminUser/UserFieldDef/TagCount,
   affiché discrètement (scénarios/champs/tags). Tags : le code vit sur la table des tags DÉCLARÉS (null pour un
   tag utilisé mais jamais déclaré).
-- **Lot 4b (différé)** : codes des NODES (mint serveur au save du graphe, dans node.data), champs SYSTÈME
-  (code déterministe réservé), endpoints API publics.
+- **Lot 4b (FAIT 2026-07-16)** : codes des NODES mintés **côté serveur** au save du graphe (`src/workflow/node-codes.ts`,
+  POST/PATCH après parseGraph ; regex anti-forge `^nod_<tenantCode>_[ULID]$` : un code valide du même tenant est
+  PRÉSERVÉ par référence, tout le reste est re-minté ; la réponse renvoie le graphe enrichi). Champs SYSTÈME : code
+  **déterministe sans stockage** `fld_<client>_sys_<key>` (`systemFieldCode`), calculé côté front via le `tenantCode`
+  exposé par GET /fields. Restent : endpoints API publics (chantier dédié).
 
 ## Workflow : auto-save + node « message rapide » (Lot C, 2026-07-16, migration 0030)
 
