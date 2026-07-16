@@ -30,6 +30,7 @@ import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
+import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { encryptSecret } from './crypto/secretbox';
@@ -200,6 +201,7 @@ async function main(): Promise<void> {
     },
     fields: {
       listFields: (tenant) => fieldStore.list(tenant),
+      tenantCode: (tenant) => resolveTenantCode(pool, tenant),
       createField: (tenant, def) => fieldStore.create(tenant, def),
       updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
       deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
@@ -249,6 +251,7 @@ async function main(): Promise<void> {
     me: { getUser: (userId) => userStore.getById(userId) },
     workflows: {
       createWorkflow: (tenant, name, graph) => workflowStore.insert(tenant, name, graph),
+      tenantCode: (tenant) => resolveTenantCode(pool, tenant),
       listWorkflows: (tenant) => workflowStore.list(tenant),
       getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
       updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),

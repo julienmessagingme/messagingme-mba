@@ -750,8 +750,8 @@ export interface UserFieldDef {
   /** Code public « fld_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
   code?: string | null;
 }
-export function listUserFields(tenantId: string): Promise<{ fields: UserFieldDef[] }> {
-  return request<{ fields: UserFieldDef[] }>(`/tenants/${tenantId}/user-fields`);
+export function listUserFields(tenantId: string): Promise<{ fields: UserFieldDef[]; tenantCode?: string }> {
+  return request<{ fields: UserFieldDef[]; tenantCode?: string }>(`/tenants/${tenantId}/user-fields`);
 }
 export function createUserField(tenantId: string, input: { label: string; type: UserFieldKind }): Promise<UserFieldDef> {
   return request<UserFieldDef>(`/tenants/${tenantId}/user-fields`, { method: 'POST', body: JSON.stringify(input) });

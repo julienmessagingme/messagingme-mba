@@ -28,6 +28,7 @@ function app(over: Partial<WorkflowRouteDeps> = {}) {
   const cap = { created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>, deleted: [] as string[], declared: [] as string[][] };
   const deps: WorkflowRouteDeps = {
     createWorkflow: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
+    tenantCode: async () => 'k7m2p3',
     listWorkflows: async () => [sampleRow()],
     getWorkflow: async (id) => (id === 'w1' ? sampleRow() : null),
     updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return id === 'w1'; },
@@ -90,6 +91,34 @@ describe('routes workflows', () => {
     expect(bad.statusCode).toBe(400);
     const empty = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: {} });
     expect(empty.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('POST : chaque node reçoit un code public nod_<client>_<ulid>, dans la réponse ET le graphe persisté', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'Onb', graph: validGraph } });
+    expect(res.statusCode).toBe(201);
+    const g = res.json<{ graph: { nodes: Array<{ data: { code?: string } }> } }>().graph;
+    for (const n of g.nodes) expect(n.data.code).toMatch(/^nod_k7m2p3_[0-9A-HJKMNP-TV-Z]{26}$/);
+    const stored = cap.created[0]!.graph as { nodes: Array<{ data: { code?: string } }> };
+    for (const n of stored.nodes) expect(n.data.code).toMatch(/^nod_k7m2p3_/); // mint AVANT le store
+    await server.close();
+  });
+
+  it('PATCH graph : mint les codes manquants, CONSERVE un code valide du tenant', async () => {
+    const { server } = app();
+    const withCode = {
+      nodes: [
+        { id: 'n1', type: 'tag', position: { x: 0, y: 0 }, data: { tag: 'vip', code: 'nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS' } },
+        { id: 'n2', type: 'template', position: { x: 200, y: 0 }, data: { templateName: 'promo' } },
+      ],
+      edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+    };
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: withCode } });
+    expect(res.statusCode).toBe(200);
+    const g = res.json<{ graph: { nodes: Array<{ data: { code?: string } }> } }>().graph;
+    expect(g.nodes[0]!.data.code).toBe('nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS'); // conservé (stabilité)
+    expect(g.nodes[1]!.data.code).toMatch(/^nod_k7m2p3_[0-9A-HJKMNP-TV-Z]{26}$/); // minté
     await server.close();
   });
 

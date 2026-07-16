@@ -5,6 +5,9 @@ import type { UserFieldDef, UserFieldType } from '../crm/types';
 
 export interface FieldsRouteDeps {
   listFields(tenantId: string): Promise<UserFieldDef[]>;
+  /** Code client racine (optionnel) : renvoyé au GET pour que le front calcule les codes des champs SYSTÈME
+   *  (`fld_<client>_sys_<key>`, déterministes, pas de ligne DB). Absent -> réponse sans tenantCode (rétro-compatible). */
+  tenantCode?(tenantId: string): Promise<string>;
   createField(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'>;
   updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
   deleteField(tenantId: string, key: string): Promise<boolean>;
@@ -28,7 +31,9 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
   app.get('/tenants/:tenantId/user-fields', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ fields: await deps.listFields(tenant) });
+    const fields = await deps.listFields(tenant);
+    const tenantCode = deps.tenantCode ? await deps.tenantCode(tenant) : undefined;
+    return reply.code(200).send({ fields, ...(tenantCode ? { tenantCode } : {}) });
   });
 
   // Créer un champ perso : la clé est dérivée du libellé (slug). 409 si la clé existe déjà.

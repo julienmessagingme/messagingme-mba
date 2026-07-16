@@ -45,6 +45,16 @@ export function makeCode(type: EntityType, tenantCode: string): string {
 }
 
 /**
+ * Code public DÉTERMINISTE et réservé d'un champ SYSTÈME (name/prenom/phone/bsuid/wa_id/email) :
+ * `fld_<tenantCode>_sys_<key>`. Pas de ligne DB, pas d'ULID : les champs système sont des constantes de code,
+ * leur code se CALCULE (un consommateur d'API peut le dériver). Le segment `sys_` le distingue sans ambiguïté
+ * d'un ULID (26 car. majuscules). Miroir front : `web/lib/fields.ts`.
+ */
+export function systemFieldCode(tenantCode: string, key: string): string {
+  return `fld_${tenantCode}_sys_${key}`;
+}
+
+/**
  * Racine `code-client` STABLE et DÉTERMINISTE dérivée d'un seed (l'uuid du tenant) : 6 caractères base32
  * minuscules. Déterministe -> utilisable à l'identique pour le backfill des tenants existants ET à la création.
  * Immuable (le seed = l'uuid du tenant ne change jamais). Collision astronomiquement improbable à l'échelle

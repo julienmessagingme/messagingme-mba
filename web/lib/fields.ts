@@ -33,6 +33,12 @@ export function customFieldsOnly(fields: UserFieldDef[]): UserFieldDef[] {
   return fields.filter((f) => !isSystemFieldKey(f.key));
 }
 
+/** Code public DÉTERMINISTE d'un champ SYSTÈME : `fld_<codeClient>_sys_<key>` (miroir de `src/ids/code.ts`).
+ *  Calculé (pas de ligne DB) : le `tenantCode` vient de la réponse de `listUserFields`. */
+export function systemFieldCode(tenantCode: string, key: string): string {
+  return `fld_${tenantCode}_sys_${key}`;
+}
+
 /** Exemple d'aperçu lisible pour un champ système (miniature WhatsApp). Un champ perso -> `[libellé]`. */
 export function systemFieldExample(key: string): string {
   switch (key) {

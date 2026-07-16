@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listUserFields, createUserField, updateUserField, deleteUserField, type UserFieldDef, type UserFieldKind } from '@/lib/api';
-import { SYSTEM_FIELDS, customFieldsOnly } from '@/lib/fields';
+import { SYSTEM_FIELDS, customFieldsOnly, systemFieldCode } from '@/lib/fields';
 import { useT } from '@/lib/i18n';
 
 export default function FieldsPage() {
@@ -21,6 +21,7 @@ function FieldsInner({ session }: { session: Session }) {
     { value: 'url', label: t('Lien', 'Link') },
   ];
   const [fields, setFields] = useState<UserFieldDef[]>([]);
+  const [tenantCode, setTenantCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -30,7 +31,9 @@ function FieldsInner({ session }: { session: Session }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      setFields((await listUserFields(session.tenantId)).fields);
+      const res = await listUserFields(session.tenantId);
+      setFields(res.fields);
+      setTenantCode(res.tenantCode ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     } finally {
@@ -106,7 +109,7 @@ function FieldsInner({ session }: { session: Session }) {
           <tbody>
             {SYSTEM_FIELDS.map((f) => (
               <tr key={f.key} className="border-b border-ink-50 last:border-0">
-                <td className="px-5 py-2.5"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code></td>
+                <td className="px-5 py-2.5"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{tenantCode && <div className="mt-0.5 font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{systemFieldCode(tenantCode, f.key)}</div>}</td>
                 <td className="px-5 py-2.5 font-medium text-ink-800">{f.label}</td>
                 <td className="px-5 py-2.5 text-right text-xs text-ink-400">{t('non supprimable', 'not deletable')}</td>
               </tr>

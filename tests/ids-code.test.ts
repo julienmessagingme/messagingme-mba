@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newUlid, makeCode, deriveTenantCode } from '../src/ids/code';
+import { newUlid, makeCode, deriveTenantCode, systemFieldCode } from '../src/ids/code';
 
 const CROCKFORD_RE = /^[0-9A-HJKMNP-TV-Z]+$/; // base32 Crockford (sans I, L, O, U)
 
@@ -52,5 +52,12 @@ describe('deriveTenantCode', () => {
 
   it('des seeds différents donnent des codes différents (attendu)', () => {
     expect(deriveTenantCode('tenant-a')).not.toBe(deriveTenantCode('tenant-b'));
+  });
+});
+
+describe('systemFieldCode', () => {
+  it('déterministe et réservé : fld_<client>_sys_<key>', () => {
+    expect(systemFieldCode('k7m2p3', 'bsuid')).toBe('fld_k7m2p3_sys_bsuid');
+    expect(systemFieldCode('k7m2p3', 'wa_id')).toBe(systemFieldCode('k7m2p3', 'wa_id'));
   });
 });

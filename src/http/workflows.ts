@@ -4,9 +4,12 @@ import type { Guard } from '../auth/middleware';
 import { parseGraph } from '../workflow/graph';
 import type { WorkflowGraph } from '../workflow/graph';
 import type { WorkflowRow } from '../workflow/store.pg';
+import { mintNodeCodes } from '../workflow/node-codes';
 
 export interface WorkflowRouteDeps {
   createWorkflow(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }>;
+  /** Code client racine (tenants.public_code, self-heal) : sert à minter les codes publics des nodes au save. */
+  tenantCode(tenantId: string): Promise<string>;
   listWorkflows(tenantId: string): Promise<WorkflowRow[]>;
   getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
   updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<boolean>;
@@ -50,8 +53,10 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const b = (req.body ?? {}) as { name?: unknown; graph?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     // graph optionnel à la création (démarrage vide) ; s'il est fourni, il doit être valide.
-    const graph = b.graph === undefined ? { nodes: [], edges: [] } : parseGraph(b.graph);
-    if (graph === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
+    const parsed = b.graph === undefined ? { nodes: [], edges: [] } : parseGraph(b.graph);
+    if (parsed === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
+    // Mint SERVEUR des codes publics de node (nod_<client>_<ulid>) : rempli/re-minté ici, jamais imposé par le client.
+    const graph = mintNodeCodes(parsed, await deps.tenantCode(tenant));
     const { id } = await deps.createWorkflow(tenant, b.name.trim(), graph);
     // Rend les tags des blocs « ajout de tag » visibles tout de suite dans Contenus > Tags (best-effort : ne
     // fait jamais échouer la sauvegarde du workflow).
@@ -89,7 +94,8 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (b.graph !== undefined) {
       const graph = parseGraph(b.graph);
       if (graph === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
-      patch.graph = graph;
+      // Mint SERVEUR des codes de node (code valide du tenant conservé, absent/étranger re-minté).
+      patch.graph = mintNodeCodes(graph, await deps.tenantCode(tenant));
     }
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à modifier (name/graph)' });
 

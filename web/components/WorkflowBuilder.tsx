@@ -433,6 +433,9 @@ function ConfigPanel({
         <select value={wfType} onChange={(e) => onPatch({ wfType: e.target.value })} className={`${cls} bg-white`}>
           {NODE_ORDER.map((nt) => <option key={nt} value={nt}>{t(...NODE_META[nt].label)}</option>)}
         </select>
+        {typeof d.code === 'string' && d.code !== '' && (
+          <p className="mt-1 font-mono text-[10px] text-ink-300" title={t('Code public (API) du bloc, posé au 1er enregistrement', 'Public code (API) of the block, set on first save')}>{d.code}</p>
+        )}
       </div>
 
       {wfType === 'template' && (

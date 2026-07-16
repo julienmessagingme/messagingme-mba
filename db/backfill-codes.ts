@@ -8,6 +8,8 @@ import 'dotenv/config';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
 import { deriveTenantCode, makeCode } from '../src/ids/code';
+import { mintNodeCodes } from '../src/workflow/node-codes';
+import type { WorkflowGraph } from '../src/workflow/graph';
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -68,6 +70,23 @@ async function main(): Promise<void> {
       n += 1;
     }
     console.log(`tags backfillés: ${n}`);
+  }
+
+  // 3) Nodes des graphes existants (Lot 4b) : mint des codes manquants (réutilise mintNodeCodes). Idempotent :
+  //    un node déjà codé (même tenant) est retourné par RÉFÉRENCE -> « rien n'a changé » détectable, pas d'update.
+  {
+    const rows = await c.query<{ id: string; tenant_id: string; graph: WorkflowGraph | null }>('select id, tenant_id, graph from workflows');
+    let n = 0;
+    for (const r of rows.rows) {
+      const tc = codes.get(r.tenant_id);
+      const graph = r.graph;
+      if (!tc || !graph || !Array.isArray(graph.nodes) || graph.nodes.length === 0) continue;
+      const minted = mintNodeCodes(graph, tc);
+      if (minted.nodes.every((node, i) => node === graph.nodes[i])) continue; // déjà tous codés
+      await c.query('update workflows set graph = $2::jsonb, updated_at = now() where id = $1', [r.id, JSON.stringify(minted)]);
+      n += 1;
+    }
+    console.log(`workflows (nodes) backfillés: ${n}`);
   }
 
   await c.end();
