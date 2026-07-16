@@ -7,9 +7,12 @@ WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · Contacts · Campagnes · Flow · Contenu (Templates / Formulaires / Tags / Champs) · Analytics · Support**.
-Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*, Billing*, Déconnexion ;
-*désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
+Admin : **Inbox · Contacts · Campagnes · Scénario · Contenu (Templates / Formulaires / Tags / Champs) · Analytics · Support**.
+Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte, Abonnement*, Billing*,
+Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
+- ✅ **Interface bilingue FR/EN** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais (mémorisé par
+  navigateur, défaut français). Pour les clients internationaux (Dubaï) et le screencast d'App Review Meta.
+- ✅ **Après connexion, un admin arrive sur l'Accueil (Home)** (numéro + statut du compte), plus sur Analytics.
 
 ## Comptes & authentification
 
@@ -41,7 +44,11 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   les contacts. Un tag saisi dans un bloc « ajout de tag » du bot builder **apparaît aussi ici dès qu'on quitte
   le champ** (persisté au blur, sans attendre l'enregistrement du workflow). Dérivés des contacts + tags déclarés.
 - ✅ **User fields** (menu Contenu) : éditer le libellé / le type, supprimer. La **clé est verrouillée**
-  (renommer la clé casserait le mapping des campagnes) -> on édite label/type seulement.
+  (renommer la clé casserait le mapping des campagnes) -> on édite label/type seulement. **Champs de base
+  « système »** (Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email) : toujours présents, **non supprimables**,
+  utilisables comme sources de variable partout.
+- ✅ **Colonne « WhatsApp ID »** dans le tableau contacts (à côté du BSUID) : les chiffres du numéro sans « + »
+  (la clé de routage que Meta émet), ou le BSUID si le contact n'a pas de numéro.
 
 ## Templates (menu Contenu)
 
@@ -78,7 +85,7 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 - ✅ **Suppression** : un brouillon est supprimé, un formulaire publié est déprécié (Meta ne permet pas de le
   supprimer). Si le formulaire est encore rattaché à un template, Meta refuse et le message est affiché.
 
-## Automatisations (menu « Flow »)
+## Automatisations (menu « Scénario », ex-« Flow »)
 
 - ✅ **Constructeur de workflow visuel** : graphe de blocs reliés par des flèches courbées (drag-and-drop),
   `+` / poubelle sur chaque flèche pour insérer ou couper, bouton « + Créer un bloc », panneau de config par
@@ -107,9 +114,12 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   pour les campagnes workflow en V1 : leur statut « envoyé » ne reflète pas la livraison réelle.)
 - ✅ **Variables associées à la création** : que ce soit un template direct OU un **workflow** (dans ce cas on
   vérifie que le **1er nœud est un envoi de template**, sinon bloqué, et on remonte SES variables), on associe
-  chaque variable à sa source dans le formulaire de campagne. Les valeurs sont résolues **par contact** : un
-  contact à qui il manque une valeur (ex. prénom absent) est **sauté et signalé (« X contacts sautés »)**,
-  l'envoi part aux contacts complets. Plus jamais de « envoyé » alors que rien ne part.
+  chaque variable à sa source via un **menu déroulant** (« Champs de base » : Nom, Prénom, Téléphone, BSUID,
+  WhatsApp ID, Email · « Mes champs » : les vrais champs perso · « Texte fixe »). Fini la clé tapée à la main qui
+  pointait un champ inexistant. Les valeurs sont résolues **par contact** : un contact à qui il manque une valeur
+  est **sauté et signalé (« X contacts sautés »)** ; 0 destinataire = avertissement rouge. Plus jamais de « envoyé »
+  alors que rien ne part. **Un template à bouton Formulaire (FLOW) part correctement** via un workflow (composant
+  bouton flow câblé, corrige le rejet Meta #131009).
 - ✅ **Garde-fous** : opt-in requis, fréquence max par contact (marketing), coupure sur quality rating, claim
   atomique anti double-envoi, idempotence. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise
   en pause par le quality gate montre **« Reprendre »** (relance les destinataires restants) ; une campagne en
@@ -154,9 +164,12 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
   <nom ou id> » + un **toggle** qui coupe/active l'envoi des analyses de conversation à HubSpot. Si aucun portail
   -> un bouton **« Connecter HubSpot »** qui lance l'installation OAuth et relie ce numéro. (Pont : mba lit le
   portail du connecteur mm-hubspot en cross-schema, même Supabase.)
-- ✅ **Onboarding « Connecter ton numéro »** : un espace **sans numéro rattaché** (typiquement fraîchement créé)
-  voit, à la place de la carte de statut, une **zone grisée « Connecter ton numéro »** (bouton placeholder =
-  futur Embedded Signup Meta). Ne s'affiche jamais pendant une panne Meta transitoire (un vrai numéro reste actif).
+- ✅ **Onboarding « Connecter mon compte WhatsApp » (Embedded Signup)** : un espace **sans numéro rattaché** voit un
+  bouton qui ouvre la **popup Meta** (Facebook Login for Business + config_id) ; le business choisit son compte + son
+  numéro et le backend rattache tout (échange de code, webhooks, register). 🚧 **Construit et déployé, mais ACTIF
+  seulement quand Meta a validé Access Verification (Tech Provider) + App Review** (soumises le 2026-07-16). Tant que
+  `META_ES_CONFIG_ID` n'est pas posé, le bouton reste un placeholder « bientôt disponible ».
+- ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
 ## Exploitation `/ops` (interne, hors console client)
 
@@ -167,7 +180,8 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (Compte, Abonnement*,
 
 ## À venir / hors périmètre
 
-- 🔲 **Onboarding guidé** (Embedded Signup) : connexion du numéro en self-service + option pool de numéros.
+- 🚧 **Onboarding guidé (Embedded Signup)** : bouton + popup + backend **construits et déployés** (OFF par défaut) ;
+  en attente de validation Meta (Tech Provider + App Review, soumis 2026-07-16). Option pool de numéros = plus tard.
 - 🔲 **Agent MBA** (auto-réponse IA) : bloqué par les ToS Meta Business AI (gating vertical). Parqué.
 - 🔲 **Abonnement / Billing** (Stripe) : menus câblés (désactivés), intégration hors lot.
 - 🔲 **Rapport mensuel auto** : score agent + stats campagnes.

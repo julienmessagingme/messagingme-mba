@@ -211,9 +211,11 @@ Resend phase 7. D9 Abonnement/Billing désactivés. D10 flow publié = **dupliqu
 
 Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (signature webhook),
 `META_VERIFY_TOKEN` (handshake), `META_ACCESS_TOKEN` (System User, envoi), `META_GRAPH_VERSION`,
-`META_FLOW_JSON_VERSION`, `META_APP_ID`, `AUTH_SECRET` (fail-fast en prod, >= 32 octets), `DATABASE_URL`,
-`DRY_RUN`, `RESEND_API_KEY` / `SUPPORT_FROM` / `SUPPORT_TO` (support). ⚠️ Un changement de `.env.prod` exige
-`docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
+`META_FLOW_JSON_VERSION`, `META_APP_ID` (=`988129420727963`, sert au FB.init + à l'échange de code ES),
+`AUTH_SECRET` (fail-fast en prod, >= 32 octets), `DATABASE_URL`, `DRY_RUN`, `RESEND_API_KEY` / `SUPPORT_FROM` /
+`SUPPORT_TO` (support), **`META_ES_CONFIG_ID`** (Embedded Signup ; vide → feature OFF, route 503), **`ENCRYPTION_KEY`**
+(64 hex ; chiffre les tokens business ES ; fail-fast prod si `META_ES_CONFIG_ID` posé). ⚠️ Un changement de `.env.prod`
+exige `docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
 
 ## Patterns
 
@@ -252,3 +254,33 @@ Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (si
   PURE, `src/workflow/template-send.ts`, testée directement — pas un fake d'executor). Corrige Meta #132000.
 - **Éditeur du corps** : `web/components/VariableBodyEditor.tsx` (contentEditable, chips `[Label]` <-> `{{n}}`).
   Numérotation MAX+1 à l'insertion ; canonicalisation 1..N au submit (`page.tsx`).
+- **Sources de variable (2026-07-16)** : `ParamSource` attribut = `name|phone|bsuid|wa_id` ; `valueOf` (switch
+  exhaustif) résout via le contact ; `bsuid` ajouté à `ResolvableContact` + `getResolvableByPhone`. **Champs
+  système** = constante code (`src/crm/fields.ts SYSTEM_FIELD_KEYS` + `web/lib/fields.ts SYSTEM_FIELDS`), SANS
+  migration ; le sélecteur front (`selForSource`) coerce un champ perso inconnu → `sys:name` (garde anti-fantôme).
+- **Bouton FLOW à l'envoi** : `buildWorkflowTemplateComponents` génère, par bouton FLOW du template, un composant
+  `{type:'button', sub_type:'flow', index, parameters:[{type:'action', action:{flow_token}}]}` (`flow_token` non
+  vide, `${waId}-${Date.now()}`). Corrige Meta #131009. Corrélation de la réponse par `_ref` baké (flow_json).
+
+## Embedded Signup (Tech Provider, 2026-07-16)
+
+Onboarding self-service du numéro WhatsApp d'un client. **OFF par défaut** (`META_ES_CONFIG_ID` vide → route 503,
+bouton placeholder). Flux :
+- **Front** (`web/app/accueil/page.tsx ConnectNumberZone`) : `GET /tenants/:id/embedded-signup/config` (appId+configId
+  publics) → `FB.login({config_id, response_type:'code', override_default_response_type:true})` (SDK FB chargé à la
+  demande). Le `code` arrive par le callback `FB.login` (TTL 30 s) ; `waba_id`/`phone_number_id` par `postMessage`
+  `WA_EMBEDDED_SIGNUP` (origine ANCRÉE `^https://([a-z0-9-]+\.)*facebook\.com$`, ids string OU number).
+- **Back** (`src/http/embedded-signup.ts` + `src/meta/embedded-signup.ts` + `src/account/es-store.pg.ts`) :
+  `POST /complete {code, wabaId, phoneNumberId}` → échange code→business token (`GET /oauth/access_token`) →
+  **`verifyWaba` + `getPhone` BLOQUANTS** avec le business token (garde anti-hijack cross-tenant : ne pas croire les
+  ids du client) → `link` (rattache waba+numéro au tenant, réaffecte si besoin) → `subscribeApp` (webhooks, best-effort
+  warning) → `register` si `status != CONNECTED` (pin CSPRNG) → `saveCredentials` (token+pin **chiffrés AES-256-GCM**
+  via `src/crypto/secretbox.ts`, mig **0029** `waba_credentials`). Config Meta = template « WhatsApp Embedded Signup
+  60-day » (cf `brain/LEARNINGS.md` 2026-07-16 pour la chaîne de prérequis Meta).
+
+## i18n FR/EN (2026-07-16)
+
+`web/lib/i18n.tsx` : `LocaleProvider` (langue dans un contexte, persistée localStorage, défaut FR, appliquée après
+montage → pas de mismatch d'hydratation) + `useT()` → `t('texte FR', 'EN text')` **co-localisé** au point d'appel (pas
+de dictionnaire central). Provider dans `app/layout.tsx`, toggle dans `AccountMenu`. Règle : NE JAMAIS wrapper une
+valeur backend/clé/comparaison dans `t()` ; chaînes au niveau module → déplacer dans le composant ou passer `t`.

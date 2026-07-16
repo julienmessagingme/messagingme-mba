@@ -202,13 +202,24 @@ Plan `.loop/lot6-auth.md`, feature-loop (reviewer séparé + 🔴/🟡 fermés +
   cartes analytics, table `/ops`) et 3 (**Contenu>Formulaires** builder tous composants, menu **Flow** éditeur
   de workflow, **Campagnes** switch Template/Workflow).
 
+## Embedded Signup + i18n + fixes campagne (2026-07-16) — LIVE ✅
+
+- **Campagnes workflow : 3 pannes SILENCIEUSES fermées** (le « envoyé mais rien reçu » persistant) : cap fréquence
+  24h retiré, indice périmé → 0 destinataire (dropdown coerce), **bouton FLOW #131009** (composant bouton flow +
+  flow_token, vérifié vs Cloud API). Détail : `CLAUDE.md` §Gotchas 2026-07-16 + `brain/LEARNINGS.md`.
+- **Champs système + sélecteur de variable dropdown** (constante code, sans migration ; attributs bsuid/wa_id ajoutés).
+- **Brique Embedded Signup (Tech Provider)** construite + reviewée (2 failles multi-tenant corrigées avant prod) +
+  déployée **OFF par défaut** (mig 0029 `waba_credentials`). Activée avec le `config_id` réel (bouton live).
+- **i18n FR/EN** sur toute l'app (moteur `web/lib/i18n.tsx`, toggle menu Compte). Logo Meta Business Agent sur
+  l'accueil, landing admin → Home, compte de test reviewer créé.
+
 ## Prochaine étape
 
 1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.
-2. **Onboarding client (Embedded Signup)** : configurer Facebook Login for Business (config_id),
-   coder le bouton ES + l'échange de token, puis Access Verification (Tech Provider) + App Review
-   (screencast). Voir `todo.md`.
-(Le token System User permanent est déjà posé, cf `todo.md` — plus d'urgence token.)
+2. **Onboarding client (Embedded Signup) : brique FAITE + déployée.** Côté Meta, **Access Verification (Tech
+   Provider) + App Review SOUMISES le 2026-07-16, en review** (~5 j / ~20 j). Rien à faire côté produit d'ici là :
+   le jour où les 2 feux passent au vert, le bouton marche de bout en bout et on tourne la vraie vidéo de démo.
+   Surveiller mails Meta + onglet Required actions. Voir `todo.md` (refresh token, envoi via token par-client).
 
 ## En attente (dépendances externes)
 

@@ -215,12 +215,26 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
   le connecteur vérifie, au lieu de l'UUID nu. (Repéré par le reviewer, sous le seuil bloquant.)
 - 📊 **Tracking réel de livraison des campagnes WORKFLOW** : remplacer le message_id synthétique `wf-<id>` par le vrai
   wamid du 1er template (rapproché des webhooks de statut) -> funnel delivered/read non figé à 0. Limitation V1 connue.
-- 🧩 **Bouton FLOW dans l'envoi workflow** : `buildWorkflowTemplateComponents` ne gère que les boutons **quick-reply**
-  (payload contrôlé). Un template dont un bouton est un **Flow** part sans son component flow -> à vérifier/gérer si on
-  déclenche un WhatsApp Flow depuis un template envoyé par workflow.
+- ✅ **Bouton FLOW dans l'envoi workflow — FAIT (2026-07-16)** : `buildWorkflowTemplateComponents` génère désormais
+  le composant `{sub_type:'flow', parameters:[{type:'action', action:{flow_token}}]}` par bouton FLOW (corrige #131009).
+  Vérifié empiriquement contre la Cloud API. Détail : `CLAUDE.md` §Gotchas 2026-07-16.
 - ⚠️ **Variables de template non contiguës** (`{{1}}` + `{{3}}` sans `{{2}}`) : le front compte les positions distinctes
   (Set) alors que le backend attend 1..N contigu -> désalignement possible. Pré-existant (mode direct), pas introduit
   ce lot ; à corriger si un template non contigu apparaît.
+
+## Suites Embedded Signup / i18n (2026-07-16)
+
+- 🔄 **Refresh du business token ES (60 j)** : le token BISU par-client expire à 60 j. Aujourd'hui il ne sert qu'à
+  l'onboarding (subscribe webhooks), donc son expiration est sans impact. **Quand on enverra les campagnes avec le
+  token PAR-CLIENT** (au lieu du `META_ACCESS_TOKEN` global), câbler le refresh + l'alerting d'expiration.
+- 📤 **Envoi via le token par-client** : le worker envoie aujourd'hui avec le token global (marche pour NOTRE numéro).
+  Pour de vrais clients onboardés, router l'envoi/les lectures sur le business token du WABA du client.
+- 🗑️ **Supprimer le compte de test reviewer** `meta-review@messagingme.app` (admin Demo) **après approbation** de
+  l'App Review Meta. Le garder tant que la review n'est pas passée (Meta peut re-tester).
+- 🌐 **i18n** : spot-check des chaînes visibles restées en français en mode EN (build vert + grep « aucune valeur
+  backend traduite » OK, mais quelques chaînes rares ont pu être oubliées). Corriger au fil des retours de Julien.
+- 🔒 **Durcir `/oauth/install?tenant=` ES multi-tenant** : l'UUID tenant est nu dans le state (cf. plus bas, connecteur
+  mm-hubspot) ; même durcissement (ticket signé court-lived) côté ES quand multi-tenant.
 
 ## Bugs connus
 
