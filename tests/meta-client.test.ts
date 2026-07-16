@@ -59,6 +59,45 @@ describe('MetaClient.sendTemplate', () => {
   });
 });
 
+describe('MetaClient.sendInteractive', () => {
+  it('body interactive/button avec réponses rapides (id btn:i, titre <=20)', async () => {
+    const t = new FakeTransport([okBody('wamid.i')]);
+    const res = await client(t).sendInteractive('33600000000', 'Ça te va ?', [{ text: 'Oui' }, { text: 'Non' }]);
+    expect(res.messageId).toBe('wamid.i');
+    expect(t.requests[0]!.body).toMatchObject({
+      messaging_product: 'whatsapp',
+      to: '33600000000',
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: 'Ça te va ?' },
+        action: { buttons: [
+          { type: 'reply', reply: { id: 'btn:0', title: 'Oui' } },
+          { type: 'reply', reply: { id: 'btn:1', title: 'Non' } },
+        ] },
+      },
+    });
+  });
+
+  it('filtre les réponses vides en PRÉSERVANT l\'index (btn:i) et cap 3', async () => {
+    const t = new FakeTransport([okBody('wamid.i2')]);
+    await client(t).sendInteractive('33600000000', 'x', [{ text: 'A' }, { text: '' }, { text: 'C' }]);
+    const body = t.requests[0]!.body as { interactive: { action: { buttons: Array<{ reply: { id: string; title: string } }> } } };
+    expect(body.interactive.action.buttons).toEqual([
+      { type: 'reply', reply: { id: 'btn:0', title: 'A' } },
+      { type: 'reply', reply: { id: 'btn:2', title: 'C' } },
+    ]);
+  });
+
+  it('BSUID -> champ recipient (jamais to)', async () => {
+    const t = new FakeTransport([okBody('wamid.i3')]);
+    await client(t).sendInteractive('BSUID_abc', 'x', [{ text: 'Oui' }]);
+    const body = t.requests[0]!.body as Record<string, unknown>;
+    expect(body['recipient']).toBe('BSUID_abc');
+    expect(body).not.toHaveProperty('to');
+  });
+});
+
 const liteClient = (transport: HttpTransport) =>
   new MetaClient({ transport, token: 'TOK', phoneNumberId: '123', version: 'v25.0', marketingViaLite: true });
 

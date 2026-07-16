@@ -4,7 +4,7 @@
  * L'exécution (machine à états par contact) arrive en PB2 et interprétera `data` selon le type de node.
  */
 
-export const WORKFLOW_NODE_TYPES = ['template', 'inbox', 'flow', 'tag', 'field'] as const;
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

@@ -425,17 +425,17 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const list = await store.list(tenantId);
     const mine = list.find((w) => w.id === id);
     expect(mine).toBeDefined();
-    expect(mine!.status).toBe('draft');
+    expect(mine!.name).toBe('Onboarding');
     expect(mine!.graph).toEqual(graph); // round-trip jsonb intact
 
     const one = await store.getById(id, tenantId);
     expect(one!.graph.nodes).toHaveLength(2);
 
-    // update partiel : seul le status change, le graphe est préservé (coalesce).
-    expect(await store.update(id, tenantId, { status: 'active' })).toBe(true);
-    const afterStatus = await store.getById(id, tenantId);
-    expect(afterStatus!.status).toBe('active');
-    expect(afterStatus!.graph).toEqual(graph); // graphe non écrasé
+    // update partiel : seul le nom change, le graphe est préservé (coalesce).
+    expect(await store.update(id, tenantId, { name: 'Onboarding v2' })).toBe(true);
+    const afterName = await store.getById(id, tenantId);
+    expect(afterName!.name).toBe('Onboarding v2');
+    expect(afterName!.graph).toEqual(graph); // graphe non écrasé
 
     // update du graphe.
     const g2 = { nodes: [{ id: 'n1', type: 'inbox' as const, position: { x: 5, y: 5 }, data: {} }], edges: [] };
@@ -491,6 +491,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       applyTag: (t, w, tag) => contactStore.addTagsByPhone(t, w, [tag]).then(() => undefined),
       setField: (t, w, k, v) => contactStore.mergeFieldsByPhone(t, w, { [k]: v }).then(() => undefined),
       sendTemplate: async (_t, _w, name) => { sends.push(name); },
+      sendQuickMessage: async (_t, _w, body) => { sends.push(`qm:${body}`); },
     });
 
     await ex.start(tenantId, wfId, graph, { waId, contactId: null });

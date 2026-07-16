@@ -5,7 +5,6 @@ export interface WorkflowRow {
   id: string;
   tenantId: string;
   name: string;
-  status: 'draft' | 'active';
   graph: WorkflowGraph;
   createdAt: string;
   updatedAt: string;
@@ -27,7 +26,7 @@ export class PgWorkflowStore {
 
   async list(tenantId: string): Promise<WorkflowRow[]> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, status, graph, created_at, updated_at from workflows
+      `select id, tenant_id, name, graph, created_at, updated_at from workflows
        where tenant_id = $1 order by created_at desc`,
       [tenantId],
     );
@@ -36,7 +35,7 @@ export class PgWorkflowStore {
 
   async getById(id: string, tenantId: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, status, graph, created_at, updated_at from workflows
+      `select id, tenant_id, name, graph, created_at, updated_at from workflows
        where id = $1 and tenant_id = $2 limit 1`,
       [id, tenantId],
     );
@@ -44,17 +43,16 @@ export class PgWorkflowStore {
     return r ? toRow(r) : null;
   }
 
-  /** MAJ partielle (name/graph/status). true si une ligne du tenant a bougé. `coalesce` : un champ absent
+  /** MAJ partielle (name/graph). true si une ligne du tenant a bougé. `coalesce` : un champ absent
    *  ne l'écrase pas. Le graphe passé est DÉJÀ validé/sanitisé par la route (parseGraph). */
-  async update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph; status?: 'draft' | 'active' }): Promise<boolean> {
+  async update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<boolean> {
     const res = await this.pool.query(
       `update workflows set
          name = coalesce($3, name),
          graph = coalesce($4::jsonb, graph),
-         status = coalesce($5, status),
          updated_at = now()
        where id = $1 and tenant_id = $2`,
-      [id, tenantId, patch.name ?? null, patch.graph ? JSON.stringify(patch.graph) : null, patch.status ?? null],
+      [id, tenantId, patch.name ?? null, patch.graph ? JSON.stringify(patch.graph) : null],
     );
     return (res.rowCount ?? 0) > 0;
   }
@@ -66,7 +64,7 @@ export class PgWorkflowStore {
 }
 
 interface Row {
-  id: string; tenant_id: string; name: string; status: 'draft' | 'active';
+  id: string; tenant_id: string; name: string;
   graph: WorkflowGraph | null; created_at: Date; updated_at: Date;
 }
 function toRow(r: Row): WorkflowRow {
@@ -74,7 +72,6 @@ function toRow(r: Row): WorkflowRow {
     id: r.id,
     tenantId: r.tenant_id,
     name: r.name,
-    status: r.status,
     graph: r.graph ?? EMPTY_GRAPH,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),

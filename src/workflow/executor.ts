@@ -19,6 +19,9 @@ export interface WorkflowExecutorDeps {
    * comportement inchangé (hints stockés).
    */
   sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[], explicitParams?: string[]): Promise<void>;
+  /** Envoie un message interactif (texte + 2-3 réponses rapides) hors template. Atteint uniquement via `advance`
+   *  (après réponse du contact), donc toujours dans la fenêtre de service 24 h. */
+  sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[]): Promise<void>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -45,6 +48,7 @@ export class WorkflowExecutor {
     for (const a of actions) {
       if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
+      else if (a.kind === 'sendQuickMessage') await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons);
       else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
     }
   }

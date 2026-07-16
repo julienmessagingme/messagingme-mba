@@ -674,7 +674,7 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 
 // --- Workflows (bot builder : graphe de blocs) ---
 
-export type WorkflowNodeType = 'template' | 'inbox' | 'flow' | 'tag' | 'field';
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
@@ -694,7 +694,6 @@ export interface WorkflowGraph {
 export interface WorkflowSummary {
   id: string;
   name: string;
-  status: 'draft' | 'active';
   graph: WorkflowGraph;
   createdAt: string;
   updatedAt: string;
@@ -702,14 +701,15 @@ export interface WorkflowSummary {
 export function listWorkflows(tenantId: string): Promise<{ workflows: WorkflowSummary[] }> {
   return request<{ workflows: WorkflowSummary[] }>(`/tenants/${tenantId}/workflows`);
 }
-export function createWorkflow(tenantId: string, name: string, graph?: WorkflowGraph): Promise<{ id: string; name: string; status: string; graph: WorkflowGraph }> {
+export function createWorkflow(tenantId: string, name: string, graph?: WorkflowGraph): Promise<{ id: string; name: string; graph: WorkflowGraph }> {
   return request(`/tenants/${tenantId}/workflows`, { method: 'POST', body: JSON.stringify({ name, ...(graph ? { graph } : {}) }) });
 }
 export function getWorkflow(tenantId: string, id: string): Promise<{ workflow: WorkflowSummary }> {
   return request<{ workflow: WorkflowSummary }>(`/tenants/${tenantId}/workflows/${id}`);
 }
-export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph; status?: 'draft' | 'active' }): Promise<unknown> {
-  return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph }, opts?: { keepalive?: boolean }): Promise<unknown> {
+  // `keepalive` : la requête survit au déchargement de la page (flush auto-save sur beforeunload / fermeture d'onglet).
+  return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(patch), ...(opts?.keepalive ? { keepalive: true } : {}) });
 }
 export function deleteWorkflow(tenantId: string, id: string): Promise<unknown> {
   return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'DELETE' });

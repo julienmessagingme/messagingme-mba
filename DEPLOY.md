@@ -75,3 +75,11 @@ sudo docker compose up -d --build
 ```
 
 (En dev, `npm run migrate` local pointe la même base prod via `.env` ; « à jour, rien à appliquer » = rien en attente.)
+
+⚠️ **Exception — migration qui DROP (ou renomme) une colonne encore lue par l'ANCIEN code** (ex. `0030_drop_workflow_status.sql`) : **ordre INVERSÉ**, deploy le code D'ABORD, migrate ENSUITE. Sinon la colonne disparaît pendant que l'ancien conteneur (qui la lit encore) tourne toujours -> 500 « column … does not exist » le temps du rebuild. Règle générale : une migration qui AJOUTE une colonne se fait avant le deploy (le code neuf en a besoin) ; une migration qui RETIRE une colonne se fait après (le code neuf a cessé de la lire, l'ancien en a encore besoin).
+
+```bash
+cd /home/ubuntu/mba && git pull
+sudo docker compose up -d --build                                # 1) deploy le code qui ne lit plus la colonne
+sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
+```

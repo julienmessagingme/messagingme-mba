@@ -92,6 +92,29 @@ export class MetaClient {
     return { messageId: this.messageId(json) };
   }
 
+  /**
+   * Message interactif à boutons de réponse (hors template). `to` = E.164 OU BSUID (routé par messagingTarget).
+   * Les titres vides sont filtrés en PRÉSERVANT l'index d'origine dans `reply.id` (`btn:<i>`), pour que la branche
+   * par bouton (sourceHandle) reste stable même si une réponse du milieu est vide. Cap Meta : 3 boutons, titre 20 car.
+   */
+  async sendInteractive(to: string, body: string, buttons: { text: string }[]): Promise<SendResult> {
+    const replyButtons = buttons
+      .map((b, i) => ({ type: 'reply' as const, reply: { id: `btn:${i}`, title: b.text.trim().slice(0, 20) } }))
+      .filter((b) => b.reply.title !== '')
+      .slice(0, 3);
+    const json = await this.call('messages', {
+      messaging_product: 'whatsapp',
+      ...messagingTarget(to),
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body },
+        action: { buttons: replyButtons },
+      },
+    });
+    return { messageId: this.messageId(json) };
+  }
+
   async sendTemplate(to: string, tpl: TemplateSpec): Promise<SendResult> {
     // `to` peut être un numéro E.164 OU un BSUID : Meta route via `to` (numéro) vs `recipient` (BSUID).
     const json = await this.call('messages', {

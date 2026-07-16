@@ -22,12 +22,13 @@ type RFEdge = Edge;
 // et il est lu par 3 composants -> on résout au rendu via t(...meta.label).
 const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string, string] }> = {
   template: { emoji: '📩', label: ['Envoi template', 'Send template'] },
+  quick_message: { emoji: '⚡', label: ['Message rapide', 'Quick message'] },
   inbox: { emoji: '💬', label: ['Inbox', 'Inbox'] },
   flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
   tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] },
   field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] },
 };
-const NODE_ORDER: WorkflowNodeType[] = ['template', 'flow', 'tag', 'field', 'inbox'];
+const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'tag', 'field', 'inbox'];
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`);
@@ -36,6 +37,7 @@ function uid(): string {
 function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) => string): string {
   const wfType = data.wfType as WorkflowNodeType;
   if (wfType === 'template') return (data.templateName as string) || t('choisir un template…', 'choose a template…');
+  if (wfType === 'quick_message') return (data.body as string)?.trim() || t('message + réponses rapides…', 'message + quick replies…');
   if (wfType === 'flow') return (data.flowName as string) || t('choisir un formulaire…', 'choose a form…');
   if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir un tag…', 'choose a tag…');
   if (wfType === 'field') return (data.fieldLabel as string) ? `${data.fieldLabel as string} = ${(data.value as string) || '…'}` : t('choisir un champ…', 'choose a field…');
@@ -51,7 +53,9 @@ function WFNode({ id, data, selected }: NodeProps) {
   const meta = NODE_META[wfType];
   const buttons = wfType === 'template' && Array.isArray(data.templateButtons)
     ? (data.templateButtons as Array<{ type?: string; text?: string }>)
-    : [];
+    : wfType === 'quick_message' && Array.isArray(data.quickReplies)
+      ? (data.quickReplies as unknown[]).map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
+      : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
   return (
     <div className={`relative w-44 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
@@ -162,7 +166,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(seed.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Données de config des blocs.
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -287,18 +292,60 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     setSelectedId(null);
   }, [selectedId, setNodes, setEdges]);
 
-  async function save() {
+  // Auto-save : plus de bouton « Enregistrer ». On sauvegarde proactivement ~1,2 s après la dernière édition du
+  // graphe, et on FLUSH la sauvegarde en attente au démontage (retour aux scénarios) + sur beforeunload (fermeture
+  // d'onglet), sinon les toutes dernières modifs seraient perdues (pire que le bouton manuel).
+  const graphRef = useRef({ nodes, edges });
+  useEffect(() => { graphRef.current = { nodes, edges }; }, [nodes, edges]);
+  const dirtyRef = useRef(false);
+  const savingRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstRender = useRef(true);
+
+  const doSave = useCallback(async (keepalive = false): Promise<void> => {
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    // Sérialise : un seul PATCH en vol. Si un save tourne déjà, on marque « sale » et il re-sauvera à la fin avec
+    // le graphe le plus récent (évite qu'un PATCH plus ancien réponde après et écrase une version plus récente).
+    if (savingRef.current) { dirtyRef.current = true; return; }
+    savingRef.current = true;
+    dirtyRef.current = false;
     setSaving(true);
-    setMsg(null);
+    setSaveError(null);
     try {
-      await updateWorkflow(tenantId, workflowId, { graph: fromRF(nodes, edges) });
-      setMsg(t('Scénario enregistré.', 'Scenario saved.'));
+      await updateWorkflow(tenantId, workflowId, { graph: fromRF(graphRef.current.nodes, graphRef.current.edges) }, keepalive ? { keepalive: true } : undefined);
+      setSavedAt(new Date());
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+      setSaveError(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+      dirtyRef.current = true; // laisse une chance au re-save / au retry
     } finally {
       setSaving(false);
+      savingRef.current = false;
     }
-  }
+    // Des modifs sont arrivées PENDANT le save (ou échec) -> re-sauver UNE fois avec le graphe le plus récent.
+    if (dirtyRef.current) void doSave(keepalive);
+  }, [tenantId, workflowId, t]);
+
+  // doSave via une ref : la planification du debounce ne dépend QUE de [nodes, edges] (pas de doSave), pour ne pas
+  // relancer une sauvegarde au simple changement de langue (doSave dépend de `t`).
+  const doSaveRef = useRef(doSave);
+  useEffect(() => { doSaveRef.current = doSave; }, [doSave]);
+
+  // Planifie une sauvegarde debounce à chaque édition. Skip le rendu INITIAL (chargement du graphe) : on ne
+  // sauvegarde pas tant que l'utilisateur n'a rien touché.
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    dirtyRef.current = true;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { void doSaveRef.current(); }, 1200);
+  }, [nodes, edges]);
+
+  // Flush au démontage + fermeture d'onglet : si des modifs sont en attente, on sauvegarde tout de suite en
+  // `keepalive` (la requête survit au déchargement de la page).
+  useEffect(() => {
+    const flush = () => { if (dirtyRef.current) void doSaveRef.current(true); };
+    window.addEventListener('beforeunload', flush);
+    return () => { window.removeEventListener('beforeunload', flush); flush(); };
+  }, []);
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -311,9 +358,19 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-3">
-          {msg && <span className="text-xs text-ink-500">{msg}</span>}
-          <button onClick={save} disabled={saving} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60">{saving ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}</button>
+        <div className="ml-auto flex items-center gap-2 text-xs">
+          {saveError ? (
+            <>
+              <span className="text-coral">⚠ {t('Échec de l’enregistrement', 'Save failed')}</span>
+              <button onClick={() => void doSave()} className="font-medium text-brand-600 hover:underline">{t('réessayer', 'retry')}</button>
+            </>
+          ) : saving ? (
+            <span className="text-ink-400">{t('Enregistrement…', 'Saving…')}</span>
+          ) : savedAt ? (
+            <span className="text-ink-400">{t('Enregistré', 'Saved')} {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          ) : (
+            <span className="text-ink-400">{t('Enregistrement automatique', 'Auto-save on')}</span>
+          )}
         </div>
       </div>
 
@@ -390,6 +447,32 @@ function ConfigPanel({
           )}
         </div>
       )}
+      {wfType === 'quick_message' && (() => {
+        const qr = Array.isArray(d.quickReplies) ? (d.quickReplies as string[]) : [];
+        return (
+          <div className="space-y-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
+              <textarea value={(d.body as string) ?? ''} onChange={(e) => onPatch({ body: e.target.value })} rows={3} className={cls} placeholder={t('Ton message…', 'Your message…')} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Réponses rapides', 'Quick replies')}</label>
+              <div className="space-y-1.5">
+                {qr.map((r, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <input value={r} maxLength={20} onChange={(e) => { const next = [...qr]; next[i] = e.target.value; onPatch({ quickReplies: next }); }} className={cls} placeholder={`${t('Réponse', 'Reply')} ${i + 1}`} />
+                    <button type="button" onClick={() => onPatch({ quickReplies: qr.filter((_, j) => j !== i) })} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+                  </div>
+                ))}
+              </div>
+              {qr.length < 3 && (
+                <button type="button" onClick={() => onPatch({ quickReplies: [...qr, ''] })} className="mt-1.5 text-xs text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
+              )}
+              <p className="mt-1 text-[11px] text-ink-400">{t('Max 3, 20 caractères. Chaque réponse devient une sortie à relier (point à droite du bloc).', 'Max 3, 20 characters. Each reply becomes an output to connect (dot on the right of the block).')}</p>
+            </div>
+          </div>
+        );
+      })()}
       {wfType === 'flow' && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Formulaire (publié)', 'Form (published)')}</label>

@@ -30,6 +30,7 @@ function make(graph: WorkflowGraph) {
     applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
     setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
     sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
+    sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
   });
   return { ex, runs, calls };
 }
@@ -54,6 +55,14 @@ describe('WorkflowExecutor', () => {
     await ex.advance('t1', '33600', 'msg1');
     expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
     expect(calls).toEqual(['tag:vip', 'tpl:promo']); // pas de nouvel envoi (inbox n'a pas d'action)
+  });
+
+  it('start : quick_message envoie le message interactif, run en attente au bloc', async () => {
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['Oui', 'Non'] })], edges: [] };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['qm:Salut']);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'qm' });
   });
 
   it('workflow 100% synchrone (tag seul) : action appliquée, AUCUN run persistant', async () => {
@@ -128,6 +137,7 @@ describe('WorkflowExecutor', () => {
       applyTag: async () => {},
       setField: async () => {},
       sendTemplate: async (_t, _w, _name, _lang, _btns, explicitParams) => { captured.push(explicitParams); },
+      sendQuickMessage: async () => {},
     });
     return { ex, captured };
   }

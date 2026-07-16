@@ -14,7 +14,8 @@ export interface WorkflowButton { type: string; text: string }
 export type WorkflowAction =
   | { kind: 'tag'; tag: string }
   | { kind: 'field'; key: string; value: string }
-  | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] };
+  | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
+  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[] };
 
 export type WalkRest =
   | { status: 'waiting'; nodeId: string } // en attente d'une réponse (après un template ou un formulaire)
@@ -64,6 +65,16 @@ function actionOf(node: WorkflowNode): WorkflowAction | null {
     }));
     return { kind: 'sendTemplate', templateName, language: String(node.data.language ?? 'fr'), buttons };
   }
+  if (node.type === 'quick_message') {
+    const body = String(node.data.body ?? '').trim();
+    // Les réponses rapides gardent leur ORDRE (index = handle btn:<i> pour la branche) : on ne filtre PAS ici,
+    // la couche d'envoi filtre les vides en préservant l'index. Bloc incomplet (pas de corps ou aucune réponse
+    // non vide) -> null (no-op), comme un template sans templateName.
+    const raw = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
+    const buttons: WorkflowButton[] = raw.map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }));
+    if (!body || !buttons.some((b) => b.text.trim() !== '')) return null;
+    return { kind: 'sendQuickMessage', body, buttons };
+  }
   return null;
 }
 
@@ -85,7 +96,7 @@ export function walk(graph: WorkflowGraph, startNodeId: string): WalkResult {
     if (!node) return { actions, rest: { status: 'done' } };
 
     if (node.type === 'inbox') return { actions, rest: { status: 'inbox' } };
-    if (node.type === 'template' || node.type === 'flow') {
+    if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node);
       if (a) actions.push(a);
       return { actions, rest: { status: 'waiting', nodeId: current } };

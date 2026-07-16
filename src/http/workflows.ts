@@ -9,7 +9,7 @@ export interface WorkflowRouteDeps {
   createWorkflow(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }>;
   listWorkflows(tenantId: string): Promise<WorkflowRow[]>;
   getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
-  updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph; status?: 'draft' | 'active' }): Promise<boolean>;
+  updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<boolean>;
   deleteWorkflow(id: string, tenantId: string): Promise<boolean>;
   /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort).
    *  Absent -> pas de déclaration (rétro-compatible). */
@@ -56,7 +56,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     // Rend les tags des blocs « ajout de tag » visibles tout de suite dans Contenus > Tags (best-effort : ne
     // fait jamais échouer la sauvegarde du workflow).
     if (deps.declareTags) { try { await deps.declareTags(tenant, tagsInGraph(graph)); } catch { /* best-effort */ } }
-    return reply.code(201).send({ id, name: b.name.trim(), status: 'draft', graph });
+    return reply.code(201).send({ id, name: b.name.trim(), graph });
   });
 
   app.get('/tenants/:tenantId/workflows', opts, async (req, reply) => {
@@ -79,9 +79,9 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const b = (req.body ?? {}) as { name?: unknown; graph?: unknown; status?: unknown };
+    const b = (req.body ?? {}) as { name?: unknown; graph?: unknown };
 
-    const patch: { name?: string; graph?: WorkflowGraph; status?: 'draft' | 'active' } = {};
+    const patch: { name?: string; graph?: WorkflowGraph } = {};
     if (b.name !== undefined) {
       if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name vide' });
       patch.name = b.name.trim();
@@ -91,11 +91,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
       if (graph === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
       patch.graph = graph;
     }
-    if (b.status !== undefined) {
-      if (b.status !== 'draft' && b.status !== 'active') return reply.code(400).send({ error: 'status invalide (draft|active)' });
-      patch.status = b.status;
-    }
-    if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à modifier (name/graph/status)' });
+    if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à modifier (name/graph)' });
 
     const ok = await deps.updateWorkflow(id, tenant, patch);
     if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });

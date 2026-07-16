@@ -160,6 +160,22 @@ async function main(): Promise<void> {
       // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
       await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
     },
+    // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Atteint uniquement via
+    // `advance` (après réponse du contact) -> fenêtre 24 h forcément ouverte. Texte littéral en V1 (pas de variables).
+    sendQuickMessage: async (tenant, waId, body, buttons) => {
+      if (dryRun) return; // DRY_RUN : aucun appel Meta
+      if (body.trim() === '' || !buttons.some((b) => b.text.trim() !== '')) return; // rien à envoyer
+      const pn = await repo.getTenantPhoneNumberId(tenant);
+      if (!pn) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendQuickMessage: aucun numéro pour le tenant ${tenant}, message rapide non envoyé à ${waId}`);
+        return;
+      }
+      const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+      const res = await client.sendInteractive(waId, body, buttons);
+      // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
+      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+    },
   });
 
   await queue.work('webhook', async (data) => {

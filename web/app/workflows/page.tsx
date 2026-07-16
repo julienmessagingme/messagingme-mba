@@ -39,7 +39,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     try {
       const res = await createWorkflow(session.tenantId, name);
       setNewName('');
-      setEditing({ id: res.id, name: res.name, status: 'draft', graph: res.graph, createdAt: '', updatedAt: '' });
+      setEditing({ id: res.id, name: res.name, graph: res.graph, createdAt: '', updatedAt: '' });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Création impossible', 'Unable to create'));
     }
@@ -110,7 +110,6 @@ function WorkflowsInner({ session }: { session: Session }) {
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
                 <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-5 py-2 font-medium">{t('Blocs', 'Blocks')}</th>
-                <th className="px-5 py-2 font-medium">{t('Statut', 'Status')}</th>
                 <th className="px-5 py-2 text-right font-medium">{t('Actions', 'Actions')}</th>
               </tr>
             </thead>
@@ -121,11 +120,6 @@ function WorkflowsInner({ session }: { session: Session }) {
                     <button onClick={() => open(w)} className="font-medium text-brand-600 hover:underline">{w.name}</button>
                   </td>
                   <td className="px-5 py-3 text-ink-500">{w.graph.nodes.length}</td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${w.status === 'active' ? 'bg-mint-50 text-mint-700' : 'bg-gold/10 text-gold'}`}>
-                      {w.status === 'active' ? t('Actif', 'Active') : t('Brouillon', 'Draft')}
-                    </span>
-                  </td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => open(w)} className="font-medium text-brand-600 hover:text-brand-700">{t('Ouvrir', 'Open')}</button>

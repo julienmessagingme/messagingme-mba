@@ -51,6 +51,25 @@ describe('walk : action sendTemplate porte les boutons du template', () => {
   });
 });
 
+describe('walk : quick_message', () => {
+  it('corps + réponses -> action sendQuickMessage (ordre préservé), waiting', () => {
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Ça te va ?', quickReplies: ['Oui', 'Non'] })], edges: [] };
+    const r = walk(g, 'qm');
+    expect(r.actions).toEqual([{ kind: 'sendQuickMessage', body: 'Ça te va ?', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'QUICK_REPLY', text: 'Non' }] }]);
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'qm' });
+  });
+  it('sans corps -> pas d\'action mais attend quand même (bloc bloquant)', () => {
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: '', quickReplies: ['Oui'] })], edges: [] };
+    const r = walk(g, 'qm');
+    expect(r.actions).toEqual([]);
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'qm' });
+  });
+  it('aucune réponse non vide -> pas d\'action', () => {
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['', ''] })], edges: [] };
+    expect(walk(g, 'qm').actions).toEqual([]);
+  });
+});
+
 describe('walk', () => {
   it('depuis l\'entrée : applique le tag SYNCHRONE puis s\'arrête au template (waiting)', () => {
     const r = walk(linear, entryNode(linear)!);

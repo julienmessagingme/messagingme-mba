@@ -19,7 +19,7 @@ const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null>
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const sampleRow = (over: Partial<WorkflowRow> = {}): WorkflowRow => ({
-  id: 'w1', tenantId: 't1', name: 'Onboarding', status: 'draft',
+  id: 'w1', tenantId: 't1', name: 'Onboarding',
   graph: { nodes: [{ id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: {} }], edges: [] },
   createdAt: '2026-07-13T00:00:00.000Z', updatedAt: '2026-07-13T00:00:00.000Z', ...over,
 });
@@ -81,15 +81,15 @@ describe('routes workflows', () => {
     await server.close();
   });
 
-  it('PATCH graph -> 200 ; graphe invalide -> 400 ; status invalide -> 400', async () => {
+  it('PATCH graph -> 200 ; graphe invalide -> 400 ; rien à modifier -> 400', async () => {
     const { server, cap } = app();
     const ok = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: validGraph } });
     expect(ok.statusCode).toBe(200);
     expect(cap.updated[0]!.id).toBe('w1');
     const bad = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: { nodes: 'x', edges: [] } } });
     expect(bad.statusCode).toBe(400);
-    const badStatus = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { status: 'zzz' } });
-    expect(badStatus.statusCode).toBe(400);
+    const empty = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: {} });
+    expect(empty.statusCode).toBe(400);
     await server.close();
   });
 
