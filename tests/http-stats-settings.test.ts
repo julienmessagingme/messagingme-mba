@@ -26,7 +26,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724 }),
     getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1 }),
-    getErrorBreakdown: async () => [{ code: 131049, count: 4 }, { code: 131047, count: 2 }],
+    getErrorBreakdown: async () => [{ code: 131049, count: 4, templateName: 'promo' }, { code: 131047, count: 2, templateName: null }],
     getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true }),
     ...over.stats,
   };
@@ -111,11 +111,21 @@ describe('stats route', () => {
     await a.close();
   });
 
-  it('GET /stats/errors -> { errors: [...] } trié', async () => {
+  it('GET /stats/errors -> { errors: [...] } trié, avec templateName', async () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json<{ errors: Array<{ code: number; count: number }> }>().errors[0]).toEqual({ code: 131049, count: 4 });
+    expect(res.json<{ errors: Array<{ code: number; count: number; templateName: string | null }> }>().errors[0]).toEqual({ code: 131049, count: 4, templateName: 'promo' });
+    await a.close();
+  });
+
+  it('GET /stats/errors?templateName -> filtre transmis au store + réponse porte templateName', async () => {
+    let captured: string | undefined = 'UNSET';
+    const a = app({ stats: { getErrorBreakdown: async (_t, _r, tpl) => { captured = tpl; return [{ code: 131049, count: 4, templateName: 'promo' }]; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/errors?days=30&templateName=promo', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(captured).toBe('promo');
+    expect(res.json<{ errors: Array<{ templateName: string | null }> }>().errors[0]!.templateName).toBe('promo');
     await a.close();
   });
 

@@ -144,7 +144,7 @@ async function main(): Promise<void> {
         return pricingClient.getPricingAnalytics(wabaId, startTs, endTs);
       },
       getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
-      getErrorBreakdown: (tenant, range) => statsStore.getErrorBreakdown(tenant, range),
+      getErrorBreakdown: (tenant, range, templateName) => statsStore.getErrorBreakdown(tenant, range, templateName),
       getCostSeries: async (tenant, range, filter) => {
         const wabaId = await repo.getTenantWabaId(tenant);
         const { startTs, endTs } = rangeToUnix(range);

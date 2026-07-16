@@ -16,10 +16,12 @@ export interface CampaignFunnel {
   failed: number;
 }
 
-/** Une ligne du breakdown d'erreurs : code Meta numérique + occurrences sur la plage. */
+/** Une ligne du breakdown d'erreurs : code Meta numérique + template + occurrences sur la plage. */
 export interface ErrorBreakdownRow {
   code: number;
   count: number;
+  /** Template de la campagne à l'origine des erreurs (null si non renseigné). */
+  templateName: string | null;
 }
 
 /** Volume d'envois de campagne par (jour, catégorie) — base du graphe de coût estimé. */
@@ -229,22 +231,23 @@ export class PgStatsStore {
    * coalesce(delivery_updated_at, sent_at, claimed_at) pour capter à la fois les échecs de LIVRAISON
    * (delivery_updated_at) et d'ENVOI (claimed_at, sent_at null). Trié par occurrences décroissantes.
    */
-  async getErrorBreakdown(tenantId: string, range: DateRange): Promise<ErrorBreakdownRow[]> {
+  async getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]> {
     const { from, to } = range;
-    const res = await this.pool.query<{ code: number; count: string }>(
+    const res = await this.pool.query<{ code: number; template_name: string | null; count: string }>(
       `with bounds as (
          select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
        )
-       select r.error_code as code, count(*)::int as count
+       select r.error_code as code, c.template_name as template_name, count(*)::int as count
        from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
        where c.tenant_id = $1 and r.error_code is not null
          and coalesce(r.delivery_updated_at, r.sent_at, r.claimed_at) >= b.start_ts
          and coalesce(r.delivery_updated_at, r.sent_at, r.claimed_at) < b.end_ts
-       group by r.error_code
+         and ($5::text is null or c.template_name = $5::text)
+       group by r.error_code, c.template_name
        order by count desc, code asc`,
-      [tenantId, from, to, TZ],
+      [tenantId, from, to, TZ, templateName ?? null],
     );
-    return res.rows.map((r) => ({ code: Number(r.code), count: Number(r.count) }));
+    return res.rows.map((r) => ({ code: Number(r.code), count: Number(r.count), templateName: r.template_name }));
   }
 
   /**

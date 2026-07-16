@@ -249,19 +249,36 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
 /** Breakdown des codes d'erreur Meta sur la période (avec libellé FR). */
 function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
   const t = useT();
-  const total = errors.reduce((a, e) => a + e.count, 0);
-  const max = errors.reduce((m, e) => Math.max(m, e.count), 0);
+  const [tpl, setTpl] = useState('');
+  // Templates ayant généré des erreurs (pour le filtre). Les erreurs des envois Inbox/Workflow ne sont pas
+  // trackées (colonne d'erreur seulement sur campaign_recipients) : ce breakdown couvre les CAMPAGNES.
+  const templates = [...new Set(errors.map((e) => e.templateName).filter((x): x is string => !!x))].sort();
+  const filtered = tpl ? errors.filter((e) => e.templateName === tpl) : errors;
+  // Agrège par code (somme sur les templates de la sélection : plusieurs lignes par code sinon).
+  const byCode = new Map<number, number>();
+  for (const e of filtered) byCode.set(e.code, (byCode.get(e.code) ?? 0) + e.count);
+  const rows = [...byCode.entries()].map(([code, count]) => ({ code, count })).sort((a, b) => b.count - a.count || a.code - b.code);
+  const total = rows.reduce((a, e) => a + e.count, 0);
+  const max = rows.reduce((m, e) => Math.max(m, e.count), 0);
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
-      <div className="mb-3">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
-        <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
+          <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
+        </div>
+        {templates.length > 0 && (
+          <select value={tpl} onChange={(e) => setTpl(e.target.value)} className="rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-700 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
+            <option value="">{t('Tous les templates', 'All templates')}</option>
+            {templates.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
       </div>
-      {errors.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-ink-500">{t('Aucune erreur sur la période.', 'No errors over the period.')}</p>
       ) : (
         <div className="space-y-2.5">
-          {errors.map((e) => (
+          {rows.map((e) => (
             <div key={e.code}>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-mono text-xs font-medium text-ink-700">{e.code}</span>

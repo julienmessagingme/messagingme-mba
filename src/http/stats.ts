@@ -14,8 +14,8 @@ export interface StatsRouteDeps {
   getPricing(tenantId: string, range: DateRange): Promise<PricingSummary | null>;
   /** Funnel d'UNE campagne : envoyés -> délivrés -> lus -> répondus + échecs. */
   getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
-  /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant). */
-  getErrorBreakdown(tenantId: string, range: DateRange): Promise<ErrorBreakdownRow[]>;
+  /** Breakdown des codes d'erreur Meta sur la plage (campagnes du tenant), filtrable par template. */
+  getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
   getCostSeries(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostSeries>;
 }
@@ -61,13 +61,15 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     return reply.code(200).send(await deps.getCampaignFunnel(tenant, campaignId));
   });
 
-  // Breakdown des codes d'erreur Meta sur la plage.
+  // Breakdown des codes d'erreur Meta sur la plage, filtrable ?templateName=.
   app.get('/tenants/:tenantId/stats/errors', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    const r = parseRange(req.query as Record<string, unknown>);
+    const q = req.query as Record<string, unknown>;
+    const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send({ errors: await deps.getErrorBreakdown(tenant, r.range) });
+    const templateName = typeof q.templateName === 'string' && q.templateName !== '' ? q.templateName : undefined;
+    return reply.code(200).send({ errors: await deps.getErrorBreakdown(tenant, r.range, templateName) });
   });
 
   // Graphe de coût estimé/jour, filtrable ?campaignId= / ?templateName= (peut appeler Meta pour le tarif).

@@ -423,10 +423,12 @@ export function getCampaignFunnel(tenantId: string, campaignId: string): Promise
   return request<CampaignFunnel>(`/tenants/${tenantId}/stats/campaign-funnel?campaignId=${encodeURIComponent(campaignId)}`);
 }
 
-/** Une ligne du breakdown d'erreurs Meta : code numérique + occurrences. */
+/** Une ligne du breakdown d'erreurs Meta : code numérique + template + occurrences. */
 export interface ErrorBreakdownRow {
   code: number;
   count: number;
+  /** Template de la campagne à l'origine des erreurs (null si non renseigné). */
+  templateName: string | null;
 }
 export function getErrorBreakdown(tenantId: string, range?: StatsRange): Promise<{ errors: ErrorBreakdownRow[] }> {
   return request<{ errors: ErrorBreakdownRow[] }>(`/tenants/${tenantId}/stats/errors${rangeQuery(range)}`);
