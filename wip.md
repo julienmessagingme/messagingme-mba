@@ -241,6 +241,25 @@ bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
   (cf `brain/LEARNINGS.md`). Gates relancés exit codes réels.
 - Tests : **707 unit** (681 → 707 : +26 nets). Migrations 0030-0031 appliquées. Baseline verte à chaque lot.
 
+## Lot 7 — Flow avancé (2026-07-17) : LIVE ✅ — PROGRAMME 16 FEATURES TERMINÉ
+
+Dernier lot du programme, feature-loop 1 tour (plan `.loop/lot7-flow-avance.md` validé, cartographie 5 explorers
++ recherche spec + 4 SONDES LIVE avant plan, reviewer transversal PASS avec 2 🟡 appliqués, commit `9fd2002`).
+- **C1 fix node `flow`** : le node de scénario ENVOIE le formulaire (message interactif type flow, calque
+  sendQuickMessage, accroche + CTA configurables dans le node). **Garde fenêtre 24 h à 3 étages** : 400 au save
+  d'un graphe qui OUVRE sur un flow/message rapide, skip défensif au start(), badge rouge sur le node d'ouverture
+  réel dans le builder. La complétion nfm_reply avance le run (mécanique existante, inchangée).
+- **C2 multi-écrans** : onglets d'écrans dans le builder (max 10, titre + bouton « Continuer » par écran),
+  ids `FORM`/`FORM_B`… (écran 1 = FORM pour toujours, sondé : chiffres REJETÉS par Meta), payload `complete`
+  agrégé par refs globales + `_ref` -> **pipeline webhook/mapping inchangé d'une ligne**. Colonne jsonb
+  polymorphe (plat = 1 écran à la lecture), ZÉRO migration. Aperçu paginé (builder + modale), miniature = écran 1.
+- **C3 champs conditionnels** : « Visible si… » par élément (source = liste choix unique/consentement du même
+  écran, est/n'est pas, valeur = option ou coché) -> propriété `visible` backticks. Sondé : champ masqué OMIS
+  du payload (zéro écrasement de champ contact), requis caché ne bloque pas la soumission.
+- **Sonde committée** `scripts/sonde-flow-live.mts` : fixture générée par LE CODE PRODUIT postée en draft sur
+  le WABA réel -> `validation_errors == []` -> delete. Gate T6 rejouable à chaque évolution du générateur.
+- Tests : **741 unit** (723 -> +18). Gates exit codes réels. Deploy vérifié (3 containers Up, HTTP 200).
+
 ## Prochaine étape
 
 1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.
@@ -248,9 +267,9 @@ bugs avant merge (dont le wiring `templateName` mort, cf `brain/LEARNINGS.md`).
    Provider) + App Review SOUMISES le 2026-07-16, en review** (~5 j / ~20 j). Rien à faire côté produit d'ici là :
    le jour où les 2 feux passent au vert, le bouton marche de bout en bout et on tourne la vraie vidéo de démo.
    Surveiller mails Meta + onglet Required actions. Voir `todo.md` (refresh token, envoi via token par-client).
-3. **Programme 16 features, lots restants** (cf `todo.md §Programme`) : **7** Flow avancé (multi-pages +
-   conditionnels, sondes Meta) + fix node `flow` no-op · **HubSpot import #14** (multi-repo) · chantier dédié
-   **endpoints API publics** (4b et 6 faits).
+3. **Programme 16 features : TERMINÉ (16/16 + socle codes publics).** Restent les chantiers hors programme
+   (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
+   **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
 
 ## En attente (dépendances externes)
 

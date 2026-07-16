@@ -87,6 +87,14 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   **choix** (liste déroulante, boutons radio, cases à cocher) / **consentement (OptIn)** / **bouton final au
   libellé personnalisable**. **Aperçu fidèle de l'écran WhatsApp** en direct (le même rendu s'ouvre en cliquant
   sur le nom d'un formulaire dans la liste).
+- ✅ **Formulaires MULTI-ÉCRANS** (2026-07-17) : onglets d'écrans dans le constructeur (ajouter / renommer /
+  réordonner / supprimer, jusqu'à 10), titre d'en-tête et bouton « Continuer » personnalisables par écran, le
+  dernier écran porte le bouton final. L'aperçu se **pagine** (◀ Écran N/M ▶), la miniature montre l'écran 1.
+  Toutes les réponses (tous écrans confondus) reviennent d'un coup à l'envoi du formulaire.
+- ✅ **Champs conditionnels** (2026-07-17) : chaque élément (texte, image ou champ) peut être « **Visible si…** »
+  une liste à choix unique ou un consentement PLUS HAUT sur le même écran a une certaine valeur (est / n'est
+  pas). Le contact ne voit le champ que si sa réponse le déclenche ; un champ resté masqué n'écrase JAMAIS une
+  valeur déjà connue de la fiche contact. Badge « 👁 Visible si… » dans l'aperçu.
 - ✅ Chaque **champ de saisie se range dans un user field du contact** (« Nouveau champ » d'après le libellé,
   ou un user field existant). Le consentement OptIn se range dans un champ booléen dédié. À la réception du
   formulaire rempli, les valeurs atterrissent dans la fiche contact + la réponse apparaît dans l'inbox.
@@ -109,6 +117,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Bloc « message rapide »** : un texte + **2-3 réponses rapides**, envoyé SANS template Meta approuvé (message
   interactif). Chaque réponse devient une **sortie à relier** (branche par bouton, comme un template). Utilisable
   seulement au fil du scénario (après une réponse du contact, fenêtre 24 h ouverte), jamais en 1er bloc.
+- ✅ **Bloc « formulaire » ENVOIE vraiment** (2026-07-17, fini le blocage silencieux) : le bloc envoie le
+  formulaire choisi en message WhatsApp interactif, avec un **texte d'accroche** et un **libellé de bouton**
+  personnalisables (pré-rempli avec le bouton du formulaire). Quand le contact soumet, ses réponses remplissent
+  sa fiche et le scénario avance. Comme le message rapide, jamais en 1er bloc : l'éditeur affiche une alerte
+  rouge sur le bloc fautif et l'enregistrement est refusé avec un message clair (fenêtre 24 h).
   - **Tirer une flèche dans le vide crée un bloc** à cet endroit (relié), puis on choisit son type dans le
     panneau de droite. Un **✕** en coin de chaque bloc le supprime directement (avec ses flèches).
 - ✅ **Variables du template collées automatiquement** : quand un bloc « envoi template » part (au lancement OU

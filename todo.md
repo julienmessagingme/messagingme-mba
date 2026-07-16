@@ -21,10 +21,13 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
   adressés par code (API keys, auth consommateur externe, scopes, rate limiting -> cadrage produit).
 - ✅ **Lot 6 — i18n anglais COMPLET : FAIT (2026-07-16)** (bug lang resync fermé, day/format locale-requis,
   toggle pré-login sur les 5 pages auth, cf `.loop/lotG-i18n-anglais.md`).
-- **Lot 7 — Flow avancé (#6b/#6c)** : multi-pages (screens + navigate + data-passing, ⚠️ SONDE LIVE obligatoire)
-  + champs conditionnels (`visible` + piège du caché-mais-requis, sonde aussi) + **fix node `flow` no-op** du
-  builder de scénario (atteint mais n'envoie RIEN, run bloqué → envoi interactif flow à sonder). Rappel : #5
-  (mapping champ→client) et #6a (choix unique/multiple) sont DÉJÀ en prod.
+- ✅ **Lot 7 — Flow avancé (#6b/#6c) : FAIT (2026-07-17)** : formulaires MULTI-ÉCRANS (onglets builder, ids
+  `FORM`/`FORM_B`…, complete agrégé par refs globales, webhook INCHANGÉ), champs CONDITIONNELS (`visibleIf` ->
+  propriété `visible`, sondé : champ masqué OMIS du payload, requis caché ne bloque pas), **fix node `flow`**
+  (envoi interactif réel + garde fenêtre 24 h à 3 étages). Sondes LIVE avant plan + sonde committée
+  `scripts/sonde-flow-live.mts` (générateur produit vs WABA réel). Cf `.loop/lot7-flow-avance.md`.
+  ⚠️ Vérif Julien restante (V2) : scénario avec node Formulaire -> envoi réel reçu sur son WhatsApp,
+  formulaire multi-écrans rempli -> champs contact + run avancé + carte inbox.
 - **HubSpot import (#14, parké)** : importer une liste HubSpot comme destinataires de campagne. Multi-repo :
   scope `crm.lists.read` sur l'app mm-hubspot + RE-CONSENTEMENT du portail cobaye (action Julien), client lists
   + route service-à-service côté mm-hubspot, proxy + réutilisation `importContacts()` côté mba, opt-in JAMAIS

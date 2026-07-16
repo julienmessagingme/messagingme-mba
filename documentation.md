@@ -67,13 +67,27 @@ Tables :
 
 ## Flows (modèle riche, migration 0016)
 
-`src/meta/flow-json.ts` : un flow = une liste ordonnée d'**éléments** (`heading|subheading|body|caption|
-image|field`). `buildFlowElements(name, elements, version, ref)` rend le flow_json (composants Text*/Image/
-inputs + Footer `complete`) et injecte une **constante `_ref`** dans le payload de complétion (discriminant
-qui identifie le flow au retour du `nfm_reply`, l'id Meta n'étant connu qu'après création). `fields` reste
-DÉRIVÉ (`fieldsOf`) pour les consommateurs. Image = **base64 BRUT** embarqué (pas un media handle carousel).
-`bodyLimit` route relevé à 7 Mo. Édition d'un DRAFT = `POST /{flow_id}/assets` en **multipart** (le create
-est en JSON inline — vérifié live) ; PUBLISHED immuable (409) -> duplication (ref régénéré).
+`src/meta/flow-json.ts` : un flow = des **écrans** (`FlowScreenDef {title?, cta?, elements}`, Lot 7) dont les
+éléments sont ordonnés (`heading|subheading|body|caption|image|field`). `buildFlowScreens(name, screens,
+version, ref, cta)` rend le flow_json : ids d'écrans `FORM`/`FORM_B`/… (**lettres+underscores UNIQUEMENT**,
+sondé live : un chiffre est rejeté ; l'écran 1 reste `FORM`, baké en `navigate_screen` des templates approuvés
+ET dans `sendFlowMessage`), PAS de `routing_model` (facultatif sans endpoint, sondé 7.2/7.3), Footers
+intermédiaires `navigate` (payload `{}`), Footer terminal `complete` dont le payload **agrège TOUS les champs**
+: refs globales `${screen.<ID>.form.<clé>}` (écrans précédents) + `${form.<clé>}` (dernier) + la **constante
+`_ref`** (discriminant du retour `nfm_reply`). ⚠️ Refs globales : payloads d'action SEULEMENT, PAS dans les
+textes affichés (non résolues, sondé). Clés de champ GLOBALEMENT uniques (`deriveScreens`, collision inter-
+écrans -> 400). `buildFlowElements` = wrapper mono-écran (non-régression prouvée par test d'égalité).
+**Conditions** : `visibleIf` (input `{field: LIBELLÉ source, op eq|neq, value}` -> stocké `{fieldKey}`) ->
+propriété `visible` backticks ; sources dropdown/radio/optin du MÊME écran situées AVANT ; valeur ∈ options
+(sans apostrophe/backtick, refusées) ou booléen. Sondé live : champ masqué/vide **OMIS** du payload complete
+(-> `hasOwnProperty` du mapping suffit, aucun écrasement) ; un `required` caché ne bloque NI navigate NI
+complete. Stockage : colonne jsonb `flows.elements` **POLYMORPHE sans migration**, normalisée par `screensOf`
+à la lecture (null legacy / tableau plat historique = 1 écran / `{screens}` nouveau). `fields` reste DÉRIVÉ
+(`fieldsOfScreens`). Image = **base64 BRUT** embarqué. `bodyLimit` 7 Mo. Édition d'un DRAFT = `POST
+/{flow_id}/assets` en **multipart** (create en JSON inline — vérifié live) ; PUBLISHED immuable (409) ->
+duplication (ref régénéré). **Sonde committée** : `scripts/sonde-flow-live.mts` (fixture via le code produit
+POSTée en draft sur le WABA réel, exige `validation_errors == []`, delete) — à rejouer à chaque évolution
+du générateur.
 
 **Mapping webhook (défensif)** : à la réception d'un `nfm_reply`, `webhooks/flow-mapping.processFlowCompletions`
 retrouve le flow par `_ref` (`findByRef`), itère sur NOTRE mapping (clé champ -> clé user field, jamais les
@@ -331,4 +345,14 @@ touchée, les uuid internes restent la source de vérité des relations.
   `executor.apply` → dep `sendQuickMessage` → `MetaClient.sendInteractive` (interactive/button, filtre les titres
   vides en PRÉSERVANT l'index `btn:<slot>` → la branche par bouton reste stable, cap Meta 3 boutons/20 car.) ;
   worker : câblage type sendTemplate (texte littéral V1, log inbox best-effort). Fenêtre 24 h garantie par l'archi
-  (jamais node d'entrée). ⚠️ le node `flow` reste un no-op silencieux (fix différé, lot Flow avancé).
+  (jamais node d'entrée).
+- **Node `flow` (Lot 7, fini le no-op)** : `actionOf` -> `{kind:'sendFlow', flowId, flowName, body, cta}`
+  (flowId vide -> null+waiting, contrat template vide ; accroche défaut « Formulaire : <nom> », cta défaut =
+  cta du flow) -> dep executor `sendFlow` -> worker -> `MetaClient.sendFlowMessage` (interactive/flow,
+  `flow_message_version:'3'`, `flow_token` jetable jamais vide `${waId}-${Date.now()}` (corrélation par `_ref`,
+  pas le token), `flow_action_payload.screen = FORM`, `mode:'draft'` dispo pour tester un brouillon).
+  **Garde fenêtre 24 h à 3 étages** : `opensOutsideServiceWindow` (engine, détecte flow/quick_message en
+  OUVERTURE y compris derrière une chaîne tag/field) -> 400 au save du graphe (POST+PATCH workflows) ; skip
+  défensif + console.error dans `executor.start()` (graphes antérieurs) ; badge rouge UI sur le node
+  d'ouverture RÉEL (traversée des blocs synchrones dans WorkflowBuilder). L'avance du run sur `nfm_reply`
+  est la mécanique existante (fallback 1re arête, dédup lastMessageId) : inchangée.
