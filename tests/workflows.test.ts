@@ -71,6 +71,35 @@ describe('routes workflows', () => {
     await server.close();
   });
 
+  it('POST/PATCH : graphe qui OUVRE sur un flow ou un message rapide -> 400 (fenêtre 24 h)', async () => {
+    const { server, cap } = app();
+    // tag -> flow en ouverture (la chaîne synchrone compte aussi comme ouverture).
+    const flowEntry = {
+      nodes: [
+        { id: 'n1', type: 'tag', position: { x: 0, y: 0 }, data: { tag: 'vip' } },
+        { id: 'n2', type: 'flow', position: { x: 200, y: 0 }, data: { flowId: 'fl1', flowName: 'RDV' } },
+      ],
+      edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+    };
+    const post = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'X', graph: flowEntry } });
+    expect(post.statusCode).toBe(400);
+    expect(post.json<{ error: string }>().error).toContain('template');
+    const qmEntry = { nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { body: 'Salut', quickReplies: ['Oui'] } }], edges: [] };
+    const patch = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: qmEntry } });
+    expect(patch.statusCode).toBe(400);
+    expect(cap.created).toEqual([]);
+    expect(cap.updated).toEqual([]);
+    await server.close();
+  });
+
+  it('POST : flow NON configuré (sans flowId) en ouverture -> 201 (le graphe reste enregistrable pendant la construction)', async () => {
+    const { server } = app();
+    const wip = { nodes: [{ id: 'n1', type: 'flow', position: { x: 0, y: 0 }, data: {} }], edges: [] };
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'WIP', graph: wip } });
+    expect(res.statusCode).toBe(201);
+    await server.close();
+  });
+
   it('GET liste + GET un + 404', async () => {
     const { server } = app();
     const list = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });

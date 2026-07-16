@@ -349,6 +349,26 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
+  // Le node qui OUVRE réellement le scénario (miroir de engine.walk) : depuis la racine (sans arête
+  // entrante, défaut 1er node), on traverse les blocs SYNCHRONES (tag/field) ; le 1er bloc bloquant
+  // atteint est celui qui ouvre. Un flow/quick_message à cette place = 400 au save (fenêtre 24 h) ->
+  // le badge d'alerte doit s'afficher sur LUI, même derrière une chaîne tag -> flow (revue Lot 7).
+  const openingNodeId = (() => {
+    if (nodes.length === 0) return null;
+    const hasIncoming = new Set(edges.map((e) => e.target));
+    let cur: string | null = (nodes.find((n) => !hasIncoming.has(n.id)) ?? nodes[0]!).id;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const node = nodes.find((n) => n.id === cur);
+      if (!node) return null;
+      const wfType = (node.data as { wfType?: string }).wfType;
+      if (wfType !== 'tag' && wfType !== 'field') return node.id;
+      cur = edges.find((e) => e.source === cur)?.target ?? null;
+    }
+    return null;
+  })();
+
   return (
     <div className="flex flex-col gap-3 lg:h-full">
       <div className="flex flex-wrap items-center gap-2">
@@ -401,7 +421,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} isEntry={selected.id === openingNodeId} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -412,9 +432,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
 const cls = 'w-full rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 function ConfigPanel({
-  node, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
+  node, isEntry, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
 }: {
-  node: RFNode; onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
+  node: RFNode; isEntry: boolean; onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
   onCommitTag: (tag: string) => void;
 }) {
@@ -427,6 +447,14 @@ function ConfigPanel({
         <span className="text-sm font-semibold text-ink-900">{NODE_META[wfType].emoji} {t(...NODE_META[wfType].label)}</span>
         <button onClick={onDelete} className="text-xs text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
       </div>
+
+      {/* Fenêtre 24 h : le serveur REFUSE un graphe qui ouvre sur un flow/message rapide (400 à l'auto-save). */}
+      {isEntry && (wfType === 'flow' || wfType === 'quick_message') && (
+        <p className="rounded-lg border border-coral/40 bg-coral/5 px-2.5 py-2 text-[11px] leading-snug text-coral">
+          {t('Ce bloc ne peut pas OUVRIR le scénario (message hors fenêtre 24 h) : relie un bloc « Envoi template » en amont, sinon l’enregistrement est refusé.',
+            'This block cannot OPEN the scenario (message outside the 24 h window): connect a “Send template” block upstream, otherwise saving is rejected.')}
+        </p>
+      )}
 
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-600">{t('Type de bloc', 'Block type')}</label>
@@ -477,13 +505,24 @@ function ConfigPanel({
         );
       })()}
       {wfType === 'flow' && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Formulaire (publié)', 'Form (published)')}</label>
-          <select value={(d.flowId as string) ?? ''} onChange={(e) => { const f = flows.find((x) => x.id === e.target.value); onPatch({ flowId: e.target.value, flowName: f?.name ?? '' }); }} className={`${cls} bg-white`}>
-            <option value="">{t('Choisir…', 'Choose…')}</option>
-            {flows.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-          </select>
-          {flows.length === 0 && <p className="mt-1 text-[11px] text-ink-400">{t('Aucun formulaire publié. Crée-en un dans Contenu > Formulaires.', 'No published form. Create one in Content > Forms.')}</p>}
+        <div className="space-y-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Formulaire (publié)', 'Form (published)')}</label>
+            {/* La sélection pré-remplit le libellé du bouton avec le cta du formulaire (modifiable ensuite). */}
+            <select value={(d.flowId as string) ?? ''} onChange={(e) => { const f = flows.find((x) => x.id === e.target.value); onPatch({ flowId: e.target.value, flowName: f?.name ?? '', cta: (f?.cta ?? '') || 'Envoyer' }); }} className={`${cls} bg-white`}>
+              <option value="">{t('Choisir…', 'Choose…')}</option>
+              {flows.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            {flows.length === 0 && <p className="mt-1 text-[11px] text-ink-400">{t('Aucun formulaire publié. Crée-en un dans Contenu > Formulaires.', 'No published form. Create one in Content > Forms.')}</p>}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Texte d’accroche', 'Message text')}</label>
+            <textarea value={(d.body as string) ?? ''} onChange={(e) => onPatch({ body: e.target.value })} rows={2} className={cls} placeholder={t('Défaut : « Formulaire : <nom> »', 'Default: “Form: <name>”')} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Libellé du bouton', 'Button label')}</label>
+            <input value={(d.cta as string) ?? ''} maxLength={30} onChange={(e) => onPatch({ cta: e.target.value })} className={cls} placeholder={t('Envoyer', 'Send')} />
+          </div>
         </div>
       )}
       {wfType === 'tag' && (

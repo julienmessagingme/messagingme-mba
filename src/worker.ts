@@ -176,6 +176,24 @@ async function main(): Promise<void> {
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
     },
+    // Formulaire (node flow) : message interactif type flow, hors template. Atteint uniquement via `advance`
+    // (le save du graphe + la garde de `start` refusent un flow en ouverture) -> fenêtre 24 h ouverte. La
+    // complétion revient en nfm_reply : mapping des champs par _ref, indépendant du canal d'envoi.
+    sendFlow: async (tenant, waId, flowId, body, cta) => {
+      if (dryRun) return; // DRY_RUN : aucun appel Meta
+      if (flowId.trim() === '') return; // rien à envoyer (défense, actionOf filtre déjà)
+      const pn = await repo.getTenantPhoneNumberId(tenant);
+      if (!pn) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendFlow: aucun numéro pour le tenant ${tenant}, formulaire non envoyé à ${waId}`);
+        return;
+      }
+      const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+      // flow_token jamais vide (exigence Meta #131009) mais jetable : la corrélation passe par le _ref du flow_json.
+      const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}` });
+      // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
+      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+    },
   });
 
   await queue.work('webhook', async (data) => {

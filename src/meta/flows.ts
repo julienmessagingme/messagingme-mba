@@ -1,16 +1,16 @@
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import type { FetchLike } from './templates';
-import { buildFlowElements } from './flow-json';
-import type { FlowElement } from './flow-json';
+import { buildFlowScreens } from './flow-json';
+import type { FlowScreenDef } from './flow-json';
 
 export interface CreateFlowInput {
   name: string;
-  /** Éléments DÉJÀ dérivés (texte/image/champ avec clés). La validation vit dans la route, pas ici. */
-  elements: FlowElement[];
+  /** Écrans aux éléments DÉJÀ dérivés (clés + visibleIf résolus). La validation vit dans la route, pas ici. */
+  screens: FlowScreenDef[];
   /** Discriminant du flow, figé dans le payload complete (identifie le flow au retour nfm_reply). */
   ref: string;
-  /** Libellé du bouton final (Footer). Défaut « Envoyer ». */
+  /** Libellé du bouton final (Footer du dernier écran). Défaut « Envoyer ». */
   cta?: string;
 }
 
@@ -33,7 +33,7 @@ export class FlowJsonInvalidError extends Error {
 /**
  * Client des WhatsApp Flows (niveau WABA). Créer / publier / lister via l'API Graph. `fetchImpl`
  * injectable pour les tests. Ne lève que MetaApiError (réseau/HTTP) ou FlowJsonInvalidError (validation).
- * Calque de MetaTemplateClient : la génération du flow_json est interne (buildFlowElements).
+ * Calque de MetaTemplateClient : la génération du flow_json est interne (buildFlowScreens).
  */
 export class MetaFlowClient {
   constructor(
@@ -56,7 +56,7 @@ export class MetaFlowClient {
 
   /** POST /{waba}/flows — name + categories:['LEAD_GENERATION'] + flow_json (STRING). Statut initial DRAFT. */
   async create(wabaId: string, input: CreateFlowInput): Promise<{ id: string; status: string }> {
-    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref, input.cta);
+    const flowJson = buildFlowScreens(input.name, input.screens, this.flowJsonVersion, input.ref, input.cta);
     const json = (await this.call(`${this.baseUrl}/${this.version}/${wabaId}/flows`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -74,7 +74,7 @@ export class MetaFlowClient {
    * chez Meta (refusé) : la route amont doit garantir status=DRAFT (409 sinon). Relit validation_errors.
    */
   async updateDraft(flowId: string, input: CreateFlowInput): Promise<void> {
-    const flowJson = buildFlowElements(input.name, input.elements, this.flowJsonVersion, input.ref, input.cta);
+    const flowJson = buildFlowScreens(input.name, input.screens, this.flowJsonVersion, input.ref, input.cta);
     const fd = new FormData();
     fd.append('asset_type', 'FLOW_JSON');
     fd.append('name', 'flow.json');

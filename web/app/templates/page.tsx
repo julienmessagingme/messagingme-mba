@@ -726,7 +726,8 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                       tenantId={tenantId}
                       autoPublish
                       onCreated={(flow) => {
-                        setPubFlows((prev) => [{ id: flow.id, name: flow.name, status: 'PUBLISHED', fields: [], createdAt: new Date().toISOString() }, ...prev]);
+                        // FlowSummary synthétique (le sélecteur n'utilise que id/name) : screens inconnus ici -> null.
+                        setPubFlows((prev) => [{ id: flow.id, name: flow.name, status: 'PUBLISHED', fields: [], screens: null, createdAt: new Date().toISOString() }, ...prev]);
                         setButtons((list) => list.map((x) => (x.type === 'FLOW' ? { ...x, flowId: flow.id } : x)));
                         setCreatingFlow(false);
                       }}

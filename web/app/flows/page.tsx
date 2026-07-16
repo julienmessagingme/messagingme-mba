@@ -108,7 +108,7 @@ function FlowsInner({ session }: { session: Session }) {
             mode="edit"
             flowId={editing.id}
             initialName={editing.name}
-            initialElements={editing.elements}
+            initialScreens={editing.screens}
             initialMapping={editing.mapping}
             initialCta={editing.cta}
             onCreated={() => { void load(); setEditing(null); }}
@@ -152,13 +152,14 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
   onPreview: () => void; onEdit: () => void; onPublish: () => void; onDuplicate: () => void; onDelete: () => void;
 }) {
   const t = useT();
-  const hasElements = !!f.elements && f.elements.length > 0;
+  // Miniature = écran 1 seulement (crop) ; pas de resolveLabel -> pas de badge de condition dans la miniature.
+  const first = f.screens && f.screens.length > 0 ? f.screens[0] : undefined;
   return (
     <div className="flex flex-col rounded-2xl border border-ink-200 bg-white p-3 shadow-sm transition hover:border-brand-300">
       <button onClick={onPreview} title={t("Voir l'aperçu", 'View preview')} className="mb-2 block overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
         <div className="pointer-events-none h-44 overflow-hidden">
-          {hasElements
-            ? <FlowScreen elements={fromFlowElements(f.elements!)} cta={f.cta} title={f.name} />
+          {first
+            ? <FlowScreen elements={fromFlowElements(first.elements)} cta={f.cta} title={first.title || f.name} />
             : <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-ink-400">{t('Aperçu indisponible (formulaire ancien)', 'Preview unavailable (legacy form)')}</div>}
         </div>
       </button>
@@ -171,7 +172,7 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         {f.status === 'DRAFT' ? (
           <>
-            {hasElements
+            {first
               ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
               : <span className="text-ink-300" title={t('Formulaire antérieur au modèle riche : à recréer', 'Form predates the rich model: must be recreated')}>{t('Éditer', 'Edit')}</span>}
             <button onClick={onPublish} className="font-medium text-brand-600 hover:text-brand-700">{t('Publier', 'Publish')}</button>
@@ -185,10 +186,15 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
   );
 }
 
-/** Aperçu d'un formulaire au clic sur son nom : le VRAI écran WhatsApp Flow (rendu partagé avec le builder). */
+/** Aperçu d'un formulaire au clic sur son nom : le VRAI écran WhatsApp Flow (rendu partagé avec le builder),
+ *  avec pagination entre les écrans, footer contextuel (Continuer vs bouton final) et badges de condition. */
 function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () => void }) {
   const t = useT();
-  const els = flow.elements ?? null;
+  const [idx, setIdx] = useState(0);
+  const screens = flow.screens && flow.screens.length > 0 ? flow.screens : null;
+  const n = screens ? screens.length : 0;
+  const cur = Math.min(idx, Math.max(0, n - 1)); // borné (filet si les données changent sous la modale)
+  const scr = screens ? screens[cur] : null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -199,10 +205,27 @@ function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () =>
           </div>
           <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
         </div>
-        {!els || els.length === 0 ? (
+        {!scr ? (
           <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t('Formulaire antérieur au modèle riche (aperçu détaillé indisponible).', 'Form predates the rich model (detailed preview unavailable).')}</p>
         ) : (
-          <FlowScreen elements={fromFlowElements(els)} cta={flow.cta} title={flow.name} />
+          <>
+            {n > 1 && (
+              <div className="mb-2 flex items-center justify-center gap-3 text-xs text-ink-500">
+                <button onClick={() => setIdx(Math.max(0, cur - 1))} disabled={cur === 0} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran précédent', 'Previous screen')}>◀</button>
+                <span>{t('Écran', 'Screen')} {cur + 1}/{n}</span>
+                <button onClick={() => setIdx(Math.min(n - 1, cur + 1))} disabled={cur === n - 1} className="rounded px-1.5 py-0.5 hover:bg-ink-100 disabled:opacity-30" aria-label={t('Écran suivant', 'Next screen')}>▶</button>
+              </div>
+            )}
+            <FlowScreen
+              elements={fromFlowElements(scr.elements, (fieldKey) => {
+                // Le libellé du champ source se résout DANS le même écran (contrainte du modèle).
+                const src = scr.elements.find((el) => el.kind === 'field' && el.key === fieldKey);
+                return src && src.kind === 'field' ? src.label : null;
+              })}
+              cta={cur === n - 1 ? flow.cta : (scr.cta || t('Continuer', 'Continue'))}
+              title={scr.title || flow.name}
+            />
+          </>
         )}
       </div>
     </div>

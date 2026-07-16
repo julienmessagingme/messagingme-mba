@@ -621,13 +621,26 @@ export type FlowTextKind = 'heading' | 'subheading' | 'body' | 'caption';
 /** Types de champ qui exigent une liste d'options (dropdown/radio/checkbox). */
 export const FLOW_CHOICE_TYPES: FlowFieldType[] = ['dropdown', 'radio', 'checkbox'];
 
+/** Condition de visibilité ENVOYÉE : `field` = LIBELLÉ du champ source (le serveur résout libellé -> clé).
+ *  Source admissible : champ dropdown/radio/optin situé AVANT l'élément sur le MÊME écran. */
+export interface FlowVisibleIfInput {
+  field: string;
+  op: 'eq' | 'neq';
+  value: string | boolean;
+}
+/** Condition de visibilité STOCKÉE : `fieldKey` = clé dérivée du champ source (pour re-seeder l'édition). */
+export interface FlowVisibleIf {
+  fieldKey: string;
+  op: 'eq' | 'neq';
+  value: string | boolean;
+}
 /** Élément riche envoyé à la création d'un flow, dans l'ordre. `saveTo` (sur un champ) : clé du user field
  *  cible ; absent -> le serveur crée un user field d'après le libellé (mapping par défaut). `options` :
- *  requis pour les champs de choix (dropdown/radio/checkbox). */
+ *  requis pour les champs de choix (dropdown/radio/checkbox). `visibleIf` : affichage conditionnel. */
 export type FlowElementInput =
-  | { kind: FlowTextKind; text: string }
-  | { kind: 'image'; src: string }
-  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; saveTo?: string; options?: string[] };
+  | { kind: FlowTextKind; text: string; visibleIf?: FlowVisibleIfInput }
+  | { kind: 'image'; src: string; visibleIf?: FlowVisibleIfInput }
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; saveTo?: string; options?: string[]; visibleIf?: FlowVisibleIfInput };
 
 export interface FlowField {
   label: string;
@@ -637,31 +650,44 @@ export interface FlowField {
 }
 /** Élément riche STOCKÉ (les champs portent leur clé dérivée) — sert à pré-remplir l'édition. */
 export type FlowElement =
-  | { kind: FlowTextKind; text: string }
-  | { kind: 'image'; src: string }
-  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; key: string; options?: string[] };
+  | { kind: FlowTextKind; text: string; visibleIf?: FlowVisibleIf }
+  | { kind: 'image'; src: string; visibleIf?: FlowVisibleIf }
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; key: string; options?: string[]; visibleIf?: FlowVisibleIf };
+/** Écran STOCKÉ (le serveur normalise : un flow mono-écran historique arrive comme [{ elements }]).
+ *  `cta` = bouton « Continuer » d'un écran intermédiaire ; le DERNIER écran porte le cta global du flow. */
+export interface FlowScreen {
+  title?: string;
+  cta?: string;
+  elements: FlowElement[];
+}
+/** Écran ENVOYÉ à la création/édition (1 à 10 écrans, chaque écran >= 1 élément). */
+export interface FlowScreenInput {
+  title?: string;
+  cta?: string;
+  elements: FlowElementInput[];
+}
 export interface FlowSummary {
   id: string;
   name: string;
   status: 'DRAFT' | 'PUBLISHED';
   /** Champs dérivés (kind='field') — pour l'aperçu de la liste. */
   fields: FlowField[];
-  /** Éléments riches (null pour les flows antérieurs au modèle) — pour pré-remplir l'édition. */
-  elements?: FlowElement[] | null;
-  /** Mapping clé champ -> clé user field — pour restaurer le « enregistrer dans » à l'édition. */
+  /** Écrans riches (null pour les flows antérieurs au modèle) : aperçu détaillé + pré-remplissage de l'édition. */
+  screens?: FlowScreen[] | null;
+  /** Mapping clé champ -> clé user field, pour restaurer le « enregistrer dans » à l'édition. */
   mapping?: Record<string, string> | null;
-  /** Libellé du bouton final (Footer) — null/absent = défaut « Envoyer ». */
+  /** Libellé du bouton final (Footer du dernier écran) : null/absent = défaut « Envoyer ». */
   cta?: string | null;
   createdAt: string;
 }
 export function listFlows(tenantId: string): Promise<{ flows: FlowSummary[] }> {
   return request<{ flows: FlowSummary[] }>(`/tenants/${tenantId}/flows`);
 }
-export function createFlow(tenantId: string, input: { name: string; elements: FlowElementInput[]; cta?: string }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+export function createFlow(tenantId: string, input: { name: string; screens: FlowScreenInput[]; cta?: string }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
   return request(`/tenants/${tenantId}/flows`, { method: 'POST', body: JSON.stringify(input) });
 }
 /** Édite un flow DRAFT (réécrit le flow_json). 409 si le flow est PUBLISHED (immuable). */
-export function updateFlow(tenantId: string, flowId: string, input: { name: string; elements: FlowElementInput[]; cta?: string }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
+export function updateFlow(tenantId: string, flowId: string, input: { name: string; screens: FlowScreenInput[]; cta?: string }): Promise<{ id: string; status: string; name: string; fields: FlowField[] }> {
   return request(`/tenants/${tenantId}/flows/${flowId}`, { method: 'PATCH', body: JSON.stringify(input) });
 }
 /** « Dupliquer pour modifier » : clone un flow (publié ou draft) en un nouveau DRAFT éditable. */

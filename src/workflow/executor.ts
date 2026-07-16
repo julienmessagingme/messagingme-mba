@@ -22,6 +22,9 @@ export interface WorkflowExecutorDeps {
   /** Envoie un message interactif (texte + 2-3 réponses rapides) hors template. Atteint uniquement via `advance`
    *  (après réponse du contact), donc toujours dans la fenêtre de service 24 h. */
   sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[]): Promise<void>;
+  /** Envoie un formulaire (message interactif type flow) hors template. Même contrainte de fenêtre 24 h que
+   *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message. */
+  sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<void>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -49,6 +52,7 @@ export class WorkflowExecutor {
       if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
       else if (a.kind === 'sendQuickMessage') await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons);
+      else if (a.kind === 'sendFlow') await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta);
       else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
     }
   }
@@ -62,6 +66,14 @@ export class WorkflowExecutor {
     const entry = entryNode(graph);
     if (!entry) return;
     const { actions, rest } = walk(graph, entry);
+    // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
+    // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Le save du graphe refuse
+    // déjà cette forme (400) ; ceci est la défense runtime pour les graphes antérieurs à la garde.
+    if (actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
+      return;
+    }
     await this.apply(tenantId, contact.waId, actions, firstTemplateParams);
     const state = restToState(rest);
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);

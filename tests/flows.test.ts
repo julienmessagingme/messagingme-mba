@@ -31,7 +31,7 @@ describe('MetaFlowClient.create', () => {
   it('POST /{waba}/flows : categories LEAD_GENERATION + flow_json en STRING -> {id, DRAFT}', async () => {
     const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'flow1', success: true } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
-    const res = await client.create('waba1', { name: 'Contact', elements: ELEMENTS, ref: 'ref1' });
+    const res = await client.create('waba1', { name: 'Contact', screens: [{ elements: ELEMENTS }], ref: 'ref1' });
     expect(res).toEqual({ id: 'flow1', status: 'DRAFT' });
     expect(calls[0]!.url).toContain('/waba1/flows');
     const body = JSON.parse(calls[0]!.init.body as string);
@@ -45,13 +45,13 @@ describe('MetaFlowClient.create', () => {
   it('validation_errors non vide -> FlowJsonInvalidError', async () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'bad', validation_errors: [{ message: 'INVALID_FLOW_JSON_VERSION' }] } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '3.1', fn);
-    await expect(client.create('waba1', { name: 'X', elements: ELEMENTS, ref: 'ref1' })).rejects.toBeInstanceOf(FlowJsonInvalidError);
+    await expect(client.create('waba1', { name: 'X', screens: [{ elements: ELEMENTS }], ref: 'ref1' })).rejects.toBeInstanceOf(FlowJsonInvalidError);
   });
 
   it('HTTP non-ok -> MetaApiError', async () => {
     const { fn } = makeFetch([{ ok: false, status: 400, json: { error: { message: 'oops', code: 100 } } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
-    await expect(client.create('waba1', { name: 'X', elements: ELEMENTS, ref: 'ref1' })).rejects.toBeInstanceOf(MetaApiError);
+    await expect(client.create('waba1', { name: 'X', screens: [{ elements: ELEMENTS }], ref: 'ref1' })).rejects.toBeInstanceOf(MetaApiError);
   });
 });
 
@@ -96,15 +96,16 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[] }
+interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[] }
 
 function app(
   over: Partial<FlowRouteDeps> = {},
   opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null } = {},
 ) {
-  const cap: Cap = { inserted: [], published: [], metaCalls: [], updated: [], removed: [] };
-  const fakeFetch: FetchLike = async (url) => {
+  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [] };
+  const fakeFetch: FetchLike = async (url, init) => {
     cap.metaCalls.push(String(url));
+    cap.metaBodies.push(init?.body ?? null);
     const ok = opts.metaOk !== false;
     return { ok, status: ok ? 200 : 400, json: async () => (ok ? { id: 'flowNew', success: true, validation_errors: [] } : { error: { message: 'x', code: 100 } }) } as Response;
   };
@@ -112,7 +113,7 @@ function app(
     flows: new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch),
     getWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId),
     insertFlow: async (_t, id, name, _elements, ref, mapping) => { cap.inserted.push({ id, name, ref, mapping }); },
-    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], elements: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
+    listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], screens: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
     belongsTo: async () => opts.belongs !== false,
     markPublished: async (id) => { cap.published.push(id); return true; },
     // Mime la vraie ensureField : rejette un type qui n'est PAS un UserFieldType (text|number|date|boolean|url).
@@ -133,7 +134,7 @@ function draftFlow(over: Partial<FlowRow> = {}): FlowRow {
   return {
     id: 'fdraft', tenantId: 't1', name: 'Contact', status: 'DRAFT',
     fields: [{ label: 'Nom', type: 'text', required: true, key: 'nom' }],
-    elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true, key: 'nom' }],
+    screens: [{ elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true, key: 'nom' }] }],
     ref: 'ref-source', mapping: { nom: 'nom' }, cta: null,
     createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z',
     ...over,
@@ -141,6 +142,65 @@ function draftFlow(over: Partial<FlowRow> = {}): FlowRow {
 }
 
 const validBody = { name: 'Contact', elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true }, { kind: 'field', label: 'Email', type: 'email', required: false }] };
+
+describe('routes flows — multi-écrans + conditions (Lot 7)', () => {
+  it('POST body `screens` (2 écrans) -> 201 : flow_json Meta à 2 écrans FORM/FORM_B, complete agrégé par refs globales', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: {
+        name: 'RDV',
+        screens: [
+          { title: 'Étape 1', elements: [{ kind: 'field', label: 'Prénom', type: 'text', required: true }] },
+          { elements: [{ kind: 'field', label: 'Email', type: 'email', required: true }] },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ fields: Array<{ key: string }> }>().fields.map((f) => f.key)).toEqual(['prenom', 'email']);
+    const createBody = JSON.parse(cap.metaBodies[0] as string) as { flow_json: string };
+    const fj = JSON.parse(createBody.flow_json) as { screens: Array<{ id: string; layout: { children: Array<Record<string, unknown>> } }> };
+    expect(fj.screens.map((s) => s.id)).toEqual(['FORM', 'FORM_B']);
+    const footer = fj.screens[1]!.layout.children.at(-1)! as { 'on-click-action': { payload: Record<string, string> } };
+    expect(footer['on-click-action'].payload['prenom']).toBe('${screen.FORM.form.prenom}');
+    await server.close();
+  });
+
+  it('POST visibleIf invalide (source inconnue) -> 400 explicite, AUCUN appel Meta ; clés dupliquées INTER-écrans -> 400', async () => {
+    const { server, cap } = app();
+    const badCond = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'X', screens: [{ elements: [{ kind: 'field', label: 'T', type: 'text', required: false, visibleIf: { field: 'Fantôme', op: 'eq', value: 'x' } }] }] },
+    });
+    expect(badCond.statusCode).toBe(400);
+    expect(badCond.json<{ error: string }>().error).toContain('visibilité');
+    const dupKeys = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: {
+        name: 'X',
+        screens: [
+          { elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true }] },
+          { elements: [{ kind: 'field', label: ' nom ', type: 'text', required: true }] },
+        ],
+      },
+    });
+    expect(dupKeys.statusCode).toBe(400);
+    expect(cap.metaCalls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('POST > 10 écrans -> 400 ; écran sans élément -> 400 ; screens sans aucun champ -> 400', async () => {
+    const { server } = app();
+    const mk = (n: number) => Array.from({ length: n }, (_, i) => ({ elements: [{ kind: 'field', label: `Champ ${i}`, type: 'text', required: false }] }));
+    const tooMany = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', screens: mk(11) } });
+    expect(tooMany.statusCode).toBe(400);
+    const emptyScreen = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', screens: [{ elements: [] }] } });
+    expect(emptyScreen.statusCode).toBe(400);
+    const noField = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: { name: 'X', screens: [{ elements: [{ kind: 'body', text: 'juste du texte' }] }] } });
+    expect(noField.statusCode).toBe(400);
+    await server.close();
+  });
+});
 
 describe('routes flows — création', () => {
   it('POST admin -> 201, create Meta + insert appelés', async () => {
@@ -334,7 +394,7 @@ describe('MetaFlowClient.updateDraft', () => {
   it('POST /{flow}/assets en MULTIPART (FormData), sans content-type JSON forcé', async () => {
     const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { success: true, validation_errors: [] } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
-    await client.updateDraft('flow9', { name: 'Contact', elements: ELEMENTS, ref: 'r1' });
+    await client.updateDraft('flow9', { name: 'Contact', screens: [{ elements: ELEMENTS }], ref: 'r1' });
     expect(calls[0]!.url).toContain('/flow9/assets');
     expect(calls[0]!.init.method).toBe('POST');
     expect(calls[0]!.init.body instanceof FormData).toBe(true);
@@ -345,7 +405,7 @@ describe('MetaFlowClient.updateDraft', () => {
   it('validation_errors non vide -> FlowJsonInvalidError', async () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: { validation_errors: [{ message: 'INVALID' }] } }]);
     const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
-    await expect(client.updateDraft('flow9', { name: 'X', elements: ELEMENTS, ref: 'r' })).rejects.toBeInstanceOf(FlowJsonInvalidError);
+    await expect(client.updateDraft('flow9', { name: 'X', screens: [{ elements: ELEMENTS }], ref: 'r' })).rejects.toBeInstanceOf(FlowJsonInvalidError);
   });
 });
 
@@ -377,7 +437,7 @@ describe('routes flows — édition (PATCH, DRAFT only)', () => {
   });
 
   it('PATCH flow legacy (elements null) -> 422 (écraserait le contenu), aucun appel Meta', async () => {
-    const { server, cap } = app({}, { flow: draftFlow({ elements: null }) });
+    const { server, cap } = app({}, { flow: draftFlow({ screens: null }) });
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/flows/fdraft', ...h(adminTok), payload: validBody });
     expect(res.statusCode).toBe(422);
     expect(cap.metaCalls).toHaveLength(0);
@@ -412,7 +472,7 @@ describe('routes flows — duplication (D10)', () => {
   });
 
   it('POST duplicate flow sans elements (legacy) -> 422', async () => {
-    const { server } = app({}, { flow: draftFlow({ elements: null }) });
+    const { server } = app({}, { flow: draftFlow({ screens: null }) });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/fsrc/duplicate', ...h(adminTok) });
     expect(res.statusCode).toBe(422);
     await server.close();

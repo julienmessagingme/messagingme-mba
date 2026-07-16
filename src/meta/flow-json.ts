@@ -66,32 +66,137 @@ export class DuplicateFieldKeyError extends Error {
 export const FLOW_REF_KEY = '_ref';
 
 export type FlowTextKind = 'heading' | 'subheading' | 'body' | 'caption';
-export interface FlowTextEl { kind: FlowTextKind; text: string }
+
+/**
+ * Condition de visibilité d'un élément (Lot 7c). CÔTÉ INPUT, `field` = le LIBELLÉ du champ source (le front
+ * ne connaît pas les clés dérivées) ; côté STOCKÉ, `fieldKey` = la clé dérivée (stable pour la génération).
+ * V1 : source = dropdown/radio (valeur = libellé d'option, id==title) ou optin (booléen), sur le MÊME écran,
+ * AVANT l'élément. Sondé live 2026-07-17 : un élément masqué est OMIS du payload complete (aucun écrasement).
+ */
+export interface VisibleIfInput { field: string; op: 'eq' | 'neq'; value: string | boolean }
+export interface VisibleIf { fieldKey: string; op: 'eq' | 'neq'; value: string | boolean }
+
+interface WithVisibleIfInput { visibleIf?: VisibleIfInput }
+interface WithVisibleIf { visibleIf?: VisibleIf }
+
+export interface FlowTextElInput extends WithVisibleIfInput { kind: FlowTextKind; text: string }
+export interface FlowTextEl extends WithVisibleIf { kind: FlowTextKind; text: string }
 /** Image = base64 BRUT (sans préfixe data-URL), vérifié live. Pas le chemin carousel (media handle). */
-export interface FlowImageEl { kind: 'image'; src: string }
-export interface FlowFieldElInput extends FlowFieldInput { kind: 'field' }
-export type FlowElementInput = FlowTextEl | FlowImageEl | FlowFieldElInput;
-export interface FlowFieldEl extends FlowField { kind: 'field' }
+export interface FlowImageElInput extends WithVisibleIfInput { kind: 'image'; src: string }
+export interface FlowImageEl extends WithVisibleIf { kind: 'image'; src: string }
+export interface FlowFieldElInput extends FlowFieldInput, WithVisibleIfInput { kind: 'field' }
+export type FlowElementInput = FlowTextElInput | FlowImageElInput | FlowFieldElInput;
+export interface FlowFieldEl extends FlowField, WithVisibleIf { kind: 'field' }
 export type FlowElement = FlowTextEl | FlowImageEl | FlowFieldEl;
+
+/** Écran d'un formulaire multi-écrans. `cta` = libellé du Footer de CET écran s'il est intermédiaire
+ *  (défaut « Continuer ») ; le DERNIER écran porte le cta global du flow (défaut « Envoyer »). */
+export interface FlowScreenInput { title?: string; cta?: string; elements: FlowElementInput[] }
+export interface FlowScreenDef { title?: string; cta?: string; elements: FlowElement[] }
+
+/** Meta borne le routing à 10 branches ; on borne pareil le nombre d'écrans. */
+export const MAX_SCREENS = 10;
+
+/** Id d'écran : lettres + underscores UNIQUEMENT (sondé live : un chiffre est REJETÉ par la validation
+ *  Meta). Écran 1 = FORM pour toujours (navigate_screen des templates approuvés + flow_action_payload). */
+export function screenId(index: number): string {
+  return index === 0 ? FLOW_ENTRY_SCREEN : `${FLOW_ENTRY_SCREEN}_${String.fromCharCode(65 + index)}`; // FORM, FORM_B, FORM_C…
+}
+
+/** Condition invalide (source inconnue, après l'élément, autre écran, mauvais type, valeur hors options…). */
+export class VisibleIfError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VisibleIfError';
+  }
+}
 
 export const FLOW_TEXT_KINDS: readonly FlowTextKind[] = ['heading', 'subheading', 'body', 'caption'];
 
-/** Dérive les clés des éléments de type `field` (les autres passent tels quels). Collision -> erreur. */
+/** Dérive les clés des éléments de type `field` (les autres passent tels quels). Collision -> erreur.
+ *  Mono-écran historique : conservé pour les appels directs, la dérivation multi passe par deriveScreens. */
 export function deriveElements(elements: FlowElementInput[]): FlowElement[] {
-  const byKey = new Map<string, string>();
-  return elements.map((el) => {
-    if (el.kind !== 'field') return el;
-    const key = slugify(el.label);
-    const prev = byKey.get(key);
-    if (prev !== undefined) throw new DuplicateFieldKeyError(prev, el.label, key);
-    byKey.set(key, el.label);
-    return { ...el, key };
+  return deriveScreens([{ elements }])[0]!.elements;
+}
+
+/** Types de champ admissibles comme SOURCE d'une condition de visibilité (V1). checkbox exclu : sa valeur
+ *  est un tableau (multi-sélection), une égalité simple ne s'y applique pas. */
+const VISIBLE_SOURCE_TYPES: readonly FlowFieldType[] = ['dropdown', 'radio', 'optin'];
+
+/**
+ * Dérive les clés de champ de TOUS les écrans (unicité GLOBALE : le payload complete et le mapping sont
+ * plats) + résout/valide les `visibleIf` (libellé source -> clé). Collision -> DuplicateFieldKeyError ;
+ * condition invalide -> VisibleIfError. L'ordre écran par écran est préservé.
+ */
+export function deriveScreens(screens: FlowScreenInput[]): FlowScreenDef[] {
+  const byKey = new Map<string, string>(); // clé -> libellé (collisions inter-écrans comprises)
+  // 1re passe : clés globales (le visibleIf INPUT est retiré, il est résolu en clés à la 2e passe).
+  const derived: FlowScreenDef[] = screens.map((s) => ({
+    ...(s.title !== undefined ? { title: s.title } : {}),
+    ...(s.cta !== undefined ? { cta: s.cta } : {}),
+    elements: s.elements.map((el): FlowElement => {
+      const { visibleIf: _vi, ...rest } = el;
+      if (rest.kind !== 'field') return rest as FlowElement;
+      const key = slugify(rest.label);
+      const prev = byKey.get(key);
+      if (prev !== undefined) throw new DuplicateFieldKeyError(prev, rest.label, key);
+      byKey.set(key, rest.label);
+      return { ...rest, key } as FlowElement;
+    }),
+  }));
+  // 2e passe : résolution des visibleIf (source = champ du MÊME écran, situé AVANT, type admissible).
+  screens.forEach((s, si) => {
+    s.elements.forEach((el, ei) => {
+      const v = el.visibleIf;
+      if (v === undefined) return;
+      const label = String(v.field ?? '').trim();
+      const before = derived[si]!.elements.slice(0, ei).filter((e): e is FlowFieldEl => e.kind === 'field');
+      const source = before.find((f) => f.label === label);
+      if (!source) throw new VisibleIfError(`condition de visibilité : champ source « ${label} » introuvable AVANT l'élément sur le même écran`);
+      if (!VISIBLE_SOURCE_TYPES.includes(source.type)) {
+        throw new VisibleIfError(`condition de visibilité : le champ source « ${label} » doit être une liste (choix unique) ou un consentement`);
+      }
+      if (v.op !== 'eq' && v.op !== 'neq') throw new VisibleIfError('condition de visibilité : opérateur inconnu (eq/neq)');
+      if (source.type === 'optin') {
+        if (typeof v.value !== 'boolean') throw new VisibleIfError(`condition de visibilité : « ${label} » est un consentement, la valeur doit être coché/non coché`);
+      } else {
+        if (typeof v.value !== 'string' || !(source.options ?? []).includes(v.value)) {
+          throw new VisibleIfError(`condition de visibilité : la valeur doit être une option de « ${label} »`);
+        }
+        // La valeur s'insère dans une expression Flow JSON entre quotes simples : pas d'échappement documenté
+        // par Meta -> on refuse les caractères qui casseraient l'expression plutôt que de générer un flow invalide.
+        if (v.value.includes("'") || v.value.includes('`')) {
+          throw new VisibleIfError(`condition de visibilité : l'option « ${v.value} » contient une apostrophe ou un accent grave, non supporté dans une condition`);
+        }
+      }
+      (derived[si]!.elements[ei] as { visibleIf?: VisibleIf }).visibleIf = { fieldKey: source.key, op: v.op, value: v.value };
+    });
   });
+  return derived;
 }
 
 /** Extrait les champs (kind='field') d'une liste d'éléments -> réutilisable pour FlowRow.fields + mapping. */
 export function fieldsOf(elements: FlowElement[]): FlowField[] {
   return elements.filter((e): e is FlowFieldEl => e.kind === 'field').map(({ label, type, required, key }) => ({ label, type, required, key }));
+}
+
+/** Tous les champs d'un formulaire multi-écrans, aplatis dans l'ordre (écran par écran). */
+export function fieldsOfScreens(screens: FlowScreenDef[]): FlowField[] {
+  return screens.flatMap((s) => fieldsOf(s.elements));
+}
+
+/**
+ * Normalise la colonne `flows.elements` (jsonb polymorphe, AUCUNE migration) vers des écrans :
+ * - null / vide -> null (flow legacy pré-modèle-riche, gardes 422 existantes) ;
+ * - tableau plat (mono-écran historique) -> [{ elements }] ;
+ * - { screens: [...] } (forme multi, écrite par le Lot 7) -> telle quelle.
+ */
+export function screensOf(stored: unknown): FlowScreenDef[] | null {
+  if (stored == null) return null;
+  if (Array.isArray(stored)) return stored.length === 0 ? null : [{ elements: stored as FlowElement[] }];
+  const obj = stored as { screens?: unknown };
+  if (Array.isArray(obj.screens) && obj.screens.length > 0) return obj.screens as FlowScreenDef[];
+  return null;
 }
 
 const TEXT_COMPONENT: Record<FlowTextKind, string> = {
@@ -101,39 +206,68 @@ const TEXT_COMPONENT: Record<FlowTextKind, string> = {
   caption: 'TextCaption',
 };
 
-/** Composant Flow JSON d'un élément riche (texte / image / champ). */
+/**
+ * Expression Flow JSON de la propriété `visible` (backticks = expression imbriquée, v6.0+, sondée OK en
+ * 7.2). optin -> booléen nu ; dropdown/radio -> comparaison au libellé d'option (id==title). La valeur a
+ * été validée sans apostrophe/backtick à la dérivation.
+ */
+function visibleExpr(v: VisibleIf): string {
+  const op = v.op === 'eq' ? '==' : '!=';
+  const rhs = typeof v.value === 'boolean' ? String(v.value) : `'${v.value}'`;
+  return `\`\${form.${v.fieldKey}} ${op} ${rhs}\``;
+}
+
+/** Composant Flow JSON d'un élément riche (texte / image / champ), avec sa condition de visibilité éventuelle. */
 function elementComponent(el: FlowElement): Record<string, unknown> {
-  if (el.kind === 'image') return { type: 'Image', src: el.src, height: 200, 'scale-type': 'contain' };
-  if (el.kind !== 'field') return { type: TEXT_COMPONENT[el.kind], text: el.text };
-  return componentFor(el);
+  const visible = el.visibleIf ? { visible: visibleExpr(el.visibleIf) } : {};
+  if (el.kind === 'image') return { type: 'Image', src: el.src, height: 200, 'scale-type': 'contain', ...visible };
+  if (el.kind !== 'field') return { type: TEXT_COMPONENT[el.kind], text: el.text, ...visible };
+  return { ...componentFor(el), ...visible };
 }
 
 /**
- * Construit le flow_json RICHE : un écran terminal, éléments (texte/image/champ) dans l'ordre + Footer
- * `complete` dont le payload renvoie chaque champ (`${form.<key>}`) ET une constante `_ref` (discriminant
- * pour identifier le flow au retour du nfm_reply). Pur et déterministe. `ref` figé à la création.
+ * Construit le flow_json multi-écrans. Ids d'écrans FORM, FORM_B, FORM_C… (lettres+underscores UNIQUEMENT,
+ * sondé : un chiffre est rejeté ; l'écran 1 reste FORM, baké dans les templates approuvés). PAS de
+ * routing_model (facultatif sans endpoint, sondé en 7.2 et 7.3). Écrans intermédiaires : Footer `navigate`
+ * (payload {}) ; écran final terminal : Footer `complete` dont le payload agrège TOUS les champs — refs
+ * globales `\${screen.<ID>.form.<clé>}` pour les écrans précédents (résolution dans les payloads sondée),
+ * `\${form.<clé>}` pour le dernier — plus la constante `_ref` (discriminant du retour nfm_reply). Un champ
+ * masqué (visible) ou vide est OMIS du payload par Meta (sondé) : le mapping webhook reste intact.
+ * Pur et déterministe. `ref` figé à la création.
  */
-export function buildFlowElements(name: string, elements: FlowElement[], version: string, ref: string, cta?: string): Record<string, unknown> {
+export function buildFlowScreens(name: string, screens: FlowScreenDef[], version: string, ref: string, cta?: string): Record<string, unknown> {
+  const last = screens.length - 1;
   const payload: Record<string, string> = {};
-  for (const f of fieldsOf(elements)) payload[f.key] = `\${form.${f.key}}`;
+  screens.forEach((s, i) => {
+    for (const f of fieldsOf(s.elements)) {
+      payload[f.key] = i === last ? `\${form.${f.key}}` : `\${screen.${screenId(i)}.form.${f.key}}`;
+    }
+  });
   payload[FLOW_REF_KEY] = ref;
-  const label = (cta ?? '').trim().slice(0, 30) || 'Envoyer';
+  const finalLabel = (cta ?? '').trim().slice(0, 30) || 'Envoyer';
   return {
     version,
-    screens: [
-      {
-        id: FLOW_ENTRY_SCREEN,
-        title: name.slice(0, 30) || 'Formulaire',
-        terminal: true,
-        success: true,
+    screens: screens.map((s, i) => {
+      const footer = i === last
+        ? { type: 'Footer', label: finalLabel, 'on-click-action': { name: 'complete', payload } }
+        : { type: 'Footer', label: (s.cta ?? '').trim().slice(0, 30) || 'Continuer', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: screenId(i + 1) }, payload: {} } };
+      return {
+        id: screenId(i),
+        title: (s.title ?? '').trim().slice(0, 30) || name.slice(0, 30) || 'Formulaire',
+        ...(i === last ? { terminal: true, success: true } : {}),
         data: {},
         layout: {
           type: 'SingleColumnLayout',
-          children: [...elements.map(elementComponent), { type: 'Footer', label, 'on-click-action': { name: 'complete', payload } }],
+          children: [...s.elements.map(elementComponent), footer],
         },
-      },
-    ],
+      };
+    }),
   };
+}
+
+/** Mono-écran historique : enveloppe d'un seul écran (compat interne + tests existants). */
+export function buildFlowElements(name: string, elements: FlowElement[], version: string, ref: string, cta?: string): Record<string, unknown> {
+  return buildFlowScreens(name, [{ elements }], version, ref, cta);
 }
 
 /** Composant Flow JSON d'un champ selon son type. */

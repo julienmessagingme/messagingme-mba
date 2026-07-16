@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { walk, entryNode, nextNode, nextNodeByHandle } from '../src/workflow/engine';
+import { walk, entryNode, nextNode, nextNodeByHandle, opensOutsideServiceWindow } from '../src/workflow/engine';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 
 const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}): WorkflowGraph['nodes'][number] => ({ id, type, position: { x: 0, y: 0 }, data });
@@ -67,6 +67,57 @@ describe('walk : quick_message', () => {
   it('aucune réponse non vide -> pas d\'action', () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['', ''] })], edges: [] };
     expect(walk(g, 'qm').actions).toEqual([]);
+  });
+});
+
+describe('walk : node flow (Lot 7 : envoi du formulaire, fini le no-op)', () => {
+  it('flowId + nom -> action sendFlow avec accroche et cta par défaut, waiting', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'Prise de RDV' })], edges: [] };
+    const r = walk(g, 'f');
+    expect(r.actions).toEqual([{ kind: 'sendFlow', flowId: 'fl1', flowName: 'Prise de RDV', body: 'Formulaire : Prise de RDV', cta: 'Envoyer' }]);
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'f' });
+  });
+  it('accroche et cta du node prioritaires (cta tronqué à 30)', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'RDV', body: ' Réserve ton créneau ', cta: 'Un libellé beaucoup trop long pour un bouton' })], edges: [] };
+    expect(walk(g, 'f').actions).toEqual([
+      { kind: 'sendFlow', flowId: 'fl1', flowName: 'RDV', body: 'Réserve ton créneau', cta: 'Un libellé beaucoup trop long ' },
+    ]);
+  });
+  it('sans flowId -> pas d\'action mais attend quand même (bloc bloquant, contrat historique)', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'flow', {})], edges: [] };
+    const r = walk(g, 'f');
+    expect(r.actions).toEqual([]);
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'f' });
+  });
+});
+
+describe('opensOutsideServiceWindow (garde fenêtre 24 h à l\'ouverture)', () => {
+  it('flow (ou chaîne synchrone -> flow) en ouverture -> true', () => {
+    const direct: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1' })], edges: [] };
+    expect(opensOutsideServiceWindow(direct)).toBe(true);
+    const chained: WorkflowGraph = {
+      nodes: [n('t', 'tag', { tag: 'vip' }), n('f', 'flow', { flowId: 'fl1' })],
+      edges: [e('e1', 't', 'f')],
+    };
+    expect(opensOutsideServiceWindow(chained)).toBe(true);
+  });
+  it('quick_message en ouverture -> true ; template en ouverture -> false', () => {
+    const qm: WorkflowGraph = { nodes: [n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] })], edges: [] };
+    expect(opensOutsideServiceWindow(qm)).toBe(true);
+    expect(opensOutsideServiceWindow(linear)).toBe(false);
+  });
+  it('flow APRÈS un template (pas en ouverture) -> false ; flow d\'ouverture NON configuré (sans flowId) -> false', () => {
+    const after: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('f', 'flow', { flowId: 'fl1' })],
+      edges: [e('e1', 'tpl', 'f')],
+    };
+    expect(opensOutsideServiceWindow(after)).toBe(false);
+    // Node flow vide : aucune action produite -> le graphe reste enregistrable pendant la construction.
+    const unconfigured: WorkflowGraph = { nodes: [n('f', 'flow', {})], edges: [] };
+    expect(opensOutsideServiceWindow(unconfigured)).toBe(false);
+  });
+  it('graphe vide -> false', () => {
+    expect(opensOutsideServiceWindow({ nodes: [], edges: [] })).toBe(false);
   });
 });
 

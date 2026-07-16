@@ -4,6 +4,7 @@ import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import { messagingTarget } from './types';
 import type { SendResult, TemplateSpec, MarketingParams } from './types';
+import { FLOW_ENTRY_SCREEN } from './flow-json';
 
 export interface MetaClientOpts {
   transport: HttpTransport;
@@ -110,6 +111,38 @@ export class MetaClient {
         type: 'button',
         body: { text: body },
         action: { buttons: replyButtons },
+      },
+    });
+    return { messageId: this.messageId(json) };
+  }
+
+  /**
+   * Message interactif de type FLOW (formulaire) hors template — fenêtre de service 24 h requise.
+   * Params requis Meta : flow_message_version '3', flow_cta, flow_id. `flow_token` jamais vide (#131009)
+   * mais la corrélation au retour passe par le `_ref` baké dans le flow_json, PAS par le token (jetable).
+   * `screen` = id de l'écran d'ENTRÉE (défaut FORM, celui des flows du générateur). `mode: 'draft'` permet
+   * de tester un brouillon non publié (sondé 2026-07-17) ; nominal = published (défaut Meta, omis).
+   */
+  async sendFlowMessage(to: string, opts: { body: string; flowId: string; cta: string; flowToken?: string; screen?: string; mode?: 'draft' | 'published' }): Promise<SendResult> {
+    const json = await this.call('messages', {
+      messaging_product: 'whatsapp',
+      ...messagingTarget(to),
+      type: 'interactive',
+      interactive: {
+        type: 'flow',
+        body: { text: opts.body },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+            flow_token: (opts.flowToken ?? '').trim() || 'mba-flow',
+            flow_id: opts.flowId,
+            flow_cta: opts.cta,
+            flow_action: 'navigate',
+            flow_action_payload: { screen: opts.screen ?? FLOW_ENTRY_SCREEN },
+            ...(opts.mode === 'draft' ? { mode: 'draft' } : {}),
+          },
+        },
       },
     });
     return { messageId: this.messageId(json) };

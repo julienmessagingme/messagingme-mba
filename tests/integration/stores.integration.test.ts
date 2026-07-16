@@ -492,6 +492,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       setField: (t, w, k, v) => contactStore.mergeFieldsByPhone(t, w, { [k]: v }).then(() => undefined),
       sendTemplate: async (_t, _w, name) => { sends.push(name); },
       sendQuickMessage: async (_t, _w, body) => { sends.push(`qm:${body}`); },
+      sendFlow: async (_t, _w, flowId) => { sends.push(`flow:${flowId}`); },
     });
 
     await ex.start(tenantId, wfId, graph, { waId, contactId: null });

@@ -98,6 +98,51 @@ describe('MetaClient.sendInteractive', () => {
   });
 });
 
+describe('MetaClient.sendFlowMessage (Lot 7 : formulaire hors template)', () => {
+  it('body interactive/flow complet : version 3, token jamais vide, flow_id, cta, navigate vers FORM, PAS de mode en nominal', async () => {
+    const t = new FakeTransport([okBody('wamid.f1')]);
+    const res = await client(t).sendFlowMessage('33600000000', { body: 'Réserve ton créneau', flowId: 'fl123', cta: 'Réserver', flowToken: '33600-42' });
+    expect(res.messageId).toBe('wamid.f1');
+    expect(t.requests[0]!.body).toEqual({
+      messaging_product: 'whatsapp',
+      to: '33600000000',
+      type: 'interactive',
+      interactive: {
+        type: 'flow',
+        body: { text: 'Réserve ton créneau' },
+        action: {
+          name: 'flow',
+          parameters: {
+            flow_message_version: '3',
+            flow_token: '33600-42',
+            flow_id: 'fl123',
+            flow_cta: 'Réserver',
+            flow_action: 'navigate',
+            flow_action_payload: { screen: 'FORM' },
+          },
+        },
+      },
+    });
+  });
+
+  it('flowToken absent/vide -> repli « mba-flow » (Meta exige un token non vide, #131009)', async () => {
+    const t = new FakeTransport([okBody('wamid.f2')]);
+    await client(t).sendFlowMessage('33600000000', { body: 'x', flowId: 'fl1', cta: 'Go', flowToken: '  ' });
+    const body = t.requests[0]!.body as { interactive: { action: { parameters: { flow_token: string } } } };
+    expect(body.interactive.action.parameters.flow_token).toBe('mba-flow');
+  });
+
+  it('mode draft (test d\'un brouillon) ajouté seulement sur demande ; BSUID -> recipient', async () => {
+    const t = new FakeTransport([okBody('wamid.f3')]);
+    await client(t).sendFlowMessage('BSUID_xyz', { body: 'x', flowId: 'fl1', cta: 'Go', mode: 'draft' });
+    const body = t.requests[0]!.body as Record<string, unknown>;
+    expect(body['recipient']).toBe('BSUID_xyz');
+    expect(body).not.toHaveProperty('to');
+    const params = (body as { interactive: { action: { parameters: Record<string, unknown> } } }).interactive.action.parameters;
+    expect(params['mode']).toBe('draft');
+  });
+});
+
 const liteClient = (transport: HttpTransport) =>
   new MetaClient({ transport, token: 'TOK', phoneNumberId: '123', version: 'v25.0', marketingViaLite: true });
 

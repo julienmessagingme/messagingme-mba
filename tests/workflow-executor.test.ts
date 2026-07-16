@@ -31,6 +31,7 @@ function make(graph: WorkflowGraph) {
     setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
     sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
     sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
+    sendFlow: async (_t, _w, flowId, body, cta) => { calls.push(`flow:${flowId}:${body}:${cta}`); },
   });
   return { ex, runs, calls };
 }
@@ -57,12 +58,62 @@ describe('WorkflowExecutor', () => {
     expect(calls).toEqual(['tag:vip', 'tpl:promo']); // pas de nouvel envoi (inbox n'a pas d'action)
   });
 
-  it('start : quick_message envoie le message interactif, run en attente au bloc', async () => {
+  // Garde fenêtre 24 h (Lot 7) : `start` = chemin campagne, HORS fenêtre de service -> un scénario qui OUVRE
+  // sur un message de session (quick_message/flow) est refusé en bloc (aucune action, aucun run).
+  it('start : quick_message en OUVERTURE -> refusé (fenêtre 24 h), aucune action, aucun run', async () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['Oui', 'Non'] })], edges: [] };
     const { ex, runs, calls } = make(g);
     await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
-    expect(calls).toEqual(['qm:Salut']);
+    expect(calls).toEqual([]);
+    expect(runs.run).toBeNull();
+  });
+
+  it('start : tag -> flow en ouverture -> refusé EN BLOC (le tag non plus n\'est pas appliqué)', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('t', 'tag', { tag: 'vip' }), n('f', 'flow', { flowId: 'fl1', flowName: 'RDV' })],
+      edges: [e('e1', 't', 'f')],
+    };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual([]);
+    expect(runs.run).toBeNull();
+  });
+
+  it('advance : quick_message APRÈS un template est envoyé (fenêtre ouverte), run en attente au bloc', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('qm', 'quick_message', { body: 'Salut', quickReplies: ['Oui', 'Non'] })],
+      edges: [e('e1', 'tpl', 'qm')],
+    };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tpl:promo']);
+    await ex.advance('t1', '33600', 'm1');
+    expect(calls).toEqual(['tpl:promo', 'qm:Salut']);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'qm' });
+  });
+
+  it('advance : node flow APRÈS un template -> sendFlow (flowId + accroche par défaut + cta), attente au bloc', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('f', 'flow', { flowId: 'fl1', flowName: 'RDV' })],
+      edges: [e('e1', 'tpl', 'f')],
+    };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm1');
+    expect(calls).toEqual(['tpl:promo', 'flow:fl1:Formulaire : RDV:Envoyer']);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'f' });
+  });
+
+  it('advance : node flow SANS flowId -> aucune action (no-op), run en attente (même contrat que template vide)', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('f', 'flow', {})],
+      edges: [e('e1', 'tpl', 'f')],
+    };
+    const { ex, runs, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm1');
+    expect(calls).toEqual(['tpl:promo']);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'f' });
   });
 
   it('workflow 100% synchrone (tag seul) : action appliquée, AUCUN run persistant', async () => {
@@ -138,6 +189,7 @@ describe('WorkflowExecutor', () => {
       setField: async () => {},
       sendTemplate: async (_t, _w, _name, _lang, _btns, explicitParams) => { captured.push(explicitParams); },
       sendQuickMessage: async () => {},
+      sendFlow: async () => {},
     });
     return { ex, captured };
   }

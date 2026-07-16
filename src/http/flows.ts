@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { deriveElements, fieldsOf, isFlowFieldType, isChoiceFieldType, flowFieldToUserFieldType, DuplicateFieldKeyError } from '../meta/flow-json';
-import type { FlowElementInput, FlowElement, FlowFieldElInput } from '../meta/flow-json';
+import { deriveScreens, fieldsOfScreens, isFlowFieldType, isChoiceFieldType, flowFieldToUserFieldType, DuplicateFieldKeyError, VisibleIfError, MAX_SCREENS } from '../meta/flow-json';
+import type { FlowElementInput, FlowScreenInput, FlowScreenDef, FlowFieldElInput, VisibleIfInput } from '../meta/flow-json';
 import type { MetaFlowClient } from '../meta/flows';
 import type { FlowRow } from '../flow/store.pg';
 import type { UserFieldType } from '../crm/types';
@@ -10,16 +10,16 @@ import type { Guard } from '../auth/middleware';
 export interface FlowRouteDeps {
   flows: MetaFlowClient;
   getWabaId(tenantId: string): Promise<string | null>;
-  insertFlow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
+  insertFlow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
   listFlows(tenantId: string): Promise<FlowRow[]>;
   belongsTo(flowId: string, tenantId: string): Promise<boolean>;
   markPublished(flowId: string, tenantId: string): Promise<boolean>;
   /** Crée le user field s'il n'existe pas (mapping par défaut : chaque champ -> son propre user field). */
   ensureUserField(tenantId: string, label: string, type: UserFieldType): Promise<void>;
-  /** Un flow par id, scopé tenant (édition/duplication : lire status + elements). null si absent. */
+  /** Un flow par id, scopé tenant (édition/duplication : lire status + screens). null si absent. */
   getFlow(flowId: string, tenantId: string): Promise<FlowRow | null>;
   /** Met à jour un flow DRAFT en base (fields re-dérivé côté store). true si une ligne DRAFT a bougé. */
-  updateFlowRow(tenantId: string, id: string, name: string, elements: FlowElement[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
+  updateFlowRow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
   /** Retire le flow du store local (après suppression/dépréciation Meta). true si supprimé. */
   removeFlowRow(flowId: string, tenantId: string): Promise<boolean>;
 }
@@ -35,29 +35,40 @@ const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() 
 const IMG_MAX = 400 * 1024; // base64 borné (~300KB binaire) — l'image Flow s'embarque dans le flow_json
 const stripDataUrl = (s: string): string => s.replace(/^data:image\/[a-z]+;base64,/i, '');
 
-/**
- * Valide le corps riche : éléments texte/image/champ + `saveTo` optionnel par champ (user field cible).
- * Renvoie les éléments (sans saveTo, pour le flow_json) + les saveTo alignés sur l'ordre des champs.
- * null si invalide (au moins 1 champ requis, sinon rien à collecter).
- */
-function parseFlowBody(v: unknown): { elements: FlowElementInput[]; saveTos: Array<string | undefined> } | null {
+/** Forme (pas la sémantique) d'un visibleIf : { field: libellé source, op eq/neq, value string|boolean }.
+ *  La résolution/validation sémantique (source existante, avant, même écran, valeur ∈ options) vit dans
+ *  deriveScreens. undefined si absent, null si malformé. */
+function parseVisibleIf(raw: unknown): VisibleIfInput | undefined | null {
+  if (raw === undefined || raw === null) return undefined;
+  const v = raw as { field?: unknown; op?: unknown; value?: unknown };
+  if (!nonEmpty(v.field)) return null;
+  if (v.op !== 'eq' && v.op !== 'neq') return null;
+  if (typeof v.value !== 'string' && typeof v.value !== 'boolean') return null;
+  return { field: v.field.trim(), op: v.op, value: v.value };
+}
+
+/** Valide UNE liste d'éléments (un écran). Renvoie null si invalide ; les saveTo sont POUSSÉS dans
+ *  l'accumulateur global (alignés sur l'ordre global des champs, écran par écran). */
+function parseElements(v: unknown, saveTos: Array<string | undefined>): { elements: FlowElementInput[]; fieldCount: number } | null {
   if (!Array.isArray(v) || v.length === 0) return null;
   const elements: FlowElementInput[] = [];
-  const saveTos: Array<string | undefined> = [];
   let fieldCount = 0;
   for (const raw of v) {
-    const el = raw as { kind?: unknown; text?: unknown; src?: unknown; label?: unknown; type?: unknown; required?: unknown; saveTo?: unknown };
+    const el = raw as { kind?: unknown; text?: unknown; src?: unknown; label?: unknown; type?: unknown; required?: unknown; saveTo?: unknown; visibleIf?: unknown };
+    const visibleIf = parseVisibleIf(el.visibleIf);
+    if (visibleIf === null) return null;
+    const vi = visibleIf ? { visibleIf } : {};
     if (el.kind === 'heading' || el.kind === 'subheading' || el.kind === 'body' || el.kind === 'caption') {
       if (!nonEmpty(el.text)) return null;
-      elements.push({ kind: el.kind, text: el.text.trim() });
+      elements.push({ kind: el.kind, text: el.text.trim(), ...vi });
     } else if (el.kind === 'image') {
       if (!nonEmpty(el.src)) return null;
       const src = stripDataUrl(el.src);
       if (src.length === 0 || src.length > IMG_MAX) return null;
-      elements.push({ kind: 'image', src });
+      elements.push({ kind: 'image', src, ...vi });
     } else if (el.kind === 'field') {
       if (!nonEmpty(el.label) || !isFlowFieldType(el.type)) return null;
-      const field: FlowFieldElInput = { kind: 'field', label: el.label.trim(), type: el.type, required: el.required === true };
+      const field: FlowFieldElInput = { kind: 'field', label: el.label.trim(), type: el.type, required: el.required === true, ...vi };
       if (isChoiceFieldType(el.type)) {
         // Un champ de choix (dropdown/radio/checkbox) exige >= 2 options distinctes non vides.
         const raw = (el as { options?: unknown }).options;
@@ -74,28 +85,59 @@ function parseFlowBody(v: unknown): { elements: FlowElementInput[]; saveTos: Arr
       return null;
     }
   }
-  return fieldCount > 0 ? { elements, saveTos } : null;
+  return { elements, fieldCount };
 }
 
 /**
- * Dérive les elements (clés champ, collision -> DuplicateFieldKeyError) PUIS construit le mapping
- * champ -> user field : défaut (saveTo vide) = user field de la clé du champ (qu'on ensure), sinon la cible
- * explicite choisie. Le ensureUserField est effectué ici. Renvoie une erreur (message 400) ou le trio prêt.
- * Partagé par la création ET l'édition d'un flow (même sémantique de mapping).
+ * Valide le corps riche, en MULTI-ÉCRANS (Lot 7). Deux formes acceptées :
+ * - `screens: [{ title?, cta?, elements: [...] }]` (le front actuel) — 1 à MAX_SCREENS écrans, chacun >= 1
+ *   élément, >= 1 champ AU GLOBAL ;
+ * - `elements: [...]` (forme historique mono-écran, tests/API directs) — enveloppée en 1 écran.
+ * Renvoie les écrans + les saveTo alignés sur l'ordre GLOBAL des champs. null si invalide.
+ */
+function parseFlowBody(body: { screens?: unknown; elements?: unknown }): { screens: FlowScreenInput[]; saveTos: Array<string | undefined> } | null {
+  const saveTos: Array<string | undefined> = [];
+  if (body.screens !== undefined) {
+    if (!Array.isArray(body.screens) || body.screens.length === 0 || body.screens.length > MAX_SCREENS) return null;
+    const screens: FlowScreenInput[] = [];
+    let totalFields = 0;
+    for (const raw of body.screens) {
+      const s = raw as { title?: unknown; cta?: unknown; elements?: unknown };
+      const parsed = parseElements(s.elements, saveTos);
+      if (parsed === null) return null;
+      totalFields += parsed.fieldCount;
+      screens.push({
+        ...(nonEmpty(s.title) ? { title: s.title.trim().slice(0, 30) } : {}),
+        ...(nonEmpty(s.cta) ? { cta: s.cta.trim().slice(0, 30) } : {}),
+        elements: parsed.elements,
+      });
+    }
+    return totalFields > 0 ? { screens, saveTos } : null;
+  }
+  const parsed = parseElements(body.elements, saveTos);
+  if (parsed === null || parsed.fieldCount === 0) return null;
+  return { screens: [{ elements: parsed.elements }], saveTos };
+}
+
+/**
+ * Dérive les écrans (clés champ GLOBALEMENT uniques, collision -> DuplicateFieldKeyError ; visibleIf
+ * résolus/validés -> VisibleIfError) PUIS construit le mapping champ -> user field : défaut (saveTo vide)
+ * = user field de la clé du champ (qu'on ensure), sinon la cible explicite choisie. Le ensureUserField est
+ * effectué ici. Renvoie une erreur (message 400) ou le trio prêt. Partagé par la création ET l'édition.
  */
 async function deriveAndMap(
   deps: FlowRouteDeps,
   tenant: string,
-  parsed: { elements: FlowElementInput[]; saveTos: Array<string | undefined> },
-): Promise<{ error: string } | { derived: FlowElement[]; mapping: Record<string, string>; fields: ReturnType<typeof fieldsOf> }> {
-  let derived: FlowElement[];
+  parsed: { screens: FlowScreenInput[]; saveTos: Array<string | undefined> },
+): Promise<{ error: string } | { derived: FlowScreenDef[]; mapping: Record<string, string>; fields: ReturnType<typeof fieldsOfScreens> }> {
+  let derived: FlowScreenDef[];
   try {
-    derived = deriveElements(parsed.elements);
+    derived = deriveScreens(parsed.screens);
   } catch (err) {
-    if (err instanceof DuplicateFieldKeyError) return { error: err.message };
+    if (err instanceof DuplicateFieldKeyError || err instanceof VisibleIfError) return { error: err.message };
     throw err;
   }
-  const fields = fieldsOf(derived);
+  const fields = fieldsOfScreens(derived);
   const mapping: Record<string, string> = {};
   for (let i = 0; i < fields.length; i += 1) {
     const f = fields[i]!;
@@ -111,7 +153,7 @@ async function deriveAndMap(
   return { derived, mapping, fields };
 }
 
-const INVALID_ELEMENTS = 'elements invalide (au moins 1 champ ; texte non vide ; image base64 <= 300KB ; type de champ valide)';
+const INVALID_ELEMENTS = 'screens/elements invalide (1 à 10 écrans, chacun >= 1 élément ; au moins 1 champ au global ; texte non vide ; image base64 <= 300KB ; type de champ valide ; visibleIf {field, op eq/neq, value})';
 
 /**
  * Routes Flows (constructeur de formulaire RICHE). GROUPE admin-only via `guard`. Le tenant vient du JWT.
@@ -128,21 +170,21 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
 
-    const b = (req.body ?? {}) as { name?: unknown; elements?: unknown; cta?: unknown };
+    const b = (req.body ?? {}) as { name?: unknown; screens?: unknown; elements?: unknown; cta?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    const parsed = parseFlowBody(b.elements);
+    const parsed = parseFlowBody(b);
     if (parsed === null) return reply.code(400).send({ error: INVALID_ELEMENTS });
     const cta = nonEmpty(b.cta) ? b.cta.trim() : undefined;
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
-    const mapped = await deriveAndMap(deps, tenant, parsed); // 400 (collision) AVANT tout appel Meta
+    const mapped = await deriveAndMap(deps, tenant, parsed); // 400 (collision/condition) AVANT tout appel Meta
     if ('error' in mapped) return reply.code(400).send({ error: mapped.error });
 
     const ref = randomUUID();
     const name = b.name.trim();
-    const { id, status } = await deps.flows.create(wabaId, { name, elements: mapped.derived, ref, ...(cta ? { cta } : {}) });
+    const { id, status } = await deps.flows.create(wabaId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) });
     await deps.insertFlow(tenant, id, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(201).send({ id, status, name, fields: mapped.fields });
   });
@@ -153,18 +195,18 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { flowId } = req.params as { flowId: string };
 
-    const b = (req.body ?? {}) as { name?: unknown; elements?: unknown; cta?: unknown };
+    const b = (req.body ?? {}) as { name?: unknown; screens?: unknown; elements?: unknown; cta?: unknown };
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    const parsed = parseFlowBody(b.elements);
+    const parsed = parseFlowBody(b);
     if (parsed === null) return reply.code(400).send({ error: INVALID_ELEMENTS });
     const cta = nonEmpty(b.cta) ? b.cta.trim() : undefined;
 
     const existing = await deps.getFlow(flowId, tenant);
     if (!existing) return reply.code(404).send({ error: 'flow inconnu' });
     if (existing.status === 'PUBLISHED') return reply.code(409).send({ error: 'flow publié : immuable. Utilise « Dupliquer pour modifier ».' });
-    // Legacy (elements null) : le builder repartirait d'un formulaire vide et ÉCRASERAIT le contenu d'origine.
-    // Symétrique au garde-fou de la duplication (422). Recréer plutôt qu'éditer.
-    if (!existing.elements || existing.elements.length === 0) {
+    // Legacy (screens null = colonne elements vide/absente) : le builder repartirait d'un formulaire vide et
+    // ÉCRASERAIT le contenu d'origine. Symétrique au garde-fou de la duplication (422).
+    if (!existing.screens) {
       return reply.code(422).send({ error: 'flow antérieur au modèle riche : à recréer plutôt qu\'à éditer' });
     }
 
@@ -177,7 +219,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     // On GARDE le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
     const ref = existing.ref ?? randomUUID();
     const name = b.name.trim();
-    await deps.flows.updateDraft(flowId, { name, elements: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta AVANT store
+    await deps.flows.updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta AVANT store
     await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: mapped.fields });
   });
@@ -190,7 +232,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
 
     const source = await deps.getFlow(flowId, tenant);
     if (!source) return reply.code(404).send({ error: 'flow inconnu' });
-    if (!source.elements || source.elements.length === 0) {
+    if (!source.screens) {
       return reply.code(422).send({ error: 'flow sans elements : duplication indisponible (flow antérieur au modèle riche)' });
     }
 
@@ -204,9 +246,9 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
     const mapping = source.mapping ?? {};
     const cta = source.cta ?? undefined;
-    const { id, status } = await deps.flows.create(wabaId, { name, elements: source.elements, ref, ...(cta ? { cta } : {}) });
-    await deps.insertFlow(tenant, id, name, source.elements, ref, mapping, cta);
-    return reply.code(201).send({ id, status, name, fields: fieldsOf(source.elements) });
+    const { id, status } = await deps.flows.create(wabaId, { name, screens: source.screens, ref, ...(cta ? { cta } : {}) });
+    await deps.insertFlow(tenant, id, name, source.screens, ref, mapping, cta);
+    return reply.code(201).send({ id, status, name, fields: fieldsOfScreens(source.screens) });
   });
 
   app.get('/tenants/:tenantId/flows', opts, async (req, reply) => {

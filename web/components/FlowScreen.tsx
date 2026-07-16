@@ -10,18 +10,35 @@ import { useT } from '@/lib/i18n';
  * pour un seul rendu de référence. Couleurs WhatsApp en dur (on imite son UI, pas la charte MM).
  */
 
-/** Élément normalisé d'écran (source commune builder + liste). Image `src` = data-url prête à l'affichage. */
-export type FlowScreenElement =
+/** Élément normalisé d'écran (source commune builder + liste). Image `src` = data-url prête à l'affichage.
+ *  `condition` : texte du badge « visible si » (ex. « Rappel ? = Oui »), calculé par l'appelant ; absent = pas de badge. */
+export type FlowScreenElement = (
   | { kind: FlowTextKind; text: string }
   | { kind: 'image'; src: string | null }
-  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; options: string[] };
+  | { kind: 'field'; label: string; type: FlowFieldType; required: boolean; options: string[] }
+) & { condition?: string };
 
-/** Passe des `FlowElement` stockés (champ avec clé, image en base64 brut) au format d'écran. */
-export function fromFlowElements(elements: FlowElement[]): FlowScreenElement[] {
+/** Texte de condition « <libellé> = <valeur> » commun builder/liste. Le préfixe localisé (« Visible si »)
+ *  est posé au rendu du badge, pas ici (fonction hors composant, pas de useT). Booléen -> ✓ / ✗. */
+export function conditionText(label: string, op: 'eq' | 'neq', value: string | boolean): string {
+  const val = typeof value === 'boolean' ? (value ? '✓' : '✗') : (value || '…');
+  return `${label} ${op === 'eq' ? '=' : '≠'} ${val}`;
+}
+
+/** Passe des `FlowElement` stockés (champ avec clé, image en base64 brut) au format d'écran.
+ *  `resolveLabel` (optionnel) : clé du champ source -> libellé, pour construire le badge de condition
+ *  depuis `visibleIf`. Sans lui, pas de badge (cas miniatures). */
+export function fromFlowElements(elements: FlowElement[], resolveLabel?: (fieldKey: string) => string | null): FlowScreenElement[] {
   return elements.map((e): FlowScreenElement => {
-    if (e.kind === 'image') return { kind: 'image', src: e.src ? (e.src.startsWith('data:') ? e.src : `data:image/jpeg;base64,${e.src}`) : null };
-    if (e.kind === 'field') return { kind: 'field', label: e.label, type: e.type, required: e.required, options: e.options ?? [] };
-    return { kind: e.kind, text: e.text };
+    let condition: string | undefined;
+    if (e.visibleIf && resolveLabel) {
+      const label = resolveLabel(e.visibleIf.fieldKey);
+      if (label) condition = conditionText(label, e.visibleIf.op, e.visibleIf.value);
+    }
+    const cond = condition ? { condition } : {};
+    if (e.kind === 'image') return { kind: 'image', src: e.src ? (e.src.startsWith('data:') ? e.src : `data:image/jpeg;base64,${e.src}`) : null, ...cond };
+    if (e.kind === 'field') return { kind: 'field', label: e.label, type: e.type, required: e.required, options: e.options ?? [], ...cond };
+    return { kind: e.kind, text: e.text, ...cond };
   });
 }
 
@@ -94,6 +111,23 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
   );
 }
 
+/** Corps d'un élément (sans clé ni badge : posés par l'appelant dans FlowScreen). */
+function ElementBody({ el }: { el: FlowScreenElement }) {
+  const t = useT();
+  if (el.kind === 'heading') return <div className="text-[22px] font-semibold leading-tight" style={{ color: INK }}>{el.text || t('Titre', 'Title')}</div>;
+  if (el.kind === 'subheading') return <div className="text-[16px] font-semibold" style={{ color: INK }}>{el.text || t('Sous-titre', 'Subtitle')}</div>;
+  if (el.kind === 'body') return <div className="whitespace-pre-wrap text-[14px] leading-snug" style={{ color: '#3b4a54' }}>{el.text || t('Paragraphe', 'Paragraph')}</div>;
+  if (el.kind === 'caption') return <div className="text-[12px]" style={{ color: MUTED }}>{el.text || t('Légende', 'Caption')}</div>;
+  if (el.kind === 'image') {
+    return el.src
+      // eslint-disable-next-line @next/next/no-img-element
+      ? <img src={el.src} alt="" className="h-40 w-full rounded-xl object-cover" />
+      : <div className="flex h-32 items-center justify-center rounded-xl text-2xl" style={{ background: '#f0f2f5', color: '#8696a0' }}>🖼️</div>;
+  }
+  if (el.kind === 'field') return <ScreenField el={el} />;
+  return null;
+}
+
 export function FlowScreen({ elements, cta, title }: { elements: FlowScreenElement[]; cta?: string | null; title?: string }) {
   const t = useT();
   return (
@@ -106,20 +140,18 @@ export function FlowScreen({ elements, cta, title }: { elements: FlowScreenEleme
       {/* Contenu défilant */}
       <div className="max-h-[440px] space-y-3.5 overflow-y-auto bg-white px-4 py-4">
         {elements.length === 0 && <p className="text-[13px]" style={{ color: MUTED }}>{t('Ajoute des éléments à gauche…', 'Add elements on the left…')}</p>}
-        {elements.map((e, i) => {
-          if (e.kind === 'heading') return <div key={i} className="text-[22px] font-semibold leading-tight" style={{ color: INK }}>{e.text || t('Titre', 'Title')}</div>;
-          if (e.kind === 'subheading') return <div key={i} className="text-[16px] font-semibold" style={{ color: INK }}>{e.text || t('Sous-titre', 'Subtitle')}</div>;
-          if (e.kind === 'body') return <div key={i} className="whitespace-pre-wrap text-[14px] leading-snug" style={{ color: '#3b4a54' }}>{e.text || t('Paragraphe', 'Paragraph')}</div>;
-          if (e.kind === 'caption') return <div key={i} className="text-[12px]" style={{ color: MUTED }}>{e.text || t('Légende', 'Caption')}</div>;
-          if (e.kind === 'image') {
-            return e.src
-              // eslint-disable-next-line @next/next/no-img-element
-              ? <img key={i} src={e.src} alt="" className="h-40 w-full rounded-xl object-cover" />
-              : <div key={i} className="flex h-32 items-center justify-center rounded-xl text-2xl" style={{ background: '#f0f2f5', color: '#8696a0' }}>🖼️</div>;
-          }
-          if (e.kind === 'field') return <ScreenField key={i} el={e} />;
-          return null;
-        })}
+        {elements.map((e, i) => (
+          <div key={i}>
+            {e.condition && (
+              <div className="mb-1">
+                <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                  👁 {t('Visible si', 'Visible if')} {e.condition}
+                </span>
+              </div>
+            )}
+            <ElementBody el={e} />
+          </div>
+        ))}
       </div>
       {/* Bouton final épinglé */}
       <div className="border-t px-4 py-3" style={{ borderColor: '#eef0f1' }}>

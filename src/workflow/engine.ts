@@ -15,7 +15,16 @@ export type WorkflowAction =
   | { kind: 'tag'; tag: string }
   | { kind: 'field'; key: string; value: string }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
-  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[] };
+  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[] }
+  | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string };
+
+/** Actions qui envoient un message de SESSION (hors template) : interdites en OUVERTURE de scénario, une
+ *  campagne démarre hors fenêtre de service 24 h (Meta 131047). Seul un template peut ouvrir. */
+export function opensOutsideServiceWindow(graph: WorkflowGraph): boolean {
+  const entry = entryNode(graph);
+  if (!entry) return false;
+  return walk(graph, entry).actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage');
+}
 
 export type WalkRest =
   | { status: 'waiting'; nodeId: string } // en attente d'une réponse (après un template ou un formulaire)
@@ -64,6 +73,17 @@ function actionOf(node: WorkflowNode): WorkflowAction | null {
       text: String((b as { text?: unknown }).text ?? ''),
     }));
     return { kind: 'sendTemplate', templateName, language: String(node.data.language ?? 'fr'), buttons };
+  }
+  if (node.type === 'flow') {
+    // Node « formulaire » : envoie le flow en message interactif (hors template). Sans flowId -> null
+    // (no-op waiting), même contrat qu'un template sans templateName. `body` = accroche du message,
+    // `cta` = libellé du bouton d'ouverture (pré-rempli avec le cta du formulaire à la sélection).
+    const flowId = String(node.data.flowId ?? '').trim();
+    if (!flowId) return null;
+    const flowName = String(node.data.flowName ?? '').trim();
+    const body = String(node.data.body ?? '').trim() || (flowName ? `Formulaire : ${flowName}` : 'Formulaire à remplir');
+    const cta = String(node.data.cta ?? '').trim().slice(0, 30) || 'Envoyer';
+    return { kind: 'sendFlow', flowId, flowName, body, cta };
   }
   if (node.type === 'quick_message') {
     const body = String(node.data.body ?? '').trim();
