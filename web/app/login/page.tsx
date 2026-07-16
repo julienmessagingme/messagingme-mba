@@ -7,9 +7,11 @@ import { login } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
+import { useT } from '@/lib/i18n';
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useT();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export default function LoginPage() {
       saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
       router.replace(res.user.role === 'agent' ? '/inbox' : '/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connexion impossible');
+      setError(err instanceof Error ? err.message : t('Connexion impossible', 'Unable to sign in'));
     } finally {
       setLoading(false);
     }
@@ -36,7 +38,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <Logo className="mx-auto mb-3 h-14 w-14" />
           <h1 className="text-xl font-semibold tracking-tight text-ink-900">MM Business Agent</h1>
-          <p className="mt-1 text-sm text-ink-400">Connecte-toi pour gérer tes contacts et campagnes.</p>
+          <p className="mt-1 text-sm text-ink-400">{t('Connecte-toi pour gérer tes contacts et campagnes.', 'Sign in to manage your contacts and campaigns.')}</p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
@@ -52,7 +54,7 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">Mot de passe</label>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Mot de passe', 'Password')}</label>
             <input
               type="password"
               required
@@ -70,11 +72,11 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
           >
-            {loading ? 'Connexion...' : 'Se connecter'}
+            {loading ? t('Connexion...', 'Signing in...') : t('Se connecter', 'Sign in')}
           </button>
           <div className="flex items-center justify-between text-xs text-ink-400">
-            <Link href="/forgot" className="hover:text-brand-600">Mot de passe oublié ?</Link>
-            <Link href="/signup" className="font-medium text-brand-600 hover:underline">Créer un espace</Link>
+            <Link href="/forgot" className="hover:text-brand-600">{t('Mot de passe oublié ?', 'Forgot password?')}</Link>
+            <Link href="/signup" className="font-medium text-brand-600 hover:underline">{t('Créer un espace', 'Create a workspace')}</Link>
           </div>
 
           <GoogleButton onError={setError} />

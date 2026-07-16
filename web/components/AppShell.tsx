@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
+import { useT } from '@/lib/i18n';
 
 type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
 
@@ -27,22 +28,6 @@ const icons = {
 interface NavChild { key: string; href: string; label: string }
 interface NavItem { key: string; href?: string; label: string; d: string; children?: NavChild[] }
 
-const NAV_ADMIN: NavItem[] = [
-  { key: 'inbox', href: '/inbox', label: 'Inbox', d: icons.inbox },
-  { key: 'contacts', href: '/contacts', label: 'Contacts', d: icons.contacts },
-  { key: 'campagnes', href: '/campaigns', label: 'Campagnes', d: icons.campaign },
-  { key: 'workflows', href: '/workflows', label: 'Scénario', d: icons.flow },
-  { key: 'contenu', label: 'Contenu', d: icons.content, children: [
-    { key: 'templates', href: '/templates', label: 'Templates' },
-    { key: 'flows', href: '/flows', label: 'Formulaires' },
-    { key: 'tags', href: '/tags', label: 'Tags' },
-    { key: 'fields', href: '/fields', label: 'Champs' },
-  ] },
-  { key: 'analytics', href: '/dashboard', label: 'Analytics', d: icons.analytics },
-  { key: 'support', href: '/support', label: 'Support', d: icons.support },
-];
-const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: 'Inbox', d: icons.inbox }];
-
 /**
  * Coquille commune : garde d'auth + RBAC, SIDEBAR gauche (nav rôle-aware) + header (menu Compte à droite)
  * + contenu pleine largeur. RBAC : seule l'inbox est ouverte à l'agent ; tout le reste exige admin (la
@@ -50,8 +35,26 @@ const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: 'Inbox', d:
  */
 export function AppShell({ active, fullBleed = false, children }: { active: Tab; fullBleed?: boolean; children: (session: Session) => React.ReactNode }) {
   const router = useRouter();
+  const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
+  const NAV_ADMIN: NavItem[] = [
+    { key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox },
+    { key: 'contacts', href: '/contacts', label: t('Contacts', 'Contacts'), d: icons.contacts },
+    { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
+    { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
+    { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
+      { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
+      { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
+      { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
+      { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
+    ] },
+    { key: 'analytics', href: '/dashboard', label: t('Analytics', 'Analytics'), d: icons.analytics },
+    { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
+  ];
+  const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox }];
 
   // Fail-safe : tout ce qui n'est pas l'inbox est réservé aux admins.
   const adminOnly = active !== 'inbox';
@@ -114,7 +117,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
 
   const SidebarInner = (
     <>
-      <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title="Accueil" onClick={() => setDrawerOpen(false)}>
+      <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title={t('Accueil', 'Home')} onClick={() => setDrawerOpen(false)}>
         <Logo className="h-8 w-8" />
         <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
       </Link>
@@ -132,14 +135,14 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       {/* Drawer mobile (z-40, sous les modales z-50) */}
       {drawerOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <button aria-label="Fermer le menu" className="absolute inset-0 bg-ink-900/30" onClick={() => setDrawerOpen(false)} />
+          <button aria-label={t('Fermer le menu', 'Close menu')} className="absolute inset-0 bg-ink-900/30" onClick={() => setDrawerOpen(false)} />
           <div className="absolute left-0 top-0 h-full w-60 border-r border-ink-200 bg-white">{SidebarInner}</div>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-ink-200 bg-white px-4 py-2.5">
-          <button className="rounded-lg p-1.5 text-ink-600 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label="Ouvrir le menu">
+          <button className="rounded-lg p-1.5 text-ink-600 hover:bg-ink-100 lg:hidden" onClick={() => setDrawerOpen(true)} aria-label={t('Ouvrir le menu', 'Open menu')}>
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           <div className="ml-auto">

@@ -9,6 +9,7 @@ import { FlowBuilder } from '@/components/FlowBuilder';
 import type { Session } from '@/lib/session';
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate, listFlows, uploadMedia, listUserFields, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
+import { useT } from '@/lib/i18n';
 
 export default function TemplatesPage() {
   return <AppShell active="templates">{(session) => <TemplatesInner session={session} />}</AppShell>;
@@ -55,13 +56,14 @@ function deterministicExample(source: ParamSource, fieldType?: string): string {
 }
 
 /** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). */
-function labelForSource(source: ParamSource, fields: UserFieldDef[]): string {
-  if (source.type === 'attribute') return source.key === 'phone' ? 'Téléphone' : 'Nom du profil WhatsApp';
-  if (source.type === 'literal') return 'Texte fixe';
-  return fields.find((f) => f.key === source.key)?.label ?? source.key ?? 'Champ';
+function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (fr: string, en?: string) => string): string {
+  if (source.type === 'attribute') return source.key === 'phone' ? t('Téléphone', 'Phone') : t('Nom du profil WhatsApp', 'WhatsApp profile name');
+  if (source.type === 'literal') return t('Texte fixe', 'Fixed text');
+  return fields.find((f) => f.key === source.key)?.label ?? source.key ?? t('Champ', 'Field');
 }
 
 function TemplatesInner({ session }: { session: Session }) {
+  const t = useT();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,24 +77,24 @@ function TemplatesInner({ session }: { session: Session }) {
     try {
       setTemplates((await listTemplates(session.tenantId)).templates);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId]);
+  }, [session.tenantId, t]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  async function remove(t: TemplateSummary) {
-    if (!window.confirm(`Supprimer le template « ${t.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.`)) return;
+  async function remove(tpl: TemplateSummary) {
+    if (!window.confirm(`${t('Supprimer le template', 'Delete template')} « ${tpl.name} » ?\n${t("Suppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.", 'Permanent deletion at Meta (all languages). Blocked if an active campaign uses it.')}`)) return;
     setError(null);
     try {
-      await deleteTemplate(session.tenantId, t.name);
+      await deleteTemplate(session.tenantId, tpl.name);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Suppression impossible');
+      setError(err instanceof Error ? err.message : t('Suppression impossible', 'Unable to delete'));
     }
   }
 
@@ -101,17 +103,17 @@ function TemplatesInner({ session }: { session: Session }) {
       {editing ? (
         <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-ink-900">Modifier « {editing.name} »</h2>
-            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Modifier', 'Edit')} « {editing.name} »</h2>
+            <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
           </div>
-          <p className="mb-4 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.</p>
+          <p className="mb-4 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">{t('Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.', 'Editing a template sends it back to Meta for review (PENDING status): it stays unsendable until re-approval. Name and language cannot be changed.')}</p>
           <CreateForm key={editing.name} tenantId={session.tenantId} onCreated={() => { void reload(); setEditing(null); }} initial={editing} />
         </section>
       ) : creating ? (
         <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouveau template</h2>
-            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouveau template', 'New template')}</h2>
+            <button onClick={() => setCreating(false)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
           </div>
           <div className="mb-4 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
             {(['simple', 'carousel'] as const).map((m) => (
@@ -120,7 +122,7 @@ function TemplatesInner({ session }: { session: Session }) {
                 onClick={() => setMode(m)}
                 className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
               >
-                {m === 'simple' ? 'Template simple' : 'Carousel'}
+                {m === 'simple' ? t('Template simple', 'Simple template') : 'Carousel'}
               </button>
             ))}
           </div>
@@ -133,54 +135,54 @@ function TemplatesInner({ session }: { session: Session }) {
       ) : null}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">Templates ({templates.length})</h2>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Templates', 'Templates')} ({templates.length})</h2>
           <div className="flex items-center gap-3">
-            <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+            <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
             {!creating && !editing && (
-              <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">+ Créer un template</button>
+              <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">{t('+ Créer un template', '+ Create a template')}</button>
             )}
           </div>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading ? (
-          <p className="text-sm text-ink-500">Chargement...</p>
+          <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : templates.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d&apos;être utilisable).
+            {t("Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d'être utilisable).", 'No templates yet. Click « + Create a template » (it goes through Meta review before it can be used).')}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
             <table className="w-full min-w-[520px] text-sm">
               <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">Nom</th>
-                  <th className="px-4 py-2.5 font-medium">Catégorie</th>
-                  <th className="px-4 py-2.5 font-medium">Langue</th>
-                  <th className="px-4 py-2.5 font-medium">Statut</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+                  <th className="px-4 py-2.5 font-medium">{t('Nom', 'Name')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('Catégorie', 'Category')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('Langue', 'Language')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('Statut', 'Status')}</th>
+                  <th className="px-4 py-2.5 text-right font-medium">{t('Actions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {templates.map((t) => (
-                  <tr key={`${t.name}-${t.language}`} className="hover:bg-ink-50">
+                {templates.map((tpl) => (
+                  <tr key={`${tpl.name}-${tpl.language}`} className="hover:bg-ink-50">
                     <td className="px-4 py-2.5">
-                      <button onClick={() => setPreview(t)} className="font-mono text-xs font-medium text-brand-600 hover:underline" title="Voir l'aperçu">{t.name}</button>
+                      <button onClick={() => setPreview(tpl)} className="font-mono text-xs font-medium text-brand-600 hover:underline" title={t("Voir l'aperçu", 'View preview')}>{tpl.name}</button>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-ink-500">{t.category?.toLowerCase()}</td>
-                    <td className="px-4 py-2.5 text-xs">{t.language}</td>
+                    <td className="px-4 py-2.5 text-xs text-ink-500">{tpl.category?.toLowerCase()}</td>
+                    <td className="px-4 py-2.5 text-xs">{tpl.language}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[t.status] ?? 'bg-ink-100 text-ink-600'}`}>
-                        {t.status?.toLowerCase()}
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[tpl.status] ?? 'bg-ink-100 text-ink-600'}`}>
+                        {tpl.status?.toLowerCase()}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-3 text-xs">
-                        {t.editable === false ? (
-                          <span className="text-ink-300" title={t.isCarousel ? "Édition d'un carousel non supportée" : "Édition non supportée : en-tête ou pied de page (il serait supprimé)"}>Éditer</span>
+                        {tpl.editable === false ? (
+                          <span className="text-ink-300" title={tpl.isCarousel ? t("Édition d'un carousel non supportée", 'Editing a carousel is not supported') : t("Édition non supportée : en-tête ou pied de page (il serait supprimé)", 'Editing not supported: header or footer (it would be removed)')}>{t('Éditer', 'Edit')}</span>
                         ) : (
-                          <button onClick={() => setEditing(t)} className="font-medium text-brand-600 hover:text-brand-700">Éditer</button>
+                          <button onClick={() => setEditing(tpl)} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
                         )}
-                        <button onClick={() => remove(t)} className="font-medium text-coral hover:text-red-700">Supprimer</button>
+                        <button onClick={() => remove(tpl)} className="font-medium text-coral hover:text-red-700">{t('Supprimer', 'Delete')}</button>
                       </div>
                     </td>
                   </tr>
@@ -197,6 +199,7 @@ function TemplatesInner({ session }: { session: Session }) {
 
 /** Aperçu WhatsApp d'un template au clic sur son nom (corps + boutons ; carousel/média = note). */
 function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary; onClose: () => void }) {
+  const t = useT();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -209,8 +212,8 @@ function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary
         </div>
         {template.isCarousel ? (
           <div className="rounded-lg bg-ink-50 px-3 py-4 text-sm text-ink-600">
-            <p className="font-medium">Template carousel</p>
-            <p className="mt-1 text-ink-500">{template.body || 'Message d’introduction non chargé.'}</p>
+            <p className="font-medium">{t('Template carousel', 'Carousel template')}</p>
+            <p className="mt-1 text-ink-500">{template.body || t('Message d’introduction non chargé.', 'Introduction message not loaded.')}</p>
           </div>
         ) : (
           <WhatsAppPreview
@@ -223,7 +226,7 @@ function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary
           />
         )}
         {template.headerFormat && template.headerFormat !== 'TEXT' && !template.isCarousel && (
-          <p className="mt-2 text-[11px] text-ink-400">En-tête {template.headerFormat.toLowerCase()} (le média réel s&apos;affiche à l&apos;envoi).</p>
+          <p className="mt-2 text-[11px] text-ink-400">{t('En-tête', 'Header')} {template.headerFormat.toLowerCase()} {t("(le média réel s'affiche à l'envoi).", '(the actual media is shown when sending).')}</p>
         )}
       </div>
     </div>
@@ -235,9 +238,10 @@ const inputCls =
 
 /** Sélecteur d'emojis : insère au curseur, se ferme au clic extérieur. */
 function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
+  const t = useT();
   return (
     <>
-      <button type="button" aria-label="Fermer" className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
+      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
       <div className="absolute bottom-11 right-0 z-50 w-64 rounded-xl border border-ink-200 bg-white p-2 shadow-lg">
         <div className="grid grid-cols-8 gap-0.5">
           {EMOJIS.map((e) => (
@@ -257,11 +261,12 @@ function FieldPicker({ options, onPick, onClose }: {
   onPick: (o: { source: ParamSource; label: string; fieldType?: string }) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <>
-      <button type="button" aria-label="Fermer" className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
+      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
       <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-lg">
-        <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">Insérer un champ</div>
+        <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Insérer un champ', 'Insert a field')}</div>
         {options.map((o, i) => (
           <button type="button" key={`${o.label}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50">{o.label}</button>
         ))}
@@ -271,6 +276,7 @@ function FieldPicker({ options, onPick, onClose }: {
 }
 
 function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCreated: () => void; initial?: TemplateSummary }) {
+  const t = useT();
   const isEdit = !!initial;
   const [name, setName] = useState(initial?.name ?? '');
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>((initial?.category?.toUpperCase() as 'MARKETING' | 'UTILITY') ?? 'MARKETING');
@@ -322,19 +328,19 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       if (hints.length > 0) {
         setVarSources((prev) => {
           const next = [...prev];
-          for (const h of hints) next[h.position - 1] = { source: h.source, label: labelForSource(h.source, uf) };
+          for (const h of hints) next[h.position - 1] = { source: h.source, label: labelForSource(h.source, uf, t) };
           return next;
         });
       }
     })();
     return () => { alive = false; };
-  }, [tenantId, initial]);
+  }, [tenantId, initial, t]);
 
   // « Nom du profil WhatsApp » = le profile_name (souvent vide en import CSV) -> clairement distinct des champs
   // Prénom / Nom importés (qui apparaissent ci-dessous via userFields). Fin de la confusion « Nom / Nom et prénom ».
   const fieldOptions: Array<{ source: ParamSource; label: string; fieldType?: string }> = [
-    { source: { type: 'attribute', key: 'name' }, label: 'Nom du profil WhatsApp' },
-    { source: { type: 'attribute', key: 'phone' }, label: 'Téléphone' },
+    { source: { type: 'attribute', key: 'name' }, label: t('Nom du profil WhatsApp', 'WhatsApp profile name') },
+    { source: { type: 'attribute', key: 'phone' }, label: t('Téléphone', 'Phone') },
     ...userFields.map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type })),
   ];
 
@@ -396,7 +402,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       headerPreviewRef.current = preview;
       setHeaderPreviewUrl(preview);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload du média impossible');
+      setError(err instanceof Error ? err.message : t('Upload du média impossible', 'Media upload failed'));
     } finally {
       setHeaderUploading(false);
     }
@@ -424,7 +430,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       // Une variable tapée à la main (sans source) partirait vide à l'envoi et se ferait rejeter par Meta -> on bloque ici.
       const unmapped = canonSources.map((v, i) => (v ? null : i + 1)).filter((p): p is number => p !== null);
       if (unmapped.length > 0) {
-        setError(`Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) : ${unmapped.map((p) => `{{${p}}}`).join(', ')}. Supprime-les puis réinsère-les avec le sélecteur.`);
+        setError(`${t('Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) :', 'Each variable must be linked to a field via « + Variable ». Not linked:')} ${unmapped.map((p) => `{{${p}}}`).join(', ')}. ${t('Supprime-les puis réinsère-les avec le sélecteur.', 'Delete them then reinsert them with the picker.')}`);
         setBusy(false);
         return;
       }
@@ -448,7 +454,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
           ...(buttons.length > 0 ? { buttons } : {}),
           ...(paramHints.length > 0 ? { paramHints } : {}),
         });
-        setOk('Modifications envoyées. Le template repasse en validation Meta.');
+        setOk(t('Modifications envoyées. Le template repasse en validation Meta.', 'Changes sent. The template goes back to Meta for review.'));
         onCreated();
         return;
       }
@@ -463,7 +469,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
         ...(buttons.length > 0 ? { buttons } : {}),
         ...(paramHints.length > 0 ? { paramHints } : {}),
       });
-      setOk(`Template soumis (statut : ${res.status}). Il passe en revue Meta.`);
+      setOk(`${t('Template soumis (statut', 'Template submitted (status')} : ${res.status}). ${t('Il passe en revue Meta.', 'It goes through Meta review.')}`);
       setName('');
       setBody('');
       setExamples([]);
@@ -475,7 +481,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
       setFooter('');
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : isEdit ? 'Modification impossible' : 'Création impossible');
+      setError(err instanceof Error ? err.message : isEdit ? t('Modification impossible', 'Update failed') : t('Création impossible', 'Creation failed'));
     } finally {
       setBusy(false);
     }
@@ -493,49 +499,49 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
     <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6 shadow-sm'}>
       {!isEdit && (
         <>
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouveau template</h2>
-          <p className="mt-1 text-xs text-ink-500">Soumis à Meta pour validation (quelques minutes à quelques heures).</p>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouveau template', 'New template')}</h2>
+          <p className="mt-1 text-xs text-ink-500">{t('Soumis à Meta pour validation (quelques minutes à quelques heures).', 'Submitted to Meta for review (a few minutes to a few hours).')}</p>
         </>
       )}
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Colonne formulaire */}
         <div>
-          <Field label={isEdit ? 'Nom (non modifiable)' : 'Nom (minuscules, sans espaces)'}>
+          <Field label={isEdit ? t('Nom (non modifiable)', 'Name (not editable)') : t('Nom (minuscules, sans espaces)', 'Name (lowercase, no spaces)')}>
             <input value={name} onChange={(e) => setName(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="promo_ete" />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Catégorie">
+            <Field label={t('Catégorie', 'Category')}>
               <select value={category} onChange={(e) => setCategory(e.target.value as 'MARKETING' | 'UTILITY')} className={inputCls}>
                 <option value="MARKETING">marketing</option>
                 <option value="UTILITY">utility</option>
               </select>
             </Field>
-            <Field label={isEdit ? 'Langue (non modifiable)' : 'Langue'}>
+            <Field label={isEdit ? t('Langue (non modifiable)', 'Language (not editable)') : t('Langue', 'Language')}>
               <input value={language} onChange={(e) => setLanguage(e.target.value)} disabled={isEdit} className={`${inputCls} disabled:bg-ink-50 disabled:text-ink-400`} placeholder="fr" />
             </Field>
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">En-tête (optionnel)</label>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('En-tête (optionnel)', 'Header (optional)')}</label>
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={headerType}
                 onChange={(e) => { setHeaderType(e.target.value as 'none' | 'TEXT' | 'IMAGE' | 'VIDEO'); clearHeaderMedia(); }}
                 className={`${inputCls} max-w-[150px]`}
               >
-                <option value="none">Aucun</option>
-                <option value="TEXT">Texte</option>
+                <option value="none">{t('Aucun', 'None')}</option>
+                <option value="TEXT">{t('Texte', 'Text')}</option>
                 <option value="IMAGE">Image</option>
-                <option value="VIDEO">Vidéo</option>
+                <option value="VIDEO">{t('Vidéo', 'Video')}</option>
               </select>
               {headerType === 'TEXT' && (
-                <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} maxLength={60} placeholder="Titre fixe (60 car. max, sans variable)" className={`${inputCls} flex-1`} />
+                <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} maxLength={60} placeholder={t('Titre fixe (60 car. max, sans variable)', 'Fixed title (60 char. max, no variable)')} className={`${inputCls} flex-1`} />
               )}
               {(headerType === 'IMAGE' || headerType === 'VIDEO') && (
                 <>
                   <button type="button" onClick={() => headerFileRef.current?.click()} disabled={headerUploading} className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-50">
-                    {headerUploading ? 'Upload…' : headerHandle ? 'Remplacer' : headerType === 'IMAGE' ? 'Choisir une image' : 'Choisir une vidéo (mp4)'}
+                    {headerUploading ? 'Upload…' : headerHandle ? t('Remplacer', 'Replace') : headerType === 'IMAGE' ? t('Choisir une image', 'Choose an image') : t('Choisir une vidéo (mp4)', 'Choose a video (mp4)')}
                   </button>
                   {headerFileName && <span className="max-w-[140px] truncate text-xs text-ink-500">{headerFileName} ✓</span>}
                   <input ref={headerFileRef} type="file" accept={headerType === 'IMAGE' ? 'image/png,image/jpeg' : 'video/mp4'} className="hidden" onChange={(e) => onHeaderFile(e.target.files?.[0])} />
@@ -545,14 +551,14 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">Corps du message</label>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Corps du message', 'Message body')}</label>
             <div className="relative">
               <VariableBodyEditor
                 ref={bodyEditorRef}
                 value={body}
                 varLabels={varSources.map((v) => v?.label)}
                 onChange={setBody}
-                placeholder={'Bonjour [Prénom], voici notre offre 🎉'}
+                placeholder={t('Bonjour [Prénom], voici notre offre 🎉', 'Hello [First name], here is our offer 🎉')}
                 className={`${inputCls} pr-28`}
               />
               <div className="absolute bottom-2 right-2 flex items-center gap-1">
@@ -560,7 +566,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                   type="button"
                   onClick={() => { setFieldPickerOpen((o) => !o); setEmojiOpen(false); }}
                   className="rounded-md border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
-                  title="Insérer une variable (champ du contact)"
+                  title={t('Insérer une variable (champ du contact)', 'Insert a variable (contact field)')}
                 >
                   + Variable
                 </button>
@@ -568,7 +574,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                   type="button"
                   onClick={() => { setEmojiOpen((o) => !o); setFieldPickerOpen(false); }}
                   className="rounded-md p-1 text-lg leading-none hover:bg-ink-100"
-                  aria-label="Insérer un emoji"
+                  aria-label={t('Insérer un emoji', 'Insert an emoji')}
                 >
                   😊
                 </button>
@@ -576,17 +582,17 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
               {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
               {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
             </div>
-            <p className="mt-1 text-xs text-ink-400">Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l&apos;exemple exigé par Meta se remplit tout seul.</p>
+            <p className="mt-1 text-xs text-ink-400">{t("Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l'exemple exigé par Meta se remplit tout seul.", 'Click « + Variable » to insert a contact field (name, first name, email…): the example required by Meta fills in automatically.')}</p>
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">Pied de page (optionnel)</label>
-            <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder="Petit texte en bas (60 car. max, sans variable)" className={inputCls} />
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Pied de page (optionnel)', 'Footer (optional)')}</label>
+            <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder={t('Petit texte en bas (60 car. max, sans variable)', 'Small text at the bottom (60 char. max, no variable)')} className={inputCls} />
           </div>
 
           {bodyPositions.length > 0 && (
             <div className="mt-2">
-              <label className="mb-1 block text-sm font-medium text-ink-700">Exemples de variables (requis par Meta)</label>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Exemples de variables (requis par Meta)', 'Variable examples (required by Meta)')}</label>
               <div className="space-y-2">
                 {/* Piloté par les positions RÉELLES du corps (index pos-1), pas un compte séquentiel : après
                     suppression d'une variable du milieu, chaque ligne reste alignée avec sa source/exemple. */}
@@ -600,7 +606,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                       value={examples[pos - 1] ?? ''}
                       onChange={(e) => setExamples((x) => { const c = [...x]; c[pos - 1] = e.target.value; return c; })}
                       className={`${inputCls} flex-1`}
-                      placeholder="ex. Julie"
+                      placeholder={t('ex. Julie', 'e.g. Julie')}
                     />
                   </div>
                 ))}
@@ -610,15 +616,15 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
 
           <div className="mt-3">
             <div className="mb-1 flex items-center justify-between">
-              <label className="text-sm font-medium text-ink-700">Boutons</label>
+              <label className="text-sm font-medium text-ink-700">{t('Boutons', 'Buttons')}</label>
               <div className="flex gap-2 text-xs">
                 {/* Un bouton FLOW est EXCLUSIF (contrainte Meta) : on masque les autres si un FLOW est là,
                     et « + Flow » remplace tous les boutons par un unique bouton FLOW. */}
                 {!hasFlow && (
                   <>
-                    <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
-                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
-                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title="Un bouton formulaire : créer un formulaire inline ou en choisir un déjà publié">+ Flow</button>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
+                    <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">{t('+ lien', '+ link')}</button>
+                    <button type="button" onClick={() => setButtons([{ type: 'FLOW', text: '', flowId: '' }])} className="text-brand-600 hover:underline" title={t('Un bouton formulaire : créer un formulaire inline ou en choisir un déjà publié', 'A form button: create an inline form or choose an already published one')}>+ Flow</button>
                   </>
                 )}
               </div>
@@ -629,22 +635,22 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                   // Bouton FLOW = exclusif : sur sa propre ligne, libellé PLEINE LARGEUR (bien visible) + choix du formulaire dessous.
                   <div key={i} className="space-y-1.5 rounded-lg border border-ink-100 bg-ink-50/50 p-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-ink-400">Bouton du formulaire</span>
-                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
+                      <span className="text-xs font-medium text-ink-400">{t('Bouton du formulaire', 'Form button')}</span>
+                      <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>
                     </div>
                     <input
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
                       maxLength={25}
                       className={`${inputCls} w-full`}
-                      placeholder="Texte affiché sur le bouton (25 car. max)"
+                      placeholder={t('Texte affiché sur le bouton (25 car. max)', 'Text shown on the button (25 char. max)')}
                     />
                     <select
                       value={b.flowId ?? ''}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, flowId: e.target.value } : x)))}
                       className={`${inputCls} w-full`}
                     >
-                      <option value="">Choisir un formulaire…</option>
+                      <option value="">{t('Choisir un formulaire…', 'Choose a form…')}</option>
                       {pubFlows.map((f) => (
                         <option key={f.id} value={f.id}>{f.name}</option>
                       ))}
@@ -652,13 +658,13 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                   </div>
                 ) : (
                   <div key={i} className="flex items-center gap-1.5">
-                    <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? 'lien' : 'réponse'}</span>
+                    <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? t('lien', 'link') : t('réponse', 'reply')}</span>
                     <input
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
                       maxLength={25}
                       className={`${inputCls} flex-1`}
-                      placeholder="Texte du bouton (25 car. max)"
+                      placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
                     />
                     {b.type === 'URL' && (
                       <input
@@ -668,7 +674,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
                         placeholder="https://..."
                       />
                     )}
-                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
+                    <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>
                   </div>
                 )
               ))}
@@ -679,13 +685,13 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
               <div className="mt-2">
                 {!creatingFlow ? (
                   <button type="button" onClick={() => setCreatingFlow(true)} className="text-xs font-medium text-brand-600 hover:underline">
-                    ＋ Créer un nouveau formulaire
+                    {t('＋ Créer un nouveau formulaire', '＋ Create a new form')}
                   </button>
                 ) : (
                   <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4">
                     <div className="mb-3 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-ink-900">Nouveau formulaire</span>
-                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-400 hover:text-ink-700">Annuler</button>
+                      <span className="text-sm font-semibold text-ink-900">{t('Nouveau formulaire', 'New form')}</span>
+                      <button type="button" onClick={() => setCreatingFlow(false)} className="text-xs text-ink-400 hover:text-ink-700">{t('Annuler', 'Cancel')}</button>
                     </div>
                     <FlowBuilder
                       tenantId={tenantId}
@@ -711,7 +717,7 @@ function CreateForm({ tenantId, onCreated, initial }: { tenantId: string; onCrea
             disabled={!canSubmit}
             className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
           >
-            {busy ? 'Envoi...' : isEdit ? 'Enregistrer les modifications' : 'Créer le template'}
+            {busy ? t('Envoi...', 'Sending...') : isEdit ? t('Enregistrer les modifications', 'Save changes') : t('Créer le template', 'Create template')}
           </button>
         </div>
 

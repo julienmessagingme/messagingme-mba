@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { dayKey, dayLabel, hourMin } from '@/lib/day';
 import type { Session } from '@/lib/session';
+import { useT } from '@/lib/i18n';
 import {
   listConversations,
   getConversationMessages,
@@ -49,10 +50,11 @@ function initials(name: string): string {
 
 /** Pastille d'auteur d'une bulle sortante (initiales + tooltip nom). */
 function AgentBadge({ name }: { name: string }) {
+  const t = useT();
   return (
     <span
-      title={`Envoyé par ${name}`}
-      aria-label={`Envoyé par ${name}`}
+      title={t(`Envoyé par ${name}`, `Sent by ${name}`)}
+      aria-label={t(`Envoyé par ${name}`, `Sent by ${name}`)}
       className="flex h-6 w-6 shrink-0 select-none items-center justify-center rounded-full bg-ink-700 text-[10px] font-semibold text-white"
     >
       {initials(name)}
@@ -62,11 +64,12 @@ function AgentBadge({ name }: { name: string }) {
 
 /** Rendu d'un message entrant à payload : carte « formulaire rempli » si c'est un objet, sinon bouton. */
 function InboundPayload({ body, payload }: { body: string | null; payload: string }) {
+  const t = useT();
   const entries = parseFormResponse(payload);
   if (!entries) return <span>👆 {body ?? payload}</span>;
   return (
     <div className="space-y-0.5">
-      <div className="mb-1 text-xs font-semibold opacity-70">📋 Formulaire rempli</div>
+      <div className="mb-1 text-xs font-semibold opacity-70">📋 {t('Formulaire rempli', 'Form response')}</div>
       {entries.map(([k, v]) => (
         <div key={k} className="text-sm">
           <span className="opacity-60">{prettyKey(k)} : </span>
@@ -78,6 +81,7 @@ function InboundPayload({ body, payload }: { body: string | null; payload: strin
 }
 
 function InboxInner({ session }: { session: Session }) {
+  const t = useT();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,11 +92,11 @@ function InboxInner({ session }: { session: Session }) {
     try {
       setConversations((await listConversations(session.tenantId)).conversations);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId]);
+  }, [session.tenantId, t]);
 
   useEffect(() => {
     void reload();
@@ -102,15 +106,15 @@ function InboxInner({ session }: { session: Session }) {
     <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[320px_1fr]">
       <section className="lg:flex lg:min-h-0 lg:flex-col">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">Conversations ({conversations.length})</h2>
-          <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Conversations', 'Conversations')} ({conversations.length})</h2>
+          <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading ? (
-          <p className="text-sm text-ink-500">Chargement...</p>
+          <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : conversations.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            Aucune conversation. Elles apparaissent quand un client répond à une campagne.
+            {t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
           </div>
         ) : (
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
@@ -139,7 +143,7 @@ function InboxInner({ session }: { session: Session }) {
           <Thread key={selected.id} session={session} conversation={selected} onSent={reload} />
         ) : (
           <div className="flex h-full min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-ink-300 bg-white text-sm text-ink-400">
-            Sélectionne une conversation
+            {t('Sélectionne une conversation', 'Select a conversation')}
           </div>
         )}
       </section>
@@ -148,6 +152,7 @@ function InboxInner({ session }: { session: Session }) {
 }
 
 function Thread({ session, conversation, onSent }: { session: Session; conversation: Conversation; onSent: () => void }) {
+  const t = useT();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [windowOpen, setWindowOpen] = useState(true);
   const [text, setText] = useState('');
@@ -158,13 +163,13 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
 
   const load = useCallback(async () => {
     try {
-      const t = await getConversationMessages(session.tenantId, conversation.id);
-      setMessages(t.messages);
-      setWindowOpen(t.windowOpen);
+      const res = await getConversationMessages(session.tenantId, conversation.id);
+      setMessages(res.messages);
+      setWindowOpen(res.windowOpen);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     }
-  }, [session.tenantId, conversation.id]);
+  }, [session.tenantId, conversation.id, t]);
 
   useEffect(() => {
     void load();
@@ -184,7 +189,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
       await load();
       onSent();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Envoi impossible');
+      setError(err instanceof Error ? err.message : t('Envoi impossible', 'Failed to send'));
     } finally {
       setBusy(false);
     }
@@ -198,7 +203,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           <span className="ml-2 font-mono text-xs text-ink-400">+{conversation.waId}</span>
         </div>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
-          {windowOpen ? 'fenêtre 24 h ouverte' : 'fenêtre 24 h fermée'}
+          {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
         </span>
       </div>
 
@@ -243,7 +248,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
         <div className="flex items-center gap-2 border-t border-ink-100 p-3">
           <button
             onClick={() => setShowTemplate(true)}
-            title="Envoyer un template"
+            title={t('Envoyer un template', 'Send a template')}
             className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-600 hover:bg-ink-50"
           >
             📋
@@ -252,7 +257,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void send(); }}
-            placeholder="Répondre (fenêtre de service 24 h)..."
+            placeholder={t('Répondre (fenêtre de service 24 h)...', 'Reply (24h service window)...')}
             className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
           <button
@@ -260,19 +265,19 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
             disabled={busy || text.trim() === ''}
             className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
           >
-            {busy ? '...' : 'Envoyer'}
+            {busy ? '...' : t('Envoyer', 'Send')}
           </button>
         </div>
       ) : (
         <div className="border-t border-ink-100 p-3">
           <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Fenêtre de 24 h fermée : WhatsApp interdit le message libre. Pour reprendre contact, envoie un <b>template approuvé</b>.
+            {t('Fenêtre de 24 h fermée : WhatsApp interdit le message libre. Pour reprendre contact, envoie un ', '24-hour window closed: WhatsApp does not allow free-form messages. To reach out again, send an ')}<b>{t('template approuvé', 'approved template')}</b>.
           </p>
           <button
             onClick={() => setShowTemplate(true)}
             className="w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600"
           >
-            Envoyer un template
+            {t('Envoyer un template', 'Send a template')}
           </button>
         </div>
       )}
@@ -307,6 +312,7 @@ function TemplateSendPanel({
   onClose: () => void;
   onSent: () => void | Promise<void>;
 }) {
+  const t = useT();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [sel, setSel] = useState<TemplateSummary | null>(null);
   const [vars, setVars] = useState<string[]>([]);
@@ -318,14 +324,14 @@ function TemplateSendPanel({
     let alive = true;
     (async () => {
       try {
-        const t = await listTemplates(session.tenantId);
-        if (alive) setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
+        const res = await listTemplates(session.tenantId);
+        if (alive) setTemplates(res.templates.filter((x) => x.status === 'APPROVED'));
       } catch (err) {
-        if (alive) setError(err instanceof Error ? err.message : 'Templates indisponibles');
+        if (alive) setError(err instanceof Error ? err.message : t('Templates indisponibles', 'Templates unavailable'));
       }
     })();
     return () => { alive = false; };
-  }, [session.tenantId]);
+  }, [session.tenantId, t]);
 
   const varCount = varCountOf(sel?.body);
   const needsMedia = sel?.headerFormat === 'IMAGE' || sel?.headerFormat === 'VIDEO' || sel?.headerFormat === 'DOCUMENT';
@@ -334,8 +340,8 @@ function TemplateSendPanel({
   const canSend = !!sel && !busy && varsFilled && (!needsMedia || imageUrl.trim() !== '');
 
   function pick(value: string) {
-    const t = templates.find((x) => `${x.name}::${x.language}` === value) ?? null;
-    setSel(t);
+    const found = templates.find((x) => `${x.name}::${x.language}` === value) ?? null;
+    setSel(found);
     setVars([]);
     setImageUrl('');
     setError(null);
@@ -357,7 +363,7 @@ function TemplateSendPanel({
       });
       await onSent();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Envoi impossible');
+      setError(err instanceof Error ? err.message : t('Envoi impossible', 'Failed to send'));
     } finally {
       setBusy(false);
     }
@@ -367,20 +373,20 @@ function TemplateSendPanel({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">Envoyer un template</h3>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Envoyer un template', 'Send a template')}</h3>
           <button onClick={onClose} className="text-ink-400 hover:text-ink-700">×</button>
         </div>
-        <p className="mt-1 text-xs text-ink-500">Le seul moyen de ré-engager un contact hors fenêtre de 24 h.</p>
+        <p className="mt-1 text-xs text-ink-500">{t('Le seul moyen de ré-engager un contact hors fenêtre de 24 h.', 'The only way to re-engage a contact outside the 24h window.')}</p>
 
         <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-700">Template approuvé</label>
+          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Template approuvé', 'Approved template')}</label>
           {templates.length === 0 ? (
-            <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans Campagnes → Templates.</p>
+            <p className="text-xs text-amber-700">{t('Aucun template approuvé. Crée-en un dans Campagnes → Templates.', 'No approved template. Create one in Campaigns → Templates.')}</p>
           ) : (
             <select value={sel ? `${sel.name}::${sel.language}` : ''} onChange={(e) => pick(e.target.value)} className={inputCls}>
-              <option value="" disabled>Choisir…</option>
-              {templates.map((t) => (
-                <option key={`${t.name}::${t.language}`} value={`${t.name}::${t.language}`}>{t.name} ({t.language})</option>
+              <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
+              {templates.map((tpl) => (
+                <option key={`${tpl.name}::${tpl.language}`} value={`${tpl.name}::${tpl.language}`}>{tpl.name} ({tpl.language})</option>
               ))}
             </select>
           )}
@@ -390,7 +396,7 @@ function TemplateSendPanel({
           <>
             {varCount > 0 && (
               <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium text-ink-700">Variables</label>
+                <label className="mb-1 block text-sm font-medium text-ink-700">{t('Variables', 'Variables')}</label>
                 <div className="space-y-2">
                   {Array.from({ length: varCount }).map((_, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -399,7 +405,7 @@ function TemplateSendPanel({
                         value={vars[i] ?? ''}
                         onChange={(e) => setVars((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
                         className={`${inputCls} flex-1`}
-                        placeholder="valeur"
+                        placeholder={t('valeur', 'value')}
                       />
                     </div>
                   ))}
@@ -410,10 +416,13 @@ function TemplateSendPanel({
             {needsMedia && (
               <div className="mt-3">
                 <label className="mb-1 block text-sm font-medium text-ink-700">
-                  URL de l&apos;{sel.headerFormat === 'IMAGE' ? 'image' : sel.headerFormat === 'VIDEO' ? 'vidéo' : 'document'} (header du template)
+                  {t(
+                    `URL de l'${sel.headerFormat === 'IMAGE' ? 'image' : sel.headerFormat === 'VIDEO' ? 'vidéo' : 'document'} (header du template)`,
+                    `${sel.headerFormat === 'IMAGE' ? 'Image' : sel.headerFormat === 'VIDEO' ? 'Video' : 'Document'} URL (template header)`,
+                  )}
                 </label>
                 <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className={inputCls} />
-                <p className="mt-1 text-[11px] text-ink-400">Lien public (https). L&apos;upload de fichier direct arrive bientôt.</p>
+                <p className="mt-1 text-[11px] text-ink-400">{t("Lien public (https). L'upload de fichier direct arrive bientôt.", 'Public link (https). Direct file upload is coming soon.')}</p>
               </div>
             )}
 
@@ -426,13 +435,13 @@ function TemplateSendPanel({
         {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
         <div className="mt-4 flex gap-2">
-          <button onClick={onClose} className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">Annuler</button>
+          <button onClick={onClose} className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Annuler', 'Cancel')}</button>
           <button
             onClick={send}
             disabled={!canSend}
             className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
           >
-            {busy ? 'Envoi...' : 'Envoyer le template'}
+            {busy ? t('Envoi...', 'Sending...') : t('Envoyer le template', 'Send the template')}
           </button>
         </div>
       </div>

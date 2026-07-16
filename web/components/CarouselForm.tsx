@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { createTemplate, uploadMedia, type TemplateButtonInput } from '@/lib/api';
 import { resizeToDataUrl } from '@/lib/image';
+import { useT } from '@/lib/i18n';
 
 interface Card {
   headerHandle: string;
@@ -17,20 +18,21 @@ const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-non
 
 /** Aperçu façon WhatsApp d'un carousel : bulle d'intro + cartes défilables (image + texte + boutons). */
 function CarouselPreview({ body, cards, buttons }: { body: string; cards: Card[]; buttons: TemplateButtonInput[] }) {
+  const t = useT();
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-ink-500">Aperçu WhatsApp</p>
+      <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu WhatsApp', 'WhatsApp preview')}</p>
       <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
         <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
           <div className="leading-tight">
             <div className="text-sm font-medium">Messaging Me Tech</div>
-            <div className="text-[10px] text-white/70">en ligne</div>
+            <div className="text-[10px] text-white/70">{t('en ligne', 'online')}</div>
           </div>
         </div>
         <div className="space-y-2 px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
           <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-800 shadow-sm">
-            {body.trim() ? <span className="whitespace-pre-wrap break-words">{body}</span> : <span className="text-ink-400">Message d&apos;introduction…</span>}
+            {body.trim() ? <span className="whitespace-pre-wrap break-words">{body}</span> : <span className="text-ink-400">{t("Message d'introduction…", 'Introduction message…')}</span>}
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {cards.map((c, i) => (
@@ -38,7 +40,7 @@ function CarouselPreview({ body, cards, buttons }: { body: string; cards: Card[]
                 <div className="flex aspect-video w-full items-center justify-center bg-ink-100 text-[11px] text-ink-400">
                   {c.preview ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.preview} alt={`Carte ${i + 1}`} className="h-full w-full object-cover" />
+                    <img src={c.preview} alt={`${t('Carte', 'Card')} ${i + 1}`} className="h-full w-full object-cover" />
                   ) : (
                     'image'
                   )}
@@ -48,7 +50,7 @@ function CarouselPreview({ body, cards, buttons }: { body: string; cards: Card[]
                   <div>
                     {buttons.map((b, j) => (
                       <div key={j} className="border-t border-ink-100 py-1.5 text-center text-[12px] font-medium text-[#00a5f4]">
-                        {b.text?.trim() || (b.type === 'URL' ? 'Lien' : 'Réponse')}
+                        {b.text?.trim() || (b.type === 'URL' ? t('Lien', 'Link') : t('Réponse', 'Reply'))}
                       </div>
                     ))}
                   </div>
@@ -65,6 +67,7 @@ function CarouselPreview({ body, cards, buttons }: { body: string; cards: Card[]
 /** Éditeur de template CAROUSEL : corps commun + 2 à 10 cartes (image + texte), boutons identiques
  *  sur toutes les cartes (contrainte Meta). Les images sont uploadées à la sélection (handle Meta). */
 export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
+  const t = useT();
   const [name, setName] = useState('');
   const [body, setBody] = useState('');
   const [cards, setCards] = useState<Card[]>([emptyCard(), emptyCard()]);
@@ -91,7 +94,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
       const { handle } = await uploadMedia(tenantId, dataUrl);
       setCard(i, { headerHandle: handle, preview: dataUrl, uploading: false });
     } catch (err) {
-      setCard(i, { uploading: false, error: err instanceof Error ? err.message : 'Upload impossible' });
+      setCard(i, { uploading: false, error: err instanceof Error ? err.message : t('Upload impossible', 'Upload failed') });
     }
   }
 
@@ -116,14 +119,14 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
           })),
         },
       });
-      setMsg({ kind: 'ok', text: `Carousel soumis (statut : ${res.status}). Il passe en revue Meta.` });
+      setMsg({ kind: 'ok', text: `${t('Carousel soumis (statut :', 'Carousel submitted (status:')} ${res.status}). ${t('Il passe en revue Meta.', 'Now under Meta review.')}` });
       setName('');
       setBody('');
       setCards([emptyCard(), emptyCard()]);
       setButtons([]);
       onCreated();
     } catch (err) {
-      setMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Création impossible' });
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Création impossible', 'Creation failed') });
     } finally {
       setBusy(false);
     }
@@ -132,32 +135,32 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
   return (
     <div className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-600">Nom du carousel</label>
+        <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom du carousel', 'Carousel name')}</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} w-full max-w-sm`} placeholder="promo_selection" />
       </div>
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-600">Message d&apos;introduction (commun)</label>
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} className={`${inputCls} w-full`} placeholder="Découvrez notre sélection du moment." />
+        <label className="mb-1 block text-xs font-medium text-ink-600">{t("Message d'introduction (commun)", 'Introduction message (shared)')}</label>
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} className={`${inputCls} w-full`} placeholder={t('Découvrez notre sélection du moment.', 'Discover our current selection.')} />
       </div>
 
       {/* Boutons communs à toutes les cartes */}
       <div>
         <div className="mb-1 flex items-center justify-between">
-          <label className="text-xs font-medium text-ink-600">Boutons (identiques sur chaque carte)</label>
+          <label className="text-xs font-medium text-ink-600">{t('Boutons (identiques sur chaque carte)', 'Buttons (identical on every card)')}</label>
           <div className="flex gap-2 text-xs">
-            <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">+ réponse rapide</button>
-            <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">+ lien</button>
+            <button type="button" onClick={() => setButtons([...buttons, { type: 'QUICK_REPLY', text: '' }])} className="text-brand-600 hover:underline">{t('+ réponse rapide', '+ quick reply')}</button>
+            <button type="button" onClick={() => setButtons([...buttons, { type: 'URL', text: '', url: '' }])} className="text-brand-600 hover:underline">{t('+ lien', '+ link')}</button>
           </div>
         </div>
         <div className="space-y-2">
           {buttons.map((b, i) => (
             <div key={i} className="flex items-center gap-1.5">
-              <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? 'lien' : 'réponse'}</span>
-              <input value={b.text} onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} className={`${inputCls} flex-1`} placeholder="Texte du bouton" />
+              <span className="w-16 shrink-0 text-xs text-ink-400">{b.type === 'URL' ? t('lien', 'link') : t('réponse', 'reply')}</span>
+              <input value={b.text} onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} className={`${inputCls} flex-1`} placeholder={t('Texte du bouton', 'Button text')} />
               {b.type === 'URL' && (
                 <input value={b.url ?? ''} onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))} className={`${inputCls} w-28`} placeholder="https://..." />
               )}
-              <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label="Retirer">×</button>
+              <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>
             </div>
           ))}
         </div>
@@ -165,13 +168,13 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
 
       {/* Cartes */}
       <div className="space-y-3">
-        <div className="text-xs font-medium text-ink-600">Cartes ({cards.length}/10) — 2 minimum</div>
+        <div className="text-xs font-medium text-ink-600">{t('Cartes', 'Cards')} ({cards.length}/10) — {t('2 minimum', 'min. 2')}</div>
         <div className="grid gap-3 sm:grid-cols-2">
           {cards.map((c, i) => (
             <div key={i} className="space-y-2 rounded-xl border border-ink-200 p-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-ink-500">Carte {i + 1}</span>
-                <button type="button" onClick={() => removeCard(i)} disabled={cards.length <= 2} className="text-xs text-ink-400 hover:text-coral disabled:opacity-40" title="Retirer">Retirer</button>
+                <span className="text-xs font-medium text-ink-500">{t('Carte', 'Card')} {i + 1}</span>
+                <button type="button" onClick={() => removeCard(i)} disabled={cards.length <= 2} className="text-xs text-ink-400 hover:text-coral disabled:opacity-40" title={t('Retirer', 'Remove')}>{t('Retirer', 'Remove')}</button>
               </div>
               <button
                 type="button"
@@ -180,12 +183,12 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                 className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-400 hover:border-brand-400 disabled:cursor-not-allowed"
               >
                 {c.uploading ? (
-                  'Upload…'
+                  t('Upload…', 'Uploading…')
                 ) : c.preview ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={c.preview} alt={`Carte ${i + 1}`} className="h-full w-full object-cover" />
+                  <img src={c.preview} alt={`${t('Carte', 'Card')} ${i + 1}`} className="h-full w-full object-cover" />
                 ) : (
-                  'Choisir une image'
+                  t('Choisir une image', 'Choose an image')
                 )}
               </button>
               <input
@@ -196,18 +199,18 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                 onChange={(e) => onFile(i, e.target.files?.[0])}
               />
               {c.error && <p className="text-xs text-coral">{c.error}</p>}
-              <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} className={`${inputCls} w-full`} placeholder="Texte de la carte (optionnel)" />
+              <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} className={`${inputCls} w-full`} placeholder={t('Texte de la carte (optionnel)', 'Card text (optional)')} />
             </div>
           ))}
         </div>
-        <button type="button" onClick={addCard} disabled={cards.length >= 10} className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-40">+ Ajouter une carte</button>
+        <button type="button" onClick={addCard} disabled={cards.length >= 10} className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-40">{t('+ Ajouter une carte', '+ Add a card')}</button>
       </div>
 
       <CarouselPreview body={body} cards={cards} buttons={buttons} />
 
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
       <button onClick={submit} disabled={!canSubmit} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
-        {busy ? 'Création…' : 'Créer le carousel'}
+        {busy ? t('Création…', 'Creating…') : t('Créer le carousel', 'Create carousel')}
       </button>
     </div>
   );

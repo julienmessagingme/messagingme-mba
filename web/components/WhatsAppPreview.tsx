@@ -1,5 +1,8 @@
+'use client';
+
 import { Fragment } from 'react';
 import type { TemplateButtonInput } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 /** Rendu du formatage WhatsApp (*gras*, _italique_, ~barré~, `mono`) en noeuds React. */
 function formatInline(text: string): React.ReactNode[] {
@@ -84,19 +87,20 @@ const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', string> = { IMAGE: '�
 
 /** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). Partagé Templates + Campagnes. */
 export function WhatsAppPreview({ body, examples, varLabels, buttons, header, footer, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
+  const t = useT();
   const mediaHeader = header && header.format !== 'TEXT' ? header.format : null;
   const textHeader = header && header.format === 'TEXT' && header.text?.trim() ? header.text : null;
   // Source média affichable (image/vidéo uploadée localement) : on montre le vrai visuel plutôt que l'icône.
   const mediaUrl = header && header.format !== 'TEXT' ? header.mediaUrl : undefined;
   return (
     <div>
-      <p className="mb-2 text-xs font-medium text-ink-500">Aperçu WhatsApp</p>
+      <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu WhatsApp', 'WhatsApp preview')}</p>
       <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
         <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
           <div className="leading-tight">
             <div className="text-sm font-medium">{senderName}</div>
-            <div className="text-[10px] text-white/70">en ligne</div>
+            <div className="text-[10px] text-white/70">{t('en ligne', 'online')}</div>
           </div>
         </div>
         <div className="min-h-[220px] px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
@@ -116,7 +120,7 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
               )}
               {textHeader && <div className="mb-1 break-words text-[13px] font-semibold text-ink-900">{textHeader}</div>}
               <div className="whitespace-pre-wrap break-words text-[13px] leading-snug text-ink-800">
-                {body.trim() ? renderBody(body, examples, varLabels) : <span className="text-ink-400">Le message apparaîtra ici…</span>}
+                {body.trim() ? renderBody(body, examples, varLabels) : <span className="text-ink-400">{t('Le message apparaîtra ici…', 'Your message will appear here…')}</span>}
               </div>
               {footer?.trim() && <div className="mt-1 break-words text-[11px] leading-snug text-ink-400">{footer}</div>}
               <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-ink-400">
@@ -127,7 +131,7 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
                   {buttons.map((b, i) => (
                     <div key={i} className="flex items-center justify-center gap-1.5 border-t border-ink-100 py-2 text-[13px] font-medium text-[#00a5f4]">
                       {b.type === 'URL' ? <UrlIcon /> : <ReplyIcon />}
-                      {b.text?.trim() || (b.type === 'URL' ? 'Lien' : 'Réponse')}
+                      {b.text?.trim() || (b.type === 'URL' ? t('Lien', 'Link') : t('Réponse', 'Reply'))}
                     </div>
                   ))}
                 </div>
@@ -137,7 +141,7 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
         </div>
       </div>
       {!hideNote && (
-        <p className="mt-2 text-[11px] text-ink-400">Le rendu réel peut varier légèrement selon l&apos;appareil. *gras*, _italique_, ~barré~ sont supportés.</p>
+        <p className="mt-2 text-[11px] text-ink-400">{t("Le rendu réel peut varier légèrement selon l'appareil. *gras*, _italique_, ~barré~ sont supportés.", 'The actual rendering may vary slightly by device. *bold*, _italic_, ~strikethrough~ are supported.')}</p>
       )}
     </div>
   );

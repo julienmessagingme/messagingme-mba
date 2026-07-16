@@ -1,6 +1,7 @@
 'use client';
 
 import type { FlowFieldType, FlowTextKind, FlowElement } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 /**
  * Rendu FIDÈLE d'un écran WhatsApp Flow, tel que le client le voit dans WhatsApp : cadre téléphone, en-tête
@@ -31,10 +32,11 @@ const GREEN = '#008069'; // vert bouton WhatsApp
 
 /** Champ « Material » à label flottant (le label chevauche la bordure supérieure). */
 function OutlinedField({ label, required, children, trailing }: { label: string; required: boolean; children: React.ReactNode; trailing?: React.ReactNode }) {
+  const t = useT();
   return (
     <div className="relative rounded-lg border px-3 pb-2 pt-3" style={{ borderColor: BORDER }}>
       <span className="absolute -top-2 left-2.5 bg-white px-1 text-[11px]" style={{ color: MUTED }}>
-        {label || 'Champ'}{required ? ' *' : ''}
+        {label || t('Champ', 'Field')}{required ? ' *' : ''}
       </span>
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-[14px]" style={{ color: '#8696a0' }}>{children}</span>
@@ -45,12 +47,13 @@ function OutlinedField({ label, required, children, trailing }: { label: string;
 }
 
 function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }> }) {
+  const t = useT();
   const opts = el.options.map((o) => o.trim()).filter((o) => o !== '');
   if (el.type === 'optin') {
     return (
       <label className="flex items-start gap-2.5 text-[13px]" style={{ color: '#3b4a54' }}>
         <span className="mt-0.5 h-[18px] w-[18px] shrink-0 rounded border" style={{ borderColor: '#8696a0' }} />
-        <span>{el.label || 'Je consens…'}{el.required ? ' *' : ''}</span>
+        <span>{el.label || t('Je consens…', 'I consent…')}{el.required ? ' *' : ''}</span>
       </label>
     );
   }
@@ -59,7 +62,7 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
     const round = el.type === 'radio';
     return (
       <div>
-        <div className="mb-1.5 text-[13px] font-medium" style={{ color: INK }}>{el.label || 'Choix'}{el.required ? ' *' : ''}</div>
+        <div className="mb-1.5 text-[13px] font-medium" style={{ color: INK }}>{el.label || t('Choix', 'Choice')}{el.required ? ' *' : ''}</div>
         <div className="overflow-hidden rounded-lg border" style={{ borderColor: BORDER }}>
           {shown.map((o, i) => (
             <div key={i} className={`flex items-center justify-between px-3 py-2.5 text-[14px] ${i > 0 ? 'border-t' : ''}`} style={{ color: INK, borderColor: '#eef0f1' }}>
@@ -72,18 +75,18 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
     );
   }
   if (el.type === 'dropdown') {
-    return <OutlinedField label={el.label} required={el.required} trailing="▾">{opts[0] ?? 'Sélectionner'}</OutlinedField>;
+    return <OutlinedField label={el.label} required={el.required} trailing="▾">{opts[0] ?? t('Sélectionner', 'Select')}</OutlinedField>;
   }
   if (el.type === 'date') {
-    return <OutlinedField label={el.label} required={el.required} trailing="📅">jj / mm / aaaa</OutlinedField>;
+    return <OutlinedField label={el.label} required={el.required} trailing="📅">{t('jj / mm / aaaa', 'dd / mm / yyyy')}</OutlinedField>;
   }
   const placeholder =
     el.type === 'passcode' ? '••••••'
-    : el.type === 'textarea' ? 'Votre réponse…'
-    : el.type === 'email' ? 'nom@exemple.com'
+    : el.type === 'textarea' ? t('Votre réponse…', 'Your answer…')
+    : el.type === 'email' ? t('nom@exemple.com', 'name@example.com')
     : el.type === 'phone' ? '+33 6 12 34 56 78'
     : el.type === 'number' ? '0'
-    : `Saisir ${(el.label || '').toLowerCase() || 'votre réponse'}…`;
+    : `${t('Saisir', 'Enter')} ${(el.label || '').toLowerCase() || t('votre réponse', 'your answer')}…`;
   return (
     <div className={el.type === 'textarea' ? 'pb-6' : ''}>
       <OutlinedField label={el.label} required={el.required}>{placeholder}</OutlinedField>
@@ -92,21 +95,22 @@ function ScreenField({ el }: { el: Extract<FlowScreenElement, { kind: 'field' }>
 }
 
 export function FlowScreen({ elements, cta, title }: { elements: FlowScreenElement[]; cta?: string | null; title?: string }) {
+  const t = useT();
   return (
     <div className="mx-auto w-full max-w-[300px] overflow-hidden rounded-[28px] border-[5px] bg-white shadow-lg" style={{ borderColor: '#0b141a' }}>
       {/* En-tête façon écran WhatsApp Flow */}
       <div className="flex items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: '#eef0f1' }}>
         <span className="text-[18px] leading-none" style={{ color: INK }}>✕</span>
-        <span className="truncate text-[14px] font-semibold" style={{ color: INK }}>{title?.trim() || 'Formulaire'}</span>
+        <span className="truncate text-[14px] font-semibold" style={{ color: INK }}>{title?.trim() || t('Formulaire', 'Form')}</span>
       </div>
       {/* Contenu défilant */}
       <div className="max-h-[440px] space-y-3.5 overflow-y-auto bg-white px-4 py-4">
-        {elements.length === 0 && <p className="text-[13px]" style={{ color: MUTED }}>Ajoute des éléments à gauche…</p>}
+        {elements.length === 0 && <p className="text-[13px]" style={{ color: MUTED }}>{t('Ajoute des éléments à gauche…', 'Add elements on the left…')}</p>}
         {elements.map((e, i) => {
-          if (e.kind === 'heading') return <div key={i} className="text-[22px] font-semibold leading-tight" style={{ color: INK }}>{e.text || 'Titre'}</div>;
-          if (e.kind === 'subheading') return <div key={i} className="text-[16px] font-semibold" style={{ color: INK }}>{e.text || 'Sous-titre'}</div>;
-          if (e.kind === 'body') return <div key={i} className="whitespace-pre-wrap text-[14px] leading-snug" style={{ color: '#3b4a54' }}>{e.text || 'Paragraphe'}</div>;
-          if (e.kind === 'caption') return <div key={i} className="text-[12px]" style={{ color: MUTED }}>{e.text || 'Légende'}</div>;
+          if (e.kind === 'heading') return <div key={i} className="text-[22px] font-semibold leading-tight" style={{ color: INK }}>{e.text || t('Titre', 'Title')}</div>;
+          if (e.kind === 'subheading') return <div key={i} className="text-[16px] font-semibold" style={{ color: INK }}>{e.text || t('Sous-titre', 'Subtitle')}</div>;
+          if (e.kind === 'body') return <div key={i} className="whitespace-pre-wrap text-[14px] leading-snug" style={{ color: '#3b4a54' }}>{e.text || t('Paragraphe', 'Paragraph')}</div>;
+          if (e.kind === 'caption') return <div key={i} className="text-[12px]" style={{ color: MUTED }}>{e.text || t('Légende', 'Caption')}</div>;
           if (e.kind === 'image') {
             return e.src
               // eslint-disable-next-line @next/next/no-img-element
@@ -119,7 +123,7 @@ export function FlowScreen({ elements, cta, title }: { elements: FlowScreenEleme
       </div>
       {/* Bouton final épinglé */}
       <div className="border-t px-4 py-3" style={{ borderColor: '#eef0f1' }}>
-        <div className="rounded-full py-2.5 text-center text-[14px] font-semibold text-white" style={{ background: GREEN }}>{cta?.trim() || 'Envoyer'}</div>
+        <div className="rounded-full py-2.5 text-center text-[14px] font-semibold text-white" style={{ background: GREEN }}>{cta?.trim() || t('Envoyer', 'Send')}</div>
       </div>
     </div>
   );

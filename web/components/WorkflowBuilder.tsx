@@ -13,16 +13,19 @@ import {
   updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 type RFNode = Node<Record<string, unknown>>;
 type RFEdge = Edge;
 
-const NODE_META: Record<WorkflowNodeType, { emoji: string; label: string }> = {
-  template: { emoji: '📩', label: 'Envoi template' },
-  inbox: { emoji: '💬', label: 'Inbox' },
-  flow: { emoji: '📋', label: 'Formulaire' },
-  tag: { emoji: '🏷️', label: 'Ajout de tag' },
-  field: { emoji: '✏️', label: 'Ajout de champ' },
+// Les libellés portent les DEUX langues ([fr, en]) : NODE_META est une constante module (useT inappelable ici),
+// et il est lu par 3 composants -> on résout au rendu via t(...meta.label).
+const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string, string] }> = {
+  template: { emoji: '📩', label: ['Envoi template', 'Send template'] },
+  inbox: { emoji: '💬', label: ['Inbox', 'Inbox'] },
+  flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
+  tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] },
+  field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] },
 };
 const NODE_ORDER: WorkflowNodeType[] = ['template', 'flow', 'tag', 'field', 'inbox'];
 
@@ -30,19 +33,20 @@ function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`);
 }
 
-function summaryOf(data: Record<string, unknown>): string {
-  const t = data.wfType as WorkflowNodeType;
-  if (t === 'template') return (data.templateName as string) || 'choisir un template…';
-  if (t === 'flow') return (data.flowName as string) || 'choisir un formulaire…';
-  if (t === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : 'choisir un tag…';
-  if (t === 'field') return (data.fieldLabel as string) ? `${data.fieldLabel as string} = ${(data.value as string) || '…'}` : 'choisir un champ…';
-  return 'la conversation arrive en inbox';
+function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) => string): string {
+  const wfType = data.wfType as WorkflowNodeType;
+  if (wfType === 'template') return (data.templateName as string) || t('choisir un template…', 'choose a template…');
+  if (wfType === 'flow') return (data.flowName as string) || t('choisir un formulaire…', 'choose a form…');
+  if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir un tag…', 'choose a tag…');
+  if (wfType === 'field') return (data.fieldLabel as string) ? `${data.fieldLabel as string} = ${(data.value as string) || '…'}` : t('choisir un champ…', 'choose a field…');
+  return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
 
 /** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` expose UNE SORTIE PAR BOUTON
  *  quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire sont montrés grisés, non
  *  reliables (ils sortent de WhatsApp). Les autres types de bloc ont une seule sortie (bas). */
 function WFNode({ id, data, selected }: NodeProps) {
+  const t = useT();
   const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
   const meta = NODE_META[wfType];
   const buttons = wfType === 'template' && Array.isArray(data.templateButtons)
@@ -56,30 +60,30 @@ function WFNode({ id, data, selected }: NodeProps) {
           le drag ni la sélection du bloc. Même pattern que le ✕ des arêtes (CustomEvent -> listener parent). */}
       <button
         className="nodrag absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-coral shadow hover:bg-red-50"
-        title="Supprimer le bloc"
+        title={t('Supprimer le bloc', 'Delete block')}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('wf-node-delete', { detail: id })); }}
       >✕</button>
       <div className="flex items-center gap-1.5 rounded-t-xl border-b border-ink-200 bg-white px-2 py-1">
         <span className="text-xs">{meta.emoji}</span>
-        <span className="truncate text-[11px] font-semibold text-ink-800">{meta.label}</span>
+        <span className="truncate text-[11px] font-semibold text-ink-800">{t(...meta.label)}</span>
       </div>
-      <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data)}</div>
+      <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data, t)}</div>
       {hasQR ? (
         // Au moins un bouton quick-reply -> une SORTIE par bouton (QR = handle reliable à droite ; URL/flow grisé).
         <div className="border-t border-ink-200">
           {buttons.map((b, i) => {
             const isQR = b.type === 'QUICK_REPLY';
             const icon = b.type === 'URL' ? '🔗' : b.type === 'FLOW' ? '📋' : '↩︎';
-            const fallback = b.type === 'URL' ? 'Lien' : b.type === 'FLOW' ? 'Formulaire' : 'Réponse';
+            const fallback = b.type === 'URL' ? t('Lien', 'Link') : b.type === 'FLOW' ? t('Formulaire', 'Form') : t('Réponse', 'Reply');
             return (
               <div key={i} className={`relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] first:border-t-0 ${isQR ? 'text-ink-700' : 'text-ink-400'}`}>
                 <span className="shrink-0">{icon}</span>
                 <span className="truncate">{b.text || fallback}</span>
                 {isQR ? (
-                  <Handle type="source" id={`btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={`Relier « ${b.text || fallback} »`} />
+                  <Handle type="source" id={`btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={`${t('Relier', 'Connect')} « ${b.text || fallback} »`} />
                 ) : (
-                  <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title="Bouton URL / formulaire : sort de WhatsApp, non reliable" />
+                  <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title={t('Bouton URL / formulaire : sort de WhatsApp, non reliable', 'URL / form button: leaves WhatsApp, not connectable')} />
                 )}
               </div>
             );
@@ -94,12 +98,12 @@ function WFNode({ id, data, selected }: NodeProps) {
               {buttons.map((b, i) => (
                 <div key={i} className="flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-400 first:border-t-0">
                   <span className="shrink-0">{b.type === 'URL' ? '🔗' : '📋'}</span>
-                  <span className="truncate">{b.text || (b.type === 'URL' ? 'Lien' : 'Formulaire')}</span>
+                  <span className="truncate">{b.text || (b.type === 'URL' ? t('Lien', 'Link') : t('Formulaire', 'Form'))}</span>
                 </div>
               ))}
             </div>
           )}
-          <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title="Tirer une flèche" />
+          <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Tirer une flèche', 'Drag an arrow')} />
         </>
       )}
     </div>
@@ -108,6 +112,7 @@ function WFNode({ id, data, selected }: NodeProps) {
 
 /** Arête courbée avec, au milieu, une poubelle (supprimer) et un + (insérer un bloc entre les deux). */
 function WFEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd }: EdgeProps) {
+  const t = useT();
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   return (
     <>
@@ -117,8 +122,8 @@ function WFEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, target
           className="nodrag nopan pointer-events-auto absolute flex gap-1"
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
         >
-          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-insert', { detail: id }))} title="Insérer un bloc" className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-xs text-brand-600 shadow hover:bg-brand-50">+</button>
-          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-delete', { detail: id }))} title="Supprimer la flèche" className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-coral shadow hover:bg-red-50">✕</button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-insert', { detail: id }))} title={t('Insérer un bloc', 'Insert a block')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-xs text-brand-600 shadow hover:bg-brand-50">+</button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-delete', { detail: id }))} title={t('Supprimer la flèche', 'Delete arrow')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-coral shadow hover:bg-red-50">✕</button>
         </div>
       </EdgeLabelRenderer>
     </>
@@ -151,6 +156,7 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
  * + sauvegarde du graphe (pas d'exécution). Le graphe est validé/sanitisé côté serveur au save.
  */
 export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph }) {
+  const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdge>(seed.edges);
@@ -286,9 +292,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     setMsg(null);
     try {
       await updateWorkflow(tenantId, workflowId, { graph: fromRF(nodes, edges) });
-      setMsg('Scénario enregistré.');
+      setMsg(t('Scénario enregistré.', 'Scenario saved.'));
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : 'Enregistrement impossible');
+      setMsg(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
     } finally {
       setSaving(false);
     }
@@ -299,15 +305,15 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
   return (
     <div className="flex flex-col gap-3 lg:h-full">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-ink-500">+ Créer un bloc :</span>
-        {NODE_ORDER.map((t) => (
-          <button key={t} onClick={() => addNode(t)} className="rounded-md border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
-            {NODE_META[t].emoji} {NODE_META[t].label}
+        <span className="text-xs text-ink-500">{t('+ Créer un bloc :', '+ Create a block:')}</span>
+        {NODE_ORDER.map((nt) => (
+          <button key={nt} onClick={() => addNode(nt)} className="rounded-md border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
+            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-3">
           {msg && <span className="text-xs text-ink-500">{msg}</span>}
-          <button onClick={save} disabled={saving} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60">{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+          <button onClick={save} disabled={saving} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60">{saving ? t('Enregistrement…', 'Saving…') : t('Enregistrer', 'Save')}</button>
         </div>
       </div>
 
@@ -336,7 +342,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
 
         <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
           {!selected ? (
-            <p className="text-sm text-ink-400">Clique un bloc pour le configurer. Tire une flèche depuis le point d&apos;un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d&apos;un bloc le supprime.</p>
+            <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
             <ConfigPanel node={selected} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
           )}
@@ -355,47 +361,48 @@ function ConfigPanel({
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
   onCommitTag: (tag: string) => void;
 }) {
+  const t = useT();
   const d = node.data as Record<string, unknown>;
   const wfType = (d.wfType as WorkflowNodeType) ?? 'template';
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-ink-900">{NODE_META[wfType].emoji} {NODE_META[wfType].label}</span>
-        <button onClick={onDelete} className="text-xs text-coral hover:underline">Supprimer</button>
+        <span className="text-sm font-semibold text-ink-900">{NODE_META[wfType].emoji} {t(...NODE_META[wfType].label)}</span>
+        <button onClick={onDelete} className="text-xs text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-600">Type de bloc</label>
+        <label className="mb-1 block text-xs font-medium text-ink-600">{t('Type de bloc', 'Block type')}</label>
         <select value={wfType} onChange={(e) => onPatch({ wfType: e.target.value })} className={`${cls} bg-white`}>
-          {NODE_ORDER.map((t) => <option key={t} value={t}>{NODE_META[t].label}</option>)}
+          {NODE_ORDER.map((nt) => <option key={nt} value={nt}>{t(...NODE_META[nt].label)}</option>)}
         </select>
       </div>
 
       {wfType === 'template' && (
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">Template à envoyer</label>
-          <select value={(d.templateName as string) ?? ''} onChange={(e) => { const t = templates.find((x) => x.name === e.target.value); onPatch({ templateName: e.target.value, language: t?.language ?? 'fr', templateButtons: t?.buttons ?? [] }); }} className={`${cls} bg-white`}>
-            <option value="">Choisir…</option>
-            {templates.map((t) => <option key={t.id || t.name} value={t.name}>{t.name}</option>)}
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Template à envoyer', 'Template to send')}</label>
+          <select value={(d.templateName as string) ?? ''} onChange={(e) => { const tpl = templates.find((x) => x.name === e.target.value); onPatch({ templateName: e.target.value, language: tpl?.language ?? 'fr', templateButtons: tpl?.buttons ?? [] }); }} className={`${cls} bg-white`}>
+            <option value="">{t('Choisir…', 'Choose…')}</option>
+            {templates.map((tpl) => <option key={tpl.id || tpl.name} value={tpl.name}>{tpl.name}</option>)}
           </select>
           {Array.isArray(d.templateButtons) && (d.templateButtons as unknown[]).length > 0 && (
-            <p className="mt-1 text-[11px] text-ink-400">Chaque bouton de réponse rapide devient une <b>sortie</b> à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.</p>
+            <p className="mt-1 text-[11px] text-ink-400">{t('Chaque bouton de réponse rapide devient une ', 'Each quick-reply button becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.', ' to connect (dot on the right of the block). Link/form buttons cannot be connected.')}</p>
           )}
         </div>
       )}
       {wfType === 'flow' && (
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">Formulaire (publié)</label>
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Formulaire (publié)', 'Form (published)')}</label>
           <select value={(d.flowId as string) ?? ''} onChange={(e) => { const f = flows.find((x) => x.id === e.target.value); onPatch({ flowId: e.target.value, flowName: f?.name ?? '' }); }} className={`${cls} bg-white`}>
-            <option value="">Choisir…</option>
+            <option value="">{t('Choisir…', 'Choose…')}</option>
             {flows.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
-          {flows.length === 0 && <p className="mt-1 text-[11px] text-ink-400">Aucun formulaire publié. Crée-en un dans Contenu &gt; Formulaires.</p>}
+          {flows.length === 0 && <p className="mt-1 text-[11px] text-ink-400">{t('Aucun formulaire publié. Crée-en un dans Contenu > Formulaires.', 'No published form. Create one in Content > Forms.')}</p>}
         </div>
       )}
       {wfType === 'tag' && (
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">Tag à ajouter</label>
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Tag à ajouter', 'Tag to add')}</label>
           <input
             list="wf-tags"
             value={(d.tag as string) ?? ''}
@@ -403,29 +410,29 @@ function ConfigPanel({
             onBlur={(e) => onCommitTag(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onCommitTag((e.target as HTMLInputElement).value); } }}
             className={cls}
-            placeholder="vip, prospect…"
+            placeholder={t('vip, prospect…', 'vip, prospect…')}
           />
-          <datalist id="wf-tags">{tags.map((t) => <option key={t.tag} value={t.tag} />)}</datalist>
-          <p className="mt-1 text-[11px] text-ink-400">Le tag est ajouté à Contenus &gt; Tags dès que tu quittes le champ.</p>
+          <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
+          <p className="mt-1 text-[11px] text-ink-400">{t('Le tag est ajouté à Contenus > Tags dès que tu quittes le champ.', 'The tag is added to Content > Tags as soon as you leave the field.')}</p>
         </div>
       )}
       {wfType === 'field' && (
         <div className="space-y-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">Champ</label>
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Champ', 'Field')}</label>
             <select value={(d.fieldKey as string) ?? ''} onChange={(e) => { const f = fields.find((x) => x.key === e.target.value); onPatch({ fieldKey: e.target.value, fieldLabel: f?.label ?? '' }); }} className={`${cls} bg-white`}>
-              <option value="">Choisir…</option>
+              <option value="">{t('Choisir…', 'Choose…')}</option>
               {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">Valeur</label>
-            <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={cls} placeholder="valeur à poser" />
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
+            <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={cls} placeholder={t('valeur à poser', 'value to set')} />
           </div>
         </div>
       )}
       {wfType === 'inbox' && (
-        <p className="text-xs text-ink-500">Quand le contact répond (quick-reply), la conversation remonte dans l&apos;inbox pour un humain.</p>
+        <p className="text-xs text-ink-500">{t("Quand le contact répond (quick-reply), la conversation remonte dans l'inbox pour un humain.", 'When the contact replies (quick-reply), the conversation moves to the inbox for a human.')}</p>
       )}
     </div>
   );

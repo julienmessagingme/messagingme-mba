@@ -19,12 +19,14 @@ import {
   type UserFieldDef,
   type UserFieldKind,
 } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
 }
 
 function ContactsInner({ session }: { session: Session }) {
+  const t = useT();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ function ContactsInner({ session }: { session: Session }) {
       const { contacts } = await listContacts(session.tenantId, { limit: 500 });
       setContacts(contacts);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ function ContactsInner({ session }: { session: Session }) {
     return (
       <div className="mx-auto max-w-3xl">
         <button onClick={() => setMode('list')} className="mb-4 text-sm text-brand-600 hover:underline">
-          ← Retour aux contacts
+          ← {t('Retour aux contacts', 'Back to contacts')}
         </button>
         <ImportScreen tenantId={session.tenantId} onImported={() => { void reload(); setMode('list'); }} />
       </div>
@@ -79,14 +81,14 @@ function ContactsInner({ session }: { session: Session }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Contacts ({contacts.length})</h2>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Contacts', 'Contacts')} ({contacts.length})</h2>
         <div className="flex items-center gap-3">
-          <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+          <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
           <button
             onClick={() => setMode('import')}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
           >
-            + Importer un CSV
+            + {t('Importer un CSV', 'Import a CSV')}
           </button>
         </div>
       </div>
@@ -114,16 +116,8 @@ const inputCls =
 
 // Catégories proposées pour chaque colonne IMPORTÉE. phone/name = attributs standard ; les
 // autres presets et « custom » sont des champs perso (fields.<key>). L'inclusion (importer ou
-// non la colonne) est gérée à part par une case à cocher.
-const CATEGORIES: Array<{ value: string; label: string }> = [
-  { value: 'phone', label: 'Téléphone' },
-  { value: 'name', label: 'Nom' },
-  { value: 'prenom', label: 'Prénom' },
-  { value: 'email', label: 'Email' },
-  { value: 'ville', label: 'Ville' },
-  { value: 'societe', label: 'Société' },
-  { value: 'custom', label: 'Champ perso…' },
-];
+// non la colonne) est gérée à part par une case à cocher. Les CATEGORIES (avec labels traduits)
+// sont construites DANS ImportScreen car useT() est inappelable au niveau module.
 const PRESET_KEYS = ['prenom', 'email', 'ville', 'societe'];
 
 function slug(s: string): string {
@@ -177,6 +171,17 @@ function buildMapping(headers: string[], choices: Record<string, Choice>): Colum
 }
 
 function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: () => void }) {
+  const t = useT();
+  // Catégories des colonnes importées : les `value` restent des clés techniques, seuls les labels sont traduits.
+  const CATEGORIES: Array<{ value: string; label: string }> = [
+    { value: 'phone', label: t('Téléphone', 'Phone') },
+    { value: 'name', label: t('Nom', 'Name') },
+    { value: 'prenom', label: t('Prénom', 'First name') },
+    { value: 'email', label: t('Email', 'Email') },
+    { value: 'ville', label: t('Ville', 'City') },
+    { value: 'societe', label: t('Société', 'Company') },
+    { value: 'custom', label: t('Champ perso…', 'Custom field…') },
+  ];
   const [csv, setCsv] = useState('');
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [choices, setChoices] = useState<Record<string, Choice>>({});
@@ -201,7 +206,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
       setPreview(p);
       setChoices(initChoices(p));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analyse impossible');
+      setError(err instanceof Error ? err.message : t('Analyse impossible', 'Analysis failed'));
     } finally {
       setBusy(false);
     }
@@ -226,7 +231,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
       setReport(r);
       onImported();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import impossible');
+      setError(err instanceof Error ? err.message : t('Import impossible', 'Import failed'));
     } finally {
       setBusy(false);
     }
@@ -258,13 +263,13 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
   if (!preview) {
     return (
       <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Importer un CSV</h2>
-        <p className="mt-1 text-xs text-ink-500">On lit la 1re ligne (les en-têtes) et tu associes chaque colonne à un champ. Tes données ne s&apos;affichent pas ici.</p>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Importer un CSV', 'Import a CSV')}</h2>
+        <p className="mt-1 text-xs text-ink-500">{t("On lit la 1re ligne (les en-têtes) et tu associes chaque colonne à un champ. Tes données ne s'affichent pas ici.", 'We read the first row (the headers) and you map each column to a field. Your data is not displayed here.')}</p>
 
         <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-ink-300 px-3 py-10 text-center hover:border-brand-500">
           <svg viewBox="0 0 24 24" className="h-8 w-8 text-ink-300" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
-          <span className="text-sm font-medium text-ink-700">{busy ? 'Analyse en cours…' : 'Choisir un fichier .csv'}</span>
-          <span className="text-xs text-ink-400">{fileName ?? 'ou glisse-le ici'}</span>
+          <span className="text-sm font-medium text-ink-700">{busy ? t('Analyse en cours…', 'Analyzing…') : t('Choisir un fichier .csv', 'Choose a .csv file')}</span>
+          <span className="text-xs text-ink-400">{fileName ?? t('ou glisse-le ici', 'or drag it here')}</span>
           <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" disabled={busy} />
         </label>
 
@@ -272,7 +277,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
 
         <div className="mt-3 text-center">
           <button onClick={() => setShowPaste((s) => !s)} className="text-xs text-ink-400 hover:text-brand-600">
-            {showPaste ? 'masquer' : 'ou coller le texte à la place'}
+            {showPaste ? t('masquer', 'hide') : t('ou coller le texte à la place', 'or paste the text instead')}
           </button>
         </div>
         {showPaste && (
@@ -281,7 +286,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
               value={csv}
               onChange={(e) => setCsv(e.target.value)}
               rows={4}
-              placeholder={'Prénom,Nom,Téléphone\nJulie,Dumas,+33612345678'}
+              placeholder={t('Prénom,Nom,Téléphone\nJulie,Dumas,+33612345678', 'First name,Name,Phone\nJulie,Dumas,+33612345678')}
               className="w-full rounded-lg border border-ink-300 px-3 py-2 font-mono text-xs outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             />
             <button
@@ -289,7 +294,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
               disabled={busy || csv.trim() === ''}
               className="mt-2 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
             >
-              {busy ? 'Analyse...' : 'Analyser →'}
+              {busy ? t('Analyse...', 'Analyzing...') : t('Analyser →', 'Analyze →')}
             </button>
           </div>
         )}
@@ -301,13 +306,13 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
   return (
     <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Associer les colonnes</h2>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Associer les colonnes', 'Map the columns')}</h2>
         <button onClick={() => { setPreview(null); setReport(null); }} className="text-xs text-brand-600 hover:underline">
-          Changer de fichier
+          {t('Changer de fichier', 'Change file')}
         </button>
       </div>
       <p className="mt-1 text-xs text-ink-500">
-        {preview.headers.length} colonnes · {preview.rowCount} lignes. <b>Coche les colonnes à importer</b> et associe chacune à un champ. <b>{includedCount}</b> cochée{includedCount > 1 ? 's' : ''}.
+        {preview.headers.length} {t('colonnes', 'columns')} · {preview.rowCount} {t('lignes.', 'rows.')} <b>{t('Coche les colonnes à importer', 'Check the columns to import')}</b> {t('et associe chacune à un champ.', 'and map each one to a field.')} <b>{includedCount}</b> {t(`cochée${includedCount > 1 ? 's' : ''}`, 'checked')}.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -320,7 +325,7 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
                 type="checkbox"
                 checked={c.include}
                 onChange={() => toggleInclude(h)}
-                title={c.include ? 'Importer cette colonne' : 'Colonne ignorée'}
+                title={c.include ? t('Importer cette colonne', 'Import this column') : t('Colonne ignorée', 'Ignored column')}
                 className="h-4 w-4 shrink-0 accent-brand-500"
               />
               <div className="min-w-0 flex-1">
@@ -343,13 +348,13 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
                     <input
                       value={c.customKey}
                       onChange={(e) => setChoice(h, { customKey: e.target.value })}
-                      placeholder="nom du champ"
+                      placeholder={t('nom du champ', 'field name')}
                       className="w-32 shrink-0 rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                     />
                   )}
                 </>
               ) : (
-                <span className="shrink-0 text-xs text-ink-400">non importée</span>
+                <span className="shrink-0 text-xs text-ink-400">{t('non importée', 'not imported')}</span>
               )}
             </div>
           );
@@ -358,29 +363,29 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
 
       {!hasPhone && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          Associe au moins une colonne à <b>Téléphone</b> : c&apos;est la clé d&apos;un contact.
+          {t('Associe au moins une colonne à', 'Map at least one column to')} <b>{t('Téléphone', 'Phone')}</b> {t(": c'est la clé d'un contact.", ": it's a contact's key.")}
         </p>
       )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-sm font-medium text-ink-700">Tags (optionnel)</label>
-          <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="salon-2026, prospect" className={inputCls} />
+          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tags (optionnel)', 'Tags (optional)')}</label>
+          <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder={t('salon-2026, prospect', 'expo-2026, prospect')} className={inputCls} />
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm text-ink-700">
           <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} className="rounded" />
-          Consentement (opt-in) donné
+          {t('Consentement (opt-in) donné', 'Consent (opt-in) given')}
         </label>
       </div>
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {report && (
         <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          <b>{report.created}</b> créés, <b>{report.updated}</b> mis à jour, <b>{report.skipped}</b> ignorés.
+          <b>{report.created}</b> {t('créés,', 'created,')} <b>{report.updated}</b> {t('mis à jour,', 'updated,')} <b>{report.skipped}</b> {t('ignorés.', 'skipped.')}
           {report.errors.length > 0 && (
             <ul className="mt-1 list-inside list-disc text-xs text-emerald-700">
               {report.errors.slice(0, 5).map((e, i) => (
-                <li key={i}>ligne {e.line} : {e.reason}</li>
+                <li key={i}>{t('ligne', 'row')} {e.line} : {e.reason}</li>
               ))}
             </ul>
           )}
@@ -393,17 +398,22 @@ function ImportScreen({ tenantId, onImported }: { tenantId: string; onImported: 
         className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
       >
         {busy
-          ? 'Import en cours...'
-          : `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`}
+          ? t('Import en cours...', 'Importing...')
+          : t(
+              `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`,
+              `Import ${includedCount} column${includedCount > 1 ? 's' : ''} and ${preview.rowCount} row${preview.rowCount > 1 ? 's' : ''}`,
+            )}
       </button>
     </section>
   );
 }
 
-const OPT_IN_LABEL: Record<string, { text: string; cls: string }> = {
-  opted_in: { text: 'opt-in', cls: 'bg-emerald-50 text-emerald-700' },
-  opted_out: { text: 'opt-out', cls: 'bg-red-50 text-red-700' },
-  unknown: { text: 'inconnu', cls: 'bg-ink-100 text-ink-600' },
+// text porte les DEUX langues [fr, en] (résolu au rendu via t(...badge.text)) : cette const vit au niveau
+// module, où useT() est inappelable. opt-in / opt-out sont identiques dans les deux langues.
+const OPT_IN_LABEL: Record<string, { text: [string, string]; cls: string }> = {
+  opted_in: { text: ['opt-in', 'opt-in'], cls: 'bg-emerald-50 text-emerald-700' },
+  opted_out: { text: ['opt-out', 'opt-out'], cls: 'bg-red-50 text-red-700' },
+  unknown: { text: ['inconnu', 'unknown'], cls: 'bg-ink-100 text-ink-600' },
 };
 
 /** WhatsApp ID (wa_id) : la clé de routage WhatsApp = les chiffres du numéro sans « + », sinon le BSUID. */
@@ -420,11 +430,12 @@ function fieldValue(c: Contact, key: string): string | null {
 }
 
 function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; loading: boolean; onSelect: (c: Contact) => void }) {
-  if (loading) return <p className="text-sm text-ink-500">Chargement...</p>;
+  const t = useT();
+  if (loading) return <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>;
   if (contacts.length === 0)
     return (
       <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-        Aucun contact pour l&apos;instant. Clique « + Importer un CSV » pour commencer.
+        {t("Aucun contact pour l'instant. Clique « + Importer un CSV » pour commencer.", 'No contacts yet. Click "+ Import a CSV" to get started.')}
       </div>
     );
   return (
@@ -432,9 +443,9 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
       <table className="w-full min-w-[880px] text-sm">
         <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
           <tr>
-            <th className="px-4 py-2.5 font-medium">Nom</th>
-            <th className="px-4 py-2.5 font-medium">Prénom</th>
-            <th className="px-4 py-2.5 font-medium">Téléphone</th>
+            <th className="px-4 py-2.5 font-medium">{t('Nom', 'Name')}</th>
+            <th className="px-4 py-2.5 font-medium">{t('Prénom', 'First name')}</th>
+            <th className="px-4 py-2.5 font-medium">{t('Téléphone', 'Phone')}</th>
             <th className="px-4 py-2.5 font-medium">BSUID</th>
             <th className="px-4 py-2.5 font-medium">WhatsApp ID</th>
             <th className="px-4 py-2.5 font-medium">Email</th>
@@ -462,7 +473,7 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
                 </td>
                 <td className="px-4 py-2.5 text-xs text-ink-700">{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
                 <td className="px-4 py-2.5">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
                 </td>
               </tr>
             );
@@ -475,18 +486,19 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
 
 /** Input adapté au type d'un user field. */
 function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value: string; onChange: (v: string) => void }) {
+  const t = useT();
   const cls = 'flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
   if (type === 'boolean') {
     return (
       <select value={value} onChange={(e) => onChange(e.target.value)} className={`${cls} bg-white`}>
         <option value="">—</option>
-        <option value="oui">oui</option>
-        <option value="non">non</option>
+        <option value="oui">{t('oui', 'yes')}</option>
+        <option value="non">{t('non', 'no')}</option>
       </select>
     );
   }
   const inputType = type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'url' ? 'url' : 'text';
-  return <input type={inputType} value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={type === 'url' ? 'https://…' : 'valeur'} />;
+  return <input type={inputType} value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={type === 'url' ? 'https://…' : t('valeur', 'value')} />;
 }
 
 /**
@@ -505,6 +517,7 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
   onSave: (v: string) => Promise<boolean>;
   onDelete?: () => Promise<boolean>;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const begin = () => { setDraft(value); setEditing(true); };
@@ -523,8 +536,8 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
             className="min-w-0 flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         )}
-        <button onClick={() => void commit()} disabled={busy} className="shrink-0 text-brand-600 hover:text-brand-700 disabled:opacity-50" aria-label="Enregistrer">✓</button>
-        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-700" aria-label="Annuler">×</button>
+        <button onClick={() => void commit()} disabled={busy} className="shrink-0 text-brand-600 hover:text-brand-700 disabled:opacity-50" aria-label={t('Enregistrer', 'Save')}>✓</button>
+        <button onClick={() => setEditing(false)} className="shrink-0 text-ink-400 hover:text-ink-700" aria-label={t('Annuler', 'Cancel')}>×</button>
       </span>
     );
   }
@@ -532,10 +545,10 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
     <span className="group flex items-center gap-2">
       <span className={`${mono ? 'font-mono ' : ''}break-words text-ink-900`}>{value !== '' ? value : '-'}</span>
       {editable && (
-        <button onClick={begin} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-brand-600 group-hover:opacity-100" aria-label="Modifier">modifier</button>
+        <button onClick={begin} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-brand-600 group-hover:opacity-100" aria-label={t('Modifier', 'Edit')}>{t('modifier', 'edit')}</button>
       )}
       {onDelete && value !== '' && (
-        <button onClick={() => void onDelete()} disabled={busy} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-coral group-hover:opacity-100 disabled:opacity-50" aria-label="Supprimer">supprimer</button>
+        <button onClick={() => void onDelete()} disabled={busy} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-coral group-hover:opacity-100 disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
       )}
     </span>
   );
@@ -560,6 +573,7 @@ function ContactDetail({
   onFieldCreated: (def: UserFieldDef) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
   const defByKey = new Map(userFields.map((d) => [d.key, d]));
   // 'prenom' est déjà affiché dans le bloc fixe ci-dessus -> l'exclure de la section Champs (pas de doublon).
@@ -590,7 +604,7 @@ function ContactDetail({
       onUpdated(updated);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Modification impossible');
+      setError(err instanceof Error ? err.message : t('Modification impossible', 'Update failed'));
       return false;
     } finally {
       setBusy(false);
@@ -632,15 +646,15 @@ function ContactDetail({
       const ok = await apply({ fields: { [def.key]: cVal.trim() } });
       if (ok) { setCreatingField(false); setCLabel(''); setCVal(''); setCType('text'); setCreatedRef(null); }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Création du champ impossible');
+      setError(err instanceof Error ? err.message : t('Création du champ impossible', 'Failed to create the field'));
     } finally {
       setBusy(false);
     }
   }
   async function addTag() {
-    const t = newTag.trim();
-    if (t === '') return;
-    if (await apply({ addTags: [t] })) setNewTag('');
+    const tag = newTag.trim();
+    if (tag === '') return;
+    if (await apply({ addTags: [tag] })) setNewTag('');
   }
 
   return (
@@ -655,21 +669,21 @@ function ContactDetail({
         </div>
 
         <div className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
-          <span className="text-ink-400">Nom</span>
+          <span className="text-ink-400">{t('Nom', 'Name')}</span>
           <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
-          <span className="text-ink-400">Prénom</span>
+          <span className="text-ink-400">{t('Prénom', 'First name')}</span>
           <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveFieldEnsuringDef('prenom', 'Prénom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
-          <span className="text-ink-400">Téléphone</span>
-          <span className="font-mono text-ink-900" title="Le numéro (identité/routage WhatsApp) n'est pas modifiable">{contact.phoneE164 ?? '-'}</span>
+          <span className="text-ink-400">{t('Téléphone', 'Phone')}</span>
+          <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n'est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
           {contact.bsuid && (
             <>
-              <span className="text-ink-400">Compte WhatsApp</span>
-              <span className="font-mono text-ink-900" title="BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro (non modifiable)">{contact.bsuid}</span>
+              <span className="text-ink-400">{t('Compte WhatsApp', 'WhatsApp account')}</span>
+              <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro (non modifiable)", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number (not editable)")}>{contact.bsuid}</span>
             </>
           )}
-          <span className="text-ink-400">Consentement</span>
-          <span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{badge.text}</span></span>
-          <span className="text-ink-400">Ajouté le</span>
+          <span className="text-ink-400">{t('Consentement', 'Consent')}</span>
+          <span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span></span>
+          <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>
           <span className="text-ink-900">{new Date(contact.createdAt).toLocaleDateString('fr-FR')}</span>
         </div>
 
@@ -678,13 +692,13 @@ function ContactDetail({
         <div className="mt-5">
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Tags</h4>
           <div className="flex flex-wrap items-center gap-1.5">
-            {(contact.tags ?? []).map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
-                {t}
-                <button onClick={() => void apply({ removeTags: [t] })} disabled={busy} className="text-brand-400 hover:text-coral" aria-label={`Retirer ${t}`}>×</button>
+            {(contact.tags ?? []).map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                {tag}
+                <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-coral" aria-label={`${t('Retirer', 'Remove')} ${tag}`}>×</button>
               </span>
             ))}
-            {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">Aucun tag.</span>}
+            {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">{t('Aucun tag.', 'No tags.')}</span>}
           </div>
           <div className="mt-2 flex items-center gap-2">
             <input
@@ -692,18 +706,18 @@ function ContactDetail({
               value={newTag}
               onChange={(e) => setNewTag(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
-              placeholder="Ajouter un tag…"
+              placeholder={t('Ajouter un tag…', 'Add a tag…')}
               className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             />
-            <datalist id="tag-suggestions">{tagSuggestions.map((t) => <option key={t} value={t} />)}</datalist>
-            <button onClick={addTag} disabled={busy || newTag.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Ajouter</button>
+            <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>
+            <button onClick={addTag} disabled={busy || newTag.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">{t('Ajouter', 'Add')}</button>
           </div>
         </div>
 
         <div className="mt-5">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Champs</h4>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">{t('Champs', 'Fields')}</h4>
           {fieldEntries.length === 0 ? (
-            <p className="text-sm text-ink-400">Aucun champ perso.</p>
+            <p className="text-sm text-ink-400">{t('Aucun champ perso.', 'No custom fields.')}</p>
           ) : (
             <div className="overflow-hidden rounded-lg border border-ink-200">
               {fieldEntries.map(([k, v], i) => (
@@ -725,35 +739,35 @@ function ContactDetail({
             {addable.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
                 <select value={newKey} onChange={(e) => { setNewKey(e.target.value); setNewVal(''); }} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
-                  <option value="">Ajouter un champ existant…</option>
+                  <option value="">{t('Ajouter un champ existant…', 'Add an existing field…')}</option>
                   {addable.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
                 </select>
                 {selectedDef && (
                   <>
                     <FieldValueInput type={selectedDef.type} value={newVal} onChange={setNewVal} />
-                    <button onClick={addField} disabled={busy || newVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Ajouter</button>
+                    <button onClick={addField} disabled={busy || newVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">{t('Ajouter', 'Add')}</button>
                   </>
                 )}
               </div>
             )}
             {!creatingField ? (
-              <button onClick={() => setCreatingField(true)} className="text-sm font-medium text-brand-600 hover:text-brand-700">+ Créer un nouveau champ</button>
+              <button onClick={() => setCreatingField(true)} className="text-sm font-medium text-brand-600 hover:text-brand-700">+ {t('Créer un nouveau champ', 'Create a new field')}</button>
             ) : (
               <div className="space-y-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder="Nom du champ (ex. Métier)" className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+                  <input value={cLabel} onChange={(e) => setCLabel(e.target.value)} placeholder={t('Nom du champ (ex. Métier)', 'Field name (e.g. Job)')} className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
                   <select value={cType} onChange={(e) => setCType(e.target.value as UserFieldKind)} className="rounded-lg border border-ink-300 bg-white px-2 py-2 text-sm text-ink-800">
-                    <option value="text">texte</option>
-                    <option value="number">nombre</option>
-                    <option value="date">date</option>
-                    <option value="boolean">oui/non</option>
-                    <option value="url">lien</option>
+                    <option value="text">{t('texte', 'text')}</option>
+                    <option value="number">{t('nombre', 'number')}</option>
+                    <option value="date">{t('date', 'date')}</option>
+                    <option value="boolean">{t('oui/non', 'yes/no')}</option>
+                    <option value="url">{t('lien', 'link')}</option>
                   </select>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <FieldValueInput type={cType} value={cVal} onChange={setCVal} />
-                  <button onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">Créer et ajouter</button>
-                  <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-400 hover:text-ink-700">Annuler</button>
+                  <button onClick={createAndAddField} disabled={busy || cLabel.trim() === '' || cVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">{t('Créer et ajouter', 'Create and add')}</button>
+                  <button onClick={() => { setCreatingField(false); setCLabel(''); setCVal(''); setCreatedRef(null); }} className="text-sm text-ink-400 hover:text-ink-700">{t('Annuler', 'Cancel')}</button>
                 </div>
               </div>
             )}

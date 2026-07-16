@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { Session } from '@/lib/session';
+import { useT, useLocale } from '@/lib/i18n';
 
 /** Initiales pour la pastille (nom si dispo, sinon partie locale de l'email). */
 function initials(email: string): string {
@@ -21,6 +22,8 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const isAdmin = session.role === 'admin';
+  const t = useT();
+  const { locale, setLocale } = useLocale();
 
   useEffect(() => {
     if (!open) return;
@@ -39,9 +42,9 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
   }, [open]);
 
   const disabledItem = (label: string) => (
-    <div className="flex cursor-not-allowed items-center justify-between px-3 py-2 text-sm text-ink-300" title="Bientôt disponible">
+    <div className="flex cursor-not-allowed items-center justify-between px-3 py-2 text-sm text-ink-300" title={t('Bientôt disponible', 'Coming soon')}>
       {label}
-      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-400">bientôt</span>
+      <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-400">{t('bientôt', 'soon')}</span>
     </div>
   );
 
@@ -64,16 +67,32 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
         <div className="absolute right-0 z-40 mt-2 w-56 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-lg" role="menu">
           <div className="border-b border-ink-100 px-3 py-2">
             <div className="truncate text-sm font-medium text-ink-900">{session.email}</div>
-            <div className="text-xs text-ink-400">{isAdmin ? 'Administrateur' : 'Agent'}</div>
+            <div className="text-xs text-ink-400">{isAdmin ? t('Administrateur', 'Administrator') : t('Agent', 'Agent')}</div>
+          </div>
+          {/* Langue de l'interface (FR/EN), mémorisée par navigateur. */}
+          <div className="flex items-center justify-between border-b border-ink-100 px-3 py-2">
+            <span className="text-xs text-ink-400">{t('Langue', 'Language')}</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-ink-200 text-xs">
+              {(['fr', 'en'] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLocale(l)}
+                  aria-pressed={locale === l}
+                  className={`px-2 py-0.5 font-medium transition ${locale === l ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                >
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
           {isAdmin && (
             <>
-              <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">Compte &amp; équipe</Link>
-              {disabledItem('Abonnement')}
-              {disabledItem('Billing')}
+              <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
+              {disabledItem(t('Abonnement', 'Subscription'))}
+              {disabledItem(t('Billing', 'Billing'))}
             </>
           )}
-          <button onClick={onLogout} className="block w-full border-t border-ink-100 px-3 py-2 text-left text-sm text-coral hover:bg-ink-50">Déconnexion</button>
+          <button onClick={onLogout} className="block w-full border-t border-ink-100 px-3 py-2 text-left text-sm text-coral hover:bg-ink-50">{t('Déconnexion', 'Log out')}</button>
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getAuthConfig, loginWithGoogle } from '@/lib/api';
 import { saveSession } from '@/lib/session';
+import { useT } from '@/lib/i18n';
 
 // GIS (Google Identity Services) : typage minimal du global injecté par le script Google.
 interface GisCredentialResponse {
@@ -49,6 +50,7 @@ function loadGis(): Promise<void> {
  */
 export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
   const router = useRouter();
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   // Ref pour garder onError stable : évite de re-déclencher l'effet (et re-render du bouton) à chaque render parent.
   const onErrorRef = useRef(onError);
@@ -83,7 +85,7 @@ export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
           callback: (resp) => {
             const idToken = resp.credential;
             if (!idToken) {
-              onErrorRef.current?.('Réponse Google vide, réessaie.');
+              onErrorRef.current?.(t('Réponse Google vide, réessaie.', 'Empty Google response, please try again.'));
               return;
             }
             loginWithGoogle(idToken)
@@ -92,12 +94,12 @@ export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
                 // Nouvel espace -> onboarding (connecter le numéro), comme le signup email ; sinon inbox (agent) / dashboard.
                 router.replace(res.isNew ? '/accueil' : res.user.role === 'agent' ? '/inbox' : '/dashboard');
               })
-              .catch((err) => onErrorRef.current?.(err instanceof Error ? err.message : 'Connexion Google impossible'));
+              .catch((err) => onErrorRef.current?.(err instanceof Error ? err.message : t('Connexion Google impossible', 'Google sign-in failed')));
           },
         });
         id.renderButton(ref.current, { theme: 'outline', size: 'large', width: 320, text: 'continue_with', logo_alignment: 'center' });
       })
-      .catch(() => onErrorRef.current?.('Google indisponible pour le moment.'));
+      .catch(() => onErrorRef.current?.(t('Google indisponible pour le moment.', 'Google is unavailable right now.')));
     return () => {
       cancelled = true;
     };
@@ -109,7 +111,7 @@ export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
     <div className="mt-4 space-y-3">
       <div className="flex items-center gap-3 text-xs text-ink-400">
         <span className="h-px flex-1 bg-ink-200" />
-        ou
+        {t('ou', 'or')}
         <span className="h-px flex-1 bg-ink-200" />
       </div>
       <div ref={ref} className="flex justify-center" />

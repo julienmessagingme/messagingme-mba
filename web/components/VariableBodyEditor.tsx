@@ -1,6 +1,7 @@
 'use client';
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { useT } from '@/lib/i18n';
 
 /** API impérative : insérer du texte (emoji) ou une variable (chip `{{n}}`) au curseur. */
 export interface VariableBodyEditorHandle {
@@ -83,6 +84,7 @@ export const VariableBodyEditor = forwardRef<VariableBodyEditorHandle, Props>(fu
   { value, varLabels, onChange, placeholder, className },
   ref,
 ) {
+  const t = useT();
   const elRef = useRef<HTMLDivElement>(null);
   // onChange/varLabels lus via refs pour garder des handlers stables (pas de ré-abonnement).
   const onChangeRef = useRef(onChange);
@@ -158,7 +160,7 @@ export const VariableBodyEditor = forwardRef<VariableBodyEditorHandle, Props>(fu
         suppressContentEditableWarning
         role="textbox"
         aria-multiline="true"
-        aria-label="Corps du message"
+        aria-label={t('Corps du message', 'Message body')}
         onInput={(e) => onChangeRef.current(serialize(e.currentTarget))}
         onPaste={(e) => {
           // Colle en TEXTE BRUT (pas de HTML arbitraire dans le contentEditable).

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { DailyPoint } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 
 export interface ChartSeries {
   label: string;
@@ -79,6 +80,7 @@ export function DailyChart({
   /** Grand chiffre : 'sum' = total période (flux) ; 'last' = dernière valeur (séries CUMULÉES). */
   summary?: 'sum' | 'last';
 }) {
+  const t = useT();
   const [hover, setHover] = useState<number | null>(null);
   const dates = useMemo(() => daysBetween(from, to), [from, to]);
 
@@ -155,8 +157,8 @@ export function DailyChart({
           </div>
         ) : (
           <div className="flex shrink-0 gap-2">
-            <MiniStat label="Pic" value={fmtNum(peak)} />
-            <MiniStat label="Moy." value={fmtNum(avg)} />
+            <MiniStat label={t('Pic', 'Peak')} value={fmtNum(peak)} />
+            <MiniStat label={t('Moy.', 'Avg.')} value={fmtNum(avg)} />
           </div>
         )}
       </div>

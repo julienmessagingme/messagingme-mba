@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
+import { useT } from '@/lib/i18n';
 import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
@@ -45,6 +46,7 @@ interface Kpis {
 }
 
 function AccueilInner({ session }: { session: Session }) {
+  const t = useT();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [account, setAccount] = useState<AccountStatusResponse | null>(null);
   const [mbaEnabled, setMbaEnabled] = useState(false);
@@ -68,11 +70,11 @@ function AccueilInner({ session }: { session: Session }) {
       setMbaEnabled(cfg.mbaEnabled);
       setAccount(acc);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId]);
+  }, [session.tenantId, t]);
 
   // KPIs 30 j : chargés à part (non bloquants). Un hoquet des stats/coût n'efface pas la carte statut.
   const loadKpis = useCallback(async () => {
@@ -127,28 +129,28 @@ function AccueilInner({ session }: { session: Session }) {
   const firstName = firstNameOf(me);
   const kpiRow = useMemo(
     () => [
-      { label: 'Contacts', value: kpis ? fmtNum(kpis.contacts) : '—' },
-      { label: 'Messages échangés', value: kpis ? fmtNum(kpis.exchanged) : '—' },
-      { label: 'Templates envoyés', value: kpis ? fmtNum(kpis.templates) : '—' },
-      { label: 'Coût estimé', value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost) : '—') : '—' },
+      { label: t('Contacts', 'Contacts'), value: kpis ? fmtNum(kpis.contacts) : '—' },
+      { label: t('Messages échangés', 'Messages exchanged'), value: kpis ? fmtNum(kpis.exchanged) : '—' },
+      { label: t('Templates envoyés', 'Templates sent'), value: kpis ? fmtNum(kpis.templates) : '—' },
+      { label: t('Coût estimé', 'Estimated cost'), value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost) : '—') : '—' },
     ],
-    [kpis],
+    [kpis, t],
   );
 
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-tight text-ink-900">
-          Bonjour{firstName ? ` ${firstName}` : ''}
+          {t('Bonjour', 'Hello')}{firstName ? ` ${firstName}` : ''}
         </h2>
-        <p className="mt-0.5 text-sm text-ink-500">Voici l&apos;état de ton compte WhatsApp Business.</p>
+        <p className="mt-0.5 text-sm text-ink-500">{t("Voici l'état de ton compte WhatsApp Business.", 'Here is the status of your WhatsApp Business account.')}</p>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {/* Rangée de KPIs (30 derniers jours) — mêmes chiffres que la page Analytics. */}
       <div>
-        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-400">30 derniers jours</div>
+        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-400">{t('30 derniers jours', 'Last 30 days')}</div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {kpiRow.map((k) => (
             <div key={k.label} className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
@@ -160,7 +162,7 @@ function AccueilInner({ session }: { session: Session }) {
       </div>
 
       {loading ? (
-        <p className="text-sm text-ink-500">Chargement…</p>
+        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {/* Espace sans numéro (self-signup) -> onboarding grisé ; sinon carte statut opérationnelle. */}
@@ -169,7 +171,7 @@ function AccueilInner({ session }: { session: Session }) {
           ) : (
             <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold tracking-tight text-ink-900">Numéro WhatsApp</h3>
+                <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
                 {account && (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-700">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX[account.status.dot] }} />
@@ -178,25 +180,25 @@ function AccueilInner({ session }: { session: Session }) {
                 )}
               </div>
               <div className="font-mono text-lg font-semibold text-ink-900">
-                {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : 'Aucun numéro'}
+                {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : t('Aucun numéro', 'No number')}
               </div>
               {account?.verifiedName && <div className="mt-0.5 text-xs text-ink-500">{account.verifiedName}</div>}
               {account && <p className="mt-1 text-xs text-ink-500">{account.status.reason}</p>}
               {account?.hasNumber && (
                 <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink-100 pt-3 text-xs">
                   <div>
-                    <div className="font-medium uppercase tracking-wide text-ink-400">Qualité</div>
+                    <div className="font-medium uppercase tracking-wide text-ink-400">{t('Qualité', 'Quality')}</div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-ink-800">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: qualityHex(account.quality) }} />
-                      {qualityLabel(account.quality)}
+                      {qualityLabel(account.quality, t)}
                     </div>
                   </div>
                   {account.tier && (
-                    <Field label="Cap d'envoi" value={tierLabel(account.tier)} />
+                    <Field label={t("Cap d'envoi", 'Sending limit')} value={tierLabel(account.tier)} />
                   )}
-                  {account.nameStatus && <Field label="Nom" value={nameStatusLabel(account.nameStatus)} />}
-                  {account.throughputLevel && <Field label="Débit" value={throughputLabel(account.throughputLevel)} />}
-                  {account.wabaHealthStatus && <Field label="Santé du compte" value={wabaHealthLabel(account.wabaHealthStatus)} />}
+                  {account.nameStatus && <Field label={t('Nom', 'Name')} value={nameStatusLabel(account.nameStatus, t)} />}
+                  {account.throughputLevel && <Field label={t('Débit', 'Throughput')} value={throughputLabel(account.throughputLevel)} />}
+                  {account.wabaHealthStatus && <Field label={t('Santé du compte', 'Account health')} value={wabaHealthLabel(account.wabaHealthStatus, t)} />}
                 </div>
               )}
               {account?.hasNumber && account.hubspotPortal?.connected && (
@@ -205,7 +207,7 @@ function AccueilInner({ session }: { session: Session }) {
                   <div className="flex items-center gap-2 text-sm font-semibold text-ink-800">
                     <HubSpotMark className="h-[18px] w-[18px] shrink-0" />
                     <span>
-                      HubSpot : connecté au portail{' '}
+                      {t('HubSpot : connecté au portail', 'HubSpot: connected to portal')}{' '}
                       <span className="font-mono text-brand-700">{account.hubspotPortal.hubDomain ?? account.hubspotPortal.hubId}</span>
                     </span>
                   </div>
@@ -216,19 +218,19 @@ function AccueilInner({ session }: { session: Session }) {
                           className="h-2.5 w-2.5 rounded-full"
                           style={{ backgroundColor: account.hubspotConnected ? DOT_HEX.green : DOT_HEX.grey }}
                         />
-                        {account.hubspotConnected ? 'Synchronisation activée' : 'Synchronisation coupée'}
+                        {account.hubspotConnected ? t('Synchronisation activée', 'Sync enabled') : t('Synchronisation coupée', 'Sync disabled')}
                       </div>
                       <p className="mt-0.5 text-xs text-ink-500">
                         {account.hubspotConnected
-                          ? "Les analyses de conversation sont synchronisées vers HubSpot."
-                          : "La synchronisation vers HubSpot est coupée pour ce numéro."}
+                          ? t('Les analyses de conversation sont synchronisées vers HubSpot.', 'Conversation analyses are synced to HubSpot.')
+                          : t('La synchronisation vers HubSpot est coupée pour ce numéro.', 'Sync to HubSpot is disabled for this number.')}
                       </p>
                     </div>
                     {isAdmin && account.phoneNumberId && (
                       <button
                         onClick={toggleHubspot}
                         disabled={savingHubspot}
-                        title="Activer/couper la synchro HubSpot"
+                        title={t('Activer/couper la synchro HubSpot', 'Enable/disable HubSpot sync')}
                         aria-pressed={account.hubspotConnected}
                         className={`relative h-7 w-12 shrink-0 rounded-full transition ${account.hubspotConnected ? 'bg-brand-500' : 'bg-ink-300'} ${savingHubspot ? 'opacity-60' : ''}`}
                       >
@@ -245,10 +247,10 @@ function AccueilInner({ session }: { session: Session }) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-semibold text-ink-800">
                       <HubSpotMark className="h-[18px] w-[18px] shrink-0" />
-                      HubSpot non connecté
+                      {t('HubSpot non connecté', 'HubSpot not connected')}
                     </div>
                     <p className="mt-0.5 text-xs text-ink-500">
-                      Aucun portail HubSpot n&apos;est relié à ce compte. Connecte-le pour synchroniser les analyses de conversation.
+                      {t("Aucun portail HubSpot n'est relié à ce compte. Connecte-le pour synchroniser les analyses de conversation.", 'No HubSpot portal is linked to this account. Connect it to sync conversation analyses.')}
                     </p>
                   </div>
                   {isAdmin && (
@@ -258,7 +260,7 @@ function AccueilInner({ session }: { session: Session }) {
                       rel="noreferrer"
                       className="shrink-0 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
                     >
-                      Connecter HubSpot
+                      {t('Connecter HubSpot', 'Connect HubSpot')}
                     </a>
                   )}
                 </div>
@@ -274,9 +276,9 @@ function AccueilInner({ session }: { session: Session }) {
                 <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
                 <p className="mt-0.5 text-xs text-ink-500">
                   {mbaEnabled
-                    ? "Activé : l'agent IA répondra quand Meta ouvrira la fonctionnalité sur ton numéro."
-                    : "Désactivé. Active-le pour préparer l'agent IA WhatsApp."}
-                  <span className="ml-1 text-ink-400">En attente d&apos;ouverture Meta (mur ToS Business AI).</span>
+                    ? t("Activé : l'agent IA répondra quand Meta ouvrira la fonctionnalité sur ton numéro.", 'Enabled: the AI agent will reply once Meta opens the feature on your number.')
+                    : t("Désactivé. Active-le pour préparer l'agent IA WhatsApp.", 'Disabled. Enable it to prepare the WhatsApp AI agent.')}
+                  <span className="ml-1 text-ink-400">{t("En attente d'ouverture Meta (mur ToS Business AI).", 'Awaiting Meta rollout (Business AI ToS wall).')}</span>
                 </p>
               </div>
             </div>
@@ -284,12 +286,12 @@ function AccueilInner({ session }: { session: Session }) {
               <button
                 onClick={toggleMba}
                 disabled={!isAdmin || savingMba}
-                title={isAdmin ? '' : 'Réservé aux admins'}
+                title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
                 className={`relative h-7 w-12 shrink-0 rounded-full transition ${mbaEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${!isAdmin ? 'cursor-not-allowed opacity-60' : ''}`}
               >
                 <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${mbaEnabled ? 'left-[22px]' : 'left-0.5'}`} />
               </button>
-              <span className="text-sm font-medium text-ink-700">{mbaEnabled ? 'Activé' : 'Désactivé'}</span>
+              <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
             </div>
           </div>
         </div>
@@ -323,7 +325,7 @@ interface FbLoginResponse {
 }
 
 let fbSdkLoading: Promise<void> | null = null;
-function loadFbSdk(appId: string, version: string): Promise<void> {
+function loadFbSdk(appId: string, version: string, t: (fr: string, en?: string) => string): Promise<void> {
   if (window.FB) return Promise.resolve();
   if (fbSdkLoading) return fbSdkLoading;
   fbSdkLoading = new Promise<void>((resolve, reject) => {
@@ -332,11 +334,11 @@ function loadFbSdk(appId: string, version: string): Promise<void> {
     s.async = true;
     s.defer = true;
     s.onload = () => {
-      if (!window.FB) { fbSdkLoading = null; reject(new Error('SDK Facebook indisponible')); return; }
+      if (!window.FB) { fbSdkLoading = null; reject(new Error(t('SDK Facebook indisponible', 'Facebook SDK unavailable'))); return; }
       window.FB.init({ appId, autoLogAppEvents: false, xfbml: false, version });
       resolve();
     };
-    s.onerror = () => { fbSdkLoading = null; reject(new Error('chargement du SDK Facebook impossible (bloqueur de pub ?)')); };
+    s.onerror = () => { fbSdkLoading = null; reject(new Error(t('chargement du SDK Facebook impossible (bloqueur de pub ?)', 'could not load the Facebook SDK (ad blocker?)'))); };
     document.head.appendChild(s);
   });
   return fbSdkLoading;
@@ -362,6 +364,7 @@ function waitFor<T>(get: () => T | undefined, timeoutMs: number): Promise<T | nu
  * serveur, le bouton reste le placeholder « bientôt disponible ».
  */
 function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: string; isAdmin: boolean; onConnected: () => void }) {
+  const t = useT();
   const [cfg, setCfg] = useState<EsConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -410,27 +413,27 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
     setWarnings([]);
     idsRef.current = undefined;
     try {
-      await loadFbSdk(cfg.appId, cfg.graphVersion);
+      await loadFbSdk(cfg.appId, cfg.graphVersion, t);
       window.FB!.login(
         (resp) => {
           void (async () => {
             try {
               const code = resp?.authResponse?.code;
               if (typeof code !== 'string' || code === '') {
-                setError('Connexion Meta annulée ou refusée.');
+                setError(t('Connexion Meta annulée ou refusée.', 'Meta connection cancelled or denied.'));
                 return;
               }
               // La session info (waba/numéro) peut arriver juste après le callback : on lui laisse 6 s.
               const ids = await waitFor(() => idsRef.current, 6000);
               if (!ids) {
-                setError('La popup n’a pas renvoyé le compte WhatsApp sélectionné. Réessaie.');
+                setError(t('La popup n’a pas renvoyé le compte WhatsApp sélectionné. Réessaie.', 'The popup did not return the selected WhatsApp account. Please try again.'));
                 return;
               }
               const res = await completeEmbeddedSignup(tenantId, { code, ...ids });
               setWarnings(res.warnings ?? []);
               onConnected();
             } catch (err) {
-              setError(err instanceof Error ? err.message : 'Connexion impossible');
+              setError(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
             } finally {
               setBusy(false);
             }
@@ -439,7 +442,7 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
         { config_id: cfg.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {} } },
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connexion impossible');
+      setError(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
       setBusy(false);
     }
   }
@@ -448,10 +451,10 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
   return (
     <div className="rounded-2xl border border-dashed border-ink-300 bg-ink-50 p-5 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-500">Numéro WhatsApp</h3>
+        <h3 className="text-sm font-semibold tracking-tight text-ink-500">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-500">
           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: DOT_HEX.grey }} />
-          Non connecté
+          {t('Non connecté', 'Not connected')}
         </span>
       </div>
       <div className="flex items-start gap-3">
@@ -461,17 +464,16 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-lg font-semibold text-ink-700">Connecter ton compte WhatsApp</div>
+          <div className="text-lg font-semibold text-ink-700">{t('Connecter ton compte WhatsApp', 'Connect your WhatsApp account')}</div>
           <p className="mt-0.5 text-xs text-ink-500">
-            Rattache ton compte WhatsApp Business (Meta) pour activer l&apos;envoi de messages et de campagnes. Tu choisis le
-            business et le numéro dans la fenêtre Meta, on s&apos;occupe du reste.
+            {t("Rattache ton compte WhatsApp Business (Meta) pour activer l'envoi de messages et de campagnes. Tu choisis le business et le numéro dans la fenêtre Meta, on s'occupe du reste.", 'Link your WhatsApp Business account (Meta) to enable sending messages and campaigns. You choose the business and number in the Meta window, we handle the rest.')}
           </p>
         </div>
       </div>
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
       {warnings.length > 0 && (
         <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          Connecté, avec avertissement{warnings.length > 1 ? 's' : ''} : {warnings.join(' · ')}
+          {t('Connecté, avec avertissement', 'Connected, with warning')}{warnings.length > 1 ? 's' : ''} : {warnings.join(' · ')}
         </div>
       )}
       <div className="mt-4 flex items-center gap-3 border-t border-ink-200 pt-3">
@@ -482,19 +484,19 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
             disabled={busy}
             className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
           >
-            {busy ? 'Connexion en cours…' : 'Connecter mon compte WhatsApp'}
+            {busy ? t('Connexion en cours…', 'Connecting…') : t('Connecter mon compte WhatsApp', 'Connect my WhatsApp account')}
           </button>
         ) : (
           <>
             <button
               type="button"
               disabled
-              title={isAdmin ? 'Bientôt disponible' : 'Réservé aux admins'}
+              title={isAdmin ? t('Bientôt disponible', 'Coming soon') : t('Réservé aux admins', 'Admins only')}
               className="cursor-not-allowed rounded-lg bg-ink-200 px-3 py-2 text-sm font-semibold text-ink-500"
             >
-              Connecter mon compte WhatsApp
+              {t('Connecter mon compte WhatsApp', 'Connect my WhatsApp account')}
             </button>
-            <span className="text-xs text-ink-400">{isAdmin ? 'Disponible prochainement' : 'Réservé aux admins'}</span>
+            <span className="text-xs text-ink-400">{isAdmin ? t('Disponible prochainement', 'Available soon') : t('Réservé aux admins', 'Admins only')}</span>
           </>
         )}
       </div>
@@ -505,26 +507,26 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
 function qualityHex(q: AccountStatusResponse['quality']): string {
   return q === 'GREEN' ? DOT_HEX.green : q === 'YELLOW' ? DOT_HEX.amber : q === 'RED' ? DOT_HEX.red : DOT_HEX.grey;
 }
-function qualityLabel(q: AccountStatusResponse['quality']): string {
-  return q === 'GREEN' ? 'Verte' : q === 'YELLOW' ? 'Moyenne' : q === 'RED' ? 'Rouge' : 'Non évaluée';
+function qualityLabel(q: AccountStatusResponse['quality'], t: (fr: string, en?: string) => string): string {
+  return q === 'GREEN' ? t('Verte', 'Green') : q === 'YELLOW' ? t('Moyenne', 'Medium') : q === 'RED' ? t('Rouge', 'Red') : t('Non évaluée', 'Not rated');
 }
 
 /** Statut du nom d'affichage (name_status Graph) -> libellé humain. */
-function nameStatusLabel(s: string): string {
+function nameStatusLabel(s: string, t: (fr: string, en?: string) => string): string {
   const map: Record<string, string> = {
-    APPROVED: 'Approuvé',
-    AVAILABLE_WITHOUT_REVIEW: 'Approuvé',
-    PENDING_REVIEW: 'En revue',
-    PENDING: 'En revue',
-    DECLINED: 'Refusé',
-    NONE: 'Aucun',
-    EXPIRED: 'Expiré',
+    APPROVED: t('Approuvé', 'Approved'),
+    AVAILABLE_WITHOUT_REVIEW: t('Approuvé', 'Approved'),
+    PENDING_REVIEW: t('En revue', 'In review'),
+    PENDING: t('En revue', 'In review'),
+    DECLINED: t('Refusé', 'Declined'),
+    NONE: t('Aucun', 'None'),
+    EXPIRED: t('Expiré', 'Expired'),
   };
   return map[s.toUpperCase()] ?? s;
 }
 
 /** Santé du WABA (health_status.can_send_message) -> libellé humain. */
-function wabaHealthLabel(s: string): string {
-  const map: Record<string, string> = { AVAILABLE: 'Disponible', LIMITED: 'Limitée', BLOCKED: 'Bloquée' };
+function wabaHealthLabel(s: string, t: (fr: string, en?: string) => string): string {
+  const map: Record<string, string> = { AVAILABLE: t('Disponible', 'Available'), LIMITED: t('Limitée', 'Limited'), BLOCKED: t('Bloquée', 'Blocked') };
   return map[s.toUpperCase()] ?? s;
 }

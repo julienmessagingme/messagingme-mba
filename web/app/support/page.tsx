@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { sendSupportMessage } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 export default function SupportPage() {
   return <AppShell active="support">{(session) => <SupportInner session={session} />}</AppShell>;
 }
 
 function SupportInner({ session }: { session: Session }) {
+  const t = useT();
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
@@ -24,7 +26,7 @@ function SupportInner({ session }: { session: Session }) {
       await sendSupportMessage(session.tenantId, { subject: subject.trim(), message: message.trim(), email: session.email });
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Envoi impossible pour le moment.");
+      setError(err instanceof Error ? err.message : t("Envoi impossible pour le moment.", 'Unable to send right now.'));
     } finally {
       setBusy(false);
     }
@@ -35,24 +37,24 @@ function SupportInner({ session }: { session: Session }) {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Support</h2>
-        <p className="mt-1 text-sm text-ink-500">Une question, un souci ? Écris-nous, on te répond par email ({session.email}).</p>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Support', 'Support')}</h2>
+        <p className="mt-1 text-sm text-ink-500">{t('Une question, un souci ? Écris-nous, on te répond par email', 'A question or an issue? Write to us and we will reply by email')} ({session.email}).</p>
       </div>
 
       {sent ? (
         <div className="rounded-2xl border border-mint-200 bg-mint-50 p-5 text-sm text-mint-700">
-          Message envoyé. Nous te répondrons à {session.email}.
-          <button onClick={() => { setSent(false); setSubject(''); setMessage(''); }} className="ml-2 font-medium underline">Envoyer un autre message</button>
+          {t('Message envoyé. Nous te répondrons à', 'Message sent. We will reply to')} {session.email}.
+          <button onClick={() => { setSent(false); setSubject(''); setMessage(''); }} className="ml-2 font-medium underline">{t('Envoyer un autre message', 'Send another message')}</button>
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">Sujet</label>
-            <input required value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder="Ex. Problème d'envoi de campagne" />
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Sujet', 'Subject')}</label>
+            <input required value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder={t("Ex. Problème d'envoi de campagne", 'E.g. Campaign sending issue')} />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">Message</label>
-            <textarea required rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder="Décris ta demande…" />
+            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
+            <textarea required rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder={t('Décris ta demande…', 'Describe your request…')} />
           </div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <button
@@ -60,7 +62,7 @@ function SupportInner({ session }: { session: Session }) {
             disabled={busy || subject.trim() === '' || message.trim() === ''}
             className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
           >
-            {busy ? 'Envoi…' : 'Envoyer'}
+            {busy ? t('Envoi…', 'Sending…') : t('Envoyer', 'Send')}
           </button>
         </form>
       )}

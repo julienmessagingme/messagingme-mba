@@ -11,6 +11,7 @@ import {
 } from '@/lib/api';
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 
 export default function DashboardPage() {
   return <AppShell active="dashboard">{(session) => <DashboardInner session={session} />}</AppShell>;
@@ -31,6 +32,7 @@ function presetRange(days: number): StatsRange {
 const PRESETS = [7, 30, 90];
 
 function DashboardInner({ session }: { session: Session }) {
+  const t = useT();
   const [range, setRange] = useState<StatsRange>(() => presetRange(30));
   const [draftFrom, setDraftFrom] = useState(range.from);
   const [draftTo, setDraftTo] = useState(range.to);
@@ -58,7 +60,7 @@ function DashboardInner({ session }: { session: Session }) {
       setErrors(eb.errors);
       setCampaigns(cp.campaigns);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ function DashboardInner({ session }: { session: Session }) {
                 onClick={() => applyPreset(d)}
                 className={`rounded-md px-2.5 py-1 ${activePreset === d ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
               >
-                {d} j
+                {d} {t('j', 'd')}
               </button>
             ))}
           </div>
@@ -105,7 +107,7 @@ function DashboardInner({ session }: { session: Session }) {
               disabled={!draftFrom || !draftTo || draftFrom > draftTo}
               className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-600 disabled:opacity-50"
             >
-              Appliquer
+              {t('Appliquer', 'Apply')}
             </button>
           </div>
         </div>
@@ -114,28 +116,28 @@ function DashboardInner({ session }: { session: Session }) {
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {loading ? (
-        <p className="text-sm text-ink-500">Chargement des statistiques...</p>
+        <p className="text-sm text-ink-500">{t('Chargement des statistiques...', 'Loading statistics...')}</p>
       ) : stats ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <DailyChart
-            title="Contacts"
-            subtitle="total cumulé"
+            title={t('Contacts', 'Contacts')}
+            subtitle={t('total cumulé', 'cumulative total')}
             from={range.from}
             to={range.to}
             summary="last"
-            series={[{ label: 'Contacts', color: '#009AFE', points: stats.contacts }]}
+            series={[{ label: t('Contacts', 'Contacts'), color: '#009AFE', points: stats.contacts }]}
           />
           <DailyChart
-            title="Messages échangés"
-            subtitle="reçus + réponses (hors template)"
+            title={t('Messages échangés', 'Messages exchanged')}
+            subtitle={t('reçus + réponses (hors template)', 'received + replies (excluding templates)')}
             from={range.from}
             to={range.to}
-            series={[{ label: 'Échangés', color: '#6E5AE0', points: stats.exchanged }]}
+            series={[{ label: t('Échangés', 'Exchanged'), color: '#6E5AE0', points: stats.exchanged }]}
           />
           <div className="lg:col-span-2">
             <DailyChart
-              title="Templates envoyés"
-              subtitle="par jour, marketing vs utility"
+              title={t('Templates envoyés', 'Templates sent')}
+              subtitle={t('par jour, marketing vs utility', 'per day, marketing vs utility')}
               from={range.from}
               to={range.to}
               series={[
@@ -163,6 +165,7 @@ function DashboardInner({ session }: { session: Session }) {
  * « répondu » = message entrant reçu après l'envoi (peut dépasser « lu » si les accusés sont désactivés).
  */
 function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaigns: CampaignSummary[] }) {
+  const t = useT();
   const [selected, setSelected] = useState<string | null>(null);
   const [funnel, setFunnel] = useState<CampaignFunnel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -186,10 +189,10 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
   const pct = (n: number) => (sent > 0 ? Math.max(2, Math.round((n / sent) * 100)) : 0);
   const bars = funnel
     ? [
-        { label: 'Envoyés', value: funnel.sent, color: '#009AFE', sub: '' },
-        { label: 'Délivrés', value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent) },
-        { label: 'Lus', value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent) },
-        { label: 'Répondus', value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent) },
+        { label: t('Envoyés', 'Sent'), value: funnel.sent, color: '#009AFE', sub: '' },
+        { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent) },
+        { label: t('Lus', 'Read'), value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent) },
+        { label: t('Répondus', 'Replied'), value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent) },
       ]
     : [];
 
@@ -197,8 +200,8 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">Funnel par campagne</h3>
-          <p className="text-xs text-ink-400">envoyés → délivrés → lus → répondus</p>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Funnel par campagne', 'Funnel by campaign')}</h3>
+          <p className="text-xs text-ink-400">{t('envoyés → délivrés → lus → répondus', 'sent → delivered → read → replied')}</p>
         </div>
         {campaigns.length > 0 && (
           <select
@@ -213,11 +216,11 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
         )}
       </div>
       {campaigns.length === 0 ? (
-        <p className="text-sm text-ink-500">Aucune campagne pour le moment.</p>
+        <p className="text-sm text-ink-500">{t('Aucune campagne pour le moment.', 'No campaigns yet.')}</p>
       ) : loading ? (
-        <p className="text-sm text-ink-500">Chargement…</p>
+        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : !funnel || sent === 0 ? (
-        <p className="text-sm text-ink-500">Aucun envoi sur cette campagne.</p>
+        <p className="text-sm text-ink-500">{t('Aucun envoi sur cette campagne.', 'No sends on this campaign.')}</p>
       ) : (
         <div className="space-y-2.5">
           {bars.map((b) => (
@@ -232,7 +235,7 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
             </div>
           ))}
           {funnel.failed > 0 && (
-            <p className="pt-1 text-xs text-ink-400">Échecs : <span className="font-medium text-coral">{fmtNum(funnel.failed)}</span></p>
+            <p className="pt-1 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed)}</span></p>
           )}
         </div>
       )}
@@ -242,16 +245,17 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
 
 /** Breakdown des codes d'erreur Meta sur la période (avec libellé FR). */
 function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
+  const t = useT();
   const total = errors.reduce((a, e) => a + e.count, 0);
   const max = errors.reduce((m, e) => Math.max(m, e.count), 0);
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3">
-        <h3 className="text-sm font-semibold tracking-tight text-ink-900">Erreurs Meta</h3>
-        <p className="text-xs text-ink-400">par code, sur la période</p>
+        <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
+        <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
       </div>
       {errors.length === 0 ? (
-        <p className="text-sm text-ink-500">Aucune erreur sur la période.</p>
+        <p className="text-sm text-ink-500">{t('Aucune erreur sur la période.', 'No errors over the period.')}</p>
       ) : (
         <div className="space-y-2.5">
           {errors.map((e) => (
@@ -266,7 +270,7 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
               <p className="mt-0.5 text-[11px] text-ink-400">{metaCodeLabel(e.code)}</p>
             </div>
           ))}
-          <p className="pt-1 text-xs text-ink-400">Total : <span className="font-medium text-ink-700">{fmtNum(total)}</span></p>
+          <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-700">{fmtNum(total)}</span></p>
         </div>
       )}
     </div>
@@ -277,6 +281,7 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
 function CostChartCard({
   tenantId, range, campaigns, templates,
 }: { tenantId: string; range: StatsRange; campaigns: CampaignSummary[]; templates: TemplateStats['breakdown'] }) {
+  const t = useT();
   const [campaignId, setCampaignId] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [cost, setCost] = useState<CostSeries | null>(null);
@@ -302,26 +307,26 @@ function CostChartCard({
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">Coût estimé</h3>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Coût estimé', 'Estimated cost')}</h3>
           <p className="text-xs text-ink-400">
-            par jour, tarif Meta × volume{cost ? <> · total ≈ <span className="font-medium text-ink-700">{fmtCost(cost.total)}</span></> : null}
+            {t('par jour, tarif Meta × volume', 'per day, Meta rate × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total)}</span></> : null}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <select value={campaignId} onChange={(e) => { setCampaignId(e.target.value); setTemplateName(''); }} className={selectCls}>
-            <option value="">Toutes campagnes</option>
+            <option value="">{t('Toutes campagnes', 'All campaigns')}</option>
             {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select value={templateName} onChange={(e) => { setTemplateName(e.target.value); setCampaignId(''); }} className={selectCls}>
-            <option value="">Tous templates</option>
+            <option value="">{t('Tous templates', 'All templates')}</option>
             {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
           </select>
         </div>
       </div>
       {loading ? (
-        <p className="text-sm text-ink-500">Chargement…</p>
+        <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : !cost || !cost.hasRates ? (
-        <p className="text-sm text-ink-500">Tarif Meta indisponible : coût non estimable pour l&apos;instant.</p>
+        <p className="text-sm text-ink-500">{t("Tarif Meta indisponible : coût non estimable pour l'instant.", 'Meta rate unavailable: cost cannot be estimated right now.')}</p>
       ) : (
         <DailyChart
           title=""
@@ -339,6 +344,7 @@ function CostChartCard({
 
 /** Section « Templates envoyés » détaillée : dropdown par template + volume + prix estimé (Meta). */
 function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
+  const t = useT();
   const rows = data?.breakdown ?? [];
   const [selected, setSelected] = useState<string | null>(null);
   const current = rows.find((r) => r.name === selected) ?? rows[0] ?? null;
@@ -351,8 +357,8 @@ function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">Détail par template</h3>
-          <p className="text-xs text-ink-400">volume + prix estimé sur la période</p>
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Détail par template', 'Breakdown by template')}</h3>
+          <p className="text-xs text-ink-400">{t('volume + prix estimé sur la période', 'volume + estimated price over the period')}</p>
         </div>
         {rows.length > 0 && (
           <select
@@ -370,26 +376,26 @@ function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
       </div>
 
       {!current ? (
-        <p className="text-sm text-ink-500">Aucun template envoyé sur la période.</p>
+        <p className="text-sm text-ink-500">{t('Aucun template envoyé sur la période.', 'No templates sent over the period.')}</p>
       ) : (
         <div className="flex flex-wrap gap-6">
-          <Metric label="Catégorie" value={current.category ?? '—'} />
-          <Metric label="Envois" value={String(current.count)} />
+          <Metric label={t('Catégorie', 'Category')} value={current.category ?? '—'} />
+          <Metric label={t('Envois', 'Sends')} value={String(current.count)} />
           <Metric
-            label="Prix estimé"
-            value={estimated != null ? `≈ ${fmtCost(estimated)}` : 'indisponible'}
-            hint={estimated != null ? 'volume × tarif catégorie (Meta), devise du compte' : 'tarif Meta indisponible'}
+            label={t('Prix estimé', 'Estimated price')}
+            value={estimated != null ? `≈ ${fmtCost(estimated)}` : t('indisponible', 'unavailable')}
+            hint={estimated != null ? t('volume × tarif catégorie (Meta), devise du compte', 'volume × category rate (Meta), account currency') : t('tarif Meta indisponible', 'Meta rate unavailable')}
           />
         </div>
       )}
 
       {pricing && (
         <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-500">
-          Coût total période (Meta, approx., devise du compte) : <span className="font-semibold text-ink-800">{fmtCost(pricing.totalCost)}</span>
+          {t('Coût total période (Meta, approx., devise du compte) :', 'Total period cost (Meta, approx., account currency):')} <span className="font-semibold text-ink-800">{fmtCost(pricing.totalCost)}</span>
         </p>
       )}
       {data && !pricing && (
-        <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-400">Prix Meta indisponible pour l’instant : volumes affichés seuls.</p>
+        <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-400">{t("Prix Meta indisponible pour l'instant : volumes affichés seuls.", 'Meta price unavailable right now: volumes shown only.')}</p>
       )}
     </div>
   );

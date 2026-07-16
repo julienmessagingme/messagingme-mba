@@ -6,6 +6,7 @@ import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import { fmtCost } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import {
   listCampaigns,
   getCampaign,
@@ -45,26 +46,30 @@ export default function CampaignsPage() {
   return <AppShell active="campagnes">{(session) => <CampaignsInner session={session} />}</AppShell>;
 }
 
-const STATUS: Record<string, { text: string; cls: string }> = {
-  draft: { text: 'brouillon', cls: 'bg-ink-100 text-ink-600' },
-  running: { text: 'en cours', cls: 'bg-blue-50 text-blue-700' },
-  paused: { text: 'en pause', cls: 'bg-amber-50 text-amber-700' },
-  completed: { text: 'terminée', cls: 'bg-emerald-50 text-emerald-700' },
-  failed: { text: 'échec', cls: 'bg-red-50 text-red-700' },
-  pending: { text: 'en attente', cls: 'bg-ink-100 text-ink-600' },
-  sending: { text: 'envoi', cls: 'bg-blue-50 text-blue-700' },
-  sent: { text: 'envoyé', cls: 'bg-ink-100 text-ink-700' },
-  skipped: { text: 'ignoré', cls: 'bg-amber-50 text-amber-700' },
+// Chaque statut porte ses DEUX libellés [fr, en] (résolus au rendu via t) : la const vit hors composant, donc
+// useT() y est inappelable -> on fait porter les deux langues à la valeur.
+const STATUS: Record<string, { text: [string, string]; cls: string }> = {
+  draft: { text: ['brouillon', 'draft'], cls: 'bg-ink-100 text-ink-600' },
+  running: { text: ['en cours', 'running'], cls: 'bg-blue-50 text-blue-700' },
+  paused: { text: ['en pause', 'paused'], cls: 'bg-amber-50 text-amber-700' },
+  completed: { text: ['terminée', 'completed'], cls: 'bg-emerald-50 text-emerald-700' },
+  failed: { text: ['échec', 'failed'], cls: 'bg-red-50 text-red-700' },
+  pending: { text: ['en attente', 'pending'], cls: 'bg-ink-100 text-ink-600' },
+  sending: { text: ['envoi', 'sending'], cls: 'bg-blue-50 text-blue-700' },
+  sent: { text: ['envoyé', 'sent'], cls: 'bg-ink-100 text-ink-700' },
+  skipped: { text: ['ignoré', 'skipped'], cls: 'bg-amber-50 text-amber-700' },
   // Statuts de livraison Meta
-  delivered: { text: 'délivré', cls: 'bg-blue-50 text-blue-700' },
-  read: { text: 'lu', cls: 'bg-emerald-50 text-emerald-700' },
+  delivered: { text: ['délivré', 'delivered'], cls: 'bg-blue-50 text-blue-700' },
+  read: { text: ['lu', 'read'], cls: 'bg-emerald-50 text-emerald-700' },
 };
 function Badge({ status }: { status: string }) {
-  const s = STATUS[status] ?? { text: status, cls: 'bg-ink-100 text-ink-600' };
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{s.text}</span>;
+  const t = useT();
+  const s = STATUS[status] ?? { text: [status, status] as [string, string], cls: 'bg-ink-100 text-ink-600' };
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.cls}`}>{t(...s.text)}</span>;
 }
 
 function CampaignsInner({ session }: { session: Session }) {
+  const t = useT();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
@@ -86,11 +91,11 @@ function CampaignsInner({ session }: { session: Session }) {
       setCampaigns(c.campaigns);
       setNumbers(n.phoneNumbers);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chargement impossible');
+      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Loading failed'));
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId]);
+  }, [session.tenantId, t]);
 
   useEffect(() => {
     void reload();
@@ -100,7 +105,7 @@ function CampaignsInner({ session }: { session: Session }) {
     try {
       setDetail(await getCampaign(session.tenantId, id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Détail indisponible');
+      setError(err instanceof Error ? err.message : t('Détail indisponible', 'Detail unavailable'));
     }
   }
 
@@ -117,7 +122,7 @@ function CampaignsInner({ session }: { session: Session }) {
         await openDetail(id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lancement impossible');
+      setError(err instanceof Error ? err.message : t('Lancement impossible', 'Launch failed'));
     } finally {
       setPolling(false);
     }
@@ -128,7 +133,7 @@ function CampaignsInner({ session }: { session: Session }) {
     return (
       <div className="mx-auto max-w-2xl">
         <button onClick={() => setMode('list')} className="mb-4 flex items-center gap-1 text-sm text-brand-600 hover:underline">
-          ← Retour aux campagnes
+          ← {t('Retour aux campagnes', 'Back to campaigns')}
         </button>
         <CreateForm
           tenantId={session.tenantId}
@@ -144,39 +149,39 @@ function CampaignsInner({ session }: { session: Session }) {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">Campagnes ({campaigns.length})</h2>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Campagnes', 'Campaigns')} ({campaigns.length})</h2>
           {pricing ? (
             <p className="mt-0.5 text-xs text-ink-500">
-              coût estimé total ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0))}</span> <span className="text-ink-400">(devise du compte)</span>
+              {t('coût estimé total', 'estimated total cost')} ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0))}</span> <span className="text-ink-400">({t('devise du compte', 'account currency')})</span>
             </p>
           ) : (
-            <p className="mt-0.5 text-xs text-ink-400">coût estimé indisponible (tarif Meta)</p>
+            <p className="mt-0.5 text-xs text-ink-400">{t('coût estimé indisponible (tarif Meta)', 'estimated cost unavailable (Meta pricing)')}</p>
           )}
         </div>
         <div className="flex items-center gap-3">
           {polling ? (
             <span className="flex items-center gap-1.5 text-xs text-ink-400">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
-              actualisation...
+              {t('actualisation...', 'refreshing...')}
             </span>
           ) : (
-            <button onClick={reload} className="text-xs text-brand-600 hover:underline">Rafraîchir</button>
+            <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
           )}
           <button
             onClick={() => { setDetail(null); setMode('create'); }}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
           >
-            + Ajouter une campagne
+            + {t('Ajouter une campagne', 'Add a campaign')}
           </button>
         </div>
       </div>
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {loading ? (
-        <p className="text-sm text-ink-500">Chargement...</p>
+        <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
       ) : campaigns.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-          Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.
+          {t('Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.', 'No campaigns. Click "+ Add a campaign" to create one.')}
         </div>
       ) : (
           <ul className="space-y-2">
@@ -190,19 +195,19 @@ function CampaignsInner({ session }: { session: Session }) {
                       <span className="text-xs text-ink-400">{c.category}</span>
                     </div>
                     <p className="mt-0.5 text-xs text-ink-500">
-                      template {c.templateName} ({c.templateLanguage}) · {c.counts.total} destinataires
+                      template {c.templateName} ({c.templateLanguage}) · {c.counts.total} {t('destinataires', 'recipients')}
                     </p>
                     <p className="mt-1 text-xs text-ink-500">
-                      <b className="text-emerald-700">{c.counts.sent}</b> envoyés
-                      {c.counts.failed > 0 && <> · <b className="text-red-700">{c.counts.failed}</b> échecs</>}
-                      {c.counts.pending > 0 && <> · {c.counts.pending} en attente</>}
-                      {c.counts.skipped > 0 && <> · {c.counts.skipped} ignorés</>}
+                      <b className="text-emerald-700">{c.counts.sent}</b> {t('envoyés', 'sent')}
+                      {c.counts.failed > 0 && <> · <b className="text-red-700">{c.counts.failed}</b> {t('échecs', 'failures')}</>}
+                      {c.counts.pending > 0 && <> · {c.counts.pending} {t('en attente', 'pending')}</>}
+                      {c.counts.skipped > 0 && <> · {c.counts.skipped} {t('ignorés', 'skipped')}</>}
                     </p>
                     {(() => {
                       const cost = estimateCampaignCost(c.counts.sent, c.category, pricing);
                       return (
                         <p className="mt-1 text-xs text-ink-400">
-                          coût estimé {cost != null ? <>≈ <span className="font-medium text-ink-700">{fmtCost(cost)}</span> (devise du compte)</> : 'indisponible'}
+                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-700">{fmtCost(cost)}</span> ({t('devise du compte', 'account currency')})</> : t('indisponible', 'unavailable')}
                         </p>
                       );
                     })()}
@@ -217,14 +222,14 @@ function CampaignsInner({ session }: { session: Session }) {
                         disabled={polling}
                         className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                       >
-                        {c.status === 'paused' ? 'Reprendre' : 'Lancer'}
+                        {c.status === 'paused' ? t('Reprendre', 'Resume') : t('Lancer', 'Launch')}
                       </button>
                     )}
                     <button
                       onClick={() => (detail?.id === c.id ? setDetail(null) : openDetail(c.id))}
                       className="text-xs text-brand-600 hover:underline"
                     >
-                      {detail?.id === c.id ? 'Masquer' : 'Détails'}
+                      {detail?.id === c.id ? t('Masquer', 'Hide') : t('Détails', 'Details')}
                     </button>
                   </div>
                 </div>
@@ -242,6 +247,7 @@ function CampaignsInner({ session }: { session: Session }) {
 }
 
 function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pricing: PricingSummary | null; onClose: () => void }) {
+  const t = useT();
   const cost = estimateCampaignCost(detail.counts.sent, detail.category, pricing);
   return (
     <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
@@ -249,21 +255,21 @@ function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pri
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
-          <span className="text-xs text-ink-400">coût estimé {cost != null ? `≈ ${fmtCost(cost)} (devise du compte)` : 'indisponible'}</span>
+          <span className="text-xs text-ink-400">{t('coût estimé', 'estimated cost')} {cost != null ? `≈ ${fmtCost(cost)} (${t('devise du compte', 'account currency')})` : t('indisponible', 'unavailable')}</span>
         </div>
-        <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">Fermer</button>
+        <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
       </div>
       {detail.recipients.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-ink-500">Aucun destinataire.</p>
+        <p className="px-4 py-4 text-sm text-ink-500">{t('Aucun destinataire.', 'No recipients.')}</p>
       ) : (
         <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
-              <th className="px-4 py-2 font-medium">Destinataire</th>
-              <th className="px-4 py-2 font-medium">Envoi</th>
-              <th className="px-4 py-2 font-medium">Livraison</th>
-              <th className="px-4 py-2 font-medium">Détail</th>
+              <th className="px-4 py-2 font-medium">{t('Destinataire', 'Recipient')}</th>
+              <th className="px-4 py-2 font-medium">{t('Envoi', 'Sending')}</th>
+              <th className="px-4 py-2 font-medium">{t('Livraison', 'Delivery')}</th>
+              <th className="px-4 py-2 font-medium">{t('Détail', 'Detail')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
@@ -322,6 +328,7 @@ function entryNodeOf(graph: WorkflowGraph): WorkflowNode | null {
 }
 
 function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void }) {
+  const t = useT();
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<'marketing' | 'utility'>('marketing');
@@ -375,7 +382,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     return () => { alive = false; };
   }, [tenantId]);
 
-  const selectedTemplate = templates.find((t) => t.name === templateName);
+  const selectedTemplate = templates.find((tpl) => tpl.name === templateName);
   // Valeurs d'aperçu par variable (échantillon lisible selon le mapping) pour la miniature WhatsApp.
   const previewExamples = vars.map((v) =>
     v.sel === 'literal' ? (v.value.trim() || '…')
@@ -387,8 +394,8 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   // design (hints). Réutilisé par le mode template DIRECT et par le 1er template d'un workflow. Ne touche NI la
   // catégorie NI le nom de campagne (le workflow choisit sa catégorie à part).
   async function loadTemplateVars(nm: string, language: string) {
-    const t = templates.find((x) => x.name === nm);
-    const n = new Set((t?.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+    const tpl = templates.find((x) => x.name === nm);
+    const n = new Set((tpl?.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
     // Défaut immédiat : chaque variable -> Nom. On affine ensuite avec les indices posés à la création du template.
     setVars(Array.from({ length: n }, () => ({ sel: 'sys:name', value: '' })));
     if (n === 0) return;
@@ -412,12 +419,12 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
 
   async function chooseTemplate(nm: string) {
     setTemplateName(nm);
-    const t = templates.find((x) => x.name === nm);
-    if (!t) { setVars([]); return; }
-    setTemplateLanguage(t.language);
-    setCategory((t.category ?? '').toUpperCase() === 'MARKETING' ? 'marketing' : 'utility');
+    const tpl = templates.find((x) => x.name === nm);
+    if (!tpl) { setVars([]); return; }
+    setTemplateLanguage(tpl.language);
+    setCategory((tpl.category ?? '').toUpperCase() === 'MARKETING' ? 'marketing' : 'utility');
     if (name.trim() === '') setName(nm);
-    await loadTemplateVars(nm, t.language);
+    await loadTemplateVars(nm, tpl.language);
   }
 
   // Choix d'un workflow : on VÉRIFIE que le 1er bloc est un envoi de template (sinon le mapping n'a pas de cible ->
@@ -434,7 +441,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     const entry = entryNodeOf(wf.graph);
     const tplName = entry && entry.type === 'template' ? String(entry.data.templateName ?? '').trim() : '';
     if (!entry || entry.type !== 'template' || tplName === '') {
-      setWfError('Le workflow doit commencer par un envoi de template.');
+      setWfError(t('Le workflow doit commencer par un envoi de template.', 'The scenario must start by sending a template.'));
       return;
     }
     const language = String(entry.data.language ?? 'fr');
@@ -457,7 +464,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   // élargie (nom, numéro, tags ET valeurs des champs perso).
   const allTags = [...new Set(contacts.flatMap((c) => c.tags ?? []))].sort();
   const filteredContacts = contacts.filter((c) => {
-    if (tagFilter.size > 0 && !(c.tags ?? []).some((t) => tagFilter.has(t))) return false;
+    if (tagFilter.size > 0 && !(c.tags ?? []).some((tag) => tagFilter.has(tag))) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
     const hay = [c.profileName ?? '', c.phoneE164 ?? '', c.bsuid ?? '', ...(c.tags ?? []), ...Object.values(c.fields ?? {}).map(String)]
@@ -482,8 +489,8 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       return n;
     });
   }
-  function toggleTag(t: string) {
-    setTagFilter((s) => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n; });
+  function toggleTag(tag: string) {
+    setTagFilter((s) => { const n = new Set(s); if (n.has(tag)) n.delete(tag); else n.add(tag); return n; });
   }
 
   function toParamMapping(): TemplateParam[] {
@@ -505,13 +512,24 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       // serait vide et « Lancer » n'enverrait à personne. Avertissement ROUGE + on RESTE sur le formulaire (pas de
       // navigation, pas de reset) pour corriger la source de la variable ou les fiches. Cf. bug « ça n'envoie à personne ».
       if (res.recipientCount === 0) {
-        setError(`Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`);
+        setError(t(
+          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`,
+          `No recipients: the ${res.skipped.length} selected contact(s) were skipped because the template variable has no value on their record. Choose another source for the variable (e.g. "Name") or complete the records.`,
+        ));
         return; // le finally remet busy à false
       }
       // Avertissement : contacts sautés faute d'une variable de template (ex. prénom absent de la fiche). L'envoi part
       // quand même aux valides ; ces contacts-là auraient fait échouer Meta -> on les écarte et on le dit.
-      const skippedMsg = res.skipped.length > 0 ? ` ${res.skipped.length} contact(s) sautés (variable de template manquante, ex. prénom absent de la fiche).` : '';
-      setOk(`Campagne créée : ${res.recipientCount} destinataire(s).${skippedMsg} Clique « Lancer » pour envoyer.`);
+      const skippedMsg = res.skipped.length > 0
+        ? t(
+            ` ${res.skipped.length} contact(s) sautés (variable de template manquante, ex. prénom absent de la fiche).`,
+            ` ${res.skipped.length} contact(s) skipped (missing template variable, e.g. first name absent from the record).`,
+          )
+        : '';
+      setOk(t(
+        `Campagne créée : ${res.recipientCount} destinataire(s).${skippedMsg} Clique « Lancer » pour envoyer.`,
+        `Campaign created: ${res.recipientCount} recipient(s).${skippedMsg} Click "Launch" to send.`,
+      ));
       setName('');
       setTemplateName('');
       setVars([]);
@@ -519,7 +537,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       setWfError(null);
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Création impossible');
+      setError(err instanceof Error ? err.message : t('Création impossible', 'Creation failed'));
     } finally {
       setBusy(false);
     }
@@ -537,12 +555,12 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
 
   return (
     <section className="h-fit rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">Nouvelle campagne</h2>
-      <p className="mt-1 text-xs text-ink-500">Choisis un template approuvé et les contacts, puis lance l&apos;envoi.</p>
+      <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouvelle campagne', 'New campaign')}</h2>
+      <p className="mt-1 text-xs text-ink-500">{t("Choisis un template approuvé et les contacts, puis lance l'envoi.", 'Choose an approved template and contacts, then launch the send.')}</p>
 
-      <Field label="Numéro expéditeur">
+      <Field label={t('Numéro expéditeur', 'Sender number')}>
         {numbers.length === 0 ? (
-          <p className="text-xs text-amber-700">Aucun numéro provisionné pour ce tenant.</p>
+          <p className="text-xs text-amber-700">{t('Aucun numéro provisionné pour ce tenant.', 'No number provisioned for this tenant.')}</p>
         ) : (
           <select value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className={inputCls}>
             {numbers.map((n) => (
@@ -557,47 +575,47 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       {/* 1. Choix des contacts (D'ABORD : la cible est indépendante de ce qu'on envoie) */}
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between">
-          <label className="text-sm font-medium text-ink-700">Destinataires</label>
+          <label className="text-sm font-medium text-ink-700">{t('Destinataires', 'Recipients')}</label>
           {contacts.length > 0 && (
-            <span className="text-xs text-ink-400">{selected.size} / {contacts.length} sélectionnés</span>
+            <span className="text-xs text-ink-400">{selected.size} / {contacts.length} {t('sélectionnés', 'selected')}</span>
           )}
         </div>
         {loadingRefs ? (
-          <p className="text-xs text-ink-400">Chargement des contacts...</p>
+          <p className="text-xs text-ink-400">{t('Chargement des contacts...', 'Loading contacts...')}</p>
         ) : contacts.length === 0 ? (
-          <p className="text-xs text-amber-700">Aucun contact joignable. Importe des contacts dans l&apos;onglet Contacts.</p>
+          <p className="text-xs text-amber-700">{t("Aucun contact joignable. Importe des contacts dans l'onglet Contacts.", 'No reachable contact. Import contacts in the Contacts tab.')}</p>
         ) : (
           <div>
             {allTags.length > 0 && (
               <div className="mb-2 flex flex-wrap items-center gap-1">
-                <span className="text-[11px] text-ink-400">Tags :</span>
-                {allTags.map((t) => (
+                <span className="text-[11px] text-ink-400">{t('Tags :', 'Tags:')}</span>
+                {allTags.map((tag) => (
                   <button
                     type="button"
-                    key={t}
-                    onClick={() => toggleTag(t)}
+                    key={tag}
+                    onClick={() => toggleTag(tag)}
                     className={`rounded-full px-2 py-0.5 text-xs transition ${
-                      tagFilter.has(t) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
+                      tagFilter.has(tag) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
                     }`}
                   >
-                    {t}
+                    {tag}
                   </button>
                 ))}
                 {tagFilter.size > 0 && (
                   <button type="button" onClick={() => setTagFilter(new Set())} className="text-[11px] text-brand-600 hover:underline">
-                    réinitialiser
+                    {t('réinitialiser', 'reset')}
                   </button>
                 )}
               </div>
             )}
             <div className="mb-2 flex items-center gap-2">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder="Rechercher (nom, numéro, tag, champ)" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder={t('Rechercher (nom, numéro, tag, champ)', 'Search (name, number, tag, field)')} />
               <button type="button" onClick={toggleAllFiltered} className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-xs text-ink-600 hover:bg-ink-50">
-                {filteredAllSelected ? 'Vider' : 'Tout'}
+                {filteredAllSelected ? t('Vider', 'Clear') : t('Tout', 'All')}
               </button>
               {(tagFilter.size > 0 || search.trim() !== '') && (
                 <button type="button" onClick={() => setSelected(new Set(filteredContacts.map((c) => c.id)))} className="shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-2 text-xs font-medium text-brand-700 hover:bg-brand-100">
-                  Uniquement ceux-ci
+                  {t('Uniquement ceux-ci', 'Only these')}
                 </button>
               )}
             </div>
@@ -606,19 +624,19 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
                   <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
-                  {(c.tags ?? []).slice(0, 3).map((t) => (
-                    <span key={t} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{t}</span>
+                  {(c.tags ?? []).slice(0, 3).map((tag) => (
+                    <span key={tag} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{tag}</span>
                   ))}
-                  <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164 ?? <span title="Compte WhatsApp (sans numéro)">{c.bsuid}</span>}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-400">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
                   {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
                 </label>
               ))}
-              {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-ink-400">Aucun contact ne correspond.</p>}
+              {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-ink-400">{t('Aucun contact ne correspond.', 'No matching contact.')}</p>}
             </div>
-            <p className="mt-1 text-[11px] text-ink-400">{filteredContacts.length} affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.</p>
+            <p className="mt-1 text-[11px] text-ink-400">{filteredContacts.length} {t('affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.', 'shown · opted-out contacts are automatically skipped for marketing.')}</p>
             {filterActive && selectedOutside > 0 && (
               <p className="mt-1 text-[11px] text-amber-600">
-                ⚠️ {selectedOutside} sélectionné(s) hors du filtre partiront aussi. « Uniquement ceux-ci » pour ne cibler que le segment affiché.
+                ⚠️ {selectedOutside} {t('sélectionné(s) hors du filtre partiront aussi. « Uniquement ceux-ci » pour ne cibler que le segment affiché.', 'selected outside the filter will also be sent. Use "Only these" to target only the shown segment.')}
               </p>
             )}
           </div>
@@ -627,11 +645,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
 
       {/* 2. Quoi envoyer : un template direct OU un workflow (bot builder) */}
       <div className="mt-4">
-        <label className="mb-1 block text-sm font-medium text-ink-700">Que veux-tu leur envoyer ?</label>
+        <label className="mb-1 block text-sm font-medium text-ink-700">{t('Que veux-tu leur envoyer ?', 'What do you want to send them?')}</label>
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
           {([
-            { m: 'template', label: 'Un template', tip: 'Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL.' },
-            { m: 'workflow', label: 'Un scénario', tip: 'Privilégiez cette méthode pour enchaîner plusieurs étapes : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un formulaire, ...).' },
+            { m: 'template', label: t('Un template', 'A template'), tip: t('Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL.', 'Best for sending a simple message with one or more buttons (CTA) that point to URLs.') },
+            { m: 'workflow', label: t('Un scénario', 'A scenario'), tip: t('Privilégiez cette méthode pour enchaîner plusieurs étapes : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un formulaire, ...).', 'Best for chaining several steps: sending a template THEN other elements (adding a tag, a field, sending a form, ...).') },
           ] as const).map(({ m, label, tip }) => (
             <span key={m} className="group relative">
               <button type="button" onClick={() => chooseMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
@@ -643,17 +661,17 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
 
       {mode === 'template' ? (
         <>
-          <Field label="Template">
+          <Field label={t('Template', 'Template')}>
             {loadingRefs ? (
-              <p className="text-xs text-ink-400">Chargement des templates...</p>
+              <p className="text-xs text-ink-400">{t('Chargement des templates...', 'Loading templates...')}</p>
             ) : templates.length === 0 ? (
-              <p className="text-xs text-amber-700">Aucun template approuvé. Crée-en un dans l&apos;onglet Templates et attends la validation Meta.</p>
+              <p className="text-xs text-amber-700">{t("Aucun template approuvé. Crée-en un dans l'onglet Templates et attends la validation Meta.", 'No approved template. Create one in the Templates tab and wait for Meta approval.')}</p>
             ) : (
               <select value={templateName} onChange={(e) => { void chooseTemplate(e.target.value); }} className={inputCls}>
-                <option value="">Choisir un template...</option>
-                {templates.map((t) => (
-                  <option key={`${t.name}-${t.language}`} value={t.name}>
-                    {t.name} ({t.language}, {t.category?.toLowerCase()})
+                <option value="">{t('Choisir un template...', 'Choose a template...')}</option>
+                {templates.map((tpl) => (
+                  <option key={`${tpl.name}-${tpl.language}`} value={tpl.name}>
+                    {tpl.name} ({tpl.language}, {tpl.category?.toLowerCase()})
                   </option>
                 ))}
               </select>
@@ -669,20 +687,20 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         </>
       ) : (
         <>
-          <Field label="Catégorie (pour l'opt-in)">
+          <Field label={t("Catégorie (pour l'opt-in)", 'Category (for opt-in)')}>
             <select value={category} onChange={(e) => setCategory(e.target.value as 'marketing' | 'utility')} className={inputCls}>
-              <option value="marketing">Marketing (opt-in requis)</option>
-              <option value="utility">Utility</option>
+              <option value="marketing">{t('Marketing (opt-in requis)', 'Marketing (opt-in required)')}</option>
+              <option value="utility">{t('Utility', 'Utility')}</option>
             </select>
           </Field>
-          <Field label="Scénario">
+          <Field label={t('Scénario', 'Scenario')}>
             {workflows.length === 0 ? (
-              <p className="text-xs text-amber-700">Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.</p>
+              <p className="text-xs text-amber-700">{t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario. Create one from the "Scenario" menu on the left.')}</p>
             ) : (
               <select value={workflowId} onChange={(e) => { void chooseWorkflow(e.target.value); }} className={inputCls}>
-                <option value="">Choisir un scénario…</option>
+                <option value="">{t('Choisir un scénario…', 'Choose a scenario…')}</option>
                 {workflows.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name} ({w.graph.nodes.length} bloc{w.graph.nodes.length > 1 ? 's' : ''})</option>
+                  <option key={w.id} value={w.id}>{w.name} ({w.graph.nodes.length} {w.graph.nodes.length > 1 ? t('blocs', 'blocks') : t('bloc', 'block')})</option>
                 ))}
               </select>
             )}
@@ -690,7 +708,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
             {wfError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{wfError}</p>}
             {!wfError && selectedTemplate?.body && (
               <div className="mt-3">
-                <p className="mb-1 text-xs text-ink-500">1er template envoyé par le scénario : <b>{templateName}</b></p>
+                <p className="mb-1 text-xs text-ink-500">{t('1er template envoyé par le scénario :', 'First template sent by the scenario:')} <b>{templateName}</b></p>
                 <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={[]} hideNote />
               </div>
             )}
@@ -702,11 +720,11 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
       )}
 
       {/* 3. Libellé de la campagne */}
-      <Field label="Nom de la campagne (interne)">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="Promo été" />
+      <Field label={t('Nom de la campagne (interne)', 'Campaign name (internal)')}>
+        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder={t('Promo été', 'Summer promo')} />
       </Field>
 
-      {!varsComplete && <p className="mt-3 text-xs text-amber-600">Complète les valeurs des variables (champ perso / texte fixe).</p>}
+      {!varsComplete && <p className="mt-3 text-xs text-amber-600">{t('Complète les valeurs des variables (champ perso / texte fixe).', 'Complete the variable values (custom field / fixed text).')}</p>}
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
 
@@ -716,7 +734,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         disabled={!canSubmit}
         className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
       >
-        {busy ? 'Création...' : 'Créer la campagne'}
+        {busy ? t('Création...', 'Creating...') : t('Créer la campagne', 'Create campaign')}
       </button>
     </section>
   );
@@ -739,6 +757,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  *  à la main -> plus de mapping vers un champ inexistant. Partagé par le mode template direct et le 1er template d'un
  *  workflow. Rien à afficher si le template n'a pas de variable. */
 function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.Dispatch<React.SetStateAction<VarRow[]>>; fields: UserFieldDef[] }) {
+  const t = useT();
   if (vars.length === 0) return null;
   const custom = customFieldsOnly(fields);
   // Ids d'options valides : sert de filet -> si un `sel` n'y est pas (ex. champ perso supprimé), on l'affiche
@@ -746,7 +765,7 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
   const validIds = new Set<string>([...SYSTEM_FIELDS.map((f) => `sys:${f.key}`), ...custom.map((f) => `field:${f.key}`), 'literal']);
   return (
     <div className="mt-3">
-      <label className="mb-1 block text-sm font-medium text-ink-700">Variables ({vars.length})</label>
+      <label className="mb-1 block text-sm font-medium text-ink-700">{t('Variables', 'Variables')} ({vars.length})</label>
       <div className="space-y-2">
         {vars.map((v, i) => (
           <div key={i} className="flex items-center gap-1.5">
@@ -756,17 +775,17 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
               onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, sel: e.target.value } : x)))}
               className={`${inputCls} flex-1`}
             >
-              {!validIds.has(v.sel) && <option value={v.sel}>⚠ champ à re-sélectionner</option>}
-              <optgroup label="Champs de base">
+              {!validIds.has(v.sel) && <option value={v.sel}>{t('⚠ champ à re-sélectionner', '⚠ field to re-select')}</option>}
+              <optgroup label={t('Champs de base', 'Base fields')}>
                 {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{f.label}</option>)}
               </optgroup>
               {custom.length > 0 && (
-                <optgroup label="Mes champs">
+                <optgroup label={t('Mes champs', 'My fields')}>
                   {custom.map((f) => <option key={f.key} value={`field:${f.key}`}>{f.label}</option>)}
                 </optgroup>
               )}
-              <optgroup label="Autre">
-                <option value="literal">Texte fixe</option>
+              <optgroup label={t('Autre', 'Other')}>
+                <option value="literal">{t('Texte fixe', 'Fixed text')}</option>
               </optgroup>
             </select>
             {v.sel === 'literal' && (
@@ -774,14 +793,14 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
                 value={v.value}
                 onChange={(e) => setVars(vars.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
                 className={`${inputCls} w-32`}
-                placeholder="valeur"
+                placeholder={t('valeur', 'value')}
               />
             )}
           </div>
         ))}
       </div>
       <p className="mt-1.5 text-[11px] text-ink-400">
-        D&apos;où vient chaque variable. « Mes champs » = tes champs de Contenu &gt; Champs. Un contact sans la valeur choisie est sauté (et signalé).
+        {t("D'où vient chaque variable. « Mes champs » = tes champs de Contenu > Champs. Un contact sans la valeur choisie est sauté (et signalé).", 'Where each variable comes from. "My fields" = your fields from Content > Fields. A contact without the chosen value is skipped (and flagged).')}
       </p>
     </div>
   );
