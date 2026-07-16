@@ -377,18 +377,27 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
     // Origine ANCRÉE sur la frontière de point : accepte www./business.facebook.com, REJETTE evilfacebook.com
     // (endsWith('facebook.com') l'aurait laissé passer -> injection d'ids forgés via postMessage).
     const FB_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*facebook\.com$/;
+    const asStr = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : typeof v === 'number' ? String(v) : undefined);
     function onMsg(e: MessageEvent) {
       if (typeof e.origin !== 'string' || !FB_ORIGIN.test(e.origin)) return;
+      // `e.data` peut être une CHAÎNE JSON (SDK) OU déjà un objet selon le canal -> on gère les deux.
+      let d: { type?: string; event?: string; data?: Record<string, unknown> } & Record<string, unknown>;
       try {
-        const d = JSON.parse(typeof e.data === 'string' ? e.data : '') as { type?: string; event?: string; data?: Record<string, unknown> } & Record<string, unknown>;
-        if (d?.type !== 'WA_EMBEDDED_SIGNUP') return;
-        if (d.event === 'FINISH' || d.event === 'FINISH_ONLY_WABA') {
-          const p = (d.data ?? d) as { waba_id?: unknown; phone_number_id?: unknown };
-          const wabaId = typeof p.waba_id === 'string' ? p.waba_id : undefined;
-          const phoneNumberId = typeof p.phone_number_id === 'string' ? p.phone_number_id : undefined;
-          if (wabaId !== undefined && phoneNumberId !== undefined) idsRef.current = { wabaId, phoneNumberId };
-        }
-      } catch { /* messages non-JSON du SDK : ignorés */ }
+        d = typeof e.data === 'string' ? JSON.parse(e.data) : (e.data as typeof d);
+      } catch { return; /* message non-JSON du SDK */ }
+      if (!d || d.type !== 'WA_EMBEDDED_SIGNUP') return;
+      // eslint-disable-next-line no-console
+      console.info('[ES] message', d.event, d.data ?? d);
+      // On capture les ids dès qu'ils sont présents, QUEL QUE SOIT l'event (FINISH, etc.), et qu'ils soient
+      // envoyés en string OU en number (Meta n'est pas constant) -> plus de « popup n'a rien renvoyé » à tort.
+      const p = (d.data ?? d) as { waba_id?: unknown; phone_number_id?: unknown };
+      const wabaId = asStr(p.waba_id);
+      const phoneNumberId = asStr(p.phone_number_id);
+      if (wabaId && phoneNumberId) {
+        idsRef.current = { wabaId, phoneNumberId };
+        // eslint-disable-next-line no-console
+        console.info('[ES] ids capturés', wabaId, phoneNumberId);
+      }
     }
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
