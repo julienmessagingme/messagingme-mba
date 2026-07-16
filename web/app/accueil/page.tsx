@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
-import { Logo } from '@/components/Logo';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
@@ -271,7 +270,9 @@ function AccueilInner({ session }: { session: Session }) {
           {/* Carte MBA (déplacée depuis Analytics) */}
           <div className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
             <div className="mb-3 flex items-start gap-3">
-              <Logo className="h-10 w-10 shrink-0" />
+              {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
                 <p className="mt-0.5 text-xs text-ink-500">
