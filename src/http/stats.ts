@@ -5,6 +5,14 @@ import type { CostSeries } from '../stats/cost';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
+import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter } from '../stats/conversation-stats.pg';
+
+// Valeurs d'enum admises pour les filtres de la liste quali (miroir de src/analysis/schema.ts). On ne passe au
+// store QUE des valeurs valides -> pas d'injection de filtre arbitraire, et le NULL = « pas de filtre ».
+const SENTIMENTS = new Set(['positif', 'neutre', 'negatif']);
+const INTENTS = new Set(['demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'autre']);
+const ACTIONS = new Set(['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune']);
+const inSet = (s: Set<string>, v: unknown): string | undefined => (typeof v === 'string' && s.has(v) ? v : undefined);
 
 export interface StatsRouteDeps {
   getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
@@ -18,6 +26,10 @@ export interface StatsRouteDeps {
   getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
   /** Série de coût estimé/jour, filtrable par campagne ou template. */
   getCostSeries(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostSeries>;
+  /** Agrégats d'analyse de conversation (Pièce 1) sur la plage. */
+  getConversationSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
+  /** Liste des dernières conversations analysées (quali), filtrable. */
+  listAnalyzedConversations(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -84,5 +96,31 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
       ...(typeof q.templateName === 'string' && q.templateName !== '' ? { templateName: q.templateName } : {}),
     };
     return reply.code(200).send(await deps.getCostSeries(tenant, r.range, filter));
+  });
+
+  // Analyse de conversation (Pièce 1) : agrégats quanti sur la plage. Scope tenant AUSSI en SQL (pas de fuite).
+  app.get('/tenants/:tenantId/stats/conversations', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getConversationSummary(tenant, r.range));
+  });
+
+  // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&limit= (enums valides seulement).
+  app.get('/tenants/:tenantId/stats/conversations/list', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const q = req.query as Record<string, unknown>;
+    const r = parseRange(q);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    const limit = typeof q.limit === 'string' && /^\d+$/.test(q.limit) ? Number(q.limit) : undefined;
+    const filters: AnalyzedConversationsFilter = {
+      ...(inSet(SENTIMENTS, q.sentiment) ? { sentiment: inSet(SENTIMENTS, q.sentiment) } : {}),
+      ...(inSet(INTENTS, q.intent) ? { intent: inSet(INTENTS, q.intent) } : {}),
+      ...(inSet(ACTIONS, q.action) ? { action: inSet(ACTIONS, q.action) } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    };
+    return reply.code(200).send({ conversations: await deps.listAnalyzedConversations(tenant, r.range, filters) });
   });
 }

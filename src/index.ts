@@ -10,6 +10,7 @@ import { ensureField } from './crm/fields';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
+import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { estimateCostSeries } from './stats/cost';
 import { rangeToUnix } from './stats/range';
 import { ResendClient } from './support/resend';
@@ -50,6 +51,9 @@ async function main(): Promise<void> {
   const tagStore = new PgTagStore(pool);
   const inboxStore = new PgInboxStore(pool);
   const statsStore = new PgStatsStore(pool);
+  // Lecture des agrégats d'analyse de conversation (Pièce 1). `enabled` = état de la feature côté serveur
+  // (empty-state différencié). La lecture ne coûte rien ; l'écriture (analyse LLM) est gatée ailleurs.
+  const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true');
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
   const authTokenStore = new PgAuthTokenStore(pool);
@@ -165,6 +169,8 @@ async function main(): Promise<void> {
         };
         return estimateCostSeries(range.from, range.to, rows, rates);
       },
+      getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
+      listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
     },
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),

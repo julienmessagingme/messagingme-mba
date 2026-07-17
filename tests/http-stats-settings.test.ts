@@ -28,6 +28,20 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1 }),
     getErrorBreakdown: async () => [{ code: 131049, count: 4, templateName: 'promo' }, { code: 131047, count: 2, templateName: null }],
     getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true }),
+    getConversationSummary: async () => ({
+      enabled: true, total: 3,
+      sentiment: { positif: 1, neutre: 1, negatif: 1 },
+      intent: { demande_devis: 2, sav: 1, reclamation: 0, information: 0, prise_rdv: 0, autre: 0 },
+      resolution: { resolved: 2, unresolved: 1, rate: 2 / 3 },
+      handledBy: { humain: 1, automatise: 2, mba: 0 },
+      exchanges: { avg: 3.5, median: 3 },
+      actions: { creer_devis: 2, rappeler: 0, relancer: 0, escalader: 1, aucune: 0 },
+      topTopics: [{ topic: 'devis', count: 2 }],
+      confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
+    }),
+    listAnalyzedConversations: async (_t, _r, f) => [
+      { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1' },
+    ],
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
@@ -54,6 +68,34 @@ describe('stats route', () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats', ...h(agentTok) });
     expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('GET /stats/conversations -> agrégats + enabled ; agent 403 ; tenant croisé 403 ; plage invalide 400', async () => {
+    const a = app();
+    const ok = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations?days=30', ...h(adminTok) });
+    expect(ok.statusCode).toBe(200);
+    const s = ok.json<{ enabled: boolean; total: number; sentiment: { positif: number }; resolution: { rate: number } }>();
+    expect(s).toMatchObject({ enabled: true, total: 3 });
+    expect(s.sentiment.positif).toBe(1);
+    expect(s.resolution.rate).toBeCloseTo(2 / 3);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/conversations', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations?from=2026-07-10&to=2026-07-01', ...h(adminTok) })).statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('GET /stats/conversations/list -> quali + filtres enum valides seulement, inboxHref', async () => {
+    const captured: unknown[] = [];
+    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1' }]; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=negatif&intent=sav&action=escalader&limit=25&junk=xxx', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ conversations: Array<{ inboxHref: string }> }>().conversations[0]?.inboxHref).toBe('/inbox?c=cv1');
+    // Seuls les filtres d'enum VALIDES sont passés au store ; une valeur hors enum serait ignorée (pas d'injection).
+    expect(captured[0]).toEqual({ sentiment: 'negatif', intent: 'sav', action: 'escalader', limit: 25 });
+    const bad = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=PIRATE&action=drop', ...h(adminTok) });
+    expect(bad.statusCode).toBe(200);
+    expect(captured[1]).toEqual({}); // aucune valeur d'enum valide -> aucun filtre
     await a.close();
   });
 

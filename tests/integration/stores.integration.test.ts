@@ -182,6 +182,60 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(row.tags).toContain('vip-bsuid');
   });
 
+  it('PgConversationStatsStore : agrégats + liste quali (Lot 9), scopés tenant', async () => {
+    const { PgConversationStatsStore } = await import('../../src/stats/conversation-stats.pg');
+    const store = new PgConversationStatsStore(pool, true);
+    // Fenêtre large (hier..demain) : les lignes sont créées à now(), on évite tout effet de bord de fuseau.
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const range = { from: iso(new Date(Date.now() - 86_400_000)), to: iso(new Date(Date.now() + 86_400_000)) };
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-conv-stats') returning id`)).rows[0]!.id;
+    try {
+      // Contact + 3 conversations analysées (2 aujourd'hui, sentiments/intents/actions varies) + 1 AUTRE tenant.
+      const ct = (await pool.query<{ id: string }>(`insert into contacts (tenant_id, phone_e164, profile_name, opt_in_status) values ($1,'+33611111111','Alice','opted_in') returning id`, [t])).rows[0]!.id;
+      const mkConv = async (wa: string) => (await pool.query<{ id: string }>(`insert into conversations (tenant_id, wa_id, contact_id, last_message_at) values ($1,$2,$3, now()) returning id`, [t, wa, ct])).rows[0]!.id;
+      const cv1 = await mkConv('33611111111');
+      const cv2 = await mkConv('33622222222');
+      const insAna = (convId: string, sentiment: string, intent: string, resolved: boolean, handled: string, action: string, ex: number, conf: number, topic: string) =>
+        pool.query(
+          `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'test','anthropic','claude-haiku-4-5')`,
+          [convId, t, sentiment, intent, topic, resolved, handled, ex, action, conf],
+        );
+      await insAna(cv1, 'positif', 'demande_devis', true, 'humain', 'creer_devis', 4, 0.92, 'Devis');
+      await insAna(cv2, 'negatif', 'reclamation', false, 'automatise', 'escalader', 2, 0.6, ' devis ');
+
+      const s = await store.getSummary(t, range);
+      expect(s.enabled).toBe(true);
+      expect(s.total).toBe(2);
+      expect(s.sentiment).toEqual({ positif: 1, neutre: 0, negatif: 1 });
+      expect(s.intent.demande_devis).toBe(1);
+      expect(s.intent.reclamation).toBe(1);
+      expect(s.resolution).toMatchObject({ resolved: 1, unresolved: 1 });
+      expect(s.resolution.rate).toBeCloseTo(0.5);
+      expect(s.handledBy).toMatchObject({ humain: 1, automatise: 1, mba: 0 });
+      expect(s.actions).toMatchObject({ creer_devis: 1, escalader: 1 });
+      expect(s.exchanges.avg).toBeCloseTo(3); // (4+2)/2
+      expect(s.exchanges.median).toBeCloseTo(3); // median de [2,4]
+      // topic regroupé par lower(btrim) : « Devis » et « devis » -> une seule clé 'devis' à 2.
+      expect(s.topTopics).toEqual([{ topic: 'devis', count: 2 }]);
+      expect(s.confidence).toMatchObject({ gte90: 1, from50to70: 1 });
+
+      // Liste quali : filtre par sentiment, join contacts (profile_name), inboxHref.
+      const list = await store.listAnalyzed(t, range, { sentiment: 'positif' });
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({ conversationId: cv1, sentiment: 'positif', profileName: 'Alice', inboxHref: `/inbox?c=${cv1}` });
+
+      // SCOPE TENANT : le tenant principal ne voit RIEN de ce jeu (aucune fuite).
+      const other = await store.getSummary(tenantId, range);
+      // (le tenant principal peut avoir d'autres analyses d'autres tests ; on verifie juste que nos 2 lignes n'y sont pas)
+      const otherList = await store.listAnalyzed(tenantId, range, {});
+      expect(otherList.some((r) => r.conversationId === cv1 || r.conversationId === cv2)).toBe(false);
+      expect(other.total).toBeGreaterThanOrEqual(0);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
   it('PgContactStore.query/count/idsForFilters : filtres composables (Lot 8), scopés tenant', async () => {
     const store = new PgContactStore(pool);
     // Tenant DÉDIÉ à ce test (jeu de données isolé, pas de collision avec les autres tests contacts).

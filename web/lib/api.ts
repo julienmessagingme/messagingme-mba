@@ -531,6 +531,55 @@ export function getTemplateStats(tenantId: string, range?: StatsRange): Promise<
   return request<TemplateStats>(`/tenants/${tenantId}/stats/templates${rangeQuery(range)}`);
 }
 
+// --- Analyse de conversation (Pièce 1) : agrégats quanti + liste quali. Champs LLM = INDICATIFS. ---
+export interface ConversationAnalysisSummary {
+  /** Feature d'analyse active côté serveur (empty-state différencié : inactif vs aucune donnée). */
+  enabled: boolean;
+  total: number;
+  sentiment: { positif: number; neutre: number; negatif: number };
+  intent: { demande_devis: number; sav: number; reclamation: number; information: number; prise_rdv: number; autre: number };
+  resolution: { resolved: number; unresolved: number; rate: number | null };
+  handledBy: { humain: number; automatise: number; mba: number };
+  exchanges: { avg: number | null; median: number | null };
+  actions: { creer_devis: number; rappeler: number; relancer: number; escalader: number; aucune: number };
+  topTopics: Array<{ topic: string; count: number }>;
+  confidence: { lt50: number; from50to70: number; from70to90: number; gte90: number };
+}
+export interface AnalyzedConversation {
+  conversationId: string;
+  waId: string;
+  profileName: string | null;
+  sentiment: string;
+  intent: string;
+  topic: string;
+  resolved: boolean;
+  actionSuggestion: string;
+  confidence: number;
+  justification: string;
+  handledBy: string;
+  exchangesCount: number;
+  analyzedAt: string;
+  /** Lien vers le fil dans l'inbox (/inbox?c=<conversationId>). */
+  inboxHref: string;
+}
+export function getConversationAnalysisSummary(tenantId: string, range?: StatsRange): Promise<ConversationAnalysisSummary> {
+  return request<ConversationAnalysisSummary>(`/tenants/${tenantId}/stats/conversations${rangeQuery(range)}`);
+}
+export function listAnalyzedConversations(
+  tenantId: string,
+  range?: StatsRange,
+  filters?: { sentiment?: string; intent?: string; action?: string; limit?: number },
+): Promise<{ conversations: AnalyzedConversation[] }> {
+  const parts: string[] = [];
+  if (filters?.sentiment) parts.push(`sentiment=${encodeURIComponent(filters.sentiment)}`);
+  if (filters?.intent) parts.push(`intent=${encodeURIComponent(filters.intent)}`);
+  if (filters?.action) parts.push(`action=${encodeURIComponent(filters.action)}`);
+  if (filters?.limit != null) parts.push(`limit=${filters.limit}`);
+  const base = rangeQuery(range);
+  const extra = parts.length ? (base ? `&${parts.join('&')}` : `?${parts.join('&')}`) : '';
+  return request<{ conversations: AnalyzedConversation[] }>(`/tenants/${tenantId}/stats/conversations/list${base}${extra}`);
+}
+
 export interface TenantSettings {
   mbaEnabled: boolean;
 }
