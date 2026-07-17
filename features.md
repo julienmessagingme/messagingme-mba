@@ -138,10 +138,26 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Campagnes
 
-- ✅ **Écran de création en 3 zones** : le **nom de la campagne en haut**, puis trois panneaux côte à côte :
-  **Expéditeur** (le numéro, affiché en texte s'il n'y en a qu'un) | **Destinataires** (grande zone : recherche,
-  filtres par tag, liste à cocher agrandie) | **Message** (toggle **Template OU Scénario**, aperçu, variables).
-  Un **tooltip au survol** explique quand privilégier template vs scénario. Empilé sur mobile.
+- ✅ **Un seul écran PLEINE LARGEUR, en 2 étapes** (refonte 2026-07-17) : fini de préparer la campagne à un
+  endroit et de la lancer ailleurs. **ÉTAPE 1 Préparation** (nom + Expéditeur | Destinataires | Débit | Message)
+  et **ÉTAPE 2 Lancement** (le timing) sur la même page. L'étape 2 s'active quand l'étape 1 est prête.
+- ✅ **Choisir les destinataires par SOURCE** : un sélecteur de source en haut de la zone Destinataires.
+  - **📇 Liste de contacts** (mini-CRM) : un vrai moteur de FILTRES combinables : par **tag(s)** (tous / au moins
+    un), **opt-in**, **téléphone** (commence par / contient), **valeur de champ perso**, **nom**. Un compteur live
+    « N contact(s) correspondent » ; « Tout sélectionner (N) » cible tout le segment.
+  - **📄 Import fichier** : importe un CSV (même écran de mapping que l'onglet Contacts) avec un **tag obligatoire**.
+    Les contacts atterrissent dans le CRM taggés, et la campagne cible aussitôt ce tag.
+  - **🔗 HubSpot** : bientôt (bouton grisé).
+- ✅ **Débit d'envoi réglable** : par défaut la campagne part au débit maximum ; on peut **limiter la vitesse**
+  (curseur 1 à 80 messages/min, le plafond WhatsApp) pour protéger la réputation du numéro, avec la **durée
+  estimée** affichée. Le débit est respecté pour de vrai côté serveur.
+- ✅ **Lancer maintenant OU plus tard** (ÉTAPE 2) : « Maintenant » lance sur place (avec un suivi inline des
+  envois) ; « Plus tard » ouvre un **calendrier** (date + heure) et **programme** la campagne, qui partira toute
+  seule à l'échéance. Une campagne programmée porte un badge « planifiée » + sa date dans la liste, et se
+  **désprogramme** en un clic.
+- ✅ **Ancien écran 3 zones conservé DANS l'étape 1** : le **nom en haut**, puis trois panneaux côte à côte :
+  **Expéditeur** (le numéro, affiché en texte s'il n'y en a qu'un) | **Destinataires** (source + filtres ci-dessus) |
+  **Message** (toggle **Template OU Scénario**, aperçu, variables). **Tooltip** au survol template vs scénario.
 - ✅ **La miniature du template montre ses BOUTONS** (réponse rapide / lien / formulaire), que ce soit un template
   direct ou le 1er template d'un scénario. Lancement, suivi des destinataires (statut interne + cycle de livraison
   Meta), auto-refresh. (Suivi de livraison Meta non câblé pour les campagnes workflow en V1 : leur statut

@@ -28,11 +28,16 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
   `scripts/sonde-flow-live.mts` (générateur produit vs WABA réel). Cf `.loop/lot7-flow-avance.md`.
   ⚠️ Vérif Julien restante (V2) : scénario avec node Formulaire -> envoi réel reçu sur son WhatsApp,
   formulaire multi-écrans rempli -> champs contact + run avancé + carte inbox.
-- **HubSpot import (#14, parké)** : importer une liste HubSpot comme destinataires de campagne. Multi-repo :
-  scope `crm.lists.read` sur l'app mm-hubspot + RE-CONSENTEMENT du portail cobaye (action Julien), client lists
-  + route service-à-service côté mm-hubspot, proxy + réutilisation `importContacts()` côté mba, opt-in JAMAIS
-  posé à 'opted_in' par défaut (conformité). + (todo #5-tail) proposer les internal names HubSpot dans les
-  sélecteurs de champs.
+- ✅ **Lot 8 — Campagne « une-page » : FAIT (2026-07-17, 5 phases LIVE)** : écran pleine largeur 2 étapes
+  (Préparation / Lancement), sources de destinataires (Liste de contacts requêtable par filtres / Import fichier
+  + tag / HubSpot grisé), débit ajustable (mig 0033, timeout de job dimensionné), planification maintenant/plus
+  tard (mig 0034, sweeper, annulable). Cf `.loop/lot8-campagne-une-page.md`. ⚠️ Vérif Julien restante (E1/V1) :
+  drive navigateur du parcours complet + coup d'œil visuel (pleine largeur, filtres, slider, calendrier).
+- **HubSpot import (#14, parké)** = **3e bouton de source** de campagne (le socle source-picker est prêt, il ne
+  reste que la source HubSpot) : importer une liste HubSpot comme destinataires. Multi-repo : scope
+  `crm.lists.read` sur l'app mm-hubspot + RE-CONSENTEMENT du portail cobaye (action Julien), client lists + route
+  service-à-service côté mm-hubspot, proxy + réutilisation `importContacts()` côté mba, opt-in JAMAIS posé à
+  'opted_in' par défaut (conformité). + (todo #5-tail) proposer les internal names HubSpot dans les sélecteurs.
 - **Analytics palier L (suite #8)** : tracker les erreurs des envois Inbox/Workflow (colonnes d'erreur sur
   `conversation_messages` + toucher le handler de statuts webhook EN PROD, risqué → à froid).
 - **Drop différés** : rien (0030 a droppé `workflows.status` ; codes = additifs).

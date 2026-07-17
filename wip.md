@@ -260,6 +260,27 @@ Dernier lot du programme, feature-loop 1 tour (plan `.loop/lot7-flow-avance.md` 
   le WABA réel -> `validation_errors == []` -> delete. Gate T6 rejouable à chaque évolution du générateur.
 - Tests : **741 unit** (723 -> +18). Gates exit codes réels. Deploy vérifié (3 containers Up, HTTP 200).
 
+## Lot 8 — Campagne « une-page, 2 étapes » (2026-07-17) : LIVE ✅
+
+Refonte de l'écran campagne. Feature-loop 5 phases (plan `.loop/lot8-campagne-une-page.md` validé, cartographie
+5 explorers, reviewer séparé PAR PHASE -> 5 vrais bugs attrapés, commit + deploy par phase). Détail usage :
+`features.md §Campagnes`. Détail technique : `documentation.md §Campagne`.
+- **P1 (f592536)** : PLEINE LARGEUR (AppShell fullBleed), une seule page en 2 ÉTAPES (Préparation / Lancement),
+  lancement RAPATRIÉ sur l'écran (createCampaign -> runCampaign + polling inline). Fini « préparer ici, lancer là ».
+- **P2 (055aea1, mig 0032)** : sélecteur de SOURCE (📇 Liste de contacts / 📄 Import / 🔗 HubSpot grisé) + mini-CRM
+  REQUÊTABLE : `query`/`count`/`idsForFilters` (WHERE paramétré, tenant toujours) filtres tags ET/OU, opt-in,
+  tél commence/contient, valeur de champ, nom ; compteur live « N correspondent ».
+- **P3 (257b06b)** : import fichier comme source = composant partagé `CsvImport` (extrait, zéro dupe) + tag
+  OBLIGATOIRE, puis pivot sur la source CRM taggée. Bonus : rapport d'import enfin visible côté Contacts.
+- **P4 (56b844b, mig 0033)** : DÉBIT ajustable 1-80/min (slider, défaut = max), RateLimiter par campagne. Vrai 🔴
+  attrapé : un timeout de job FIXE ne couvre pas un run throttlé long -> rejeu parallèle. Fix = timeout PAR JOB
+  dimensionné (`campaign/pacing.ts`), cf `brain/LEARNINGS.md`.
+- **P5 (74399d2, mig 0034)** : PLANIFICATION maintenant/plus tard (datetime -> ISO UTC), statut `scheduled` +
+  sweeper 60s (`schedule-sweep.ts`), annulable. Badge « planifiée » + date dans la liste.
+- Tests : **761 unit** (745 -> +16 : filtres, débit+pacing, sweeper, route schedule/cancel) + intégrations
+  (filtres CRM, programmation). 3 migrations (0032-0034). Reviewers PASS. Restent E1 (drive navigateur) + V1
+  (œil Julien) hors boucle.
+
 ## Prochaine étape
 
 1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.
