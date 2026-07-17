@@ -1,6 +1,7 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { dayKey, dayLabel, hourMin } from '@/lib/day';
@@ -18,7 +19,16 @@ import {
 } from '@/lib/api';
 
 export default function InboxPage() {
-  return <AppShell active="inbox" fullBleed>{(session) => <InboxInner session={session} />}</AppShell>;
+  // Suspense : useSearchParams (deep-link ?c=) exige une frontière Suspense au build (Next 15).
+  return (
+    <AppShell active="inbox" fullBleed>
+      {(session) => (
+        <Suspense fallback={null}>
+          <InboxInner session={session} />
+        </Suspense>
+      )}
+    </AppShell>
+  );
 }
 
 /** Réponse de formulaire Flow (nfm_reply) : le payload est un objet JSON {champ: valeur}. Renvoie les
@@ -83,6 +93,9 @@ function InboundPayload({ body, payload }: { body: string | null; payload: strin
 function InboxInner({ session }: { session: Session }) {
   const t = useT();
   const { locale } = useLocale();
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get('c');
+  const deepLinkApplied = useRef(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +115,17 @@ function InboxInner({ session }: { session: Session }) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Deep-link ?c=<id> : quand la liste est chargée, pré-sélectionne la conversation correspondante (une seule
+  // fois, pour ne pas ré-écraser un choix manuel aux refresh suivants). Conv absente de la liste -> ignorée.
+  useEffect(() => {
+    if (deepLinkApplied.current || !deepLinkId || conversations.length === 0) return;
+    const match = conversations.find((c) => c.id === deepLinkId);
+    if (match) {
+      setSelected(match);
+      deepLinkApplied.current = true;
+    }
+  }, [deepLinkId, conversations]);
 
   // Auto-refresh de la liste (~15 s), seulement quand l'onglet est visible (pas de martèlement en arrière-plan) ;
   // reload immédiat au retour de focus. Réutilise l'endpoint existant, aucun changement backend.
@@ -260,7 +284,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
                   )}
                   <div className={`mt-0.5 text-right text-[10px] ${m.direction === 'out' ? 'text-white/70' : 'text-ink-400'}`}>{hourMin(m.createdAt, locale)}</div>
                 </div>
-                {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur — legacy ou réponse auto). */}
+                {/* Pastille de l'auteur (repli neutre : rien si pas d'auteur, legacy ou réponse auto). */}
                 {m.direction === 'out' && m.senderName ? <AgentBadge name={m.senderName} /> : null}
               </div>
             </Fragment>

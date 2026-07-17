@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { DailyChart } from '@/components/DailyChart';
+import { ConversationAnalysisCard } from '@/components/ConversationAnalysisCard';
 import type { Session } from '@/lib/session';
 import {
   getStats, getTemplateStats, getErrorBreakdown, getCampaignFunnel, getCostSeries, listCampaigns,
@@ -156,6 +157,9 @@ function DashboardInner({ session }: { session: Session }) {
           <ErrorBreakdownCard errors={errors} />
           <div className="lg:col-span-2">
             <TemplateBreakdownCard data={templateStats} />
+          </div>
+          <div className="lg:col-span-2">
+            <ConversationAnalysisCard tenantId={session.tenantId} range={range} />
           </div>
         </div>
       ) : null}
@@ -401,7 +405,7 @@ function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
         <p className="text-sm text-ink-500">{t('Aucun template envoyé sur la période.', 'No templates sent over the period.')}</p>
       ) : (
         <div className="flex flex-wrap gap-6">
-          <Metric label={t('Catégorie', 'Category')} value={current.category ?? '—'} />
+          <Metric label={t('Catégorie', 'Category')} value={current.category ?? '-'} />
           <Metric label={t('Envois', 'Sends')} value={String(current.count)} />
           <Metric
             label={t('Prix estimé', 'Estimated price')}
