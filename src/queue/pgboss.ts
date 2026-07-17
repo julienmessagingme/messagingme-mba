@@ -55,9 +55,14 @@ export class PgBossQueue implements Queue {
     return jobs?.length ?? 0;
   }
 
-  async enqueue(name: string, data: unknown, opts?: { singletonKey?: string }): Promise<void> {
+  async enqueue(name: string, data: unknown, opts?: { singletonKey?: string; expireInSeconds?: number }): Promise<void> {
     await this.ensure(name);
-    await this.boss.send(name, data as object, opts?.singletonKey ? { singletonKey: opts.singletonKey } : {});
+    // `expireInSeconds` PAR JOB (prime sur la policy de file) : dimensionne la durée max d'un run de campagne
+    // throttlé sur son travail réel, sinon un run long expirerait et serait rejoué en parallèle.
+    await this.boss.send(name, data as object, {
+      ...(opts?.singletonKey ? { singletonKey: opts.singletonKey } : {}),
+      ...(opts?.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
+    });
   }
 
   async work(name: string, handler: (data: unknown) => Promise<void>): Promise<void> {

@@ -5,14 +5,14 @@ import type { Queue } from './queue';
  * `enqueue` enregistre les jobs ; `deliver` rejoue les jobs vers le handler.
  */
 export class FakeQueue implements Queue {
-  public readonly enqueued: Array<{ name: string; data: unknown }> = [];
+  public readonly enqueued: Array<{ name: string; data: unknown; opts?: { singletonKey?: string; expireInSeconds?: number } }> = [];
   private readonly handlers = new Map<string, (data: unknown) => Promise<void>>();
 
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
 
-  async enqueue(name: string, data: unknown, _opts?: { singletonKey?: string }): Promise<void> {
-    this.enqueued.push({ name, data });
+  async enqueue(name: string, data: unknown, opts?: { singletonKey?: string; expireInSeconds?: number }): Promise<void> {
+    this.enqueued.push({ name, data, ...(opts ? { opts } : {}) });
   }
 
   async work(name: string, handler: (data: unknown) => Promise<void>): Promise<void> {

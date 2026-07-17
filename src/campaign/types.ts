@@ -17,6 +17,8 @@ export interface Campaign {
   status: CampaignStatus;
   /** Si présent : la campagne DÉMARRE ce workflow par destinataire (au lieu d'envoyer un template). */
   workflowId: string | null;
+  /** Débit max en messages/minute (1..80). null = aucun throttle (le run part au rythme boucle + latence Meta). */
+  ratePerMinute: number | null;
 }
 
 export interface Recipient {

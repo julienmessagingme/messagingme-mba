@@ -23,6 +23,7 @@ const campaigns: CampaignRouteDeps = {
   queue: new FakeQueue(),
   phoneNumberBelongsToTenant: async () => true,
   campaignBelongsTo: async () => true,
+  getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
   getWorkflowGraph: async () => null,
   listCampaigns: async () => [],
   getCampaignDetail: async () => null,

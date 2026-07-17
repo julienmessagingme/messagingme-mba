@@ -62,7 +62,7 @@ class FakeQuality implements QualityProvider {
 
 const campaign: Campaign = {
   id: 'c1', tenantId: 't1', phoneNumberId: 'pn1', category: 'marketing',
-  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null,
+  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null,
 };
 
 function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }): RunJobDeps {
@@ -138,6 +138,47 @@ describe('campaignRunJob', () => {
     );
     expect(report.sent).toBe(1);
     expect(captured).toEqual([['Julie']]);
+  });
+
+  it('débit PAR CAMPAGNE : ratePerMinute posé -> RateLimiter d intervalle ceil(60000/rate), acquire avant chaque envoi', async () => {
+    const intervals: number[] = [];
+    let acquires = 0;
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+      { id: 'r2', contactId: 'y', toE164: '+33622', resolvedParams: [], status: 'pending' },
+    ]);
+    const staticGate = { acquire: async () => { throw new Error('le limiteur statique ne doit PAS être utilisé quand un débit par campagne est posé'); } };
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => ({ ...campaign, ratePerMinute: 30 }),
+        recipients,
+        rateLimiter: staticGate, // doit être IGNORÉ au profit du limiteur par campagne
+        makeRateLimiter: (ms) => { intervals.push(ms); return { acquire: async () => { acquires += 1; } }; },
+      }),
+    );
+    expect(report.sent).toBe(2);
+    expect(intervals).toEqual([2000]); // ceil(60000/30) = 2000 ms, un SEUL limiteur construit pour le run
+    expect(acquires).toBe(2); // une acquisition par destinataire
+  });
+
+  it('débit PAR CAMPAGNE : ratePerMinute null -> aucun limiteur par campagne, le limiteur statique (s il existe) est utilisé', async () => {
+    let made = 0;
+    let acquires = 0;
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        recipients,
+        rateLimiter: { acquire: async () => { acquires += 1; } },
+        makeRateLimiter: () => { made += 1; return { acquire: async () => {} }; },
+      }),
+    );
+    expect(made).toBe(0); // pas de débit -> pas de limiteur par campagne construit
+    expect(acquires).toBe(1); // le limiteur statique fourni est utilisé tel quel
   });
 
   it('campagne inconnue -> throw', async () => {

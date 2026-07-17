@@ -59,6 +59,7 @@ interface Deps {
   workflowGraph?: WorkflowGraph; // override du graphe renvoyé (pour tester le bloc d'entrée non-template)
   campaignTenant?: string; // tenant propriétaire de 'known'
   queue?: FakeQueue;
+  runSizing?: { ratePerMinute: number | null; pendingCount: number } | null; // dimensionnement du job de run
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -71,6 +72,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       // Workflow non détenu -> null (comme un getById cross-tenant) ; sinon le graphe (override ou défaut).
       getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
       campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
+      getRunSizing: async () => (d.runSizing !== undefined ? d.runSizing : { ratePerMinute: null, pendingCount: 0 }),
       listCampaigns: async (tenant) => [
         { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
       ],
@@ -92,6 +94,24 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     const body = res.json<{ campaignId: string; recipientCount: number; skipped: unknown[] }>();
     expect(body).toEqual({ campaignId: 'camp-1', recipientCount: 1, skipped: [] }); // c2 non opt-in exclu
     expect(repo.created[0]?.tenantId).toBe('t1');
+    await app.close();
+  });
+
+  it('débit ratePerMinute : accepté 1..80 (persisté), rejeté 0 / 81 / décimal / négatif -> 400 ; absent -> null', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo);
+    // Valeur valide persistée telle quelle.
+    const ok = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, ratePerMinute: 40 } });
+    expect(ok.statusCode).toBe(201);
+    expect(repo.created.at(-1)?.ratePerMinute).toBe(40);
+    // Absent -> pas de débit (undefined dans l'input, colonne null).
+    await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(repo.created.at(-1)?.ratePerMinute).toBeUndefined();
+    // Bornes rejetées.
+    for (const bad of [0, 81, 12.5, -3]) {
+      const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, ratePerMinute: bad } });
+      expect(res.statusCode, `rate=${bad}`).toBe(400);
+    }
     await app.close();
   });
 
@@ -222,12 +242,26 @@ describe('POST /tenants/:tenantId/campaigns', () => {
 });
 
 describe('POST /campaigns/:campaignId/run', () => {
-  it('campagne du tenant -> 202 + job campaign-run enqueué', async () => {
+  it('campagne du tenant -> 202 + job campaign-run enqueué (singletonKey + expire dimensionné)', async () => {
     const q = new FakeQueue();
     const app = appWith(new FakeRepo(contacts), { queue: q });
     const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
     expect(res.statusCode).toBe(202);
-    expect(q.enqueued).toEqual([{ name: 'campaign-run', data: { campaignId: 'known' } }]);
+    expect(q.enqueued).toHaveLength(1);
+    expect(q.enqueued[0]).toMatchObject({ name: 'campaign-run', data: { campaignId: 'known' } });
+    expect(q.enqueued[0]?.opts?.singletonKey).toBe('known');
+    expect(q.enqueued[0]?.opts?.expireInSeconds).toBe(900); // 0 pending -> plancher 15 min
+    await app.close();
+  });
+
+  it('expireInSeconds dimensionné sur (destinataires, débit) : grosse liste à débit bas -> timeout > 15 min', async () => {
+    const q = new FakeQueue();
+    // 1000 destinataires à 1/min : ~1000 min -> le timeout doit COUVRIR ça (pas la constante fixe de 15 min).
+    const app = appWith(new FakeRepo(contacts), { queue: q, runSizing: { ratePerMinute: 1, pendingCount: 1000 } });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(202);
+    // campaignJobExpireSeconds(1000, 1) = max(900, ceil(1000/1*60*1.5)+600) = 90600 s (>> 15 min et >> 2 h).
+    expect(q.enqueued[0]?.opts?.expireInSeconds).toBe(90_600);
     await app.close();
   });
 

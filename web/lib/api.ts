@@ -267,6 +267,8 @@ export interface CreateCampaignInput {
   contactIds?: string[];
   /** Campagne workflow : démarre ce workflow par destinataire (au lieu d'un template). */
   workflowId?: string;
+  /** Débit max en messages/minute (1..80). Absent/null = aucun throttle (le run part au max). */
+  ratePerMinute?: number | null;
 }
 
 export function listCampaigns(tenantId: string): Promise<{ campaigns: CampaignSummary[] }> {

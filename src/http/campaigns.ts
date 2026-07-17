@@ -5,6 +5,7 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
+import { campaignJobExpireSeconds } from '../campaign/pacing';
 import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
@@ -17,6 +18,9 @@ export interface CampaignRouteDeps {
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
+  /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
+   *  Sert à calculer l'expireInSeconds du job (éviter qu'un run throttlé long expire et soit rejoué en parallèle). */
+  getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
   /**
    * Graphe du workflow du tenant (campagne workflow). null si inconnu/autre tenant (le scope tenant vaut le
    * contrôle de propriété : un workflow d'un autre tenant renvoie null -> 400). Sert aussi à vérifier que le
@@ -86,9 +90,20 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       paramMapping: unknown;
       contactIds: unknown;
       workflowId: string;
+      ratePerMinute: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
+    // Débit optionnel : entier 1..80 messages/min (le client ne peut que BAISSER sous le plafond métier).
+    // Absent/null = aucun throttle. Rejette 0, 81, décimal, négatif -> 400 déterministe.
+    let ratePerMinute: number | null | undefined;
+    if (b.ratePerMinute !== undefined && b.ratePerMinute !== null) {
+      const r = b.ratePerMinute;
+      if (typeof r !== 'number' || !Number.isInteger(r) || r < 1 || r > 80) {
+        return reply.code(400).send({ error: 'ratePerMinute invalide (entier 1..80 ou null)' });
+      }
+      ratePerMinute = r;
+    }
     if (!nonEmpty(b.phoneNumberId)) return reply.code(400).send({ error: 'phoneNumberId requis' });
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     // Une campagne envoie SOIT un template SOIT un workflow (exactement un des deux).
@@ -142,6 +157,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       paramMapping,
       ...(contactIds ? { contactIds } : {}),
       ...(isWorkflow ? { workflowId: b.workflowId as string } : {}),
+      ...(ratePerMinute !== undefined ? { ratePerMinute } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     return reply.code(201).send(result);
@@ -155,9 +171,13 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     if (!(await deps.campaignBelongsTo(campaignId, authTenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
+    // Dimensionne l'expiration du job sur le travail réel (nb destinataires en attente / débit choisi) :
+    // un run throttlé long ne doit pas expirer et être rejoué en parallèle. Absent -> défaut file (15 min).
+    const sizing = await deps.getRunSizing(campaignId);
+    const expireInSeconds = sizing ? campaignJobExpireSeconds(sizing.pendingCount, sizing.ratePerMinute) : undefined;
     // singletonKey = campaignId : deux POST /run concurrents n'empilent pas deux jobs pour
     // la même campagne (le claim par destinataire est le garde-fou primaire, ceci le double).
-    await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId });
+    await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });
     return reply.code(202).send({ enqueued: true, campaignId });
   });
 }

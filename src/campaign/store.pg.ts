@@ -18,6 +18,8 @@ export interface CreateCampaignInput {
   contactIds?: string[];
   /** Campagne workflow : démarre ce workflow par destinataire au lieu d'envoyer un template. */
   workflowId?: string;
+  /** Débit max en messages/minute (1..80). Absent/null = aucun throttle. */
+  ratePerMinute?: number | null;
 }
 
 export interface RecipientCounts {
@@ -66,8 +68,8 @@ export class PgCampaignRepo {
     const isWorkflow = !!input.workflowId;
     const res = await this.pool.query<{ id: string }>(
       `insert into campaigns
-         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
        returning id`,
       [
         input.tenantId,
@@ -78,6 +80,7 @@ export class PgCampaignRepo {
         isWorkflow ? null : input.templateLanguage,
         JSON.stringify(input.paramMapping),
         input.workflowId ?? null,
+        input.ratePerMinute ?? null,
       ],
     );
     const id = res.rows[0]?.id;
@@ -96,9 +99,10 @@ export class PgCampaignRepo {
       param_mapping: TemplateParam[];
       status: CampaignStatus;
       workflow_id: string | null;
+      rate_per_minute: number | null;
     }>(
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
-              param_mapping, status, workflow_id
+              param_mapping, status, workflow_id, rate_per_minute
        from campaigns where id = $1`,
       [id],
     );
@@ -114,6 +118,7 @@ export class PgCampaignRepo {
       paramMapping: r.param_mapping,
       status: r.status,
       workflowId: r.workflow_id,
+      ratePerMinute: r.rate_per_minute,
     };
   }
 
@@ -133,6 +138,18 @@ export class PgCampaignRepo {
       [campaignId, tenantId],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Débit choisi + nb de destinataires EN ATTENTE : dimensionne le timeout du job de run (pacing.ts). */
+  async getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null> {
+    const res = await this.pool.query<{ rate_per_minute: number | null; pending: string }>(
+      `select c.rate_per_minute,
+              (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
+       from campaigns c where c.id = $1`,
+      [campaignId],
+    );
+    const r = res.rows[0];
+    return r ? { ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) } : null;
   }
 
   /**
@@ -322,13 +339,13 @@ export class PgCampaignRepo {
       const isWorkflow = !!input.workflowId;
       const cRes = await client.query<{ id: string }>(
         `insert into campaigns
-           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
          returning id`,
         [
           input.tenantId, input.phoneNumberId, input.name, input.category,
           isWorkflow ? null : input.templateName, isWorkflow ? null : input.templateLanguage,
-          JSON.stringify(input.paramMapping), input.workflowId ?? null,
+          JSON.stringify(input.paramMapping), input.workflowId ?? null, input.ratePerMinute ?? null,
         ],
       );
       const campaignId = cRes.rows[0]?.id;

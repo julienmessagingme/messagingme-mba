@@ -362,6 +362,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  // Débit d'envoi (« vitesse du canon ») : null = débit maximum (aucun throttle, comportement par défaut).
+  // Sinon 1..80 messages/min (plafond WhatsApp). Envoyé au backend seulement s'il est non-null.
+  const [ratePerMinute, setRatePerMinute] = useState<number | null>(null);
   // Lancement rapatrié sur l'écran (étape 2) : idle -> creating -> launching (avec polling inline) -> done|error.
   const [launch, setLaunch] = useState<{
     phase: 'idle' | 'creating' | 'launching' | 'done' | 'error';
@@ -612,9 +615,11 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
   // Payload de création partagé par le brouillon (submit) et le lancement direct (createAndLaunch).
   function buildCreateInput(): CreateCampaignInput {
+    // ratePerMinute omis quand null (débit max) : on n'envoie la clé que si un plafond est choisi.
+    const rate = ratePerMinute != null ? { ratePerMinute } : {};
     return mode === 'workflow'
-      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected] }
-      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] };
+      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected], ...rate }
+      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected], ...rate };
   }
 
   // Remise à zéro pour « Nouvelle campagne » après un lancement réussi (sans quitter l'écran de création).
@@ -626,6 +631,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     setWfError(null);
     setError(null);
     setOk(null);
+    setRatePerMinute(null); // retour au débit maximum (défaut)
     setLaunch({ phase: 'idle' });
   }
 
@@ -1009,6 +1015,51 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         </>
       )}
         </div>
+      </div>
+
+      {/* Débit d'envoi (« vitesse du canon ») : placé après le grid pour disposer de la sélection (durée estimée
+          sur selected.size). Défaut = maximum (ratePerMinute null). « Limiter » borne à 1..80 messages/min. */}
+      <div className="mt-4 rounded-xl border border-ink-200 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium text-ink-700">{t("Débit d'envoi", 'Sending rate')}</h3>
+            <p className="mt-0.5 text-xs text-ink-500">{t('Par défaut, envoi au débit maximum.', 'By default, sending at maximum speed.')}</p>
+          </div>
+          <label className="flex shrink-0 items-center gap-2 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              checked={ratePerMinute != null}
+              onChange={(e) => setRatePerMinute(e.target.checked ? 80 : null)}
+              className="accent-brand-500"
+            />
+            {t("Limiter la vitesse d'envoi", 'Limit the sending speed')}
+          </label>
+        </div>
+
+        {ratePerMinute != null && (
+          <div className="mt-3">
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={1}
+                max={80}
+                step={1}
+                value={ratePerMinute}
+                onChange={(e) => setRatePerMinute(Number(e.target.value))}
+                className="flex-1 accent-brand-500"
+              />
+              <span className="w-32 shrink-0 text-right text-sm font-medium text-ink-800">{ratePerMinute} {t('messages / min', 'messages / min')}</span>
+            </div>
+            {selected.size > 0 && (
+              <p className="mt-2 text-xs text-ink-500">
+                {t(`~${Math.ceil(selected.size / ratePerMinute)} min pour envoyer ${selected.size} message(s)`, `~${Math.ceil(selected.size / ratePerMinute)} min to send ${selected.size} message(s)`)}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] text-ink-400">
+              {t('Le plafond est 80/min (limite WhatsApp). Baisser le débit protège la réputation du numéro.', 'The cap is 80/min (WhatsApp limit). Lowering the rate protects the number reputation.')}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Avertissements de préparation : restent en bas de l'étape 1 (variables incomplètes, erreur de création). */}

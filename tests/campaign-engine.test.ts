@@ -81,7 +81,7 @@ class FakeQuality implements QualityProvider {
 
 const campaign: Campaign = {
   id: 'c1', tenantId: 't1', phoneNumberId: 'pn1', category: 'marketing',
-  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null,
+  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null,
 };
 function rec(id: string, to: string, status: Recipient['status'] = 'pending'): Recipient {
   return { id, contactId: `ct-${id}`, toE164: to, resolvedParams: ['X'], status };
