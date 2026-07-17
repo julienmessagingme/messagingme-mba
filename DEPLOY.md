@@ -83,3 +83,15 @@ cd /home/ubuntu/mba && git pull
 sudo docker compose up -d --build                                # 1) deploy le code qui ne lit plus la colonne
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
+
+## ⚠️ Crash-loop transitoire au redéploiement (EMAXCONNSESSION) — normal, s'auto-résout
+
+Juste après `up -d --build`, `mba-api` peut apparaître `Restarting (1)` pendant ~30-60 s et `/health`
+renvoyer 500. Cause : le pooler Supabase (session mode) est plafonné à **15 sessions** ; quand `mba-api`
+et `mba-worker` (deux instances pg-boss) cold-start EN MÊME TEMPS pendant que le pooler tient encore les
+sessions des conteneurs qu'on vient de tuer, le total dépasse 15 -> `EMAXCONNSESSION`. pg-boss émet un
+event `error` non capté (Timekeeper.onCron) qui tue le process -> Docker le relance -> crash-loop bref.
+**Ça se résout seul** dès que le pooler libère les sessions des conteneurs tués (quelques dizaines de
+secondes). Attendre puis revérifier : `sudo docker ps --filter name=mba-api` doit finir sur `Up` stable
+et `/health` sur 200. Ne PAS restart en boucle manuellement (ça relance le cold-start et prolonge la
+contention). Ce n'est pas lié au code déployé.

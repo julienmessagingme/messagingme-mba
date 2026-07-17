@@ -7,7 +7,8 @@ WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · Contacts · Campagnes · Scénario · Contenu (Templates / Formulaires / Tags / Champs) · Analytics · Support**.
+Admin : **Inbox · Contacts · Campagnes · Scénario · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics · Support**.
+Le groupe **Contenu** est **repliable** (clic sur l'en-tête, chevron) : ouvert d'office quand on est sur une de ses pages, sinon replié.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 - ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
@@ -47,6 +48,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Tags** (menu Contenu) : renommer (re-dédup si la cible existe), supprimer -> répercuté sur tous
   les contacts. Un tag saisi dans un bloc « ajout de tag » du bot builder **apparaît aussi ici dès qu'on quitte
   le champ** (persisté au blur, sans attendre l'enregistrement du workflow). Dérivés des contacts + tags déclarés.
+- ✅ **Blocs** (menu Contenu, 2026-07-17) : liste à plat de TOUS les blocs (nodes) de tous les scénarios,
+  **filtrable par type** (Envoi template / Message rapide / Formulaire / Ajout de tag / Ajout de champ / Inbox),
+  avec pour chaque bloc son **code public (`nod_…`) toujours visible** (ou « non codé » pour un bloc jamais
+  re-sauvegardé), un résumé de son contenu, et un lien qui ouvre le scénario correspondant. C'est la vue qui
+  sert à retrouver le code d'un bloc précis (adressage d'une future API).
 - ✅ **User fields** (menu Contenu) : éditer le libellé / le type, supprimer. La **clé est verrouillée**
   (renommer la clé casserait le mapping des campagnes) -> on édite label/type seulement. **Champs de base
   « système »** (Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email) : toujours présents, **non supprimables**,
