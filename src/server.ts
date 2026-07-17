@@ -20,8 +20,13 @@ import { registerMe } from './http/me';
 import { registerOps } from './http/ops';
 import { registerWorkflows } from './http/workflows';
 import { registerEmbeddedSignup } from './http/embedded-signup';
+import { registerApiKeys } from './http/api-keys';
+import { registerV1Contacts } from './http/v1-contacts';
+import { registerV1Sends } from './http/v1-sends';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
+import { makeRequireApiKey, requireScope } from './auth/api-key';
+import { RateLimiter } from './auth/rate-limit';
 import { MetaApiError } from './meta/errors';
 import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
@@ -43,6 +48,10 @@ import type { MeRouteDeps } from './http/me';
 import type { OpsRouteDeps } from './http/ops';
 import type { WorkflowRouteDeps } from './http/workflows';
 import type { EmbeddedSignupRouteDeps } from './http/embedded-signup';
+import type { ApiKeysRouteDeps } from './http/api-keys';
+import type { V1ContactsRouteDeps } from './http/v1-contacts';
+import type { V1SendsRouteDeps } from './http/v1-sends';
+import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
@@ -91,6 +100,10 @@ export interface ServerDeps {
   workflows?: WorkflowRouteDeps;
   /** Embedded Signup Meta (connexion du numéro, Tech Provider) — réservé aux admins. */
   embeddedSignup?: EmbeddedSignupRouteDeps;
+  /** CRUD des clés d'API (console admin, JWT) — réservé aux admins. */
+  apiKeys?: ApiKeysRouteDeps;
+  /** API publique /v1 (authentifiée par clé d'API, autorité SÉPARÉE du JWT, comme /ops). */
+  v1?: { apiKeys: ApiKeyLookup; contacts: V1ContactsRouteDeps; sends?: V1SendsRouteDeps };
 }
 
 /**
@@ -99,7 +112,7 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup) && !deps.auth) {
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
     throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
@@ -164,6 +177,15 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
   if (deps.embeddedSignup) registerEmbeddedSignup(app, deps.embeddedSignup, requireAdmin);
+  if (deps.apiKeys) registerApiKeys(app, deps.apiKeys, requireAdmin);
+  // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Le rate limiter est un SINGLETON
+  // (partagé entre requêtes). Chaque route compose [requireApiKey, requireScope('<scope>')].
+  if (deps.v1) {
+    const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
+    const requireApiKey = makeRequireApiKey(deps.v1.apiKeys, apiLimiter);
+    registerV1Contacts(app, deps.v1.contacts, [requireApiKey, requireScope('contacts:write')]);
+    if (deps.v1.sends) registerV1Sends(app, deps.v1.sends, [requireApiKey, requireScope('sends:create')]);
+  }
   // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
   // compte authentifié (générique, lit req.auth.userId).
   if (deps.account) registerAccount(app, deps.account, requireAdmin);

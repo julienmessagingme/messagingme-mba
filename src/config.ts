@@ -38,6 +38,9 @@ const schema = z.object({
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /** Secret de la surface d'exploitation cross-tenant `/ops` (lecture seule). Vide -> /ops désactivé (401). */
   OPS_TOKEN: z.string().default(''),
+  /** Rate limit de l'API publique /v1 : requêtes par clé et par fenêtre (en mémoire, par process). */
+  API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(60),
+  API_KEY_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

@@ -13,6 +13,7 @@ import {
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
+import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { logTemplateSent } from './inbox/outbound-log';
 import { PgFlowStore } from './flow/store.pg';
@@ -335,9 +336,26 @@ async function main(): Promise<void> {
   const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
   scheduleSweeper.unref();
 
+  // Sweeper d'idempotence API : purge les clés Idempotency-Key plus vieilles que 24h (fenêtre de dédup).
+  const idempotencyStore = new PgApiIdempotencyStore(pool);
+  const idempotencySweep = async (): Promise<void> => {
+    try {
+      const n = await idempotencyStore.sweepOlderThan(24 * 60 * 60 * 1000);
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`idempotency-sweep: ${n} clé(s) d'idempotence purgée(s)`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('idempotency-sweep erreur:', err instanceof Error ? err.message : err);
+    }
+  };
+  void idempotencySweep();
+  const idempotencySweeper = setInterval(() => void idempotencySweep(), 60 * 60 * 1000);
+  idempotencySweeper.unref();
+
   installGracefulShutdown(async () => {
     clearInterval(sweeper);
     clearInterval(scheduleSweeper);
+    clearInterval(idempotencySweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     await queue.stop();
     await pool.end();

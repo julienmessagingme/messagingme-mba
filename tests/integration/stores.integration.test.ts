@@ -21,6 +21,9 @@ import { PgWorkflowStore } from '../../src/workflow/store.pg';
 import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
 import { WorkflowExecutor } from '../../src/workflow/executor';
 import { PgFlowStore } from '../../src/flow/store.pg';
+import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
+import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
+import { resolveScenario } from '../../src/ids/resolve';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -711,6 +714,88 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await pool.query(`update campaign_recipients set claimed_at = now() - interval '1 hour' where id = $1`, [rid]);
     expect(await recipients.reclaimStale(60_000)).toBeGreaterThanOrEqual(1);
     expect(await recipients.listPending(campaignId)).toHaveLength(1); // de retour pending
+  });
+
+  it('PgApiKeyStore : create (clair une fois, hash en base), findActiveByHash, revoke, listByTenant sans hash', async () => {
+    const store = new PgApiKeyStore(pool);
+    const { id, key } = await store.create(tenantId, 'CI', ['contacts:write', 'sends:create']);
+    expect(key.startsWith('mba_')).toBe(true);
+    // le clair n'est PAS en base (seul le hash).
+    expect((await pool.query<{ n: string }>(`select count(*) n from api_keys where key_hash = $1`, [key])).rows[0]!.n).toBe('0');
+    const found = await store.findActiveByHash((await import('../../src/lib/signature')).sha256Hex(key));
+    expect(found).toMatchObject({ id, tenantId, scopes: ['contacts:write', 'sends:create'] });
+    // liste sans hash ni clair.
+    const list = await store.listByTenant(tenantId);
+    const mine = list.find((k) => k.id === id)!;
+    expect(mine).toMatchObject({ name: 'CI', revokedAt: null });
+    expect(mine).not.toHaveProperty('keyHash');
+    // révocation -> findActiveByHash null, revoke idempotent.
+    expect(await store.revoke(tenantId, id)).toBe(true);
+    expect(await store.revoke(tenantId, id)).toBe(false); // déjà révoquée
+    expect(await store.findActiveByHash((await import('../../src/lib/signature')).sha256Hex(key))).toBeNull();
+    // scope tenant : un autre tenant ne révoque pas cette clé.
+    const other = await store.create(tenantId, 'X', ['contacts:write']);
+    expect(await store.revoke('00000000-0000-0000-0000-000000000000', other.id)).toBe(false);
+  });
+
+  it('PgApiIdempotencyStore : claim atomique, complete rejoue, release libère, sweep purge', async () => {
+    const store = new PgApiIdempotencyStore(pool);
+    const key = `idem-${Date.now()}`;
+    const c1 = await store.claim(tenantId, key);
+    expect(c1).toEqual({ claimed: true });
+    // 2e claim avant complete -> pending.
+    expect(await store.claim(tenantId, key)).toEqual({ claimed: false, pending: true });
+    await store.complete(tenantId, key, '11111111-1111-1111-1111-111111111111', { ok: 1 });
+    // après complete -> rejeu du rapport.
+    const replay = await store.claim(tenantId, key);
+    expect(replay).toMatchObject({ claimed: false, sendId: '11111111-1111-1111-1111-111111111111', response: { ok: 1 } });
+    // release ne touche PAS une clé complétée (send_id non null).
+    await store.release(tenantId, key);
+    expect((await store.claim(tenantId, key)).claimed).toBe(false);
+    // release libère une clé PENDING (claim sans complete).
+    const key2 = `idem2-${Date.now()}`;
+    await store.claim(tenantId, key2);
+    await store.release(tenantId, key2);
+    expect(await store.claim(tenantId, key2)).toEqual({ claimed: true }); // re-claimable
+    // sweep purge tout (fenêtre 0).
+    expect(await store.sweepOlderThan(0)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('resolveScenario (Postgres réel) : par code scn_, par nom, nom AMBIGU -> ambiguous', async () => {
+    const wf = new PgWorkflowStore(pool);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-resolve') returning id`)).rows[0]!.id;
+    try {
+      const a = await wf.insert(t, 'Parcours Unique', { nodes: [], edges: [] });
+      await wf.insert(t, 'Doublon', { nodes: [], edges: [] });
+      await wf.insert(t, 'doublon', { nodes: [], edges: [] }); // même nom (insensible casse) -> ambigu
+      const code = (await wf.getById(a.id, t))!.code!;
+      expect(await resolveScenario(t, code, wf)).toMatchObject({ ok: true, value: { id: a.id } });
+      expect(await resolveScenario(t, 'Parcours Unique', wf)).toMatchObject({ ok: true, value: { id: a.id } });
+      const amb = await resolveScenario(t, 'Doublon', wf);
+      expect(amb.ok).toBe(false);
+      if (!amb.ok && amb.reason === 'ambiguous') expect(amb.matches).toHaveLength(2); else throw new Error('attendu ambiguous');
+      expect(await resolveScenario(t, 'Inexistant', wf)).toEqual({ ok: false, reason: 'not_found' });
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
+  it('PgContactStore.upsertByPhoneReturningId / findByPhone / listContactsForBuildByIds', async () => {
+    const store = new PgContactStore(pool);
+    const repo = new PgCampaignRepo(pool);
+    const phone = '+33600000091';
+    const first = await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: 'API', fields: { ville: 'Nice' }, optInStatus: 'opted_in' });
+    expect(first.created).toBe(true);
+    const again = await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown' });
+    expect(again.created).toBe(false);
+    expect(again.id).toBe(first.id); // même contact
+    const found = await store.findByPhone(tenantId, phone);
+    expect(found?.id).toBe(first.id);
+    expect(await store.findByPhone(tenantId, '+33600000099')).toBeNull();
+    const build = await repo.listContactsForBuildByIds(tenantId, [first.id]);
+    expect(build).toHaveLength(1);
+    expect(build[0]).toMatchObject({ id: first.id, phone_e164: phone, optInStatus: 'opted_in' });
+    expect(await repo.listContactsForBuildByIds(tenantId, [])).toEqual([]);
   });
 
   it('createWithRecipients : rollback si un destinataire échoue (pas de campagne orpheline)', async () => {

@@ -58,9 +58,22 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
 ## Décisions API/HubSpot tranchées (2026-07-17) -> paliers restants
 
 Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 validées par Julien). Paliers :
-- **Palier 3 — API publique v1** : table `api_keys` (+ scopes), résolveur `resolveCode` (code ET nom, D-2),
-  `POST /v1/contacts` (+ batch), `POST /v1/sends` (scénario + template, `Idempotency-Key` OBLIGATOIRE D-4,
-  rapport détaillé par numéro D-5, upsert-then-send D-3). Node seul = fenêtre 24h uniquement (D-1).
+- ✅ **Palier 3 (Phase A+B) — API publique v1 : FAIT (2026-07-17)** : clés d'API (`api_keys`, scopes
+  contacts:write/sends:create, rôle synthétique 'api'), résolveur code+nom (409 ambigu), `POST /v1/contacts`
+  (+ batch), `POST /v1/sends` (scénario + template, `Idempotency-Key` obligatoire + claim atomique, rapport
+  skipped détaillé, upsert-then-send), `GET /v1/sends/:id`, CRUD clés admin. Migration 0035. Cf
+  `.loop/palier3-api.md`. Reviewer sécurité : 🔴 double-envoi (idempotence libérée post-enqueue) trouvé + corrigé.
+  - **Reste Phase B2 (différé)** : cible node (envoi d'un bloc à un contact en fenêtre 24h ; renvoie 422
+    aujourd'hui). `WorkflowExecutor.startFromNode` + `getWindowOpenByWaIds` + colonne `campaigns.start_node_id`
+    (déjà en base) + branche `runCampaign`. Cadré dans le blueprint.
+  - **Reste Phase C (différé)** : page web `/api-keys` (gestion des clés côté admin ; aujourd'hui via la route
+    admin/curl). + lien nav.
+  - 🟡 **follow-up (reviewer)** : sur échec d'enqueue APRÈS scellement d'idempotence, une campagne draft reste
+    orpheline (recipients pending, jamais lancée) et le client reçoit 201 sans signal (console.error seul).
+    Récupérable via `POST /campaigns/:id/run`. Ajouter un sweeper/alerte sur campagnes draft à recipients
+    pending sans activité file (>10 min), même pattern que idempotencySweep dans worker.ts.
+- ~~Palier 3 (ancien cadrage)~~ remplacé par l'entrée ci-dessus.
+  Rappel de portée (fait) : `POST /v1/sends` scénario + template, node = fenêtre 24h uniquement (D-1, Phase B2).
 - **Palier 4 — import listes HubSpot** : derrière un toggle self-serve « Campagnes via données HubSpot » qui,
   à l'activation, ajoute le scope `crm.lists.read` au portail (D-7).
 - **Palier 5 — échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions

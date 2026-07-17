@@ -246,6 +246,24 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   `META_ES_CONFIG_ID` n'est pas posé, le bouton reste un placeholder « bientôt disponible ».
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
+## API publique `/v1` (intégrateurs externes)
+
+- ✅ **Clés d'API** (2026-07-17) : un admin crée des clés depuis la console (nom + périmètres). La clé n'est
+  **montrée qu'une fois** à la création (jamais re-affichée, seul son empreinte est stockée). Révocable.
+  Deux périmètres : « écrire des contacts » et « lancer des envois » (une clé peut n'avoir que l'un des deux).
+- ✅ **Créer / mettre à jour des contacts** : `POST /v1/contacts` (un contact) et `/v1/contacts/batch` (jusqu'à
+  500). Champs de base ou perso, adressés par leur clé OU leur code ; un champ perso inconnu est créé
+  automatiquement. Sert à pré-charger des contacts avant une campagne.
+- ✅ **Lancer un envoi** : `POST /v1/sends` envoie un **scénario** (par code ou par nom) ou un **template** à un
+  lot de destinataires (jusqu'à 50). L'API crée les contacts absents à la volée puis envoie. Réponse
+  **détaillée** : combien créés / retrouvés, et la liste des numéros écartés **avec la raison** (non opt-in,
+  numéro invalide, hors fenêtre...). Un en-tête `Idempotency-Key` **obligatoire** garantit qu'un même envoi
+  relancé ne part jamais deux fois. `GET /v1/sends/:id` donne le statut (livrés / lus / répondus).
+- L'espace client est **toujours déduit de la clé** (jamais de l'URL) : une clé ne peut voir/toucher que les
+  données de son espace. Débit borné par clé.
+- 🔲 À venir : envoi d'un **bloc précis** (node) à un contact déjà en conversation (24h), et une page de
+  gestion des clés dans la console (aujourd'hui via l'API admin).
+
 ## Exploitation `/ops` (interne, hors console client)
 
 - ✅ **Console d'exploitation cross-tenant** `/ops` : vue **lecture seule** de TOUS les clients (protégée par

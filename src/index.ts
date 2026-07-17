@@ -20,6 +20,11 @@ import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';
 import { PgFlowStore } from './flow/store.pg';
+import { PgApiKeyStore } from './auth/api-key-store.pg';
+import { upsertContactsFromApi } from './api/contacts-upsert';
+import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
+import { resolveScenario } from './ids/resolve';
+import { enqueueCampaignRun } from './campaign/enqueue';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaFlowClient } from './meta/flows';
@@ -58,6 +63,8 @@ async function main(): Promise<void> {
   const userStore = new PgUserStore(pool);
   const authTokenStore = new PgAuthTokenStore(pool);
   const flowStore = new PgFlowStore(pool);
+  const apiKeyStore = new PgApiKeyStore(pool);
+  const idempotencyStore = new PgApiIdempotencyStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const workflowStore = new PgWorkflowStore(pool);
@@ -301,6 +308,31 @@ async function main(): Promise<void> {
           text,
           ...(email ? { replyTo: email } : {}),
         });
+      },
+    },
+    apiKeys: {
+      createKey: (tenant, name, scopes) => apiKeyStore.create(tenant, name, scopes),
+      listKeys: (tenant) => apiKeyStore.listByTenant(tenant),
+      revokeKey: (tenant, id) => apiKeyStore.revoke(tenant, id),
+    },
+    v1: {
+      apiKeys: apiKeyStore,
+      contacts: {
+        upsertContacts: (tenant, items) => upsertContactsFromApi(tenant, items, { contacts: contactStore, fields: fieldStore }),
+      },
+      sends: {
+        resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
+        getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+        phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+        findContactByPhone: async (tenant, phone) => { const c = await contactStore.findByPhone(tenant, phone); return c ? { id: c.id } : null; },
+        createContactByPhone: (tenant, phone) => contactStore.upsertByPhoneReturningId({ tenantId: tenant, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown' }),
+        listContactsForBuildByIds: (tenant, ids) => repo.listContactsForBuildByIds(tenant, ids),
+        createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
+        enqueue: (campaignId, count, rate) => enqueueCampaignRun(queue, campaignId, count, rate),
+        idempotencyClaim: (tenant, key) => idempotencyStore.claim(tenant, key),
+        idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
+        idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
+        getSendDetail: (sendId, tenant) => repo.getCampaignDetail(sendId, tenant),
       },
     },
   });

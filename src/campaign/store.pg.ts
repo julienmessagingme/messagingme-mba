@@ -347,6 +347,22 @@ export class PgCampaignRepo {
     };
   }
 
+  /** Comme listContactsForBuild mais BORNÉ à des ids précis (API /v1/sends : évite de charger tout le CRM). */
+  async listContactsForBuildByIds(tenantId: string, ids: string[]): Promise<BuildContact[]> {
+    if (ids.length === 0) return [];
+    const res = await this.pool.query<{
+      id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
+      fields: Record<string, unknown>; opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
+    }>(
+      `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
+       from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+      [tenantId, ids],
+    );
+    return res.rows.map((r) => ({
+      id: r.id, phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields, optInStatus: r.opt_in_status,
+    }));
+  }
+
   /** Contacts du tenant prêts pour buildRecipients (id, phone, bsuid, name, fields, opt-in). */
   async listContactsForBuild(tenantId: string): Promise<BuildContact[]> {
     const res = await this.pool.query<{

@@ -23,4 +23,15 @@ export class RateLimiter {
     entry.count += 1;
     return true;
   }
+
+  /** État courant SANS consommer de tentative (pour les en-têtes x-ratelimit-*). Une fenêtre expirée ou
+   *  jamais ouverte -> quota plein, reset dans une fenêtre. `limit` = le plafond configuré. */
+  remaining(key: string): { limit: number; remaining: number; resetAt: number } {
+    const t = this.now();
+    const entry = this.hits.get(key);
+    if (!entry || t >= entry.resetAt) {
+      return { limit: this.max, remaining: this.max, resetAt: t + this.windowMs };
+    }
+    return { limit: this.max, remaining: Math.max(0, this.max - entry.count), resetAt: entry.resetAt };
+  }
 }

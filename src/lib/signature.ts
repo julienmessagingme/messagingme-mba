@@ -1,4 +1,10 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+
+/** Hash sha256 hex d'une chaîne. Pour stocker une clé d'API par son empreinte (jamais le clair), et la
+ *  retrouver par index unique (pas de comparaison mémoire -> pas de canal de timing, comme auth_tokens). */
+export function sha256Hex(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex');
+}
 
 /** Signe un corps brut : `sha256=<hex>` (HMAC-SHA256). Utilisé pour signer le push d'analyse vers le connecteur mm-hubspot. */
 export function signHmac(secret: string, raw: Buffer | string): string {

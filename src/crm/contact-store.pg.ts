@@ -41,10 +41,11 @@ export interface ContactFilters {
 export class PgContactStore implements ContactStore {
   constructor(private readonly pool: Pool) {}
 
-  async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> {
+  /** Comme upsertByPhone mais renvoie AUSSI l'id du contact (pour l'API : upsert-then-send adresse par id). */
+  async upsertByPhoneReturningId(c: ContactUpsert): Promise<{ id: string; created: boolean }> {
     // Index unique PARTIEL contacts_tenant_phone_uidx (where phone_e164 is not null) :
     // le ON CONFLICT doit répéter le prédicat pour cibler cet index.
-    const res = await this.pool.query<{ created: boolean }>(
+    const res = await this.pool.query<{ id: string; created: boolean }>(
       `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags)
        values ($1, $2, $3, $4::jsonb, $5, $6, $7::text[])
        on conflict (tenant_id, phone_e164) where phone_e164 is not null
@@ -59,7 +60,7 @@ export class PgContactStore implements ContactStore {
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          updated_at = now()
-       returning (xmax = 0) as created`,
+       returning id, (xmax = 0) as created`,
       [
         c.tenantId,
         c.phoneE164,
@@ -70,7 +71,23 @@ export class PgContactStore implements ContactStore {
         c.tags ?? [],
       ],
     );
-    return res.rows[0]?.created ? 'created' : 'updated';
+    const row = res.rows[0]!;
+    return { id: row.id, created: row.created };
+  }
+
+  async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> {
+    return (await this.upsertByPhoneReturningId(c)).created ? 'created' : 'updated';
+  }
+
+  /** Contact par téléphone E.164 exact (tenant scopé). null si absent. Pour l'API : décider create vs update. */
+  async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
+    const res = await this.pool.query(
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at
+       from contacts where tenant_id = $1 and phone_e164 = $2 limit 1`,
+      [tenantId, phoneE164],
+    );
+    const r = res.rows[0];
+    return r ? PgContactStore.rowToContact(r) : null;
   }
 
   /**
