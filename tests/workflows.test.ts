@@ -191,4 +191,33 @@ describe('routes workflows', () => {
     expect(cross.statusCode).toBe(403);
     await server.close();
   });
+
+  it('GET /nodes : aplati les nodes de tous les scénarios, résumé field depuis fieldLabel', async () => {
+    // Forme RÉELLE persistée par le builder (fieldKey/fieldLabel/value pour un bloc « ajout de champ »).
+    const nodesRow = sampleRow({
+      id: 'wA', name: 'Parcours',
+      graph: { nodes: [
+        { id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: { code: 'nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS', templateName: 'promo' } },
+        { id: 'n2', type: 'field', position: { x: 200, y: 0 }, data: { fieldKey: 'ville', fieldLabel: 'Ville', value: 'Paris' } },
+        { id: 'n3', type: 'tag', position: { x: 400, y: 0 }, data: { tag: 'vip' } },
+      ], edges: [] },
+    });
+    const { server } = app({ listWorkflows: async () => [nodesRow] });
+    const all = await server.inject({ method: 'GET', url: '/tenants/t1/nodes', ...h(adminTok) });
+    expect(all.statusCode).toBe(200);
+    const nodes = all.json<{ nodes: Array<{ type: string; summary: string; code: string | null; workflowId: string }> }>().nodes;
+    expect(nodes).toHaveLength(3);
+    const field = nodes.find((n) => n.type === 'field')!;
+    expect(field.summary).toBe('Ville = Paris'); // <- aurait échoué avec l'ancien data.key
+    expect(field.code).toBeNull(); // node jamais re-sauvegardé -> pas de code
+    expect(nodes.find((n) => n.type === 'template')!.code).toBe('nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS');
+    expect(nodes.every((n) => n.workflowId === 'wA')).toBe(true);
+    // Filtre par type
+    const tags = await server.inject({ method: 'GET', url: '/tenants/t1/nodes?type=tag', ...h(adminTok) });
+    expect(tags.json<{ nodes: unknown[] }>().nodes).toHaveLength(1);
+    // Tenant croisé -> 403
+    const cross = await server.inject({ method: 'GET', url: '/tenants/t1/nodes', ...h(otherTok) });
+    expect(cross.statusCode).toBe(403);
+    await server.close();
+  });
 });

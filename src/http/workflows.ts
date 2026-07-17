@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { parseGraph } from '../workflow/graph';
+import { parseGraph, isWorkflowNodeType } from '../workflow/graph';
 import type { WorkflowGraph } from '../workflow/graph';
 import type { WorkflowRow } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
+import { collectNodes } from '../workflow/node-list';
 import { opensOutsideServiceWindow } from '../workflow/engine';
 
 const OPENS_SESSION_MSG = 'le premier message d’un scénario doit être un template : un formulaire ou un message rapide en ouverture partirait hors fenêtre de service 24 h';
@@ -73,6 +74,18 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ workflows: await deps.listWorkflows(tenant) });
+  });
+
+  // Contenu > Blocs : liste à plat de TOUS les nodes des scénarios du tenant, requêtable par ?type=.
+  // Chaque node porte son code public (nod_..., ou null s'il n'a jamais été re-sauvegardé depuis le Lot 4b).
+  // Route de LECTURE : dérivée des workflows (aucun store dédié), admin-only via `opts`.
+  app.get('/tenants/:tenantId/nodes', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const q = (req.query ?? {}) as { type?: unknown };
+    const type = isWorkflowNodeType(q.type) ? q.type : undefined;
+    const workflows = await deps.listWorkflows(tenant);
+    return reply.code(200).send({ nodes: collectNodes(workflows, type) });
   });
 
   app.get('/tenants/:tenantId/workflows/:id', opts, async (req, reply) => {

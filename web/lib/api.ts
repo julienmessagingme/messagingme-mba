@@ -853,6 +853,20 @@ export function deleteWorkflow(tenantId: string, id: string): Promise<unknown> {
   return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'DELETE' });
 }
 
+/** Un bloc (node) aplati depuis les scénarios, pour la page Contenu > Blocs. `code` = nod_... ou null. */
+export interface NodeListItem {
+  code: string | null;
+  type: WorkflowNodeType;
+  workflowId: string;
+  workflowName: string;
+  summary: string;
+}
+/** Liste tous les blocs des scénarios du tenant, optionnellement filtrés par type. */
+export function listNodes(tenantId: string, type?: WorkflowNodeType): Promise<{ nodes: NodeListItem[] }> {
+  const qs = type ? `?type=${encodeURIComponent(type)}` : '';
+  return request<{ nodes: NodeListItem[] }>(`/tenants/${tenantId}/nodes${qs}`);
+}
+
 // --- Contenu : Tags + User fields (édition) ---
 
 export interface TagCount {

@@ -8,7 +8,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'inbox' | 'admin' | 'support';
+type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -38,6 +38,11 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Groupes de nav repliables. Ouvert au départ seulement si la page active est un de ses enfants
+  // (`active` est une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => ({
+    contenu: ['templates', 'flows', 'nodes', 'tags', 'fields'].includes(active),
+  }));
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
   const NAV_ADMIN: NavItem[] = [
@@ -48,6 +53,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
       { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
       { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
+      { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
       { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
     ] },
@@ -80,9 +86,11 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     router.replace('/login');
   }
 
-  // Groupe de nav actif : dashboard -> Analytics ; templates|flows -> Contenu ; sinon la page elle-même.
+  // Groupe de nav actif : dashboard -> Analytics ; templates|flows|nodes|tags|fields -> Contenu ; sinon la page elle-même.
   const group =
-    active === 'dashboard' ? 'analytics' : active === 'templates' || active === 'flows' || active === 'tags' || active === 'fields' ? 'contenu' : active;
+    active === 'dashboard' ? 'analytics'
+      : active === 'templates' || active === 'flows' || active === 'nodes' || active === 'tags' || active === 'fields' ? 'contenu'
+        : active;
   const nav = session.role === 'admin' ? NAV_ADMIN : NAV_AGENT;
 
   const itemCls = (on: boolean) =>
@@ -95,15 +103,23 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       {nav.map((item) =>
         item.children ? (
           <div key={item.key}>
-            <div className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm ${group === item.key ? 'font-medium text-brand-700' : 'text-ink-600'}`}>
+            <button
+              type="button"
+              onClick={() => setOpenGroups((s) => ({ ...s, [item.key]: !s[item.key] }))}
+              aria-expanded={!!openGroups[item.key]}
+              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition hover:bg-ink-100 ${group === item.key ? 'font-medium text-brand-700' : 'text-ink-600'}`}
+            >
               <Ico d={item.d} />
               {item.label}
-            </div>
-            <div className="ml-[30px] space-y-0.5 border-l border-ink-100 pl-2">
-              {item.children.map((c) => (
-                <Link key={c.key} href={c.href} onClick={() => setDrawerOpen(false)} className={subCls(active === c.key)}>{c.label}</Link>
-              ))}
-            </div>
+              <svg viewBox="0 0 24 24" className={`ml-auto h-4 w-4 shrink-0 text-ink-400 transition-transform ${openGroups[item.key] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            {openGroups[item.key] && (
+              <div className="ml-[30px] mt-0.5 space-y-0.5 border-l border-ink-100 pl-2">
+                {item.children.map((c) => (
+                  <Link key={c.key} href={c.href} onClick={() => setDrawerOpen(false)} className={subCls(active === c.key)}>{c.label}</Link>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <Link key={item.key} href={item.href!} onClick={() => setDrawerOpen(false)} className={itemCls(group === item.key)}>

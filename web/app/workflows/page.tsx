@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
@@ -8,7 +9,16 @@ import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, type Workfl
 import { useT } from '@/lib/i18n';
 
 export default function WorkflowsPage() {
-  return <AppShell active="workflows" fullBleed>{(session) => <WorkflowsInner session={session} />}</AppShell>;
+  // Suspense : useSearchParams (deep-link ?open=) exige une frontière Suspense au build (Next 15).
+  return (
+    <AppShell active="workflows" fullBleed>
+      {(session) => (
+        <Suspense fallback={null}>
+          <WorkflowsInner session={session} />
+        </Suspense>
+      )}
+    </AppShell>
+  );
 }
 
 function WorkflowsInner({ session }: { session: Session }) {
@@ -18,6 +28,9 @@ function WorkflowsInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [editing, setEditing] = useState<WorkflowSummary | null>(null);
+  const searchParams = useSearchParams();
+  const deepLinkId = searchParams.get('open');
+  const deepLinkApplied = useRef(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -31,6 +44,17 @@ function WorkflowsInner({ session }: { session: Session }) {
   }, [session.tenantId, t]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Deep-link ?open=<id> (depuis Contenu > Blocs) : ouvre le scénario correspondant une fois la liste chargée,
+  // une seule fois (pas de ré-ouverture après un retour manuel à la liste). Scénario absent -> ignoré.
+  useEffect(() => {
+    if (deepLinkApplied.current || !deepLinkId || editing || workflows.length === 0) return;
+    const match = workflows.find((w) => w.id === deepLinkId);
+    if (match) {
+      deepLinkApplied.current = true;
+      void open(match);
+    }
+  }, [deepLinkId, workflows, editing]);
 
   async function create() {
     const name = newName.trim();

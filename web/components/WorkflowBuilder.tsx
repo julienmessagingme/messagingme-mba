@@ -14,21 +14,10 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { NODE_META, NODE_ORDER } from '@/lib/nodeMeta';
 
 type RFNode = Node<Record<string, unknown>>;
 type RFEdge = Edge;
-
-// Les libellés portent les DEUX langues ([fr, en]) : NODE_META est une constante module (useT inappelable ici),
-// et il est lu par 3 composants -> on résout au rendu via t(...meta.label).
-const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string, string] }> = {
-  template: { emoji: '📩', label: ['Envoi template', 'Send template'] },
-  quick_message: { emoji: '⚡', label: ['Message rapide', 'Quick message'] },
-  inbox: { emoji: '💬', label: ['Inbox', 'Inbox'] },
-  flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
-  tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] },
-  field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] },
-};
-const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'tag', 'field', 'inbox'];
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`);
