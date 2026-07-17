@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { CsvImport } from '@/components/CsvImport';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import { fmtCost } from '@/lib/format';
@@ -34,6 +35,7 @@ import {
   type TemplateParam,
   type TemplateSummary,
   type Contact,
+  type ImportReport,
   type ContactFilters,
   type ContactFieldFilter,
   type TagCount,
@@ -395,6 +397,10 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const [total, setTotal] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Récap non bloquant après un import fichier (N importés + tag posé) : affiché dans la zone Destinataires.
+  const [importMsg, setImportMsg] = useState<{ n: number; tags: string[] } | null>(null);
+  // Import CSV (source fichier) en vol : gèle les boutons de source (changer de source démonterait CsvImport).
+  const [importBusy, setImportBusy] = useState(false);
   // Anti-course : n'appliquer qu'une réponse à jour (une plus récente peut la doubler entre-temps).
   const reqSeq = useRef(0);
 
@@ -538,9 +544,33 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   }
 
   // Bascule de source. Pour les sources non implémentées, on vide la sélection (donc étape 2 désactivée).
+  // Un changement manuel de source referme le récap d'import (il ne concerne plus l'écran affiché).
   function chooseSource(s: 'crm' | 'file' | 'hubspot') {
     setSource(s);
+    setImportMsg(null);
     if (s !== 'crm') setSelected(new Set());
+  }
+
+  // Après un import fichier : les contacts sont dans le CRM, taggés. On CIBLE ces contacts en posant leur(s)
+  // tag(s) comme seul filtre et en vidant tout le reste, pour que le compteur/liste (étape Destinataires) ne
+  // montrent qu'eux. tagMode 'or' si plusieurs tags (au moins un), 'and' sinon.
+  function applyImportedTags(tags: string[]) {
+    setTagFilter(new Set(tags));
+    setTagMode(tags.length > 1 ? 'or' : 'and');
+    setOptIn('');
+    setPhonePrefix('');
+    setPhoneContains('');
+    setNameSearch('');
+    setFieldFilters([]);
+  }
+
+  // Callback de CsvImport (source fichier) : on pivote sur la source CRM filtrée par le(s) tag(s) de l'import.
+  // L'effet debouncé de la liste se redéclenche (filtres changés) et re-coche les contacts chargés -> `selected`
+  // contient les importés, l'étape 2 devient accessible. N = contacts réellement posés (créés + mis à jour).
+  function handleImported({ report, tags }: { report: ImportReport; tags: string[] }) {
+    applyImportedTags(tags);
+    setSource('crm');
+    setImportMsg({ n: report.created + report.updated, tags });
   }
   function toggleContact(id: string) {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -568,6 +598,13 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const customFields = customFieldsOnly(userFields);
   // Un filtre est actif dès qu'une clé est posée -> distingue « aucun résultat » de « aucun contact du tout ».
   const hasActiveFilters = Object.keys(buildFilters()).length > 0;
+  // Le récap d'import n'est PERTINENT que tant que le filtre affiché == exactement les tags importés (rien
+  // d'autre). Dès que l'utilisateur touche un filtre, la sélection diverge des importés -> on masque le récap.
+  const importMsgFresh = importMsg !== null
+    && tagFilter.size === importMsg.tags.length
+    && importMsg.tags.every((tg) => tagFilter.has(tg))
+    && !optIn && !phonePrefix.trim() && !phoneContains.trim() && !nameSearch.trim()
+    && fieldFilters.filter((r) => r.key && r.value.trim()).length === 0;
 
   function toParamMapping(): TemplateParam[] {
     return vars.map((v, i) => ({ position: i + 1, source: selToSource(v.sel, v.value) }));
@@ -741,10 +778,12 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
         {/* Sélecteur de SOURCE des destinataires (segmenté, comme le toggle template/scénario). */}
         <div className="mb-3 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
-          <button type="button" onClick={() => chooseSource('crm')} className={`rounded-md px-2.5 py-1 ${source === 'crm' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
+          {/* Boutons de source gelés pendant un import en vol (changer de source démonterait CsvImport et sa
+              requête, la sélection pivoterait sur un état obsolète). */}
+          <button type="button" disabled={importBusy} onClick={() => chooseSource('crm')} className={`rounded-md px-2.5 py-1 disabled:opacity-40 ${source === 'crm' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
             📇 {t('Liste de contacts', 'Contact list')}
           </button>
-          <button type="button" onClick={() => chooseSource('file')} className={`rounded-md px-2.5 py-1 ${source === 'file' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
+          <button type="button" disabled={importBusy} onClick={() => chooseSource('file')} className={`rounded-md px-2.5 py-1 disabled:opacity-40 ${source === 'file' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
             📄 {t('Import fichier', 'File import')}
           </button>
           <button type="button" disabled className="cursor-not-allowed rounded-md px-2.5 py-1 text-ink-300" title={t('Bientôt disponible', 'Coming soon')}>
@@ -753,9 +792,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         </div>
 
         {source === 'file' ? (
-          <div className="rounded-lg border border-dashed border-ink-300 bg-ink-50/40 px-4 py-8 text-center text-xs text-ink-500">
-            {t('Import de fichier : bientôt (phase suivante)', 'File import: coming soon (next phase)')}
-          </div>
+          <CsvImport tenantId={tenantId} requireTag onImported={handleImported} onBusyChange={setImportBusy} />
         ) : source === 'hubspot' ? (
           <div className="rounded-lg border border-dashed border-ink-300 bg-ink-50/40 px-4 py-8 text-center text-xs text-ink-500">
             {t('HubSpot : bientôt.', 'HubSpot: coming soon.')}
@@ -764,6 +801,16 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           <p className="text-xs text-ink-400">{t('Chargement des contacts...', 'Loading contacts...')}</p>
         ) : (
           <div>
+            {/* Récap d'import (non bloquant) : rappelle N importés + le(s) tag(s) posé(s), qui filtrent la liste.
+                Masqué dès que l'utilisateur modifie un filtre (le récap ne décrit plus la sélection affichée). */}
+            {importMsgFresh && importMsg && (
+              <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                <span>
+                  <b>{importMsg.n}</b> {t('contact(s) importé(s) et taggé(s)', 'contact(s) imported and tagged')} « {importMsg.tags.join(', ')} ». {t('Ils sont sélectionnés ci-dessous.', 'They are selected below.')}
+                </span>
+                <button type="button" onClick={() => setImportMsg(null)} className="shrink-0 leading-none text-emerald-500 hover:text-emerald-800" aria-label={t('Fermer', 'Close')}>×</button>
+              </div>
+            )}
             {/* Tags : puces multi-sélection alimentées par listTags (pas dérivées des contacts chargés). */}
             {tags.length > 0 && (
               <div className="mb-2">
