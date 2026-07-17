@@ -14,6 +14,7 @@ import {
   listPhoneNumbers,
   createCampaign,
   runCampaign,
+  cancelSchedule,
   listTemplates,
   listWorkflows,
   listUserFields,
@@ -60,6 +61,7 @@ export default function CampaignsPage() {
 // useT() y est inappelable -> on fait porter les deux langues à la valeur.
 const STATUS: Record<string, { text: [string, string]; cls: string }> = {
   draft: { text: ['brouillon', 'draft'], cls: 'bg-ink-100 text-ink-600' },
+  scheduled: { text: ['planifiée', 'scheduled'], cls: 'bg-violet-50 text-violet-700' },
   running: { text: ['en cours', 'running'], cls: 'bg-blue-50 text-blue-700' },
   paused: { text: ['en pause', 'paused'], cls: 'bg-amber-50 text-amber-700' },
   completed: { text: ['terminée', 'completed'], cls: 'bg-emerald-50 text-emerald-700' },
@@ -140,6 +142,18 @@ function CampaignsInner({ session }: { session: Session }) {
     }
   }
 
+  // Annule la programmation d'une campagne « scheduled » : elle repasse en brouillon côté backend, puis on
+  // rafraîchit la liste pour refléter le nouveau statut.
+  async function cancelSched(id: string) {
+    setError(null);
+    try {
+      await cancelSchedule(id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Annulation impossible', 'Cancellation failed'));
+    }
+  }
+
   // Écran de création (ouvert via « Ajouter une campagne »). Pleine largeur : fullBleed retire le padding et
   // impose overflow-hidden sur <main>, donc on gère ici notre propre scroll et notre propre padding.
   if (mode === 'create') {
@@ -211,6 +225,11 @@ function CampaignsInner({ session }: { session: Session }) {
                       <Badge status={c.status} />
                       <span className="text-xs text-ink-400">{c.category}</span>
                     </div>
+                    {c.status === 'scheduled' && c.scheduledAt && (
+                      <p className="mt-0.5 text-xs font-medium text-violet-700">
+                        {t('Planifiée le', 'Scheduled for')} {new Date(c.scheduledAt).toLocaleString()}
+                      </p>
+                    )}
                     <p className="mt-0.5 text-xs text-ink-500">
                       template {c.templateName} ({c.templateLanguage}) · {c.counts.total} {t('destinataires', 'recipients')}
                     </p>
@@ -240,6 +259,16 @@ function CampaignsInner({ session }: { session: Session }) {
                         className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                       >
                         {c.status === 'paused' ? t('Reprendre', 'Resume') : t('Lancer', 'Launch')}
+                      </button>
+                    )}
+                    {/* Une campagne programmée part seule à l'échéance : pas de « Lancer », mais on peut annuler
+                        la programmation (retour brouillon). */}
+                    {c.status === 'scheduled' && (
+                      <button
+                        onClick={() => cancelSched(c.id)}
+                        className="rounded-lg border border-ink-300 px-3 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
+                      >
+                        {t('Annuler la planification', 'Cancel schedule')}
                       </button>
                     )}
                     <button
@@ -366,12 +395,18 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // Sinon 1..80 messages/min (plafond WhatsApp). Envoyé au backend seulement s'il est non-null.
   const [ratePerMinute, setRatePerMinute] = useState<number | null>(null);
   // Lancement rapatrié sur l'écran (étape 2) : idle -> creating -> launching (avec polling inline) -> done|error.
+  // Programmation : idle -> creating -> scheduled (pas de polling, le worker déclenche l'envoi à l'échéance).
   const [launch, setLaunch] = useState<{
-    phase: 'idle' | 'creating' | 'launching' | 'done' | 'error';
+    phase: 'idle' | 'creating' | 'launching' | 'scheduled' | 'done' | 'error';
     campaignId?: string;
     detail?: CampaignDetail;
     message?: string;
   }>({ phase: 'idle' });
+  // Timing du lancement (étape 2) : 'now' = envoi immédiat, 'later' = programmation à une date/heure future.
+  const [timing, setTiming] = useState<'now' | 'later'>('now');
+  // Date/heure choisie pour la programmation, en HEURE LOCALE (valeur brute d'un <input datetime-local>).
+  // Convertie en ISO UTC absolu (new Date(...).toISOString()) seulement au moment de l'action.
+  const [scheduledLocal, setScheduledLocal] = useState('');
   // Anti-course : ne pas appliquer les indices d'un template si l'utilisateur en a choisi un autre entre-temps.
   const chooseSeq = useRef(0);
   // Garde de démontage : le mini-polling du lancement est une boucle async hors cycle React -> on l'arrête si
@@ -632,6 +667,8 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     setError(null);
     setOk(null);
     setRatePerMinute(null); // retour au débit maximum (défaut)
+    setTiming('now');
+    setScheduledLocal('');
     setLaunch({ phase: 'idle' });
   }
 
@@ -716,6 +753,38 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     }
   }
 
+  // Créer PUIS programmer un lancement futur (étape 2, timing 'later'). Pas de polling : on confirme la
+  // programmation et on laisse le worker déclencher l'envoi à l'échéance. La date locale saisie est convertie
+  // en ISO UTC absolu ici, au moment de l'action.
+  async function createAndSchedule() {
+    const scheduledISO = new Date(scheduledLocal).toISOString();
+    setError(null);
+    setOk(null);
+    setLaunch({ phase: 'creating' });
+    try {
+      const res = await createCampaign(tenantId, buildCreateInput());
+      // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE programme PAS et on reste.
+      if (res.recipientCount === 0) {
+        setError(t(
+          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`,
+          `No recipients: the ${res.skipped.length} selected contact(s) were skipped because the template variable has no value on their record. Choose another source for the variable (e.g. "Name") or complete the records.`,
+        ));
+        setLaunch({ phase: 'idle' });
+        return;
+      }
+      const r = await runCampaign(res.campaignId, scheduledISO);
+      if (!mountedRef.current) return; // écran quitté entre-temps -> on cesse tout setState
+      const when = new Date(r.scheduledAt ?? scheduledISO).toLocaleString();
+      setLaunch({
+        phase: 'scheduled',
+        campaignId: res.campaignId,
+        message: t(`Campagne planifiée le ${when}.`, `Campaign scheduled for ${when}.`),
+      });
+    } catch (err) {
+      setLaunch({ phase: 'error', message: err instanceof Error ? err.message : t('Programmation impossible', 'Scheduling failed') });
+    }
+  }
+
   // Le sélecteur garantit une source valide (champ de base ou champ perso réel) : seul « Texte fixe » exige
   // une valeur saisie. On bloque l'envoi tant qu'un texte fixe est vide (sinon 400 côté backend).
   const varsComplete = vars.every((v) => (v.sel === 'literal' ? v.value.trim() !== '' : true));
@@ -727,8 +796,12 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // Étape 1 prête = ce qui active l'étape 2 (indépendant du busy/launch en cours).
   const step1Ready = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0;
   const canSubmit = step1Ready && !busy;
-  // Lancement en cours (création + polling) : verrouille les boutons des deux étapes.
+  // Lancement en cours (création + polling) : verrouille les boutons des deux étapes. Couvre aussi la phase
+  // 'creating' de la programmation (créer + programmer), donc le retour liste est gelé pendant l'opération.
   const launching = launch.phase === 'creating' || launch.phase === 'launching';
+  // Validation UI de la programmation : date renseignée, valide, et STRICTEMENT dans le futur (au rendu).
+  const scheduledDate = timing === 'later' && scheduledLocal ? new Date(scheduledLocal) : null;
+  const scheduledValid = scheduledDate !== null && !Number.isNaN(scheduledDate.getTime()) && scheduledDate.getTime() > Date.now();
   // Remonte l'état « lancement en cours » au parent (fige le retour liste pendant creating/launching).
   useEffect(() => { onBusyChange?.(launching); }, [launching, onBusyChange]);
 
@@ -1078,15 +1151,41 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           <>
             <p className="mt-1 text-sm text-ink-700">{t(`Prêt à lancer à ${selected.size} destinataire(s).`, `Ready to launch to ${selected.size} recipient(s).`)}</p>
 
-            {/* Timing : une seule option pour l'instant. Le calendrier et le slider de débit arrivent en phases suivantes. */}
+            {/* Timing : lancer maintenant OU programmer un envoi futur. 'later' révèle un sélecteur date/heure. */}
             <div className="mt-4">
               <label className="mb-1 block text-sm font-medium text-ink-700">{t('Quand ?', 'When?')}</label>
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-lg border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700">{t('Maintenant', 'Now')}</span>
-                <span className="cursor-not-allowed rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-400" title={t('Bientôt disponible', 'Coming soon')}>
-                  {t('Planifier plus tard (bientôt)', 'Schedule for later (soon)')}
-                </span>
+              <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
+                {([
+                  ['now', t('Maintenant', 'Now')],
+                  ['later', t('Plus tard', 'Later')],
+                ] as const).map(([val, label]) => (
+                  <button
+                    type="button"
+                    key={val}
+                    onClick={() => setTiming(val)}
+                    disabled={launching}
+                    className={`rounded-md px-3 py-1 disabled:opacity-40 ${timing === val ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
+
+              {timing === 'later' && (
+                <div className="mt-3">
+                  <input
+                    type="datetime-local"
+                    value={scheduledLocal}
+                    onChange={(e) => setScheduledLocal(e.target.value)}
+                    disabled={launching}
+                    className={`${inputCls} max-w-xs disabled:opacity-40`}
+                  />
+                  <p className="mt-1 text-xs text-ink-500">{t('Le lancement partira automatiquement à cette date/heure.', 'The launch will go out automatically at this date/time.')}</p>
+                  {scheduledLocal !== '' && !scheduledValid && (
+                    <p className="mt-1 text-xs text-amber-600">{t('Choisis une date et une heure dans le futur.', 'Choose a date and time in the future.')}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Progression / résultat du lancement inline (compteurs rafraîchis par le polling). */}
@@ -1124,21 +1223,56 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
                     </div>
                   </div>
                 )}
+                {launch.phase === 'scheduled' && (
+                  <div>
+                    <p className="font-medium text-violet-800">{launch.message}</p>
+                    <p className="mt-1 text-xs text-ink-500">{t('Elle partira automatiquement à la date prévue. Tu peux annuler la planification depuis la liste.', 'It will go out automatically at the scheduled time. You can cancel the schedule from the list.')}</p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => onCreated()}
+                        className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+                      >
+                        {t('Voir dans les campagnes', 'View in campaigns')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetForm}
+                        className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+                      >
+                        {t('Nouvelle campagne', 'New campaign')}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {launch.phase === 'error' && <p className="text-red-700">{launch.message}</p>}
               </div>
             )}
 
-            {/* Boutons d'action : masqués une fois le lancement terminé (les boutons de suite prennent le relais). */}
-            {launch.phase !== 'done' && (
+            {/* Boutons d'action : masqués une fois le lancement/programmation terminé (les boutons de suite prennent
+                le relais). Le bouton primaire dépend du timing : « Créer et lancer » (now) ou « Créer et planifier »
+                (later, actif seulement si la date est dans le futur). Le brouillon reste disponible dans les deux cas. */}
+            {launch.phase !== 'done' && launch.phase !== 'scheduled' && (
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={createAndLaunch}
-                  disabled={!canSubmit || launching}
-                  className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-                >
-                  {launch.phase === 'creating' ? t('Création...', 'Creating...') : launch.phase === 'launching' ? t('Lancement...', 'Launching...') : t('Créer et lancer', 'Create and launch')}
-                </button>
+                {timing === 'now' ? (
+                  <button
+                    type="button"
+                    onClick={createAndLaunch}
+                    disabled={!canSubmit || launching}
+                    className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                  >
+                    {launch.phase === 'creating' ? t('Création...', 'Creating...') : launch.phase === 'launching' ? t('Lancement...', 'Launching...') : t('Créer et lancer', 'Create and launch')}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={createAndSchedule}
+                    disabled={!canSubmit || launching || !scheduledValid}
+                    className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                  >
+                    {launch.phase === 'creating' ? t('Programmation...', 'Scheduling...') : t('Créer et planifier', 'Create and schedule')}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={submit}

@@ -290,6 +290,44 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect((await store.listDistinct(tenantId)).some((t) => t.tag === 'declared-only')).toBe(false);
   });
 
+  it('PgCampaignRepo : programmation (schedule/cancel/listDue/markScheduledRunning), gardes de statut', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const cId = await repo.insertCampaign({
+      tenantId, phoneNumberId: 'pn-sched', name: 'planif', category: 'marketing',
+      templateName: 't', templateLanguage: 'fr', paramMapping: [], ratePerMinute: 10,
+    });
+    // 2 destinataires en attente (pour le dimensionnement du sweeper).
+    const ct = (await pool.query<{ id: string }>(`insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1,$2,'opted_in') returning id`, [tenantId, '+33600000055'])).rows[0]!.id;
+    await repo.insertRecipients(cId, [{ contactId: ct, toE164: '+33600000055', resolvedParams: ['X'] }]);
+
+    // Programme dans le FUTUR -> pas dû.
+    const future = new Date(Date.now() + 3_600_000);
+    expect(await repo.scheduleCampaign(cId, tenantId, future)).toBe(true);
+    expect((await repo.getCampaign(cId))?.status).toBe('scheduled');
+    expect((await repo.listDueScheduled(new Date())).some((c) => c.id === cId)).toBe(false); // futur -> pas dû
+
+    // Rendre l'échéance PASSÉE (rester 'scheduled') -> dû. scheduleCampaign ne re-programme pas une campagne
+    // déjà 'scheduled' (garde draft/paused voulue), donc on pousse scheduled_at dans le passé directement.
+    await pool.query(`update campaigns set scheduled_at = now() - interval '1 second' where id = $1`, [cId]);
+    const due = (await repo.listDueScheduled(new Date())).find((c) => c.id === cId);
+    expect(due).toMatchObject({ ratePerMinute: 10, pendingCount: 1 });
+
+    // Claim du sweeper : scheduled -> running (une seule fois).
+    expect(await repo.markScheduledRunning(cId)).toBe(true);
+    expect(await repo.markScheduledRunning(cId)).toBe(false); // plus 'scheduled'
+    expect((await repo.getCampaign(cId))?.status).toBe('running');
+
+    // Annulation : seule une campagne 'scheduled' s'annule (running -> non).
+    expect(await repo.cancelSchedule(cId, tenantId)).toBe(false); // running, pas scheduled
+    await pool.query(`update campaigns set status='scheduled', scheduled_at=now() where id=$1`, [cId]);
+    expect(await repo.cancelSchedule(cId, tenantId)).toBe(true);
+    const back = await repo.getCampaign(cId);
+    expect(back?.status).toBe('draft');
+
+    // Scope tenant : un autre tenant ne programme/annule pas cette campagne.
+    expect(await repo.scheduleCampaign(cId, '00000000-0000-0000-0000-000000000000', future)).toBe(false);
+  });
+
   it('PgCampaignRepo + stores : insert, listPending, markResult, setStatus, lastSentAt', async () => {
     const repo = new PgCampaignRepo(pool);
     const recipients = new PgRecipientStore(pool);

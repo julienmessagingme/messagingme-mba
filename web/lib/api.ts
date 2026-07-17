@@ -226,6 +226,8 @@ export interface CampaignSummary {
   templateName: string;
   templateLanguage: string;
   createdAt: string;
+  /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
+  scheduledAt: string | null;
   counts: RecipientCounts;
 }
 export interface CampaignRecipient {
@@ -289,8 +291,13 @@ export interface CampaignCreated {
 export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<CampaignCreated> {
   return request(`/tenants/${tenantId}/campaigns`, { method: 'POST', body: JSON.stringify(input) });
 }
-export function runCampaign(campaignId: string): Promise<{ enqueued: boolean }> {
-  return request(`/campaigns/${campaignId}/run`, { method: 'POST' });
+/** Lance une campagne : maintenant (sans `scheduledAt`) ou à une date future (ISO UTC absolu -> programmée). */
+export function runCampaign(campaignId: string, scheduledAt?: string): Promise<{ enqueued?: boolean; scheduled?: boolean; scheduledAt?: string }> {
+  return request(`/campaigns/${campaignId}/run`, { method: 'POST', ...(scheduledAt ? { body: JSON.stringify({ scheduledAt }) } : {}) });
+}
+/** Annule une campagne programmée : elle repasse en brouillon. */
+export function cancelSchedule(campaignId: string): Promise<{ cancelled: boolean }> {
+  return request(`/campaigns/${campaignId}/cancel-schedule`, { method: 'POST' });
 }
 
 // --- Templates ---

@@ -39,6 +39,8 @@ export interface CampaignSummary {
   templateName: string;
   templateLanguage: string;
   createdAt: string;
+  /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
+  scheduledAt: string | null;
   counts: RecipientCounts;
 }
 export interface CampaignDetail extends CampaignSummary {
@@ -152,6 +154,50 @@ export class PgCampaignRepo {
     return r ? { ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) } : null;
   }
 
+  /** Programme une campagne pour un lancement futur (scopé tenant). Seul un brouillon ou une campagne en pause
+   *  se programme (pas une déjà en cours/terminée). `scheduledAt` = instant absolu UTC. true si programmée. */
+  async scheduleCampaign(campaignId: string, tenantId: string, scheduledAt: Date): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set status = 'scheduled', scheduled_at = $3
+       where id = $1 and tenant_id = $2 and status in ('draft', 'paused')`,
+      [campaignId, tenantId, scheduledAt.toISOString()],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Annule une programmation (scopé tenant) : la campagne repasse en brouillon. true si annulée. */
+  async cancelSchedule(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set status = 'draft', scheduled_at = null
+       where id = $1 and tenant_id = $2 and status = 'scheduled'`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. Le sweeper les
+   *  enfile puis les passe en 'running'. Cross-tenant (le sweeper tourne pour tous). */
+  async listDueScheduled(now: Date = new Date()): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
+    const res = await this.pool.query<{ id: string; rate_per_minute: number | null; pending: string }>(
+      `select c.id, c.rate_per_minute,
+              (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
+       from campaigns c
+       where c.status = 'scheduled' and c.scheduled_at <= $1`,
+      [now.toISOString()],
+    );
+    return res.rows.map((r) => ({ id: r.id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
+  }
+
+  /** Passe une campagne programmée en 'running' (claim du sweeper, garde `status='scheduled'` anti-double).
+   *  true si claimée par CET appel (une seule fois même avec plusieurs sweepers). */
+  async markScheduledRunning(campaignId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set status = 'running', scheduled_at = null where id = $1 and status = 'scheduled'`,
+      [campaignId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /**
    * Campagnes ACTIVES (draft/running/paused) référençant un template (par nom ; langue optionnelle).
    * Garde-fou D1 : éditer/supprimer un template utilisé par une de ces campagnes casserait des envois
@@ -169,7 +215,7 @@ export class PgCampaignRepo {
        from campaigns
        where tenant_id = $1 and template_name = $2
          and ($3::text is null or template_language = $3)
-         and status in ('draft', 'running', 'paused')
+         and status in ('draft', 'running', 'paused', 'scheduled')
        order by created_at desc`,
       [tenantId, templateName, templateLanguage ?? null],
     );
@@ -180,11 +226,11 @@ export class PgCampaignRepo {
   async listCampaignSummaries(tenantId: string): Promise<CampaignSummary[]> {
     const res = await this.pool.query<{
       id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-      phone_number_id: string; template_name: string; template_language: string; created_at: Date;
+      phone_number_id: string; template_name: string; template_language: string; created_at: Date; scheduled_at: Date | null;
       total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
     }>(
       `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at,
+              c.template_name, c.template_language, c.created_at, c.scheduled_at,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -205,11 +251,11 @@ export class PgCampaignRepo {
   async getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null> {
     const head = await this.pool.query<{
       id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-      phone_number_id: string; template_name: string; template_language: string; created_at: Date;
+      phone_number_id: string; template_name: string; template_language: string; created_at: Date; scheduled_at: Date | null;
       total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
     }>(
       `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at,
+              c.template_name, c.template_language, c.created_at, c.scheduled_at,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -276,7 +322,7 @@ export class PgCampaignRepo {
 
   private toSummary(r: {
     id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-    phone_number_id: string; template_name: string | null; template_language: string | null; created_at: Date;
+    phone_number_id: string; template_name: string | null; template_language: string | null; created_at: Date; scheduled_at?: Date | null;
     total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
   }): CampaignSummary {
     return {
@@ -289,6 +335,7 @@ export class PgCampaignRepo {
       templateName: r.template_name ?? '',
       templateLanguage: r.template_language ?? '',
       createdAt: r.created_at.toISOString(),
+      scheduledAt: r.scheduled_at ? r.scheduled_at.toISOString() : null,
       counts: {
         total: Number(r.total),
         pending: Number(r.pending),

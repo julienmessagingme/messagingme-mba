@@ -12,6 +12,7 @@ import {
   PgQualityProvider,
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
+import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { PgInboxStore } from './inbox/store.pg';
 import { logTemplateSent } from './inbox/outbound-log';
 import { PgFlowStore } from './flow/store.pg';
@@ -313,8 +314,30 @@ async function main(): Promise<void> {
   const sweeper = setInterval(() => void sweep(), config.RECLAIM_INTERVAL_MS);
   sweeper.unref();
 
+  // Sweeper de PLANIFICATION : enfile les campagnes programmées dues (scheduled_at <= maintenant). Miroir du
+  // sweeper d'analyse. Toutes les 60 s (granularité suffisante pour un lancement programmé). singletonKey +
+  // markRunning garantissent un enqueue exactement-une-fois même avec deux instances worker.
+  const scheduleSweep = async (): Promise<void> => {
+    try {
+      const n = await runCampaignScheduleSweep({
+        listDue: () => repo.listDueScheduled(),
+        enqueueRun: (id, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { singletonKey: id, expireInSeconds }),
+        markRunning: (id) => repo.markScheduledRunning(id),
+      });
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`schedule-sweep: ${n} campagne(s) programmée(s) lancée(s)`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('schedule-sweep erreur:', err instanceof Error ? err.message : err);
+    }
+  };
+  void scheduleSweep();
+  const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
+  scheduleSweeper.unref();
+
   installGracefulShutdown(async () => {
     clearInterval(sweeper);
+    clearInterval(scheduleSweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     await queue.stop();
     await pool.end();

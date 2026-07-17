@@ -1,7 +1,7 @@
 import type { TemplateParam } from '../crm/template';
 
 export type CampaignCategory = 'marketing' | 'utility';
-export type CampaignStatus = 'draft' | 'running' | 'paused' | 'completed' | 'failed';
+export type CampaignStatus = 'draft' | 'running' | 'paused' | 'completed' | 'failed' | 'scheduled';
 export type RecipientStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
 export type QualityRating = 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
 

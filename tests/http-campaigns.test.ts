@@ -60,6 +60,9 @@ interface Deps {
   campaignTenant?: string; // tenant propriétaire de 'known'
   queue?: FakeQueue;
   runSizing?: { ratePerMinute: number | null; pendingCount: number } | null; // dimensionnement du job de run
+  scheduleOk?: boolean; // scheduleCampaign renvoie ce booléen (défaut true)
+  cancelOk?: boolean; // cancelSchedule renvoie ce booléen (défaut true)
+  scheduled?: Array<{ id: string; when: string }>; // capture des programmations
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -73,6 +76,8 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
       campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
       getRunSizing: async () => (d.runSizing !== undefined ? d.runSizing : { ratePerMinute: null, pendingCount: 0 }),
+      scheduleCampaign: async (id, _tenant, when) => { d.scheduled?.push({ id, when: when.toISOString() }); return d.scheduleOk ?? true; },
+      cancelSchedule: async () => d.cancelOk ?? true,
       listCampaigns: async (tenant) => [
         { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
       ],
@@ -288,6 +293,49 @@ describe('POST /campaigns/:campaignId/run', () => {
     expect(res.statusCode).toBe(403);
     expect(q.enqueued).toEqual([]);
     await app.close();
+  });
+
+  it('scheduledAt FUTUR -> 202 scheduled (programme, N ENFILE PAS de job)', async () => {
+    const q = new FakeQueue();
+    const scheduled: Array<{ id: string; when: string }> = [];
+    const app = appWith(new FakeRepo(contacts), { queue: q, scheduled });
+    const when = new Date(Date.now() + 3_600_000).toISOString(); // dans 1 h
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth(), payload: { scheduledAt: when } });
+    expect(res.statusCode).toBe(202);
+    expect(res.json<{ scheduled: boolean; scheduledAt: string }>()).toMatchObject({ scheduled: true, scheduledAt: when });
+    expect(scheduled).toEqual([{ id: 'known', when }]);
+    expect(q.enqueued).toEqual([]); // PAS de lancement immédiat
+    await app.close();
+  });
+
+  it('scheduledAt PASSÉ ou invalide -> 400 (pas de lancement déguisé)', async () => {
+    const q = new FakeQueue();
+    const app = appWith(new FakeRepo(contacts), { queue: q });
+    const past = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth(), payload: { scheduledAt: new Date(Date.now() - 1000).toISOString() } });
+    expect(past.statusCode).toBe(400);
+    const bad = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth(), payload: { scheduledAt: 'pas-une-date' } });
+    expect(bad.statusCode).toBe(400);
+    expect(q.enqueued).toEqual([]);
+    await app.close();
+  });
+
+  it('scheduledAt sur une campagne non programmable -> 409', async () => {
+    const app = appWith(new FakeRepo(contacts), { scheduleOk: false });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth(), payload: { scheduledAt: new Date(Date.now() + 3_600_000).toISOString() } });
+    expect(res.statusCode).toBe(409);
+    await app.close();
+  });
+
+  it('POST /cancel-schedule -> 200 si programmée, 404 sinon, 403 agent', async () => {
+    const ok = appWith(new FakeRepo(contacts));
+    expect((await ok.inject({ method: 'POST', url: '/campaigns/known/cancel-schedule', ...auth() })).statusCode).toBe(200);
+    await ok.close();
+    const no = appWith(new FakeRepo(contacts), { cancelOk: false });
+    expect((await no.inject({ method: 'POST', url: '/campaigns/known/cancel-schedule', ...auth() })).statusCode).toBe(404);
+    await no.close();
+    const agent = appWith(new FakeRepo(contacts));
+    expect((await agent.inject({ method: 'POST', url: '/campaigns/known/cancel-schedule', ...asAgent() })).statusCode).toBe(403);
+    await agent.close();
   });
 });
 

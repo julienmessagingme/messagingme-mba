@@ -21,6 +21,10 @@ export interface CampaignRouteDeps {
   /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
    *  Sert à calculer l'expireInSeconds du job (éviter qu'un run throttlé long expire et soit rejoué en parallèle). */
   getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
+  /** Programme une campagne (draft/paused) pour un lancement futur (scopé tenant). true si programmée. */
+  scheduleCampaign(campaignId: string, tenantId: string, scheduledAt: Date): Promise<boolean>;
+  /** Annule une programmation (scopé tenant) : la campagne repasse en brouillon. true si annulée. */
+  cancelSchedule(campaignId: string, tenantId: string): Promise<boolean>;
   /**
    * Graphe du workflow du tenant (campagne workflow). null si inconnu/autre tenant (le scope tenant vaut le
    * contrôle de propriété : un workflow d'un autre tenant renvoie null -> 400). Sert aussi à vérifier que le
@@ -171,13 +175,38 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     if (!(await deps.campaignBelongsTo(campaignId, authTenant))) {
       return reply.code(404).send({ error: 'campagne inconnue' });
     }
-    // Dimensionne l'expiration du job sur le travail réel (nb destinataires en attente / débit choisi) :
-    // un run throttlé long ne doit pas expirer et être rejoué en parallèle. Absent -> défaut file (15 min).
+
+    // ÉTAPE 2 « plus tard » : un scheduledAt (ISO absolu UTC) programme au lieu de lancer tout de suite. Le
+    // sweeper enfilera le run à l'échéance. Doit être une date FUTURE (une date passée = 400, pas un lancement
+    // immédiat déguisé). La campagne passe en statut 'scheduled' (annulable via /cancel-schedule).
+    const b = (req.body ?? {}) as { scheduledAt?: unknown };
+    if (b.scheduledAt !== undefined && b.scheduledAt !== null) {
+      if (typeof b.scheduledAt !== 'string') return reply.code(400).send({ error: 'scheduledAt invalide (ISO)' });
+      const when = new Date(b.scheduledAt);
+      if (Number.isNaN(when.getTime())) return reply.code(400).send({ error: 'scheduledAt invalide (date)' });
+      if (when.getTime() <= Date.now()) return reply.code(400).send({ error: 'scheduledAt doit être dans le futur' });
+      const ok = await deps.scheduleCampaign(campaignId, authTenant, when);
+      if (!ok) return reply.code(409).send({ error: 'campagne non programmable (déjà en cours/terminée)' });
+      return reply.code(202).send({ scheduled: true, campaignId, scheduledAt: when.toISOString() });
+    }
+
+    // Lancement IMMÉDIAT. Dimensionne l'expiration du job sur le travail réel (nb destinataires en attente /
+    // débit choisi) : un run throttlé long ne doit pas expirer et être rejoué en parallèle. Absent -> défaut file.
     const sizing = await deps.getRunSizing(campaignId);
     const expireInSeconds = sizing ? campaignJobExpireSeconds(sizing.pendingCount, sizing.ratePerMinute) : undefined;
     // singletonKey = campaignId : deux POST /run concurrents n'empilent pas deux jobs pour
     // la même campagne (le claim par destinataire est le garde-fou primaire, ceci le double).
     await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });
     return reply.code(202).send({ enqueued: true, campaignId });
+  });
+
+  // Annule une campagne programmée : elle repasse en brouillon (le job différé n'a jamais été enfilé, rien à tuer).
+  app.post('/campaigns/:campaignId/cancel-schedule', guard, async (req, reply) => {
+    if (forbidNonAdmin(req, reply)) return;
+    const { campaignId } = req.params as { campaignId: string };
+    const authTenant = req.auth?.tenantId ?? '';
+    const ok = await deps.cancelSchedule(campaignId, authTenant);
+    if (!ok) return reply.code(404).send({ error: 'campagne non programmée' });
+    return reply.code(200).send({ cancelled: true, campaignId });
   });
 }

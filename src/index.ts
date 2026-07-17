@@ -104,6 +104,8 @@ async function main(): Promise<void> {
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
       getRunSizing: (id) => repo.getRunSizing(id),
+      scheduleCampaign: (id, tenant, when) => repo.scheduleCampaign(id, tenant, when),
+      cancelSchedule: (id, tenant) => repo.cancelSchedule(id, tenant),
       getWorkflowGraph: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant))?.graph ?? null,
       listCampaigns: (tenant) => repo.listCampaignSummaries(tenant),
       getCampaignDetail: (id, tenant) => repo.getCampaignDetail(id, tenant),
