@@ -24,6 +24,8 @@ import {
   type CampaignSummary,
   type CampaignDetail,
   type CampaignCategory,
+  type CreateCampaignInput,
+  type RecipientCounts,
   type PhoneNumber,
   type PricingSummary,
   type TemplateParam,
@@ -43,7 +45,7 @@ function estimateCampaignCost(sent: number, category: CampaignCategory, pricing:
 }
 
 export default function CampaignsPage() {
-  return <AppShell active="campagnes">{(session) => <CampaignsInner session={session} />}</AppShell>;
+  return <AppShell active="campagnes" fullBleed>{(session) => <CampaignsInner session={session} />}</AppShell>;
 }
 
 // Chaque statut porte ses DEUX libellés [fr, en] (résolus au rendu via t) : la const vit hors composant, donc
@@ -77,6 +79,8 @@ function CampaignsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [mode, setMode] = useState<'list' | 'create'>('list');
+  // Un lancement inline (étape 2) est en cours dans CreateForm -> on gèle le retour liste (remonté par callback).
+  const [createBusy, setCreateBusy] = useState(false);
   // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
   const [pricing, setPricing] = useState<PricingSummary | null>(null);
 
@@ -128,24 +132,29 @@ function CampaignsInner({ session }: { session: Session }) {
     }
   }
 
-  // Écran de création (ouvert via « Ajouter une campagne »).
+  // Écran de création (ouvert via « Ajouter une campagne »). Pleine largeur : fullBleed retire le padding et
+  // impose overflow-hidden sur <main>, donc on gère ici notre propre scroll et notre propre padding.
   if (mode === 'create') {
     return (
-      <div className="mx-auto max-w-6xl">
-        <button onClick={() => setMode('list')} className="mb-4 flex items-center gap-1 text-sm text-brand-600 hover:underline">
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+        {/* Retour désactivé pendant un lancement en cours (createBusy) : on n'invite pas à quitter l'écran
+            au milieu du mini-polling. */}
+        <button onClick={() => setMode('list')} disabled={createBusy} className="mb-4 flex items-center gap-1 text-sm text-brand-600 hover:underline disabled:opacity-40">
           ← {t('Retour aux campagnes', 'Back to campaigns')}
         </button>
         <CreateForm
           tenantId={session.tenantId}
           numbers={numbers}
+          onBusyChange={setCreateBusy}
           onCreated={() => { void reload(); setMode('list'); }}
         />
       </div>
     );
   }
 
-  // Écran par défaut : dashboard de suivi des campagnes.
+  // Écran par défaut : dashboard de suivi des campagnes. Même conteneur scrollable pleine largeur que la création.
   return (
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
     <section>
       <div className="mb-4 flex items-center justify-between">
         <div>
@@ -243,6 +252,7 @@ function CampaignsInner({ session }: { session: Session }) {
           </ul>
         )}
     </section>
+    </div>
   );
 }
 
@@ -309,7 +319,7 @@ function selToSource(sel: string, value: string): TemplateParam['source'] {
 }
 
 /** ParamSource (indice de template stocké) -> option à présélectionner. `customFields` = les champs perso RÉELS :
- *  un indice vers un champ inexistant (ex. indice périmé « nom » d'un champ supprimé) retombe sur « Nom » — sinon
+ *  un indice vers un champ inexistant (ex. indice périmé « nom » d'un champ supprimé) retombe sur « Nom » : sinon
  *  le `<select>` afficherait la 1re option (« Nom ») tout en gardant en interne un `sel` fantôme qui saute le contact. */
 function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]): string {
   if (s.type === 'literal') return 'literal';
@@ -327,7 +337,7 @@ function entryNodeOf(graph: WorkflowGraph): WorkflowNode | null {
   return graph.nodes.find((nn) => !hasIncoming.has(nn.id)) ?? graph.nodes[0] ?? null;
 }
 
-function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void }) {
+function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void }) {
   const t = useT();
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [name, setName] = useState('');
@@ -344,8 +354,19 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  // Lancement rapatrié sur l'écran (étape 2) : idle -> creating -> launching (avec polling inline) -> done|error.
+  const [launch, setLaunch] = useState<{
+    phase: 'idle' | 'creating' | 'launching' | 'done' | 'error';
+    campaignId?: string;
+    detail?: CampaignDetail;
+    message?: string;
+  }>({ phase: 'idle' });
   // Anti-course : ne pas appliquer les indices d'un template si l'utilisateur en a choisi un autre entre-temps.
   const chooseSeq = useRef(0);
+  // Garde de démontage : le mini-polling du lancement est une boucle async hors cycle React -> on l'arrête si
+  // l'utilisateur quitte l'écran (retour liste) pour ne pas continuer à fetch/setState sur un composant démonté.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   // Templates approuvés + contacts + champs perso (chargés une fois, indépendamment du polling des campagnes).
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -497,17 +518,31 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     return vars.map((v, i) => ({ position: i + 1, source: selToSource(v.sel, v.value) }));
   }
 
+  // Payload de création partagé par le brouillon (submit) et le lancement direct (createAndLaunch).
+  function buildCreateInput(): CreateCampaignInput {
+    return mode === 'workflow'
+      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected] }
+      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] };
+  }
+
+  // Remise à zéro pour « Nouvelle campagne » après un lancement réussi (sans quitter l'écran de création).
+  function resetForm() {
+    setName('');
+    setTemplateName('');
+    setVars([]);
+    setWorkflowId('');
+    setWfError(null);
+    setError(null);
+    setOk(null);
+    setLaunch({ phase: 'idle' });
+  }
+
   async function submit() {
     setBusy(true);
     setError(null);
     setOk(null);
     try {
-      const res = await createCampaign(
-        tenantId,
-        mode === 'workflow'
-          ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected] }
-          : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected] },
-      );
+      const res = await createCampaign(tenantId, buildCreateInput());
       // 0 destinataire = TOUS sautés (la variable du template n'a aucune valeur sur les fiches choisies) : la campagne
       // serait vide et « Lancer » n'enverrait à personne. Avertissement ROUGE + on RESTE sur le formulaire (pas de
       // navigation, pas de reset) pour corriger la source de la variable ou les fiches. Cf. bug « ça n'envoie à personne ».
@@ -543,6 +578,46 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
     }
   }
 
+  // Créer PUIS lancer sur place (étape 2), sans repasser par la liste. Mini-polling inline (6 tours / 2s) pour
+  // voir les statuts évoluer, comme CampaignsInner.run(). L'utilisateur reste sur l'écran pour voir le résultat.
+  async function createAndLaunch() {
+    setError(null);
+    setOk(null);
+    setLaunch({ phase: 'creating' });
+    try {
+      const res = await createCampaign(tenantId, buildCreateInput());
+      // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE lance PAS et on reste.
+      if (res.recipientCount === 0) {
+        setError(t(
+          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`,
+          `No recipients: the ${res.skipped.length} selected contact(s) were skipped because the template variable has no value on their record. Choose another source for the variable (e.g. "Name") or complete the records.`,
+        ));
+        setLaunch({ phase: 'idle' });
+        return;
+      }
+      setLaunch({ phase: 'launching', campaignId: res.campaignId });
+      await runCampaign(res.campaignId);
+      let detail: CampaignDetail | undefined;
+      for (let i = 0; i < 6; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (!mountedRef.current) return; // écran quitté pendant le polling -> on cesse tout (fetch + setState)
+        detail = await getCampaign(tenantId, res.campaignId);
+        if (!mountedRef.current) return;
+        setLaunch({ phase: 'launching', campaignId: res.campaignId, detail });
+      }
+      const sent = detail?.counts.sent ?? 0;
+      const failed = detail?.counts.failed ?? 0;
+      setLaunch({
+        phase: 'done',
+        campaignId: res.campaignId,
+        detail,
+        message: t(`Campagne lancée : ${sent} envoyés / ${failed} échecs.`, `Campaign launched: ${sent} sent / ${failed} failures.`),
+      });
+    } catch (err) {
+      setLaunch({ phase: 'error', message: err instanceof Error ? err.message : t('Lancement impossible', 'Launch failed') });
+    }
+  }
+
   // Le sélecteur garantit une source valide (champ de base ou champ perso réel) : seul « Texte fixe » exige
   // une valeur saisie. On bloque l'envoi tant qu'un texte fixe est vide (sinon 400 côté backend).
   const varsComplete = vars.every((v) => (v.sel === 'literal' ? v.value.trim() !== '' : true));
@@ -551,12 +626,21 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
   const contentReady = mode === 'workflow'
     ? (workflowId !== '' && wfError === null && varsComplete)
     : (templateName !== '' && varsComplete);
-  const canSubmit = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0 && !busy;
+  // Étape 1 prête = ce qui active l'étape 2 (indépendant du busy/launch en cours).
+  const step1Ready = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0;
+  const canSubmit = step1Ready && !busy;
+  // Lancement en cours (création + polling) : verrouille les boutons des deux étapes.
+  const launching = launch.phase === 'creating' || launch.phase === 'launching';
+  // Remonte l'état « lancement en cours » au parent (fige le retour liste pendant creating/launching).
+  useEffect(() => { onBusyChange?.(launching); }, [launching, onBusyChange]);
 
   return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouvelle campagne', 'New campaign')}</h2>
-      <p className="mt-1 text-xs text-ink-500">{t("Choisis un template approuvé et les contacts, puis lance l'envoi.", 'Choose an approved template and contacts, then launch the send.')}</p>
+    <div className="space-y-6">
+      {/* ÉTAPE 1 : Préparation : nom + les 3 zones existantes (contenu inchangé, juste déplacé ici). */}
+      <section className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">{t('Étape 1', 'Step 1')}</p>
+        <h2 className="mt-0.5 text-base font-semibold tracking-tight text-ink-900">{t('Préparation', 'Preparation')}</h2>
+        <p className="mt-1 text-xs text-ink-500">{t('Choisis un template approuvé et les contacts.', 'Choose an approved template and contacts.')}</p>
 
       {/* Nom de la campagne : au-dessus des 3 zones */}
       <div className="mt-4">
@@ -564,9 +648,10 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} max-w-md`} placeholder={t('Promo été', 'Summer promo')} />
       </div>
 
-      {/* 3 zones côte à côte (empilées sur mobile) : Expéditeur | Destinataires | Message */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)]">
-        {/* ZONE 1 — Expéditeur (un seul numéro en général) */}
+      {/* 3 zones côte à côte (empilées sur mobile) : Expéditeur | Destinataires | Message. Grille élargie en xl
+          car l'écran est désormais pleine largeur. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_minmax(0,1fr)]">
+        {/* ZONE 1 : Expéditeur (un seul numéro en général) */}
         <div className="rounded-xl border border-ink-200 bg-ink-50/30 p-4">
           <h3 className="text-sm font-semibold text-ink-800">{t('Expéditeur', 'Sender')}</h3>
           <div className="mt-2">
@@ -589,7 +674,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
           </div>
         </div>
 
-        {/* ZONE 2 — Destinataires */}
+        {/* ZONE 2 : Destinataires */}
         <div className="rounded-xl border border-ink-200 p-4">
         <div className="mb-1 flex items-center justify-between">
           <label className="text-sm font-medium text-ink-700">{t('Destinataires', 'Recipients')}</label>
@@ -660,7 +745,7 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         )}
       </div>
 
-        {/* ZONE 3 — Message : un template direct OU un scénario (bot builder) */}
+        {/* ZONE 3 : Message : un template direct OU un scénario (bot builder) */}
         <div className="rounded-xl border border-ink-200 p-4">
           <h3 className="mb-2 text-sm font-semibold text-ink-800">{t('Message', 'Message')}</h3>
           <div className="mt-1">
@@ -740,19 +825,111 @@ function CreateForm({ tenantId, numbers, onCreated }: { tenantId: string; number
         </div>
       </div>
 
+      {/* Avertissements de préparation : restent en bas de l'étape 1 (variables incomplètes, erreur de création). */}
       {!varsComplete && <p className="mt-3 text-xs text-amber-600">{t('Complète les valeurs des variables (champ perso / texte fixe).', 'Complete the variable values (custom field / fixed text).')}</p>}
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
+      </section>
 
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!canSubmit}
-        className="mt-4 w-full rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
-      >
-        {busy ? t('Création...', 'Creating...') : t('Créer la campagne', 'Create campaign')}
-      </button>
-    </section>
+      {/* ÉTAPE 2 (Lancement) : grisée tant que l'étape 1 n'est pas prête. Le lancement « maintenant » s'exécute ici. */}
+      <section className={`rounded-2xl border border-ink-200 bg-white p-6 shadow-sm transition ${step1Ready ? '' : 'opacity-60'}`} aria-disabled={!step1Ready}>
+        <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">{t('Étape 2', 'Step 2')}</p>
+        <h2 className="mt-0.5 text-base font-semibold tracking-tight text-ink-900">{t('Lancement', 'Launch')}</h2>
+
+        {!step1Ready ? (
+          <p className="mt-1 text-xs text-ink-500">{t("Complète l'étape 1 pour activer le lancement.", 'Complete step 1 to enable launching.')}</p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-ink-700">{t(`Prêt à lancer à ${selected.size} destinataire(s).`, `Ready to launch to ${selected.size} recipient(s).`)}</p>
+
+            {/* Timing : une seule option pour l'instant. Le calendrier et le slider de débit arrivent en phases suivantes. */}
+            <div className="mt-4">
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Quand ?', 'When?')}</label>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-lg border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700">{t('Maintenant', 'Now')}</span>
+                <span className="cursor-not-allowed rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-400" title={t('Bientôt disponible', 'Coming soon')}>
+                  {t('Planifier plus tard (bientôt)', 'Schedule for later (soon)')}
+                </span>
+              </div>
+            </div>
+
+            {/* Progression / résultat du lancement inline (compteurs rafraîchis par le polling). */}
+            {launch.phase !== 'idle' && (
+              <div className="mt-4 rounded-xl border border-ink-200 bg-ink-50/40 p-4 text-sm">
+                {launch.phase === 'creating' && <p className="text-ink-600">{t('Création de la campagne...', 'Creating the campaign...')}</p>}
+                {launch.phase === 'launching' && (
+                  <div>
+                    <div className="flex items-center gap-1.5 text-ink-600">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" />
+                      {t('Envoi en cours...', 'Sending...')}
+                    </div>
+                    {launch.detail && <LaunchCounts counts={launch.detail.counts} />}
+                  </div>
+                )}
+                {launch.phase === 'done' && (
+                  <div>
+                    <p className="font-medium text-emerald-800">{launch.message}</p>
+                    {launch.detail && <LaunchCounts counts={launch.detail.counts} />}
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => onCreated()}
+                        className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+                      >
+                        {t('Voir dans les campagnes', 'View in campaigns')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetForm}
+                        className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+                      >
+                        {t('Nouvelle campagne', 'New campaign')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {launch.phase === 'error' && <p className="text-red-700">{launch.message}</p>}
+              </div>
+            )}
+
+            {/* Boutons d'action : masqués une fois le lancement terminé (les boutons de suite prennent le relais). */}
+            {launch.phase !== 'done' && (
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={createAndLaunch}
+                  disabled={!canSubmit || launching}
+                  className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                >
+                  {launch.phase === 'creating' ? t('Création...', 'Creating...') : launch.phase === 'launching' ? t('Lancement...', 'Launching...') : t('Créer et lancer', 'Create and launch')}
+                </button>
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={!canSubmit || launching}
+                  className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+                >
+                  {busy ? t('Création...', 'Creating...') : t('Créer le brouillon (lancer plus tard)', 'Create draft (launch later)')}
+                </button>
+              </div>
+            )}
+            {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/** Compteurs sent/failed/pending/skipped du lancement inline (étape 2). Réutilise le même style que la liste. */
+function LaunchCounts({ counts }: { counts: RecipientCounts }) {
+  const t = useT();
+  return (
+    <p className="mt-2 text-xs text-ink-600">
+      <b className="text-emerald-700">{counts.sent}</b> {t('envoyés', 'sent')}
+      {counts.failed > 0 && <> · <b className="text-red-700">{counts.failed}</b> {t('échecs', 'failures')}</>}
+      {counts.pending > 0 && <> · {counts.pending} {t('en attente', 'pending')}</>}
+      {counts.skipped > 0 && <> · {counts.skipped} {t('ignorés', 'skipped')}</>}
+    </p>
   );
 }
 
