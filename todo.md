@@ -40,6 +40,13 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
   'opted_in' par défaut (conformité). + (todo #5-tail) proposer les internal names HubSpot dans les sélecteurs.
 - **Analytics palier L (suite #8)** : tracker les erreurs des envois Inbox/Workflow (colonnes d'erreur sur
   `conversation_messages` + toucher le handler de statuts webhook EN PROD, risqué → à froid).
+- ✅ **ConvAnalyzer light (Lot 9) : FAIT (2026-07-17)** — bloc « Conversations (analyse) » dans Analytics
+  (quanti donut/barres + table quali filtrable -> inbox), sur le moteur Pièce 1 déjà actif. Cf
+  `.loop/lot9-convanalyzer.md`. **V2 (backlog)** : (a) **agent IA décisionnel** branché sur l'analyse
+  (déclencher une action HubSpot / dire au MBA de faire qqch) = le vrai objectif de Julien, à cadrer ;
+  (b) enrichir le schéma d'analyse pour reprendre ce que le vrai convanalyzer a en plus (urgence graduée 0-5,
+  score d'échec du bot, churn, clustering de sujets) ; (c) tendance temporelle stable (joindre
+  `conversations.created_at`, pas `conversation_analysis.created_at` qui bouge à la ré-analyse).
 - **Drop différés** : rien (0030 a droppé `workflows.status` ; codes = additifs).
 
 ## Post-live — prochaines actions

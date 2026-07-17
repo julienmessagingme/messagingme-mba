@@ -281,6 +281,22 @@ Refonte de l'écran campagne. Feature-loop 5 phases (plan `.loop/lot8-campagne-u
   (filtres CRM, programmation). 3 migrations (0032-0034). Reviewers PASS. Restent E1 (drive navigateur) + V1
   (œil Julien) hors boucle.
 
+## Lot 9 — ConvAnalyzer light dans Analytics (2026-07-17) : LIVE ✅
+
+Feature-loop 2 phases (plan `.loop/lot9-convanalyzer.md`, cartographie 4 explorers dont le repo convanalyzer
+externe, reviewer séparé par phase PASS). Le moteur d'analyse (Pièce 1, actif en prod, sans lecteur) est
+surfacé dans Analytics. Détail usage : `features.md §Analytics`. Détail technique : `documentation.md
+§Conversations (analyse)`.
+- **Phase A (2dbc226)** : couche de LECTURE `src/stats/conversation-stats.pg.ts` (agrégats en une passe +
+  liste quali, `tenant_id=$1` partout) + 2 routes admin-only (`/stats/conversations` + `/list`, filtres enum
+  validés) + api.ts. 1er lecteur de `conversation_analysis`. ZÉRO LLM, ZÉRO migration.
+- **Phase B (c88cdcf)** : bloc `ConversationAnalysisCard` (donut sentiment SVG maison, barres intent/action,
+  compteurs, top topics ; table quali filtrable -> clic ouvre le fil inbox via deep-link `?c=`). Empty-state
+  différencié (inactif vs aucune donnée sur la période).
+- Tests : **763 unit** (+2 route) + intégration Supabase (agrégats sur jeu réel, scope tenant croisé).
+  Reviewers PASS. ⚠️ Sémantique `created_at` = date de dernière analyse (cf `brain/LEARNINGS.md`). V1/V2 (rendu
+  visuel + montée en charge du trafic) = vérif Julien. Base posée pour un futur agent IA décisionnel (V2).
+
 ## Prochaine étape
 
 1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.

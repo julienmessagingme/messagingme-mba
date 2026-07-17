@@ -203,6 +203,14 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   ou par template**, tarif Meta × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
   (jamais de faux coût).
 - ✅ **Coût / breakdown par template** (prix Meta par catégorie).
+- ✅ **Conversations (analyse)** (2026-07-17, bloc en bas d'Analytics) : lecture de l'**analyse automatique des
+  conversations** (une IA classe chaque conversation). **Quanti** : donut du **sentiment** (positif / neutre /
+  négatif), barres par **intention** (demande de devis, SAV, réclamation, info, prise de RDV, autre) et par
+  **action suggérée** (créer un devis / rappeler / relancer / escalader / aucune = le pipeline à traiter), **taux
+  de résolution**, **qui a géré** (humain vs automatisé), **friction** (nb d'échanges moyen), top sujets. **Quali**
+  : la table des conversations analysées, **filtrable** (sentiment / intention / action), avec la **justification**
+  ; un **clic ouvre le fil réel dans l'inbox**. Analyse IA = **indicative**. Vide tant que peu de trafic (message
+  « aucune conversation analysée sur la période » ou « analyse non activée »). Réservé admin.
 
 ## Support (menu Support)
 
