@@ -81,8 +81,10 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
   `hubspot_lists_enabled`, proxy signé, `importHubspotList` (opt-in JAMAIS opted_in, garanti au niveau du type,
   tag `HubSpot: <nom>`). Migrations 0007 (mmhs) + 0036 (mba). Reviewer cross-repo PASS. Cf
   `~/mm-hubspot/.loop/palier4-lists-connecteur.md`.
-  - **RESTE Phase 2 (UI mba, différé)** : toggle + CTA re-consentement sur /accueil, 3e bouton de source de
-    campagne (stub déjà là), composant HubspotListImport. **RESTE Phase 3 (Julien)** : re-consentement réel du
+  - ✅ **Phase 2 (UI mba) FAITE (2026-07-18)** : toggle « Campagnes via données HubSpot » + CTA re-consentement
+    sur /accueil (dans le bloc portail connecté), 3e bouton de source de campagne activé + composant
+    HubspotListImport (liste -> sélection -> import, tag serveur source de vérité). Reviewer logique PASS (2 🔴
+    corrigés : mismatch de tag, getSettings dans Promise.all). **RESTE Phase 3 (Julien)** : re-consentement réel du
     portail cobaye 139615673 + import de test.
   - 🟡 follow-up : (a) `searchLists` count:100 sans pagination -> >100 listes tronquées silencieusement, paginer ;
     (b) restreindre `/service/*` de l'exposition publique NPM (déjà HMAC fort, mais surface réductible).

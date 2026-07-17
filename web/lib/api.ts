@@ -582,12 +582,17 @@ export function listAnalyzedConversations(
 
 export interface TenantSettings {
   mbaEnabled: boolean;
+  hubspotListsEnabled: boolean;
 }
 export function getSettings(tenantId: string): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`);
 }
 export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`, { method: 'PUT', body: JSON.stringify({ mbaEnabled }) });
+}
+/** Active/désactive le toggle « Campagnes via données HubSpot ». */
+export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<{ hubspotListsEnabled: boolean }> {
+  return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
 }
 
 // --- Accueil : profil courant + statut compte WhatsApp ---
@@ -618,8 +623,9 @@ export interface AccountStatusResponse {
   accountReviewStatus: string | null;
   businessVerificationStatus: string | null;
   hubspotConnected: boolean;
-  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ». */
-  hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null };
+  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ».
+   *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */
+  hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean };
   status: { dot: AccountDot; label: string; reason: string };
 }
 export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {
@@ -631,6 +637,26 @@ export function setHubspotConnected(tenantId: string, phoneNumberId: string, con
     method: 'PATCH',
     body: JSON.stringify({ connected }),
   });
+}
+
+// --- Import de listes HubSpot (3e source de campagne) ---
+
+export interface HubspotList { listId: string; name: string; size: number | null; processingType: string }
+/** Réponse du GET /hubspot/lists : `available:false` si le toggle est OFF ; sinon lists (ou re-consentement requis). */
+export interface HubspotListsResult {
+  available: boolean;
+  reason?: 'reconsent_required';
+  reconsentUrl?: string;
+  lists?: HubspotList[];
+}
+export function listHubspotLists(tenantId: string, query?: string): Promise<HubspotListsResult> {
+  const qs = query ? `?query=${encodeURIComponent(query)}` : '';
+  return request<HubspotListsResult>(`/tenants/${tenantId}/hubspot/lists${qs}`);
+}
+/** Importe une liste HubSpot comme contacts (opt-in jamais activé, tag « HubSpot: <nom> »). `tags` = tag(s)
+ *  réellement posé(s) par le serveur (source de vérité pour filtrer les contacts importés). */
+export function importHubspotList(tenantId: string, listId: string, listName: string): Promise<ImportReport & { truncated: boolean; skippedNoPhone: number; tags: string[] }> {
+  return request(`/tenants/${tenantId}/hubspot/import`, { method: 'POST', body: JSON.stringify({ listId, listName }) });
 }
 
 // --- Surface d'exploitation cross-tenant (/ops) : token SÉPARÉ (x-ops-token), PAS la session JWT ---

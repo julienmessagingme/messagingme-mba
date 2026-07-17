@@ -158,7 +158,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
     « N contact(s) correspondent » ; « Tout sélectionner (N) » cible tout le segment.
   - **📄 Import fichier** : importe un CSV (même écran de mapping que l'onglet Contacts) avec un **tag obligatoire**.
     Les contacts atterrissent dans le CRM taggés, et la campagne cible aussitôt ce tag.
-  - **🔗 HubSpot** : bientôt (bouton grisé).
+  - **🔗 HubSpot** (2026-07-18) : importe une **liste HubSpot** comme destinataires. Le bouton est actif seulement
+    si le toggle « Campagnes via données HubSpot » est activé (sur l'Accueil). On choisit une liste du portail
+    (nom, nombre de contacts, active/statique), on importe ses contacts (taggés `HubSpot: <nom>`, opt-in JAMAIS
+    présumé), et la campagne cible aussitôt ce tag. Si le portail n'a pas encore autorisé l'accès aux listes, une
+    CTA de re-consentement s'affiche (ajoute la permission « Lists » à ce portail uniquement).
 - ✅ **Débit d'envoi réglable** : par défaut la campagne part au débit maximum ; on peut **limiter la vitesse**
   (curseur 1 à 80 messages/min, le plafond WhatsApp) pour protéger la réputation du numéro, avec la **durée
   estimée** affichée. Le débit est respecté pour de vrai côté serveur.

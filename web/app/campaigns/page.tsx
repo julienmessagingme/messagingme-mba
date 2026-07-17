@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { CsvImport } from '@/components/CsvImport';
+import { HubspotListImport } from '@/components/HubspotListImport';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import { fmtCost } from '@/lib/format';
@@ -19,6 +20,7 @@ import {
   listWorkflows,
   listUserFields,
   listTags,
+  getSettings,
   queryContacts,
   countContacts,
   contactIdsForFilters,
@@ -422,6 +424,8 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
   // --- Zone Destinataires : source + filtres du mini-CRM ---
   const [source, setSource] = useState<'crm' | 'file' | 'hubspot'>('crm');
+  // Toggle « Campagnes via données HubSpot » (réglé sur l'accueil) : gate le 3e bouton de source.
+  const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
   // Filtres UI (alimentent ContactFilters). tagMode 'and' = tous, 'or' = au moins un.
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
   const [tagMode, setTagMode] = useState<'and' | 'or'>('and');
@@ -449,6 +453,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   useEffect(() => {
     let alive = true;
     (async () => {
+      // getSettings lancé EN PARALLÈLE mais DÉCOUPLÉ du Promise.all (all-or-nothing) : un hoquet sur les réglages
+      // ne doit pas vider templates/scénarios ; le toggle HubSpot reste false par défaut. `.catch(->null)` isole l'échec.
+      const settingsPromise = getSettings(tenantId).catch(() => null);
       try {
         const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
         if (!alive) return;
@@ -461,6 +468,8 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       } finally {
         if (alive) setLoadingRefs(false);
       }
+      const cfg = await settingsPromise;
+      if (alive && cfg) setHubspotListsEnabled(cfg.hubspotListsEnabled);
     })();
     return () => { alive = false; };
   }, [tenantId]);
@@ -865,17 +874,21 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           <button type="button" disabled={importBusy} onClick={() => chooseSource('file')} className={`rounded-md px-2.5 py-1 disabled:opacity-40 ${source === 'file' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
             📄 {t('Import fichier', 'File import')}
           </button>
-          <button type="button" disabled className="cursor-not-allowed rounded-md px-2.5 py-1 text-ink-300" title={t('Bientôt disponible', 'Coming soon')}>
-            🔗 {t('HubSpot (bientôt)', 'HubSpot (soon)')}
+          <button
+            type="button"
+            disabled={importBusy || !hubspotListsEnabled}
+            onClick={() => chooseSource('hubspot')}
+            title={hubspotListsEnabled ? undefined : t('Active « Campagnes via données HubSpot » sur l\'accueil', 'Enable "Campaigns from HubSpot data" on the home page')}
+            className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${source === 'hubspot' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+          >
+            🔗 {t('HubSpot', 'HubSpot')}
           </button>
         </div>
 
         {source === 'file' ? (
           <CsvImport tenantId={tenantId} requireTag onImported={handleImported} onBusyChange={setImportBusy} />
         ) : source === 'hubspot' ? (
-          <div className="rounded-lg border border-dashed border-ink-300 bg-ink-50/40 px-4 py-8 text-center text-xs text-ink-500">
-            {t('HubSpot : bientôt.', 'HubSpot: coming soon.')}
-          </div>
+          <HubspotListImport tenantId={tenantId} onImported={handleImported} onBusyChange={setImportBusy} />
         ) : loadingRefs ? (
           <p className="text-xs text-ink-400">{t('Chargement des contacts...', 'Loading contacts...')}</p>
         ) : (

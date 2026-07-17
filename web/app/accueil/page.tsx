@@ -7,6 +7,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
+  setHubspotListsEnabled as saveHubspotListsEnabled,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
@@ -52,6 +53,8 @@ function AccueilInner({ session }: { session: Session }) {
   const [mbaEnabled, setMbaEnabled] = useState(false);
   const [savingMba, setSavingMba] = useState(false);
   const [savingHubspot, setSavingHubspot] = useState(false);
+  const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
+  const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +71,7 @@ function AccueilInner({ session }: { session: Session }) {
       ]);
       setMe(m);
       setMbaEnabled(cfg.mbaEnabled);
+      setHubspotListsEnabled(cfg.hubspotListsEnabled);
       setAccount(acc);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
@@ -123,6 +127,20 @@ function AccueilInner({ session }: { session: Session }) {
       setAccount((a) => (a ? { ...a, hubspotConnected: !next } : a)); // rollback
     } finally {
       setSavingHubspot(false);
+    }
+  }
+
+  async function toggleHubspotLists() {
+    if (!isAdmin) return;
+    const next = !hubspotListsEnabled;
+    setSavingLists(true);
+    setHubspotListsEnabled(next); // optimiste
+    try {
+      await saveHubspotListsEnabled(session.tenantId, next);
+    } catch {
+      setHubspotListsEnabled(!next); // rollback
+    } finally {
+      setSavingLists(false);
     }
   }
 
@@ -236,6 +254,42 @@ function AccueilInner({ session }: { session: Session }) {
                       >
                         <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${account.hubspotConnected ? 'left-[22px]' : 'left-0.5'}`} />
                       </button>
+                    )}
+                  </div>
+
+                  {/* Toggle « Campagnes via données HubSpot » : autorise l'import de listes HubSpot comme destinataires. */}
+                  <div className="mt-3 border-t border-ink-50 pt-3">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-ink-800">{t('Campagnes via données HubSpot', 'Campaigns from HubSpot data')}</div>
+                        <p className="mt-0.5 text-xs text-ink-500">{t('Importe une liste HubSpot comme destinataires de campagne.', 'Import a HubSpot list as campaign recipients.')}</p>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          onClick={toggleHubspotLists}
+                          disabled={savingLists}
+                          aria-pressed={hubspotListsEnabled}
+                          title={t("Activer/désactiver l'import de listes HubSpot", 'Enable/disable HubSpot list import')}
+                          className={`relative h-7 w-12 shrink-0 rounded-full transition ${hubspotListsEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${savingLists ? 'opacity-60' : ''}`}
+                        >
+                          <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${hubspotListsEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                        </button>
+                      )}
+                    </div>
+                    {/* Activé mais scope crm.lists.read pas encore accordé -> CTA de re-consentement CIBLÉ (ajoute le
+                        scope à CE portail uniquement, sans re-solliciter les autres). */}
+                    {isAdmin && hubspotListsEnabled && !account.hubspotPortal.listsScopeGranted && (
+                      <a
+                        href={`https://mm-hubspot.messagingme.app/oauth/install?tenant=${encodeURIComponent(session.tenantId)}&grant=lists`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
+                      >
+                        {t("Autoriser l'accès aux listes HubSpot →", 'Authorize access to HubSpot lists →')}
+                      </a>
+                    )}
+                    {hubspotListsEnabled && account.hubspotPortal.listsScopeGranted && (
+                      <p className="mt-2 text-xs text-ink-500">{t("Accès aux listes autorisé. Choisis une liste HubSpot à l'étape « destinataires » d'une campagne.", "List access authorized. Pick a HubSpot list in a campaign's recipients step.")}</p>
                     )}
                   </div>
                 </div>

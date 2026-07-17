@@ -60,7 +60,7 @@ export async function importHubspotList(
   tenantId: string,
   listId: string,
   listName: string,
-): Promise<{ report: ImportReport; truncated: boolean; skippedNoPhone: number }> {
+): Promise<{ report: ImportReport; truncated: boolean; skippedNoPhone: number; tags: string[] }> {
   const data = await callService<{ contacts: Array<{ phone: string; name: string | null }>; truncated: boolean; skippedNoPhone: number }>(
     connector,
     '/service/lists/contacts',
@@ -68,9 +68,10 @@ export async function importHubspotList(
   );
   const rows = data.contacts.map((c) => ({ phone: c.phone, name: c.name ?? '' }));
   const mapping: ColumnMapping = { columns: { phone: { target: 'phone' }, name: { target: 'name' } } };
-  const report = await importContacts(
-    { rows, mapping, tenantId, optIn: false, tags: [`HubSpot: ${listName}`] },
-    importDeps,
-  );
-  return { report, truncated: data.truncated, skippedNoPhone: data.skippedNoPhone };
+  // `tags` = source de vérité UNIQUE du tag réellement posé (le front s'en sert pour filtrer -> doit matcher
+  // EXACTEMENT ce qui est stocké, y compris toute normalisation). On le renvoie plutôt que de laisser le front
+  // reconstruire « HubSpot: <nom> » de son côté (risque de divergence sur un nom long/espacé).
+  const tags = [`HubSpot: ${listName}`];
+  const report = await importContacts({ rows, mapping, tenantId, optIn: false, tags }, importDeps);
+  return { report, truncated: data.truncated, skippedNoPhone: data.skippedNoPhone, tags };
 }

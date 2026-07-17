@@ -57,6 +57,7 @@ describe('importHubspotList', () => {
     expect(contacts.upserts[0]!.tags).toEqual(['HubSpot: Ma liste']); // tag de traçabilité
     expect(contacts.upserts[0]!.phoneE164).toBe('+33612345678');
     expect(out.report).toMatchObject({ created: 1, skipped: 0 });
+    expect(out.tags).toEqual(['HubSpot: Ma liste']); // tag renvoyé = source de vérité pour le filtre front
     expect(t.posts[0]!.url).toBe('http://connector/service/lists/contacts');
   });
   it('remonte truncated + skippedNoPhone', async () => {

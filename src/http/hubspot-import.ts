@@ -9,8 +9,8 @@ export interface HubspotImportRouteDeps {
   isListsEnabled(tenantId: string): Promise<boolean>;
   /** Liste les listes HubSpot du portail (peut lever ReconsentRequiredError). */
   fetchLists(tenantId: string, query?: string): Promise<HubspotList[]>;
-  /** Importe une liste (opt-in TOUJOURS false, tag HubSpot). Peut lever ReconsentRequiredError. */
-  importList(tenantId: string, listId: string, listName: string): Promise<{ report: ImportReport; truncated: boolean; skippedNoPhone: number }>;
+  /** Importe une liste (opt-in TOUJOURS false, tag HubSpot). `tags` = tag(s) réellement posé(s). Peut lever ReconsentRequiredError. */
+  importList(tenantId: string, listId: string, listName: string): Promise<{ report: ImportReport; truncated: boolean; skippedNoPhone: number; tags: string[] }>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -53,8 +53,8 @@ export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportR
     if (!nonEmpty(b.listId)) return reply.code(400).send({ error: 'listId requis' });
     const listName = nonEmpty(b.listName) ? b.listName.trim().slice(0, 120) : b.listId.trim();
     try {
-      const { report, truncated, skippedNoPhone } = await deps.importList(tenant, b.listId.trim(), listName);
-      return reply.code(200).send({ ...report, truncated, skippedNoPhone });
+      const { report, truncated, skippedNoPhone, tags } = await deps.importList(tenant, b.listId.trim(), listName);
+      return reply.code(200).send({ ...report, truncated, skippedNoPhone, tags });
     } catch (err) {
       if (err instanceof ReconsentRequiredError) {
         return reply.code(409).send({ error: 'reconsent_required', reconsentUrl: err.reconsentUrl });

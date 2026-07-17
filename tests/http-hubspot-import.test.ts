@@ -25,7 +25,7 @@ function app(over: Partial<HubspotImportRouteDeps> = {}) {
   const deps: HubspotImportRouteDeps = {
     isListsEnabled: async () => true,
     fetchLists: async () => { cap.fetchCalls += 1; return [LIST]; },
-    importList: async (_t, listId, listName) => { cap.imports.push({ listId, listName }); return { report: { created: 2, updated: 0, skipped: 0, errors: [] }, truncated: false, skippedNoPhone: 1 }; },
+    importList: async (_t, listId, listName) => { cap.imports.push({ listId, listName }); return { report: { created: 2, updated: 0, skipped: 0, errors: [] }, truncated: false, skippedNoPhone: 1, tags: [`HubSpot: ${listName}`] }; },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, hubspotImport: deps }), cap };
@@ -68,7 +68,7 @@ describe('POST /tenants/:t/hubspot/import', () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/hubspot/import', ...h(adminTok), payload: { listId: '1', listName: 'Chauds' } });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ created: 2, truncated: false, skippedNoPhone: 1 });
+    expect(res.json()).toMatchObject({ created: 2, truncated: false, skippedNoPhone: 1, tags: ['HubSpot: Chauds'] });
     expect(cap.imports[0]).toEqual({ listId: '1', listName: 'Chauds' });
     await server.close();
   });
