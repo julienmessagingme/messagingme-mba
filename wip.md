@@ -285,9 +285,10 @@ Refonte de l'écran campagne. Feature-loop 5 phases (plan `.loop/lot8-campagne-u
 
 1. Faire approuver un template Marketing FR à variable pour de vraies campagnes.
 2. **Onboarding client (Embedded Signup) : brique FAITE + déployée.** Côté Meta, **Access Verification (Tech
-   Provider) + App Review SOUMISES le 2026-07-16, en review** (~5 j / ~20 j). Rien à faire côté produit d'ici là :
-   le jour où les 2 feux passent au vert, le bouton marche de bout en bout et on tourne la vraie vidéo de démo.
-   Surveiller mails Meta + onglet Required actions. Voir `todo.md` (refresh token, envoi via token par-client).
+   Provider) VÉRIFIÉE le 2026-07-17 ✓** (email Meta « Your business has been verified as a Tech Provider »,
+   business « Messaging Me » ID 103185632463539). **Reste l'App Review, encore en review** (~20 j). Rien à
+   faire côté produit d'ici là : quand ce dernier feu passe au vert, le bouton marche de bout en bout et on
+   tourne la vraie vidéo de démo. Surveiller mails Meta + onglet Required actions. Voir `todo.md`.
 3. **Programme 16 features : TERMINÉ (16/16 + socle codes publics).** Restent les chantiers hors programme
    (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
    **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
