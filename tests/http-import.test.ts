@@ -35,7 +35,11 @@ class FakeFields implements UserFieldStore {
   }
 }
 
-function inject(contacts: ContactStore, userFields: UserFieldStore) {
+// Capture des appels de requête filtrée (pour asserter le parsing des query params -> ContactFilters + le
+// routage query vs list). Partagé par les tests qui en ont besoin via un objet passé à inject.
+type QueryCapture = { queryFilters: unknown[]; countFilters: unknown[]; idsFilters: unknown[] };
+
+function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryCapture) {
   return buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -45,6 +49,11 @@ function inject(contacts: ContactStore, userFields: UserFieldStore) {
       listContacts: async () => [
         { id: 'c1', phoneE164: '+33611111111', bsuid: null, profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z' },
       ],
+      queryContacts: async (_t, filters) => { cap?.queryFilters.push(filters); return [
+        { id: 'c2', phoneE164: '+33612345678', bsuid: null, profileName: 'Marc', optInStatus: 'opted_in', fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z' },
+      ]; },
+      countContacts: async (_t, filters) => { cap?.countFilters.push(filters); return 3; },
+      contactIdsForFilters: async (_t, filters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },
     },
   });
 }
@@ -135,6 +144,59 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     const app = inject(new FakeContacts(), new FakeFields());
     const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts' });
     expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('GET contacts AVEC filtres -> route sur queryContacts (+ total), pas listContacts', async () => {
+    const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
+    const app = inject(new FakeContacts(), new FakeFields(), cap);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/tenants/t1/contacts?tags=vip,pro&tagMode=or&optIn=opted_in&phonePrefix=%2B336&phoneContains=12%2034&nameSearch=mar&fields=' + encodeURIComponent('[{"key":"ville","op":"contains","value":"par"}]'),
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ contacts: Array<{ profileName: string }>; total: number }>();
+    expect(body.contacts[0]?.profileName).toBe('Marc'); // vient de queryContacts, pas de listContacts (Julie)
+    expect(body.total).toBe(3);
+    expect(cap.queryFilters).toHaveLength(1);
+    // Le parsing des query params -> ContactFilters typés.
+    expect(cap.queryFilters[0]).toEqual({
+      tags: ['vip', 'pro'], tagMode: 'or', optIn: 'opted_in', phonePrefix: '+336', phoneContains: '12 34', nameSearch: 'mar',
+      fieldFilters: [{ key: 'ville', op: 'contains', value: 'par' }],
+    });
+    await app.close();
+  });
+
+  it('GET /contacts/count et /contacts/ids -> compteur + ids résolus par filtres', async () => {
+    const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
+    const app = inject(new FakeContacts(), new FakeFields(), cap);
+    const count = await app.inject({ method: 'GET', url: '/tenants/t1/contacts/count?tags=vip', headers: { authorization: `Bearer ${token}` } });
+    expect(count.statusCode).toBe(200);
+    expect(count.json<{ total: number }>().total).toBe(3);
+    expect(cap.countFilters[0]).toEqual({ tags: ['vip'] });
+    const ids = await app.inject({ method: 'GET', url: '/tenants/t1/contacts/ids?optIn=opted_out', headers: { authorization: `Bearer ${token}` } });
+    expect(ids.statusCode).toBe(200);
+    expect(ids.json<{ ids: string[] }>().ids).toEqual(['c2', 'c3']);
+    expect(cap.idsFilters[0]).toEqual({ optIn: 'opted_out' });
+    await app.close();
+  });
+
+  it('GET contacts filtre de champ ILLISIBLE -> ignoré (pas de 500), retombe sur listContacts', async () => {
+    const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
+    const app = inject(new FakeContacts(), new FakeFields(), cap);
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts?fields=pas-du-json', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    // Aucun filtre valide -> chemin historique listContacts (Julie), queryContacts jamais appelé.
+    expect(res.json<{ contacts: Array<{ profileName: string }> }>().contacts[0]?.profileName).toBe('Julie');
+    expect(cap.queryFilters).toHaveLength(0);
+    await app.close();
+  });
+
+  it('GET contacts/count d un autre tenant -> 403', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({ method: 'GET', url: '/tenants/AUTRE/contacts/count', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(403);
     await app.close();
   });
 

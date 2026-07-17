@@ -101,6 +101,54 @@ export function updateContact(
   return request<{ contact: Contact }>(`/tenants/${tenantId}/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 
+/** Un filtre sur la valeur d'un champ perso (jsonb, valeur texte) : égalité exacte ou sous-chaîne. */
+export interface ContactFieldFilter { key: string; op: 'eq' | 'contains'; value: string }
+
+/** Critères composables de la « Liste de contacts » (source de campagne). Tous optionnels. */
+export interface ContactFilters {
+  tags?: string[];
+  tagMode?: 'and' | 'or';
+  optIn?: 'opted_in' | 'opted_out' | 'unknown';
+  phonePrefix?: string;
+  phoneContains?: string;
+  nameSearch?: string;
+  fieldFilters?: ContactFieldFilter[];
+}
+
+/** Encode des ContactFilters en query string (miroir de parseFilters côté serveur). */
+function filtersToQuery(f: ContactFilters): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (f.tags && f.tags.length > 0) qs.set('tags', f.tags.join(','));
+  if (f.tagMode === 'or') qs.set('tagMode', 'or');
+  if (f.optIn) qs.set('optIn', f.optIn);
+  if (f.phonePrefix) qs.set('phonePrefix', f.phonePrefix);
+  if (f.phoneContains) qs.set('phoneContains', f.phoneContains);
+  if (f.nameSearch) qs.set('nameSearch', f.nameSearch);
+  if (f.fieldFilters && f.fieldFilters.length > 0) qs.set('fields', JSON.stringify(f.fieldFilters));
+  return qs;
+}
+
+/** Contacts correspondant aux filtres (paginé) + total (compteur réel). Source « Liste de contacts ». */
+export function queryContacts(tenantId: string, filters: ContactFilters, opts?: { limit?: number; offset?: number }): Promise<{ contacts: Contact[]; total?: number }> {
+  const qs = filtersToQuery(filters);
+  if (opts?.limit != null) qs.set('limit', String(opts.limit));
+  if (opts?.offset != null) qs.set('offset', String(opts.offset));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return request<{ contacts: Contact[]; total?: number }>(`/tenants/${tenantId}/contacts${suffix}`);
+}
+
+/** Nombre de contacts correspondant aux filtres (badge « N contacts correspondent »). */
+export function countContacts(tenantId: string, filters: ContactFilters): Promise<{ total: number }> {
+  const suffix = filtersToQuery(filters).toString();
+  return request<{ total: number }>(`/tenants/${tenantId}/contacts/count${suffix ? `?${suffix}` : ''}`);
+}
+
+/** Ids des contacts correspondant aux filtres (résolution serveur de la source d'une campagne). */
+export function contactIdsForFilters(tenantId: string, filters: ContactFilters): Promise<{ ids: string[] }> {
+  const suffix = filtersToQuery(filters).toString();
+  return request<{ ids: string[] }>(`/tenants/${tenantId}/contacts/ids${suffix ? `?${suffix}` : ''}`);
+}
+
 /** Récupère TOUS les contacts d'un tenant (pagination par pages de 500). Pour la sélection de
  *  campagne : ne jamais tronquer silencieusement (sinon on enverrait à un sous-ensemble). */
 export async function listAllContacts(tenantId: string): Promise<Contact[]> {

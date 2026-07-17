@@ -14,9 +14,12 @@ import {
   createCampaign,
   runCampaign,
   listTemplates,
-  listAllContacts,
   listWorkflows,
   listUserFields,
+  listTags,
+  queryContacts,
+  countContacts,
+  contactIdsForFilters,
   getTemplateStats,
   getTemplateHints,
   contactIdentity,
@@ -31,6 +34,9 @@ import {
   type TemplateParam,
   type TemplateSummary,
   type Contact,
+  type ContactFilters,
+  type ContactFieldFilter,
+  type TagCount,
   type WorkflowSummary,
   type WorkflowGraph,
   type WorkflowNode,
@@ -368,14 +374,29 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
-  // Templates approuvés + contacts + champs perso (chargés une fois, indépendamment du polling des campagnes).
+  // Références chargées une fois (indépendamment du polling des campagnes) : templates, scénarios, champs, tags.
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
+  const [tags, setTags] = useState<TagCount[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState('');
+
+  // --- Zone Destinataires : source + filtres du mini-CRM ---
+  const [source, setSource] = useState<'crm' | 'file' | 'hubspot'>('crm');
+  // Filtres UI (alimentent ContactFilters). tagMode 'and' = tous, 'or' = au moins un.
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
+  const [tagMode, setTagMode] = useState<'and' | 'or'>('and');
+  const [optIn, setOptIn] = useState<'' | 'opted_in' | 'opted_out' | 'unknown'>('');
+  const [phonePrefix, setPhonePrefix] = useState('');
+  const [phoneContains, setPhoneContains] = useState('');
+  const [nameSearch, setNameSearch] = useState('');
+  const [fieldFilters, setFieldFilters] = useState<ContactFieldFilter[]>([]);
+  // Résultats : liste affichée (<= 500), total réel (compteur), sélection ciblée.
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [countLoading, setCountLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Anti-course : n'appliquer qu'une réponse à jour (une plus récente peut la doubler entre-temps).
+  const reqSeq = useRef(0);
 
   useEffect(() => {
     if (!phoneNumberId && numbers[0]) setPhoneNumberId(numbers[0].id);
@@ -385,15 +406,12 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     let alive = true;
     (async () => {
       try {
-        const [t, c, w, uf] = await Promise.all([listTemplates(tenantId), listAllContacts(tenantId), listWorkflows(tenantId), listUserFields(tenantId)]);
+        const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
         if (!alive) return;
-        setTemplates(t.templates.filter((x) => x.status === 'APPROVED'));
+        setTemplates(tpl.templates.filter((x) => x.status === 'APPROVED'));
         setWorkflows(w.workflows);
         setUserFields(uf.fields);
-        // Contacts joignables = ceux qui ont une identité (numéro OU BSUID).
-        const reachable = c.filter((x) => contactIdentity(x) !== null);
-        setContacts(reachable);
-        setSelected(new Set(reachable.map((x) => x.id))); // tout coché par défaut
+        setTags(tg.tags);
       } catch {
         // silencieux : l'erreur de création reste affichée si l'envoi échoue
       } finally {
@@ -402,6 +420,44 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     })();
     return () => { alive = false; };
   }, [tenantId]);
+
+  // Construit ContactFilters depuis l'UI : n'inclut une clé que si elle est renseignée (miroir de filtersToQuery).
+  const buildFilters = useCallback((): ContactFilters => {
+    const f: ContactFilters = {};
+    if (tagFilter.size > 0) { f.tags = [...tagFilter]; f.tagMode = tagMode; }
+    if (optIn) f.optIn = optIn;
+    if (phonePrefix.trim()) f.phonePrefix = phonePrefix.trim();
+    if (phoneContains.trim()) f.phoneContains = phoneContains.trim();
+    if (nameSearch.trim()) f.nameSearch = nameSearch.trim();
+    const ff = fieldFilters.filter((r) => r.key && r.value.trim()).map((r) => ({ key: r.key, op: r.op, value: r.value.trim() }));
+    if (ff.length > 0) f.fieldFilters = ff;
+    return f;
+  }, [tagFilter, tagMode, optIn, phonePrefix, phoneContains, nameSearch, fieldFilters]);
+
+  // Rechargement DEBOUNCÉ (350 ms) de la liste + du compteur quand les filtres changent (source 'crm' seulement).
+  // Au rechargement, on re-coche tous les contacts chargés (comportement « tout ciblé » par défaut).
+  useEffect(() => {
+    if (source !== 'crm') { setCountLoading(false); return; }
+    const f = buildFilters();
+    setCountLoading(true);
+    const timer = setTimeout(() => {
+      const seq = ++reqSeq.current;
+      void (async () => {
+        try {
+          const [q, c] = await Promise.all([queryContacts(tenantId, f, { limit: 500 }), countContacts(tenantId, f)]);
+          if (seq !== reqSeq.current || !mountedRef.current) return; // réponse périmée ou écran quitté
+          setContacts(q.contacts);
+          setTotal(c.total);
+          setSelected(new Set(q.contacts.map((x) => x.id)));
+          setCountLoading(false);
+        } catch {
+          if (seq !== reqSeq.current || !mountedRef.current) return;
+          setCountLoading(false); // erreur silencieuse : on garde l'affichage précédent
+        }
+      })();
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [source, tenantId, buildFilters]);
 
   const selectedTemplate = templates.find((tpl) => tpl.name === templateName);
   // Valeurs d'aperçu par variable (échantillon lisible selon le mapping) pour la miniature WhatsApp.
@@ -481,38 +537,37 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     setWorkflowId('');
   }
 
-  // Tous les tags présents (pour les filtres). Requête = filtre par tag(s) + recherche texte
-  // élargie (nom, numéro, tags ET valeurs des champs perso).
-  const allTags = [...new Set(contacts.flatMap((c) => c.tags ?? []))].sort();
-  const filteredContacts = contacts.filter((c) => {
-    if (tagFilter.size > 0 && !(c.tags ?? []).some((tag) => tagFilter.has(tag))) return false;
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    const hay = [c.profileName ?? '', c.phoneE164 ?? '', c.bsuid ?? '', ...(c.tags ?? []), ...Object.values(c.fields ?? {}).map(String)]
-      .join(' ')
-      .toLowerCase();
-    return hay.includes(q);
-  });
-  // « Tout » agit sur ce qui est AFFICHÉ (filtre/recherche), pour sélectionner un segment entier.
-  const filteredAllSelected = filteredContacts.length > 0 && filteredContacts.every((c) => selected.has(c.id));
-  // Combien de sélectionnés sont MASQUÉS par le filtre courant (ils partiront quand même).
-  const filteredIds = new Set(filteredContacts.map((c) => c.id));
-  const selectedOutside = [...selected].filter((id) => !filteredIds.has(id)).length;
-  const filterActive = tagFilter.size > 0 || search.trim() !== '';
-
+  // Bascule de source. Pour les sources non implémentées, on vide la sélection (donc étape 2 désactivée).
+  function chooseSource(s: 'crm' | 'file' | 'hubspot') {
+    setSource(s);
+    if (s !== 'crm') setSelected(new Set());
+  }
   function toggleContact(id: string) {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  }
-  function toggleAllFiltered() {
-    setSelected((s) => {
-      const n = new Set(s);
-      for (const c of filteredContacts) { if (filteredAllSelected) n.delete(c.id); else n.add(c.id); }
-      return n;
-    });
   }
   function toggleTag(tag: string) {
     setTagFilter((s) => { const n = new Set(s); if (n.has(tag)) n.delete(tag); else n.add(tag); return n; });
   }
+  function addFieldFilter() {
+    setFieldFilters((r) => (r.length >= 5 ? r : [...r, { key: '', op: 'eq', value: '' }]));
+  }
+  function updateFieldFilter(i: number, patch: Partial<ContactFieldFilter>) {
+    setFieldFilters((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  }
+  function removeFieldFilter(i: number) {
+    setFieldFilters((r) => r.filter((_, j) => j !== i));
+  }
+  // « Tout sélectionner (N) » : résout côté serveur TOUS les ids correspondants (au-delà des 500 affichés).
+  async function selectAllMatching() {
+    try {
+      const { ids } = await contactIdsForFilters(tenantId, buildFilters());
+      if (!mountedRef.current) return;
+      setSelected(new Set(ids));
+    } catch { /* silencieux */ }
+  }
+  const customFields = customFieldsOnly(userFields);
+  // Un filtre est actif dès qu'une clé est posée -> distingue « aucun résultat » de « aucun contact du tout ».
+  const hasActiveFilters = Object.keys(buildFilters()).length > 0;
 
   function toParamMapping(): TemplateParam[] {
     return vars.map((v, i) => ({ position: i + 1, source: selToSource(v.sel, v.value) }));
@@ -674,55 +729,138 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           </div>
         </div>
 
-        {/* ZONE 2 : Destinataires */}
+        {/* ZONE 2 : Destinataires : source (liste CRM / fichier / HubSpot) + filtres du mini-CRM */}
         <div className="rounded-xl border border-ink-200 p-4">
-        <div className="mb-1 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between">
           <label className="text-sm font-medium text-ink-700">{t('Destinataires', 'Recipients')}</label>
-          {contacts.length > 0 && (
-            <span className="text-xs text-ink-400">{selected.size} / {contacts.length} {t('sélectionnés', 'selected')}</span>
+          {/* Y = total réel (compteur serveur), pas le nombre de contacts affichés. */}
+          {source === 'crm' && total !== null && (
+            <span className="text-xs text-ink-400">{selected.size} / {total} {t('sélectionnés', 'selected')}</span>
           )}
         </div>
-        {loadingRefs ? (
+
+        {/* Sélecteur de SOURCE des destinataires (segmenté, comme le toggle template/scénario). */}
+        <div className="mb-3 inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
+          <button type="button" onClick={() => chooseSource('crm')} className={`rounded-md px-2.5 py-1 ${source === 'crm' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
+            📇 {t('Liste de contacts', 'Contact list')}
+          </button>
+          <button type="button" onClick={() => chooseSource('file')} className={`rounded-md px-2.5 py-1 ${source === 'file' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
+            📄 {t('Import fichier', 'File import')}
+          </button>
+          <button type="button" disabled className="cursor-not-allowed rounded-md px-2.5 py-1 text-ink-300" title={t('Bientôt disponible', 'Coming soon')}>
+            🔗 {t('HubSpot (bientôt)', 'HubSpot (soon)')}
+          </button>
+        </div>
+
+        {source === 'file' ? (
+          <div className="rounded-lg border border-dashed border-ink-300 bg-ink-50/40 px-4 py-8 text-center text-xs text-ink-500">
+            {t('Import de fichier : bientôt (phase suivante)', 'File import: coming soon (next phase)')}
+          </div>
+        ) : source === 'hubspot' ? (
+          <div className="rounded-lg border border-dashed border-ink-300 bg-ink-50/40 px-4 py-8 text-center text-xs text-ink-500">
+            {t('HubSpot : bientôt.', 'HubSpot: coming soon.')}
+          </div>
+        ) : loadingRefs ? (
           <p className="text-xs text-ink-400">{t('Chargement des contacts...', 'Loading contacts...')}</p>
-        ) : contacts.length === 0 ? (
-          <p className="text-xs text-amber-700">{t("Aucun contact joignable. Importe des contacts dans l'onglet Contacts.", 'No reachable contact. Import contacts in the Contacts tab.')}</p>
         ) : (
           <div>
-            {allTags.length > 0 && (
-              <div className="mb-2 flex flex-wrap items-center gap-1">
-                <span className="text-[11px] text-ink-400">{t('Tags :', 'Tags:')}</span>
-                {allTags.map((tag) => (
-                  <button
-                    type="button"
-                    key={tag}
-                    onClick={() => toggleTag(tag)}
-                    className={`rounded-full px-2 py-0.5 text-xs transition ${
-                      tagFilter.has(tag) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-                {tagFilter.size > 0 && (
-                  <button type="button" onClick={() => setTagFilter(new Set())} className="text-[11px] text-brand-600 hover:underline">
-                    {t('réinitialiser', 'reset')}
-                  </button>
+            {/* Tags : puces multi-sélection alimentées par listTags (pas dérivées des contacts chargés). */}
+            {tags.length > 0 && (
+              <div className="mb-2">
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] text-ink-400">{t('Tags :', 'Tags:')}</span>
+                  {tags.map((tc) => (
+                    <button
+                      type="button"
+                      key={tc.tag}
+                      onClick={() => toggleTag(tc.tag)}
+                      className={`rounded-full px-2 py-0.5 text-xs transition ${tagFilter.has(tc.tag) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'}`}
+                    >
+                      {tc.tag} <span className="opacity-60">{tc.count}</span>
+                    </button>
+                  ))}
+                  {tagFilter.size > 0 && (
+                    <button type="button" onClick={() => setTagFilter(new Set())} className="text-[11px] text-brand-600 hover:underline">{t('réinitialiser', 'reset')}</button>
+                  )}
+                </div>
+                {/* Combinaison des tags : « tous » (and) vs « au moins un » (or). N'a de sens qu'à partir de 2 tags. */}
+                {tagFilter.size > 1 && (
+                  <div className="mt-1 inline-flex gap-1 rounded-lg bg-ink-100 p-0.5 text-[11px]">
+                    {([['and', t('tous', 'all')], ['or', t('au moins un', 'any')]] as const).map(([m, label]) => (
+                      <button type="button" key={m} onClick={() => setTagMode(m)} className={`rounded-md px-2 py-0.5 ${tagMode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
-            <div className="mb-2 flex items-center gap-2">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputCls} flex-1`} placeholder={t('Rechercher (nom, numéro, tag, champ)', 'Search (name, number, tag, field)')} />
-              <button type="button" onClick={toggleAllFiltered} className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-xs text-ink-600 hover:bg-ink-50">
-                {filteredAllSelected ? t('Vider', 'Clear') : t('Tout', 'All')}
-              </button>
-              {(tagFilter.size > 0 || search.trim() !== '') && (
-                <button type="button" onClick={() => setSelected(new Set(filteredContacts.map((c) => c.id)))} className="shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-2 text-xs font-medium text-brand-700 hover:bg-brand-100">
-                  {t('Uniquement ceux-ci', 'Only these')}
-                </button>
-              )}
+
+            {/* Opt-in / Nom / Téléphone (commence par + contient) */}
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Opt-in', 'Opt-in')}</span>
+                <select value={optIn} onChange={(e) => setOptIn(e.target.value as typeof optIn)} className={`${inputCls} py-1.5`}>
+                  <option value="">{t('Tous', 'All')}</option>
+                  <option value="opted_in">{t('Opté-in', 'Opted-in')}</option>
+                  <option value="opted_out">{t('Opté-out', 'Opted-out')}</option>
+                  <option value="unknown">{t('Inconnu', 'Unknown')}</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Nom contient', 'Name contains')}</span>
+                <input value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} className={`${inputCls} py-1.5`} placeholder={t('nom', 'name')} />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Tél. commence par', 'Phone starts with')}</span>
+                <input value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className={`${inputCls} py-1.5`} placeholder="+336" />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Tél. contient', 'Phone contains')}</span>
+                <input value={phoneContains} onChange={(e) => setPhoneContains(e.target.value)} className={`${inputCls} py-1.5`} placeholder="06" />
+              </label>
             </div>
+
+            {/* Filtres de champ perso (répétables, max 5). Une ligne ne compte que si champ ET valeur remplis. */}
+            {customFields.length > 0 && (
+              <div className="mb-2 space-y-1.5">
+                {fieldFilters.map((r, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <select value={r.key} onChange={(e) => updateFieldFilter(i, { key: e.target.value })} className={`${inputCls} flex-1 py-1.5`}>
+                      <option value="">{t('Champ…', 'Field…')}</option>
+                      {customFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                    <select value={r.op} onChange={(e) => updateFieldFilter(i, { op: e.target.value as ContactFieldFilter['op'] })} className={`${inputCls} w-24 py-1.5`}>
+                      <option value="eq">{t('est', 'is')}</option>
+                      <option value="contains">{t('contient', 'contains')}</option>
+                    </select>
+                    <input value={r.value} onChange={(e) => updateFieldFilter(i, { value: e.target.value })} className={`${inputCls} w-28 py-1.5`} placeholder={t('valeur', 'value')} />
+                    <button type="button" onClick={() => removeFieldFilter(i)} className="shrink-0 rounded p-1 text-ink-400 hover:text-red-600" title={t('Retirer', 'Remove')}>✕</button>
+                  </div>
+                ))}
+                {fieldFilters.length < 5 && (
+                  <button type="button" onClick={addFieldFilter} className="text-[11px] text-brand-600 hover:underline">+ {t('filtre de champ', 'field filter')}</button>
+                )}
+              </div>
+            )}
+
+            {/* Compteur live (débounce) + contrôles de sélection sur gros volumes. */}
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+                {countLoading || total === null ? t('… contacts', '… contacts') : t(`${total} contact(s) correspondent`, `${total} contact(s) match`)}
+              </span>
+              {total !== null && total > contacts.length && (
+                <>
+                  <span className="text-ink-400">{t(`${contacts.length} affichés sur ${total} au total`, `${contacts.length} shown of ${total} total`)}</span>
+                  <button type="button" onClick={selectAllMatching} className="rounded-lg border border-brand-300 bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100">
+                    {t(`Tout sélectionner (${total})`, `Select all (${total})`)}
+                  </button>
+                </>
+              )}
+              <button type="button" onClick={() => setSelected(new Set())} className="rounded-lg border border-ink-300 px-2 py-0.5 text-ink-600 hover:bg-ink-50">{t('Vider', 'Clear')}</button>
+            </div>
+
+            {/* Liste des contacts correspondants (<= 500 affichés) : cocher/décocher affine la sélection. */}
             <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
-              {filteredContacts.map((c) => (
+              {contacts.map((c) => (
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
                   <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
@@ -733,14 +871,15 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
                   {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-600">opt-out</span>}
                 </label>
               ))}
-              {filteredContacts.length === 0 && <p className="px-2.5 py-2 text-xs text-ink-400">{t('Aucun contact ne correspond.', 'No matching contact.')}</p>}
+              {contacts.length === 0 && (
+                <p className="px-2.5 py-3 text-xs text-ink-400">
+                  {countLoading ? t('Chargement…', 'Loading…')
+                    : hasActiveFilters ? t('Aucun contact ne correspond aux filtres.', 'No contact matches the filters.')
+                    : t("Aucun contact joignable. Importe des contacts dans l'onglet Contacts.", 'No reachable contact. Import contacts in the Contacts tab.')}
+                </p>
+              )}
             </div>
-            <p className="mt-1 text-[11px] text-ink-400">{filteredContacts.length} {t('affichés · les contacts opt-out sont ignorés automatiquement pour le marketing.', 'shown · opted-out contacts are automatically skipped for marketing.')}</p>
-            {filterActive && selectedOutside > 0 && (
-              <p className="mt-1 text-[11px] text-amber-600">
-                ⚠️ {selectedOutside} {t('sélectionné(s) hors du filtre partiront aussi. « Uniquement ceux-ci » pour ne cibler que le segment affiché.', 'selected outside the filter will also be sent. Use "Only these" to target only the shown segment.')}
-              </p>
-            )}
+            <p className="mt-1 text-[11px] text-ink-400">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
           </div>
         )}
       </div>

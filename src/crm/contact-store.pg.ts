@@ -14,6 +14,25 @@ export interface ContactRow {
   createdAt: string;
 }
 
+/** Un filtre sur la valeur d'un champ perso (jsonb, valeur STRING) : égalité exacte ou sous-chaîne. */
+export interface ContactFieldFilter { key: string; op: 'eq' | 'contains'; value: string }
+
+/** Critères de requête composables de la « Liste de contacts » (source de campagne). Tous optionnels ;
+ *  vides -> aucun filtre (tous les contacts du tenant). */
+export interface ContactFilters {
+  tags?: string[];
+  /** 'and' (défaut) = contient TOUS les tags ; 'or' = en partage au moins un. */
+  tagMode?: 'and' | 'or';
+  optIn?: 'opted_in' | 'opted_out' | 'unknown';
+  /** Préfixe E.164 ancré (ex. « +336 »). */
+  phonePrefix?: string;
+  /** Sous-chaîne de chiffres du numéro (ex. « 42 42 »). */
+  phoneContains?: string;
+  /** Recherche sur le nom de profil (insensible à la casse). */
+  nameSearch?: string;
+  fieldFilters?: ContactFieldFilter[];
+}
+
 /**
  * Store Postgres des contacts. Upsert par (tenant, téléphone) avec MERGE jsonb des
  * champs perso (jamais d'écrasement des clés absentes du CSV courant) et opt-in qui
@@ -207,6 +226,88 @@ export class PgContactStore implements ContactStore {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Construit un WHERE dynamique PARAMÉTRÉ pour requêter les contacts (source « Liste de contacts » d'une
+   * campagne). `tenant_id = $1` TOUJOURS présent (anti-fuite cross-tenant). Chaque filtre ajoute un paramètre.
+   * Les valeurs de champ perso sont stockées en STRING dans le jsonb -> comparaison textuelle (eq/contains).
+   */
+  private static buildWhere(tenantId: string, f: ContactFilters): { where: string; params: unknown[] } {
+    const clauses: string[] = ['tenant_id = $1'];
+    const params: unknown[] = [tenantId];
+    const add = (v: unknown): string => { params.push(v); return `$${params.length}`; };
+
+    const tags = (f.tags ?? []).map((t) => t.trim()).filter((t) => t !== '');
+    if (tags.length > 0) {
+      // AND = contient TOUS les tags (@>) ; OR = en partage AU MOINS un (&&).
+      const op = f.tagMode === 'or' ? '&&' : '@>';
+      clauses.push(`tags ${op} ${add(tags)}::text[]`);
+    }
+    if (f.optIn === 'opted_in' || f.optIn === 'opted_out' || f.optIn === 'unknown') {
+      clauses.push(`opt_in_status = ${add(f.optIn)}`);
+    }
+    if (f.phonePrefix && f.phonePrefix.trim() !== '') {
+      // Préfixe ANCRÉ (utilise l'index unique sur phone_e164). On garde `+` et chiffres saisis tels quels.
+      clauses.push(`phone_e164 like ${add(f.phonePrefix.trim() + '%')}`);
+    }
+    if (f.phoneContains && f.phoneContains.replace(/\D/g, '') !== '') {
+      // Contenu : on compare sur les CHIFFRES nus des deux côtés (le stocké est +E.164).
+      clauses.push(`regexp_replace(coalesce(phone_e164,''), '[^0-9]', '', 'g') like '%' || ${add(f.phoneContains.replace(/\D/g, ''))} || '%'`);
+    }
+    if (f.nameSearch && f.nameSearch.trim() !== '') {
+      clauses.push(`profile_name ilike '%' || ${add(f.nameSearch.trim())} || '%'`);
+    }
+    for (const ff of f.fieldFilters ?? []) {
+      const key = String(ff.key ?? '').trim();
+      const val = String(ff.value ?? '');
+      if (key === '' || val === '') continue;
+      // `fields ->> $key` : la clé jsonb est PARAMÉTRÉE (pas d'interpolation). eq exact ou contains (ilike).
+      const keyRef = add(key);
+      if (ff.op === 'contains') clauses.push(`coalesce(fields ->> ${keyRef}, '') ilike '%' || ${add(val)} || '%'`);
+      else clauses.push(`fields ->> ${keyRef} = ${add(val)}`);
+    }
+    return { where: clauses.join(' and '), params };
+  }
+
+  /**
+   * Requête filtrée + paginée (source « Liste de contacts » de campagne). Filtres composables (tags AND/OR,
+   * opt-in, préfixe/contenu de téléphone, recherche nom, valeur de champ perso). Toujours scopé tenant.
+   */
+  async query(tenantId: string, filters: ContactFilters, limit = 100, offset = 0): Promise<ContactRow[]> {
+    const capped = Math.min(Math.max(limit, 1), 500);
+    const { where, params } = PgContactStore.buildWhere(tenantId, filters);
+    const limitRef = `$${params.length + 1}`;
+    const offsetRef = `$${params.length + 2}`;
+    const res = await this.pool.query<{
+      id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
+      opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
+    }>(
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at
+       from contacts where ${where}
+       order by created_at desc limit ${limitRef} offset ${offsetRef}`,
+      [...params, capped, Math.max(offset, 0)],
+    );
+    return res.rows.map(PgContactStore.rowToContact);
+  }
+
+  /** Nombre de contacts correspondant aux filtres (pour afficher « N contacts » AVANT de fixer le débit). */
+  async count(tenantId: string, filters: ContactFilters): Promise<number> {
+    const { where, params } = PgContactStore.buildWhere(tenantId, filters);
+    const res = await this.pool.query<{ n: string }>(`select count(*)::text as n from contacts where ${where}`, params);
+    return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /** Ids des contacts correspondant aux filtres (résolution serveur de la source « Liste de contacts »
+   *  d'une campagne, sans charger tout le CRM côté front). Scopé tenant. Cap dur anti-abus. */
+  async idsForFilters(tenantId: string, filters: ContactFilters, cap = 100_000): Promise<string[]> {
+    const { where, params } = PgContactStore.buildWhere(tenantId, filters);
+    const capRef = `$${params.length + 1}`;
+    const res = await this.pool.query<{ id: string }>(
+      `select id from contacts where ${where} order by created_at desc limit ${capRef}`,
+      [...params, Math.max(1, cap)],
+    );
+    return res.rows.map((r) => r.id);
   }
 
   /** Liste paginée des contacts d'un tenant (les plus récents d'abord). */

@@ -182,6 +182,47 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(row.tags).toContain('vip-bsuid');
   });
 
+  it('PgContactStore.query/count/idsForFilters : filtres composables (Lot 8), scopés tenant', async () => {
+    const store = new PgContactStore(pool);
+    // Tenant DÉDIÉ à ce test (jeu de données isolé, pas de collision avec les autres tests contacts).
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-filters') returning id`)).rows[0]!.id;
+    try {
+      await store.upsertByPhone({ tenantId: t, phoneE164: '+33611000001', profileName: 'Alice Martin', fields: { ville: 'Lyon' }, optInStatus: 'opted_in', tags: ['vip', 'salon'] });
+      await store.upsertByPhone({ tenantId: t, phoneE164: '+33622000002', profileName: 'Bob Durand', fields: { ville: 'Paris' }, optInStatus: 'opted_in', tags: ['vip'] });
+      await store.upsertByPhone({ tenantId: t, phoneE164: '+33611000003', profileName: 'Chloé Petit', fields: { ville: 'Lyon' }, optInStatus: 'unknown', tags: ['salon'] });
+      const names = async (f: Parameters<typeof store.query>[1]) => (await store.query(t, f, 500)).map((r) => r.profileName).sort();
+
+      // tags AND (défaut) = contient TOUS ; OR = au moins un.
+      expect(await names({ tags: ['vip', 'salon'] })).toEqual(['Alice Martin']);
+      expect(await names({ tags: ['vip', 'salon'], tagMode: 'or' })).toEqual(['Alice Martin', 'Bob Durand', 'Chloé Petit']);
+      // opt-in.
+      expect(await names({ optIn: 'unknown' })).toEqual(['Chloé Petit']);
+      // préfixe ancré (+33611...) et contenu de chiffres.
+      expect(await names({ phonePrefix: '+33611' })).toEqual(['Alice Martin', 'Chloé Petit']);
+      expect(await names({ phoneContains: '2200' })).toEqual(['Bob Durand']);
+      // recherche nom (insensible casse) + valeur de champ perso (eq / contains).
+      expect(await names({ nameSearch: 'martin' })).toEqual(['Alice Martin']);
+      expect(await names({ fieldFilters: [{ key: 'ville', op: 'eq', value: 'Lyon' }] })).toEqual(['Alice Martin', 'Chloé Petit']);
+      expect(await names({ fieldFilters: [{ key: 'ville', op: 'contains', value: 'ari' }] })).toEqual(['Bob Durand']);
+      // combinaison : vip ET à Lyon.
+      expect(await names({ tags: ['vip'], fieldFilters: [{ key: 'ville', op: 'eq', value: 'Lyon' }] })).toEqual(['Alice Martin']);
+
+      // count == taille ; idsForFilters cohérent.
+      expect(await store.count(t, { tags: ['vip'] })).toBe(2);
+      expect(await store.count(t, {})).toBe(3); // aucun filtre = tous
+      expect((await store.idsForFilters(t, { optIn: 'unknown' })).length).toBe(1);
+
+      // SCOPE TENANT : les mêmes filtres sur un AUTRE tenant ne voient rien (anti-fuite).
+      expect(await store.count(tenantId, { tags: ['vip', 'salon'], phonePrefix: '+33611000001' })).toBe(
+        // le tenant principal peut avoir des contacts d'autres tests : on vérifie juste que le jeu d'itest-filters n'y fuit pas
+        (await store.query(tenantId, { nameSearch: 'Alice Martin' }, 500)).length,
+      );
+      expect(await store.query(tenantId, { nameSearch: 'Alice Martin' }, 500)).toEqual([]);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
   it('PgContactStore.applyEdits : MERGE fields + tags add/remove en transaction, scoping tenant', async () => {
     const store = new PgContactStore(pool);
     const contactId = (await pool.query<{ id: string }>(

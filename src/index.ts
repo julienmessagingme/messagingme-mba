@@ -94,6 +94,9 @@ async function main(): Promise<void> {
       userFields: fieldStore,
       defaultCountry: config.DEFAULT_COUNTRY as CountryCode,
       listContacts: (tenantId, limit, offset, tag) => contactStore.list(tenantId, limit, offset, tag),
+      queryContacts: (tenantId, filters, limit, offset) => contactStore.query(tenantId, filters, limit, offset),
+      countContacts: (tenantId, filters) => contactStore.count(tenantId, filters),
+      contactIdsForFilters: (tenantId, filters) => contactStore.idsForFilters(tenantId, filters),
     },
     campaigns: {
       repo,
