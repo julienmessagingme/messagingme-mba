@@ -79,6 +79,10 @@ const schema = z.object({
   CONNECTOR_PUSH_URL: z.string().default(''),
   /** Secret HMAC partagé avec le connecteur (== INGEST_SECRET). Signe le push. */
   CONNECTOR_PUSH_SECRET: z.string().default(''),
+  /** URL du canal SERVICE du connecteur (mba interroge les listes HubSpot, ex. http://mm-hubspot-api:8096). Vide -> import HubSpot INERTE (routes non montées). */
+  HUBSPOT_SERVICE_URL: z.string().default(''),
+  /** Secret HMAC du canal service (== SERVICE_SECRET de mm-hubspot). Signe les appels /service/*. */
+  HUBSPOT_SERVICE_SECRET: z.string().default(''),
 }).superRefine((c, ctx) => {
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
@@ -112,6 +116,10 @@ const schema = z.object({
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
     if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CONNECTOR_PUSH_SECRET'], message: 'CONNECTOR_PUSH_SECRET requis quand CONNECTOR_PUSH_URL est défini' });
+    }
+    // Idem canal service (import de listes) : URL posée sans secret -> le connecteur refuserait tout (401).
+    if (c.HUBSPOT_SERVICE_URL !== '' && c.HUBSPOT_SERVICE_SECRET === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['HUBSPOT_SERVICE_SECRET'], message: 'HUBSPOT_SERVICE_SECRET requis quand HUBSPOT_SERVICE_URL est défini' });
     }
     // Embedded Signup activé sans clé de chiffrement = tokens business stockables en clair OU crash au premier
     // onboarding. Fail-fast au boot : 64 hex exigés.

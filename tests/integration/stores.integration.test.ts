@@ -24,6 +24,7 @@ import { PgFlowStore } from '../../src/flow/store.pg';
 import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
 import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { resolveScenario } from '../../src/ids/resolve';
+import { PgTenantSettingsStore } from '../../src/settings/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -714,6 +715,22 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await pool.query(`update campaign_recipients set claimed_at = now() - interval '1 hour' where id = $1`, [rid]);
     expect(await recipients.reclaimStale(60_000)).toBeGreaterThanOrEqual(1);
     expect(await recipients.listPending(campaignId)).toHaveLength(1); // de retour pending
+  });
+
+  it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {
+    const store = new PgTenantSettingsStore(pool);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-settings') returning id`)).rows[0]!.id;
+    try {
+      expect(await store.get(t)).toEqual({ mbaEnabled: false, hubspotListsEnabled: false }); // défauts
+      await store.setMbaEnabled(t, true);
+      await store.setHubspotListsEnabled(t, true);
+      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: true });
+      // Le toggle listes n'écrase PAS mba_enabled (upsert ciblé par colonne).
+      await store.setHubspotListsEnabled(t, false);
+      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: false });
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
   });
 
   it('PgApiKeyStore : create (clair une fois, hash en base), findActiveByHash, revoke, listByTenant sans hash', async () => {

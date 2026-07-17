@@ -100,8 +100,8 @@ export class PgPhoneStatusStore {
    * dans mmhs (le mapping du pilote reste intact).
    */
   async getHubspotPortal(tenantId: string): Promise<HubspotPortalLink> {
-    const res = await this.pool.query<{ hub_id: string; hub_domain: string | null }>(
-      `select p.hub_id, p.hub_domain
+    const res = await this.pool.query<{ hub_id: string; hub_domain: string | null; granted_scopes: string[] | null }>(
+      `select p.hub_id, p.hub_domain, p.granted_scopes
          from mmhs.tenant_portals tp
          join mmhs.portals p on p.hub_id = tp.hub_id
         where tp.tenant_id = $1
@@ -110,7 +110,7 @@ export class PgPhoneStatusStore {
     );
     const r = res.rows[0];
     if (!r) return { connected: false };
-    return { connected: true, hubId: r.hub_id, hubDomain: r.hub_domain };
+    return { connected: true, hubId: r.hub_id, hubDomain: r.hub_domain, listsScopeGranted: (r.granted_scopes ?? []).includes('crm.lists.read') };
   }
 
   /**

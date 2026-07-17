@@ -74,8 +74,18 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
     pending sans activité file (>10 min), même pattern que idempotencySweep dans worker.ts.
 - ~~Palier 3 (ancien cadrage)~~ remplacé par l'entrée ci-dessus.
   Rappel de portée (fait) : `POST /v1/sends` scénario + template, node = fenêtre 24h uniquement (D-1, Phase B2).
-- **Palier 4 — import listes HubSpot** : derrière un toggle self-serve « Campagnes via données HubSpot » qui,
-  à l'activation, ajoute le scope `crm.lists.read` au portail (D-7).
+- 🔶 **Palier 4 — import listes HubSpot (Phase 0+1 FAITES 2026-07-18)** : toggle self-serve + re-consentement
+  ciblé (`optional_scope=crm.lists.read`, mécanisme natif HubSpot, ne touche pas les autres portails). Phase 0
+  (connecteur mm-hubspot) : client Lists (search/memberships/batch-read borné 5000), OAuth optional_scope +
+  granted_scopes + garde anti-hijack, route service signée `/service/lists[/contacts]`. Phase 1 (mba) : toggle
+  `hubspot_lists_enabled`, proxy signé, `importHubspotList` (opt-in JAMAIS opted_in, garanti au niveau du type,
+  tag `HubSpot: <nom>`). Migrations 0007 (mmhs) + 0036 (mba). Reviewer cross-repo PASS. Cf
+  `~/mm-hubspot/.loop/palier4-lists-connecteur.md`.
+  - **RESTE Phase 2 (UI mba, différé)** : toggle + CTA re-consentement sur /accueil, 3e bouton de source de
+    campagne (stub déjà là), composant HubspotListImport. **RESTE Phase 3 (Julien)** : re-consentement réel du
+    portail cobaye 139615673 + import de test.
+  - 🟡 follow-up : (a) `searchLists` count:100 sans pagination -> >100 listes tronquées silencieusement, paginer ;
+    (b) restreindre `/service/*` de l'exposition publique NPM (déjà HMAC fort, mais surface réductible).
 - **Palier 5 — échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions
   sûres, N3 Deal auto, N4 autonome), seuil de confiance interne calibré par niveau (D-8/D-9/D-10). 5a = N1-2 +
   curseur + setter `autonomy_level` ; 5b = N3 (Deal auto) après mesure.

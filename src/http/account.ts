@@ -31,6 +31,8 @@ export interface HubspotPortalLink {
   connected: boolean;
   hubId?: string;
   hubDomain?: string | null;
+  /** Le portail a-t-il accordé le scope crm.lists.read (import de listes possible sans re-consentement) ? */
+  listsScopeGranted?: boolean;
 }
 
 /** Sous-ensemble de champs persistables au pull (tout optionnel : coalesce à l'écriture). */

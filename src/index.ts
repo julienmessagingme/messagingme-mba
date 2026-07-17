@@ -25,6 +25,7 @@ import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { resolveScenario } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
+import { fetchHubspotLists, importHubspotList } from './crm/hubspot-import';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaTemplateClient } from './meta/templates';
 import { MetaFlowClient } from './meta/flows';
@@ -182,7 +183,19 @@ async function main(): Promise<void> {
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
+      setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
     },
+    // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
+    ...(config.HUBSPOT_SERVICE_URL
+      ? {
+          hubspotImport: {
+            isListsEnabled: async (tenant: string) => (await settingsStore.get(tenant)).hubspotListsEnabled,
+            fetchLists: (tenant: string, query?: string) => fetchHubspotLists({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant, query),
+            importList: (tenant: string, listId: string, listName: string) =>
+              importHubspotList({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, { contacts: contactStore, userFields: fieldStore }, tenant, listId, listName),
+          },
+        }
+      : {}),
     admin: {
       listUsers: (tenant) => userStore.list(tenant),
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),
