@@ -6,7 +6,7 @@ import { pool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
-import { ensureField } from './crm/fields';
+import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
 import { PgCampaignRepo } from './campaign/store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
@@ -200,6 +200,8 @@ async function main(): Promise<void> {
       belongsTo: (flowId, tenant) => flowStore.belongsTo(flowId, tenant),
       markPublished: (flowId, tenant) => flowStore.markPublished(flowId, tenant),
       ensureUserField: async (tenant, label, type) => { await ensureField(fieldStore, tenant, label, type); },
+      listUserFields: (tenant) => fieldStore.list(tenant),
+      ensureOptinField: async (tenant) => { await ensureFieldByKey(fieldStore, tenant, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL, 'boolean'); },
       getFlow: (flowId, tenant) => flowStore.getById(flowId, tenant),
       updateFlowRow: (tenant, id, name, screens, ref, mapping, cta) => flowStore.update(id, tenant, { name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
       removeFlowRow: (flowId, tenant) => flowStore.remove(flowId, tenant),

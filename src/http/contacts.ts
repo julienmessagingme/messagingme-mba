@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { ContactRow } from '../crm/contact-store.pg';
-import type { UserFieldDef, UserFieldType } from '../crm/types';
+import type { UserFieldDef } from '../crm/types';
+import { validateFieldValue, canonicalizeFieldValue } from '../crm/fields';
 
 export interface ContactsRouteDeps {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
@@ -21,19 +22,6 @@ function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): str
   const authTenant = req.auth?.tenantId;
   if (authTenant !== undefined && authTenant !== tenantId) return null;
   return authTenant ?? tenantId;
-}
-
-/** Valide une valeur (string) selon le type du user field. Les valeurs sont stockées en STRING
- *  (cohérent avec String(v) de la substitution campagne). Vide -> invalide (utiliser un retrait). */
-function validateFieldValue(type: UserFieldType, value: string): boolean {
-  const v = value.trim();
-  if (v === '') return false;
-  if (v.length > 1000) return false;
-  if (type === 'number') return Number.isFinite(Number(v));
-  if (type === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
-  if (type === 'boolean') return ['true', 'false', 'oui', 'non', '1', '0'].includes(v.toLowerCase());
-  if (type === 'url') return /^https?:\/\/\S+$/i.test(v);
-  return true; // text
 }
 
 const asStringArray = (v: unknown): string[] =>
@@ -66,7 +54,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
       const val = String(raw);
       if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
-      values[key] = val.trim();
+      values[key] = canonicalizeFieldValue(def.type, val);
     }
 
     // Suppression de valeurs de champs : n'importe quelle clé présente sur le contact (l'opérateur jsonb `- text[]`

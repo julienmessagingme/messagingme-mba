@@ -25,6 +25,7 @@ const FIELDS: UserFieldDef[] = [
   { key: 'prenom', label: 'Prénom', type: 'text' },
   { key: 'age', label: 'Âge', type: 'number' },
   { key: 'date_rdv', label: 'Date RDV', type: 'date' },
+  { key: 'consent', label: 'Consentement', type: 'boolean' },
 ];
 
 interface Cap { merged: Array<Record<string, string>>; added: string[][]; removed: string[][]; removedFields: string[][]; names: Array<string | null> }
@@ -78,6 +79,27 @@ describe('routes contacts — édition fiche', () => {
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { date_rdv: '01/08/2026' } } });
     expect(res.statusCode).toBe(400);
     await server.close();
+  });
+
+  it('PATCH champ booléen : « oui » -> stocké canonique « true » (pas la saisie brute)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { consent: 'oui' } } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.merged).toEqual([{ consent: 'true' }]);
+    await server.close();
+  });
+
+  it('PATCH champ booléen : « 0 » -> canonique « false » ; valeur non booléenne -> 400', async () => {
+    const ok = app();
+    const rOk = await ok.server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { consent: '0' } } });
+    expect(rOk.statusCode).toBe(200);
+    expect(ok.cap.merged).toEqual([{ consent: 'false' }]);
+    await ok.server.close();
+    const ko = app();
+    const rKo = await ko.server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { fields: { consent: 'peut-être' } } });
+    expect(rKo.statusCode).toBe(400);
+    expect(ko.cap.merged).toHaveLength(0);
+    await ko.server.close();
   });
 
   it('PATCH addTags + removeTags -> 200, les deux appelés', async () => {

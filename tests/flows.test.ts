@@ -96,13 +96,13 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[] }
+interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[]; ensuredOptin: number }
 
 function app(
   over: Partial<FlowRouteDeps> = {},
   opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null } = {},
 ) {
-  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [] };
+  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [], ensuredOptin: 0 };
   const fakeFetch: FetchLike = async (url, init) => {
     cap.metaCalls.push(String(url));
     cap.metaBodies.push(init?.body ?? null);
@@ -121,6 +121,8 @@ function app(
     ensureUserField: async (_t, _label, type) => {
       if (!['text', 'number', 'date', 'boolean', 'url'].includes(type)) throw new Error(`type de champ invalide: ${type}`);
     },
+    listUserFields: async () => [],
+    ensureOptinField: async () => { cap.ensuredOptin += 1; },
     getFlow: async () => (opts.flow === undefined ? null : opts.flow),
     updateFlowRow: async (_t, id, name, _elements, ref) => { cap.updated.push({ id, name, ref }); return true; },
     removeFlowRow: async (id) => { cap.removed.push(id); return true; },
@@ -253,16 +255,63 @@ describe('routes flows — création', () => {
     await server.close();
   });
 
-  it('POST optin : le saveTo fourni est IGNORÉ (consentement -> champ booléen dédié, jamais un autre champ)', async () => {
+  it('POST optin SANS cible -> défaut whatsapp_optin (créé à la volée)', async () => {
     const { server, cap } = app();
     const res = await server.inject({
       method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
-      payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'newsletter' }] },
+      payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true }] },
     });
     expect(res.statusCode).toBe(201);
-    // mapping par défaut (clé = clé du champ), PAS 'newsletter' : le booléen ne fuit pas dans un autre champ.
-    expect(cap.inserted[0]!.mapping!['j_accepte']).toBe('j_accepte');
+    expect(cap.inserted[0]!.mapping!['j_accepte']).toBe('whatsapp_optin'); // rangé dans le champ de consentement
+    expect(cap.ensuredOptin).toBe(1); // champ whatsapp_optin assuré
     await server.close();
+  });
+
+  it('POST optin AVEC cible booléenne existante -> mapping vers cette clé, whatsapp_optin PAS créé', async () => {
+    const { server, cap } = app({ listUserFields: async () => [{ key: 'consentement_marketing', label: 'Consentement marketing', type: 'boolean' }] });
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'consentement_marketing' }] },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(cap.inserted[0]!.mapping!['j_accepte']).toBe('consentement_marketing');
+    expect(cap.ensuredOptin).toBe(0); // cible choisie -> pas de création du champ par défaut
+    await server.close();
+  });
+
+  it('POST deux optin SANS cible -> 400 (collision sur whatsapp_optin), aucun appel Meta', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'F', elements: [
+        { kind: 'field', label: "J'accepte A", type: 'optin', required: true },
+        { kind: 'field', label: "J'accepte B", type: 'optin', required: true },
+      ] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toContain('consentement');
+    expect(cap.metaCalls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('POST optin AVEC cible inexistante ou non booléenne -> 400 AVANT Meta', async () => {
+    const inexistant = app({ listUserFields: async () => [] });
+    const r1 = await inexistant.server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'inconnu' }] },
+    });
+    expect(r1.statusCode).toBe(400);
+    expect(inexistant.cap.metaCalls).toHaveLength(0);
+    await inexistant.server.close();
+
+    const nonBool = app({ listUserFields: async () => [{ key: 'ville', label: 'Ville', type: 'text' }] });
+    const r2 = await nonBool.server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'F', elements: [{ kind: 'field', label: "J'accepte", type: 'optin', required: true, saveTo: 'ville' }] },
+    });
+    expect(r2.statusCode).toBe(400);
+    expect(nonBool.cap.metaCalls).toHaveLength(0);
+    await nonBool.server.close();
   });
 
   it('POST collision de clés -> 400 AVANT Meta (aucun appel Meta)', async () => {

@@ -189,11 +189,15 @@ function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value
   const t = useT();
   const cls = 'flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
   if (type === 'boolean') {
+    // Valeurs stockées de façon canonique ('true'/'false'). On tolère l'affichage des valeurs héritées
+    // ('oui'/'non'/'1'/'0') pour qu'une ancienne fiche reste correctement présélectionnée (pas de backfill).
+    const low = value.trim().toLowerCase();
+    const display = ['true', 'oui', '1'].includes(low) ? 'true' : ['false', 'non', '0'].includes(low) ? 'false' : '';
     return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={`${cls} bg-white`}>
+      <select value={display} onChange={(e) => onChange(e.target.value)} className={`${cls} bg-white`}>
         <option value="">-</option>
-        <option value="oui">{t('oui', 'yes')}</option>
-        <option value="non">{t('non', 'no')}</option>
+        <option value="true">{t('oui', 'yes')}</option>
+        <option value="false">{t('non', 'no')}</option>
       </select>
     );
   }

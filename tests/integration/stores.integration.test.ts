@@ -20,6 +20,7 @@ import { PgOpsStore } from '../../src/ops/store.pg';
 import { PgWorkflowStore } from '../../src/workflow/store.pg';
 import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
 import { WorkflowExecutor } from '../../src/workflow/executor';
+import { PgFlowStore } from '../../src/flow/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -169,6 +170,42 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await store.removeByName(tenantId, name);
     expect(await store.get(tenantId, name, 'fr')).toEqual([]);
     expect(await store.get(tenantId, name, 'en')).toEqual([]);
+  });
+
+  it('PgContactStore.markOptedIn : passe opted_out -> opted_in (source posée), gagne toujours ; no-op si inconnu', async () => {
+    const store = new PgContactStore(pool);
+    const phone = '+33600000081';
+    // Contact explicitement DÉSINSCRIT : un consentement de flow doit l'écraser (décision produit).
+    await pool.query(`insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_out')`, [tenantId, phone]);
+    expect(await store.markOptedIn(tenantId, '33600000081', 'flow')).toBe(1);
+    const row = (await pool.query<{ opt_in_status: string; opt_in_source: string }>(
+      `select opt_in_status, opt_in_source from contacts where tenant_id = $1 and phone_e164 = $2`, [tenantId, phone],
+    )).rows[0]!;
+    expect(row.opt_in_status).toBe('opted_in'); // l'opt-out est écrasé
+    expect(row.opt_in_source).toBe('flow');
+    // Numéro inconnu -> aucune ligne touchée (merge-only).
+    expect(await store.markOptedIn(tenantId, '33699999998', 'flow')).toBe(0);
+  });
+
+  it('PgFlowStore.findByRef : renvoie mapping + fieldTypes + optinFieldKeys (repère les champs OptIn)', async () => {
+    const store = new PgFlowStore(pool);
+    const ref = `ref-optin-itest-${Date.now()}`;
+    const id = `flow-optin-itest-${Date.now()}`;
+    const screens = [{ elements: [
+      { kind: 'field' as const, label: "J'accepte", type: 'optin' as const, required: true, key: 'j_accepte' },
+      { kind: 'field' as const, label: 'Ville', type: 'text' as const, required: false, key: 'ville' },
+    ] }];
+    try {
+      await store.insert({ id, tenantId, name: 'ConsentFlow itest', screens, ref, mapping: { j_accepte: 'whatsapp_optin', ville: 'ville' } });
+      const row = await store.findByRef(ref);
+      expect(row).not.toBeNull();
+      expect(row!.mapping).toMatchObject({ j_accepte: 'whatsapp_optin', ville: 'ville' });
+      expect(row!.fieldTypes).toMatchObject({ j_accepte: 'optin', ville: 'text' });
+      expect(row!.optinFieldKeys).toEqual(['j_accepte']); // seul le champ optin, pas 'ville'
+      expect(await store.findByRef('ref-inexistant-xyz')).toBeNull();
+    } finally {
+      await pool.query('delete from flows where id = $1', [id]);
+    }
   });
 
   it('PgContactStore.mergeFieldsByPhone / addTagsByPhone : atteignent un contact identifié par BSUID', async () => {

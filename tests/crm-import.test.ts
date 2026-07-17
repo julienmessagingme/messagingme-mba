@@ -59,6 +59,22 @@ describe('importContacts', () => {
     expect(contacts.byPhone.get('t1|+33612345678')?.tags).toEqual(['salon-2026', 'prospect']);
   });
 
+  it('champ booléen pré-existant : « Oui » -> canonique « true » ; valeur non reconnue -> brute, ligne NON rejetée', async () => {
+    const contacts = new FakeContactStore();
+    const userFields = new FakeFieldStore();
+    userFields.defs.push({ key: 'consent', label: 'Consentement', type: 'boolean' });
+    const boolMapping: ColumnMapping = { columns: { tel: { target: 'phone' }, optin: { target: 'custom', key: 'consent' } } };
+    const rows = [
+      { tel: '0612345678', optin: 'Oui' },
+      { tel: '0700000000', optin: 'bof' }, // non reconnu -> brut, mais la ligne passe quand même
+    ];
+    const report = await importContacts({ rows, mapping: boolMapping, tenantId: 't1', optIn: false }, { contacts, userFields });
+    expect(report.created).toBe(2);
+    expect(report.skipped).toBe(0);
+    expect(contacts.byPhone.get('t1|+33612345678')?.fields).toEqual({ consent: 'true' });
+    expect(contacts.byPhone.get('t1|+33700000000')?.fields).toEqual({ consent: 'bof' });
+  });
+
   it('téléphone invalide ou absent -> skip + erreur dans le rapport', async () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();

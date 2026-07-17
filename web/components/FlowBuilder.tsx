@@ -17,6 +17,7 @@ import {
   type UserFieldDef,
 } from '@/lib/api';
 import { resizeToDataUrl, dataUrlBase64Length } from '@/lib/image';
+import { WHATSAPP_OPTIN_FIELD_KEY } from '@/lib/fields';
 import { FlowScreen, conditionText, type FlowScreenElement } from '@/components/FlowScreen';
 import { useT } from '@/lib/i18n';
 
@@ -80,7 +81,10 @@ function toBElems(elements: FlowElement[], mapping: Record<string, string>, star
     if (e.kind === 'field') {
       if (COND_SOURCE_TYPES.includes(e.type)) sourceUidByKey.set(e.key, u);
       const target = mapping[e.key];
-      return { uid: u, kind: 'field', label: e.label, type: e.type, required: e.required, saveTo: target && target !== e.key ? target : '', options: e.options ?? [], ...vis };
+      // « saveTo vide » = mapping PAR DÉFAUT (ne pas ré-sérialiser une cible explicite au round-trip d'édition).
+      // Défaut d'un optin = whatsapp_optin (clé != clé du champ) ; défaut des autres = la clé du champ.
+      const defaultTarget = e.type === 'optin' ? WHATSAPP_OPTIN_FIELD_KEY : e.key;
+      return { uid: u, kind: 'field', label: e.label, type: e.type, required: e.required, saveTo: target && target !== defaultTarget ? target : '', options: e.options ?? [], ...vis };
     }
     return { uid: u, kind: e.kind, text: e.text, ...vis };
   });
@@ -220,9 +224,9 @@ export function FlowBuilder({
     });
   }
   function changeType(uid: number, type: FlowFieldType) {
-    // Choix -> amorcer 2 options vides (Meta en exige >= 2). Consentement (optin) -> il se range TOUJOURS
-    // dans un champ booléen dédié : on réinitialise saveTo (sinon un saveTo orphelin d'un ancien type
-    // écrirait le booléen de consentement dans un autre champ).
+    // Choix -> amorcer 2 options vides (Meta en exige >= 2). Vers un consentement (optin) -> on réinitialise
+    // saveTo : une cible héritée d'un autre type ne serait pas un champ booléen (le serveur la refuserait) ;
+    // vide = champ de consentement par défaut, l'utilisateur peut ensuite choisir un champ Oui/Non existant.
     patchField(uid, (e) => ({
       ...e,
       type,
@@ -346,8 +350,9 @@ export function FlowBuilder({
           if (e.kind === 'field') {
             return {
               kind: 'field', label: e.label.trim(), type: e.type, required: e.required,
-              // Jamais de saveTo sur un consentement : il va toujours dans un champ booléen dédié.
-              ...(e.saveTo && e.type !== 'optin' ? { saveTo: e.saveTo } : {}),
+              // saveTo = champ cible choisi (facultatif). Pour un consentement (optin), le serveur valide que
+              // la cible est un champ booléen ; sans cible, défaut serveur = whatsapp_optin.
+              ...(e.saveTo ? { saveTo: e.saveTo } : {}),
               ...(isChoice(e.type) ? { options: cleanOptions(e.options) } : {}),
               ...vis,
             };
@@ -510,17 +515,26 @@ export function FlowBuilder({
                     </div>
                   )}
 
-                  {e.type !== 'optin' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-ink-500">{t('Enregistrer dans', 'Save to')}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-ink-500">{t('Enregistrer dans', 'Save to')}</span>
+                    {e.type === 'optin' ? (
+                      // Consentement : cible = champ Oui/Non uniquement (le serveur refuse un champ non booléen).
+                      // Sans cible = champ de consentement par défaut (whatsapp_optin), qui ouvre le statut opt-in.
+                      <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
+                        <option value="">{t('Consentement WhatsApp (par défaut)', 'WhatsApp consent (default)')}</option>
+                        {userFields.filter((uf) => uf.type === 'boolean').map((uf) => (
+                          <option key={uf.key} value={uf.key}>{uf.label}</option>
+                        ))}
+                      </select>
+                    ) : (
                       <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
                         <option value="">{t("Nouveau champ (d'après le libellé)", 'New field (from label)')}</option>
                         {userFields.map((uf) => (
                           <option key={uf.key} value={uf.key}>{uf.label}</option>
                         ))}
                       </select>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
 

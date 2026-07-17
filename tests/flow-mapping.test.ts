@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extractFlowCompletions } from '../src/webhooks/inbound';
 import { processFlowCompletions } from '../src/webhooks/flow-mapping';
 import type { FlowMappingLookup, ContactFieldWriter } from '../src/webhooks/flow-mapping';
+import type { FlowFieldType } from '../src/meta/flow-json';
 
 function nfm(responseJson: unknown, opts: { from?: string; contacts?: unknown[]; phoneNumberId?: string } = {}) {
   return {
@@ -57,14 +58,17 @@ describe('extractFlowCompletions', () => {
   });
 });
 
+interface LookupRow { tenantId: string; mapping: Record<string, string>; fieldTypes?: Record<string, FlowFieldType>; optinFieldKeys?: string[] }
 class FakeLookup implements FlowMappingLookup {
-  constructor(private readonly row: { tenantId: string; mapping: Record<string, string> } | null) {}
-  async findByRef(): Promise<{ tenantId: string; mapping: Record<string, string> } | null> {
-    return this.row;
+  constructor(private readonly row: LookupRow | null) {}
+  async findByRef(): Promise<{ tenantId: string; mapping: Record<string, string>; fieldTypes: Record<string, FlowFieldType>; optinFieldKeys: string[] } | null> {
+    if (!this.row) return null;
+    return { tenantId: this.row.tenantId, mapping: this.row.mapping, fieldTypes: this.row.fieldTypes ?? {}, optinFieldKeys: this.row.optinFieldKeys ?? [] };
   }
 }
 class FakeWriter implements ContactFieldWriter {
   readonly writes: Array<{ tenantId: string; waId: string; values: Record<string, unknown> }> = [];
+  readonly optIns: Array<{ tenantId: string; waId: string; source: string }> = [];
   constructor(private readonly throwOnce = false) {}
   async mergeFieldsByPhone(tenantId: string, waId: string, values: Record<string, unknown>): Promise<void> {
     if (this.throwOnce && this.writes.length === 0) {
@@ -72,6 +76,9 @@ class FakeWriter implements ContactFieldWriter {
       throw new Error('db down');
     }
     this.writes.push({ tenantId, waId, values });
+  }
+  async markOptedIn(tenantId: string, waId: string, source: string): Promise<void> {
+    this.optIns.push({ tenantId, waId, source });
   }
 }
 
@@ -84,6 +91,40 @@ describe('processFlowCompletions', () => {
     expect(writer.writes[0]).toEqual({ tenantId: 't1', waId: '33611', values: { prenom: 'Marc', date_rendez_vous: '2026-08-01' } });
     expect(writer.writes[0]!.values).not.toHaveProperty('flow_token');
     expect(writer.writes[0]!.values).not.toHaveProperty('_ref');
+    expect(writer.optIns).toHaveLength(0); // aucun champ optin -> pas de consentement
+  });
+
+  it('OptIn coché (true) -> champ booléen canonique « true » + markOptedIn(source=flow) une fois', async () => {
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { consent: 'whatsapp_optin' }, fieldTypes: { consent: 'optin' }, optinFieldKeys: ['consent'] });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', consent: true }, { from: '33611' }), lookup, writer);
+    expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { whatsapp_optin: 'true' } }]);
+    expect(writer.optIns).toEqual([{ tenantId: 't1', waId: '33611', source: 'flow' }]);
+  });
+
+  it('OptIn décoché (false) -> champ « false », markOptedIn JAMAIS appelé', async () => {
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { consent: 'whatsapp_optin' }, fieldTypes: { consent: 'optin' }, optinFieldKeys: ['consent'] });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', consent: false }, { from: '33611' }), lookup, writer);
+    expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { whatsapp_optin: 'false' } }]);
+    expect(writer.optIns).toHaveLength(0);
+  });
+
+  it('OptIn absent du payload -> ni champ ni consentement (le contact n\'a pas répondu à cet écran)', async () => {
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { consent: 'whatsapp_optin', nom: 'prenom' }, fieldTypes: { consent: 'optin', nom: 'text' }, optinFieldKeys: ['consent'] });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', nom: 'Marc' }, { from: '33611' }), lookup, writer);
+    expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { prenom: 'Marc' } }]);
+    expect(writer.optIns).toHaveLength(0);
+  });
+
+  it('DÉCOUPLAGE : un champ NON-optin dont la valeur vaut « true » n\'ouvre PAS le gate marketing', async () => {
+    // Seul le composant OptIn de Meta a la portée « consentement ». Un champ texte « true » ne compte pas.
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { agree: 'a_accepte' }, fieldTypes: { agree: 'text' }, optinFieldKeys: [] });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', agree: 'true' }, { from: '33611' }), lookup, writer);
+    expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { a_accepte: 'true' } }]);
+    expect(writer.optIns).toHaveLength(0);
   });
 
   it('ref inconnu (findByRef null) -> aucune écriture', async () => {

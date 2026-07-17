@@ -102,8 +102,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   pas). Le contact ne voit le champ que si sa réponse le déclenche ; un champ resté masqué n'écrase JAMAIS une
   valeur déjà connue de la fiche contact. Badge « 👁 Visible si… » dans l'aperçu.
 - ✅ Chaque **champ de saisie se range dans un user field du contact** (« Nouveau champ » d'après le libellé,
-  ou un user field existant). Le consentement OptIn se range dans un champ booléen dédié. À la réception du
-  formulaire rempli, les valeurs atterrissent dans la fiche contact + la réponse apparaît dans l'inbox.
+  ou un user field existant). À la réception du formulaire rempli, les valeurs atterrissent dans la fiche contact
+  + la réponse apparaît dans l'inbox.
+- ✅ **Consentement (OptIn) exploitable** (2026-07-17) : dans le constructeur, un champ « Consentement » se range
+  dans le **champ Oui/Non de ton choix** (par défaut « Consentement WhatsApp », créé automatiquement). Quand le
+  contact coche la case et envoie, on enregistre le champ ET **on passe son statut opt-in à « accepté »** : il
+  devient éligible aux campagnes marketing (le consentement capté sert enfin à quelque chose). Un consentement
+  frais l'emporte sur un désabonnement antérieur. Les valeurs Oui/Non sont stockées de façon uniforme.
 - ✅ **Depuis un template** : le bouton « + Flow » crée un formulaire inline (publié aussitôt) OU en choisit un
   déjà publié, puis l'attache au template (bouton FLOW exclusif).
 - ✅ **Édition / duplication** : un DRAFT s'édite ; un flow PUBLISHED est immuable -> « Dupliquer pour modifier »

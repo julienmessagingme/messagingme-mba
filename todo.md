@@ -47,6 +47,25 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
   (b) enrichir le schéma d'analyse pour reprendre ce que le vrai convanalyzer a en plus (urgence graduée 0-5,
   score d'échec du bot, churn, clustering de sujets) ; (c) tendance temporelle stable (joindre
   `conversations.created_at`, pas `conversation_analysis.created_at` qui bouge à la ré-analyse).
+- ✅ **Palier 2 — champ booléen + consentement de flow : FAIT (2026-07-17)** : canonicalisation booléenne
+  (`crm/fields.ts`, partagée fiche/import/webhook), OptIn de flow -> champ booléen choisi (défaut `whatsapp_optin`
+  créé à la volée) ET flip `opt_in_status='opted_in'` (opt-out écrasé, décision Julien), garde double-consentement.
+  Cf `.loop/palier2-consentement.md` + cadrage `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md`.
+  ⚠️ Dette test : `toBElems` (FlowBuilder) non testé unitairement (fonction non exportée) -> exporter + test
+  (optin défaut -> saveTo vide ; optin cible explicite -> saveTo non vide). ⚠️ Vérif Julien : flow avec écran
+  de consentement -> coché -> champ « Oui » + statut opt-in + éligibilité campagne marketing.
+
+## Décisions API/HubSpot tranchées (2026-07-17) -> paliers restants
+
+Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 validées par Julien). Paliers :
+- **Palier 3 — API publique v1** : table `api_keys` (+ scopes), résolveur `resolveCode` (code ET nom, D-2),
+  `POST /v1/contacts` (+ batch), `POST /v1/sends` (scénario + template, `Idempotency-Key` OBLIGATOIRE D-4,
+  rapport détaillé par numéro D-5, upsert-then-send D-3). Node seul = fenêtre 24h uniquement (D-1).
+- **Palier 4 — import listes HubSpot** : derrière un toggle self-serve « Campagnes via données HubSpot » qui,
+  à l'activation, ajoute le scope `crm.lists.read` au portail (D-7).
+- **Palier 5 — échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions
+  sûres, N3 Deal auto, N4 autonome), seuil de confiance interne calibré par niveau (D-8/D-9/D-10). 5a = N1-2 +
+  curseur + setter `autonomy_level` ; 5b = N3 (Deal auto) après mesure.
 - **Drop différés** : rien (0030 a droppé `workflows.status` ; codes = additifs).
 
 ## Post-live — prochaines actions

@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { fieldsOfScreens, screensOf } from '../meta/flow-json';
-import type { FlowField, FlowScreenDef } from '../meta/flow-json';
+import type { FlowField, FlowFieldType, FlowScreenDef } from '../meta/flow-json';
 
 export interface FlowRow {
   id: string;
@@ -24,6 +24,10 @@ export interface FlowRow {
 export interface FlowMappingRow {
   tenantId: string;
   mapping: Record<string, string>;
+  /** Type Flow déclaré de chaque champ (clé -> type) : pour canonicaliser la valeur AVANT écriture. */
+  fieldTypes: Record<string, FlowFieldType>;
+  /** Clés des champs de type `optin` (consentement) : leur passage à `true` ouvre le gate marketing. */
+  optinFieldKeys: string[];
 }
 
 /**
@@ -111,14 +115,23 @@ export class PgFlowStore {
     return (res.rowCount ?? 0) > 0;
   }
 
-  /** Retrouve le tenant + le mapping d'un flow par son `ref` (retour nfm_reply). null si inconnu. */
+  /** Retrouve le tenant + le mapping + les types de champ d'un flow par son `ref` (retour nfm_reply). null si
+   *  inconnu. `fields` (déjà stocké, dérivé) donne le type de chaque champ (canonicalisation) et repère les
+   *  champs OptIn (gate marketing). Un `select` de plus sur une requête déjà indexée par `ref` unique. */
   async findByRef(ref: string): Promise<FlowMappingRow | null> {
-    const res = await this.pool.query<{ tenant_id: string; mapping: Record<string, string> | null }>(
-      `select tenant_id, mapping from flows where ref = $1 limit 1`,
+    const res = await this.pool.query<{ tenant_id: string; mapping: Record<string, string> | null; fields: FlowField[] | null }>(
+      `select tenant_id, mapping, fields from flows where ref = $1 limit 1`,
       [ref],
     );
     const r = res.rows[0];
-    return r ? { tenantId: r.tenant_id, mapping: r.mapping ?? {} } : null;
+    if (!r) return null;
+    const fields = r.fields ?? [];
+    return {
+      tenantId: r.tenant_id,
+      mapping: r.mapping ?? {},
+      fieldTypes: Object.fromEntries(fields.map((f) => [f.key, f.type])),
+      optinFieldKeys: fields.filter((f) => f.type === 'optin').map((f) => f.key),
+    };
   }
 
   /** Le flow appartient-il au tenant ? (garde-fou AVANT tout appel Meta sur publish.) */

@@ -4,7 +4,8 @@ import { deriveScreens, fieldsOfScreens, isFlowFieldType, isChoiceFieldType, flo
 import type { FlowElementInput, FlowScreenInput, FlowScreenDef, FlowFieldElInput, VisibleIfInput } from '../meta/flow-json';
 import type { MetaFlowClient } from '../meta/flows';
 import type { FlowRow } from '../flow/store.pg';
-import type { UserFieldType } from '../crm/types';
+import type { UserFieldType, UserFieldDef } from '../crm/types';
+import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
 import type { Guard } from '../auth/middleware';
 
 export interface FlowRouteDeps {
@@ -16,6 +17,10 @@ export interface FlowRouteDeps {
   markPublished(flowId: string, tenantId: string): Promise<boolean>;
   /** Crée le user field s'il n'existe pas (mapping par défaut : chaque champ -> son propre user field). */
   ensureUserField(tenantId: string, label: string, type: UserFieldType): Promise<void>;
+  /** Définitions des user fields du tenant : valider qu'une cible de consentement choisie est bien booléenne. */
+  listUserFields(tenantId: string): Promise<UserFieldDef[]>;
+  /** Crée (idempotent, PAR CLÉ) le champ booléen de consentement par défaut `whatsapp_optin`. */
+  ensureOptinField(tenantId: string): Promise<void>;
   /** Un flow par id, scopé tenant (édition/duplication : lire status + screens). null si absent. */
   getFlow(flowId: string, tenantId: string): Promise<FlowRow | null>;
   /** Met à jour un flow DRAFT en base (fields re-dérivé côté store). true si une ligne DRAFT a bougé. */
@@ -77,9 +82,9 @@ function parseElements(v: unknown, saveTos: Array<string | undefined>): { elemen
         field.options = opts;
       }
       elements.push(field);
-      // Un consentement (optin) se range TOUJOURS dans un champ booléen dédié : on ignore tout saveTo
-      // fourni (défense en profondeur contre un appel API direct qui écrirait le booléen ailleurs).
-      saveTos.push(field.type !== 'optin' && nonEmpty(el.saveTo) ? el.saveTo.trim() : undefined);
+      // saveTo = champ cible explicite (facultatif). Pour un consentement (optin), la cible doit être un
+      // champ BOOLÉEN (validé dans deriveAndMap) ; sans cible, défaut = whatsapp_optin (créé à la volée).
+      saveTos.push(nonEmpty(el.saveTo) ? el.saveTo.trim() : undefined);
       fieldCount += 1;
     } else {
       return null;
@@ -139,16 +144,38 @@ async function deriveAndMap(
   }
   const fields = fieldsOfScreens(derived);
   const mapping: Record<string, string> = {};
+  // Défs chargées UNE fois, seulement si un consentement (optin) désigne une cible explicite à valider.
+  let defs: UserFieldDef[] | null = null;
   for (let i = 0; i < fields.length; i += 1) {
     const f = fields[i]!;
     const saveTo = parsed.saveTos[i];
-    if (saveTo) {
+    if (f.type === 'optin') {
+      // Consentement : cible = champ BOOLÉEN choisi (validé) ou, à défaut, whatsapp_optin (créé à la volée).
+      if (saveTo) {
+        defs ??= await deps.listUserFields(tenant);
+        const target = defs.find((d) => d.key === saveTo);
+        if (!target || target.type !== 'boolean') {
+          return { error: `le consentement « ${f.label} » doit être enregistré dans un champ Oui/Non existant` };
+        }
+        mapping[f.key] = saveTo;
+      } else {
+        await deps.ensureOptinField(tenant);
+        mapping[f.key] = WHATSAPP_OPTIN_FIELD_KEY;
+      }
+    } else if (saveTo) {
       mapping[f.key] = saveTo;
     } else {
       mapping[f.key] = f.key;
       // email/phone/textarea (types Flow) -> 'text' (type user field) : sinon ensureField -> 500.
       await deps.ensureUserField(tenant, f.label, flowFieldToUserFieldType(f.type));
     }
+  }
+  // Deux consentements ne peuvent pas viser le MÊME champ (sinon le 2e écrase la valeur du 1er alors que le
+  // gate opt-in s'ouvre au moindre « oui » : incohérence stockée). Vaut pour le défaut (tous -> whatsapp_optin)
+  // comme pour deux cibles explicites identiques.
+  const optinTargets = fields.filter((f) => f.type === 'optin').map((f) => mapping[f.key]!);
+  if (new Set(optinTargets).size !== optinTargets.length) {
+    return { error: 'deux consentements enregistrent dans le même champ : donnez une cible distincte à chacun' };
   }
   return { derived, mapping, fields };
 }

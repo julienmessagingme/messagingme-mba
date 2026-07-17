@@ -95,6 +95,26 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * Consentement marketing EXPLICITE capté par un WhatsApp Flow (composant OptIn coché) : passe le contact à
+   * opt_in_status='opted_in'. GAGNE toujours, même sur un opted_out antérieur (décision produit Julien : une
+   * action fraîche du contact lui-même dans WhatsApp est une preuve forte, cohérent avec l'opt-in de l'import
+   * CSV). Même matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus PUIS bsuid, 1 contact). Merge-only :
+   * ne crée pas de fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
+   */
+  async markOptedIn(tenantId: string, waId: string, source: string): Promise<number> {
+    const res = await this.pool.query(
+      `update contacts set opt_in_status = 'opted_in', opt_in_source = $3, updated_at = now()
+       where id = (
+         select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1
+       )`,
+      [tenantId, waId, source],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * Ajoute des tags (union dédupliquée) au contact d'un numéro (bloc « ajout de tag » d'un workflow). Même
    * matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus, 1 contact). Merge-only : ne crée pas de
    * fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).

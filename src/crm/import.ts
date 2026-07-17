@@ -1,7 +1,7 @@
 import { normalizePhone } from './phone';
-import { slugify } from './fields';
+import { slugify, validateFieldValue, canonicalizeFieldValue } from './fields';
 import type { UserFieldStore } from './fields';
-import type { ColumnMapping, ImportReport } from './types';
+import type { ColumnMapping, ImportReport, UserFieldDef } from './types';
 import type { CountryCode } from 'libphonenumber-js';
 
 export interface ContactUpsert {
@@ -64,9 +64,15 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
       report.errors.push({ line: 1, reason: `colonnes fusionnées sur la clé "${key}": ${headers.join(', ')}` });
     }
   }
-  const existing = new Set((await deps.userFields.list(input.tenantId)).map((f) => f.key));
+  // On garde la DÉFINITION (type inclus), pas juste la clé : elle sert à canonicaliser chaque valeur selon
+  // le type déclaré du champ (ex. un booléen « Oui » -> 'true'), sur les MÊMES règles que la fiche contact.
+  const defsByKey = new Map((await deps.userFields.list(input.tenantId)).map((f) => [f.key, f] as const));
   for (const key of keyToHeaders.keys()) {
-    if (!existing.has(key)) await deps.userFields.upsert(input.tenantId, { key, label: key, type: 'text' });
+    if (!defsByKey.has(key)) {
+      const def: UserFieldDef = { key, label: key, type: 'text' };
+      await deps.userFields.upsert(input.tenantId, def);
+      defsByKey.set(key, def);
+    }
   }
 
   // 2) Traiter chaque ligne.
@@ -86,7 +92,12 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
         if (val && profileName === null) profileName = val;
       } else if (m.target === 'custom') {
         const key = m.key ?? slugify(header);
-        if (val && fields[key] === undefined) fields[key] = val;
+        if (val && fields[key] === undefined) {
+          // Canonicalise selon le type déclaré (booléen 'Oui' -> 'true'). Valeur non valide pour le type ->
+          // conservée BRUTE (comme avant : l'import ne rejette pas une ligne sur une valeur de champ perso).
+          const type = defsByKey.get(key)?.type ?? 'text';
+          fields[key] = validateFieldValue(type, val) ? canonicalizeFieldValue(type, val) : val;
+        }
       }
       // 'ignore' -> rien
     }

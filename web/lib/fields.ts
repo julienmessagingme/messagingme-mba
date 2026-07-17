@@ -28,6 +28,10 @@ export function isSystemFieldKey(key: string): boolean {
   return SYSTEM_FIELD_KEYS.includes(key);
 }
 
+/** Clé du champ booléen de consentement par défaut. Miroir de `src/crm/fields.ts` (WHATSAPP_OPTIN_FIELD_KEY) :
+ *  un OptIn qui pointe dessus est un mapping PAR DÉFAUT (saveTo vide dans l'éditeur), pas un choix explicite. */
+export const WHATSAPP_OPTIN_FIELD_KEY = 'whatsapp_optin';
+
 /** Champs perso à afficher/proposer = les user fields HORS clés système (évite le doublon avec Prénom/Email système). */
 export function customFieldsOnly(fields: UserFieldDef[]): UserFieldDef[] {
   return fields.filter((f) => !isSystemFieldKey(f.key));
