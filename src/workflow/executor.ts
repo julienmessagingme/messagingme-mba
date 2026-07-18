@@ -19,11 +19,12 @@ export interface WorkflowExecutorDeps {
    * comportement inchangé (hints stockés).
    */
   sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[], explicitParams?: string[]): Promise<void>;
-  /** Envoie un message interactif (texte + 2-3 réponses rapides) hors template. Atteint uniquement via `advance`
-   *  (après réponse du contact), donc toujours dans la fenêtre de service 24 h. */
+  /** Envoie un message interactif (texte + 2-3 réponses rapides) hors template. Atteint via `advance` (après
+   *  réponse du contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
   sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[]): Promise<void>;
   /** Envoie un formulaire (message interactif type flow) hors template. Même contrainte de fenêtre 24 h que
-   *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message. */
+   *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
+   *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
   sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<void>;
 }
 
@@ -58,25 +59,54 @@ export class WorkflowExecutor {
   }
 
   /**
-   * Démarre un run : parcourt depuis l'entrée, applique les actions, persiste l'état (sauf 100% synchrone -> done).
-   * `firstTemplateParams` (campagne workflow) = variables du 1er template déjà résolues par contact -> passées à
-   * l'envoi du 1er template SANS re-résolution via les hints stockés.
+   * Corps commun de `start` et `startFromNode` : parcourt depuis `startNodeId`, applique les actions, persiste
+   * l'état (sauf 100 % synchrone -> done). `startNodeId` inconnu (bloc supprimé entre-temps) -> `walk` renvoie
+   * `done` sans action : aucun envoi, aucun throw.
+   *
+   * ⚠️ `opts.allowSessionOpen` est la SEULE façon de lever la garde fenêtre 24 h, et il n'est posé que par
+   * `startFromNode` (appelé par /v1/sends, qui a DÉJÀ vérifié la fenêtre par destinataire). Le défaut
+   * (`start`, campagne classique) garde la garde : ne jamais l'inverser.
    */
-  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, firstTemplateParams?: string[]): Promise<void> {
-    const entry = entryNode(graph);
-    if (!entry) return;
-    const { actions, rest } = walk(graph, entry);
+  private async runFrom(
+    tenantId: string,
+    workflowId: string,
+    graph: WorkflowGraph,
+    contact: { waId: string; contactId: string | null },
+    startNodeId: string,
+    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[] } = {},
+  ): Promise<void> {
+    const { actions, rest } = walk(graph, startNodeId);
     // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
     // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Le save du graphe refuse
     // déjà cette forme (400) ; ceci est la défense runtime pour les graphes antérieurs à la garde.
-    if (actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
+    if (!opts.allowSessionOpen && actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
       return;
     }
-    await this.apply(tenantId, contact.waId, actions, firstTemplateParams);
+    await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams);
     const state = restToState(rest);
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
+  }
+
+  /**
+   * Démarre un run : parcourt depuis l'entrée, applique les actions, persiste l'état (sauf 100% synchrone -> done).
+   * `firstTemplateParams` (campagne workflow) = variables du 1er template déjà résolues par contact -> passées à
+   * l'envoi du 1er template SANS re-résolution via les hints stockés. Garde fenêtre 24 h APPLIQUÉE.
+   */
+  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, firstTemplateParams?: string[]): Promise<void> {
+    const entry = entryNode(graph);
+    if (!entry) return;
+    await this.runFrom(tenantId, workflowId, graph, contact, entry, firstTemplateParams ? { firstTemplateParams } : {});
+  }
+
+  /**
+   * Démarre un run à un bloc ARBITRAIRE du graphe (cible `node` de /v1/sends, D-1). La garde fenêtre 24 h n'est
+   * PAS appliquée ici : l'appelant a déjà écarté les contacts hors fenêtre (`out_of_window`), et l'intérêt même
+   * de la cible node est d'envoyer un message de session (quick_message/flow) à quelqu'un qui vient d'écrire.
+   */
+  async startFromNode(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, startNodeId: string): Promise<void> {
+    await this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true });
   }
 
   /**

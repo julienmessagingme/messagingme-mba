@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { normalizePhone } from '../crm/phone';
+import { waIdOf } from '../crm/identity';
 import { buildRecipients } from '../campaign/build';
 import { buildApiRecipients } from '../api/sends-build';
 import type { ApiSkip } from '../api/sends-build';
@@ -19,10 +20,16 @@ export interface V1SendCreateInput {
   templateLanguage: string;
   paramMapping: TemplateParam[];
   workflowId?: string;
+  /** Cible node : le run démarre à ce bloc du scénario (au lieu de son entrée). */
+  startNodeId?: string;
 }
 
 export interface V1SendsRouteDeps {
   resolveScenario(tenantId: string, ref: string): Promise<ResolveResult<{ id: string; name: string }>>;
+  /** Résout un code `nod_...` en (scénario, bloc). Absent -> la cible node reste refusée (422). */
+  resolveNode?(tenantId: string, code: string): Promise<ResolveResult<{ workflowId: string; nodeId: string; label: string }>>;
+  /** Fenêtre de service 24 h par wa_id (cible node uniquement). Absent de la map -> fermée. */
+  getWindowOpenByWaIds?(tenantId: string, waIds: string[]): Promise<Map<string, boolean>>;
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   findContactByPhone(tenantId: string, phoneE164: string): Promise<{ id: string } | null>;
@@ -34,17 +41,23 @@ export interface V1SendsRouteDeps {
   idempotencyComplete(tenantId: string, key: string, sendId: string, response: unknown): Promise<void>;
   idempotencyRelease(tenantId: string, key: string): Promise<void>;
   getSendDetail(sendId: string, tenantId: string): Promise<unknown | null>;
+  /** Attente entre deux tentatives d'enqueue. Injectable pour tester le retry sans temporisation réelle. */
+  sleep?(ms: number): Promise<void>;
 }
 
 const MAX_RECIPIENTS = 50;
 const MAX_SKIPPED_REPORT = 200;
+/** Retry borné de l'enqueue (idempotent par singletonKey) : 3 tentatives, backoff court entre chacune. */
+const ENQUEUE_MAX_ATTEMPTS = 3;
+const ENQUEUE_RETRY_DELAYS_MS = [100, 300];
 const CATEGORIES: readonly string[] = ['marketing', 'utility'];
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * API publique /v1 des envois. Tenant issu de la clé (req.auth). Guard attendu :
- * [makeRequireApiKey, requireScope('sends:create')]. Cible scénario (par code/nom) ou template ; le node est
- * différé (422). Idempotency-Key OBLIGATOIRE (D-4). Rapport skipped détaillé par numéro (D-5). Upsert-then-send (D-3).
+ * [makeRequireApiKey, requireScope('sends:create')]. Cible scénario (par code/nom), template, ou NODE (code
+ * `nod_`, D-1 : uniquement dans la fenêtre 24 h, hors fenêtre -> skipped out_of_window, jamais d'envoi).
+ * Idempotency-Key OBLIGATOIRE (D-4). Rapport skipped détaillé par numéro (D-5). Upsert-then-send (D-3).
  */
 export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
@@ -65,11 +78,11 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     if (b.recipients.length > MAX_RECIPIENTS) return reply.code(400).send({ error: `maximum ${MAX_RECIPIENTS} destinataires par envoi` });
     const params: TemplateParam[] = Array.isArray(b.params) ? (b.params as TemplateParam[]) : [];
     const ratePerMinute = typeof b.ratePerMinute === 'number' && b.ratePerMinute > 0 ? Math.min(80, Math.floor(b.ratePerMinute)) : null;
-    const createMissing = b.createMissing !== false; // défaut true (upsert-then-send)
 
-    // Résolution de la cible : scénario (code/nom), template (name+language), node (différé).
+    // Résolution de la cible : scénario (code/nom), template (name+language), node (code nod_).
     const t = b.target as Record<string, unknown>;
     let workflowId: string | undefined;
+    let startNodeId: string | undefined;
     let templateName = '';
     let templateLanguage = '';
     let label = '';
@@ -85,10 +98,23 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       templateLanguage = t.template.language;
       label = templateName;
     } else if (typeof t.node === 'string') {
-      return reply.code(422).send({ error: 'cible node non encore supportée (à venir)' });
+      if (!deps.resolveNode || !deps.getWindowOpenByWaIds) return reply.code(422).send({ error: 'cible node non disponible sur cette instance' });
+      // Les variables de template n'ont aucun sens sur un bloc ciblé (elles ne seraient jamais envoyées) :
+      // on le dit au lieu de les ignorer en silence.
+      if (params.length > 0) return reply.code(400).send({ error: 'params inutile sur une cible node (aucune variable de template n’est envoyée)' });
+      const r = await deps.resolveNode(tenantId, t.node);
+      if (!r.ok) return reply.code(404).send({ error: 'bloc introuvable' });
+      workflowId = r.value.workflowId;
+      startNodeId = r.value.nodeId;
+      label = r.value.label;
     } else {
       return reply.code(400).send({ error: 'target invalide : {scenario} | {template:{name,language}} | {node}' });
     }
+
+    // Upsert-then-send (D-3), SAUF sur une cible node : un contact inconnu n'a par construction aucune
+    // conversation, donc il serait créé puis immédiatement écarté `out_of_window`. On ne pollue pas le CRM
+    // pour rien, et `unknown_contact` dit la vérité à l'appelant (« ce numéro ne t'a jamais écrit »).
+    const createMissing = startNodeId ? false : b.createMissing !== false;
 
     // Numéro expéditeur : fourni (vérifié tenant) ou défaut du tenant.
     let phoneNumberId: string;
@@ -126,9 +152,25 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       }
 
       const contacts = await deps.listContactsForBuildByIds(tenantId, ids);
-      const { eligible, skipped: optSkips } = buildApiRecipients(category, contacts);
+      // Cible NODE (D-1) : un bloc n'est envoyable QUE dans la fenêtre de service 24 h (Meta 131047). On
+      // interroge la fenêtre pour tout le lot en UNE requête, puis buildApiRecipients écarte les fermés en
+      // `out_of_window` AVANT toute création de destinataire -> ils ne partent jamais.
+      let windowOpenById: Map<string, boolean> | undefined;
+      if (startNodeId && deps.getWindowOpenByWaIds) {
+        const waIdByContact = new Map<string, string>();
+        for (const c of contacts) {
+          const w = waIdOf(c.phone_e164, c.bsuid);
+          if (w) waIdByContact.set(c.id, w);
+        }
+        const byWaId = await deps.getWindowOpenByWaIds(tenantId, [...new Set(waIdByContact.values())]);
+        windowOpenById = new Map<string, boolean>();
+        for (const [contactId, waId] of waIdByContact) windowOpenById.set(contactId, byWaId.get(waId) === true);
+      }
+      const { eligible, skipped: optSkips } = buildApiRecipients(category, contacts, windowOpenById ? { windowOpenById } : undefined);
       skipped.push(...optSkips);
       // Résolution des variables de template (missing_variable) sur les éligibles. Scénario : params vide.
+      // Cible NODE : `params` est déjà refusé en amont (400) -> le tableau est vide, personne n'est écarté
+      // pour une variable qui ne serait de toute façon jamais envoyée.
       const built = buildRecipients(category, params, eligible);
       for (const s of built.skipped) skipped.push({ phone: s.toE164, reason: 'missing_variable' });
 
@@ -142,7 +184,12 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
         skippedTotal: skipped.length,
       };
       const send = await deps.createSend(
-        { tenantId, phoneNumberId, name, category, templateName, templateLanguage, paramMapping: params, ...(workflowId ? { workflowId } : {}) },
+        {
+          tenantId, phoneNumberId, name, category, templateName, templateLanguage,
+          paramMapping: params,
+          ...(workflowId ? { workflowId } : {}),
+          ...(startNodeId ? { startNodeId } : {}),
+        },
         built.recipients,
       );
       report.sendId = send.campaignId;
@@ -156,13 +203,29 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       throw err;
     }
 
-    // Idempotence scellée. enqueue est idempotent (singletonKey=campaignId) et HORS du chemin de release :
-    // un échec laisse une campagne non lancée (sous-envoi, jamais sur-envoi), à ré-enfiler hors bande.
-    try {
-      await deps.enqueue(report.sendId, report.recipientCount, ratePerMinute);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('v1/sends: enqueue échoué après scellement idempotence (campagne non lancée):', report.sendId, err instanceof Error ? err.message : err);
+    // Idempotence scellée, DÉFINITIVEMENT : aucun chemin ci-dessous ne release (un release ici ferait
+    // recréer une 2e campagne au retry client = messages en DOUBLE). enqueue est idempotent
+    // (singletonKey=campaignId), donc le RETENTER est sans risque : on couvre le hoquet transitoire de la
+    // file (pool pg saturé) au lieu de laisser une campagne draft jamais lancée. Échec persistant -> 201 +
+    // log fort : sous-envoi assumé, jamais de sur-envoi.
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    for (let attempt = 0; attempt < ENQUEUE_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        await deps.enqueue(report.sendId, report.recipientCount, ratePerMinute);
+        break;
+      } catch (err) {
+        const last = attempt === ENQUEUE_MAX_ATTEMPTS - 1;
+        // eslint-disable-next-line no-console
+        console.error(
+          last
+            ? `v1/sends: enqueue échoué ${ENQUEUE_MAX_ATTEMPTS} fois après scellement idempotence (campagne NON lancée, à ré-enfiler à la main):`
+            : `v1/sends: enqueue échoué (tentative ${attempt + 1}/${ENQUEUE_MAX_ATTEMPTS}), nouvelle tentative:`,
+          report.sendId,
+          err instanceof Error ? err.message : err,
+        );
+        if (last) break;
+        await sleep(ENQUEUE_RETRY_DELAYS_MS[attempt] ?? 300);
+      }
     }
     return reply.code(201).send(report);
   });

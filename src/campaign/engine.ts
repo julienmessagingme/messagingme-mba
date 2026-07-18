@@ -54,6 +54,12 @@ export interface EngineDeps {
    * paramMapping de la campagne) -> l'executor les passe telles quelles au 1er envoi (pas de re-résolution).
    */
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void>;
+  /**
+   * Campagne NODE (/v1/sends, D-1) : démarre le workflow à un bloc PRÉCIS. Pas de `firstTemplateParams` (la
+   * cible node n'est pas une ouverture de template paramétrée) et pas de garde fenêtre 24 h dans l'executor :
+   * la fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi.
+   */
+  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -122,7 +128,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Envoi isolé : SEULE une erreur du sender (Meta) marque le destinataire `failed`.
     let res: SendResult;
     try {
-      if (campaign.workflowId) {
+      if (campaign.workflowId && campaign.startNodeId) {
+        // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
+        // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
+        if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
+        const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
+        await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
+        res = { messageId: `wf-${campaign.workflowId}` };
+      } else if (campaign.workflowId) {
         // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
         // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
         // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).

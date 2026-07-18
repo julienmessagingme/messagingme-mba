@@ -45,6 +45,11 @@ function app(over: Partial<V1SendsRouteDeps> = {}) {
     idempotencyComplete: async (_t, key, sendId, response) => { idem.set(key, { sendId, response }); },
     idempotencyRelease: async (_t, key) => { idem.delete(key); },
     getSendDetail: async (id, _t) => (id === 'camp1' ? { sendId: 'camp1', status: 'running' } : null),
+    // Cible node : seul `nod_ok` existe. Par défaut la fenêtre 24 h est OUVERTE pour tous les wa_id du lot
+    // (les tests qui veulent tester le hors-fenêtre surchargent getWindowOpenByWaIds).
+    resolveNode: async (_t, code) => (code === 'nod_ok' ? { ok: true, value: { workflowId: 'wf1', nodeId: 'n5', label: 'Relance' } } : { ok: false, reason: 'not_found' }),
+    getWindowOpenByWaIds: async (_t, waIds) => new Map(waIds.map((w) => [w, true])),
+    sleep: async () => {}, // pas de temporisation réelle dans les tests de retry
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, contacts: { upsertContacts: async () => [] }, sends } }), cap, idem };
@@ -90,11 +95,11 @@ describe('POST /v1/sends', () => {
     await server.close();
   });
 
-  it('scénario introuvable -> 404 ; nom ambigu -> 409 ; node -> 422', async () => {
+  it('scénario introuvable -> 404 ; nom ambigu -> 409 ; node inconnu -> 404', async () => {
     const { server } = app();
     expect((await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'i1'), payload: { target: { scenario: 'scn_missing' }, category: 'utility', recipients: ['+33612345671'] } })).statusCode).toBe(404);
     expect((await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'i2'), payload: { target: { scenario: 'Ambigu' }, category: 'utility', recipients: ['+33612345671'] } })).statusCode).toBe(409);
-    expect((await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'i3'), payload: { target: { node: 'nod_x' }, category: 'utility', recipients: ['+33612345671'] } })).statusCode).toBe(422);
+    expect((await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'i3'), payload: { target: { node: 'nod_x' }, category: 'utility', recipients: ['+33612345671'] } })).statusCode).toBe(404);
     await server.close();
   });
 
@@ -144,8 +149,37 @@ describe('POST /v1/sends', () => {
     });
     const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-seal'), payload: { target: { scenario: 'scn_ok' }, category: 'utility', recipients: ['+33612345671'] } });
     expect(res.statusCode).toBe(201); // renvoyé malgré l'échec d'enqueue
-    expect(order).toEqual(['createSend', 'complete', 'enqueue']); // idempotence scellée AVANT enqueue
+    // Idempotence scellée AVANT enqueue, puis 3 tentatives d'enqueue (toutes en échec ici).
+    expect(order).toEqual(['createSend', 'complete', 'enqueue', 'enqueue', 'enqueue']);
     expect(released).toBe(false); // claim jamais libéré -> retry rejoue le rapport, pas de 2e campagne/envoi
+    await server.close();
+  });
+
+  it('enqueue : échec TRANSITOIRE -> retry -> succès (pas de campagne orpheline)', async () => {
+    let attempts = 0;
+    let released = false;
+    const { server } = app({
+      enqueue: async () => { attempts += 1; if (attempts < 3) throw new Error('pg-boss saturé'); },
+      idempotencyRelease: async () => { released = true; },
+    });
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-retry'), payload: { target: { scenario: 'scn_ok' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(res.statusCode).toBe(201);
+    expect(attempts).toBe(3); // a retenté jusqu'au succès
+    expect(released).toBe(false); // le retry d'enqueue ne libère JAMAIS l'idempotence
+    await server.close();
+  });
+
+  it('enqueue : échec PERSISTANT -> borné à 3 tentatives, 201, idempotence toujours scellée', async () => {
+    let attempts = 0;
+    let released = false;
+    const { server } = app({
+      enqueue: async () => { attempts += 1; throw new Error('pg-boss down'); },
+      idempotencyRelease: async () => { released = true; },
+    });
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-retry-ko'), payload: { target: { scenario: 'scn_ok' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(res.statusCode).toBe(201);
+    expect(attempts).toBe(3); // borné : pas de boucle infinie
+    expect(released).toBe(false);
     await server.close();
   });
 
@@ -159,6 +193,84 @@ describe('POST /v1/sends', () => {
       server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-fail'), payload: { target: { scenario: 'scn_ok' }, category: 'utility', recipients: ['+33612345671'] } }),
     ).resolves.toMatchObject({ statusCode: 500 });
     expect(released).toBe(true); // erreur avant scellement -> clé libérée pour un vrai retry
+    await server.close();
+  });
+
+  it('cible node : code résolu + contact EN fenêtre -> campagne créée avec startNodeId', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ recipientCount: number }>().recipientCount).toBe(1);
+    const input = cap.sends[0]!.input as { workflowId?: string; startNodeId?: string; name: string };
+    expect(input.workflowId).toBe('wf1');
+    expect(input.startNodeId).toBe('n5'); // le run démarrera à CE bloc
+    expect(input.name).toContain('Relance'); // libellé du bloc dans le nom de campagne
+    await server.close();
+  });
+
+  it('cible node : contact HORS fenêtre 24 h -> skipped out_of_window et AUCUN destinataire', async () => {
+    const { server, cap } = app({ getWindowOpenByWaIds: async () => new Map() }); // aucune conversation -> tout fermé
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-closed'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ recipientCount: number; skipped: Array<{ phone: string; reason: string }> }>();
+    expect(body.recipientCount).toBe(0); // rien à envoyer
+    expect(body.skipped).toEqual([{ phone: '+33612345671', reason: 'out_of_window' }]);
+    expect(cap.sends[0]!.recipients).toEqual([]); // aucun destinataire créé -> aucun envoi possible
+    await server.close();
+  });
+
+  it('cible node : la fenêtre est interrogée avec le wa_id (chiffres nus), pas le E.164', async () => {
+    const asked: string[][] = [];
+    const { server } = app({ getWindowOpenByWaIds: async (_t, waIds) => { asked.push(waIds); return new Map(waIds.map((w) => [w, true])); } });
+    await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-waid'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(asked).toEqual([['33612345671']]);
+    await server.close();
+  });
+
+  it('cible node : mélange en fenêtre / hors fenêtre -> seul le contact ouvert part', async () => {
+    const { server, cap } = app({
+      // Les DEUX contacts existent (sinon le 2e sortirait en unknown_contact avant même le test de fenêtre).
+      findContactByPhone: async (_t, phone) => ({ id: phone === '+33612345671' ? 'c1' : 'c2' }),
+      getWindowOpenByWaIds: async () => new Map([['33612345671', true], ['33698765432', false]]),
+    });
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-mix'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671', '+33698765432'] } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ recipientCount: number; skipped: Array<{ phone: string; reason: string }> }>();
+    expect(body.recipientCount).toBe(1);
+    expect(body.skipped).toEqual([{ phone: '+33698765432', reason: 'out_of_window' }]);
+    expect(cap.sends[0]!.recipients.map((r) => r.toE164)).toEqual(['+33612345671']);
+    await server.close();
+  });
+
+  it('cible node : numéro INCONNU -> unknown_contact, AUCUNE fiche créée (pas de pollution du CRM)', async () => {
+    // Un contact inconnu n'a par construction aucune conversation : le créer pour l'écarter aussitôt en
+    // out_of_window ne sert à rien et salit le CRM. createMissing est forcé à false sur une cible node.
+    let creations = 0;
+    const { server, cap } = app({ createContactByPhone: async (_t, phone) => { creations += 1; return { id: `new-${phone}` }; } });
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-unknown'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33698765432'], createMissing: true } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ created: number; skipped: Array<{ phone: string; reason: string }> }>();
+    expect(creations).toBe(0); // createMissing:true du client est IGNORÉ sur une cible node
+    expect(body.created).toBe(0);
+    expect(body.skipped).toEqual([{ phone: '+33698765432', reason: 'unknown_contact' }]);
+    expect(cap.sends[0]!.recipients).toEqual([]);
+    await server.close();
+  });
+
+  it('cible node : des params de template -> 400 (ils ne seraient jamais envoyés)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-params'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671'], params: [{ type: 'field', key: 'prenom' }] } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.sends).toHaveLength(0); // refusé AVANT toute création
+    await server.close();
+  });
+
+  it('cible node : la fenêtre n’est PAS interrogée pour un scénario ou un template', async () => {
+    let called = 0;
+    const { server, cap } = app({ getWindowOpenByWaIds: async (_t, waIds) => { called += 1; return new Map(waIds.map((w) => [w, true])); } });
+    await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-scn-nowin'), payload: { target: { scenario: 'scn_ok' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(called).toBe(0); // une campagne scénario n'est pas contrainte à la fenêtre 24 h
+    expect((cap.sends[0]!.input as { startNodeId?: string }).startNodeId).toBeUndefined();
     await server.close();
   });
 

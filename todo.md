@@ -63,15 +63,33 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
   (+ batch), `POST /v1/sends` (scénario + template, `Idempotency-Key` obligatoire + claim atomique, rapport
   skipped détaillé, upsert-then-send), `GET /v1/sends/:id`, CRUD clés admin. Migration 0035. Cf
   `.loop/palier3-api.md`. Reviewer sécurité : 🔴 double-envoi (idempotence libérée post-enqueue) trouvé + corrigé.
-  - **Reste Phase B2 (différé)** : cible node (envoi d'un bloc à un contact en fenêtre 24h ; renvoie 422
-    aujourd'hui). `WorkflowExecutor.startFromNode` + `getWindowOpenByWaIds` + colonne `campaigns.start_node_id`
-    (déjà en base) + branche `runCampaign`. Cadré dans le blueprint.
+  - ✅ **Phase B2 — cible node : FAITE (2026-07-18)** : `WorkflowExecutor.startFromNode` (garde 24 h de `start`
+    conservée intacte), `PgInboxStore.getWindowOpenByWaIds` (fenêtre en lot, 1 requête), `Campaign.startNodeId`
+    de bout en bout, branche `startWorkflowFromNode` du moteur, `POST /v1/sends` accepte `{node:'nod_...'}`.
+    Hors fenêtre -> `skipped:{reason:'out_of_window'}`, jamais d'envoi. `createMissing` forcé à false et `params`
+    refusé (400) sur cette cible. Aucune migration (0035 portait déjà la colonne). Reviewer PASS.
+    Cf `.loop/palier3-b2-et-robustesse.md`.
   - **Reste Phase C (différé)** : page web `/api-keys` (gestion des clés côté admin ; aujourd'hui via la route
     admin/curl). + lien nav.
-  - 🟡 **follow-up (reviewer)** : sur échec d'enqueue APRÈS scellement d'idempotence, une campagne draft reste
-    orpheline (recipients pending, jamais lancée) et le client reçoit 201 sans signal (console.error seul).
-    Récupérable via `POST /campaigns/:id/run`. Ajouter un sweeper/alerte sur campagnes draft à recipients
-    pending sans activité file (>10 min), même pattern que idempotencySweep dans worker.ts.
+  - ✅ 🟡 **follow-up enqueue : FAIT (2026-07-18)** : retry borné (3 tentatives, backoff 100/300 ms) au lieu d'un
+    sweeper. Motif : un sweeper qui ré-enfilerait les campagnes `draft` relancerait aussi les brouillons créés à
+    la main dans l'UI et jamais lancés volontairement (= envois non désirés). L'idempotence reste scellée
+    inconditionnellement sur tous les chemins.
+  - 🟡 **runs de workflow orphelins** (reviewer 2026-07-18, pré-existant, rendu probable par la cible node) :
+    `PgWorkflowRunStore.findWaitingByWaId` prend le run `waiting` le plus RÉCENT. Un contact qui avait déjà un run
+    en attente (campagne scénario) et à qui on envoie un bloc se retrouve avec 2 runs : le 2e avance et se
+    termine, puis une réponse ultérieure réveille le PREMIER et envoie un message que personne n'a demandé.
+    Correctif proposé : dans `PgWorkflowRunStore.start`, clore les runs `waiting` du même (tenant, wa_id) avant
+    l'insert (l'index partiel `workflow_runs_waiting_idx` couvre déjà l'écriture). Change la sémantique de cycle
+    de vie des runs pour TOUTES les campagnes -> décision Julien avant de le faire.
+  - 🟡 **`phoneNumberId` ignoré à l'envoi workflow** (reviewer 2026-07-18) : `/v1/sends` valide le numéro et le
+    persiste sur la campagne, mais `worker.ts` (sendTemplate/sendQuickMessage/sendFlow du workflow) résout le
+    numéro via `getTenantPhoneNumberId` = le PREMIER numéro du tenant. Zéro impact avec un seul numéro ; au 2e,
+    un appel API explicite partirait du mauvais expéditeur en silence. Correctif : passer `campaign.phoneNumberId`
+    jusqu'aux callbacks de l'executor.
+  - 🟡 **intégration `queue.integration.test.ts`** : échoue en EMAXCONNSESSION (pooler Supabase plafonné à 15
+    sessions, partagées avec la prod mba-api/mba-worker). `fileParallelism: false` a réglé les 5 autres fichiers
+    (17 -> 60 tests verts). Reste à borner les pools de ce test précis, ou à le pointer sur une autre base.
 - ~~Palier 3 (ancien cadrage)~~ remplacé par l'entrée ci-dessus.
   Rappel de portée (fait) : `POST /v1/sends` scénario + template, node = fenêtre 24h uniquement (D-1, Phase B2).
 - 🔶 **Palier 4 — import listes HubSpot (Phase 0+1 FAITES 2026-07-18)** : toggle self-serve + re-consentement
@@ -86,8 +104,9 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
     HubspotListImport (liste -> sélection -> import, tag serveur source de vérité). Reviewer logique PASS (2 🔴
     corrigés : mismatch de tag, getSettings dans Promise.all). **RESTE Phase 3 (Julien)** : re-consentement réel du
     portail cobaye 139615673 + import de test.
-  - 🟡 follow-up : (a) `searchLists` count:100 sans pagination -> >100 listes tronquées silencieusement, paginer ;
-    (b) restreindre `/service/*` de l'exposition publique NPM (déjà HMAC fort, mais surface réductible).
+  - ✅ 🟡 (a) **`searchLists` paginé : FAIT (2026-07-18)** : boucle par `offset`, arrêt sur `hasMore=false`,
+    `total` atteint, page vide, borne 500 listes ET borne dure d'itérations, chaque troncature loguée.
+  - 🟡 (b) restreindre `/service/*` de l'exposition publique NPM (déjà HMAC fort, mais surface réductible).
 - **Palier 5 — échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions
   sûres, N3 Deal auto, N4 autonome), seuil de confiance interne calibré par niveau (D-8/D-9/D-10). 5a = N1-2 +
   curseur + setter `autonomy_level` ; 5b = N3 (Deal auto) après mesure.

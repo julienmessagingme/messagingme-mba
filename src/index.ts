@@ -23,7 +23,7 @@ import { PgFlowStore } from './flow/store.pg';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
-import { resolveScenario } from './ids/resolve';
+import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { fetchHubspotLists, importHubspotList } from './crm/hubspot-import';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
@@ -335,6 +335,17 @@ async function main(): Promise<void> {
       },
       sends: {
         resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
+        // Cible node : le code `nod_` vit dans le graphe -> scan des scénarios du tenant. Le libellé du bloc
+        // (ou son code à défaut) sert à nommer la campagne dans la console.
+        resolveNode: async (tenant, code) => {
+          const r = await resolveNode(tenant, code, workflowStore);
+          // Un code `nod_` est unique : resolveNode ne produit jamais 'ambiguous', seulement not_found.
+          if (!r.ok) return { ok: false, reason: 'not_found' };
+          const node = r.value.graph.nodes.find((n) => n.id === r.value.nodeId);
+          const label = String(node?.data.label ?? '').trim() || code;
+          return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label } };
+        },
+        getWindowOpenByWaIds: (tenant, waIds) => inboxStore.getWindowOpenByWaIds(tenant, waIds),
         getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
         phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
         findContactByPhone: async (tenant, phone) => { const c = await contactStore.findByPhone(tenant, phone); return c ? { id: c.id } : null; },

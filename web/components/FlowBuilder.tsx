@@ -17,7 +17,7 @@ import {
   type UserFieldDef,
 } from '@/lib/api';
 import { resizeToDataUrl, dataUrlBase64Length } from '@/lib/image';
-import { WHATSAPP_OPTIN_FIELD_KEY } from '@/lib/fields';
+import { isDefaultSaveTo } from '@/lib/flow-mapping';
 import { FlowScreen, conditionText, type FlowScreenElement } from '@/components/FlowScreen';
 import { useT } from '@/lib/i18n';
 
@@ -82,9 +82,9 @@ function toBElems(elements: FlowElement[], mapping: Record<string, string>, star
       if (COND_SOURCE_TYPES.includes(e.type)) sourceUidByKey.set(e.key, u);
       const target = mapping[e.key];
       // « saveTo vide » = mapping PAR DÉFAUT (ne pas ré-sérialiser une cible explicite au round-trip d'édition).
-      // Défaut d'un optin = whatsapp_optin (clé != clé du champ) ; défaut des autres = la clé du champ.
-      const defaultTarget = e.type === 'optin' ? WHATSAPP_OPTIN_FIELD_KEY : e.key;
-      return { uid: u, kind: 'field', label: e.label, type: e.type, required: e.required, saveTo: target && target !== defaultTarget ? target : '', options: e.options ?? [], ...vis };
+      // La règle du défaut vit dans lib/flow-mapping.ts : fonction PURE, testée hors React.
+      const saveTo = isDefaultSaveTo(e.type, target, e.key) ? '' : target ?? '';
+      return { uid: u, kind: 'field', label: e.label, type: e.type, required: e.required, saveTo, options: e.options ?? [], ...vis };
     }
     return { uid: u, kind: e.kind, text: e.text, ...vis };
   });

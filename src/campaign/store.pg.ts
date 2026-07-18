@@ -18,6 +18,8 @@ export interface CreateCampaignInput {
   contactIds?: string[];
   /** Campagne workflow : démarre ce workflow par destinataire au lieu d'envoyer un template. */
   workflowId?: string;
+  /** Cible NODE (/v1/sends) : démarre le workflow à CE bloc au lieu de son entrée. Requiert `workflowId`. */
+  startNodeId?: string;
   /** Débit max en messages/minute (1..80). Absent/null = aucun throttle. */
   ratePerMinute?: number | null;
 }
@@ -70,8 +72,8 @@ export class PgCampaignRepo {
     const isWorkflow = !!input.workflowId;
     const res = await this.pool.query<{ id: string }>(
       `insert into campaigns
-         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
        returning id`,
       [
         input.tenantId,
@@ -83,6 +85,8 @@ export class PgCampaignRepo {
         JSON.stringify(input.paramMapping),
         input.workflowId ?? null,
         input.ratePerMinute ?? null,
+        // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null (pas de campagne bâtarde).
+        isWorkflow ? input.startNodeId ?? null : null,
       ],
     );
     const id = res.rows[0]?.id;
@@ -102,9 +106,10 @@ export class PgCampaignRepo {
       status: CampaignStatus;
       workflow_id: string | null;
       rate_per_minute: number | null;
+      start_node_id: string | null;
     }>(
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
-              param_mapping, status, workflow_id, rate_per_minute
+              param_mapping, status, workflow_id, rate_per_minute, start_node_id
        from campaigns where id = $1`,
       [id],
     );
@@ -121,6 +126,7 @@ export class PgCampaignRepo {
       status: r.status,
       workflowId: r.workflow_id,
       ratePerMinute: r.rate_per_minute,
+      startNodeId: r.start_node_id,
     };
   }
 
@@ -402,13 +408,15 @@ export class PgCampaignRepo {
       const isWorkflow = !!input.workflowId;
       const cRes = await client.query<{ id: string }>(
         `insert into campaigns
-           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
+           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
          returning id`,
         [
           input.tenantId, input.phoneNumberId, input.name, input.category,
           isWorkflow ? null : input.templateName, isWorkflow ? null : input.templateLanguage,
           JSON.stringify(input.paramMapping), input.workflowId ?? null, input.ratePerMinute ?? null,
+          // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null.
+          isWorkflow ? input.startNodeId ?? null : null,
         ],
       );
       const campaignId = cRes.rows[0]?.id;

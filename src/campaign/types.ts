@@ -17,6 +17,11 @@ export interface Campaign {
   status: CampaignStatus;
   /** Si présent : la campagne DÉMARRE ce workflow par destinataire (au lieu d'envoyer un template). */
   workflowId: string | null;
+  /**
+   * Cible NODE (/v1/sends, D-1) : avec `workflowId`, le run démarre à CE bloc au lieu de l'entrée du scénario.
+   * La fenêtre 24 h a été vérifiée par destinataire à la création de l'envoi. null = comportement classique.
+   */
+  startNodeId: string | null;
   /** Débit max en messages/minute (1..80). null = aucun throttle (le run part au rythme boucle + latence Meta). */
   ratePerMinute: number | null;
 }

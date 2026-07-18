@@ -204,6 +204,56 @@ describe('WorkflowExecutor', () => {
     expect(captured).toEqual([['Julie']]);
   });
 
+  // startFromNode (cible node de /v1/sends, D-1) : démarre à un bloc ARBITRAIRE, SANS la garde fenêtre 24 h
+  // (l'appelant a déjà écarté les contacts hors fenêtre). `start` garde la sienne : cf. tests plus haut.
+  describe('startFromNode', () => {
+    it('démarre à un bloc du MILIEU du graphe (les blocs amont ne sont pas rejoués)', async () => {
+      const g: WorkflowGraph = {
+        nodes: [n('t', 'tag', { tag: 'amont' }), n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
+        edges: [e('e1', 't', 'tpl'), e('e2', 'tpl', 'ib')],
+      };
+      const { ex, runs, calls } = make(g);
+      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 'tpl');
+      expect(calls).toEqual(['tpl:promo']); // pas de 'tag:amont' : on a sauté l'entrée
+      expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+    });
+
+    it('quick_message en cible : PART (contrairement à start qui le bloquerait)', async () => {
+      const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['Oui', 'Non'] })], edges: [] };
+      const { ex, runs, calls } = make(g);
+      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 'qm');
+      expect(calls).toEqual(['qm:Salut']);
+      expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'qm' });
+      // NON-RÉGRESSION : le MÊME graphe via `start` reste refusé (garde 24 h intacte).
+      const via = make(g);
+      await via.ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      expect(via.calls).toEqual([]);
+      expect(via.runs.run).toBeNull();
+    });
+
+    it('flow en cible : PART aussi (message de session légitime en fenêtre ouverte)', async () => {
+      const g: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'RDV' })], edges: [] };
+      const { ex, calls } = make(g);
+      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 'f');
+      expect(calls).toEqual(['flow:fl1:Formulaire : RDV:Envoyer']);
+    });
+
+    it('bloc SUPPRIMÉ entre-temps (nodeId inconnu) -> aucune action, aucun run, aucun throw', async () => {
+      const { ex, runs, calls } = make(linear);
+      await expect(ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'disparu')).resolves.toBeUndefined();
+      expect(calls).toEqual([]);
+      expect(runs.run).toBeNull();
+    });
+
+    it('cible 100 % synchrone (tag en fin de chaîne) : action appliquée, aucun run persistant', async () => {
+      const g: WorkflowGraph = { nodes: [n('t', 'tag', { tag: 'x' })], edges: [] };
+      const { ex, runs, calls } = make(g);
+      await ex.startFromNode('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, 't');
+      expect(calls).toEqual(['tag:x']);
+      expect(runs.run).toBeNull();
+    });
+  });
+
   it('advance : sendTemplate SANS explicitParams (hints stockés -> comportement inchangé)', async () => {
     // tpl1 -> tpl2 -> inbox : start envoie tpl1 AVEC params, l\'advance envoie tpl2 SANS params (undefined).
     const g: WorkflowGraph = {

@@ -81,7 +81,7 @@ class FakeQuality implements QualityProvider {
 
 const campaign: Campaign = {
   id: 'c1', tenantId: 't1', phoneNumberId: 'pn1', category: 'marketing',
-  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null,
+  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null, startNodeId: null,
 };
 function rec(id: string, to: string, status: Recipient['status'] = 'pending'): Recipient {
   return { id, contactId: `ct-${id}`, toE164: to, resolvedParams: ['X'], status };
@@ -141,6 +141,56 @@ describe('runCampaign', () => {
       startWorkflow: async (_t, _w, _waId, _cid, params) => { captured.push(params); },
     }));
     expect(captured).toEqual([['X'], ['X']]);
+  });
+
+  // Aiguillage des 3 formes de campagne (cible node de /v1/sends, D-1).
+  it('campagne NODE (workflowId + startNodeId) : passe par startWorkflowFromNode, PAS par startWorkflow', async () => {
+    const fromNode: string[] = [];
+    const classic: string[] = [];
+    const sender = new FakeSender();
+    const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
+    const report = await runCampaign(node, deps({
+      recipients, sender,
+      startWorkflow: async (_t, wf, waId) => { classic.push(`${wf}:${waId}`); },
+      startWorkflowFromNode: async (_t, wf, nodeId, waId, cid) => { fromNode.push(`${wf}:${nodeId}:${waId}:${cid}`); },
+    }));
+    expect(report).toMatchObject({ sent: 2, failed: 0 });
+    expect(classic).toEqual([]); // l'entrée du scénario n'est JAMAIS rejouée
+    expect(fromNode).toEqual(['wf1:n5:33611:ct-r1', 'wf1:n5:BSUID_xyz:ct-r2']); // waId = chiffres nus, BSUID intact
+    expect(sender.calls).toEqual([]); // aucun envoi de template en direct
+  });
+
+  it('campagne WORKFLOW SEUL (startNodeId null) : comportement INCHANGÉ (startWorkflow)', async () => {
+    const fromNode: string[] = [];
+    const classic: string[] = [];
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async (_t, w, waId) => { classic.push(`${w}:${waId}`); },
+      startWorkflowFromNode: async () => { fromNode.push('NE DEVRAIT PAS ÊTRE APPELÉ'); },
+    }));
+    expect(classic).toEqual(['wf1:33611']);
+    expect(fromNode).toEqual([]);
+  });
+
+  it('campagne TEMPLATE (ni workflow ni node) : comportement INCHANGÉ (envoi direct)', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(campaign, deps({
+      recipients, sender,
+      startWorkflow: async () => { throw new Error('ne doit pas être appelé'); },
+      startWorkflowFromNode: async () => { throw new Error('ne doit pas être appelé'); },
+    }));
+    expect(sender.calls).toHaveLength(1);
+  });
+
+  it('campagne NODE sans startWorkflowFromNode câblé -> destinataire failed (jamais d’envoi silencieux)', async () => {
+    const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(node, deps({ recipients }));
+    expect(report).toMatchObject({ sent: 0, failed: 1 });
   });
 
   it('fréquence : un contact envoyé récemment est skippé QUAND le cap est activé (fenêtre > 0)', async () => {

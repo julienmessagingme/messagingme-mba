@@ -134,6 +134,30 @@ export class PgInboxStore implements InboxStore {
     return { waId: r.wa_id, lastInboundAt: lastIn ? lastIn.toISOString() : null, windowOpen };
   }
 
+  /**
+   * Fenêtre de service 24 h pour un LOT de wa_id (cible node de /v1/sends, D-1). Même règle que
+   * `getConversationContext` : dernier message ENTRANT strictement < 24 h. Un wa_id sans conversation, ou avec
+   * une conversation mais aucun inbound, est ABSENT de la map -> l'appelant le traite comme fermé
+   * (`.get()` -> undefined -> falsy). Une seule requête pour tout le lot (pas de N+1).
+   */
+  async getWindowOpenByWaIds(tenantId: string, waIds: string[]): Promise<Map<string, boolean>> {
+    const out = new Map<string, boolean>();
+    if (waIds.length === 0) return out;
+    const res = await this.pool.query<{ wa_id: string; last_in: Date | null }>(
+      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in') as last_in
+       from conversations c
+       left join conversation_messages m on m.conversation_id = c.id
+       where c.tenant_id = $1 and c.wa_id = any($2::text[])
+       group by c.wa_id`,
+      [tenantId, waIds],
+    );
+    for (const r of res.rows) {
+      if (!r.last_in) continue; // aucun inbound -> fenêtre jamais ouverte, on laisse absent
+      out.set(r.wa_id, Date.now() - r.last_in.getTime() < 24 * 3600 * 1000);
+    }
+    return out;
+  }
+
   async getMessages(conversationId: string): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
       id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; sender_name: string | null;

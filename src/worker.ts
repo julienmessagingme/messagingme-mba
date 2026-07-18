@@ -162,8 +162,9 @@ async function main(): Promise<void> {
       // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
       await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
     },
-    // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Atteint uniquement via
-    // `advance` (après réponse du contact) -> fenêtre 24 h forcément ouverte. Texte littéral en V1 (pas de variables).
+    // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Deux chemins d'accès,
+    // tous deux EN fenêtre 24 h : `advance` (le contact vient de répondre) et `startFromNode` (cible node de
+    // /v1/sends, qui a écarté les hors-fenêtre en amont). Texte littéral en V1 (pas de variables).
     sendQuickMessage: async (tenant, waId, body, buttons) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (body.trim() === '' || !buttons.some((b) => b.text.trim() !== '')) return; // rien à envoyer
@@ -178,9 +179,10 @@ async function main(): Promise<void> {
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
     },
-    // Formulaire (node flow) : message interactif type flow, hors template. Atteint uniquement via `advance`
-    // (le save du graphe + la garde de `start` refusent un flow en ouverture) -> fenêtre 24 h ouverte. La
-    // complétion revient en nfm_reply : mapping des champs par _ref, indépendant du canal d'envoi.
+    // Formulaire (node flow) : message interactif type flow, hors template. Atteint via `advance` (le save du
+    // graphe + la garde de `start` refusent un flow en OUVERTURE) ou via `startFromNode` (cible node, fenêtre
+    // déjà vérifiée) -> fenêtre 24 h ouverte dans les deux cas. La complétion revient en nfm_reply : mapping
+    // des champs par _ref, indépendant du canal d'envoi.
     sendFlow: async (tenant, waId, flowId, body, cta) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (flowId.trim() === '') return; // rien à envoyer (défense, actionOf filtre déjà)
@@ -235,6 +237,12 @@ async function main(): Promise<void> {
       startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) => {
         const wf = await workflowStore.getById(workflowId, tenant);
         if (wf) await workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams);
+      },
+      // Campagne NODE (/v1/sends) : démarre le workflow au bloc ciblé. Fenêtre 24 h déjà vérifiée à la création
+      // de l'envoi -> l'executor n'applique pas la garde (startFromNode).
+      startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId) => {
+        const wf = await workflowStore.getById(workflowId, tenant);
+        if (wf) await workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId);
       },
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),

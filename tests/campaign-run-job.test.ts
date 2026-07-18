@@ -62,7 +62,7 @@ class FakeQuality implements QualityProvider {
 
 const campaign: Campaign = {
   id: 'c1', tenantId: 't1', phoneNumberId: 'pn1', category: 'marketing',
-  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null,
+  templateName: 'promo', templateLanguage: 'fr', paramMapping: [], status: 'draft', workflowId: null, ratePerMinute: null, startNodeId: null,
 };
 
 function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }): RunJobDeps {
@@ -138,6 +138,27 @@ describe('campaignRunJob', () => {
     );
     expect(report.sent).toBe(1);
     expect(captured).toEqual([['Julie']]);
+  });
+
+  // Sans ce passthrough, TOUTE campagne node échouerait en prod (« startWorkflowFromNode non câblé ») alors que
+  // le test du moteur resterait vert : il prouve que runCampaign appelle le callback, pas que le job le transmet.
+  it('campagne NODE : campaignRunJob transmet startWorkflowFromNode au moteur', async () => {
+    const captured: string[] = [];
+    const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => node,
+        recipients,
+        startWorkflow: async () => { throw new Error('ne doit pas être appelé sur une cible node'); },
+        startWorkflowFromNode: async (_t, wf, nodeId, waId, cid) => { captured.push(`${wf}:${nodeId}:${waId}:${cid}`); },
+      }),
+    );
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(captured).toEqual(['wf1:n5:33611:ct1']);
   });
 
   it('débit PAR CAMPAGNE : ratePerMinute posé -> RateLimiter d intervalle ceil(60000/rate), acquire avant chaque envoi', async () => {
