@@ -106,7 +106,11 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
     portail cobaye 139615673 + import de test.
   - ✅ 🟡 (a) **`searchLists` paginé : FAIT (2026-07-18)** : boucle par `offset`, arrêt sur `hasMore=false`,
     `total` atteint, page vide, borne 500 listes ET borne dure d'itérations, chaque troncature loguée.
-  - 🟡 (b) restreindre `/service/*` de l'exposition publique NPM (déjà HMAC fort, mais surface réductible).
+  - ✅ 🟡 (b) **`/service/*` fermé au public : FAIT (2026-07-18)** : `advanced_config` sur le proxy host NPM 22
+    (`mm-hubspot.messagingme.app`), `location ^~ /service/ { return 404; }`. mba appelle le connecteur en INTERNE
+    (`HUBSPOT_SERVICE_URL=http://mm-hubspot-api:8096`), donc sans passer par NPM. Vérifié après bascule : public
+    `/service/lists` -> 404, `/health` -> 200, `/ingest` -> 401 (inchangé), interne `/service/lists` -> 401
+    (vivant, signature exigée).
 - **Palier 5 — échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions
   sûres, N3 Deal auto, N4 autonome), seuil de confiance interne calibré par niveau (D-8/D-9/D-10). 5a = N1-2 +
   curseur + setter `autonomy_level` ; 5b = N3 (Deal auto) après mesure.
