@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-const schema = z.object({
+/** Exporté pour les tests : `config` est parsé À L'IMPORT, donc inutilisable pour vérifier les fail-fast
+ *  (il faudrait réimporter le module avec un autre environnement). Le schéma, lui, se parse à la demande. */
+export const schema = z.object({
   PORT: z.coerce.number().default(8095),
   META_APP_SECRET: z.string().default(''),
   META_VERIFY_TOKEN: z.string().default(''),
@@ -36,6 +38,26 @@ const schema = z.object({
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
+  /**
+   * Budget de connexions Postgres. Le pooler Supabase est en SESSION mode, plafonné à ~15 clients, et il est
+   * PARTAGÉ avec mm-hubspot (qui borne déjà : 2 + 2 par process). Sans plafond ici, `pg` prend son défaut de 10
+   * et pg-boss le sien : 2 process x (10 + 10) = 40 sessions demandées pour 15 disponibles -> EMAXCONNSESSION,
+   * l'API se fige et le worker meurt. Arithmétique du défaut ci-dessous : mba 2 process x (3 + 2) = 10,
+   * mm-hubspot 2 process x (2 + 2) = 8, soit 18 pour ~15 disponibles.
+   * ⚠️ Le pire cas simultané DÉPASSE donc encore le plafond du pooler. Ce qui change n'est PAS qu'on tient le
+   * budget : c'est que le dépassement devient borné, rare (les pools sont paresseux, ils n'ouvrent que sous
+   * charge réelle) et diagnosticable (timeout net + log, au lieu d'un gel silencieux).
+   * Le vrai correctif est le mode TRANSACTION pour l'API (bloc 4 du PLAN.md), pas un plafond plus fin.
+   */
+  DB_POOL_MAX: z.coerce.number().default(3),
+  /** Max de connexions du pool pg-boss (même contrainte de pooler partagé). */
+  PGBOSS_MAX: z.coerce.number().default(2),
+  /**
+   * Timeout d'ACQUISITION d'une connexion du pool (ms). Le défaut `pg` est une attente ILLIMITÉE : pool saturé
+   * -> la requête HTTP ne répond jamais, sans erreur, sans trace. On préfère un échec net au bout du délai,
+   * que le setErrorHandler journalise. 0 = attente illimitée (comportement pg d'origine, à éviter).
+   */
+  DB_CONN_TIMEOUT_MS: z.coerce.number().default(8000),
   /** Secret de la surface d'exploitation cross-tenant `/ops` (lecture seule). Vide -> /ops désactivé (401). */
   OPS_TOKEN: z.string().default(''),
   /** Rate limit de l'API publique /v1 : requêtes par clé et par fenêtre (en mémoire, par process). */
@@ -88,6 +110,16 @@ const schema = z.object({
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables
   // cross-tenant. En dev/test on tolère le défaut pour l'ergonomie.
   if (process.env.NODE_ENV === 'production') {
+    // Sans base, le service crashe plus loin sur un ECONNREFUSED localhost:5432 avec une stack `pg` opaque qui
+    // ne nomme jamais la variable manquante. Fail-fast ici = le message dit quoi corriger.
+    if (c.DATABASE_URL === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'DATABASE_URL requis en production' });
+    }
+    // Sans secret d'app, `verifySignature` renvoie false d'entrée : le service DÉMARRE, /health répond ok, et
+    // 100 % des webhooks Meta partent en 403 indéfiniment, sans une trace. Panne totale et silencieuse.
+    if (c.META_APP_SECRET === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['META_APP_SECRET'], message: 'META_APP_SECRET requis en production (sans lui, 100 % des webhooks Meta sont rejetés en 403)' });
+    }
     if (c.AUTH_SECRET === 'dev-insecure-change-me' || Buffer.byteLength(c.AUTH_SECRET) < 32) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

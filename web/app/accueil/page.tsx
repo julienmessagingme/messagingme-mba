@@ -58,26 +58,52 @@ function AccueilInner({ session }: { session: Session }) {
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Erreur PROPRE au statut du compte : distinguée de `error` pour ne jamais afficher « Aucun numéro »
+   *  quand la vérité est « je n'ai pas réussi à le savoir ». */
+  const [accountError, setAccountError] = useState<string | null>(null);
+  /**
+   * Chargement PROPRE au statut, distinct de `loading`. Indispensable : `getAccountStatus` fait deux
+   * allers-retours vers l'API Graph de Meta, il arrive donc TOUJOURS après `getMe`/`getSettings` qui sont deux
+   * requêtes SQL. Sans cet état, la fenêtre `loading=false, account=null, accountError=null` est le cas
+   * NOMINAL, et le rendu y affiche « Aucun numéro » avant de se corriger.
+   */
+  const [accountLoading, setAccountLoading] = useState(true);
 
   const isAdmin = session.role === 'admin';
 
+  /**
+   * Statut du compte, chargé À PART et jamais en `Promise.all` avec le reste. C'était la cause du symptôme
+   * « le numéro n'apparaît pas » : un `Promise.all` est tout-ou-rien, donc un hoquet sur `getMe` (qui ne sert
+   * qu'à afficher un prénom) laissait `account` à null, et l'affichage retombait sur « Aucun numéro », ce qui
+   * est un MENSONGE : on ne sait pas, ce n'est pas la même chose que ne pas en avoir.
+   */
+  const loadAccount = useCallback(async () => {
+    setAccountLoading(true);
+    setAccountError(null);
+    try {
+      setAccount(await getAccountStatus(session.tenantId));
+    } catch (err) {
+      setAccount(null);
+      setAccountError(err instanceof Error ? err.message : t('Statut indisponible', 'Status unavailable'));
+    } finally {
+      setAccountLoading(false);
+    }
+  }, [session.tenantId, t]);
+
+  /** Profil et réglages : `allSettled`, chaque réponse est appliquée indépendamment des autres. */
   const load = useCallback(async () => {
     setError(null);
-    try {
-      const [m, cfg, acc] = await Promise.all([
-        getMe(session.tenantId),
-        getSettings(session.tenantId),
-        getAccountStatus(session.tenantId),
-      ]);
-      setMe(m);
-      setMbaEnabled(cfg.mbaEnabled);
-      setHubspotListsEnabled(cfg.hubspotListsEnabled);
-      setAccount(acc);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
-    } finally {
-      setLoading(false);
+    const [m, cfg] = await Promise.allSettled([getMe(session.tenantId), getSettings(session.tenantId)]);
+    if (m.status === 'fulfilled') setMe(m.value);
+    if (cfg.status === 'fulfilled') {
+      setMbaEnabled(cfg.value.mbaEnabled);
+      setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
     }
+    if (m.status === 'rejected' || cfg.status === 'rejected') {
+      const reason = (m.status === 'rejected' ? m.reason : cfg.status === 'rejected' ? cfg.reason : null) as unknown;
+      setError(reason instanceof Error ? reason.message : t('Chargement partiel', 'Partial load'));
+    }
+    setLoading(false);
   }, [session.tenantId, t]);
 
   // KPIs 30 j : chargés à part (non bloquants). Un hoquet des stats/coût n'efface pas la carte statut.
@@ -99,8 +125,9 @@ function AccueilInner({ session }: { session: Session }) {
 
   useEffect(() => {
     void load();
+    void loadAccount();
     void loadKpis();
-  }, [load, loadKpis]);
+  }, [load, loadAccount, loadKpis]);
 
   async function toggleMba() {
     if (!isAdmin) return;
@@ -183,9 +210,29 @@ function AccueilInner({ session }: { session: Session }) {
         <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* Espace sans numéro (self-signup) -> onboarding grisé ; sinon carte statut opérationnelle. */}
-          {account && !account.hasNumber ? (
-            <ConnectNumberZone tenantId={session.tenantId} isAdmin={isAdmin} onConnected={() => { setLoading(true); void load(); }} />
+          {/* Invariant de cette cascade : « Aucun numéro » ne s'affiche QUE si account est chargé ET dit qu'il
+              n'y en a pas. Tant qu'on ne sait pas, on le dit (chargement, puis erreur avec de quoi relancer).
+              Affirmer une absence qu'on n'a pas constatée était toute la cause du symptôme rapporté. */}
+          {accountLoading ? (
+            <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
+              <p className="mt-2 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+            </div>
+          ) : accountError ? (
+            <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
+              <p className="mt-2 text-sm text-ink-600">{t('Statut indisponible pour le moment.', 'Status unavailable right now.')}</p>
+              <p className="mt-0.5 text-xs text-ink-400">{accountError}</p>
+              <button
+                type="button"
+                onClick={() => void loadAccount()}
+                className="mt-3 rounded-lg border border-ink-300 px-3 py-1.5 text-sm font-medium text-ink-700 transition hover:bg-ink-100"
+              >
+                {t('Réessayer', 'Retry')}
+              </button>
+            </div>
+          ) : account && !account.hasNumber ? (
+            <ConnectNumberZone tenantId={session.tenantId} isAdmin={isAdmin} onConnected={() => { setLoading(true); void load(); void loadAccount(); }} />
           ) : (
             <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">

@@ -26,19 +26,26 @@ Les blocs 0 et 1 sont à faire dans les deux cas, en premier.
 
 ---
 
-## Bloc 0 — les quatre correctifs de quelques heures (1 jour)
+## ✅ Bloc 0 — FAIT (2026-07-18), déployé en production
 
-Meilleur rapport gain sur effort de tout l'audit. Le point 4 corrige le « internal error »
-du Dashboard que tu constates depuis des jours.
-
-| # | Action | Constat | Effort |
+| # | Action | Constat | État |
 |---|---|---|---|
-| 0.1 | Borner les 4 pools : `DB_POOL_MAX`, `PGBOSS_MAX`, `DB_CONN_TIMEOUT_MS` au zod de `src/config.ts`, câblés dans `src/db/pool.ts` **et** dans les deux `new PgBossQueue`. Exposer `onError` sur `PgBossQueue` et l'attacher (aujourd'hui un event non capté tue le process) | B2 | S |
-| 0.2 | Logger l'exception avant de la masquer dans les deux `setErrorHandler`, activer pino JSON sur stdout (les deux Fastify tournent en `logger: false`) | B9 | S |
-| 0.3 | Fail-fast au boot sur `DATABASE_URL` et `META_APP_SECRET` vides (aujourd'hui `.default('')` sans garde : le service démarre, `/health` répond ok, et 100 % des webhooks partent en 403) | B9 | S |
-| 0.4 | `/accueil` en `Promise.allSettled` avec un état par appel, sortir `getAccountStatus` de la rafale, distinguer « statut indisponible » de « aucun numéro », bouton Réessayer, retry unique sur 5xx dans `web/lib/api.ts` | bug Dashboard | S |
+| 0.1 | `DB_POOL_MAX` (3), `PGBOSS_MAX` (2), `DB_CONN_TIMEOUT_MS` (8000) au zod, câblés dans `src/db/pool.ts` **et** dans les deux `PgBossQueue`. `poolOptions` extrait en fonction pure (piège `max: 0`). `onError` exposé et attaché avant `start()` dans les deux process | B2 | ✅ |
+| 0.2 | Les deux `setErrorHandler` journalisent un JSON (méthode, url, tenant, message, stack) sur les 5xx avant de renvoyer le corps opaque. Côté mm-hubspot l'URL est tronquée avant la query | B9 | ✅ |
+| 0.3 | Fail-fast production sur `DATABASE_URL` et `META_APP_SECRET` vides. Vérifié : `.env.prod` porte bien `NODE_ENV=production`, donc le `superRefine` s'exécute réellement | B9 | ✅ |
+| 0.4 | `getAccountStatus` sorti de la rafale dans son propre `loadAccount` avec son état `accountLoading`, le reste en `Promise.allSettled`, branche « Statut indisponible » + bouton Réessayer, retry unique sur 5xx réservé aux GET/HEAD | bug Dashboard | ✅ |
 
-Après ce bloc : le bug du Dashboard disparaît, et la prochaine panne laisse enfin une trace.
+**Invariant posé par ce bloc** : « Aucun numéro » ne s'affiche QUE si le statut est chargé ET dit qu'il n'y en
+a pas. Ne jamais affirmer une absence qu'on n'a pas constatée.
+
+Reviewer séparé : FAIL au premier passage (un trou réel dans 0.4, `loading` passait à false avant que le statut
+n'arrive, ce qui affichait « Aucun numéro » de façon transitoire mais systématique), puis PASS après correction.
+5 🟡 fermés dans la foulée, dont une fuite du code d'autorisation HubSpot dans les logs que 0.2 venait
+d'introduire, et deux tests qui étaient des faux témoins. Tests : 875 -> 886.
+
+**Reportés en backlog, arbitrage assumé** : `/ops/overview` consomme les 3 connexions du pool d'un coup
+(surface admin rare, protégée par `OPS_TOKEN`) ; abaisser les plafonds à 2/1 pour rentrer strictement sous les
+15 coûte en latence pour un gain marginal tant que le mode transaction (bloc 4) n'est pas fait.
 
 ---
 

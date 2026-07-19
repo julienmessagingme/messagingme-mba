@@ -124,7 +124,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
 
   // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
-  app.setErrorHandler((err: FastifyError, _req: FastifyRequest, reply: FastifyReply) => {
+  app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
     // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 422 + message clair.
     // 422 (4xx) et non 502 : Cloudflare/NPM remplacent les 5xx de l'origine par leur propre page
     // « error code: 502 », ce qui masque le message Meta utile. Un 4xx passe tel quel avec le body.
@@ -140,6 +140,23 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return reply.code(422).send({ error: err.message.slice(0, 200) });
     }
     const code = err.statusCode ?? 500;
+    // JOURNALISER AVANT DE MASQUER. Le corps renvoyé au client reste volontairement opaque sur les 5xx (pas
+    // de fuite d'interne), mais l'exception doit laisser une trace exploitable côté serveur : sans ça, une
+    // saturation du pool, une erreur SQL ou un bug de sérialisation produisaient un « Internal Server Error »
+    // dont il ne restait RIEN nulle part, et on ne pouvait que constater le symptôme depuis le navigateur.
+    // `console.error` et non `req.log` : Fastify est construit en `logger: false`, donc `req.log` est un no-op.
+    if (code >= 500) {
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify({
+        lvl: 'error',
+        msg: 'unhandled_route_error',
+        method: req.method,
+        url: req.url,
+        tenant: req.auth?.tenantId ?? null,
+        err: err.message,
+        stack: err.stack,
+      }));
+    }
     reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });
   });
 

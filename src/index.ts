@@ -47,7 +47,11 @@ import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
 async function main(): Promise<void> {
-  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA);
+  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, { max: config.PGBOSS_MAX, connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS });
+  // Un event `error` de pg-boss non capté est une exception non gérée qui tue l'API. On le journalise
+  // et on laisse tourner : une saturation ponctuelle du pooler ne doit pas coûter un redémarrage.
+  // eslint-disable-next-line no-console
+  queue.onError((err) => console.error('[pg-boss:api]', err instanceof Error ? err.message : err));
   await queue.start();
 
   const repo = new PgCampaignRepo(pool);

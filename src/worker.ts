@@ -42,7 +42,11 @@ import type { Campaign } from './campaign/types';
 import { installGracefulShutdown } from './shutdown';
 
 async function main(): Promise<void> {
-  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA);
+  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, { max: config.PGBOSS_MAX, connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS });
+  // Idem côté worker, et c'est ici que ça comptait le plus : le worker est le SEUL composant qui envoie les
+  // messages, et un event `error` non capté le tuait pendant que l'API continuait de répondre 200 sur /health.
+  // eslint-disable-next-line no-console
+  queue.onError((err) => console.error('[pg-boss:worker]', err instanceof Error ? err.message : err));
   await queue.start();
 
   // File webhook (Loop 1). Le PgRecipientStore applique les statuts de livraison ; le

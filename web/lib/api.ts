@@ -13,7 +13,29 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Un 5xx sur une LECTURE est très majoritairement transitoire (pool Postgres saturé une fraction de seconde,
+ * conteneur qui vient de redémarrer). Une seule reprise, après une courte pause, évite d'infliger un écran
+ * d'erreur pour un hoquet. On ne rejoue QUE les requêtes idempotentes : rejouer un POST enverrait des messages
+ * WhatsApp en double, ce qu'aucun gain d'ergonomie ne justifie.
+ */
+const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
+const RETRY_DELAY_MS = 400;
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const canRetry = RETRYABLE_METHODS.has(method);
+  try {
+    return await attempt<T>(path, init);
+  } catch (err) {
+    const transient = err instanceof ApiError ? err.status >= 500 : true; // panne réseau -> pas d'ApiError
+    if (!canRetry || !transient) throw err;
+    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    return attempt<T>(path, init);
+  }
+}
+
+async function attempt<T>(path: string, init: RequestInit): Promise<T> {
   const session = getSession();
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
