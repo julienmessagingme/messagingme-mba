@@ -946,6 +946,41 @@ export function deleteTag(tenantId: string, tag: string): Promise<{ removed: num
   return request(`/tenants/${tenantId}/tags?tag=${encodeURIComponent(tag)}`, { method: 'DELETE' });
 }
 
+// --- Clés d'API (surface publique /v1) ---
+
+/** Scopes reconnus. Doit rester aligné sur `VALID_API_SCOPES` du serveur (`src/http/api-keys.ts`). */
+export const API_SCOPES = ['contacts:write', 'sends:create'] as const;
+export type ApiScope = (typeof API_SCOPES)[number];
+
+export interface ApiKeyRow {
+  id: string;
+  name: string;
+  scopes: string[];
+  createdAt: string;
+  /** Dernier appel authentifié par cette clé. null = jamais utilisée. */
+  lastUsedAt: string | null;
+  /** Instant de révocation. Non null = la clé ne peut plus rien : la ligne RESTE dans la liste. */
+  revokedAt: string | null;
+}
+/** Réponse de création. `key` est la clé EN CLAIR, renvoyée UNE SEULE FOIS et jamais re-consultable. */
+export interface ApiKeyCreated {
+  id: string;
+  key: string;
+  name: string;
+  scopes: string[];
+}
+
+export function listApiKeys(tenantId: string): Promise<{ keys: ApiKeyRow[] }> {
+  return request<{ keys: ApiKeyRow[] }>(`/tenants/${tenantId}/api-keys`);
+}
+export function createApiKey(tenantId: string, name: string, scopes: string[]): Promise<ApiKeyCreated> {
+  return request(`/tenants/${tenantId}/api-keys`, { method: 'POST', body: JSON.stringify({ name, scopes }) });
+}
+/** Révoque une clé. Elle reste listée, avec `revokedAt` renseigné : ce n'est pas une suppression. */
+export function revokeApiKey(tenantId: string, id: string): Promise<{ id: string; revoked: boolean }> {
+  return request(`/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' });
+}
+
 export type UserFieldKind = 'text' | 'number' | 'date' | 'boolean' | 'url';
 export interface UserFieldDef {
   key: string;

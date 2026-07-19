@@ -8,7 +8,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -23,6 +23,7 @@ const icons = {
   analytics: 'M3 3v18h18M8 17V9M13 17V5M18 17v-6',
   flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
   support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
+  developers: 'M8 6l-5 6 5 6M16 6l5 6-5 6M13 4l-2 16',
 };
 
 interface NavChild { key: string; href: string; label: string }
@@ -40,8 +41,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Groupes de nav repliables. Ouvert au départ seulement si la page active est un de ses enfants
   // (`active` est une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
+  // Chaque groupe DOIT figurer ici : un groupe absent de cet initialiseur reste replié même quand on arrive
+  // directement sur une de ses pages, et l'élément actif est alors invisible.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => ({
     contenu: ['templates', 'flows', 'nodes', 'tags', 'fields'].includes(active),
+    analytics: ['dashboard', 'dashboard-quali'].includes(active),
+    developers: ['api-docs', 'api-keys'].includes(active),
   }));
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
@@ -58,8 +63,19 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
       { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
     ] },
-    { key: 'analytics', href: '/dashboard', label: t('Analytics', 'Analytics'), d: icons.analytics },
+    { key: 'analytics', label: t('Analytics', 'Analytics'), d: icons.analytics, children: [
+      { key: 'dashboard', href: '/dashboard', label: t('Quantitatif', 'Quantitative') },
+      { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Qualitatif', 'Qualitative') },
+    ] },
     { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
+  ];
+  // Second tableau, rendu dans son propre conteneur COLLÉ EN BAS de la barre. La nav n'a aucun mécanisme de
+  // placement (pas de champ `position`), donc le bas se fait par la structure, pas par une propriété d'entrée.
+  const NAV_ADMIN_BAS: NavItem[] = [
+    { key: 'developers', label: t('Developers', 'Developers'), d: icons.developers, children: [
+      { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
+      { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
+    ] },
   ];
   const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox }];
 
@@ -87,11 +103,14 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     router.replace('/login');
   }
 
-  // Groupe de nav actif : dashboard -> Analytics ; templates|flows|nodes|tags|fields -> Contenu ; sinon la page elle-même.
-  const group =
-    active === 'dashboard' ? 'analytics'
-      : active === 'templates' || active === 'flows' || active === 'nodes' || active === 'tags' || active === 'fields' ? 'contenu'
-        : active;
+  // Groupe de nav actif. Sans cette table, `itemCls(group === item.key)` ne s'allume jamais sur un parent de
+  // groupe et l'entrée reste grise alors qu'on est sur une de ses pages.
+  const GROUP_OF: Partial<Record<Tab, string>> = {
+    dashboard: 'analytics', 'dashboard-quali': 'analytics',
+    templates: 'contenu', flows: 'contenu', nodes: 'contenu', tags: 'contenu', fields: 'contenu',
+    'api-docs': 'developers', 'api-keys': 'developers',
+  };
+  const group = GROUP_OF[active] ?? active;
   const nav = session.role === 'admin' ? NAV_ADMIN : NAV_AGENT;
 
   const itemCls = (on: boolean) =>
@@ -99,9 +118,11 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const subCls = (on: boolean) =>
     `block rounded-md px-3 py-1.5 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-800'}`;
 
-  const NavList = (
+  // Rendu paramétré : la barre a désormais DEUX listes (le corps, et le bloc collé en bas). Factorisé plutôt
+  // que dupliqué, pour qu'un changement de style de nav n'ait pas à être fait deux fois.
+  const renderNav = (items: NavItem[]) => (
     <nav className="space-y-1">
-      {nav.map((item) =>
+      {items.map((item) =>
         item.children ? (
           <div key={item.key}>
             <button
@@ -133,20 +154,29 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   );
 
   const SidebarInner = (
-    <>
+    // Colonne pleine hauteur : c'est elle qui permet au bloc bas de descendre. Le `flex-1` du corps ci-dessous
+    // ne pousse rien tant que la colonne n'occupe pas vraiment la hauteur disponible.
+    <div className="flex h-full flex-col">
       <Link href={session.role === 'admin' ? '/accueil' : '/inbox'} className="flex items-center gap-2 px-3 py-4" title={t('Accueil', 'Home')} onClick={() => setDrawerOpen(false)}>
         <Logo className="h-8 w-8" />
         <span className="text-sm font-semibold tracking-tight text-ink-900">MM Business Agent</span>
       </Link>
-      <div className="px-2">{NavList}</div>
-    </>
+      {/* flex-1 pousse le bloc bas vers le bas ; overflow-y-auto fait scroller le CORPS de la nav sur un écran
+          court, au lieu de faire déborder la colonne et de rendre le bloc bas inatteignable. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2">{renderNav(nav)}</div>
+      {session.role === 'admin' && (
+        <div className="border-t border-ink-100 px-2 py-3">{renderNav(NAV_ADMIN_BAS)}</div>
+      )}
+    </div>
   );
 
   return (
     <div className={`bg-[#F7F8FB] lg:flex ${fullBleed ? 'min-h-screen lg:h-screen lg:overflow-hidden' : 'min-h-screen'}`}>
       {/* Sidebar desktop */}
       <aside className="hidden w-60 shrink-0 border-r border-ink-200 bg-white lg:block">
-        <div className="sticky top-0">{SidebarInner}</div>
+        {/* h-screen (et pas seulement sticky) : sans hauteur réelle, la colonne flex ne s'étire pas et le bloc
+            bas se colle sous la dernière entrée au lieu de descendre. */}
+        <div className="sticky top-0 h-screen">{SidebarInner}</div>
       </aside>
 
       {/* Drawer mobile (z-40, sous les modales z-50) */}

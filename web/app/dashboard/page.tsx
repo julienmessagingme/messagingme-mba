@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { DailyChart } from '@/components/DailyChart';
-import { ConversationAnalysisCard } from '@/components/ConversationAnalysisCard';
+import { RangeBar } from '@/components/RangeBar';
 import type { Session } from '@/lib/session';
 import {
   getStats, getTemplateStats, getErrorBreakdown, getCampaignFunnel, getCostSeries, listCampaigns,
@@ -13,39 +13,21 @@ import {
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
+import { presetRange } from '@/lib/range';
 
 export default function DashboardPage() {
   return <AppShell active="dashboard">{(session) => <DashboardInner session={session} />}</AppShell>;
 }
 
-/** Date du jour Europe/Paris (YYYY-MM-DD). */
-function todayParis(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
-}
-function addDays(dateStr: string, delta: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d) + delta * 86400000).toISOString().slice(0, 10);
-}
-function presetRange(days: number): StatsRange {
-  const to = todayParis();
-  return { from: addDays(to, -(days - 1)), to };
-}
-const PRESETS = [7, 30, 90];
-
 function DashboardInner({ session }: { session: Session }) {
   const t = useT();
   const [range, setRange] = useState<StatsRange>(() => presetRange(30));
-  const [draftFrom, setDraftFrom] = useState(range.from);
-  const [draftTo, setDraftTo] = useState(range.to);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
   const [errors, setErrors] = useState<ErrorBreakdownRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const today = todayParis();
-  const activePreset = range.to === today ? PRESETS.find((d) => range.from === addDays(today, -(d - 1))) ?? null : null;
 
   const load = useCallback(async () => {
     setError(null);
@@ -71,51 +53,9 @@ function DashboardInner({ session }: { session: Session }) {
     void load();
   }, [load]);
 
-  function applyPreset(d: number) {
-    const r = presetRange(d);
-    setRange(r);
-    setDraftFrom(r.from);
-    setDraftTo(r.to);
-  }
-  function applyCustom() {
-    if (draftFrom && draftTo && draftFrom <= draftTo) setRange({ from: draftFrom, to: draftTo });
-  }
-
-  const inputCls ='rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-
   return (
     <div className="space-y-4">
-      {/* Périodes + sélecteur de date FIGÉS en haut au scroll. top-12 = juste sous la barre de compte AppShell
-          (sticky top-0, ~48px) ; z-20 < z-30 (header) pour ne pas la chevaucher ; bg = fond de page pour masquer
-          les cartes qui défilent dessous. */}
-      <div className="sticky top-12 z-20 flex flex-wrap items-center justify-between gap-3 bg-[#F7F8FB] py-2">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">Analytics</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-xs">
-            {PRESETS.map((d) => (
-              <button
-                key={d}
-                onClick={() => applyPreset(d)}
-                className={`rounded-md px-2.5 py-1 ${activePreset === d ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
-              >
-                {d} {t('j', 'd')}
-              </button>
-            ))}
-          </div>
-          <div className="inline-flex items-center gap-1.5">
-            <input type="date" value={draftFrom} max={draftTo || today} onChange={(e) => setDraftFrom(e.target.value)} className={inputCls} />
-            <span className="text-ink-400">→</span>
-            <input type="date" value={draftTo} min={draftFrom} max={today} onChange={(e) => setDraftTo(e.target.value)} className={inputCls} />
-            <button
-              onClick={applyCustom}
-              disabled={!draftFrom || !draftTo || draftFrom > draftTo}
-              className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-600 disabled:opacity-50"
-            >
-              {t('Appliquer', 'Apply')}
-            </button>
-          </div>
-        </div>
-      </div>
+      <RangeBar title={t('Analytics quantitatif', 'Quantitative analytics')} range={range} onChange={setRange} />
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -157,9 +97,6 @@ function DashboardInner({ session }: { session: Session }) {
           <ErrorBreakdownCard errors={errors} />
           <div className="lg:col-span-2">
             <TemplateBreakdownCard data={templateStats} />
-          </div>
-          <div className="lg:col-span-2">
-            <ConversationAnalysisCard tenantId={session.tenantId} range={range} />
           </div>
         </div>
       ) : null}
