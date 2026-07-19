@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveScenario, resolveNode, resolveTag, resolveFieldKey } from '../src/ids/resolve';
-import type { WorkflowLister, TagLister, FieldLister } from '../src/ids/resolve';
+import { resolveScenario, resolveNode, resolveFieldKey } from '../src/ids/resolve';
+import type { WorkflowLister, FieldLister } from '../src/ids/resolve';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { UserFieldDef } from '../src/crm/types';
 
@@ -8,7 +8,6 @@ const g = (nodes: WorkflowGraph['nodes'] = []): WorkflowGraph => ({ nodes, edges
 function wfLister(rows: Array<{ id: string; name: string; code?: string | null; graph?: WorkflowGraph }>): WorkflowLister {
   return { list: async () => rows.map((r) => ({ id: r.id, name: r.name, code: r.code ?? null, graph: r.graph ?? g() })) };
 }
-const tagLister = (rows: Array<{ tag: string; code?: string | null }>): TagLister => ({ listDistinct: async () => rows });
 const fieldLister = (defs: UserFieldDef[]): FieldLister => ({ list: async () => defs });
 
 describe('resolveScenario', () => {
@@ -46,15 +45,6 @@ describe('resolveNode', () => {
   });
   it('nod_ absent des graphes -> not_found', async () => {
     expect(await resolveNode('t1', 'nod_ab_MISS', wfLister([{ id: 'w1', name: 'W', graph: g() }]))).toEqual({ ok: false, reason: 'not_found' });
-  });
-});
-
-describe('resolveTag', () => {
-  it('par code tag_ puis par nom', async () => {
-    const lister = tagLister([{ tag: 'vip', code: 'tag_ab_V' }]);
-    expect(await resolveTag('t1', 'tag_ab_V', lister)).toMatchObject({ ok: true, value: { tag: 'vip' } });
-    expect(await resolveTag('t1', 'VIP', lister)).toMatchObject({ ok: true, value: { tag: 'vip' } });
-    expect(await resolveTag('t1', 'inconnu', lister)).toEqual({ ok: false, reason: 'not_found' });
   });
 });
 

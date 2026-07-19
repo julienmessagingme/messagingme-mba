@@ -1,4 +1,5 @@
 import type { ParamSource, UserFieldDef } from './api';
+import { FRONT_SYSTEM_FIELD_KEYS } from './codes';
 
 /**
  * Champs de BASE (« système ») : toujours proposés comme source de variable, toujours présents dans Contenu > Champs,
@@ -13,14 +14,20 @@ export interface SystemField {
   source: ParamSource;
 }
 
-export const SYSTEM_FIELDS: SystemField[] = [
-  { key: 'name', label: 'Nom', source: { type: 'attribute', key: 'name' } },
-  { key: 'prenom', label: 'Prénom', source: { type: 'field', key: 'prenom' } },
-  { key: 'phone', label: 'Téléphone', source: { type: 'attribute', key: 'phone' } },
-  { key: 'bsuid', label: 'BSUID', source: { type: 'attribute', key: 'bsuid' } },
-  { key: 'wa_id', label: 'WhatsApp ID', source: { type: 'attribute', key: 'wa_id' } },
-  { key: 'email', label: 'Email', source: { type: 'field', key: 'email' } },
-];
+/** Libellé + source de variable de chaque champ système. Typé en `Record` sur la liste de clés PURE : ajouter
+ *  une clé à `FRONT_SYSTEM_FIELD_KEYS` sans lui donner de libellé ici ne compile pas. */
+const SYSTEM_FIELD_META: Record<(typeof FRONT_SYSTEM_FIELD_KEYS)[number], Omit<SystemField, 'key'>> = {
+  name: { label: 'Nom', source: { type: 'attribute', key: 'name' } },
+  prenom: { label: 'Prénom', source: { type: 'field', key: 'prenom' } },
+  phone: { label: 'Téléphone', source: { type: 'attribute', key: 'phone' } },
+  bsuid: { label: 'BSUID', source: { type: 'attribute', key: 'bsuid' } },
+  wa_id: { label: 'WhatsApp ID', source: { type: 'attribute', key: 'wa_id' } },
+  email: { label: 'Email', source: { type: 'field', key: 'email' } },
+};
+
+/** CONSTRUIT à partir de la liste pure, dans son ordre. C'est ce qui rend le test de `web/lib/codes.ts`
+ *  représentatif de ce que la page Champs affiche réellement : une seule source de vérité, pas deux. */
+export const SYSTEM_FIELDS: SystemField[] = FRONT_SYSTEM_FIELD_KEYS.map((key) => ({ key, ...SYSTEM_FIELD_META[key] }));
 
 export const SYSTEM_FIELD_KEYS: readonly string[] = SYSTEM_FIELDS.map((f) => f.key);
 
@@ -37,11 +44,9 @@ export function customFieldsOnly(fields: UserFieldDef[]): UserFieldDef[] {
   return fields.filter((f) => !isSystemFieldKey(f.key));
 }
 
-/** Code public DÉTERMINISTE d'un champ SYSTÈME : `fld_<codeClient>_sys_<key>` (miroir de `src/ids/code.ts`).
- *  Calculé (pas de ligne DB) : le `tenantCode` vient de la réponse de `listUserFields`. */
-export function systemFieldCode(tenantCode: string, key: string): string {
-  return `fld_${tenantCode}_sys_${key}`;
-}
+/** Code public DÉTERMINISTE d'un champ SYSTÈME. Défini dans `./codes` (module PUR, testé depuis la suite
+ *  racine) et ré-exporté ici pour rester avec les autres helpers de champs. */
+export { systemFieldCode } from './codes';
 
 /** Exemple d'aperçu lisible pour un champ système (miniature WhatsApp). Un champ perso -> `[libellé]`. */
 export function systemFieldExample(key: string): string {

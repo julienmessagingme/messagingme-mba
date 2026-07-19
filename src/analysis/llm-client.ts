@@ -6,7 +6,9 @@ export interface LlmPrompt {
   user: string;
 }
 
-/** Contrat minimal d'un client LLM : une complétion texte. Agnostique du provider (Claude par défaut, OpenAI possible). */
+/** Contrat minimal d'un client LLM : une complétion texte. UNE SEULE implémentation existe (Anthropic). Le
+ *  contrat est étroit exprès pour qu'en ajouter une autre reste simple, mais ce n'est pas fait : `LLM_PROVIDER`
+ *  n'accepte que 'anthropic' (garde au boot). Ne pas relire ce commentaire comme « c'est déjà multi-provider ». */
 export interface LlmClient {
   complete(prompt: LlmPrompt): Promise<string>;
 }
@@ -68,7 +70,12 @@ export class AnthropicClient implements LlmClient {
   }
 }
 
-/** Fabrique le client LLM d'après la config (provider en env). Throw si le provider est inconnu (fail-fast). */
+/**
+ * Fabrique le client LLM d'après la config. Le throw n'est plus la vraie garde : `LLM_PROVIDER` est un
+ * `z.enum(['anthropic'])`, donc une valeur inconnue est refusée AU BOOT, avec un message qui nomme la
+ * variable. Avant, elle passait la config et tuait le conteneur worker au premier appel d'analyse.
+ * Ce throw reste comme filet pour les appels directs (tests, futur appelant hors config).
+ */
 export function createLlmClient(
   cfg: { provider: string; apiKey: string; model: string; maxTokens: number },
   transport?: HttpTransport,

@@ -88,8 +88,10 @@ export const schema = z.object({
   CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   /** Nombre max de conversations réclamées par passage de balayage. */
   CONVERSATION_ANALYSIS_BATCH: z.coerce.number().default(20),
-  /** Provider LLM de l'analyse. 'anthropic' (défaut) = Claude. Factory `createLlmClient` (throw si inconnu). */
-  LLM_PROVIDER: z.string().default('anthropic'),
+  /** Provider LLM de l'analyse. UNE seule implémentation existe. `z.enum` et non `z.string` : une valeur
+   *  inconnue était acceptée par la config et TUAIT le conteneur worker au premier appel d'analyse, avec une
+   *  erreur qui ne nommait pas la variable. Elle est maintenant refusée au boot. */
+  LLM_PROVIDER: z.enum(['anthropic']).default('anthropic'),
   /** Clé API du provider LLM. Vide -> analyse non activable (fail-fast prod si ENABLED). */
   LLM_API_KEY: z.string().default(''),
   /** Id de modèle LLM (ex. claude-haiku-4-5 pour ce classifieur haut-volume, ou claude-opus-4-8 pour la qualité).

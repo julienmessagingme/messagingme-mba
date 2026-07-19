@@ -44,15 +44,10 @@ export function makeCode(type: EntityType, tenantCode: string): string {
   return `${type}_${tenantCode}_${newUlid()}`;
 }
 
-/**
- * Code public DÉTERMINISTE et réservé d'un champ SYSTÈME (name/prenom/phone/bsuid/wa_id/email) :
- * `fld_<tenantCode>_sys_<key>`. Pas de ligne DB, pas d'ULID : les champs système sont des constantes de code,
- * leur code se CALCULE (un consommateur d'API peut le dériver). Le segment `sys_` le distingue sans ambiguïté
- * d'un ULID (26 car. majuscules). Miroir front : `web/lib/fields.ts`.
- */
-export function systemFieldCode(tenantCode: string, key: string): string {
-  return `fld_${tenantCode}_sys_${key}`;
-}
+// `systemFieldCode` a vécu ici sans jamais avoir d'appelant côté serveur : le seul générateur utilisé est
+// celui du front (`web/lib/codes.ts`, appelé par la page Champs). Supprimé le 2026-07-18. Le format
+// `fld_<tenantCode>_sys_<key>` reste RÉSERVÉ et documenté côté front ; le résolveur d'API le reconnaît via
+// `SYS_RE` dans `src/ids/resolve.ts`, qui est le vrai consommateur serveur de cette convention.
 
 /**
  * Racine `code-client` STABLE et DÉTERMINISTE dérivée d'un seed (l'uuid du tenant) : 6 caractères base32

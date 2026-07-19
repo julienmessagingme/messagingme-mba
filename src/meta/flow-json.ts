@@ -111,8 +111,6 @@ export class VisibleIfError extends Error {
   }
 }
 
-export const FLOW_TEXT_KINDS: readonly FlowTextKind[] = ['heading', 'subheading', 'body', 'caption'];
-
 /** Dérive les clés des éléments de type `field` (les autres passent tels quels). Collision -> erreur.
  *  Mono-écran historique : conservé pour les appels directs, la dérivation multi passe par deriveScreens. */
 export function deriveElements(elements: FlowElementInput[]): FlowElement[] {

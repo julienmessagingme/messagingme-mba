@@ -128,12 +128,18 @@ un autre user field.
 
 ## Identité contact (numéro OU BSUID)
 
-`src/crm/identity.ts` : source unique de la règle. `contactIdentity(phone, bsuid)` = numéro sinon BSUID.
-`classifyWaId(waId)` : 7-15 chiffres -> `{phoneE164:'+'+waId}`, sinon `{bsuid}` (heuristique, aucun trafic
-BSUID en prod aujourd'hui -> à confirmer au 1er BSUID réel). Miroir front `web/lib/api.ts` `contactIdentity`.
+`src/crm/identity.ts` expose `waIdOf(phone, bsuid)` (clé de routage WhatsApp) et `classifyWaId(waId)` :
+7-15 chiffres -> `{phoneE164:'+'+waId}`, sinon `{bsuid}` (heuristique, aucun trafic BSUID en prod aujourd'hui
+-> à confirmer au 1er BSUID réel).
+
+⚠️ **La règle d'AFFICHAGE « numéro sinon BSUID » n'est PAS factorisée.** Corrigé le 2026-07-18 : ce paragraphe
+annonçait `src/crm/identity.ts` comme « source unique de la règle » alors que le `contactIdentity` serveur
+n'avait aucun appelant (supprimé depuis). La règle est réécrite à la main à trois endroits :
+`web/lib/api.ts` (`contactIdentity`, le seul vivant, utilisé par les pages Contacts et Campagne),
+`src/api/sends-build.ts` et `src/campaign/build.ts`. Les factoriser est un chantier ouvert, pas un acquis.
 - `contacts` porte `phone_e164` + `bsuid` (0001, contrainte « au moins un », 2 index uniques partiels).
   `ContactRow.bsuid` exposé partout (tous les selects). Front : colonne « Identifiant », fiche « Compte
-  WhatsApp », sélection/label campagne via `contactIdentity`.
+  WhatsApp », sélection/label campagne via le `contactIdentity` DU FRONT (`web/lib/api.ts`).
 - **Auto-création depuis l'inbound** : `PgContactStore.upsertFromInbound` (upsert par l'index unique phone OU
   bsuid, opt-in 'unknown' à la CRÉATION seulement, `opt_in_source='inbound'`, coalesce du profile_name).
   Câblée dans `processInbound(payload, store, upsertContact?)` AVANT `recordInbound`, **isolée** (un échec ne

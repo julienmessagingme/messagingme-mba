@@ -217,7 +217,13 @@ export class PgUserStore {
 
   /**
    * Supprime définitivement un compte DU tenant. Refusé si c'est le dernier admin ACTIF (même
-   * invariant que la révocation). Aucune FK ne référence users -> pas de violation à la suppression.
+   * invariant que la révocation).
+   *
+   * ⚠️ Corrigé le 2026-07-18 : ce commentaire affirmait « aucune FK ne référence users », ce qui est FAUX
+   * depuis la migration 0017 (`conversation_messages.sender_user_id`). La suppression ne viole rien parce que
+   * cette FK est déclarée `on delete set null`, pas parce qu'il n'y en aurait aucune. Toute nouvelle FK vers
+   * `users` doit donc déclarer explicitement son comportement de suppression, sinon ce delete se mettra à
+   * échouer sur une violation de contrainte.
    */
   async deleteUser(tenantId: string, userId: string): Promise<UserMutation> {
     const del = await this.pool.query(

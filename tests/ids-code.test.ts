@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newUlid, makeCode, deriveTenantCode, systemFieldCode } from '../src/ids/code';
+import { newUlid, makeCode, deriveTenantCode } from '../src/ids/code';
 
 const CROCKFORD_RE = /^[0-9A-HJKMNP-TV-Z]+$/; // base32 Crockford (sans I, L, O, U)
 
@@ -55,9 +55,6 @@ describe('deriveTenantCode', () => {
   });
 });
 
-describe('systemFieldCode', () => {
-  it('déterministe et réservé : fld_<client>_sys_<key>', () => {
-    expect(systemFieldCode('k7m2p3', 'bsuid')).toBe('fld_k7m2p3_sys_bsuid');
-    expect(systemFieldCode('k7m2p3', 'wa_id')).toBe(systemFieldCode('k7m2p3', 'wa_id'));
-  });
-});
+// Le `systemFieldCode` SERVEUR testé ici n'avait aucun appelant : ce test protégeait un générateur mort
+// pendant que le générateur VIVANT (celui du front) n'était couvert par rien. Les deux sont corrigés :
+// la fonction serveur est supprimée, et la fonction front est testée dans `tests/web-codes.test.ts`.

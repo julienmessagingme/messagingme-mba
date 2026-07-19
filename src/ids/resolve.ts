@@ -16,9 +16,6 @@ export type ResolveResult<T> =
 export interface WorkflowLister {
   list(tenantId: string): Promise<Array<{ id: string; name: string; code?: string | null; graph: WorkflowGraph }>>;
 }
-export interface TagLister {
-  listDistinct(tenantId: string): Promise<Array<{ tag: string; code?: string | null }>>;
-}
 export interface FieldLister {
   list(tenantId: string): Promise<UserFieldDef[]>;
 }
@@ -58,23 +55,10 @@ export async function resolveNode(
   return { ok: false, reason: 'not_found' };
 }
 
-/** Tag par code `tag_...` ou par nom. PK (tenant,name) -> ambiguïté impossible, chemin gardé par symétrie. */
-export async function resolveTag(
-  tenantId: string,
-  ref: string,
-  tags: TagLister,
-): Promise<ResolveResult<{ tag: string; code: string | null }>> {
-  const all = await tags.listDistinct(tenantId);
-  const pick = (t: (typeof all)[number]) => ({ tag: t.tag, code: t.code ?? null });
-  if (ref.startsWith('tag_')) {
-    const hit = all.find((t) => t.code === ref);
-    return hit ? { ok: true, value: pick(hit) } : { ok: false, reason: 'not_found' };
-  }
-  const matches = all.filter((t) => eqName(t.tag, ref)).map(pick);
-  if (matches.length === 0) return { ok: false, reason: 'not_found' };
-  if (matches.length > 1) return { ok: false, reason: 'ambiguous', matches };
-  return { ok: true, value: matches[0]! };
-}
+// `resolveTag` a vécu ici sans jamais avoir d'appelant : aucun endpoint n'adresse un tag par code ou par nom.
+// Il avait été écrit « par symétrie » avec les autres résolveurs, et son propre commentaire avouait que le
+// chemin d'ambiguïté qu'il gérait était impossible. Supprimé le 2026-07-18 avec son interface `TagLister`.
+// À réécrire le jour où un endpoint en aura vraiment besoin, en repartant du besoin réel.
 
 const SYS_RE = /^fld_[0-9a-z]+_sys_(.+)$/;
 

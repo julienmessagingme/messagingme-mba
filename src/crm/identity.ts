@@ -1,16 +1,16 @@
 /**
- * Encapsulation de l'identité d'un contact (règle unique, réutilisée partout).
+ * Identité WhatsApp d'un contact, côté SERVEUR.
  *
  * Un contact WhatsApp est identifié par un NUMÉRO (E.164) OU un BSUID (business-scoped user id, remonté
  * quand le client n'a pas partagé son numéro, post-octobre). La table `contacts` porte les deux colonnes
- * (`phone_e164`, `bsuid`) avec la contrainte « au moins un des deux ». La règle d'affichage/envoi = le
- * numéro s'il existe, sinon le BSUID.
+ * (`phone_e164`, `bsuid`) avec la contrainte « au moins un des deux ».
+ *
+ * ⚠️ Ce module ne prétend PAS être la source unique de la règle « numéro sinon BSUID ». Cette règle
+ * d'AFFICHAGE vit côté front (`web/lib/api.ts`, `contactIdentity`) et est réécrite à la main dans
+ * `src/api/sends-build.ts` et `src/campaign/build.ts`. Un `contactIdentity` serveur a existé ici en se
+ * décrivant comme « réutilisé partout » alors qu'il n'avait aucun appelant : supprimé le 2026-07-18.
+ * Factoriser les trois occurrences restantes est un vrai chantier, pas un commentaire.
  */
-
-/** Identité messageable d'un contact : le numéro si présent, sinon le BSUID. null si aucun. */
-export function contactIdentity(phoneE164: string | null | undefined, bsuid: string | null | undefined): string | null {
-  return phoneE164 ?? bsuid ?? null;
-}
 
 /**
  * WhatsApp ID (wa_id) d'un contact : les chiffres du numéro SANS « + » s'il existe, sinon le BSUID. C'est la clé

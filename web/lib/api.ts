@@ -171,18 +171,10 @@ export function contactIdsForFilters(tenantId: string, filters: ContactFilters):
   return request<{ ids: string[] }>(`/tenants/${tenantId}/contacts/ids${suffix ? `?${suffix}` : ''}`);
 }
 
-/** Récupère TOUS les contacts d'un tenant (pagination par pages de 500). Pour la sélection de
- *  campagne : ne jamais tronquer silencieusement (sinon on enverrait à un sous-ensemble). */
-export async function listAllContacts(tenantId: string): Promise<Contact[]> {
-  const page = 500;
-  const all: Contact[] = [];
-  for (let offset = 0; offset < 100_000; offset += page) {
-    const { contacts } = await listContacts(tenantId, { limit: page, offset });
-    all.push(...contacts);
-    if (contacts.length < page) break;
-  }
-  return all;
-}
+// `listAllContacts` a vécu ici sans appelant : elle paginait correctement, avec un commentaire promettant de
+// « ne jamais tronquer silencieusement », pendant que la page Contacts et l'écran Campagne appelaient
+// `listContacts` avec la limite serveur en dur. Supprimée le 2026-07-18 plutôt que gardée « au cas où » :
+// la pagination réelle de ces deux écrans est un item du backlog (bloc 5 du PLAN.md), pas un helper dormant.
 
 export interface ImportReport {
   created: number;

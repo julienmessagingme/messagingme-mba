@@ -139,7 +139,8 @@ Quatre demandes de Julien + l'encapsulation d'identité BSUID. Revue transversal
   422 si rattaché à un template), bouton + confirm.
 - **C. Bouton campagne** : « Lancer » (brouillon) / « Reprendre » (en pause, relance les restants) seulement ;
   plus rien sur en cours / terminée / échec.
-- **D. Identité BSUID** : `src/crm/identity.ts` (`classifyWaId`, `contactIdentity`) + `messagingTarget` (envoi
+- **D. Identité BSUID** : `src/crm/identity.ts` (`classifyWaId`, `waIdOf` ; le `contactIdentity` serveur listé
+  ici à l'origine n'a jamais eu d'appelant, supprimé le 2026-07-18) + `messagingTarget` (envoi
   `to` numéro / `recipient` BSUID). `bsuid` exposé (fiche, liste « Identifiant », campagne). Auto-création de
   fiche depuis l'inbound (numéro OU BSUID, isolée, opt-in 'unknown'). Matching étendu au bsuid
   (merge/tag/conversation). `buildRecipients` cible `phone ?? bsuid`. Détail : `documentation.md §Identité`.
