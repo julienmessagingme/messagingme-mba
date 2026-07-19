@@ -70,11 +70,26 @@ migrations en attente sur la base partagée :
 
 ```bash
 cd /home/ubuntu/mba && git pull
-sudo docker compose run --rm --no-deps mba-api npm run migrate   # applique les migrations en attente (idempotent)
-sudo docker compose up -d --build
+sudo docker compose build mba-api                                # 1) OBLIGATOIRE avant de migrer, cf. ci-dessous
+sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) applique les migrations (idempotent)
+sudo docker compose up -d --build                                # 3) bascule les services
 ```
 
-(En dev, `npm run migrate` local pointe la même base prod via `.env` ; « à jour, rien à appliquer » = rien en attente.)
+🔴 **Le `build` de l'étape 1 n'est pas optionnel, et son oubli est SILENCIEUX.** `docker compose run mba-api`
+démarre un conteneur depuis l'IMAGE, pas depuis le répertoire du VPS. Les migrations sont copiées dans l'image
+au build : après un simple `git pull`, les nouveaux `.sql` sont sur le disque de l'hôte mais **absents de
+l'image**, donc `npm run migrate` répond fièrement **« à jour, rien à appliquer »** alors que rien n'a été
+appliqué. Si on croit ce message et qu'on enchaîne le deploy, on met en production du code qui lit une colonne
+inexistante. Constaté le 2026-07-18 sur les migrations 0037-0039.
+
+Vérification en une commande quand il y a un doute :
+```bash
+sudo docker compose run --rm --no-deps --entrypoint sh mba-api -c 'ls db/migrations | tail -4'
+```
+La dernière migration du repo doit y figurer. Sinon, l'image est périmée : rebuild avant de migrer.
+
+(En dev, `npm run migrate` local pointe la même base prod via `.env` ; là, « à jour, rien à appliquer » est
+fiable, puisqu'il lit le répertoire réel et non une image.)
 
 ⚠️ **Exception — migration qui DROP (ou renomme) une colonne encore lue par l'ANCIEN code** (ex. `0030_drop_workflow_status.sql`) : **ordre INVERSÉ**, deploy le code D'ABORD, migrate ENSUITE. Sinon la colonne disparaît pendant que l'ancien conteneur (qui la lit encore) tourne toujours -> 500 « column … does not exist » le temps du rebuild. Règle générale : une migration qui AJOUTE une colonne se fait avant le deploy (le code neuf en a besoin) ; une migration qui RETIRE une colonne se fait après (le code neuf a cessé de la lire, l'ancien en a encore besoin).
 
