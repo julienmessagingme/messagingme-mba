@@ -41,10 +41,14 @@ passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` pui
 
 ## Docs du repo (séparation stricte)
 
+- **[PLAN.md](PLAN.md) — le plan global, à lire en premier.** Audit de scalabilité et lot de
+  features séquencés ensemble en 6 blocs, avec les efforts et les décisions déjà tranchées.
+- [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) — le détail de chaque constat de l'audit
+  (référencé par `PLAN.md` sous la forme Bn). Verdict : pas prêt pour des dizaines de clients.
 - [documentation.md](documentation.md) — technique : archi, stack, schéma DB, env, patterns
 - [features.md](features.md) — fonctionnel : les features vues utilisateur, statut
 - [wip.md](wip.md) — ce sur quoi on bosse maintenant
-- [todo.md](todo.md) — backlog (dont le plan des boucles feature-loop)
+- [todo.md](todo.md) — backlog et historique des lots livrés
 
 ## Règles spécifiques au projet
 

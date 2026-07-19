@@ -1,5 +1,8 @@
 # todo.md — backlog
 
+> **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
+> en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
+
 ## ⚠️ AUDIT DE SCALABILITÉ (2026-07-18) — LIRE EN PREMIER
 
 **`AUDIT-SCALE-2026-07-18.md`** : audit multi-agents des deux repos (10 dimensions, 117 constats,
