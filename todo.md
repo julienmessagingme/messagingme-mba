@@ -1,5 +1,23 @@
 # todo.md — backlog
 
+## ⚠️ AUDIT DE SCALABILITÉ (2026-07-18) — LIRE EN PREMIER
+
+**`AUDIT-SCALE-2026-07-18.md`** : audit multi-agents des deux repos (10 dimensions, 117 constats,
+chacun passé devant des vérificateurs adverses, 189 agents). Verdict : **le produit ne peut PAS
+accueillir des dizaines de clients en l'état**. Trois bloquants mécaniques :
+
+1. **Le multi-tenant Meta n'est pas câblé.** Les 12 sites d'envoi utilisent `config.META_ACCESS_TOKEN`
+   (token global unique) ; le token business chiffré de chaque client est écrit en base mais
+   `decryptSecret` n'a **aucun appelant** en prod. « Chaque client connecte son numéro » est simulé.
+2. **Budget de connexions Postgres non borné** : jusqu'à 42 sessions demandées contre 15 au pooler
+   Supabase. C'est la cause du « internal error » du Dashboard, **déjà avec un seul client**.
+   mm-hubspot a codé la garde (`DB_POOL_MAX`/`PGBOSS_MAX`), mba non. Correctif : une demi-journée.
+3. **Un seul numéro par tenant, câblé en dur** (`getTenantPhoneNumberId` = `order by created_at limit 1`,
+   `conversations` sans `phone_number_id`). Deux numéros chez UN client cassent l'inbox.
+
+Le plan d'action ordonné (3 vagues, ~3 semaines pour les vagues 1 et 2) est en §7 du rapport.
+Les vagues 1 et 2 sont le minimum avant de vendre. §8 liste ce qui reste à trancher côté produit.
+
 ## Plan des boucles feature-loop (ordre)
 
 1. ✅ **Loop 1 — Webhook receiver + file + idempotence** (le socle que tout consomme).
