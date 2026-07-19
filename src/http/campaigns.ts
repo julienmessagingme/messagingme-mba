@@ -31,7 +31,13 @@ export interface CampaignRouteDeps {
    * bloc d'entrée est bien un envoi de template.
    */
   getWorkflowGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
-  listCampaigns(tenantId: string): Promise<CampaignSummary[]>;
+  listCampaigns(tenantId: string, opts?: { archived?: boolean }): Promise<CampaignSummary[]>;
+  /** Archive une campagne (scopée tenant) : masquée de la liste, conservée en base. true si elle était active. */
+  archiveCampaign(campaignId: string, tenantId: string): Promise<boolean>;
+  /** Sort une campagne de l'archive (scopée tenant). true si elle y était. */
+  unarchiveCampaign(campaignId: string, tenantId: string): Promise<boolean>;
+  /** Supprime pour de bon une campagne JAMAIS lancée (scopée tenant). false si la garde métier refuse. */
+  deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
 }
@@ -60,7 +66,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   app.get('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ campaigns: await deps.listCampaigns(tenant) });
+    // `?archived=1` bascule sur la corbeille. Valeur venue de la query string, donc `unknown` : on n'accepte
+    // QUE les deux formes explicites, tout le reste (y compris 'false', '0', 'oui') vaut « campagnes actives ».
+    const q = (req.query ?? {}) as { archived?: unknown };
+    const archived = q.archived === '1' || q.archived === 'true';
+    return reply.code(200).send({ campaigns: await deps.listCampaigns(tenant, { archived }) });
   });
 
   app.get('/tenants/:tenantId/campaigns/:campaignId', guard, async (req, reply) => {
@@ -208,5 +218,52 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const ok = await deps.cancelSchedule(campaignId, authTenant);
     if (!ok) return reply.code(404).send({ error: 'campagne non programmée' });
     return reply.code(200).send({ cancelled: true, campaignId });
+  });
+
+  // Archivage : masque la campagne de la liste sans rien effacer. Les trois routes ci-dessous contrôlent
+  // l'appartenance AVANT d'agir, ce qui est la seule façon de distinguer honnêtement « pas à toi » (404) de
+  // « pas dans le bon état » (200 idempotent pour l'archive, 409 pour la suppression).
+  app.post('/tenants/:tenantId/campaigns/:campaignId/archive', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { campaignId } = req.params as { campaignId: string };
+    if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
+      return reply.code(404).send({ error: 'campagne inconnue' });
+    }
+    // Archiver une campagne déjà archivée n'est pas une erreur : l'état visé est atteint, on répond 200 sans
+    // réécrire l'horodatage (la garde `archived_at is null` du store s'en charge).
+    await deps.archiveCampaign(campaignId, tenant);
+    return reply.code(200).send({ archived: true, campaignId });
+  });
+
+  app.post('/tenants/:tenantId/campaigns/:campaignId/unarchive', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { campaignId } = req.params as { campaignId: string };
+    if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
+      return reply.code(404).send({ error: 'campagne inconnue' });
+    }
+    await deps.unarchiveCampaign(campaignId, tenant);
+    return reply.code(200).send({ archived: false, campaignId });
+  });
+
+  // Suppression DÉFINITIVE, réservée aux campagnes qui n'ont jamais rien envoyé. Une campagne partie porte
+  // l'historique qui alimente les analytics : elle s'archive, elle ne s'efface pas. 409 (et non 404) quand la
+  // garde refuse, pour que l'interface puisse proposer l'archivage à la place.
+  app.delete('/tenants/:tenantId/campaigns/:campaignId', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { campaignId } = req.params as { campaignId: string };
+    if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
+      return reply.code(404).send({ error: 'campagne inconnue' });
+    }
+    const deleted = await deps.deleteDraftCampaign(campaignId, tenant);
+    if (!deleted) {
+      return reply.code(409).send({ error: 'campagne déjà lancée : elle ne peut être qu\'archivée' });
+    }
+    return reply.code(200).send({ deleted: true, campaignId });
   });
 }

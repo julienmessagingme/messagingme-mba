@@ -63,6 +63,9 @@ interface Deps {
   scheduleOk?: boolean; // scheduleCampaign renvoie ce booléen (défaut true)
   cancelOk?: boolean; // cancelSchedule renvoie ce booléen (défaut true)
   scheduled?: Array<{ id: string; when: string }>; // capture des programmations
+  listOpts?: Array<{ archived?: boolean } | undefined>; // capture des options reçues par listCampaigns
+  archiveCalls?: Array<{ id: string; tenant: string; kind: 'archive' | 'unarchive' | 'delete' }>;
+  deleteOk?: boolean; // deleteDraftCampaign renvoie ce booléen (défaut true)
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -78,9 +81,15 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       getRunSizing: async () => (d.runSizing !== undefined ? d.runSizing : { ratePerMinute: null, pendingCount: 0 }),
       scheduleCampaign: async (id, _tenant, when) => { d.scheduled?.push({ id, when: when.toISOString() }); return d.scheduleOk ?? true; },
       cancelSchedule: async () => d.cancelOk ?? true,
-      listCampaigns: async (tenant) => [
-        { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
-      ],
+      listCampaigns: async (tenant, opts) => {
+        d.listOpts?.push(opts);
+        return [
+          { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', archivedAt: null, counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
+        ];
+      },
+      archiveCampaign: async (id, tenant) => { d.archiveCalls?.push({ id, tenant, kind: 'archive' }); return true; },
+      unarchiveCampaign: async (id, tenant) => { d.archiveCalls?.push({ id, tenant, kind: 'unarchive' }); return true; },
+      deleteDraftCampaign: async (id, tenant) => { d.archiveCalls?.push({ id, tenant, kind: 'delete' }); return d.deleteOk ?? true; },
       getCampaignDetail: async (id, tenant) =>
         id === 'known' && tenant === 't1'
           ? ({ id: 'known', name: 'Promo', category: 'marketing', status: 'completed', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 1, pending: 0, sending: 0, sent: 1, failed: 0, skipped: 0 }, recipients: [{ id: 'r1', toE164: '+33611', status: 'sent', messageId: 'm-1', error: null, sentAt: '2026-07-05T00:00:00.000Z' }] } as never)

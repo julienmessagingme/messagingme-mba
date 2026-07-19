@@ -43,6 +43,9 @@ export interface CampaignSummary {
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
+  /** Instant d'archivage (ISO UTC). null = campagne active. ORTHOGONAL au statut : une campagne archivée
+   *  garde son statut d'origine (completed, failed...) et ses destinataires, qui portent l'historique. */
+  archivedAt: string | null;
   counts: RecipientCounts;
 }
 export interface CampaignDetail extends CampaignSummary {
@@ -228,15 +231,24 @@ export class PgCampaignRepo {
     return res.rows.map((r) => ({ id: r.id, name: r.name, status: r.status, templateLanguage: r.template_language }));
   }
 
-  /** Résumé des campagnes du tenant avec le décompte des destinataires par statut. */
-  async listCampaignSummaries(tenantId: string): Promise<CampaignSummary[]> {
+  /**
+   * Résumé des campagnes du tenant avec le décompte des destinataires par statut.
+   * Par défaut, seules les campagnes ACTIVES : `opts.archived = true` renvoie exclusivement les archivées
+   * (les deux ensembles sont disjoints, jamais réunis, sinon la liste mélangerait actif et corbeille).
+   */
+  async listCampaignSummaries(tenantId: string, opts?: { archived?: boolean }): Promise<CampaignSummary[]> {
+    // Prédicat choisi sur un BOOLÉEN interne, jamais sur une valeur d'entrée : pas d'interpolation de donnée
+    // utilisateur. Écrit en littéral (et non `(archived_at is not null) = $2`) pour que la branche par défaut
+    // touche l'index partiel `campaigns_active_idx ... where archived_at is null` de la migration 0038.
+    const archivedFilter = opts?.archived ? 'c.archived_at is not null' : 'c.archived_at is null';
     const res = await this.pool.query<{
       id: string; name: string; category: CampaignCategory; status: CampaignStatus;
       phone_number_id: string; template_name: string; template_language: string; created_at: Date; scheduled_at: Date | null;
+      archived_at: Date | null;
       total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
     }>(
       `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at, c.scheduled_at,
+              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -245,7 +257,7 @@ export class PgCampaignRepo {
               count(r.id) filter (where r.status = 'skipped') as skipped
        from campaigns c
        left join campaign_recipients r on r.campaign_id = c.id
-       where c.tenant_id = $1
+       where c.tenant_id = $1 and ${archivedFilter}
        group by c.id
        order by c.created_at desc`,
       [tenantId],
@@ -253,15 +265,71 @@ export class PgCampaignRepo {
     return res.rows.map((r) => this.toSummary(r));
   }
 
+  /**
+   * Archive une campagne (scopée tenant). Réversible, et la ligne comme ses destinataires restent en base :
+   * c'est un masquage de liste, PAS une suppression. Les analytics continuent de la compter.
+   * Idempotent côté appelant : rowCount = 0 signifie « déjà archivée » aussi bien que « pas à toi », d'où le
+   * contrôle d'appartenance séparé dans la route (qui seul peut rendre un 404 honnête).
+   */
+  async archiveCampaign(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set archived_at = now()
+       where id = $1 and tenant_id = $2 and archived_at is null`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** Sort une campagne de l'archive (scopée tenant). true si elle y était. */
+  async unarchiveCampaign(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set archived_at = null
+       where id = $1 and tenant_id = $2 and archived_at is not null`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Supprime DÉFINITIVEMENT une campagne, et seulement si elle n'a jamais rien envoyé. `campaign_recipients`
+   * part avec elle par `on delete cascade` (0003) : c'est la seule FK vers `campaigns`, rien d'autre à nettoyer.
+   *
+   * La garde n'est PAS `status = 'draft'` seul. `POST /run` enfile le job SANS changer le statut (c'est le
+   * moteur qui passe à 'running') : entre le 202 et la prise en charge par le worker, une campagne lancée est
+   * encore un brouillon. On exige donc aussi qu'AUCUN destinataire n'ait quitté 'pending'. Les deux conditions
+   * sont dans le WHERE, donc évaluées atomiquement : pas de lecture-puis-écriture, pas de course.
+   *
+   * Fenêtre résiduelle assumée : si le job est enfilé mais que le worker n'a encore touché aucun destinataire,
+   * la suppression passe et le job échouera ensuite en « campagne inconnue » (job en DLQ, aucune donnée
+   * corrompue). Elle dure les quelques secondes entre le lancement et la prise en charge, sur une campagne
+   * qu'on vient précisément de lancer : la fermer exigerait d'interroger la file, ce qui ne vaut pas ce prix.
+   */
+  async deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `delete from campaigns
+       where id = $1 and tenant_id = $2 and status = 'draft'
+         and not exists (
+           select 1 from campaign_recipients r
+           where r.campaign_id = campaigns.id and r.status <> 'pending'
+         )`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Détail d'une campagne (scopée tenant) + ses destinataires. null si absente/autre tenant. */
   async getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null> {
     const head = await this.pool.query<{
       id: string; name: string; category: CampaignCategory; status: CampaignStatus;
       phone_number_id: string; template_name: string; template_language: string; created_at: Date; scheduled_at: Date | null;
+      archived_at: Date | null;
       total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
     }>(
+      // Le détail ne filtre PAS sur archived_at : une campagne archivée reste consultable (c'est tout l'intérêt
+      // d'archiver plutôt que de supprimer). On sélectionne quand même la colonne, sinon `toSummary` rendrait
+      // `archivedAt: null` sur une campagne archivée, c'est-à-dire une réponse fausse.
       `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at, c.scheduled_at,
+              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -329,6 +397,7 @@ export class PgCampaignRepo {
   private toSummary(r: {
     id: string; name: string; category: CampaignCategory; status: CampaignStatus;
     phone_number_id: string; template_name: string | null; template_language: string | null; created_at: Date; scheduled_at?: Date | null;
+    archived_at?: Date | null;
     total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
   }): CampaignSummary {
     return {
@@ -342,6 +411,7 @@ export class PgCampaignRepo {
       templateLanguage: r.template_language ?? '',
       createdAt: r.created_at.toISOString(),
       scheduledAt: r.scheduled_at ? r.scheduled_at.toISOString() : null,
+      archivedAt: r.archived_at ? r.archived_at.toISOString() : null,
       counts: {
         total: Number(r.total),
         pending: Number(r.pending),

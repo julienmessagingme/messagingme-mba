@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
+import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
 import { fmtCost } from '@/lib/format';
@@ -16,6 +17,9 @@ import {
   createCampaign,
   runCampaign,
   cancelSchedule,
+  archiveCampaign,
+  unarchiveCampaign,
+  deleteCampaign,
   listTemplates,
   listWorkflows,
   listUserFields,
@@ -91,6 +95,8 @@ function CampaignsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [mode, setMode] = useState<'list' | 'create'>('list');
+  // Corbeille : la liste montre SOIT les campagnes actives SOIT les archivées, jamais les deux mélangées.
+  const [showArchived, setShowArchived] = useState(false);
   // Un lancement inline (étape 2) est en cours dans CreateForm -> on gèle le retour liste (remonté par callback).
   const [createBusy, setCreateBusy] = useState(false);
   // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
@@ -103,7 +109,10 @@ function CampaignsInner({ session }: { session: Session }) {
   const reload = useCallback(async () => {
     setError(null);
     try {
-      const [c, n] = await Promise.all([listCampaigns(session.tenantId), listPhoneNumbers(session.tenantId)]);
+      const [c, n] = await Promise.all([
+        listCampaigns(session.tenantId, { archived: showArchived }),
+        listPhoneNumbers(session.tenantId),
+      ]);
       setCampaigns(c.campaigns);
       setNumbers(n.phoneNumbers);
     } catch (err) {
@@ -111,7 +120,7 @@ function CampaignsInner({ session }: { session: Session }) {
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId, t]);
+  }, [session.tenantId, showArchived, t]);
 
   useEffect(() => {
     void reload();
@@ -156,6 +165,34 @@ function CampaignsInner({ session }: { session: Session }) {
     }
   }
 
+  // Sort la campagne de la liste courante : son panneau de détail ouvert n'a plus de ligne à laquelle se
+  // rattacher, on le referme d'abord pour ne pas laisser un détail orphelin à l'écran.
+  async function mutateAndReload(id: string, action: () => Promise<unknown>, failure: string) {
+    setError(null);
+    try {
+      await action();
+      if (detail?.id === id) setDetail(null);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : failure);
+    }
+  }
+
+  async function archive(id: string) {
+    await mutateAndReload(id, () => archiveCampaign(session.tenantId, id), t('Archivage impossible', 'Archiving failed'));
+  }
+  async function unarchive(id: string) {
+    await mutateAndReload(id, () => unarchiveCampaign(session.tenantId, id), t('Restauration impossible', 'Restore failed'));
+  }
+  async function remove(c: CampaignSummary) {
+    const ok = window.confirm(t(
+      `Supprimer définitivement « ${c.name} » ? Cette campagne n'a jamais rien envoyé, elle sera effacée pour de bon.`,
+      `Permanently delete “${c.name}”? This campaign never sent anything, it will be erased for good.`,
+    ));
+    if (!ok) return;
+    await mutateAndReload(c.id, () => deleteCampaign(session.tenantId, c.id), t('Suppression impossible', 'Deletion failed'));
+  }
+
   // Écran de création (ouvert via « Ajouter une campagne »). Pleine largeur : fullBleed retire le padding et
   // impose overflow-hidden sur <main>, donc on gère ici notre propre scroll et notre propre padding.
   if (mode === 'create') {
@@ -182,10 +219,15 @@ function CampaignsInner({ session }: { session: Session }) {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Campagnes', 'Campaigns')} ({campaigns.length})</h2>
+          <h2 className="text-base font-semibold tracking-tight text-ink-900">
+            {showArchived ? t('Campagnes archivées', 'Archived campaigns') : t('Campagnes', 'Campaigns')} ({campaigns.length})
+          </h2>
           {pricing ? (
+            /* « des campagnes affichées », et non « total » : la somme porte sur la liste RENDUE, qui exclut
+               désormais les archivées. Le dashboard, lui, compte tout. Deux chiffres différents sur deux écrans
+               sont acceptables tant que chacun dit sur quoi il porte ; « total » ici serait un mensonge. */
             <p className="mt-0.5 text-xs text-ink-500">
-              {t('coût estimé total', 'estimated total cost')} ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0))}</span> <span className="text-ink-400">({t('devise du compte', 'account currency')})</span>
+              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0))}</span> <span className="text-ink-400">({t('devise du compte', 'account currency')})</span>
             </p>
           ) : (
             <p className="mt-0.5 text-xs text-ink-400">{t('coût estimé indisponible (tarif Meta)', 'estimated cost unavailable (Meta pricing)')}</p>
@@ -200,6 +242,14 @@ function CampaignsInner({ session }: { session: Session }) {
           ) : (
             <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
           )}
+          {/* Bascule actives / archivées. `reload` dépend de showArchived, donc l'effet de montage la rejoue
+              tout seul au changement : pas d'appel manuel ici, sinon on chargerait deux fois. */}
+          <button
+            onClick={() => { setDetail(null); setShowArchived((v) => !v); }}
+            className="text-xs text-ink-500 hover:text-ink-800 hover:underline"
+          >
+            {showArchived ? t('Voir les campagnes actives', 'View active campaigns') : t('Voir les archivées', 'View archived')}
+          </button>
           <button
             onClick={() => { setDetail(null); setMode('create'); }}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
@@ -214,7 +264,9 @@ function CampaignsInner({ session }: { session: Session }) {
         <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
       ) : campaigns.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-          {t('Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.', 'No campaigns. Click "+ Add a campaign" to create one.')}
+          {showArchived
+            ? t('Aucune campagne archivée.', 'No archived campaigns.')
+            : t('Aucune campagne. Clique « + Ajouter une campagne » pour en créer une.', 'No campaigns. Click "+ Add a campaign" to create one.')}
         </div>
       ) : (
           <ul className="space-y-2">
@@ -279,6 +331,23 @@ function CampaignsInner({ session }: { session: Session }) {
                     >
                       {detail?.id === c.id ? t('Masquer', 'Hide') : t('Détails', 'Details')}
                     </button>
+                    {/* Sortie de liste. Une campagne qui a envoyé ne peut QUE s'archiver : ses destinataires
+                        portent l'historique lu par les analytics. Seul un brouillon dont aucun destinataire n'a
+                        bougé se supprime pour de bon. Le serveur retient la même garde et répond 409 s'il
+                        n'est pas d'accord : ce test local ne fait qu'éviter de proposer un bouton perdant. */}
+                    {c.archivedAt ? (
+                      <button onClick={() => unarchive(c.id)} className="text-xs text-ink-500 hover:text-ink-800 hover:underline">
+                        {t('Restaurer', 'Restore')}
+                      </button>
+                    ) : c.status === 'draft' && c.counts.total === c.counts.pending ? (
+                      <button onClick={() => remove(c)} className="text-xs text-red-600 hover:underline">
+                        {t('Supprimer', 'Delete')}
+                      </button>
+                    ) : (
+                      <button onClick={() => archive(c.id)} className="text-xs text-ink-500 hover:text-ink-800 hover:underline">
+                        {t('Archiver', 'Archive')}
+                      </button>
+                    )}
                   </div>
                 </div>
                 {detail?.id === c.id && (
@@ -418,6 +487,10 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
   // Références chargées une fois (indépendamment du polling des campagnes) : templates, scénarios, champs, tags.
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  // Création d'un template SANS quitter la campagne en cours. `submittedTemplate` retient ce qui vient d'être
+  // soumis : le formulaire se referme, mais la confirmation doit survivre pour expliquer l'attente Meta.
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [submittedTemplate, setSubmittedTemplate] = useState<CreatedTemplate | null>(null);
   const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
@@ -472,6 +545,17 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       if (alive && cfg) setHubspotListsEnabled(cfg.hubspotListsEnabled);
     })();
     return () => { alive = false; };
+  }, [tenantId]);
+
+  // Recharge la SEULE liste des templates (après une création inline, ou pour vérifier une approbation Meta).
+  // Même filtre APPROVED que le chargement initial : le select ne doit jamais proposer un template inenvoyable.
+  const reloadTemplates = useCallback(async () => {
+    try {
+      const tpl = await listTemplates(tenantId);
+      setTemplates(tpl.templates.filter((x) => x.status === 'APPROVED'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rafraîchissement impossible');
+    }
   }, [tenantId]);
 
   // Construit ContactFilters depuis l'UI : n'inclut une clé que si elle est renseignée (miroir de filtersToQuery).
@@ -1061,6 +1145,49 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
             {selectedTemplate?.body && (
               <div className="mt-3">
                 <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={selectedTemplate?.buttons ?? []} hideNote />
+              </div>
+            )}
+
+            {/* Créer un template sans quitter la campagne. Modèle : la création inline d'un formulaire depuis le
+                sélecteur de bouton FLOW, écran Templates. Une différence CHANGE tout ici : un template neuf revient
+                PENDING, or ce select ne liste que les APPROVED. On ne l'injecte donc PAS dans la liste (il serait
+                sélectionnable et inenvoyable, l'échec arriverait plus tard chez Meta, illisible). On affiche à la
+                place ce qui vient de se passer, et on NOMME l'attente : le bouton n'a jamais l'air cassé. */}
+            {!loadingRefs && !creatingTemplate && !submittedTemplate && (
+              <button type="button" onClick={() => setCreatingTemplate(true)} className="mt-2 text-xs text-brand-600 hover:underline">
+                ＋ {t('Créer un nouveau template', 'Create a new template')}
+              </button>
+            )}
+            {submittedTemplate && (
+              <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+                <p className="text-sm font-medium text-ink-900">
+                  {t('Template', 'Template')} « {submittedTemplate.name} » {t('soumis', 'submitted')} ({t('statut', 'status')} : {submittedTemplate.status}).
+                </p>
+                <p className="mt-1 text-xs text-ink-600">
+                  {t(
+                    "Il passe en revue chez Meta. Il apparaîtra dans cette liste une fois approuvé : une campagne ne peut partir qu'avec un template déjà approuvé.",
+                    'It goes through Meta review. It will show up in this list once approved: a campaign can only run with an already-approved template.',
+                  )}
+                </p>
+                <div className="mt-2 flex items-center gap-3">
+                  <button type="button" onClick={() => { void reloadTemplates(); }} className="text-xs text-brand-600 hover:underline">
+                    {t('Rafraîchir la liste', 'Refresh the list')}
+                  </button>
+                  <button type="button" onClick={() => setSubmittedTemplate(null)} className="text-xs text-ink-500 hover:underline">
+                    {t('Fermer', 'Close')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {creatingTemplate && (
+              <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+                <TemplateForm
+                  tenantId={tenantId}
+                  onCreated={(created) => { setCreatingTemplate(false); if (created) setSubmittedTemplate(created); }}
+                />
+                <button type="button" onClick={() => setCreatingTemplate(false)} className="mt-2 text-xs text-ink-500 hover:underline">
+                  {t('Annuler', 'Cancel')}
+                </button>
               </div>
             )}
           </Field>

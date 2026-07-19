@@ -30,6 +30,9 @@ const campaigns: CampaignRouteDeps = {
   cancelSchedule: async () => true,
   getWorkflowGraph: async () => null,
   listCampaigns: async () => [],
+  archiveCampaign: async () => true,
+  unarchiveCampaign: async () => true,
+  deleteDraftCampaign: async () => true,
   getCampaignDetail: async () => null,
   listPhoneNumbers: async () => [],
 };

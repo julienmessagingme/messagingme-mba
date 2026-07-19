@@ -242,6 +242,8 @@ export interface CampaignSummary {
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
+  /** Instant d'archivage (ISO UTC). null = campagne active. Indépendant du statut. */
+  archivedAt: string | null;
   counts: RecipientCounts;
 }
 export interface CampaignRecipient {
@@ -287,8 +289,9 @@ export interface CreateCampaignInput {
   ratePerMinute?: number | null;
 }
 
-export function listCampaigns(tenantId: string): Promise<{ campaigns: CampaignSummary[] }> {
-  return request<{ campaigns: CampaignSummary[] }>(`/tenants/${tenantId}/campaigns`);
+/** Campagnes actives par défaut ; `archived: true` renvoie la corbeille (les deux ensembles sont disjoints). */
+export function listCampaigns(tenantId: string, opts?: { archived?: boolean }): Promise<{ campaigns: CampaignSummary[] }> {
+  return request<{ campaigns: CampaignSummary[] }>(`/tenants/${tenantId}/campaigns${opts?.archived ? '?archived=1' : ''}`);
 }
 export function getCampaign(tenantId: string, campaignId: string): Promise<CampaignDetail> {
   return request<CampaignDetail>(`/tenants/${tenantId}/campaigns/${campaignId}`);
@@ -312,6 +315,18 @@ export function runCampaign(campaignId: string, scheduledAt?: string): Promise<{
 /** Annule une campagne programmée : elle repasse en brouillon. */
 export function cancelSchedule(campaignId: string): Promise<{ cancelled: boolean }> {
   return request(`/campaigns/${campaignId}/cancel-schedule`, { method: 'POST' });
+}
+/** Archive une campagne : masquée de la liste, conservée en base (les analytics continuent de la compter). */
+export function archiveCampaign(tenantId: string, campaignId: string): Promise<{ archived: boolean }> {
+  return request(`/tenants/${tenantId}/campaigns/${campaignId}/archive`, { method: 'POST' });
+}
+/** Sort une campagne de l'archive. */
+export function unarchiveCampaign(tenantId: string, campaignId: string): Promise<{ archived: boolean }> {
+  return request(`/tenants/${tenantId}/campaigns/${campaignId}/unarchive`, { method: 'POST' });
+}
+/** Supprime DÉFINITIVEMENT une campagne jamais lancée. 409 si elle est déjà partie (il faut l'archiver). */
+export function deleteCampaign(tenantId: string, campaignId: string): Promise<{ deleted: boolean }> {
+  return request(`/tenants/${tenantId}/campaigns/${campaignId}`, { method: 'DELETE' });
 }
 
 // --- Templates ---
