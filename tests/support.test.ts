@@ -70,19 +70,51 @@ describe('ResendClient.send', () => {
 });
 
 describe('routes support', () => {
-  it('POST valide -> 200, sendSupport appelé avec l auteur + reply-to', async () => {
+  it('POST valide -> 200, reply-to résolu EN BASE depuis le compte authentifié', async () => {
     let captured: unknown = null;
-    const a = app({ sendSupport: async (i) => { captured = i; } });
-    const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'Bug', message: 'ça casse', email: 'julien@x.fr' } });
+    const a = app({
+      sendSupport: async (i) => { captured = i; },
+      getUserEmail: async (id) => (id === 'u1' ? 'julien@x.fr' : null),
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'Bug', message: 'ça casse' } });
     expect(res.statusCode).toBe(200);
     expect(captured).toMatchObject({ tenantId: 't1', userId: 'u1', email: 'julien@x.fr', subject: 'Bug', message: 'ça casse' });
     await a.close();
   });
 
-  it('POST email invalide -> ignoré (reply-to null), envoi quand même', async () => {
+  it('un email GLISSÉ DANS LE CORPS est ignoré : le reply-to reste celui du compte', async () => {
+    // C'est l'invariant du durcissement : avant, n'importe quel compte authentifié pouvait faire répondre
+    // l'équipe à l'adresse de son choix, en la posant simplement dans le corps de la requête.
+    let captured: { email?: string | null } = {};
+    const a = app({
+      sendSupport: async (i) => { captured = i; },
+      getUserEmail: async () => 'vrai@compte.fr',
+    });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/support', ...h(token),
+      payload: { subject: 'X', message: 'Y', email: 'attaquant@ailleurs.fr' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(captured.email).toBe('vrai@compte.fr');
+    await a.close();
+  });
+
+  it('lookup d’email en panne -> envoi quand même, sans reply-to', async () => {
+    let captured: { email?: string | null } = {};
+    const a = app({
+      sendSupport: async (i) => { captured = i; },
+      getUserEmail: async () => { throw new Error('pool saturé'); },
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
+    expect(res.statusCode).toBe(200);
+    expect(captured.email).toBeNull();
+    await a.close();
+  });
+
+  it('dep getUserEmail ABSENT -> pas de reply-to, jamais de TypeError', async () => {
     let captured: { email?: string | null } = {};
     const a = app({ sendSupport: async (i) => { captured = i; } });
-    const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y', email: 'pas-un-email' } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
     expect(res.statusCode).toBe(200);
     expect(captured.email).toBeNull();
     await a.close();
@@ -128,5 +160,50 @@ describe('routes support', () => {
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', headers: { 'content-type': 'application/json' }, payload: { subject: 'X', message: 'Y' } });
     expect(res.statusCode).toBe(401);
     await a.close();
+  });
+
+  it('6e envoi dans la minute -> 429, et le message n’est PAS envoyé', async () => {
+    let sends = 0;
+    const a = app({ sendSupport: async () => { sends += 1; } });
+    const post = () => a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
+    for (let i = 0; i < 5; i += 1) expect((await post()).statusCode).toBe(200);
+    const blocked = await post();
+    expect(blocked.statusCode).toBe(429);
+    expect(sends).toBe(5); // le 6e n'a pas atteint Resend : c'est tout l'intérêt du plafond
+    await a.close();
+  });
+
+  it('un tenant interdit ne consomme PAS de quota', async () => {
+    // Le 403 est rendu avant le limiteur : sinon un tiers pourrait épuiser le quota d'un compte en tapant
+    // des URL d'autres tenants, et l'utilisateur légitime se verrait refuser son propre message.
+    const a = app();
+    for (let i = 0; i < 8; i += 1) {
+      const res = await a.inject({ method: 'POST', url: '/tenants/AUTRE/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
+      expect(res.statusCode).toBe(403);
+    }
+    const mine = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
+    expect(mine.statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('l’échec d’envoi laisse une TRACE serveur (ne pas masquer sans journaliser)', async () => {
+    // Le `catch` nu d'avant rendait indiscernables une panne Resend et un bug de programmation : les deux
+    // donnaient « réessaie plus tard », et il n'en restait RIEN nulle part.
+    const logged: string[] = [];
+    const spy = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const a = app({ sendSupport: async () => { throw new Error('resend 403 domaine non vérifié'); } });
+      const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'X', message: 'Y' } });
+      expect(res.statusCode).toBe(502);
+      await a.close();
+    } finally {
+      console.error = spy;
+    }
+    const line = logged.find((l) => l.includes('support_send_failed'));
+    expect(line).toBeTruthy();
+    const parsed = JSON.parse(line as string) as { tenant: string; userId: string; err: string };
+    expect(parsed).toMatchObject({ tenant: 't1', userId: 'u1' });
+    expect(parsed.err).toContain('domaine non vérifié'); // la cause réelle, pas le message client
   });
 });

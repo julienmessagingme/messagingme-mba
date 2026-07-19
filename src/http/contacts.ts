@@ -3,6 +3,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { ContactRow } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
+import type { ContactHistory } from '../crm/contact-history.pg';
 import { validateFieldValue, canonicalizeFieldValue } from '../crm/fields';
 
 export interface ContactsRouteDeps {
@@ -15,6 +16,8 @@ export interface ContactsRouteDeps {
   ): Promise<ContactRow | null>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
+  /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
+  getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -80,5 +83,24 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const updated = await deps.applyEdits(tenant, contactId, { fields: values, removeFields, addTags, removeTags, ...(profileName !== undefined ? { profileName } : {}) });
     if (!updated) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send({ contact: updated });
+  });
+
+  /**
+   * Historique d'un contact : campagnes reçues et conversations tenues. Lecture seule.
+   *
+   * Le segment `/history` n'est pas décoratif : un `GET /tenants/:t/contacts/:contactId` nu entrerait en
+   * concurrence de routage avec les GET statiques `/contacts/count` et `/contacts/ids` de src/http/import.ts.
+   * Fastify tranche en faveur du statique, mais c'est une ambiguïté gratuite.
+   *
+   * Admin-only, comme tout ce fichier (`registerContacts` est monté avec `requireAdmin`). Un agent voit déjà
+   * les mêmes conversations dans l'inbox, mais pas l'historique de campagnes, qui est une vue de pilotage.
+   */
+  app.get('/tenants/:tenantId/contacts/:contactId/history', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { contactId } = req.params as { contactId: string };
+    const history = await deps.getContactHistory(tenant, contactId);
+    if (!history) return reply.code(404).send({ error: 'contact inconnu' });
+    return reply.code(200).send(history);
   });
 }

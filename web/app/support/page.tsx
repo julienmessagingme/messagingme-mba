@@ -23,7 +23,7 @@ function SupportInner({ session }: { session: Session }) {
     setBusy(true);
     setError(null);
     try {
-      await sendSupportMessage(session.tenantId, { subject: subject.trim(), message: message.trim(), email: session.email });
+      await sendSupportMessage(session.tenantId, { subject: subject.trim(), message: message.trim() });
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Envoi impossible pour le moment.", 'Unable to send right now.'));
@@ -50,11 +50,11 @@ function SupportInner({ session }: { session: Session }) {
         <form onSubmit={submit} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-600">{t('Sujet', 'Subject')}</label>
-            <input required value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder={t("Ex. Problème d'envoi de campagne", 'E.g. Campaign sending issue')} />
+            <input required maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder={t("Ex. Problème d'envoi de campagne", 'E.g. Campaign sending issue')} />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
-            <textarea required rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder={t('Décris ta demande…', 'Describe your request…')} />
+            <textarea required maxLength={5000} rows={6} value={message} onChange={(e) => setMessage(e.target.value)} className={inputCls} placeholder={t('Décris ta demande…', 'Describe your request…')} />
           </div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <button

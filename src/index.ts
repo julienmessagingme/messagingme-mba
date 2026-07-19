@@ -4,6 +4,7 @@ import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
+import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
 import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
 
   const repo = new PgCampaignRepo(pool);
   const contactStore = new PgContactStore(pool);
+  const contactHistoryStore = new PgContactHistoryStore(pool);
   const templateHintStore = new PgTemplateHintStore(pool);
   const fieldStore = new PgUserFieldStore(pool);
   const tagStore = new PgTagStore(pool);
@@ -251,6 +253,7 @@ async function main(): Promise<void> {
     contacts: {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
       listUserFields: (tenant) => fieldStore.list(tenant),
+      getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
     },
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
@@ -309,6 +312,7 @@ async function main(): Promise<void> {
     opsToken: config.OPS_TOKEN,
     support: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
+      getUserEmail: async (userId) => (await userStore.getById(userId))?.email ?? null,
       sendSupport: async ({ tenantId, userId, email, subject, message }) => {
         const client = new ResendClient(config.RESEND_API_KEY);
         const text = [

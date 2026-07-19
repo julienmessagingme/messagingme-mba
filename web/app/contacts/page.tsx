@@ -15,6 +15,7 @@ import {
   type UserFieldDef,
   type UserFieldKind,
 } from '@/lib/api';
+import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate } from '@/lib/day';
 
@@ -298,6 +299,9 @@ function ContactDetail({
   const [cVal, setCVal] = useState('');
   // Champ déjà créé mais dont la pose de valeur a échoué : on le réutilise au retry (évite un 409).
   const [createdRef, setCreatedRef] = useState<UserFieldDef | null>(null);
+  // Onglet courant. L'historique se charge au premier affichage seulement (le panneau fait son propre fetch,
+  // et n'est monté que quand l'onglet est actif).
+  const [tab, setTab] = useState<'fiche' | 'historique'>('fiche');
 
   const selectedDef = defByKey.get(newKey);
 
@@ -364,7 +368,7 @@ function ContactDetail({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold tracking-tight text-ink-900">{contact.profileName ?? contactIdentity(contact) ?? '-'}</h3>
@@ -373,6 +377,22 @@ function ContactDetail({
           <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
         </div>
 
+        <div className="mt-4 flex gap-1 border-b border-ink-100 text-sm">
+          {(['fiche', 'historique'] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className={`-mb-px border-b-2 px-3 py-1.5 transition ${tab === k ? 'border-brand-500 font-medium text-brand-700' : 'border-transparent text-ink-500 hover:text-ink-800'}`}
+            >
+              {k === 'fiche' ? t('Fiche', 'Details') : t('Historique', 'History')}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'historique' ? (
+          <ContactHistoryPanel tenantId={tenantId} contactId={contact.id} />
+        ) : (
+        <>
         <div className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
           <span className="text-ink-400">{t('Nom', 'Name')}</span>
           <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
@@ -478,6 +498,8 @@ function ContactDetail({
             )}
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

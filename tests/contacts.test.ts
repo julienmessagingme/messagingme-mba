@@ -44,6 +44,7 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
       return result;
     },
     listUserFields: async () => FIELDS,
+    getContactHistory: async () => ({ sends: [], conversations: [] }),
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), cap };

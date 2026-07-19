@@ -123,6 +123,47 @@ export function updateContact(
   return request<{ contact: Contact }>(`/tenants/${tenantId}/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 
+// --- Historique d'un contact (onglet de la fiche) ---
+
+export interface ContactSend {
+  campaignId: string;
+  campaignName: string;
+  category: string;
+  /** null quand la campagne envoie un scénario au lieu d'un template. */
+  templateName: string | null;
+  templateLanguage: string | null;
+  workflowName: string | null;
+  status: string;
+  sentAt: string | null;
+  error: string | null;
+  /** Dernier état connu. null = statut jamais remonté par Meta, ce qui ne veut PAS dire « non délivré ». */
+  deliveryStatus: string | null;
+  deliveryUpdatedAt: string | null;
+}
+export interface ContactConversation {
+  conversationId: string;
+  waId: string;
+  lastMessageAt: string;
+  lastPreview: string | null;
+  messagesCount: number;
+  analysisStatus: string;
+  analysis: {
+    sentiment: string; intent: string; topic: string; resolved: boolean;
+    handledBy: string; exchangesCount: number; actionSuggestion: string; analyzedAt: string;
+  } | null;
+  /** L'analyse existe mais un message est arrivé depuis : elle est périmée. */
+  analysisStale: boolean;
+  inboxHref: string;
+}
+export interface ContactHistory {
+  sends: ContactSend[];
+  conversations: ContactConversation[];
+}
+/** Campagnes reçues + conversations tenues par ce contact. 404 si le contact n'est pas dans l'espace. */
+export function getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory> {
+  return request<ContactHistory>(`/tenants/${tenantId}/contacts/${contactId}/history`);
+}
+
 /** Un filtre sur la valeur d'un champ perso (jsonb, valeur texte) : égalité exacte ou sous-chaîne. */
 export interface ContactFieldFilter { key: string; op: 'eq' | 'contains'; value: string }
 
@@ -731,7 +772,8 @@ export async function getOpsOverview(opsToken: string): Promise<OpsOverview> {
 
 // --- Support (formulaire de contact -> email Resend) ---
 
-export function sendSupportMessage(tenantId: string, input: { subject: string; message: string; email?: string }): Promise<{ ok: boolean }> {
+/** Le reply-to n'est PAS envoye par le client : le serveur le resout depuis le compte authentifie. */
+export function sendSupportMessage(tenantId: string, input: { subject: string; message: string }): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>(`/tenants/${tenantId}/support`, { method: 'POST', body: JSON.stringify(input) });
 }
 
