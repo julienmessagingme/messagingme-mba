@@ -62,28 +62,27 @@ Ces quatre points sont exploitables aujourd'hui, sur la prod.
 
 ---
 
-## Bloc 2 — le lot de features demandé (3 à 4 jours) — 2/8 FAITS
+## ✅ Bloc 2 — FAIT (2026-07-19/20), le lot de features demandé — 8/8
 
 Arbitrages déjà tranchés par Julien le 2026-07-18, intégrés ci-dessous.
 
-> **⚠️ REPRISE : lire `.loop/lot2-cartographie.md` AVANT de coder.** Cartographie des points d'insertion exacts
-> des 8 items (fichiers, numéros de ligne, code existant à imiter, migration, pièges), produite par 5 agents en
-> parallèle. Elle a déjà attrapé des pièges non évidents. Ne PAS la refaire, elle coûte ~500k tokens.
+> Les 8 items sont livrés et revus (commits 10cef93, 07b8d40, 01156ab). Aucune migration restante :
+> 0037, 0038 et 0039 étaient déjà appliquées, le code les lit désormais.
 >
-> **Les migrations 0037, 0038 et 0039 sont DÉJÀ APPLIQUÉES en production.** 0038 (`campaigns.archived_at` +
-> index partiel) et 0039 (index `campaign_recipients(contact_id)` et `conversations(contact_id)`) sont inertes
-> tant que le code ne les lit pas : l'archivage et l'historique contact n'ont donc plus de migration à faire.
+> `.loop/lot2-cartographie.md` (cartographie des points d'insertion, ~500k tokens à produire) reste sur disque,
+> gitignorée. Elle a servi et a attrapé plusieurs pièges non évidents ; la garder tant que le lot n'est pas
+> validé à l'écran par Julien.
 
 | # | Action | Décision / note | Effort |
 |---|---|---|---|
-| 2.1 | **Menu « Developers » en bas de la sidebar**, avec deux entrées : documentation de l'API et gestion des clés. Aujourd'hui les clés se créent en curl, la page n'existe pas (c'est la « Phase C » différée du Palier 3) | **Plusieurs clés nommées** par espace (ce que le backend fait déjà) : créer, lister, révoquer. Clé affichée en clair une seule fois à la création | M |
-| 2.2 | **Analytics en sous-menus quanti / quali** dans la sidebar | quanti = le dashboard actuel ; quali = le bloc Conversations (analyse) déjà construit au Lot 9, extrait dans sa propre page | S |
+| 2.1 | ✅ **FAIT** Menu « Developers » en bas de la sidebar, avec deux entrées : documentation de l'API et gestion des clés. Aujourd'hui les clés se créent en curl, la page n'existe pas (c'est la « Phase C » différée du Palier 3) | **Plusieurs clés nommées** par espace (ce que le backend fait déjà) : créer, lister, révoquer. Clé affichée en clair une seule fois à la création | M |
+| 2.2 | ✅ **FAIT** Analytics en sous-menus quanti / quali dans la sidebar | quanti = le dashboard actuel ; quali = le bloc Conversations (analyse) déjà construit au Lot 9, extrait dans sa propre page | S |
 | 2.3 | ✅ **FAIT (2026-07-18)** Date de dernière connexion par compte sur la page Équipe | Migration 0037 appliquée. Écrite sur les **5** émissions de session (login, login Google, inscription, inscription Google, acceptation d'invitation), en fire-and-forget, et APRÈS le contrôle `disabled` du chemin Google. 5 tests | ✅ |
-| 2.4 | **Créer un template depuis l'écran Campagne**, dans la liste de choix, en réutilisant le formulaire de création existant | ⚠️ La liste est filtrée sur `APPROVED` : un template neuf n'y apparaîtra pas tant que Meta ne l'a pas approuvé. À dire explicitement à l'écran, sinon le bouton paraît cassé | M |
-| 2.5 | **Bouton supprimer sur la liste des campagnes** | **Archivage**, sauf les brouillons jamais lancés qui sont supprimés pour de bon. Une campagne envoyée porte l'historique qui alimente les analytics : la masquer, pas l'effacer. Filtre « voir les archivées » | M |
-| 2.6 | **Historique par contact** : quelle campagne et quel template lui ont été envoyés et quand, plus toutes les conversations tenues avec lui et leur analyse | Nouvelle route de lecture scopée tenant, plus un onglet sur la fiche contact. Le plus gros item du lot | M |
+| 2.4 | ✅ **FAIT** Créer un template depuis l'écran Campagne, dans la liste de choix, en réutilisant le formulaire de création existant | ⚠️ La liste est filtrée sur `APPROVED` : un template neuf n'y apparaîtra pas tant que Meta ne l'a pas approuvé. À dire explicitement à l'écran, sinon le bouton paraît cassé | M |
+| 2.5 | ✅ **FAIT** Bouton supprimer sur la liste des campagnes | **Archivage**, sauf les brouillons jamais lancés qui sont supprimés pour de bon. Une campagne envoyée porte l'historique qui alimente les analytics : la masquer, pas l'effacer. Filtre « voir les archivées » | M |
+| 2.6 | ✅ **FAIT** Historique par contact : quelle campagne et quel template lui ont été envoyés et quand, plus toutes les conversations tenues avec lui et leur analyse | Nouvelle route de lecture scopée tenant, plus un onglet sur la fiche contact. Le plus gros item du lot | M |
 | 2.7 | ✅ **FAIT (2026-07-18)** Renommer « Contacts » en « mini-CRM » dans la sidebar | Libellé seulement, l'URL `/contacts` ne bouge pas | ✅ |
-| 2.8 | **Support** : le mail part déjà, et il arrive déjà chez toi. Rien à changer sur la destination. Ce qu'il faut corriger : le `catch {}` sans binding qui perd le message en silence, l'absence de rate limit sur une clé Resend partagée avec les mails de reset, et le reply-to pris dans le corps de la requête au lieu du JWT | §6B | M |
+| 2.8 | ✅ **FAIT** Support : le mail part déjà, et il arrive déjà chez toi. Rien à changer sur la destination. Ce qu'il faut corriger : le `catch {}` sans binding qui perd le message en silence, l'absence de rate limit sur une clé Resend partagée avec les mails de reset, et le reply-to pris dans le corps de la requête au lieu du JWT | §6B | M |
 
 ---
 

@@ -7,8 +7,8 @@ WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · Contacts · Campagnes · Scénario · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics · Support**.
-Le groupe **Contenu** est **repliable** (clic sur l'en-tête, chevron) : ouvert d'office quand on est sur une de ses pages, sinon replié.
+Admin : **Inbox · mini-CRM · Campagnes · Scénario · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics (Quantitatif / Qualitatif) · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
+Les groupes **Contenu**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 - ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
@@ -45,6 +45,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   place, et on édite le **Nom** et le **Prénom**. Le **téléphone et le BSUID restent en lecture seule** (ce sont
   les identités qui routent les messages WhatsApp). Un champ « orphelin » (dont la définition a été supprimée)
   reste supprimable.
+- ✅ **Onglet « Historique » sur la fiche contact** (2026-07-20) : deux vues de tout ce que ce contact a vécu.
+  **Campagnes reçues** : quelle campagne, quel template ou scénario, quand, et où en est le message (envoyé,
+  délivré, lu, non délivré, écarté, envoi en échec avec son motif). Un message parti dont Meta n'a jamais
+  renvoyé de statut est marqué « envoyé, statut inconnu » et jamais « non délivré ». **Conversations** : chaque
+  échange avec son nombre de messages, son dernier aperçu, et son analyse IA quand elle existe (sentiment,
+  sujet, résolu ou non, traité par un humain ou par le bot). Une analyse rendue caduque par un message plus
+  récent est signalée « à rafraîchir » plutôt que présentée comme à jour. Un clic ouvre le fil dans l'inbox.
 - ✅ **Tags** (menu Contenu) : renommer (re-dédup si la cible existe), supprimer -> répercuté sur tous
   les contacts. Un tag saisi dans un bloc « ajout de tag » du bot builder **apparaît aussi ici dès qu'on quitte
   le champ** (persisté au blur, sans attendre l'enregistrement du workflow). Dérivés des contacts + tags déclarés.
@@ -149,6 +156,16 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Campagnes
 
+- ✅ **Archiver ou supprimer une campagne** (2026-07-20). Une campagne qui n'a **jamais rien envoyé** se
+  **supprime** définitivement (confirmation). Toutes les autres s'**archivent** : elles disparaissent de la liste
+  mais restent en base, parce que leurs destinataires portent l'historique qui alimente les Analytics (le coût,
+  le funnel, les erreurs). Archiver ne change donc **jamais** un chiffre du tableau de bord. Un lien « Voir les
+  archivées » bascule sur la corbeille, d'où chaque campagne se **restaure**. Le coût affiché en haut de liste
+  porte explicitement sur « les campagnes affichées », pour ne pas contredire le total du tableau de bord.
+- ✅ **Créer un template depuis l'écran Campagne** (2026-07-20) : sous le sélecteur de template, un bouton ouvre
+  le formulaire de création habituel sans quitter la campagne en cours. Un template neuf part en validation chez
+  Meta : l'écran le dit clairement et **ne le fait pas apparaître dans la liste** (une campagne ne peut partir
+  qu'avec un template approuvé), avec un bouton « Rafraîchir la liste » pour le récupérer une fois approuvé.
 - ✅ **Un seul écran PLEINE LARGEUR, en 2 étapes** (refonte 2026-07-17) : fini de préparer la campagne à un
   endroit et de la lancer ailleurs. **ÉTAPE 1 Préparation** (nom + Expéditeur | Destinataires | Débit | Message)
   et **ÉTAPE 2 Lancement** (le timing) sur la même page. L'étape 2 s'active quand l'étape 1 est prête.
@@ -204,6 +221,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Analytics (menu Analytics)
 
+- ✅ **Deux pages** (2026-07-20) : **Quantitatif** (les volumes, coûts, erreurs et funnels ci-dessous) et
+  **Qualitatif** (ce que les conversations disent). Les deux partagent le même bandeau de période, pour qu'un
+  chiffre de l'une et une conversation de l'autre portent toujours sur la même fenêtre.
 - ✅ **Plage de dates libre** : presets 7/30/90 j **+** sélecteur de dates personnalisé (les graphes honorent
   une plage passée). Séries : contacts (cumul), templates envoyés, messages échangés. **La barre périodes +
   dates reste FIGÉE en haut au scroll** (sticky sous la barre de compte).
@@ -218,7 +238,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   ou par template**, tarif Meta × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
   (jamais de faux coût).
 - ✅ **Coût / breakdown par template** (prix Meta par catégorie).
-- ✅ **Conversations (analyse)** (2026-07-17, bloc en bas d'Analytics) : lecture de l'**analyse automatique des
+- ✅ **Conversations (analyse)** (2026-07-17, page **Analytics > Qualitatif** depuis le 2026-07-20) : lecture de l'**analyse automatique des
   conversations** (une IA classe chaque conversation). **Quanti** : donut du **sentiment** (positif / neutre /
   négatif), barres par **intention** (demande de devis, SAV, réclamation, info, prise de RDV, autre) et par
   **action suggérée** (créer un devis / rappeler / relancer / escalader / aucune = le pipeline à traiter), **taux
@@ -229,7 +249,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Support (menu Support)
 
-- ✅ **Formulaire de contact** : sujet + message -> email à l'équipe via Resend (reply-to = email de l'auteur).
+- ✅ **Formulaire de contact** : sujet + message -> email à l'équipe via Resend. Le **reply-to est l'email du
+  compte connecté, résolu côté serveur** (2026-07-20) : il ne peut plus être choisi depuis le navigateur.
+  **5 envois par minute et par compte** ; au-delà, un message invite à réessayer plus tard.
   Domaine `messagingme.app` **vérifié** (hors mode test) : les emails partent réellement (support, invitations,
   réinitialisation de mot de passe).
 
@@ -265,8 +287,12 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   relancé ne part jamais deux fois. `GET /v1/sends/:id` donne le statut (livrés / lus / répondus).
 - L'espace client est **toujours déduit de la clé** (jamais de l'URL) : une clé ne peut voir/toucher que les
   données de son espace. Débit borné par clé.
-- 🔲 À venir : envoi d'un **bloc précis** (node) à un contact déjà en conversation (24h), et une page de
-  gestion des clés dans la console (aujourd'hui via l'API admin).
+- ✅ **Menu « Developers »** (2026-07-20), en bas de la barre latérale, réservé aux admins. Deux pages :
+  **Documentation API** (adresse de base, authentification, débit, chaque endpoint avec son corps de requête,
+  ses réponses et ses codes d'erreur, plus un exemple curl complet) et **Clés d'API** (créer avec un nom et des
+  périmètres, lister avec date de création et dernier appel, révoquer). La clé en clair s'affiche dans une
+  fenêtre au moment de la création, avec un bouton Copier : c'est le seul instant où elle existe. Une clé
+  révoquée reste dans la liste, marquée comme telle.
 
 ## Exploitation `/ops` (interne, hors console client)
 
