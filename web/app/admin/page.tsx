@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
+import { formatDate, hourMin } from '@/lib/day';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -12,6 +13,7 @@ export default function AdminPage() {
 
 function AdminInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +93,7 @@ function AdminInner({ session }: { session: Session }) {
                 <th className="px-5 py-2 font-medium">{t('Email', 'Email')}</th>
                 <th className="px-5 py-2 font-medium">{t('Rôle', 'Role')}</th>
                 <th className="px-5 py-2 font-medium">{t('Statut', 'Status')}</th>
+                <th className="px-5 py-2 font-medium">{t('Dernière connexion', 'Last sign-in')}</th>
                 <th className="px-5 py-2 text-right font-medium">{t('Actions', 'Actions')}</th>
               </tr>
             </thead>
@@ -120,6 +123,18 @@ function AdminInner({ session }: { session: Session }) {
                         <span className="inline-flex items-center rounded-full bg-gold/10 px-2 py-0.5 text-xs font-medium text-gold" title={t("A été invité mais n'a pas encore choisi son mot de passe", "Has been invited but hasn't chosen a password yet")}>{t('Invité', 'Invited')}</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full bg-mint-50 px-2 py-0.5 text-xs font-medium text-mint-700">{t('Actif', 'Active')}</span>
+                      )}
+                    </td>
+                    <td className={`px-5 py-3 tabular-nums ${u.disabled ? 'text-ink-400' : 'text-ink-600'}`}>
+                      {u.lastLoginAt ? (
+                        <>
+                          {formatDate(u.lastLoginAt, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                          <span className="ml-1.5 text-ink-400">{hourMin(u.lastLoginAt, locale)}</span>
+                        </>
+                      ) : (
+                        <span className="text-ink-300" title={t('Aucune connexion depuis la mise en place du suivi', 'No sign-in since tracking was introduced')}>
+                          {t('Jamais', 'Never')}
+                        </span>
                       )}
                     </td>
                     <td className="px-5 py-3">

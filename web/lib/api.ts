@@ -735,6 +735,9 @@ export interface AdminUser {
   /** true = invitation en attente (mot de passe pas encore choisi). */
   pending: boolean;
   createdAt: string;
+  /** Dernière connexion réussie (ISO). null = jamais connecté depuis la mise en place du suivi (migration
+   *  0037) : on affiche « jamais », on ne retombe PAS sur `createdAt` qui mentirait. */
+  lastLoginAt: string | null;
 }
 export function listUsers(tenantId: string): Promise<{ users: AdminUser[] }> {
   return request<{ users: AdminUser[] }>(`/tenants/${tenantId}/users`);

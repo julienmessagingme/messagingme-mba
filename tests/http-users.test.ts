@@ -17,7 +17,7 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, pending: false, createdAt: '2026-07-01T00:00:00.000Z' };
+const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, pending: false, createdAt: '2026-07-01T00:00:00.000Z', lastLoginAt: '2026-07-17T09:30:00.000Z' };
 
 interface Captured {
   roleSet: Array<{ tenant: string; userId: string; role: string }>;
@@ -35,7 +35,8 @@ function app(over: Partial<UsersRouteDeps> = {}): { server: ReturnType<typeof bu
     createPendingUser: async (tenant, email, role) => {
       if (email === 'taken@demo.test') throw new DuplicateEmailError();
       cap.invited.push({ tenant, email, role });
-      return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z' };
+      // Une invitation en attente n'a par construction jamais servi à se connecter.
+      return { id: 'pending1', email, name: null, role, disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z', lastLoginAt: null };
     },
     createInviteToken: async () => 'INVITE_RAW',
     sendEmail: async (e) => { cap.emails.push(e.text); cap.emailObjs.push(e); },

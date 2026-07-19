@@ -94,6 +94,7 @@ async function main(): Promise<void> {
       // Refonte auth : inscription libre, reset/changement de mot de passe.
       createTenantWithAdmin: (name, admin) => userStore.createTenantWithAdmin(name, admin),
       setPassword: (userId, hash) => userStore.setPassword(userId, hash),
+      touchLastLogin: (userId) => userStore.touchLastLogin(userId),
       getPasswordHash: (userId) => userStore.getPasswordHash(userId),
       sessionUser: (userId) => userStore.getSessionUser(userId),
       tokens: authTokenStore,

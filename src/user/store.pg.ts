@@ -14,6 +14,9 @@ export interface UserRow {
   /** true = invitation en attente (pas encore de mot de passe posé). */
   pending: boolean;
   createdAt: string;
+  /** Dernière CONNEXION réussie (ISO). null = jamais connecté DEPUIS la migration 0037 : on n'invente pas de
+   *  valeur de repli sur `createdAt`, une date d'inscription n'est pas une date de connexion. */
+  lastLoginAt: string | null;
 }
 
 /** Résultat d'une mutation de compte gardée par l'invariant « ≥1 admin actif par tenant ». */
@@ -73,8 +76,8 @@ export class PgUserStore {
   }
 
   async list(tenantId: string): Promise<UserRow[]> {
-    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; code: string | null; disabled_at: Date | null; pending: boolean; created_at: Date }>(
-      `select id, email, name, role, code, disabled_at, (password_hash is null) as pending, created_at from users
+    const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; code: string | null; disabled_at: Date | null; pending: boolean; created_at: Date; last_login_at: Date | null }>(
+      `select id, email, name, role, code, disabled_at, (password_hash is null) as pending, created_at, last_login_at from users
        where tenant_id = $1 order by created_at asc`,
       [tenantId],
     );
@@ -87,7 +90,16 @@ export class PgUserStore {
       disabled: r.disabled_at !== null,
       pending: r.pending,
       createdAt: r.created_at.toISOString(),
+      lastLoginAt: r.last_login_at?.toISOString() ?? null,
     }));
+  }
+
+  /**
+   * Horodate la dernière connexion réussie. Appelée en FIRE-AND-FORGET depuis les routes de login : une panne
+   * d'écriture (pool saturé, hoquet réseau) ne doit jamais transformer une authentification valide en 500.
+   */
+  async touchLastLogin(userId: string): Promise<void> {
+    await this.pool.query(`update users set last_login_at = now() where id = $1`, [userId]);
   }
 
   /** Un compte par email, TOUT statut (y compris pending sans mot de passe) : pour le login Google (lié par
@@ -123,7 +135,7 @@ export class PgUserStore {
         [tenantId, email, role, code],
       );
       const r = res.rows[0]!;
-      return { id: r.id, email: r.email, name: r.name, role: r.role, code, disabled: false, pending: true, createdAt: r.created_at.toISOString() };
+      return { id: r.id, email: r.email, name: r.name, role: r.role, code, disabled: false, pending: true, createdAt: r.created_at.toISOString(), lastLoginAt: null };
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') throw new DuplicateEmailError();
       throw err;

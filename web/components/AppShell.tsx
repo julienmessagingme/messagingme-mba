@@ -47,7 +47,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
   const NAV_ADMIN: NavItem[] = [
     { key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox },
-    { key: 'contacts', href: '/contacts', label: t('Contacts', 'Contacts'), d: icons.contacts },
+    // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
+    { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [

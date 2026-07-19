@@ -41,6 +41,23 @@ export interface AuthRouteDeps {
   appUrl?: string;
   /** Durée de validité d'un lien de reset (ms). */
   resetTtlMs?: number;
+  /**
+   * Horodate la dernière connexion réussie (colonne « Dernière connexion » de la page Équipe). OPTIONNEL :
+   * les tests construisent `auth` avec `{ users, secret }` seuls, le rendre requis casserait leur compilation.
+   */
+  touchLastLogin?(userId: string): Promise<void>;
+}
+
+/**
+ * Marque une connexion réussie SANS jamais bloquer la réponse ni pouvoir la faire échouer : l'écriture part
+ * en fire-and-forget, exactement comme l'envoi d'email de reset plus bas. Mettre une écriture Postgres sur le
+ * chemin critique de l'authentification transformerait un pool saturé en « identifiants refusés ».
+ *
+ * ⚠️ `?.(userId)?.catch(...)` et non `?.(userId).catch(...)` : quand le dep est absent, l'appel optionnel rend
+ * `undefined`, et appeler `.catch` dessus lève un TypeError à l'exécution. Le `?.` sur le retour est requis.
+ */
+function markLogin(deps: AuthRouteDeps, userId: string): void {
+  void deps.touchLastLogin?.(userId)?.catch(() => {});
 }
 
 // Hash leurre (format scrypt valide) pour égaliser le temps CPU quand l'email est inconnu :
@@ -82,6 +99,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     }
 
     const token = await signSession({ userId: user.id, tenantId: user.tenantId, role: user.role }, deps.secret);
+    markLogin(deps, user.id);
     return reply.code(200).send({ token, user: { email: user.email, role: user.role, tenantId: user.tenantId } });
   });
 
@@ -103,6 +121,9 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
       // Compte existant (actif OU invitation en attente) : Google fait foi (liaison par email vérifié).
       if (existing.disabled) return reply.code(403).send({ error: 'compte révoqué' });
       const jwt = await signSession({ userId: existing.id, tenantId: existing.tenantId, role: existing.role }, deps.secret);
+      // APRÈS le contrôle `disabled` : un compte révoqué qui présente un jeton Google valide reçoit un 403 et
+      // ne doit surtout pas être crédité d'une « dernière connexion » qui n'a pas eu lieu.
+      markLogin(deps, existing.id);
       return reply.code(200).send({ token: jwt, user: { email: identity.email, role: existing.role, tenantId: existing.tenantId }, isNew: false });
     }
     // Email inconnu -> inscription libre via Google : nouvel espace + admin, SANS mot de passe (Google-only).
@@ -111,6 +132,9 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     const workspaceName = gname !== '' ? `Espace de ${gname}` : 'Mon espace';
     const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email: identity.email, name: identity.name, passwordHash: null });
     const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
+    // Une inscription EST une connexion : sans ça un compte tout neuf, en train d'utiliser l'app, s'afficherait
+    // « jamais connecté » sur la page Équipe jusqu'à sa première reconnexion.
+    markLogin(deps, userId);
     // isNew:true -> le front envoie vers /accueil (onboarding « connecter ton numéro »), comme le signup email.
     return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
   });
@@ -130,6 +154,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     try {
       const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
       const token = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
+      markLogin(deps, userId);
       return reply.code(201).send({ token, user: { email, role: 'admin', tenantId } });
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
@@ -192,6 +217,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     if (!su) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
     await deps.setPassword(userId, await hashPassword(password));
     const jwt = await signSession({ userId, tenantId: su.tenantId, role: su.role }, deps.secret);
+    markLogin(deps, userId); // accepter une invitation, c'est se connecter pour la première fois
     return reply.code(200).send({ token: jwt, user: { email: su.email, role: su.role, tenantId: su.tenantId } });
   });
 
