@@ -1,0 +1,336 @@
+---
+openapi: 3.1.1
+info:
+  title: Agent Event
+  version: 2.0.0
+  summary: |
+    Trigger an agent action asynchronously for a specific phone number conversation.
+  description: |
+    This endpoint triggers agent actions asynchronously in response to business events. Use it to notify the Meta Business Agent about events occurring in your systems — such as a completed purchase, identity verification, or shipping update — so the agent can take appropriate action in the customer conversation. Uses POST to submit an event (returns immediately with status "accepted") and GET to poll the processing status of a previously submitted event.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_event'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    post:
+      responses:
+        200:
+          description: |
+            Acknowledgment that the event was accepted for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelAgentEventResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Send an agent event
+      description: |
+        Trigger an agent action asynchronously. The event is enqueued for processing and the endpoint returns immediately with status "accepted".
+      operationId: sendAgentEvent
+      tags:
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelAgentEventRequest'
+        required: true
+  /{agent_event_id}:
+    get:
+      responses:
+        200:
+          description: The current status of the agent event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelAgentEventStatusResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        403:
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                FORBIDDEN:
+                  value:
+                    title: Forbidden
+                    detail: |
+                      This endpoint is not enabled for the requested entity
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: The agent event could not be found
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Get an agent event status
+      description: |
+        Retrieve the current processing status of a previously submitted agent event, identified by its ID.
+      operationId: getAgentEvent
+      tags:
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: agent_event_id
+          in: path
+          description: 'The ID of the agent event, as returned by the POST /{entity_id}/agent_event endpoint.'
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+components:
+  schemas:
+    BizAIOmniChannelAgentEventRequest:
+      type: object
+      required:
+        - to
+        - event
+      properties:
+        to:
+          type: string
+          description: Consumer phone number in E.164 format.
+          example: '+15551234567'
+        event:
+          type: object
+          description: Event-specific fields.
+          required:
+            - type
+            - description
+            - payload
+          properties:
+            type:
+              type: string
+              description: |
+                Required. Partner-defined event identifier, e.g. "document_verified", "payment_received". Max 256 characters.
+            description:
+              type: string
+              description: |
+                Required. Human-readable description of the event, e.g. "User's identity document has been verified". Max 1024 characters.
+            payload:
+              type: string
+              description: |
+                Required. Opaque JSON string passed through to the agent as-is. Max 4096 characters.
+    BizAIOmniChannelAgentEventResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: '"accepted" when the event is successfully enqueued.'
+          example: accepted
+        agent_event_id:
+          type: string
+          description: |
+            The ID of the recorded agent event, when one was created.
+          example: '1234567890123456'
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+    BizAIOmniChannelAgentEventStatusResponse:
+      type: object
+      required:
+        - status
+        - event_type
+        - created_at
+        - updated_at
+      properties:
+        status:
+          type: string
+          description: |
+            The current processing status of the agent event. One of "request_received", "processing", "skipped", "sent", "success", or "failed".
+          example: request_received
+          enum:
+            - request_received
+            - processing
+            - sent
+            - failed
+            - skipped
+            - success
+        event_type:
+          type: string
+          description: |
+            The partner-defined event identifier supplied when the event was submitted, e.g. "document_verified".
+          example: document_verified
+        error_message:
+          type: string
+          description: |
+            Summary of failure, if event state is FAILED.
+          example: internal_server_error
+        skipped_reason:
+          type: string
+          description: |
+            Summary of skip reason, if event state is SKIPPED.
+          example: no_phone_settings
+        created_at:
+          type: string
+          description: |
+            The ISO 8601 timestamp at which the agent event was received.
+          example: 2024-01-15T10:30:00+0000
+        updated_at:
+          type: string
+          description: |
+            The ISO 8601 timestamp at which the agent event status was last updated.
+          example: 2024-01-15T10:31:00+0000
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

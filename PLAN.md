@@ -1,4 +1,4 @@
-# PLAN.md — plan global (au 2026-07-18)
+# PLAN.md : plan global (au 2026-07-20)
 
 Vue unique de tout ce qui reste, audit de scalabilité **et** lot de features confondus.
 Source des constats : `AUDIT-SCALE-2026-07-18.md` (les références Bn et « Railway n » y renvoient).
@@ -8,25 +8,113 @@ Ce fichier est la référence de séquencement. Le détail d'un constat se lit d
 
 ---
 
-## La tension à trancher en premier
+## Reprise à froid : à lire dans cet ordre
+
+Pour une session qui démarre sans contexte.
+
+1. **`docs/MBA-ARCHITECTURE.md`** (10 min). Ce que MBA implique pour notre code, et pourquoi le
+   chantier n° 1 se construit sans attendre Meta. C'est le document qui donne le sens du reste.
+2. **Ce fichier**, section « Bloc A » ci-dessous, puis les blocs 1, 3, 4, 5.
+3. **`docs/MBA-API-REFERENCE.md`** seulement quand on code un appel MBA. 3 700 lignes, à consulter
+   par chapitre, jamais en entier.
+
+Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
+
+**État au 2026-07-20** : blocs 0 et 2 livrés et déployés en production (922 tests). Il reste le
+bloc A ci-dessous, puis 1, 3, 4, 5.
+
+---
+
+## La thèse produit, qui commande tout le séquencement
+
+`mba.messagingme.app` est **la couche de pilotage du MBA de Meta**, pas un constructeur de bot
+concurrent. Cinq piliers : onboarder MBA, contrôler finement ce à quoi l'agent répond, **passer la
+main à un humain** (le cœur), lancer des campagnes (ce que MBA ne fait pas), analyser et remonter
+dans HubSpot. Ce qui ne sert aucun des cinq est probablement hors sujet.
+
+Pari sous-jacent, énoncé par Julien : Meta pousse vers la réponse full IA via MBA, et **au 01/10 les
+messages de service deviennent facturables sauf si c'est MBA qui répond**. MBA cesse alors d'être
+une option pour les clients. Reste le point d'entrée, qui est notre terrain : un bouton sur le site
+laisse MBA répondre, sinon il faut des campagnes ou des pubs CTWA.
+
+**Blocage actuel, contractuel et non technique.** `agent_eligibility` renvoie 403 « Terms of Service
+must be accepted ». Aucune ligne de code n'accélère cette date. Deux veilles tournent sur le VPS,
+toutes les 6 heures, avec alerte Telegram : `ops/mba-eligibility-watch.mjs` (l'accès) et
+`ops/mba-docs-watch.mjs` (la doc, qui arrive au compte-gouttes avant le 01/08).
+
+---
+
+## Décision produit prise le 2026-07-20 : qui répond après une campagne
+
+Chaque campagne **déclare qui reprend la main une fois le message parti**. La règle par défaut se
+déduit de la forme de la campagne :
+
+| Forme de la campagne | Détenteur visé après envoi | Raison |
+|---|---|---|
+| Workflow qui se termine par un bloc **inbox** | `app_human` | le bloc inbox dit explicitement qu'un humain prend le relais |
+| Workflow sans bloc inbox | `app_workflow` | le scénario continue de piloter la conversation |
+| **Template seul, sans workflow** | `mba` | personne de notre côté n'attend la réponse, MBA doit répondre |
+
+Le défaut est déduit, mais **surchargeable par campagne** dans l'écran de création : c'est
+exactement le « ça je fais répondre automatiquement, ça non » qui fait la valeur du produit.
+
+⚠️ **Question non tranchée, et qui doit l'être en conditions réelles** : un envoi sortant prend-il
+implicitement le contrôle du fil ? La doc ne le dit nulle part. Si oui, une campagne « template
+seul » coupe MBA sur tous ses destinataires jusqu'à un `release` explicite, donc il faudra un
+`release` **par destinataire** après l'envoi, avec le coût et le débit que ça implique. C'est le
+premier test à faire le jour de l'ouverture, avant toute campagne de volume.
+
+Note sur l'audience : `ai_audience` n'accepte que `ALLOWLISTED_ONLY` ou `EVERYONE`, et l'allowlist
+est une liste de **numéros**. Meta n'offre aucune segmentation (pas de « seulement les prospects »,
+pas de « seulement ceux venus de CTWA »). **La règle qui produit la liste, c'est notre produit** :
+un segment CRM chez nous, poussé dans l'allowlist. C'est typiquement ce qu'une couche d'agence
+apporte et que Meta ne fera pas.
+
+---
+
+## Bloc A : le socle du passage de main (2 à 3 jours), À FAIRE EN PREMIER
+
+**Pourquoi en premier, avant même la sécurité** : ces trois briques corrigent un bug qui existe
+**aujourd'hui en production**, elles se testent et se démontrent immédiatement, elles ne dépendent
+d'aucune acceptation de ToS, et elles sont la fondation de ce que Julien a désigné comme la
+plus-value centrale du produit. Détail complet dans `docs/MBA-ARCHITECTURE.md`.
+
+| # | Action | Pourquoi | Effort |
+|---|---|---|---|
+| A.1 | **État de contrôle par conversation** : un détenteur parmi `app_workflow`, `app_human`, `mba`. Colonne sur `conversations`, posée à chaque envoi sortant (envoyer PREND le contrôle, il n'existe pas d'action `take`), recalée sur `messaging_handovers` | Le système n'a aucune notion de qui détient une conversation. C'est le manque structurant, MBA ou pas | M |
+| A.2 | **Exclusion humain / workflow** : `processWorkflowAdvance` (`src/webhooks/workflow-advance.ts`) doit refuser d'avancer quand le détenteur est `app_human` | **Bug réel en production** : aujourd'hui un humain répond dans l'inbox pendant que le workflow envoie sa suite, les deux écrivent au client | S |
+| A.3 | **Consommer `standby` et `messaging_handovers`** : ils sont typés dans `parse.ts` mais rien ne les lit en aval. Recaler l'état de contrôle, afficher les échanges vus en standby dans l'inbox | Le jour où MBA s'allume, la prod cesse **silencieusement** de voir les conversations. Aucune erreur levée | M |
+| A.4 | **Garde-fou d'inactivité** : rendre la main automatiquement au bout d'un délai configurable | Il n'existe **aucun** release automatique côté Meta. Contrôle jamais rendu (opérateur parti, crash) = conversation bloquée et MBA muet, indéfiniment | S |
+| A.5 | **Déclaration du détenteur visé par campagne** (cf. décision ci-dessus), défaut déduit de la forme, surchargeable | C'est l'écran qui matérialise « ça je fais répondre automatiquement, ça non » | M |
+
+A.1 et A.2 se font ensemble et livrent seuls la valeur. A.5 dépend de A.1.
+
+---
+
+## La tension à trancher (rédigée le 2026-07-18, toujours valable)
 
 Ton objectif est « des dizaines de clients connectent leur numéro ». **Aujourd'hui cette promesse
 est simulée** : les 12 sites d'envoi utilisent un token Meta global unique, et le token business
 chiffré de chaque client, écrit en base par l'Embedded Signup, n'est jamais relu (`decryptSecret`
 n'a aucun appelant en production). C'est le constat **B1**, effort L.
 
-Or B1 est en bloc 4 ci-dessous, après ton lot de features. C'est un choix, pas une évidence :
+Or B1 est en bloc 4 ci-dessous. C'est un choix, pas une évidence :
 
-- si le prochain jalon est de **montrer** le produit (démos, premiers rendez-vous), le lot de
-  features passe devant, il rend la console présentable et B1 ne se voit pas en démo ;
+- si le prochain jalon est de **montrer** le produit (démos, premiers rendez-vous), B1 ne se voit
+  pas en démo et peut attendre ;
 - si le prochain jalon est de **faire signer** un client qui branchera son propre numéro, B1
-  remonte avant le lot, parce que c'est lui qui rend la promesse vraie.
+  remonte avant tout le reste, parce que c'est lui qui rend la promesse vraie.
 
-Les blocs 0 et 1 sont à faire dans les deux cas, en premier.
+**Ce que MBA change à cet arbitrage** : le jour où MBA s'ouvre, chaque client aura son propre numéro
+et sa propre configuration d'agent, pilotés **par numéro** (Meta ne partage rien entre numéros).
+B1 cesse alors d'être une dette de scalabilité pour devenir un prérequis d'exploitation. Il remonte
+donc mécaniquement dès que l'éligibilité passe au vert.
+
+Le bloc 1 est à faire dans les deux cas, juste après le bloc A.
 
 ---
 
-## ✅ Bloc 0 — FAIT (2026-07-18), déployé en production
+## ✅ Bloc 0 : FAIT (2026-07-18), déployé en production
 
 | # | Action | Constat | État |
 |---|---|---|---|
@@ -49,7 +137,7 @@ d'introduire, et deux tests qui étaient des faux témoins. Tests : 875 -> 886.
 
 ---
 
-## Bloc 1 — sécurité, à fermer avant tout nouveau client (2 à 3 jours)
+## Bloc 1 : sécurité, à fermer avant tout nouveau client (2 à 3 jours)
 
 Ces quatre points sont exploitables aujourd'hui, sur la prod.
 
@@ -62,7 +150,7 @@ Ces quatre points sont exploitables aujourd'hui, sur la prod.
 
 ---
 
-## ✅ Bloc 2 — FAIT (2026-07-19/20), le lot de features demandé — 8/8
+## ✅ Bloc 2 : FAIT (2026-07-19/20), le lot de features demandé, 8/8
 
 Arbitrages déjà tranchés par Julien le 2026-07-18, intégrés ci-dessous.
 
@@ -86,7 +174,7 @@ Arbitrages déjà tranchés par Julien le 2026-07-18, intégrés ci-dessous.
 
 ---
 
-## Bloc 3 — fin de la vague 1 de l'audit (2 jours)
+## Bloc 3 : fin de la vague 1 de l'audit (2 jours)
 
 | # | Action | Constat | Effort |
 |---|---|---|---|
@@ -96,7 +184,7 @@ Arbitrages déjà tranchés par Julien le 2026-07-18, intégrés ci-dessous.
 
 ---
 
-## Bloc 4 — avant la bascule Railway (8 à 12 jours)
+## Bloc 4 : avant la bascule Railway (8 à 12 jours)
 
 Verdict Railway : **pas prêt**, mais les blocages sont peu nombreux et identifiés. Les deux services
 sont fondamentalement portables (pas d'écriture disque, `PORT` lu de l'environnement, SIGTERM géré,
@@ -124,7 +212,7 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 
 ---
 
-## Bloc 5 — après, par ordre de valeur
+## Bloc 5 : après, par ordre de valeur
 
 | # | Action | Constat | Effort |
 |---|---|---|---|
@@ -148,7 +236,8 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 - **Phase 3 HubSpot** : activer le toggle, cliquer le CTA de re-consentement sur le portail cobaye 139615673, approuver « Lists », faire un import de test et vérifier que les contacts ne sont pas en `opted_in`.
 - **App Review Meta** : en review depuis le 2026-07-17, environ 20 jours. Débloque l'Embedded Signup de bout en bout.
 - **Un template Marketing FR à variable** à faire approuver.
-- **Les vérifications visuelles accumulées** (Palier 3 B2, Palier 2, Lots 7, 8 et 9), détaillées dans `todo.md`.
+- **Les vérifications visuelles accumulées** (Palier 3 B2, Palier 2, Lots 7, 8 et 9), détaillées dans `todo.md`, plus les 8 items du bloc 2 livrés le 2026-07-20 et jamais vus à l'écran.
+- **MBA** : accepter les Terms of Service Meta Business Agent dans WhatsApp Manager le jour où l'onglet apparaît, et les Tech Provider ToS dans le portail développeur. Rien de tout ceci n'est faisable par API, et les deux veilles alertent sur Telegram quand ça bouge.
 
 ---
 
@@ -159,3 +248,4 @@ Elles changent le coût, pas la faisabilité.
 1. **Plusieurs numéros par tenant, oui ou non ?** Si oui, 5.4 coûte L. Si non, c'est S : il suffit de refuser proprement le second numéro au lieu de le casser en silence.
 2. **Quelle rétention par défaut**, et est-ce contractuel ou réglable par client ?
 3. **Le cap anti-répétition marketing** (désactivé en dur depuis le 2026-07-15) reste-t-il la politique des 30 clients ? Si tu le réactives, crée l'index d'abord, sinon la garde coûte plus cher que l'envoi qu'elle protège.
+4. **Le segment CRM qui alimente l'allowlist MBA** : quels critères (tags, opt-in, origine CTWA, ancienneté) et qui a le droit de les modifier ? C'est la brique qui rend `ALLOWLISTED_ONLY` utilisable, et Meta n'en fournit aucun équivalent. À cadrer avant de coder l'écran, pas pendant.

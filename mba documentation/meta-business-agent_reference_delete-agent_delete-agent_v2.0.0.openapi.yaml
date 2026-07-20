@@ -1,0 +1,147 @@
+---
+openapi: 3.1.1
+info:
+  title: Delete Agent
+  version: 2.0.0
+  summary: |
+    Delete the Meta Business Agent for a specific entity.
+  description: |
+    This endpoint removes the Meta Business Agent from a specific WhatsApp phone number. It deletes the agent configuration and, when the last agent on the account is removed, disconnects the integration.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/delete_agent'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    delete:
+      responses:
+        200:
+          description: Agent deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelDeleteAgentResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        403:
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                FORBIDDEN:
+                  value:
+                    title: Forbidden
+                    detail: |
+                      The caller is not permitted to delete the agent
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Delete the Meta Business Agent
+      description: |
+        Remove the Meta Business agent from the specified WhatsApp phone number. Deletes the agent configuration and, when the last agent on the account is removed, disconnects the integration.
+      operationId: deleteAgent
+      tags:
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+components:
+  schemas:
+    BizAIOmniChannelDeleteAgentResponse:
+      type: object
+      properties:
+        deleted_agent_id:
+          type: string
+          description: |
+            The ID of the AI agent settings that was removed, or null if there was nothing to remove.
+          nullable: true
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

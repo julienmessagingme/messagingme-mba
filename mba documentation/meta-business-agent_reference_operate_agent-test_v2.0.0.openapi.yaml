@@ -1,0 +1,203 @@
+---
+openapi: 3.1.1
+info:
+  title: Agent Test
+  version: 2.0.0
+  summary: |
+    Send test messages to the AI agent for automated testing.
+  description: |
+    This endpoint sends test messages to the AI agent for automated testing without requiring a real consumer phone number. Messages are processed through the full agent pipeline and the response is returned synchronously. Use it to validate agent behavior, test knowledge base responses, and verify skill/connector integrations during development.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_test'
+tags:
+  - 
+    name: Agent Config
+    description: Agent configuration and settings
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    post:
+      responses:
+        200:
+          description: |
+            Response containing the AI agent response and test conversation metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelAgentTestResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Run an agent test
+      description: |
+        Send a test message to the AI agent and receive a response. Messages are processed through the full agent pipeline without requiring a consumer phone number.
+      operationId: runAgentTest
+      tags:
+        - Agent Config
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the AI agent to test.
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelAgentTestRequest'
+        required: true
+components:
+  schemas:
+    BizAIOmniChannelAgentTestRequest:
+      type: object
+      required:
+        - user_msg
+      properties:
+        user_msg:
+          type: string
+          description: |
+            The text content of the test message to send to the AI agent
+          example: What products do you have?
+        conversation_id:
+          type: string
+          description: |
+            Identifier for multi-turn test conversations. Provide the conversation_id from a previous response to continue that conversation.
+          example: conv_abc123
+    BizAIOmniChannelAgentTestResponse:
+      type: object
+      required:
+        - message_id
+        - agent_response
+        - conversation_id
+      properties:
+        message_id:
+          type: string
+          description: |
+            Unique identifier for this message exchange
+          example: msg_abc123
+        agent_response:
+          type: string
+          description: The AI agent response text
+          example: We have several products available...
+        conversation_id:
+          type: string
+          description: |
+            The test conversation identifier. Use this in subsequent requests for multi-turn conversations.
+          example: conv_abc123
+        timestamp:
+          type: integer
+          description: |
+            Unix timestamp when the response was generated
+          example: 1714500000
+        handoff_reason:
+          type: string
+          description: |
+            If the agent hands off to a human, this contains the reason
+          example: complex_request
+          nullable: true
+        no_response_reason:
+          type: string
+          description: |
+            If the agent did not generate a response, this contains the reason. Possible values include ELIGIBILITY_CHECK_FAILED.
+          example: out_of_scope
+          nullable: true
+        quick_replies:
+          type: array
+          description: |
+            Suggested quick reply messages generated by the AI agent
+          items:
+            type: string
+        product_variant_ids:
+          type: array
+          description: |
+            The variant IDs of the products referenced in the agent response
+          items:
+            type: string
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

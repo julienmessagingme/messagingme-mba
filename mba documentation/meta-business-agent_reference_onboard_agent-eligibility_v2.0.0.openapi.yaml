@@ -1,0 +1,149 @@
+---
+openapi: 3.1.1
+info:
+  title: Agent Eligibility
+  version: 2.0.0
+  summary: |
+    Check whether a specific WhatsApp Business Phone Number is eligible for the business AI agent.
+  description: |
+    This endpoint reports whether the business AI agent can be enabled for a specific WhatsApp Business Phone Number. The resource is a singleton — one eligibility result per entity_id.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_eligibility'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    get:
+      responses:
+        200:
+          description: |
+            Response containing the eligibility result for the entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelEligibilityResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Get agent eligibility
+      description: |
+        Check whether the business AI agent is eligible for the specified entity.
+      operationId: getAgentEligibility
+      tags:
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID to check eligibility for.
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+components:
+  schemas:
+    BizAIOmniChannelEligibilityResponse:
+      type: object
+      required:
+        - is_eligible
+      properties:
+        is_eligible:
+          type: boolean
+          description: |
+            Whether the entity is eligible for the business AI agent. true for eligible, false for not eligible
+          example: true
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

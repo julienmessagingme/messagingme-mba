@@ -1,0 +1,615 @@
+---
+openapi: 3.1.1
+info:
+  title: Agent Skills
+  version: 2.0.0
+  summary: |
+    Manage AI agent skills for a specific entity (WhatsApp Business Phone Number).
+  description: |
+    This endpoint provides CRUD operations for managing AI agent skills for a specific entity (WhatsApp Business Phone Number). Skills define behavioral guidelines, tone of voice, and response patterns for the AI agent. The agent follows skills as written, so write them as clear directives. Avoid conflicting skills — if two skills both claim priority for the same situation (e.g., both say "do this first" when a customer messages), the agent may produce duplicate or inconsistent responses. When multiple actions should happen on the same trigger, consolidate them into a single skill with explicitly ordered steps.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_config/skills'
+tags:
+  - 
+    name: Agent Config
+    description: Agent configuration and settings
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    get:
+      responses:
+        200:
+          description: A list of all skills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BizAIOmniChannelSkillsResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: List skills
+      description: |
+        Retrieve a list of all AI skills for the specified entity
+      operationId: listSkills
+      tags:
+        - Agent Config
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: agent_id
+          in: query
+          description: |
+            Optional settings ID. When provided, returns skills for the specified settings. When absent, returns skills for the most recently created settings for the given channel.
+          required: false
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+    post:
+      responses:
+        201:
+          description: The newly created skill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelSkillsResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Create a skill
+      description: |
+        Create a new AI skill for the specified entity
+      operationId: createSkill
+      tags:
+        - Agent Config
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: agent_id
+          in: query
+          description: |
+            Optional settings ID. When provided, creates the skill under the specified settings. When absent, uses the most recently created settings for the given channel.
+          required: false
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelSkillsRequest'
+        required: true
+  /{skill_id}:
+    get:
+      responses:
+        200:
+          description: The requested skill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelSkillsResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Get a skill
+      description: Retrieve a specific AI skill by its ID
+      operationId: getSkill
+      tags:
+        - Agent Config
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: skill_id
+          in: path
+          description: |
+            The unique identifier (UUID) of the skill
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+    put:
+      responses:
+        200:
+          description: The updated skill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelSkillsResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Update a skill
+      description: Update a specific AI skill by its ID
+      operationId: updateSkill
+      tags:
+        - Agent Config
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: skill_id
+          in: path
+          description: |
+            The unique identifier (UUID) of the skill
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelSkillsRequest'
+        required: true
+    delete:
+      responses:
+        204:
+          description: Skill successfully deleted
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Delete a skill
+      description: Delete a specific AI skill by its ID
+      operationId: deleteSkill
+      tags:
+        - Agent Config
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: skill_id
+          in: path
+          description: |
+            The unique identifier (UUID) of the skill
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+components:
+  schemas:
+    BizAIOmniChannelSkillsRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: |
+            A human-readable name for the skill. Max 64 characters. Must contain only lowercase letters, numbers, and hyphens, and must not start or end with a hyphen. Use a descriptive title that makes the skill's purpose clear (e.g., `greeting-skill`, `product-return-policy`). Avoid generic titles like `skill-1`.
+          example: greeting-skill
+        description:
+          type: string
+          description: |
+            A description telling the AI when to apply this skill. Max 1024 characters. Be specific about the trigger or context — for example, "Apply when the customer first messages the agent" or "Apply when the customer asks about returns or refunds." The agent uses this to decide which skills are relevant to the current conversation.
+          example: |
+            Apply when the customer first messages the agent to set the greeting tone and collect initial context.
+        skill:
+          type: string
+          description: |
+            The body containing the actual instructions for the AI. Max 20000 characters. Write clear, non-conflicting directives. Avoid having multiple skills that each claim priority for the same situation (e.g., two skills that both say "do this first" on the first message) — the agent cannot resolve conflicting priorities and may produce duplicate or inconsistent responses. If multiple actions should happen on the same trigger, consolidate them into a single skill with an explicit sequence of steps.
+          example: 'When a customer sends their first message: 1) Look up their contact info, 2) Check business hours, 3) Greet them by name and ask how you can help.'
+    BizAIOmniChannelSkillsResponse:
+      type: object
+      required:
+        - id
+        - skill
+        - channel
+      properties:
+        id:
+          type: string
+          description: A unique identifier for the skill
+          example: '1234567890'
+        title:
+          type: string
+          description: |
+            An optional, human-readable name for the skill
+          example: Greeting Skill
+        description:
+          type: string
+          description: |
+            A description telling the AI when to apply this skill
+          example: How the agent should greet customers
+        skill:
+          type: string
+          description: |
+            The body containing the actual instructions for the AI. Has no specific restrictions on structure or content.
+          example: |
+            Always greet the customer by name and ask how you can help
+        channel:
+          type: string
+          description: |
+            The channel/platform this skill applies to
+          example: WHATSAPP
+          enum:
+            - email
+            - instagram
+            - line
+            - messenger
+            - sms
+            - tiktok
+            - unknown
+            - webchat
+            - whatsapp
+        created_at:
+          type: integer
+          description: The timestamp when the skill was created
+          example: 1714500000
+        metadata:
+          type: object
+          description: |
+            A map of key-value pairs for additional metadata
+          additionalProperties:
+            type: string
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

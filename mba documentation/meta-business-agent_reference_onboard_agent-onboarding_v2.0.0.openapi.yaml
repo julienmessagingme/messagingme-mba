@@ -1,0 +1,154 @@
+---
+openapi: 3.1.1
+info:
+  title: Agent Onboarding
+  version: 2.0.0
+  summary: |
+    Trigger AI agent onboarding for a specific entity.
+  description: |
+    This endpoint triggers the onboarding flow for a Business AI agent on a specific entity and channel. It creates the necessary entities and schedules async jobs for data preparation.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_onboarding'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    post:
+      responses:
+        201:
+          description: Onboarding triggered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelOnboardingResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Create an onboarding session
+      description: |
+        Trigger AI agent onboarding for the specified entity and channel. Creates the necessary entities and schedules async jobs for data preparation.
+      operationId: createOnboardingSession
+      tags:
+        - Business AI
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: channel
+          in: query
+          description: |
+            The channel to onboard the AI agent for (messenger, whatsapp, instagram, tiktok, line, etc.)
+          required: true
+          schema:
+            type: string
+            enum:
+              - email
+              - instagram
+              - line
+              - messenger
+              - sms
+              - tiktok
+              - unknown
+              - webchat
+              - whatsapp
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+components:
+  schemas:
+    BizAIOmniChannelOnboardingResponse:
+      type: object
+      required:
+        - agent_id
+      properties:
+        agent_id:
+          type: string
+          description: The ID of the agent settings entity
+          example: '1234567890'
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

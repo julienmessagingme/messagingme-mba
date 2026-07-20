@@ -1,0 +1,1421 @@
+---
+openapi: 3.1.1
+info:
+  title: Connectors
+  version: 2.0.0
+  summary: |
+    Manage connector (API definition) resources for a specific entity.
+  description: |
+    This endpoint provides CRUD operations for managing connector resources for a specific entity. Connectors define external API integrations including base URL, authentication type, and auth configuration that the AI agent can use to interact with third-party services. Supported `auth_type` values are `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY`, and `NONE`. Give each connector a descriptive `name` and `description` so the agent understands what the external service provides.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_connectors'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+  - 
+    name: Connectors
+    description: External API connector management
+paths:
+  /:
+    get:
+      responses:
+        200:
+          description: A list of all connectors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: List connectors
+      description: |
+        Retrieve a list of all connectors for the specified entity
+      operationId: listConnectors
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+    post:
+      responses:
+        201:
+          description: The newly created connector
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Create a connector
+      description: |
+        Create a new connector for the specified entity
+      operationId: createConnector
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorRequest'
+        required: true
+  /{connector_id}:
+    get:
+      responses:
+        200:
+          description: The requested connector
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Get a connector
+      description: Retrieve a specific connector by its ID
+      operationId: getConnector
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+    put:
+      responses:
+        200:
+          description: The updated connector
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Update a connector
+      description: Update a specific connector by its ID
+      operationId: updateConnector
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorRequest'
+        required: true
+    delete:
+      responses:
+        204:
+          description: Connector successfully deleted
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Delete a connector
+      description: Delete a specific connector by its ID
+      operationId: deleteConnector
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+  /{connector_id}/upsertCertificate:
+    post:
+      responses:
+        200:
+          description: |
+            The updated connector with mTLS certificate metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Upsert mTLS certificate for a connector
+      description: |
+        Upload or rotate the mTLS client certificate for this connector. If a certificate already exists, it will be replaced and the connection will be re-established with the new credentials.
+      operationId: upsertConnectorCertificate
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorCertificateRequest'
+        required: true
+  /{connector_id}/upsertApiKey:
+    post:
+      responses:
+        200:
+          description: |
+            The updated connector with API key metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: |
+        Upsert API key credentials for a connector
+      description: |
+        Set or rotate the API key credentials for this connector. If credentials already exist, they are replaced and the connection is re-established with the new credentials. The credential payload is required; this endpoint will not delete credentials. To remove an API key layer, delete the connector or change its auth type via the update endpoint instead.
+      operationId: upsertConnectorApiKey
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorUpsertApiKeyRequest'
+        required: true
+  /{connector_id}/upsertOAuth:
+    post:
+      responses:
+        200:
+          description: |
+            The updated connector with OAuth credential metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: |
+        Upsert OAuth 2.0 credentials for a connector
+      description: |
+        Set or rotate the OAuth 2.0 client credentials for this connector. If credentials already exist, they are replaced and the connection is re-established with the new credentials. The credential payload is required; this endpoint will not delete credentials. To remove an OAuth layer, delete the connector or change its auth type via the update endpoint instead.
+      operationId: upsertConnectorOAuth
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorUpsertOAuthRequest'
+        required: true
+  /{connector_id}/logs:
+    get:
+      responses:
+        200:
+          description: |
+            Log entries or failure patterns, with optional statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorLogStatsResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: List connector error logs
+      description: 'Retrieve error logs for the connector. Returns individual log entries by default, or aggregated failure patterns ranked by occurrence count when summary_only is true. Optionally includes aggregate statistics such as success rate and latency percentiles. Only errors originating from the third-party system are included. The time range (end_time - start_time) must not exceed 7 days. Logs are available for the last 7 days only.'
+      operationId: getConnectorLogs
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: The unique identifier of the connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: start_time
+          in: query
+          description: |
+            Start of the time range as a Unix timestamp (seconds). Defaults to 24 hours ago. Must be within the last 7 days. The time range must not exceed 7 days.
+          required: false
+          schema:
+            type: integer
+        - 
+          name: end_time
+          in: query
+          description: |
+            End of the time range as a Unix timestamp (seconds). Defaults to now (server side). The time range must not exceed 7 days.
+          required: false
+          schema:
+            type: integer
+        - 
+          name: limit
+          in: query
+          description: |
+            Maximum number of log entries to return (1-1000). Defaults to 100.
+          required: false
+          schema:
+            type: integer
+        - 
+          name: tool_id
+          in: query
+          description: |
+            Optional tool ID to filter logs to a specific operation. When omitted, returns logs for all tools on the connector.
+          required: false
+          schema:
+            type: string
+        - 
+          name: include_stats
+          in: query
+          description: |
+            When true, include aggregate statistics (success rate, latency percentiles, counts) in the response. The returned `time_window_seconds` reflects the actual covered window, which may be smaller than your requested range if the most recent logs have not yet been processed. Defaults to false.
+          required: false
+          schema:
+            type: boolean
+        - 
+          name: summary_only
+          in: query
+          description: |
+            When true, return aggregated failure patterns ranked by occurrence count instead of individual log entries. Defaults to false.
+          required: false
+          schema:
+            type: boolean
+        - 
+          name: top_n
+          in: query
+          description: |
+            Number of top failure patterns to return when summary_only is true (1-50). Defaults to 10.
+          required: false
+          schema:
+            type: integer
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+components:
+  schemas:
+    BizAIOmniChannelConnectorOAuth2ClientCredentialsAuthConfig:
+      type: object
+      description: |
+        OAuth 2.0 client credentials configuration. Provide this only when auth_type is OAUTH2_CLIENT_CREDENTIALS.
+      example:
+        token_url: https://auth.example.com/token
+        scopes_to_request:
+          0: read
+          1: write
+        token_request_content_type: application/x-www-form-urlencoded
+        client_id: YOUR_CLIENT_ID
+        client_secret: YOUR_CLIENT_SECRET
+      required:
+        - token_url
+        - scopes_to_request
+        - client_id
+        - client_secret
+      nullable: true
+      properties:
+        token_url:
+          type: string
+          description: |
+            Token URL used to request OAuth access tokens.
+          example: https://auth.example.com/token
+        scopes_to_request:
+          type: array
+          description: OAuth scopes to request.
+          example:
+            0: read
+            1: write
+          items:
+            type: string
+        token_request_content_type:
+          type: string
+          description: |
+            Content type for token requests. Supported values are application/x-www-form-urlencoded and application/json. Defaults to application/x-www-form-urlencoded.
+          example: application/x-www-form-urlencoded
+          nullable: true
+        client_id:
+          type: string
+          description: OAuth client ID.
+          example: YOUR_CLIENT_ID
+        client_secret:
+          type: string
+          description: OAuth client secret.
+          example: YOUR_CLIENT_SECRET
+    BizAIOmniChannelConnectorApiKeyParam:
+      type: object
+      required:
+        - field_name
+        - value
+      properties:
+        field_name:
+          type: string
+          description: |
+            Header, query parameter, or body field name.
+          example: X-API-Key
+        value:
+          type: string
+          description: Secret value for this API key field.
+          example: YOUR_API_KEY
+        prefix:
+          type: string
+          description: |
+            Optional value prefix, such as Bearer followed by a space.
+          example: 'Bearer '
+          nullable: true
+    BizAIOmniChannelConnectorApiKeyAuthConfig:
+      type: object
+      description: |
+        API key configuration. Provide this only when auth_type is API_KEY.
+      example:
+        headers:
+          0:
+            field_name: X-API-Key
+            value: YOUR_API_KEY
+            prefix:
+        query_params:
+          0:
+            field_name: client_id
+            value: YOUR_CLIENT_ID
+            prefix:
+        body_params: [ ]
+      nullable: true
+      properties:
+        headers:
+          type: array
+          description: API key fields to add as HTTP headers.
+          example:
+            0:
+              field_name: X-API-Key
+              value: YOUR_API_KEY
+              prefix:
+          nullable: true
+          items:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorApiKeyParam'
+        query_params:
+          type: array
+          description: |
+            API key fields to add as query parameters.
+          example:
+            0:
+              field_name: api_key
+              value: YOUR_API_KEY
+              prefix:
+          nullable: true
+          items:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorApiKeyParam'
+        body_params:
+          type: array
+          description: |
+            API key fields to add as JSON body parameters.
+          example: [ ]
+          nullable: true
+          items:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorApiKeyParam'
+    BizAIOmniChannelConnectorAuthConfig:
+      type: object
+      description: |
+        Authentication configuration for this connector
+      nullable: true
+      properties:
+        oauth2_client_credentials:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorOAuth2ClientCredentialsAuthConfig'
+        api_key:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorApiKeyAuthConfig'
+    BizAIOmniChannelConnectorRequest:
+      type: object
+      required:
+        - name
+        - description
+        - base_url
+        - auth_type
+      properties:
+        name:
+          type: string
+          description: |
+            Display name of the connector. Use a name that clearly identifies the external service (e.g., `Shopify Order Management`, `Salesforce CRM`).
+          example: Shopify Order Management
+        description:
+          type: string
+          description: |-
+            Description of what this connector integrates with and its purpose. The agent uses this to understand the connector's capabilities. For example: "Connects to the Shopify API for managing customer orders, processing returns, and checking inventory availability."
+          example: |
+            Connects to the Shopify API for managing customer orders, processing returns, and checking inventory availability.
+        base_url:
+          type: string
+          description: Base URL of the external API
+          example: https://api.shopify.com/v1
+        auth_type:
+          type: string
+          description: |
+            Authentication type for this connector. Currently, only OAUTH2_CLIENT_CREDENTIALS, API_KEY, and NONE are supported.
+          example: OAUTH2_CLIENT_CREDENTIALS
+          enum:
+            - OAUTH2
+            - OAUTH2_CLIENT_CREDENTIALS
+            - API_KEY
+            - BASIC
+            - CUSTOM
+            - NONE
+        auth_config:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorAuthConfig'
+        user_auth_injection_config:
+          type: object
+          description: |
+            Configuration for injecting user auth tokens into tool requests
+          required:
+            - location
+            - field_name
+            - prefix
+          properties:
+            location:
+              type: string
+              description: |
+                Where to inject the token (HEADERS, QUERY, or BODY)
+              enum:
+                - body
+                - headers
+                - path
+                - query
+            field_name:
+              type: string
+              description: |
+                Field name for the injected token (e.g., "X-User-Token")
+            prefix:
+              type: string
+              description: |
+                Prefix for the token value (e.g., "Bearer ")
+        requires_certificate:
+          type: boolean
+          description: |
+            Whether this connector requires mTLS client certificate. When true, use the upsert_certificate endpoint to provide the cert.
+          example: false
+    BizAIOmniChannelConnectorResponse:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - base_url
+        - auth_type
+        - connection_status
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this connector
+          example: '1234567890'
+        name:
+          type: string
+          description: Display name of the connector
+          example: My Shopify Connector
+        description:
+          type: string
+          description: Description of the connector
+          example: Connects to Shopify for order management
+        base_url:
+          type: string
+          description: Base URL of the external API
+          example: https://api.shopify.com/v1
+        auth_type:
+          type: string
+          description: Authentication type for this connector
+          example: OAUTH2_CLIENT_CREDENTIALS
+          enum:
+            - OAUTH2
+            - OAUTH2_CLIENT_CREDENTIALS
+            - API_KEY
+            - BASIC
+            - CUSTOM
+            - NONE
+        auth_config:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorAuthConfig'
+        mtls_config:
+          type: object
+          description: |
+            mTLS certificate metadata and PEM content (private key is never exposed)
+          required:
+            - has_certificate
+          nullable: true
+          properties:
+            has_certificate:
+              type: boolean
+              description: |
+                Whether an mTLS certificate is configured
+            fingerprint:
+              type: string
+              description: SHA-256 fingerprint of the certificate
+              nullable: true
+            expires_at:
+              type: integer
+              description: Unix timestamp of certificate expiry
+              nullable: true
+            subject:
+              type: string
+              description: Certificate subject DN
+              nullable: true
+            client_certificate:
+              type: string
+              description: |
+                PEM-encoded client certificate (public, safe to expose)
+              nullable: true
+            ca_certificate:
+              type: string
+              description: |
+                PEM-encoded CA certificate chain (public, safe to expose)
+              nullable: true
+        connection_status:
+          type: object
+          description: Connection status information
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              description: Current connection status
+              enum:
+                - PENDING_OAUTH
+                - ACTIVE
+                - EXPIRED
+                - ERROR
+            error_message:
+              type: string
+              description: Error message if connection failed
+              nullable: true
+        user_auth_injection_config:
+          type: object
+          description: |
+            Configuration for injecting user auth tokens into tool requests
+          required:
+            - location
+            - field_name
+            - prefix
+          properties:
+            location:
+              type: string
+              description: Where to inject the token
+              enum:
+                - body
+                - headers
+                - path
+                - query
+            field_name:
+              type: string
+              description: Field name for the injected token
+            prefix:
+              type: string
+              description: Prefix for the token value
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+    BizAIOmniChannelConnectorCertificateRequest:
+      type: object
+      required:
+        - client_certificate
+        - client_key
+      properties:
+        client_certificate:
+          type: string
+          description: |
+            PEM-encoded client certificate for mTLS authentication. Must begin with "-----BEGIN CERTIFICATE-----".
+          example: -----BEGIN CERTIFICATE-----...
+        client_key:
+          type: string
+          description: |
+            PEM-encoded private key for mTLS authentication. Must begin with "-----BEGIN PRIVATE KEY-----" (PKCS8), "-----BEGIN RSA PRIVATE KEY-----", or "-----BEGIN EC PRIVATE KEY-----".
+          example: -----BEGIN PRIVATE KEY-----...
+        ca_certificate:
+          type: string
+          description: |
+            Optional PEM-encoded CA certificate for the client side mTLS trust chain to verify server side certificate. Useful if server certificate is not signed by a public CA.
+          example: -----BEGIN CERTIFICATE-----...
+    BizAIOmniChannelConnectorUpsertApiKeyRequest:
+      type: object
+      required:
+        - api_key_config
+      properties:
+        api_key_config:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorApiKeyAuthConfig'
+    BizAIOmniChannelConnectorUpsertOAuthRequest:
+      type: object
+      required:
+        - oauth_config
+      properties:
+        oauth_config:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorOAuth2ClientCredentialsAuthConfig'
+    BizAIOmniChannelConnectorLogStatsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          description: |
+            Array of log entries or failure patterns depending on query mode
+          items:
+            type: object
+            properties:
+              event_time:
+                type: string
+                description: |
+                  ISO 8601 UTC timestamp at second precision (e.g. "2026-05-13T21:46:58Z") of when the error event occurred (individual log entry mode).
+              failure_code_name:
+                type: string
+                description: |
+                  Human-readable name of the failure code (e.g. TRANSPORT_ERROR)
+              error_message:
+                type: string
+                description: Error message from the failed operation
+              tool_name:
+                type: string
+                description: |
+                  The tool that was being used when the error occurred
+              occurrences:
+                type: integer
+                description: |
+                  Number of times this failure pattern occurred (summary_only mode)
+              last_seen:
+                type: string
+                description: |
+                  ISO 8601 UTC timestamp at second precision (e.g. "2026-05-13T21:46:58Z") of the most recent occurrence (summary_only mode).
+        stats:
+          type: object
+          description: |
+            Aggregate statistics for the queried time window, present when include_stats is true
+          required:
+            - start_count
+            - success_count
+            - exception_count
+            - success_rate
+            - avg_latency_s
+            - p95_latency_s
+            - p99_latency_s
+            - time_window_seconds
+          properties:
+            start_count:
+              type: integer
+              description: Total number of tool execution starts
+            success_count:
+              type: integer
+              description: Number of successful tool executions
+            exception_count:
+              type: integer
+              description: Number of failed tool executions
+            success_rate:
+              type: number
+              description: |
+                Ratio of successful executions to total starts
+            avg_latency_s:
+              type: number
+              description: Average execution latency in seconds
+            p95_latency_s:
+              type: number
+              description: |
+                95th percentile execution latency in seconds
+            p99_latency_s:
+              type: number
+              description: |
+                99th percentile execution latency in seconds
+            time_window_seconds:
+              type: integer
+              description: |
+                Number of seconds in the statistics time window. Reflects the actual covered window, which may be smaller than the requested range if the most recent logs have not yet been processed.
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

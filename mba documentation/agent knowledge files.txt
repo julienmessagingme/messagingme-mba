@@ -1,0 +1,337 @@
+## Base URL
+
+| URL | Description |
+|-----|-------------|
+| https://api.facebook.com/{entity_id}/agent_config/files |  |
+
+## Authorization
+
+This API requires:
+
+any of the following
+  - Capability: bizai_wa_enterprise_api_3p_access
+  - Permission: whatsapp_business_messaging
+
+## APIs
+
+| Method | Endpoint |
+|--------|----------|
+| DELETE | [/{file_id}](#delete-file-id) |
+| GET | [/](#get) |
+| GET | [/{file_id}](#get-file-id) |
+| POST | [/](#post) |
+
+<jumplink id="delete-file-id"></jumplink>
+## DELETE /{file_id}
+
+Delete a knowledge file
+
+Delete a specific file from the knowledge base by its ID
+
+
+### Header Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| X-API-Version | "2.0.0" |  |  |
+
+### Path Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| entity_id | string | ✓ | The WhatsApp Business Phone Number ID for the Meta Business Agent. |
+| file_id | string | ✓ | The unique identifier of the file |
+
+### Responses
+
+**204**
+
+File successfully deleted
+
+**404**
+
+Not found
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**401**
+
+Unauthorized
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**429**
+
+Too many requests
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**500**
+
+Server error
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+
+<jumplink id="get"></jumplink>
+## GET /
+
+List knowledge files
+
+Retrieve a list of all files in the AI agent knowledge base for the specified entity
+
+
+### Header Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| X-API-Version | "2.0.0" |  |  |
+
+### Path Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| entity_id | string | ✓ | The WhatsApp Business Phone Number ID for the Meta Business Agent. |
+
+### Responses
+
+**200**
+
+A list of all knowledge base files
+
+**Content Type**: `application/json`
+
+**Schema**: array of [BizAIOmniChannelKnowledgeFileResponse](#bizaiomnichannelknowledgefileresponse)
+
+**400**
+
+Bad request
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**404**
+
+Not found
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**401**
+
+Unauthorized
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**429**
+
+Too many requests
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**500**
+
+Server error
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+
+<jumplink id="get-file-id"></jumplink>
+## GET /{file_id}
+
+Get a knowledge file
+
+Retrieve a specific file by its ID
+
+### Header Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| X-API-Version | "2.0.0" |  |  |
+
+### Path Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| entity_id | string | ✓ | The WhatsApp Business Phone Number ID for the Meta Business Agent. |
+| file_id | string | ✓ | The unique identifier of the file |
+
+### Responses
+
+**200**
+
+The requested file metadata
+
+**Content Type**: `application/json`
+
+**Schema**: [BizAIOmniChannelKnowledgeFileResponse](#bizaiomnichannelknowledgefileresponse)
+
+**400**
+
+Bad request
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**404**
+
+Not found
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**401**
+
+Unauthorized
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**429**
+
+Too many requests
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**500**
+
+Server error
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+
+<jumplink id="post"></jumplink>
+## POST /
+
+Upload a knowledge file
+
+Upload a new file to the AI agent knowledge base for the specified entity
+
+
+### Header Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| X-API-Version | "2.0.0" |  |  |
+
+### Path Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| entity_id | string | ✓ | The WhatsApp Business Phone Number ID for the Meta Business Agent. |
+
+### Request Body (Required)
+
+**Content Type**: `multipart/form-data`
+
+**Schema**: [BizAIOmniChannelKnowledgeFileRequest](#bizaiomnichannelknowledgefilerequest)
+
+### Responses
+
+**201**
+
+The newly uploaded file metadata
+
+**Content Type**: `application/json`
+
+**Schema**: [BizAIOmniChannelKnowledgeFileResponse](#bizaiomnichannelknowledgefileresponse)
+
+**400**
+
+Bad request
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**401**
+
+Unauthorized
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**429**
+
+Too many requests
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+**500**
+
+Server error
+
+**Content Type**: `application/json`
+
+**Schema**: [StandardError](#standarderror)
+
+
+# Components
+
+## Schemas
+
+<jumplink id="bizaiomnichannelknowledgefilerequest"></jumplink>
+### BizAIOmniChannelKnowledgeFileRequest
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| file_name | string | ✓ | The name of the file being uploaded |
+| file | string (binary) | ✓ | The file to be uploaded. Maximum file size: 100000000 bytes. Supported file types: - .pdf - .doc - .docx - .png - .jpg - .jpeg - .csv, when CSV extraction is enabled for the WhatsApp asset - .xlsx, when XLSX extraction is enabled for the WhatsApp asset |
+
+<jumplink id="bizaiomnichannelknowledgefileresponse"></jumplink>
+### BizAIOmniChannelKnowledgeFileResponse
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| id | string | ✓ | The unique identifier for this file |
+| file_name | string | ✓ | The name of the file |
+
+<jumplink id="standarderror"></jumplink>
+### StandardError
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| title | string | ✓ |  |
+| detail | string | ✓ |  |
+| type | string |  |  |
+| status | integer |  |  |
+
+## Authentication
+
+| Scheme | Type | Location |
+|--------|------|----------|
+| OAuthToken__Authorization | HTTP Bearer | Header: `Authorization` |
+
+### Usage Examples
+
+- **OAuthToken__Authorization**: Include `Authorization: Bearer your-token-here` in request headers
+
+### Global Authentication Requirements
+
+All endpoints require: OAuthToken__Authorization

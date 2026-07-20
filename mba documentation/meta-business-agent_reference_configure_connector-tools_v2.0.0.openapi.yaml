@@ -1,0 +1,1091 @@
+---
+openapi: 3.1.1
+info:
+  title: Connector Tools
+  version: 2.0.0
+  summary: |
+    Manage tool (endpoint/operation) definitions for a specific connector.
+  description: |
+    This endpoint provides CRUD operations for managing tool definitions for a specific connector. Tools define the individual operations (endpoints) available on an external API, including the canonical outbound request definition and user-auth extraction metadata. Each tool must have a descriptive `name` and `description` so the agent knows when and how to use it. In the `request_definition`, define the body schema with explicit field types, descriptions, and required fields rather than using unstructured objects — the agent uses this schema to extract the correct values from the conversation and build valid API requests.
+  license:
+    name: Meta Business AI Terms of Service
+    url: |
+      https://www.facebook.com/legal/3774714022740775
+servers:
+  - 
+    url: 'https://api.facebook.com/{entity_id}/agent_connectors/{connector_id}/tools'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+  - 
+    name: Connectors
+    description: External API connector management
+paths:
+  /:
+    get:
+      responses:
+        200:
+          description: A list of all tools
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BizAIOmniChannelConnectorToolResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: List connector tools
+      description: |
+        Retrieve a list of all tools for the specified connector
+      operationId: listConnectorTools
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: |
+            The unique identifier of the parent connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+    post:
+      responses:
+        201:
+          description: The newly created tool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorToolResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Create a connector tool
+      description: |
+        Create a new tool for the specified connector
+      operationId: createConnectorTool
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: |
+            The unique identifier of the parent connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRequest'
+        required: true
+  /{tool_id}:
+    get:
+      responses:
+        200:
+          description: The requested tool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorToolResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Get a connector tool
+      description: Retrieve a specific tool by its ID
+      operationId: getConnectorTool
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: |
+            The unique identifier of the parent connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: tool_id
+          in: path
+          description: The unique identifier of the tool
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+    put:
+      responses:
+        200:
+          description: The updated tool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorToolResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Update a connector tool
+      description: Update a specific tool by its ID
+      operationId: updateConnectorTool
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: |
+            The unique identifier of the parent connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: tool_id
+          in: path
+          description: The unique identifier of the tool
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRequest'
+        required: true
+    delete:
+      responses:
+        204:
+          description: Tool successfully deleted
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                NOT_FOUND:
+                  value:
+                    title: Not Found
+                    detail: Resource not found
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Delete a connector tool
+      description: Delete a specific tool by its ID
+      operationId: deleteConnectorTool
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: |
+            The unique identifier of the parent connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: tool_id
+          in: path
+          description: The unique identifier of the tool
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+  /{tool_id}/run:
+    post:
+      responses:
+        200:
+          description: The tool execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRunResponse'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                BAD_REQUEST:
+                  value:
+                    title: Bad Request
+                    detail: Invalid parameters
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                UNAUTHORIZED:
+                  value:
+                    title: Unauthorized
+                    detail: |
+                      Authentication credentials are missing or invalid
+        429:
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                TOO_MANY_REQUESTS:
+                  value:
+                    title: Too Many Requests
+                    detail: Rate limit exceeded
+        500:
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+              examples:
+                INTERNAL_SERVER_ERROR:
+                  value:
+                    title: Internal Server Error
+                    detail: An unexpected error occurred
+        default:
+          description: Error response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardError'
+      summary: Run a connector tool
+      description: |
+        Execute a tool action. Returns the raw response from the upstream API endpoint.
+      operationId: runConnectorTool
+      tags:
+        - Business AI
+        - Connectors
+      parameters:
+        - 
+          name: entity_id
+          in: path
+          description: |
+            The WhatsApp Business Phone Number ID for the Meta Business Agent.
+          required: true
+          schema:
+            type: string
+        - 
+          name: connector_id
+          in: path
+          description: |
+            The unique identifier of the parent connector
+          required: true
+          schema:
+            type: string
+        - 
+          name: tool_id
+          in: path
+          description: The unique identifier of the tool
+          required: true
+          schema:
+            type: string
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 2.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRunRequest'
+        required: true
+components:
+  schemas:
+    BizAIOmniChannelConnectorToolParameterBinding:
+      type: object
+      description: |
+        Meta Business Agent-owned binding for this node; omitted means agent/runtime input at the node’s canonical path. This cannot be provided for an "object" or "array" type node
+      example:
+        kind: default
+        value: Sample item
+      required:
+        - kind
+      nullable: true
+      properties:
+        kind:
+          type: string
+          description: |
+            Source mode for a Meta Business Agent-owned field.
+          example: default
+          enum:
+            - default
+            - macro
+        value:
+          type: string
+          description: |
+            Typed literal value, required when `kind = "default"`; It must be provided as a string, and the underlying value must match the node type. It will be converted into the appropriate node type when making toolcalls to the underlying endpoint.
+          example: Sample item
+          nullable: true
+        macro:
+          type: string
+          description: |
+            Registered Meta Business Agent macro ID, required when `kind = "macro"`.
+          example: WHATSAPP_PHONE_NUMBER
+          enum:
+            - WHATSAPP_PHONE_NUMBER
+            - WHATSAPP_IDENTITY_HASH
+            - WHATSAPP_CURRENT_STATUS_ID
+          nullable: true
+    BizAIOmniChannelConnectorToolParameterNode:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: Node type.
+          example: string
+          enum:
+            - string
+            - integer
+            - number
+            - boolean
+        description:
+          type: string
+          description: |
+            Human-readable documentation for the parameter. Always provide a description — the agent uses it to understand what value to extract from the conversation and pass to the API.
+          example: |
+            The unique identifier of the order to look up.
+          nullable: true
+        required:
+          type: boolean
+          description: |
+            Whether the field is required. This field is ignored for path params, since they are always required.
+          example: true
+          nullable: true
+        binding:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolParameterBinding'
+    BizAIOmniChannelConnectorToolBodyNode:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: |
+            Node type. When defining a field that contains structured data, use `object` with explicit `properties` rather than `string`. Fully defined schemas allow the agent to extract and pass the correct fields automatically. Avoid using `object` without defining its `properties`, as this causes the agent to guess the expected structure.
+          example: string
+          enum:
+            - object
+            - array
+            - string
+            - integer
+            - number
+            - boolean
+        description:
+          type: string
+          description: |
+            Human-readable documentation for the field or container. Always provide a description for every node — the agent uses it to understand what data each field expects and to extract the right values from the conversation.
+          example: The name of the item to create.
+          nullable: true
+        required:
+          type: array
+          description: |
+            Required properties of this object. It can only be provided for "object" type nodes.
+          example:
+            0: key
+            1: value
+          nullable: true
+          items:
+            type: string
+        properties:
+          type: object
+          description: |
+            Child fields for `object` nodes; keys are canonical outbound field names, value is a string representation of the BodyNode type. Only provide when node is of type `object`. Always define explicit properties with their types and descriptions instead of leaving an object undefined — the agent needs a fully specified schema to correctly populate the request.
+          example:
+            key: '{"type":"string","description":"Property key."}'
+            value: '{"type":"string","description":"Property value."}'
+          nullable: true
+          additionalProperties:
+            type: string
+            description: |
+              BodyNode element schema for a child field. This field needs to be provided as a string of the BodyNode type.
+        items:
+          type: string
+          description: |
+            BodyNode element schema for `array` nodes. Only provide when node is of type `array`. This field needs to be provided as a string representation of the BodyNode type.
+          example: '{"type":"object","description":"Key-value item property.","required":["key","value"],"properties":{"key":"{"type":"string","description":"Property key."}","value":"{"type":"string","description":"Property value."}"}}'
+          nullable: true
+        binding:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolParameterBinding'
+    BizAIOmniChannelConnectorToolRequestBodyDefinition:
+      type: object
+      description: |
+        Request body definition; omit or set to `null` when the request has no body.
+      example:
+        content_type: application/json
+        params:
+          name:
+            type: string
+            description: Item name.
+          price:
+            type: integer
+            description: Item price in cents.
+          properties:
+            type: array
+            description: Custom item properties.
+            items: '{"type":"object","description":"Key-value item property.","required":["key","value"],"properties":{"key":"{"type":"string","description":"Property key."}","value":"{"type":"string","description":"Property value."}"}}'
+        required:
+          0: name
+          1: price
+      required:
+        - content_type
+        - params
+      nullable: true
+      properties:
+        content_type:
+          type: string
+          description: |
+            Request body content type; currently only supports `application/json`
+          example: application/json
+          enum:
+            - application/json
+        params:
+          type: object
+          description: |
+            Top-level JSON body fields; keys are canonical outbound field names.
+          example:
+            name:
+              type: string
+              description: Item name.
+            price:
+              type: integer
+              description: Item price in cents.
+            properties:
+              type: array
+              description: Custom item properties.
+              items: '{"type":"object","description":"Key-value item property.","required":["key","value"],"properties":{"key":"{"type":"string","description":"Property key."}","value":"{"type":"string","description":"Property value."}"}}'
+          additionalProperties:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorToolBodyNode'
+        required:
+          type: array
+          description: |
+            Required top-level body fields. Entries must be keys present in `params`.
+          example:
+            0: name
+            1: price
+          nullable: true
+          items:
+            type: string
+    BizAIOmniChannelConnectorToolRequestDefinition:
+      type: object
+      description: |
+        Roundtripped outbound HTTP request definition.
+      example:
+        method: POST
+        path: /items
+        path_parameters: { }
+        query_parameters: { }
+        headers: { }
+        body:
+          content_type: application/json
+          params:
+            name:
+              type: string
+              description: Item name.
+            price:
+              type: integer
+              description: Item price in cents.
+            properties:
+              type: array
+              description: Custom item properties.
+              items: '{"type":"object","description":"Key-value item property.","required":["key","value"],"properties":{"key":"{"type":"string","description":"Property key."}","value":"{"type":"string","description":"Property value."}"}}'
+          required:
+            0: name
+            1: price
+      required:
+        - method
+        - path
+      properties:
+        method:
+          type: string
+          description: HTTP method for the outbound request.
+          example: POST
+          enum:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - PATCH
+        path:
+          type: string
+          description: 'Outbound request path template, including `{placeholder}` segments for path parameters.'
+          example: /items
+        path_parameters:
+          type: object
+          description: |
+            Path-parameter schema; property names must match the placeholder names used in `path`.
+          example: { }
+          additionalProperties:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorToolParameterNode'
+        query_parameters:
+          type: object
+          description: |
+            Query-parameter schema; property names are the canonical outbound query parameter names.
+          example: { }
+          additionalProperties:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorToolParameterNode'
+        headers:
+          type: object
+          description: |
+            Header schema; property names are the canonical outbound header names.
+          example: { }
+          additionalProperties:
+            $ref: '#/components/schemas/BizAIOmniChannelConnectorToolParameterNode'
+        body:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRequestBodyDefinition'
+    BizAIOmniChannelConnectorToolUserAuthToolConfig:
+      type: object
+      description: |
+        Response extraction config for login/refresh user-auth actions.
+      example:
+        user_action_tool_type: auth
+        user_auth_token_path: data.access_token
+        refresh_token_path: data.refresh_token
+        expires_at_path: data.expires_at
+        expires_at_type: absolute
+      required:
+        - user_action_tool_type
+        - user_auth_token_path
+      nullable: true
+      properties:
+        user_action_tool_type:
+          type: string
+          description: 'Type of user auth action: auth performs the initial user authorization, while refresh uses an existing refresh token.'
+          example: auth
+          enum:
+            - auth
+            - refresh
+        user_auth_token_path:
+          type: string
+          description: |
+            Dot-path used to extract the access token from a login/refresh tool response.
+          example: data.access_token
+        refresh_token_path:
+          type: string
+          description: |
+            Dot-path used to extract the refresh token from a login/refresh tool response.
+          example: data.refresh_token
+          nullable: true
+        expires_at_path:
+          type: string
+          description: |
+            Dot-path used to extract token expiry from a login/refresh tool response.
+          example: data.expires_at
+          nullable: true
+        expires_at_type:
+          type: string
+          description: |
+            How to interpret the value found at `expires_at_path`.
+          example: absolute
+          enum:
+            - absolute
+            - relative_seconds
+          nullable: true
+    BizAIOmniChannelConnectorToolRequest:
+      type: object
+      required:
+        - name
+        - description
+        - request_definition
+        - user_auth_required
+      properties:
+        name:
+          type: string
+          description: |
+            Stable tool/action key, visible to the agent. Use a clear, descriptive name that indicates the action (e.g., `check_order_status`, `create_return_request`). Avoid generic names like `action1` or `tool`.
+          example: check_order_status
+        description:
+          type: string
+          description: 'Human-readable description of what this tool does and when to use it. The agent relies on this description to decide when to invoke the tool during a conversation. Be specific about the action, expected inputs, and what the tool returns. For example: "Use this tool when a customer asks about the status of an existing order. Requires an order ID. Returns the order status, estimated delivery date, and tracking information." Vague or missing descriptions cause the agent to invoke tools incorrectly or not at all.'
+          example: |
+            Use this tool when a customer asks about the status of an existing order. Requires an order ID. Returns the order status, estimated delivery date, and tracking information.
+        request_definition:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRequestDefinition'
+        user_auth_required:
+          type: boolean
+          description: |
+            If `true`, Meta Business Agent injects stored user auth into the outbound request at runtime using the connector's user-auth injection config.
+          example: false
+        user_auth_action_config:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolUserAuthToolConfig'
+    BizAIOmniChannelConnectorToolUserAuthActionConfig:
+      type: object
+      description: |
+        Response extraction config for login/refresh user-auth actions.
+      example:
+        user_action_tool_type: auth
+        user_auth_token_path: data.access_token
+        refresh_token_path: data.refresh_token
+        expires_at_path: data.expires_at
+        expires_at_type: absolute
+      required:
+        - user_action_tool_type
+        - user_auth_token_path
+      nullable: true
+      properties:
+        user_action_tool_type:
+          type: string
+          description: 'Type of user auth action: auth performs the initial user authorization, while refresh uses an existing refresh token.'
+          example: auth
+          enum:
+            - auth
+            - refresh
+        user_auth_token_path:
+          type: string
+          description: |
+            Dot-path used to extract the access token from a login/refresh tool response.
+          example: data.access_token
+        refresh_token_path:
+          type: string
+          description: |
+            Dot-path used to extract the refresh token from a login/refresh tool response.
+          example: data.refresh_token
+          nullable: true
+        expires_at_path:
+          type: string
+          description: |
+            Dot-path used to extract token expiry from a login/refresh tool response.
+          example: data.expires_at
+          nullable: true
+        expires_at_type:
+          type: string
+          description: |
+            How to interpret the value found at `expires_at_path`.
+          example: absolute
+          enum:
+            - absolute
+            - relative_seconds
+          nullable: true
+    BizAIOmniChannelConnectorToolResponse:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - request_definition
+        - user_auth_required
+      properties:
+        id:
+          type: string
+          description: Tool ID returned by the Stefi API.
+          example: 123456789012345
+        name:
+          type: string
+          description: |
+            Stable tool/action key, visible to the agent.
+          example: check_order_status
+        description:
+          type: string
+          description: Human-readable tool description.
+          example: |
+            Use this tool when a customer asks about the status of an existing order. Requires an order ID. Returns the order status, estimated delivery date, and tracking information.
+        request_definition:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolRequestDefinition'
+        user_auth_required:
+          type: boolean
+          description: |
+            Whether Meta Business Agent injects stored user auth into the outbound request at runtime.
+          example: false
+        user_auth_action_config:
+          $ref: '#/components/schemas/BizAIOmniChannelConnectorToolUserAuthActionConfig'
+    StandardError:
+      type: object
+      required:
+        - title
+        - detail
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        type:
+          type: string
+        status:
+          type: integer
+    BizAIOmniChannelConnectorToolRunRequest:
+      type: object
+      properties:
+        input:
+          type: string
+          description: |
+            JSON-encoded input payload for the tool action. Defaults to empty object if not provided.
+          example: '{"query": "search for product"}'
+    BizAIOmniChannelConnectorToolRunResponse:
+      type: object
+      required:
+        - output
+        - status
+      properties:
+        output:
+          type: string
+          description: |
+            JSON-encoded response from the tool execution
+          example: '{"results": []}'
+        status:
+          type: string
+          description: 'Execution status: success or error'
+          example: SUCCESS
+  securitySchemes:
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__Authorization: [ ]

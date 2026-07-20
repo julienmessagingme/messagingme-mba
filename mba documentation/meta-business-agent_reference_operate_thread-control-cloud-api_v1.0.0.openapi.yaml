@@ -1,0 +1,131 @@
+---
+openapi: 3.1.1
+info:
+  title: Thread Control (Cloud API)
+  version: 1.0.0
+  summary: |
+    Release thread control for a consumer conversation on a WhatsApp Business phone number.
+  description: |
+    Release thread control for a consumer conversation, handing the conversation back to Meta Business Agent as the automatic responder.
+servers:
+  - 
+    url: 'https://api.facebook.com/business/whatsapp/phone_numbers/{phone_number_id}/thread_control'
+tags:
+  - 
+    name: Business AI
+    description: Business AI API operations
+paths:
+  /:
+    post:
+      responses:
+        200:
+          description: |
+            Thread control action result with messaging product identifier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadControlResponse'
+          headers:
+            Vary:
+              required: false
+              schema:
+                type: string
+              description: Vary http response header
+            Access-Control-Allow-Origin:
+              required: false
+              schema:
+                type: string
+              description: |
+                Denotes whether the response can be shared with requesting code from the given origin
+            Facebook-API-Version:
+              required: false
+              schema:
+                type: string
+              description: |
+                Effective Graph API version for the request.
+      description: |
+        Release thread control for a consumer conversation.
+      operationId: passOrReleaseThreadControl
+      tags:
+        - Business AI
+      parameters:
+        - 
+          name: phone_number_id
+          in: path
+          description: |
+            WhatsApp Business Account Phone Number ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - 
+          name: X-API-Version
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - 1.0.0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadControlRequest'
+        required: true
+components:
+  schemas:
+    ThreadControlRequest:
+      type: object
+      required:
+        - messaging_product
+        - action
+      properties:
+        messaging_product:
+          type: string
+          description: |
+            Messaging service used for the request. Must be "whatsapp".
+          enum:
+            - whatsapp
+        action:
+          type: string
+          description: |
+            The thread control action to perform. Currently only "release" is supported; it relinquishes thread control and hands the conversation back to Meta Business Agent as the automatic responder. "pass" is reserved for future use. You must currently hold thread control for the conversation.
+          enum:
+            - pass
+            - release
+        to:
+          type: string
+          description: |
+            Consumer identifier (phone number or WhatsApp ID) whose thread control is being transferred.
+        recipient:
+          type: string
+          description: |
+            Business-scoped user ID of the consumer whose thread control is being transferred. Accepted but not yet wired; provide `to` instead.
+    ThreadControlResponse:
+      type: object
+      required:
+        - messaging_product
+      properties:
+        messaging_product:
+          type: string
+          description: |
+            Messaging service used for the response. Always "whatsapp".
+          enum:
+            - whatsapp
+  securitySchemes:
+    OAuthToken__access_token:
+      type: apiKey
+      name: access_token
+      in: query
+    OAuthToken__oauth_token:
+      type: apiKey
+      name: oauth_token
+      in: query
+    OAuthToken__Authorization:
+      type: http
+      scheme: bearer
+security:
+  - 
+    OAuthToken__access_token: [ ]
+    OAuthToken__oauth_token: [ ]
+    OAuthToken__Authorization: [ ]
