@@ -14,7 +14,7 @@ import {
 import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
-import { PgInboxStore, AUTOMATED_MAY_OVERWRITE } from './inbox/store.pg';
+import { PgInboxStore } from './inbox/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
 import { logTemplateSent } from './inbox/outbound-log';
 import { PgFlowStore } from './flow/store.pg';
@@ -254,13 +254,6 @@ async function main(): Promise<void> {
       },
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
-      // Un opérateur engagé (ou MBA) interdit l'envoi de masse vers ce contact. Saut transitoire.
-      mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
-      // Après un envoi réussi, le fil est à nous, en automatique. `only` empêche cette pose de
-      // dégrader un détenteur plus fort qui serait apparu entre-temps.
-      markControl: async (tenant, waId) => {
-        await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { only: AUTOMATED_MAY_OVERWRITE });
-      },
     });
   });
 

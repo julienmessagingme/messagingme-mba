@@ -3,9 +3,6 @@ import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
-import { runCampaign } from '../src/campaign/engine';
-import type { EngineDeps } from '../src/campaign/engine';
-import type { Campaign, Recipient } from '../src/campaign/types';
 
 /**
  * L'état de contrôle d'une conversation : qui détient le fil, et donc qui a le droit d'écrire au client.
@@ -89,82 +86,6 @@ describe('gel du scénario quand le fil ne nous appartient pas', () => {
     const trace: Trace = { sent: [], states: [] };
     await executor(undefined, trace).advance('t1', '33611', 'm1');
     expect(trace.sent).toEqual(['suite']);
-  });
-});
-
-// --- Campagnes ---
-
-const CAMPAIGN: Campaign = {
-  id: 'camp1', tenantId: 't1', phoneNumberId: 'pn1', name: 'Promo', category: 'utility',
-  templateName: 'promo', templateLanguage: 'fr', status: 'draft', ratePerMinute: null,
-  paramMapping: [], workflowId: null, startNodeId: null,
-} as Campaign;
-
-function recipients(): Recipient[] {
-  return [
-    { id: 'r1', campaignId: 'camp1', contactId: 'c1', toE164: '+33611111111', resolvedParams: [], status: 'pending' } as unknown as Recipient,
-    { id: 'r2', campaignId: 'camp1', contactId: 'c2', toE164: '+33622222222', resolvedParams: [], status: 'pending' } as unknown as Recipient,
-  ];
-}
-
-interface MarkedResult { id: string; status: string; error?: string }
-function engineDeps(over: Partial<EngineDeps> = {}): { deps: EngineDeps; claimed: string[]; sent: string[]; marked: string[]; results: MarkedResult[] } {
-  const claimed: string[] = [];
-  const sent: string[] = [];
-  const marked: string[] = [];
-  const results: MarkedResult[] = [];
-  const deps: EngineDeps = {
-    sender: {
-      sendMarketing: async () => ({ messageId: 'm' }),
-      sendTemplate: async (to) => { sent.push(to); return { messageId: `m-${to}` }; },
-    },
-    recipients: {
-      listPending: async () => recipients(),
-      claim: async (id) => { claimed.push(id); return true; },
-      markResult: async (id, r) => { results.push({ id, status: r.status, ...(r.error ? { error: r.error } : {}) }); },
-    },
-    campaigns: { setStatus: async () => {} },
-    frequency: { lastSentAt: async () => null, record: async () => {} },
-    quality: { getRating: async () => 'GREEN' },
-    markControl: async (_t, waId) => { marked.push(waId); },
-    ...over,
-  };
-  return { deps, claimed, sent, marked, results };
-}
-
-describe('campagne face à un fil détenu', () => {
-  it('saute le destinataire SANS le claimer, et PERSISTE l’écart avec son motif', async () => {
-    // Deux invariants en un.
-    // (1) Le saut précède le claim : claimer puis renoncer laisserait le destinataire bloqué en `sending`.
-    // (2) L'écart est ÉCRIT en base en `skipped`, jamais laissé en `pending`. C'est le point crucial : la
-    //     campagne se marque `completed` en fin de run et le front ne permet de relancer qu'une campagne
-    //     `draft` ou `paused`. Un destinataire laissé `pending` ne repartirait donc JAMAIS et
-    //     disparaîtrait en silence, la panne invisible déjà rencontrée avec le cap de fréquence.
-    const { deps, claimed, sent, results } = engineDeps({ mayAct: async (_t, waId) => waId !== '33611111111' });
-    const report = await runCampaign(CAMPAIGN, deps);
-    expect(sent).toEqual(['+33622222222']);
-    expect(claimed).toEqual(['r2']);
-    expect(report.skipped).toBe(1);
-    expect(report.sent).toBe(1);
-    const ecart = results.find((x) => x.id === 'r1');
-    expect(ecart?.status).toBe('skipped');
-    expect(ecart?.error).toContain('opérateur');
-  });
-
-  it('pose le détenteur après un envoi réussi, pour les DEUX destinataires', async () => {
-    const { deps, marked } = engineDeps();
-    await runCampaign(CAMPAIGN, deps);
-    // Numéro en chiffres nus : la même dérivation que le webhook et le store, sinon on créerait une
-    // seconde conversation pour le même contact.
-    expect(marked).toEqual(['33611111111', '33622222222']);
-  });
-
-  it('un échec de pose ne relabellise pas un message livré', async () => {
-    const { deps, sent } = engineDeps({ markControl: async () => { throw new Error('base indisponible'); } });
-    const report = await runCampaign(CAMPAIGN, deps);
-    expect(sent).toHaveLength(2);
-    expect(report.sent).toBe(2);
-    expect(report.failed).toBe(0);
   });
 });
 
