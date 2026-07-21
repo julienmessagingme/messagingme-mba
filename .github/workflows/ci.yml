@@ -9,10 +9,11 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          # Même version que les images de production (node:22-alpine, Dockerfile et web/Dockerfile).
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -38,10 +39,11 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       DB_SSL: 'off'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          # Même version que les images de production (node:22-alpine, Dockerfile et web/Dockerfile).
+          node-version: 22
           cache: npm
       - run: npm ci
       - name: Migrations (crée le schéma applicatif)
