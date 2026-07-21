@@ -721,15 +721,46 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const store = new PgTenantSettingsStore(pool);
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-settings') returning id`)).rows[0]!.id;
     try {
-      expect(await store.get(t)).toEqual({ mbaEnabled: false, hubspotListsEnabled: false }); // défauts
+      expect(await store.get(t)).toEqual({ mbaEnabled: false, hubspotListsEnabled: false, controlHandbackSeconds: null }); // défauts
       await store.setMbaEnabled(t, true);
       await store.setHubspotListsEnabled(t, true);
-      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: true });
+      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: true, controlHandbackSeconds: null });
       // Le toggle listes n'écrase PAS mba_enabled (upsert ciblé par colonne).
       await store.setHubspotListsEnabled(t, false);
-      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: false });
+      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: false, controlHandbackSeconds: null });
     } finally {
       await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
+  it('PgTenantSettingsStore : durée du gel par client, 0 conservé, null = pas de réglage, et lecture en lot en ms', async () => {
+    const store = new PgTenantSettingsStore(pool);
+    const a = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-handback-a') returning id`)).rows[0]!.id;
+    const b = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-handback-b') returning id`)).rows[0]!.id;
+    try {
+      await store.setMbaEnabled(a, true);
+      await store.setControlHandbackSeconds(a, 900);
+      // Le réglage du délai n'écrase PAS les autres toggles (upsert ciblé par colonne).
+      expect(await store.get(a)).toEqual({ mbaEnabled: true, hubspotListsEnabled: false, controlHandbackSeconds: 900 });
+
+      // 0 = jamais de reprise automatique. Doit être conservé tel quel, PAS confondu avec « pas réglé ».
+      await store.setControlHandbackSeconds(a, 0);
+      expect((await store.get(a)).controlHandbackSeconds).toBe(0);
+
+      // Lecture en lot : secondes -> millisecondes, et le client sans réglage est ABSENT de la Map.
+      await store.setControlHandbackSeconds(b, 60);
+      const ms = await store.handbackMsByTenant([a, b, tenantId]);
+      expect(ms.get(a)).toBe(0);
+      expect(ms.get(b)).toBe(60_000);
+      expect(ms.has(tenantId)).toBe(false);
+
+      // Retour à null = le défaut du serveur reprend la main, donc absent du lot.
+      await store.setControlHandbackSeconds(a, null);
+      expect((await store.get(a)).controlHandbackSeconds).toBeNull();
+      expect((await store.handbackMsByTenant([a])).has(a)).toBe(false);
+      expect(await store.handbackMsByTenant([])).toEqual(new Map());
+    } finally {
+      await pool.query('delete from tenants where id = any($1::uuid[])', [[a, b]]);
     }
   });
 
