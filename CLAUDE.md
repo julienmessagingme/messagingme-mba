@@ -17,13 +17,21 @@ npm run worker           # worker pg-boss : webhooks + campaign-run + sweeper (c
 npm run migrate          # applique db/migrations/*.sql (suivi schema_migrations)
 npm run seed             # compte/tenant démo (SEED_PASSWORD requis, ou SEED_DEMO=true)
 npm test                 # vitest unitaires (sans DB)
-npm run test:integration # vitest intégration (contre Supabase, DATABASE_URL requis)
+npm run test:integration # vitest intégration (⚠️ le DATABASE_URL local = la PROD, cf. ci-dessous)
 npm run typecheck        # tsc --noEmit
 
 # Frontend (dans web/)
 npm run dev              # Next.js :3000 (proxifie /api/backend/* -> BACKEND_URL)
 npm run build            # build standalone
 ```
+
+⚠️ **`npm test` en local ne prouve que la moitié des tests.** Les tests d'intégration
+(stores, pg-boss, e2e) ont besoin d'un Postgres, et le `DATABASE_URL` du `.env` local pointe
+sur la **base de production** : les lancer d'ici y crée et y supprime des tenants. Ne pas les
+lancer en local. La CI monte un Postgres jetable pour ça (job `integration`), donc **après un
+push, regarder le run GitHub** : un `npm test` vert en local n'a rien vérifié côté base. Vu le
+2026-07-21, quatre commits rouges d'affilée sur une attente de test périmée qu'aucun test
+unitaire ne pouvait voir.
 
 ⚠️ En prod l'app tourne **via tsx en conteneur** (`node dist` casse : ESM `moduleResolution:
 Bundler` sans extensions). `npm run build` (tsc) n'est pas le chemin de déploiement.
