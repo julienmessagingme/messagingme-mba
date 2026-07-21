@@ -120,24 +120,30 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
-   * Conversations dont le contrôle est détenu (hors `app_workflow`) depuis plus longtemps que le délai
-   * donné. Alimente le garde-fou d'inactivité : il n'existe AUCUN release automatique côté Meta, donc un
-   * contrôle jamais rendu (opérateur parti, onglet fermé, crash) gèlerait la conversation indéfiniment.
+   * TOUTES les conversations dont le contrôle est détenu (hors `app_workflow`), les plus anciennes d'abord.
+   *
+   * Alimente le garde-fou d'inactivité : il n'existe AUCUN release automatique côté Meta, donc un contrôle
+   * jamais rendu (opérateur parti, onglet fermé, crash) gèlerait la conversation indéfiniment.
+   *
+   * AUCUN filtre d'âge en SQL, volontairement : le délai de reprise est réglable PAR CLIENT, et un client
+   * peut choisir un délai plus court que le défaut du serveur. Filtrer ici avec le défaut raterait
+   * silencieusement ses conversations. Le tri est donc fait en SQL, la décision en mémoire, avec le
+   * réglage du bon client. Un état détenu est transitoire par construction, donc ce lot reste petit ; si
+   * le plafond était atteint, ce sont les plus anciennes qui passent d'abord, ce qui est la bonne priorité.
+   *
    * `control_changed_at` null = bascule d'avant la migration 0040 : traitée comme éligible, sinon ces
    * conversations resteraient bloquées pour toujours.
    */
-  async listStaleControl(
-    olderThan: Date,
-    limit = 200,
+  async listHeldControl(
+    limit = 500,
   ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>> {
     const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null }>(
       `select tenant_id, wa_id, control_owner, control_changed_at
        from conversations
        where control_owner <> 'app_workflow'
-         and (control_changed_at is null or control_changed_at < $1)
        order by control_changed_at nulls first
-       limit $2`,
-      [olderThan.toISOString(), limit],
+       limit $1`,
+      [limit],
     );
     return res.rows.map((r) => ({
       tenantId: r.tenant_id,

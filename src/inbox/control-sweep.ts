@@ -2,8 +2,7 @@ import type { ControlOwner } from './store.pg';
 
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
-  listStaleControl(
-    olderThan: Date,
+  listHeldControl(
     limit?: number,
   ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>>;
   setControlOwner(
@@ -12,8 +11,19 @@ export interface ControlSweepDeps {
     owner: ControlOwner,
     opts?: { only?: readonly ControlOwner[] },
   ): Promise<boolean>;
-  /** Délai d'inactivité par détenteur, en ms. 0 ou absent = cet état n'est jamais repris automatiquement. */
+  /**
+   * Délai d'inactivité par détenteur, en ms. C'est le DÉFAUT du serveur : il s'applique aux clients qui
+   * n'ont rien réglé. 0 ou absent = cet état n'est jamais repris automatiquement.
+   */
   timeouts: Partial<Record<ControlOwner, number>>;
+  /**
+   * Réglage PAR CLIENT de la durée du gel humain, en ms. Absent de la Map = ce client n'a rien réglé, on
+   * applique le défaut ci-dessus. Une valeur 0 = ce client ne veut aucune reprise automatique.
+   *
+   * Ne concerne QUE `app_human` : c'est la seule durée qui relève d'un arbitrage métier du client (combien
+   * de temps on laisse un opérateur travailler tranquille). Le délai `mba` reste un garde-fou technique.
+   */
+  handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
   now?: () => number;
 }
 
@@ -31,19 +41,27 @@ export interface ControlSweepDeps {
  */
 export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   const now = deps.now ?? (() => Date.now());
-  const actifs = Object.values(deps.timeouts).filter((ms): ms is number => typeof ms === 'number' && ms > 0);
-  if (actifs.length === 0) return 0; // reprise automatique entièrement désactivée
 
-  // On lit avec le délai le PLUS COURT, donc le prédicat le plus large : lire avec le plus long raterait
-  // les conversations dont l'état a un délai court et qui viennent juste d'échoir.
-  const stale = await deps.listStaleControl(new Date(now() - Math.min(...actifs)));
+  // Le lot ramène TOUTES les conversations détenues, sans filtre d'âge : le délai humain est réglable par
+  // client et peut être plus court que le défaut du serveur, donc un filtre SQL basé sur le défaut
+  // raterait silencieusement les conversations des clients pressés.
+  const held = await deps.listHeldControl();
+  if (held.length === 0) return 0;
+
+  // Un seul aller-retour pour tous les clients du lot, au lieu d'une requête par conversation.
+  const parTenant = deps.handbackMsByTenant
+    ? await deps.handbackMsByTenant([...new Set(held.map((c) => c.tenantId))])
+    : new Map<string, number>();
 
   let rendues = 0;
-  for (const c of stale) {
-    const ms = deps.timeouts[c.owner];
-    // Un état sans délai configuré (ou à 0) n'est jamais repris : c'est le sens de « désactivé ».
+  for (const c of held) {
+    // Le réglage du client prime sur le défaut du serveur, et UNIQUEMENT sur le gel humain : c'est la
+    // seule durée qui relève d'un arbitrage métier (combien de temps on laisse un opérateur travailler).
+    const reglageClient = c.owner === 'app_human' ? parTenant.get(c.tenantId) : undefined;
+    const ms = reglageClient ?? deps.timeouts[c.owner];
+    // Absent ou 0 = jamais de reprise automatique pour cet état. Un client qui pose 0 garde la main
+    // jusqu'à ce qu'un opérateur la rende explicitement, c'est un choix légitime.
     if (ms === undefined || ms <= 0) continue;
-    // Refiltrage par état : la requête a ramené large, chaque détenteur applique ensuite SON délai.
     // `changedAt` null = bascule antérieure à la migration 0040, donc éligible (sinon ces conversations
     // resteraient bloquées pour toujours, ce qui est exactement ce que ce balayage existe pour éviter).
     if (c.changedAt !== null && now() - c.changedAt.getTime() < ms) continue;

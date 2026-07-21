@@ -15,6 +15,7 @@ import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
+import { PgTenantSettingsStore } from './settings/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
 import { logTemplateSent } from './inbox/outbound-log';
 import { PgFlowStore } from './flow/store.pg';
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
   const eventStore = new PgEventStore(pool);
   const recipientStore = new PgRecipientStore(pool);
   const inboxStore = new PgInboxStore(pool);
+  const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
   const contactStore = new PgContactStore(pool);
   const repo = new PgCampaignRepo(pool);
@@ -359,10 +361,13 @@ async function main(): Promise<void> {
   const controlSweep = async (): Promise<void> => {
     try {
       const rendues = await runControlSweep({
-        listStaleControl: (olderThan, limit) => inboxStore.listStaleControl(olderThan, limit),
+        listHeldControl: (limit) => inboxStore.listHeldControl(limit),
         setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
-        // Un opérateur inactif rend la main vite, MBA beaucoup plus tard (il est censé répondre seul).
+        // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
         timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS },
+        // Réglage par client du gel humain : c'est lui qui décide combien de temps on laisse un
+        // opérateur travailler tranquille avant que la conversation reparte.
+        handbackMsByTenant: (ids) => settingsStore.handbackMsByTenant(ids),
       });
       // eslint-disable-next-line no-console
       if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);

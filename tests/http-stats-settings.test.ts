@@ -45,9 +45,10 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false }),
+    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, controlHandbackSeconds: null }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
+    setControlHandbackSeconds: async () => {},
     ...over.settings,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, stats, settings });
@@ -227,7 +228,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false }) } });
+    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, controlHandbackSeconds: null }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
@@ -276,6 +277,58 @@ describe('settings route', () => {
     const a = app();
     const res = await a.inject({ method: 'PUT', url: '/tenants/t1/settings', ...h(adminTok), payload: { mbaEnabled: 'oui' } });
     expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+});
+
+/**
+ * Durée du gel après prise de main, réglable par client.
+ *
+ * La validation compte autant que l'écriture : ce réglage décide combien de temps un client final peut
+ * rester sans réponse. Une valeur aberrante acceptée en silence casserait la promesse « le client finit
+ * toujours par avoir une réponse », et rien à l'écran ne le signalerait.
+ */
+describe('PATCH /settings/control-handback', () => {
+  const url = '/tenants/t1/settings/control-handback';
+
+  it('accepte une durée en secondes et la renvoie', async () => {
+    const poses: Array<number | null> = [];
+    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds: 1800 } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ controlHandbackSeconds: number }>().controlHandbackSeconds).toBe(1800);
+    expect(poses).toEqual([1800]);
+    await a.close();
+  });
+
+  it('accepte null (retour au défaut du serveur) et 0 (jamais de reprise auto)', async () => {
+    const poses: Array<number | null> = [];
+    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds: null } })).statusCode).toBe(200);
+    expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds: 0 } })).statusCode).toBe(200);
+    expect(poses).toEqual([null, 0]);
+    await a.close();
+  });
+
+  it('refuse ce qui laisserait un client sans réponse trop longtemps ou pour toujours', async () => {
+    const poses: Array<number | null> = [];
+    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    // Au-delà de 7 jours ce n'est plus un gel, c'est un abandon. Négatif, décimal et non-nombre sont
+    // des erreurs de saisie qu'il vaut mieux refuser que coercer en silence.
+    for (const seconds of [7 * 24 * 3600 + 1, -1, 1.5, '1800', true, undefined]) {
+      const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { seconds } });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(poses).toEqual([]); // aucune écriture sur une valeur refusée
+    await a.close();
+  });
+
+  it('un agent ne peut pas changer ce réglage (admin seulement)', async () => {
+    const poses: Array<number | null> = [];
+    const a = app({ settings: { setControlHandbackSeconds: async (_t: string, sec: number | null) => { poses.push(sec); } } });
+    const res = await a.inject({ method: 'PATCH', url, ...h(agentTok), payload: { seconds: 60 } });
+    expect(res.statusCode).toBe(403);
+    expect(poses).toEqual([]);
     await a.close();
   });
 });

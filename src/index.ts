@@ -196,6 +196,7 @@ async function main(): Promise<void> {
       getSettings: (tenant) => settingsStore.get(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
+      setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
     ...(config.HUBSPOT_SERVICE_URL

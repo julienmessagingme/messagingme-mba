@@ -107,7 +107,7 @@ function sweepDeps(
     rendues,
     lu,
     deps: {
-      listStaleControl: async (olderThan) => { lu.push(olderThan); return stale; },
+      listHeldControl: async () => { lu.push(new Date(T0)); return stale; },
       setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
       timeouts,
       now: () => T0,
@@ -144,12 +144,6 @@ describe('garde-fou d’inactivité', () => {
     expect(rendues).toEqual(['humain']);
   });
 
-  it('lit avec le délai le plus COURT, sinon les fils humains juste échus seraient ratés', async () => {
-    const { deps, lu } = sweepDeps([], { app_human: 2 * H, mba: 24 * H });
-    await runControlSweep(deps);
-    expect(lu[0]!.getTime()).toBe(T0 - 2 * H);
-  });
-
   it('un délai à 0 désactive la reprise pour CET état seulement', async () => {
     const { deps, rendues } = sweepDeps(
       [
@@ -162,10 +156,9 @@ describe('garde-fou d’inactivité', () => {
     expect(rendues).toEqual(['agent']);
   });
 
-  it('tous les délais à 0 -> aucune lecture, aucune écriture', async () => {
-    const { deps, lu, rendues } = sweepDeps([{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: null }], { app_human: 0, mba: 0 });
+  it('tous les délais à 0 -> aucune conversation rendue', async () => {
+    const { deps, rendues } = sweepDeps([{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: null }], { app_human: 0, mba: 0 });
     expect(await runControlSweep(deps)).toBe(0);
-    expect(lu).toEqual([]);
     expect(rendues).toEqual([]);
   });
 
@@ -179,11 +172,100 @@ describe('garde-fou d’inactivité', () => {
     // Un opérateur qui reprend la main entre la lecture et l'écriture : le store refuse, et le compteur
     // ne doit pas prétendre avoir rendu la conversation.
     const deps: ControlSweepDeps = {
-      listStaleControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H) }],
+      listHeldControl: async () => [{ tenantId: 't1', waId: 'x', owner: 'app_human', changedAt: ago(5 * H) }],
       setControlOwner: async () => false,
       timeouts: { app_human: 2 * H },
       now: () => T0,
     };
     expect(await runControlSweep(deps)).toBe(0);
+  });
+});
+
+describe('durée du gel réglable PAR CLIENT', () => {
+  /** Sweep avec un réglage client, sur un lot de conversations de plusieurs clients. */
+  function withReglages(
+    stale: Array<{ tenantId: string; waId: string; owner: 'app_workflow' | 'app_human' | 'mba'; changedAt: Date | null }>,
+    reglages: Record<string, number>,
+    defauts: Partial<Record<'app_workflow' | 'app_human' | 'mba', number>> = { app_human: 2 * H, mba: 24 * H },
+  ): { deps: ControlSweepDeps; rendues: string[]; demandes: string[][] } {
+    const rendues: string[] = [];
+    const demandes: string[][] = [];
+    return {
+      rendues,
+      demandes,
+      deps: {
+        listHeldControl: async () => stale,
+        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+        handbackMsByTenant: async (ids) => { demandes.push([...ids]); return new Map(Object.entries(reglages)); },
+        timeouts: defauts,
+        now: () => T0,
+      },
+    };
+  }
+
+  it('le réglage du client PRIME sur le défaut du serveur, dans les deux sens', async () => {
+    // t1 veut 30 min (plus court que le défaut 2 h) : sa conversation d'1 h est rendue.
+    // t2 veut 8 h (plus long) : la sienne, également d'1 h, ne l'est pas.
+    const { deps, rendues } = withReglages(
+      [
+        { tenantId: 't1', waId: 'presse', owner: 'app_human', changedAt: ago(1 * H) },
+        { tenantId: 't2', waId: 'patient', owner: 'app_human', changedAt: ago(1 * H) },
+      ],
+      { t1: 30 * 60 * 1000, t2: 8 * H },
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['presse']);
+  });
+
+  it('un client qui n’a rien réglé garde le défaut du serveur', async () => {
+    const { deps, rendues } = withReglages(
+      [
+        { tenantId: 'sansReglage', waId: 'vieux', owner: 'app_human', changedAt: ago(3 * H) },
+        { tenantId: 'sansReglage', waId: 'recent', owner: 'app_human', changedAt: ago(1 * H) },
+      ],
+      {},
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['vieux']);
+  });
+
+  it('un réglage à 0 = la conversation reste à l’humain, même très ancienne', async () => {
+    // Choix légitime : certains veulent que l'opérateur garde la main jusqu'à ce qu'il la rende lui-même.
+    const { deps, rendues } = withReglages(
+      [{ tenantId: 't1', waId: 'jamais', owner: 'app_human', changedAt: ago(500 * H) }],
+      { t1: 0 },
+    );
+    expect(await runControlSweep(deps)).toBe(0);
+    expect(rendues).toEqual([]);
+  });
+
+  it('le réglage client ne s’applique QU’au gel humain, pas au garde-fou MBA', async () => {
+    // Le délai MBA est un garde-fou technique, pas un arbitrage métier : un client ne doit pas pouvoir
+    // s'en servir pour préempter l'agent de Meta au bout de 30 minutes.
+    const { deps, rendues } = withReglages(
+      [{ tenantId: 't1', waId: 'agent', owner: 'mba', changedAt: ago(2 * H) }],
+      { t1: 30 * 60 * 1000 },
+    );
+    expect(await runControlSweep(deps)).toBe(0);
+    expect(rendues).toEqual([]);
+  });
+
+  it('ne demande les réglages qu’UNE fois par client, pas une fois par conversation', async () => {
+    const { deps, demandes } = withReglages(
+      [
+        { tenantId: 't1', waId: 'a', owner: 'app_human', changedAt: ago(3 * H) },
+        { tenantId: 't1', waId: 'b', owner: 'app_human', changedAt: ago(3 * H) },
+        { tenantId: 't2', waId: 'c', owner: 'app_human', changedAt: ago(3 * H) },
+      ],
+      {},
+    );
+    await runControlSweep(deps);
+    expect(demandes).toEqual([['t1', 't2']]);
+  });
+
+  it('aucune conversation détenue -> aucune requête de réglages', async () => {
+    const { deps, demandes } = withReglages([], {});
+    expect(await runControlSweep(deps)).toBe(0);
+    expect(demandes).toEqual([]);
   });
 });
