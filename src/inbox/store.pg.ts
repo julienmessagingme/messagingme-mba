@@ -9,11 +9,6 @@ import type { InboxStore, InboundMessage } from '../webhooks/inbound';
  */
 export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
 
-/** Détenteurs qu'un envoi AUTOMATISÉ a le droit d'écraser. Un envoi automatisé ne dégrade jamais un
- *  détenteur plus fort que le sien : sans cette garde, une campagne programmée révoquerait en silence
- *  l'opérateur qui est en train de traiter la conversation. */
-export const AUTOMATED_MAY_OVERWRITE: readonly ControlOwner[] = ['app_workflow'];
-
 export interface ConversationSummary {
   id: string;
   waId: string;
