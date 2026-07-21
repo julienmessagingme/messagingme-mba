@@ -29,6 +29,16 @@ export interface InboxRouteDeps {
    * Optionnel pour ne pas casser les suites de tests qui construisent des deps minimales.
    */
   takeControl?(tenantId: string, waId: string): Promise<void>;
+  /**
+   * L'opérateur REND la main : la conversation repart en automatique. Renvoie qui la détient désormais.
+   *
+   * Quand MBA sera actif sur le numéro, c'est ici qu'il faudra aussi appeler `thread_control` avec
+   * l'action `release` côté Meta, pour que l'agent redevienne le répondeur principal. Aujourd'hui la
+   * fonction se contente de l'état local, ce qui est exactement ce qu'il faut sans MBA.
+   */
+  releaseControl?(tenantId: string, waId: string): Promise<'app_workflow' | 'mba'>;
+  /** Détenteur courant du fil, pour l'afficher dans le détail de la conversation. */
+  getControlOwner?(tenantId: string, waId: string): Promise<'app_workflow' | 'app_human' | 'mba'>;
   recordOutbound(
     conversationId: string,
     body: string,
@@ -80,6 +90,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       waId: ctx.waId,
       windowOpen: ctx.windowOpen,
       lastInboundAt: ctx.lastInboundAt,
+      // Qui détient le fil : sans cette information, l'opérateur voit le scénario se taire sans comprendre
+      // pourquoi et ne sait pas s'il doit rendre la main. Défaut `app_workflow` quand le dep est absent,
+      // qui est l'état d'une conversation dont personne n'a pris le contrôle.
+      controlOwner: deps.getControlOwner ? await deps.getControlOwner(tenant, ctx.waId) : 'app_workflow',
       messages: await deps.getMessages(conversationId),
     });
   });
@@ -153,5 +167,22 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
+  });
+
+  /**
+   * L'opérateur rend la main : le scénario (ou, demain, l'agent de Meta) reprend la conversation.
+   *
+   * Sans cette route, le seul chemin de retour serait le garde-fou d'inactivité : un opérateur qui règle
+   * une question en deux minutes devrait attendre le délai configuré avant que l'automatisme reparte.
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/release', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!deps.releaseControl) return reply.code(503).send({ error: 'reprise indisponible sur cette instance' });
+    const owner = await deps.releaseControl(tenant, ctx.waId);
+    return reply.code(200).send({ controlOwner: owner });
   });
 }

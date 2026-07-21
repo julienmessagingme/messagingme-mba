@@ -244,3 +244,46 @@ describe('un opérateur qui écrit PREND le fil', () => {
     await a.close();
   });
 });
+
+describe('rendre la main depuis la conversation', () => {
+  it('rend la main et renvoie le nouveau détenteur', async () => {
+    const rendus: Array<[string, string]> = [];
+    const a = app({ releaseControl: async (t, w) => { rendus.push([t, w]); return 'app_workflow'; } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/release', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ controlOwner: string }>().controlOwner).toBe('app_workflow');
+    expect(rendus).toEqual([['t1', '33611']]);
+    await a.close();
+  });
+
+  it('conversation inconnue -> 404 sans rien rendre', async () => {
+    const rendus: string[] = [];
+    const a = app({ releaseControl: async (_t, w) => { rendus.push(w); return 'app_workflow'; } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/nope/release', ...auth() });
+    expect(res.statusCode).toBe(404);
+    expect(rendus).toEqual([]);
+    await a.close();
+  });
+
+  it('tenant de l’URL != tenant du jeton -> 403', async () => {
+    const a = app({ releaseControl: async () => 'app_workflow' });
+    const res = await a.inject({ method: 'POST', url: '/tenants/AUTRE/conversations/c1/release', ...auth() });
+    expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('le détail de conversation expose QUI détient le fil', async () => {
+    const a = app({ getControlOwner: async () => 'mba' });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ controlOwner: string }>().controlOwner).toBe('mba');
+    await a.close();
+  });
+
+  it('dep absent -> le détail annonce `app_workflow`, jamais une valeur manquante', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
+    expect(res.json<{ controlOwner: string }>().controlOwner).toBe('app_workflow');
+    await a.close();
+  });
+});

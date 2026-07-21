@@ -8,6 +8,7 @@ import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
   setHubspotListsEnabled as saveHubspotListsEnabled,
+  setControlHandbackSeconds,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
@@ -54,6 +55,9 @@ function AccueilInner({ session }: { session: Session }) {
   const [savingMba, setSavingMba] = useState(false);
   const [savingHubspot, setSavingHubspot] = useState(false);
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
+  // Durée du gel quand un opérateur prend la main. '' = valeur par défaut du serveur.
+  const [handback, setHandback] = useState('');
+  const [savingHandback, setSavingHandback] = useState(false);
   const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,6 +102,7 @@ function AccueilInner({ session }: { session: Session }) {
     if (cfg.status === 'fulfilled') {
       setMbaEnabled(cfg.value.mbaEnabled);
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
+      setHandback(cfg.value.controlHandbackSeconds === null ? '' : String(Math.round(cfg.value.controlHandbackSeconds / 60)));
     }
     if (m.status === 'rejected' || cfg.status === 'rejected') {
       const reason = (m.status === 'rejected' ? m.reason : cfg.status === 'rejected' ? cfg.reason : null) as unknown;
@@ -168,6 +173,25 @@ function AccueilInner({ session }: { session: Session }) {
       setHubspotListsEnabled(!next); // rollback
     } finally {
       setSavingLists(false);
+    }
+  }
+
+  /**
+   * Enregistre la durée du gel. Saisie en MINUTES (une durée en secondes n'a aucun sens pour un
+   * utilisateur), champ vide = retour au défaut du serveur, 0 = pas de reprise automatique.
+   */
+  async function saveHandback() {
+    if (!isAdmin) return;
+    const brut = handback.trim();
+    const minutes = brut === '' ? null : Number(brut);
+    if (minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) return;
+    setSavingHandback(true);
+    try {
+      await setControlHandbackSeconds(session.tenantId, minutes === null ? null : minutes * 60);
+    } catch {
+      /* l'erreur reste visible par l'absence de confirmation ; pas de rollback, la saisie est conservée */
+    } finally {
+      setSavingHandback(false);
     }
   }
 
@@ -339,6 +363,44 @@ function AccueilInner({ session }: { session: Session }) {
                       <p className="mt-2 text-xs text-ink-500">{t("Accès aux listes autorisé. Choisis une liste HubSpot à l'étape « destinataires » d'une campagne.", "List access authorized. Pick a HubSpot list in a campaign's recipients step.")}</p>
                     )}
                   </div>
+                </div>
+              )}
+              {/* Durée du gel : combien de temps une conversation reste à l'opérateur avant de repartir
+                  toute seule. C'est le réglage qui décide combien de temps un client peut rester sans
+                  réponse automatique, d'où le libellé explicite plutôt qu'un simple nombre. */}
+              {account?.hasNumber && (
+                <div className="mt-4 border-t border-ink-100 pt-3">
+                  <div className="text-sm font-semibold text-ink-800">
+                    {t("Reprise après intervention d'un opérateur", 'Hand back after an operator steps in')}
+                  </div>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    {t(
+                      "Quand un opérateur répond dans l'inbox, le scénario se met en pause sur cette conversation. Voici combien de temps avant qu'il reprenne tout seul.",
+                      'When an operator replies from the inbox, the scenario pauses on that conversation. This is how long before it resumes on its own.',
+                    )}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={handback}
+                      onChange={(e) => setHandback(e.target.value)}
+                      onBlur={() => { void saveHandback(); }}
+                      disabled={!isAdmin || savingHandback}
+                      placeholder={t('par défaut', 'default')}
+                      className="w-28 rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
+                    />
+                    <span className="text-sm text-ink-600">{t('minutes', 'minutes')}</span>
+                    {savingHandback && <span className="text-xs text-ink-400">{t('enregistrement...', 'saving...')}</span>}
+                  </div>
+                  <p className="mt-1.5 text-xs text-ink-400">
+                    {handback.trim() === ''
+                      ? t('Vide : la valeur par défaut du service s’applique (2 heures).', 'Empty: the service default applies (2 hours).')
+                      : handback.trim() === '0'
+                        ? t('0 : le scénario ne reprend JAMAIS tout seul. Il faut rendre la main depuis la conversation.', '0: the scenario never resumes on its own. You must hand back from the conversation.')
+                        : t('Un opérateur peut rendre la main plus tôt, depuis la conversation.', 'An operator can hand back earlier, from the conversation.')}
+                  </p>
                 </div>
               )}
               {account?.hasNumber && account.hubspotPortal && !account.hubspotPortal.connected && (

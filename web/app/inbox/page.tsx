@@ -5,11 +5,13 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { dayKey, dayLabel, hourMin } from '@/lib/day';
+import type { ControlOwner } from '@/lib/api';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import {
   listConversations,
   getConversationMessages,
+  releaseConversation,
   replyConversation,
   listTemplates,
   sendTemplateToConversation,
@@ -165,6 +167,11 @@ function InboxInner({ session }: { session: Session }) {
                     <span className="shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
                   <p className="truncate text-xs text-ink-500">{c.lastPreview ?? ''}</p>
+                  {/* Le badge n'apparaît QUE si quelqu'un détient le fil : l'afficher sur toutes les
+                      lignes noierait l'information, alors que c'est l'exception qui doit sauter aux yeux. */}
+                  {c.controlOwner !== 'app_workflow' && (
+                    <span className="mt-1 inline-block"><ControlBadge owner={c.controlOwner} /></span>
+                  )}
                 </button>
               </li>
             ))}
@@ -190,6 +197,10 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   const { locale } = useLocale();
   const [messages, setMessages] = useState<InboxMessage[]>([]);
   const [windowOpen, setWindowOpen] = useState(true);
+  // Qui détient le fil. Sans cette information, l'opérateur voit le scénario se taire sans comprendre
+  // pourquoi, et ne sait pas s'il doit rendre la main.
+  const [controlOwner, setControlOwner] = useState<ControlOwner>('app_workflow');
+  const [releasing, setReleasing] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -208,6 +219,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           : res.messages,
       );
       setWindowOpen(res.windowOpen);
+      setControlOwner(res.controlOwner);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     }
@@ -246,6 +258,20 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
     }
   }
 
+  async function release() {
+    setReleasing(true);
+    setError(null);
+    try {
+      const res = await releaseConversation(session.tenantId, conversation.id);
+      setControlOwner(res.controlOwner);
+      onSent(); // rafraîchit la liste : le badge y change aussi
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Reprise impossible', 'Hand back failed'));
+    } finally {
+      setReleasing(false);
+    }
+  }
+
   return (
     <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white shadow-sm lg:h-full">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
@@ -253,9 +279,23 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           <span className="text-sm font-semibold">{conversation.profileName ?? `+${conversation.waId}`}</span>
           <span className="ml-2 font-mono text-xs text-ink-400">+{conversation.waId}</span>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
-          {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
-        </span>
+        <div className="flex items-center gap-2">
+          <ControlBadge owner={controlOwner} />
+          {/* Rendre la main : sans ce bouton, le seul retour possible serait le délai d'inactivité, donc un
+              opérateur qui règle une question en deux minutes devrait attendre des heures. */}
+          {controlOwner === 'app_human' && (
+            <button
+              onClick={() => { void release(); }}
+              disabled={releasing}
+              className="rounded-lg border border-ink-300 px-2 py-0.5 text-[11px] font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50"
+            >
+              {releasing ? t('...', '...') : t('Rendre la main', 'Hand back')}
+            </button>
+          )}
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
+            {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
@@ -497,5 +537,41 @@ function TemplateSendPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Qui répond au client en ce moment. Trois états mutuellement exclusifs.
+ *
+ * L'enjeu n'est pas décoratif : quand un opérateur détient le fil, le scénario se tait volontairement.
+ * Sans ce badge, ce silence ressemblerait à une panne.
+ */
+function ControlBadge({ owner }: { owner: ControlOwner }) {
+  const t = useT();
+  const LOOK: Record<ControlOwner, { label: string; cls: string; title: string }> = {
+    app_workflow: {
+      label: t('scénario', 'scenario'),
+      cls: 'bg-ink-100 text-ink-600',
+      title: t('Le scénario automatique répond.', 'The automated scenario is responding.'),
+    },
+    app_human: {
+      label: t('vous avez la main', 'you have the hand'),
+      cls: 'bg-brand-50 text-brand-700',
+      title: t(
+        'Un opérateur s’occupe de cette conversation : le scénario est en pause et les campagnes ne l’enverront pas.',
+        'An operator is handling this conversation: the scenario is paused and campaigns will skip it.',
+      ),
+    },
+    mba: {
+      label: t('agent Meta', 'Meta agent'),
+      cls: 'bg-violet-50 text-violet-700',
+      title: t("L'agent de Meta répond directement au client.", 'Meta’s agent is answering the customer directly.'),
+    },
+  };
+  const look = LOOK[owner];
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${look.cls}`} title={look.title}>
+      {look.label}
+    </span>
   );
 }

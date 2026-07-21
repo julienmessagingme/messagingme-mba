@@ -149,6 +149,23 @@ async function main(): Promise<void> {
       recordOutbound: (id, body, msgId, type, cat, name, sender) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender),
       // Un opérateur qui écrit prend le fil : le scénario se gèle sur ce contact, les campagnes le sautent.
       takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+      getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
+      /**
+       * L'opérateur rend la main. Aujourd'hui la conversation repart au scénario.
+       *
+       * PRÉ-CÂBLAGE MBA : quand l'agent de Meta est actif sur le numéro, c'est ici qu'il faudra appeler
+       * `POST https://api.facebook.com/business/whatsapp/phone_numbers/{id}/thread_control` avec
+       * `{ messaging_product:'whatsapp', action:'release', to:<waId> }` pour qu'il redevienne le
+       * répondeur principal. ⚠️ L'action est bien `release` et non `pass` : la spec dit que seul
+       * `release` est implémenté et qu'il rend la conversation à MBA, alors que le guide de démarrage
+       * de Meta dit l'inverse. Détail et citations dans docs/MBA-API-REFERENCE.md.
+       *
+       * Le champ `mbaEnabled` du tenant est le bon interrupteur pour brancher cet appel le jour venu.
+       */
+      releaseControl: async (tenant, waId) => {
+        await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
+        return 'app_workflow';
+      },
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (phoneNumberId, to, text) => {
         const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });

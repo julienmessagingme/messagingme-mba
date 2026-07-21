@@ -467,12 +467,20 @@ export function uploadMedia(tenantId: string, dataUrl: string): Promise<{ handle
 
 // --- Inbox ---
 
+/**
+ * Qui détient la conversation, et donc qui répond au client.
+ * `app_workflow` = le scénario, en automatique. `app_human` = un opérateur s'en occupe, le scénario se
+ * tait. `mba` = l'agent de Meta répond (n'arrive que si MBA est activé sur le numéro).
+ */
+export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
+
 export interface Conversation {
   id: string;
   waId: string;
   profileName: string | null;
   lastPreview: string | null;
   lastMessageAt: string;
+  controlOwner: ControlOwner;
 }
 export interface InboxMessage {
   id: string;
@@ -491,10 +499,15 @@ export interface ConversationThread {
   waId: string;
   windowOpen: boolean;
   lastInboundAt: string | null;
+  controlOwner: ControlOwner;
   messages: InboxMessage[];
 }
 export function getConversationMessages(tenantId: string, conversationId: string): Promise<ConversationThread> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/messages`);
+}
+/** L'opérateur rend la main : le scénario (ou l'agent de Meta) reprend la conversation. */
+export function releaseConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/release`, { method: 'POST' });
 }
 export function replyConversation(tenantId: string, conversationId: string, text: string): Promise<{ messageId: string }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
@@ -651,6 +664,8 @@ export function listAnalyzedConversations(
 }
 
 export interface TenantSettings {
+  /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
+  controlHandbackSeconds: number | null;
   mbaEnabled: boolean;
   hubspotListsEnabled: boolean;
 }
@@ -663,6 +678,12 @@ export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<Tena
 /** Active/désactive le toggle « Campagnes via données HubSpot ». */
 export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<{ hubspotListsEnabled: boolean }> {
   return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+}
+
+/** Durée du gel après qu'un opérateur a pris la main, en secondes. null = défaut du serveur, 0 = jamais
+ *  de reprise automatique (l'opérateur garde la main jusqu'à ce qu'il la rende). */
+export function setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<{ controlHandbackSeconds: number | null }> {
+  return request(`/tenants/${tenantId}/settings/control-handback`, { method: 'PATCH', body: JSON.stringify({ seconds }) });
 }
 
 // --- Accueil : profil courant + statut compte WhatsApp ---

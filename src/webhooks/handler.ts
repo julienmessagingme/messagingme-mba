@@ -3,10 +3,12 @@ import { processStatuses } from './delivery';
 import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
+import { processHandovers } from './handover';
 import type { DeliveryStore } from './delivery';
 import type { InboxStore, InboundContactUpsert } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
 import type { WorkflowAdvanceDeps } from './workflow-advance';
+import type { HandoverDeps } from './handover';
 import type { EventStore } from './store';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
@@ -29,6 +31,7 @@ export async function handleWebhookJob(
   flowMapping?: FlowMappingDeps,
   workflowAdvance?: WorkflowAdvanceDeps,
   inboundContactUpsert?: InboundContactUpsert,
+  handover?: HandoverDeps,
 ): Promise<void> {
   const events = parseWebhook(raw);
   for (const ev of events) {
@@ -53,6 +56,18 @@ export async function handleWebhookJob(
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: avance workflow ignorée:', err instanceof Error ? err.message : err);
+    }
+  }
+  // Bascules de contrôle et messages de l'agent Meta (pré-câblage MBA). INERTE tant que MBA n'est activé
+  // sur aucun numéro. ISOLÉ : ces événements sont les moins bien documentés de tous, donc les plus
+  // susceptibles d'avoir une forme inattendue, et ils ne doivent surtout pas emporter les statuts de
+  // livraison avec eux dans la DLQ.
+  if (handover) {
+    try {
+      await processHandovers(raw, handover);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handleWebhookJob: handover ignoré:', err instanceof Error ? err.message : err);
     }
   }
 }

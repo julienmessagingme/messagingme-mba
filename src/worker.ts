@@ -218,6 +218,15 @@ async function main(): Promise<void> {
       // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
       (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName).then(() => {}),
+      // Pré-câblage MBA : bascules de contrôle et messages de l'agent Meta. Inerte tant que MBA n'est
+      // activé nulle part, mais déjà branché pour que le premier test réel soit OBSERVABLE.
+      {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
+        setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
+        recordAgentMessage: (t, w, body, messageId) =>
+          inboxStore.recordOutboundByWaId(t, w, { body, messageId, type: 'mba' }),
+      },
     );
   });
 
