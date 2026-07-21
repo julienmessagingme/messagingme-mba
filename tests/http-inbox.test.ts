@@ -16,7 +16,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
     listConversations: async () => [
-      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z' },
+      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow' },
     ],
     getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
     getMessages: async () => [
@@ -197,6 +197,50 @@ describe('inbox routes', () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/conversations', ...auth() });
     expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+});
+
+/**
+ * Prise de main par un opérateur.
+ *
+ * Ces deux tests ferment un trou signalé en revue : sans eux, supprimer l'appel `takeControl` des routes
+ * (ou son câblage dans index.ts) laissait les 930 tests verts, et le bug d'origine revenait en silence,
+ * un humain et un scénario écrivant au client en parallèle.
+ */
+describe('un opérateur qui écrit PREND le fil', () => {
+  it('réponse texte -> takeControl appelé avec le tenant et le wa_id de la conversation', async () => {
+    const pris: Array<[string, string]> = [];
+    const a = app({ takeControl: async (tenant, waId) => { pris.push([tenant, waId]); } });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(),
+      payload: { text: 'je regarde ça' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(pris).toEqual([['t1', '33611']]);
+    await a.close();
+  });
+
+  it('envoi de template à la main -> takeControl aussi (c’est le même acte d’opérateur)', async () => {
+    const pris: Array<[string, string]> = [];
+    const a = app({ takeControl: async (tenant, waId) => { pris.push([tenant, waId]); } });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(),
+      payload: { templateName: 'relance', language: 'fr' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(pris).toEqual([['t1', '33611']]);
+    await a.close();
+  });
+
+  it('un échec de prise de main ne fait pas échouer l’envoi (best-effort)', async () => {
+    // Le message est parti chez Meta : rendre une erreur ferait croire à l'opérateur qu'il doit renvoyer.
+    const a = app({ takeControl: async () => { throw new Error('base indisponible'); } });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(),
+      payload: { text: 'coucou' },
+    });
+    expect(res.statusCode).toBe(200);
     await a.close();
   });
 });

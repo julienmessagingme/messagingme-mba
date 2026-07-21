@@ -22,6 +22,13 @@ export interface InboxRouteDeps {
     tenantId: string,
   ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
   getMessages(conversationId: string): Promise<ConversationMessage[]>;
+  /**
+   * Un opérateur vient d'écrire : il PREND le fil. Posé depuis la route et non depuis le store, parce que
+   * seule la route sait qu'un humain authentifié est à l'origine de l'envoi. Sans condition `only` : un
+   * humain prend toujours la main, y compris sur MBA (côté Meta, envoyer suffit à prendre le contrôle).
+   * Optionnel pour ne pas casser les suites de tests qui construisent des deps minimales.
+   */
+  takeControl?(tenantId: string, waId: string): Promise<void>;
   recordOutbound(
     conversationId: string,
     body: string,
@@ -94,6 +101,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
     const messageId = await deps.sendReply(phoneNumberId, ctx.waId, text);
+    // L'opérateur prend le fil : le scénario cesse d'avancer sur ce contact, et une campagne ne l'écrasera
+    // pas. Best-effort, APRÈS l'envoi réussi : un échec d'état ne doit pas faire croire à un message perdu.
+    await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     await deps.recordOutbound(conversationId, text, messageId, 'text', null, null, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });
@@ -139,6 +149,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       ...(headerMediaUrl ? { headerMediaUrl } : {}),
       ...(headerFormat ? { headerFormat } : {}),
     });
+    // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
+    await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });

@@ -33,6 +33,10 @@ export interface RunJobDeps {
     waId: string,
     msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
   ) => Promise<void>;
+  /** Le fil est-il libre pour un envoi automatisé ? false si un opérateur ou MBA le détient. */
+  mayAct?: (tenantId: string, waId: string) => Promise<boolean>;
+  /** Pose le détenteur du fil après un envoi réussi (sans dégrader un détenteur plus fort). */
+  markControl?: (tenantId: string, waId: string) => Promise<void>;
   thresholds?: GuardrailThresholds;
 }
 
@@ -67,6 +71,8 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(deps.startWorkflow ? { startWorkflow: deps.startWorkflow } : {}),
     ...(deps.startWorkflowFromNode ? { startWorkflowFromNode: deps.startWorkflowFromNode } : {}),
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
+    ...(deps.mayAct ? { mayAct: deps.mayAct } : {}),
+    ...(deps.markControl ? { markControl: deps.markControl } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
   });
 }

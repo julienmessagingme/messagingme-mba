@@ -88,6 +88,16 @@ export const schema = z.object({
   CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   /** Nombre max de conversations réclamées par passage de balayage. */
   CONVERSATION_ANALYSIS_BATCH: z.coerce.number().default(20),
+  /** Cadence du garde-fou qui rend la main au scénario quand plus personne ne s'occupe d'une conversation. */
+  CONTROL_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
+  /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR revient au scénario. 2 h : assez long pour
+   *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
+   *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre
+   *  seule soupape. 0 désactive la reprise (le contrôle reste alors humain indéfiniment, à vos risques). */
+  CONTROL_HUMAN_TIMEOUT_MS: z.coerce.number().default(2 * 60 * 60 * 1000),
+  /** Idem pour un fil tenu par MBA. Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte
+   *  qu'en cas de silence anormal. */
+  CONTROL_MBA_TIMEOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
   /** Provider LLM de l'analyse. UNE seule implémentation existe. `z.enum` et non `z.string` : une valeur
    *  inconnue était acceptée par la config et TUAIT le conteneur worker au premier appel d'analyse, avec une
    *  erreur qui ne nommait pas la variable. Elle est maintenant refusée au boot. */

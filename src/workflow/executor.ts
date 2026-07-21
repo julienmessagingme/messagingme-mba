@@ -26,6 +26,12 @@ export interface WorkflowExecutorDeps {
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
   sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<void>;
+  /**
+   * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent
+   * de Meta (`mba`) le détient. OPTIONNEL : absent, tout est permis, ce qui préserve le comportement des
+   * suites de tests qui construisent des deps minimales. En production il est toujours câblé.
+   */
+  mayAct?(tenantId: string, waId: string): Promise<boolean>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -75,6 +81,14 @@ export class WorkflowExecutor {
     startNodeId: string,
     opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[] } = {},
   ): Promise<void> {
+    // Un scénario n'écrit JAMAIS dans un fil détenu par un opérateur ou par MBA. Ce garde est ici, et pas
+    // seulement dans `advance`, parce que `start` et `startFromNode` passent par `runFrom` : sans lui, une
+    // campagne démarrerait un parcours en plein échange humain, et les deux écriraient au client.
+    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {
+      // eslint-disable-next-line no-console
+      console.log(`workflow ${workflowId}: fil détenu par un humain ou par MBA, run non démarré pour ${contact.waId}`);
+      return;
+    }
     const { actions, rest } = walk(graph, startNodeId);
     // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
     // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Le save du graphe refuse
@@ -117,6 +131,11 @@ export class WorkflowExecutor {
   async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
+    // Le fil est-il encore à nous ? Placé APRÈS la recherche du run pour ne pas payer une requête sur les
+    // messages qui n'attendent aucun parcours (le cas le plus fréquent). Le run reste `waiting` : le gel
+    // est transitoire, il repart tout seul dès que le contrôle revient (fin d'échange humain, ou garde-fou
+    // d'inactivité). On ne le clôt PAS, sinon un aller-retour avec un opérateur tuerait le parcours.
+    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) return;
     const graph = run.currentNode ? await this.deps.getGraph(run.workflowId, tenantId) : null;
     const next = graph && run.currentNode
       ? ((buttonPayload ? nextNodeByHandle(graph, run.currentNode, buttonPayload) : null) ?? nextNode(graph, run.currentNode))

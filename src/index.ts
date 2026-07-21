@@ -147,6 +147,8 @@ async function main(): Promise<void> {
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
       recordOutbound: (id, body, msgId, type, cat, name, sender) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender),
+      // Un opérateur qui écrit prend le fil : le scénario se gèle sur ce contact, les campagnes le sautent.
+      takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (phoneNumberId, to, text) => {
         const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });

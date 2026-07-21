@@ -66,8 +66,23 @@ export interface EngineDeps {
     waId: string,
     msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
   ) => Promise<void>;
+  /**
+   * La campagne a-t-elle le droit d'écrire dans ce fil ? false dès qu'un opérateur ou MBA le détient.
+   * Sans ce garde, l'envoi de masse serait le SEUL canal que l'état de contrôle ne bloque pas, et la
+   * campagne du soir écrirait au client en plein échange avec un opérateur. Optionnel : absent, rien n'est
+   * bloqué (rétro-compatible avec les suites de tests existantes).
+   */
+  mayAct?: (tenantId: string, waId: string) => Promise<boolean>;
+  /** Pose le détenteur du fil après un envoi réussi, sans jamais dégrader un détenteur plus fort. */
+  markControl?: (tenantId: string, waId: string) => Promise<void>;
   now?: () => number;
   thresholds?: GuardrailThresholds;
+}
+
+/** wa_id d'un destinataire : numéro en chiffres nus, BSUID tel quel. Règle unique, partagée avec le webhook
+ *  et le store d'inbox : la dériver deux fois différemment créerait deux conversations pour un contact. */
+function waIdOf(toE164: string): string {
+  return toE164.startsWith('+') ? toE164.replace(/[^0-9]/g, '') : toE164;
 }
 
 const DEFAULT_THRESHOLDS: GuardrailThresholds = {
@@ -120,6 +135,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       }
     }
 
+    // Contrôle du fil : un opérateur engagé (ou MBA) interdit l'envoi automatisé vers ce contact. Saut
+    // TRANSITOIRE avant le claim, exactement comme le saut de fréquence ci-dessus : le destinataire reste
+    // `pending` et sera réévalué au prochain run, au lieu d'être consommé et perdu.
+    if (deps.mayAct && !(await deps.mayAct(campaign.tenantId, waIdOf(r.toE164)))) {
+      report.skipped += 1;
+      continue;
+    }
+
     // Claim atomique : si un autre run/worker a déjà pris ce destinataire, on passe.
     if (!(await deps.recipients.claim(r.id))) continue;
 
@@ -132,7 +155,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
         // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
-        const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
+        const waId = waIdOf(r.toE164);
         await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
         res = { messageId: `wf-${campaign.workflowId}` };
       } else if (campaign.workflowId) {
@@ -140,7 +163,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
         // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).
         if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
-        const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
+        const waId = waIdOf(r.toE164);
         // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
         // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
         await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, r.resolvedParams);
@@ -175,11 +198,24 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     await deps.recipients.markResult(r.id, { status: 'sent', messageId: res.messageId, sentAt: at });
     await deps.frequency.record(campaign.tenantId, r.toE164, at);
 
+    // Détenteur du fil, posé ICI et pas dans les branches d'envoi : les trois formes de campagne (node,
+    // workflow, template direct) convergent à cet endroit. Le placer dans la branche `else` du template
+    // direct, comme le fait le log ci-dessous, le rendrait inatteignable pour toute campagne workflow.
+    // `markControl` ne dégrade jamais un détenteur plus fort (garde `only` côté store), et son échec ne
+    // relabellise pas un message livré.
+    if (deps.markControl) {
+      try {
+        await deps.markControl(campaign.tenantId, waIdOf(r.toE164));
+      } catch {
+        /* best-effort : un envoi livré ne redevient jamais `failed` à cause d'un état de contrôle */
+      }
+    }
+
     // Journalise le template envoyé dans le fil de conversation (fil d'inbox complet + transcript d'analyse).
     // UNIQUEMENT pour un envoi template DIRECT : la branche workflow a un messageId synthétique `wf-...`, le vrai
     // template est loggé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise pas l'envoi.
     if (deps.recordOutbound && !campaign.workflowId) {
-      const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
+      const waId = waIdOf(r.toE164);
       const body = `Template « ${campaign.templateName} »${r.resolvedParams.length > 0 ? ` (${r.resolvedParams.join(', ')})` : ''}`;
       try {
         await deps.recordOutbound(campaign.tenantId, waId, {

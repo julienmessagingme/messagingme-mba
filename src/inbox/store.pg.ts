@@ -1,12 +1,26 @@
 import type { Pool } from 'pg';
 import type { InboxStore, InboundMessage } from '../webhooks/inbound';
 
+/**
+ * Qui détient la conversation, et donc qui répond au client.
+ *
+ * `app_workflow` est le SEUL état qui autorise un scénario à avancer ou à démarrer. `mba` n'est jamais
+ * déduit d'une de nos actions : il vient exclusivement d'un webhook `messaging_handovers`.
+ */
+export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
+
+/** Détenteurs qu'un envoi AUTOMATISÉ a le droit d'écraser. Un envoi automatisé ne dégrade jamais un
+ *  détenteur plus fort que le sien : sans cette garde, une campagne programmée révoquerait en silence
+ *  l'opérateur qui est en train de traiter la conversation. */
+export const AUTOMATED_MAY_OVERWRITE: readonly ControlOwner[] = ['app_workflow'];
+
 export interface ConversationSummary {
   id: string;
   waId: string;
   profileName: string | null;
   lastPreview: string | null;
   lastMessageAt: string;
+  controlOwner: ControlOwner;
 }
 export interface ConversationMessage {
   id: string;
@@ -58,6 +72,81 @@ export class PgInboxStore implements InboxStore {
     return conv.rows[0]!.id;
   }
 
+  /**
+   * Détenteur courant du fil. L'ABSENCE de conversation vaut `app_workflow` : une campagne peut viser un
+   * contact qui n'a jamais écrit, sa conversation n'existe alors pas encore et rien ne doit être bloqué.
+   */
+  async getControlOwner(tenantId: string, waId: string): Promise<ControlOwner> {
+    const res = await this.pool.query<{ control_owner: ControlOwner }>(
+      `select control_owner from conversations where tenant_id = $1 and wa_id = $2`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.control_owner ?? 'app_workflow';
+  }
+
+  /**
+   * Pose le détenteur du fil.
+   *
+   * `only` restreint la transition aux détenteurs courants listés. C'est LE mécanisme qui empêche un envoi
+   * automatisé de révoquer un opérateur engagé : sans lui, un opérateur répond à 10h00, une campagne
+   * programmée touche le même contact à 10h02 et repose `app_workflow`, et le scénario redémarre par-dessus
+   * l'humain au message suivant. La garde est DANS le WHERE, donc évaluée atomiquement, sans lecture
+   * préalable et donc sans course entre la lecture et l'écriture.
+   *
+   * UPDATE SEUL, volontairement : ne crée jamais la conversation. Si la ligne n'existe pas, le détenteur
+   * vaut déjà `app_workflow` (défaut de la colonne ET valeur rendue par `getControlOwner`), donc une pose
+   * automatisée n'aurait rien à écrire ; et créer une conversation vide juste pour porter un état la ferait
+   * apparaître sans le moindre message dans l'inbox. Les deux poses non automatiques (un humain qui répond,
+   * un handover Meta) portent par construction sur une conversation qui a déjà des messages.
+   *
+   * Renvoie true si la bascule a eu lieu, false si la garde l'a refusée ou si l'état était déjà celui visé
+   * (cas normaux, jamais une erreur).
+   */
+  async setControlOwner(
+    tenantId: string,
+    waId: string,
+    owner: ControlOwner,
+    opts?: { only?: readonly ControlOwner[] },
+  ): Promise<boolean> {
+    const only = opts?.only;
+    const res = await this.pool.query(
+      `update conversations set control_owner = $3, control_changed_at = now()
+       where tenant_id = $1 and wa_id = $2
+         and control_owner is distinct from $3
+         and ($4::text[] is null or control_owner = any($4::text[]))`,
+      [tenantId, waId, owner, only ? [...only] : null],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Conversations dont le contrôle est détenu (hors `app_workflow`) depuis plus longtemps que le délai
+   * donné. Alimente le garde-fou d'inactivité : il n'existe AUCUN release automatique côté Meta, donc un
+   * contrôle jamais rendu (opérateur parti, onglet fermé, crash) gèlerait la conversation indéfiniment.
+   * `control_changed_at` null = bascule d'avant la migration 0040 : traitée comme éligible, sinon ces
+   * conversations resteraient bloquées pour toujours.
+   */
+  async listStaleControl(
+    olderThan: Date,
+    limit = 200,
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>> {
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null }>(
+      `select tenant_id, wa_id, control_owner, control_changed_at
+       from conversations
+       where control_owner <> 'app_workflow'
+         and (control_changed_at is null or control_changed_at < $1)
+       order by control_changed_at nulls first
+       limit $2`,
+      [olderThan.toISOString(), limit],
+    );
+    return res.rows.map((r) => ({
+      tenantId: r.tenant_id,
+      waId: r.wa_id,
+      owner: r.control_owner,
+      changedAt: r.control_changed_at,
+    }));
+  }
+
   async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
     const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview);
@@ -92,8 +181,9 @@ export class PgInboxStore implements InboxStore {
   async listConversations(tenantId: string): Promise<ConversationSummary[]> {
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date;
+      control_owner: ControlOwner;
     }>(
-      `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at
+      `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner
        from conversations c
        left join contacts ct on ct.id = c.contact_id
        where c.tenant_id = $1
@@ -107,6 +197,7 @@ export class PgInboxStore implements InboxStore {
       profileName: r.profile_name,
       lastPreview: r.last_preview,
       lastMessageAt: r.last_message_at.toISOString(),
+      controlOwner: r.control_owner,
     }));
   }
 

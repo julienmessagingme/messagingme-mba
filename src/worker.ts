@@ -14,7 +14,8 @@ import {
 import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
-import { PgInboxStore } from './inbox/store.pg';
+import { PgInboxStore, AUTOMATED_MAY_OVERWRITE } from './inbox/store.pg';
+import { runControlSweep } from './inbox/control-sweep';
 import { logTemplateSent } from './inbox/outbound-log';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
@@ -92,6 +93,9 @@ async function main(): Promise<void> {
 
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
+    // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
+    // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
+    mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
     // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime — y compris par
     // un ancien workflow non re-sauvegardé — atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.
@@ -250,6 +254,13 @@ async function main(): Promise<void> {
       },
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
+      // Un opérateur engagé (ou MBA) interdit l'envoi de masse vers ce contact. Saut transitoire.
+      mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
+      // Après un envoi réussi, le fil est à nous, en automatique. `only` empêche cette pose de
+      // dégrader un détenteur plus fort qui serait apparu entre-temps.
+      markControl: async (tenant, waId) => {
+        await inboxStore.setControlOwner(tenant, waId, 'app_workflow', { only: AUTOMATED_MAY_OVERWRITE });
+      },
     });
   });
 
@@ -347,6 +358,29 @@ async function main(): Promise<void> {
   void scheduleSweep();
   const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
   scheduleSweeper.unref();
+
+  // Sweeper de CONTRÔLE : rend la main au scénario quand plus personne ne s'occupe d'une conversation.
+  // Il n'existe AUCUN release automatique côté Meta : sans ce balayage, un opérateur qui ferme son onglet
+  // (ou un worker qui meurt) gèlerait la conversation indéfiniment, scénario muet et client sans réponse.
+  // C'est la soupape de la capacité de gel, elle part donc dans le même déploiement qu'elle.
+  const controlSweep = async (): Promise<void> => {
+    try {
+      const rendues = await runControlSweep({
+        listStaleControl: (olderThan, limit) => inboxStore.listStaleControl(olderThan, limit),
+        setControlOwner: (t, w, o, opts) => inboxStore.setControlOwner(t, w, o, opts),
+        // Un opérateur inactif rend la main vite, MBA beaucoup plus tard (il est censé répondre seul).
+        timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS },
+      });
+      // eslint-disable-next-line no-console
+      if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('control-sweep erreur:', err instanceof Error ? err.message : err);
+    }
+  };
+  void controlSweep();
+  const controlSweeper = setInterval(() => void controlSweep(), config.CONTROL_SWEEP_INTERVAL_MS);
+  controlSweeper.unref();
 
   // Sweeper d'idempotence API : purge les clés Idempotency-Key plus vieilles que 24h (fenêtre de dédup).
   const idempotencyStore = new PgApiIdempotencyStore(pool);
