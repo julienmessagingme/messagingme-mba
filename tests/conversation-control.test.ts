@@ -107,10 +107,12 @@ function recipients(): Recipient[] {
   ];
 }
 
-function engineDeps(over: Partial<EngineDeps> = {}): { deps: EngineDeps; claimed: string[]; sent: string[]; marked: string[] } {
+interface MarkedResult { id: string; status: string; error?: string }
+function engineDeps(over: Partial<EngineDeps> = {}): { deps: EngineDeps; claimed: string[]; sent: string[]; marked: string[]; results: MarkedResult[] } {
   const claimed: string[] = [];
   const sent: string[] = [];
   const marked: string[] = [];
+  const results: MarkedResult[] = [];
   const deps: EngineDeps = {
     sender: {
       sendMarketing: async () => ({ messageId: 'm' }),
@@ -119,7 +121,7 @@ function engineDeps(over: Partial<EngineDeps> = {}): { deps: EngineDeps; claimed
     recipients: {
       listPending: async () => recipients(),
       claim: async (id) => { claimed.push(id); return true; },
-      markResult: async () => {},
+      markResult: async (id, r) => { results.push({ id, status: r.status, ...(r.error ? { error: r.error } : {}) }); },
     },
     campaigns: { setStatus: async () => {} },
     frequency: { lastSentAt: async () => null, record: async () => {} },
@@ -127,19 +129,26 @@ function engineDeps(over: Partial<EngineDeps> = {}): { deps: EngineDeps; claimed
     markControl: async (_t, waId) => { marked.push(waId); },
     ...over,
   };
-  return { deps, claimed, sent, marked };
+  return { deps, claimed, sent, marked, results };
 }
 
 describe('campagne face à un fil détenu', () => {
-  it('saute le destinataire SANS le claimer (il reste pending, réévalué au prochain run)', async () => {
-    // Le saut doit précéder le claim : claimer puis renoncer consommerait le destinataire, qui resterait
-    // bloqué en `sending` et ne serait jamais renvoyé.
-    const { deps, claimed, sent } = engineDeps({ mayAct: async (_t, waId) => waId !== '33611111111' });
+  it('saute le destinataire SANS le claimer, et PERSISTE l’écart avec son motif', async () => {
+    // Deux invariants en un.
+    // (1) Le saut précède le claim : claimer puis renoncer laisserait le destinataire bloqué en `sending`.
+    // (2) L'écart est ÉCRIT en base en `skipped`, jamais laissé en `pending`. C'est le point crucial : la
+    //     campagne se marque `completed` en fin de run et le front ne permet de relancer qu'une campagne
+    //     `draft` ou `paused`. Un destinataire laissé `pending` ne repartirait donc JAMAIS et
+    //     disparaîtrait en silence, la panne invisible déjà rencontrée avec le cap de fréquence.
+    const { deps, claimed, sent, results } = engineDeps({ mayAct: async (_t, waId) => waId !== '33611111111' });
     const report = await runCampaign(CAMPAIGN, deps);
     expect(sent).toEqual(['+33622222222']);
     expect(claimed).toEqual(['r2']);
     expect(report.skipped).toBe(1);
     expect(report.sent).toBe(1);
+    const ecart = results.find((x) => x.id === 'r1');
+    expect(ecart?.status).toBe('skipped');
+    expect(ecart?.error).toContain('opérateur');
   });
 
   it('pose le détenteur après un envoi réussi, pour les DEUX destinataires', async () => {

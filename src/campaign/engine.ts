@@ -135,10 +135,18 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       }
     }
 
-    // Contrôle du fil : un opérateur engagé (ou MBA) interdit l'envoi automatisé vers ce contact. Saut
-    // TRANSITOIRE avant le claim, exactement comme le saut de fréquence ci-dessus : le destinataire reste
-    // `pending` et sera réévalué au prochain run, au lieu d'être consommé et perdu.
+    // Contrôle du fil : un opérateur engagé (ou MBA) interdit l'envoi automatisé vers ce contact, pour ne
+    // pas jeter un message de campagne au milieu d'un échange humain.
+    //
+    // L'écart est PERSISTÉ en `skipped` avec son motif, et surtout PAS laissé en `pending`. C'est la leçon
+    // du cap de fréquence : un destinataire laissé `pending` pendant que la campagne se marque `completed`
+    // (ligne ~234) ne repartira JAMAIS, puisque le front ne permet de relancer qu'une campagne `draft` ou
+    // `paused`. Il disparaissait donc en silence. Ici, le contact apparaît dans le détail de la campagne
+    // avec la raison, l'opérateur le voit et peut le rattraper.
+    //
+    // Placé AVANT le claim : claimer puis renoncer laisserait le destinataire bloqué en `sending`.
     if (deps.mayAct && !(await deps.mayAct(campaign.tenantId, waIdOf(r.toE164)))) {
+      await deps.recipients.markResult(r.id, { status: 'skipped', error: 'conversation tenue par un opérateur' });
       report.skipped += 1;
       continue;
     }
