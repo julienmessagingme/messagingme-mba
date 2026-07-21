@@ -77,7 +77,11 @@ apporte et que Meta ne fera pas.
 **Pourquoi en premier, avant même la sécurité** : ces trois briques corrigent un bug qui existe
 **aujourd'hui en production**, elles se testent et se démontrent immédiatement, elles ne dépendent
 d'aucune acceptation de ToS, et elles sont la fondation de ce que Julien a désigné comme la
-plus-value centrale du produit. Détail complet dans `docs/MBA-ARCHITECTURE.md`.
+plus-value centrale du produit. Le pourquoi est dans `docs/MBA-ARCHITECTURE.md`.
+
+> **➡️ Le plan d'exécution détaillé est dans `docs/PLAN-BLOC-A.md`.** Migration prête à copier, points
+> d'insertion avec numéros de ligne vérifiés, les deux pièges qui feraient échouer l'approche naïve,
+> les tests à écrire. **Le lire avant de coder**, il évite de refaire la cartographie.
 
 | # | Action | Pourquoi | Effort |
 |---|---|---|---|
