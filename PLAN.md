@@ -79,9 +79,13 @@ apporte et que Meta ne fera pas.
 d'aucune acceptation de ToS, et elles sont la fondation de ce que Julien a désigné comme la
 plus-value centrale du produit. Le pourquoi est dans `docs/MBA-ARCHITECTURE.md`.
 
-> **➡️ Le plan d'exécution détaillé est dans `docs/PLAN-BLOC-A.md`.** Migration prête à copier, points
-> d'insertion avec numéros de ligne vérifiés, les deux pièges qui feraient échouer l'approche naïve,
-> les tests à écrire. **Le lire avant de coder**, il évite de refaire la cartographie.
+> **➡️ Le plan d'exécution détaillé est dans `docs/PLAN-BLOC-A.md` (version 2).** Migrations prêtes à
+> copier, points d'insertion avec numéros de ligne vérifiés, pièges, tests. **Le lire avant de coder.**
+>
+> La v1 a été soumise à une chasse aux pièges : 29 trouvés, 25 confirmés, **13 bloquants**, dont trois
+> trous réels de ma part. **L'ordre du tableau ci-dessous est périmé**, le bon ordre est celui de la v2 :
+> **A.1 (élargi) → A.2 (élargi) → A.4 → A.3 → A.5 (réécrit)**. A.4 remonte et part dans le même
+> déploiement que A.2 : une capacité de gel sans sa soupape ne doit pas aller en production.
 
 | # | Action | Pourquoi | Effort |
 |---|---|---|---|

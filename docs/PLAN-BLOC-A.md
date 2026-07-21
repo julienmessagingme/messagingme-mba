@@ -1,9 +1,10 @@
 # Plan détaillé, bloc A : l'état de contrôle d'une conversation
 
-> Écrit le 2026-07-20 pour être exécuté à froid. Points d'insertion vérifiés dans le code, avec numéros de
-> ligne. Contexte du pourquoi : `MBA-ARCHITECTURE.md`. Séquencement global : `PLAN.md`.
+> **Version 2, du 2026-07-21.** La version 1 a été soumise à une chasse aux pièges (4 angles, chaque lot
+> revérifié contre le code) : 29 pièges trouvés, 25 confirmés, dont **13 bloquants**. Trois erreurs de la v1
+> étaient des trous réels, vérifiés à la main et corrigés ici. Ce qui suit intègre ces corrections.
 >
-> **Ordre d'exécution : A.1 puis A.2 ensemble (ils livrent seuls la valeur), puis A.3, A.4, A.5.**
+> Contexte du pourquoi : `MBA-ARCHITECTURE.md`. Séquencement global : `PLAN.md`.
 
 ## Le problème, en une phrase
 
@@ -16,234 +17,266 @@ Une colonne sur `conversations`, trois valeurs exclusives :
 
 | Valeur | Sens | Qui la pose |
 |---|---|---|
-| `app_workflow` | notre côté, automatique (scénario, campagne) | défaut, et chaque envoi automatisé |
-| `app_human` | un opérateur est engagé | un envoi depuis l'inbox |
-| `mba` | l'agent de Meta tient le fil | `messaging_handovers`, ou notre `release` |
+| `app_workflow` | notre côté, automatique (scénario, campagne) | défaut, et les envois automatisés **sous condition** |
+| `app_human` | un opérateur est engagé | un envoi depuis l'inbox, ou un run atteignant son bloc inbox |
+| `mba` | l'agent de Meta tient le fil | **uniquement** un `messaging_handovers` reçu (A.3) |
 
-Un enum plutôt que deux booléens : les états illégaux deviennent non représentables. Un humain qui envoie
-détient forcément le fil, l'enum interdit d'exprimer le contraire.
+**Règle 1 : seul `app_workflow` autorise l'avance ou le démarrage d'un scénario.**
 
-**Règle d'or : seul `app_workflow` autorise l'avance d'un scénario.** `app_human` et `mba` la gèlent.
+**Règle 2, la plus importante, absente de la v1 : un envoi automatisé ne dégrade JAMAIS un détenteur plus
+fort que le sien.** Toute pose automatique est conditionnelle (`where control_owner = 'app_workflow'`).
+
+**Règle 3 : tout état doit avoir un chemin de retour.** Un état dans lequel on entre sans pouvoir en sortir
+est un bug de schéma, pas un détail d'implémentation.
+
+## ⚠️ Les trois erreurs de la version 1, vérifiées à la main
+
+Elles sont consignées parce que chacune était une conclusion plausible et fausse.
+
+**1. Le point de pose de A.5 était dans une branche morte.** `campaign/engine.ts:158` est à l'intérieur du
+`else` ouvert ligne 148. La branche node sort ligne 137, la branche workflow ligne 147. **Aucune campagne
+workflow n'atteint jamais la ligne 158.** Les deux premières lignes de mon tableau A.5 étaient donc lettre
+morte, et le seul détenteur qu'une campagne aurait jamais posé était `mba`. Le bon point est **après
+`markResult` (ligne 175), hors du if/else**, là où les trois formes convergent.
+
+**2. Le garde de A.2 n'était pas unique.** `runFrom` (`executor.ts:70`) appelle `this.apply(...)` ligne 87,
+donc **envoie**, sans consulter personne. `start` (ligne 97) et `startFromNode` (ligne 108) passent tous
+deux par là. Un garde posé uniquement dans `advance()` laisse le démarrage de scénario écrire dans un fil
+tenu par un humain.
+
+**3. Le plan gardait la lecture et laissait les écritures libres.** Je définissais une option `only` sur
+`setControlOwner` sans l'imposer nulle part. Conséquence : un opérateur répond à 10h00, une campagne
+programmée touche le même contact à 10h02, le worker repose `app_workflow`, le client répond à 10h03 et le
+scénario redémarre par-dessus l'opérateur. Le gel était révoqué en silence, et `control_changed_at` re-daté
+au passage, donc le garde-fou de A.4 n'aurait jamais vu de contrôle humain ancien.
 
 ---
 
-## A.1 : la colonne et sa pose
+## Ordre d'exécution révisé
 
-### La migration
+**A.1 (élargi) → A.2 (élargi) → A.4 → A.3 → A.5 (réécrit).**
 
-Fichier à créer : `db/migrations/0040_conversation_control.sql` (0039 est la dernière, vérifié).
+Deux changements par rapport à la v1. **A.4 remonte avant A.3 et part dans le MÊME déploiement que A.2** :
+dès qu'on sait geler, on doit savoir dégeler, sinon on met en production une capacité de blocage sans sa
+soupape. **A.3 descend** : il ne sert à rien tant que MBA n'est actif chez aucun tenant.
+
+Migrations : **0040 avec A.1 et A.2**, **0041 livrée avec A.5**. Jamais A.5 sur la seule 0040.
+
+---
+
+## A.1 : la colonne, sa pose, et sa visibilité
+
+### La migration 0040
+
+`db/migrations/0040_conversation_control.sql` (0039 est la dernière, vérifié).
 
 ```sql
 -- 0040_conversation_control.sql : qui détient la conversation, et donc qui répond au client.
 --
--- Trois détenteurs exclusifs. 'app_workflow' = notre côté en automatique (scénario, campagne),
--- 'app_human' = un opérateur est engagé dans l'inbox, 'mba' = l'agent de Meta tient le fil.
---
--- DÉFAUT 'app_workflow' : c'est EXACTEMENT le comportement actuel (le scénario avance toujours), donc la
--- migration ne change le sort d'aucune conversation existante. Choisir 'app_human' par défaut gèlerait
--- rétroactivement tous les scénarios en attente au moment du déploiement.
---
--- ADD-only, migrer AVANT de déployer le code neuf.
+-- DÉFAUT 'app_workflow' : reproduit EXACTEMENT le comportement actuel, donc la migration ne change le sort
+-- d'aucune conversation existante et ne gèle rétroactivement aucun scénario en attente.
 alter table conversations
   add column if not exists control_owner text not null default 'app_workflow'
     check (control_owner in ('app_workflow', 'app_human', 'mba'));
 
--- Horodatage de la dernière bascule : sert au garde-fou d'inactivité (A.4), qui cherche les conversations
--- détenues par un humain depuis trop longtemps. Nullable : une conversation qui n'a jamais basculé n'a pas
--- de date de bascule, et mettre now() par défaut mentirait sur des conversations antérieures.
 alter table conversations add column if not exists control_changed_at timestamptz;
 
--- Index partiel sur le chemin chaud du garde-fou : il ne balaie QUE les conversations sous contrôle humain,
--- jamais la table entière. Même forme que conversations_analysis_pending_idx (0027).
-create index if not exists conversations_human_control_idx
-  on conversations (control_changed_at) where control_owner = 'app_human';
+-- Le balayage de A.4 doit récupérer TOUT état non rendu, pas seulement 'app_human' : une conversation
+-- passée à 'mba' sans chemin de retour serait bloquée définitivement (cf. règle 3).
+create index if not exists conversations_control_held_idx
+  on conversations (control_changed_at) where control_owner <> 'app_workflow';
 ```
+
+**Backfill borné, à trancher avant d'écrire la migration.** Sans backfill, une conversation aujourd'hui
+tenue par un humain naît `app_workflow`, donc le bug actuel persiste sur elle jusqu'à la prochaine action
+humaine (qui la corrige). Avec un backfill total, on gèle rétroactivement des scénarios dont un humain a
+envoyé un message il y a six mois. **Recommandation : backfill borné aux conversations dont le dernier
+message sortant porte un `sender_user_id` non nul ET date de moins de 24 h.** À faire dans la même
+migration, avec `control_changed_at` posé à la date de ce message, pas à `now()`.
 
 ### Le store
 
 `src/inbox/store.pg.ts`.
 
-**Ajouter une méthode dédiée**, plutôt que de greffer l'état sur une méthode existante :
-
 ```ts
-/** Pose le détenteur du fil. Crée la conversation si elle n'existe pas (cas d'une campagne vers un
- *  contact qui n'a jamais écrit). `only` restreint la transition à un détenteur courant précis. */
+/** Pose le détenteur du fil. Crée la conversation si elle n'existe pas (campagne vers un contact qui n'a
+ *  jamais écrit). `only` RESTREINT la transition aux détenteurs courants listés : c'est le mécanisme qui
+ *  empêche un envoi automatisé de révoquer un opérateur engagé. Rend false si la garde a bloqué. */
 async setControlOwner(
-  tenantId: string,
-  waId: string,
+  tenantId: string, waId: string,
   owner: 'app_workflow' | 'app_human' | 'mba',
-  opts?: { only?: string[] },
+  opts?: { only?: readonly string[] },
 ): Promise<boolean>
+
+/** Détenteur courant. Absence de ligne = 'app_workflow' (la conversation n'existe pas encore). */
+async getControlOwner(tenantId: string, waId: string): Promise<'app_workflow' | 'app_human' | 'mba'>
 ```
 
-**Ligne 42 à 59, `upsertConversationByWaId`** : ne PAS toucher au `DO UPDATE`. C'est le piège numéro un.
-La ligne 54 y remet `analysis_status` à `'pending'` à chaque message : si on imite ce précédent pour
-`control_owner`, **chaque message entrant rendrait la main au scénario** et annulerait tout le travail.
-La colonne doit être posée par des écritures explicites, jamais par l'upsert de passage.
+**Ligne 42 à 59, `upsertConversationByWaId` : ne PAS toucher au `DO UPDATE`.** La ligne 54 y remet
+`analysis_status` à `pending` à chaque message. Imiter ce précédent ferait rendre la main au scénario à
+chaque message entrant et annulerait tout le gel. Le précédent est un piège, pas un modèle.
 
-**Ligne 92 à 111, `listConversations`** : ajouter `c.control_owner` au select (ligne 96) et au type
-`ConversationSummary` (lignes 4 à 10). L'inbox doit montrer qui répond.
+**Ligne 92 à 111, `listConversations`** et **ligne 118 à 135, `getConversationContext`** : ajouter
+`control_owner` au select et aux types. Attention au `group by c.wa_id` ligne 127.
 
-**Ligne 118 à 135, `getConversationContext`** : ajouter `control_owner` au select. Attention au
-`group by c.wa_id` ligne 127, toute colonne ajoutée doit y entrer.
+### Les trois familles d'émetteurs, et leurs conditions
 
-### Les trois familles d'émetteurs, vérifiées
+| Famille | Où poser | Détenteur | Condition |
+|---|---|---|---|
+| Inbox, humain | **dans la route** `src/http/inbox.ts:97` et `:142`, pas dans les closures de `index.ts` (la route seule connaît `req.auth.userId`) | `app_human` | aucune, un humain prend toujours la main |
+| Worker, scénario | `src/worker.ts:129`, `:165`, `:182`, `:201` | `app_workflow` | **`only: ['app_workflow']`** |
+| Moteur de campagne | `src/campaign/engine.ts`, **après `markResult` ligne 175, hors du if/else** | `app_workflow` | **`only: ['app_workflow']`** |
 
-Tout envoi passe par `MetaClient` (`src/meta/client.ts`), mais **le bon endroit pour poser l'état n'est pas
-le client HTTP** : il ne connaît ni le tenant ni l'intention. Les points de pose sont les trois appelants.
+### ⚠️ Ne pas accrocher l'état à `recordOutbound`
 
-| Famille | Fichier et lignes | Détenteur à poser |
-|---|---|---|
-| Inbox, humain | `src/index.ts:151` (`sendReply`) et `:155` (`sendTemplateMessage`), appelés depuis `src/http/inbox.ts:97` et `:142` | `app_human` |
-| Worker, scénario | `src/worker.ts:129`, `:165`, `:182`, `:201` | `app_workflow` |
-| Moteur de campagne | `src/campaign/engine.ts:158-159` | celui déclaré par la campagne (A.5) |
+Il paraît idéal (il connaît la conversation et l'émetteur) mais il est **conditionnel** à
+`engine.ts:181` (`if (deps.recordOutbound && !campaign.workflowId)`, donc muet pour une campagne workflow)
+et **best-effort** à `worker.ts:184` et `:203` (erreur avalée par un `catch {}` assumé). Un état accroché
+dessus se désynchroniserait précisément dans le cas qui compte.
 
-Le chemin humain porte **déjà** `req.auth?.userId` jusqu'au store (`recordOutbound`, 7e paramètre, défaut
-null, documenté « null pour les réponses auto »). Le discriminant existe, il n'est pas exploité.
+### La visibilité et la reprise, absentes de la v1
 
-### ⚠️ Le piège que j'ai vérifié : ne pas accrocher l'état à `recordOutbound`
+Un état invisible et irréversible est inutilisable. À livrer avec A.1 :
 
-`recordOutbound` semble le point de passage idéal, il connaît la conversation et l'émetteur. **Il ne
-convient pas** :
-
-- `src/campaign/engine.ts:181` l'appelle sous condition `if (deps.recordOutbound && !campaign.workflowId)`.
-  Une campagne qui lance un **scénario** ne journalise donc rien ici.
-- `src/worker.ts:184` et `:203` l'appellent en best-effort, l'erreur est avalée par un `catch {}` assumé.
-
-La journalisation est optionnelle, conditionnelle et silencieuse en cas d'échec, **par conception**. Un état
-de contrôle accroché dessus se désynchroniserait précisément dans le cas qui compte, la campagne workflow.
-
-### ⚠️ Deuxième piège vérifié : la conversation peut ne pas exister
-
-Pour une campagne **workflow**, `engine.ts:181` ne crée pas la conversation. Elle n'apparaît que plus tard,
-quand le worker envoie réellement (`worker.ts:184` → `recordOutboundByWaId` → `upsertConversationByWaId`).
-
-Donc `setControlOwner` doit **créer la ligne si elle manque** (insert ... on conflict do update), et tout
-lecteur doit traiter l'absence de ligne comme `app_workflow`, jamais comme une erreur.
+- `control_owner` remonté jusqu'au front (la route de détail construit sa réponse en dur,
+  `src/http/inbox.ts:72-77`, à étendre) et affiché dans l'inbox ;
+- une **route de reprise** qui rend la main au scénario, et son bouton. Sans elle, un opérateur gèle un
+  parcours d'un clic sans pouvoir l'annuler.
 
 ### La dérivation du `waId`
 
-`advance()` et le moteur de campagne raisonnent en `waId`, pas en `conversationId`. La règle est déjà écrite
-à `engine.ts:182` et doit être reprise telle quelle, sans la réinventer :
-
-```ts
-const waId = r.toE164.startsWith('+') ? r.toE164.replace(/[^0-9]/g, '') : r.toE164;
-```
-
-Numéro en chiffres nus, BSUID brut. La clé `unique (tenant_id, wa_id)` de `0009_inbox.sql` rend la
-recherche exacte et indexée.
+Règle déjà écrite à `engine.ts:135` et `:144`, à reprendre telle quelle :
+`to.startsWith('+') ? to.replace(/[^0-9]/g, '') : to`. Numéro en chiffres nus, BSUID brut. La clé
+`unique (tenant_id, wa_id)` de `0009_inbox.sql` rend la recherche exacte et indexée.
 
 ---
 
-## A.2 : geler l'avance du scénario
+## A.2 : geler l'avance ET le démarrage
 
-**Point d'insertion unique et exact : `src/workflow/executor.ts:117`, première ligne de `advance()`.**
+**Trois points d'insertion, pas un.**
+
+**1. `src/workflow/executor.ts`, dans `advance()` ligne 117**, après `findWaitingByWaId` (pour pouvoir
+décider explicitement du sort du run plutôt que de le laisser en attente indéfiniment) :
 
 ```ts
-async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null) {
-  // Un scénario n'avance que si NOUS tenons le fil en automatique. Un opérateur engagé dans l'inbox ou
-  // MBA qui répond doivent geler le parcours, sinon deux émetteurs écrivent au client en parallèle.
-  if (!(await this.deps.mayAdvance(tenantId, waId))) return;
-  const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
-  ...
+const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
+if (!run || run.lastMessageId === messageId) return;
+// Un scénario n'avance que si NOUS tenons le fil en automatique.
+if (!(await this.deps.mayAdvance(tenantId, waId))) return;
 ```
 
-**Pourquoi ici et pas dans la route webhook** : `advance()` est le point d'entrée unique de la progression
-sur message entrant. Un garde posé dans `src/webhooks/workflow-advance.ts` serait contourné par tout
-appelant futur d'`advance`. Le garde appartient à la règle métier, pas au transport.
+**2. `src/workflow/executor.ts`, dans `runFrom()` ligne 78, AVANT le `apply` ligne 87.** C'est le point
+oublié par la v1 : `start` et `startFromNode` envoient par là. Journaliser le saut, sur le modèle du
+`console.error` de la garde 24 h juste au-dessus (lignes 82 à 86).
 
-**Pourquoi un dep `mayAdvance` et pas un accès direct au store** : l'executor ne connaît aucun store, il
-reçoit tout par `deps` (convention du fichier). Câblage dans `src/worker.ts:211`, à côté de
-`advance: (t, w, m, bp) => workflowExecutor.advance(...)`.
+**3. `src/campaign/engine.ts`, avant le claim ligne 124.** Sauter le destinataire de façon **transitoire**
+(il reste `pending`, réévalué au prochain run), sur le modèle exact du skip de fréquence lignes 115 à 121.
+Sans ce troisième point, le canal le plus bruyant du produit, l'envoi de masse, est le seul que l'état ne
+bloque pas : la campagne du soir écrit au client en plein échange avec un opérateur.
 
-Le dep rend `true` seulement si le détenteur vaut `app_workflow`, **absence de ligne comprise**.
+**Pourquoi un dep et pas un accès direct au store** : l'executor ne connaît aucun store, il reçoit tout par
+`deps`. Câblage dans `src/worker.ts:211`.
+
+---
+
+## A.4 : le garde-fou d'inactivité, livré AVEC A.2
+
+Il n'existe **aucun** release automatique côté Meta. Un contrôle jamais rendu (opérateur parti, onglet
+fermé, crash) laisse la conversation gelée indéfiniment. Une capacité de gel sans soupape ne doit pas
+partir en production.
+
+Patron déjà présent quatre fois dans `src/worker.ts` : `setInterval` + `.unref()` + `clearInterval` à
+l'arrêt (lignes 311, 327, 348, 364, nettoyage ligne 368).
+
+Balayage sur **`control_owner <> 'app_workflow'`** (pas seulement `app_human`, cf. règle 3), avec un délai
+distinct par état : court pour `app_human` (un opérateur inactif rend la main), plus long pour `mba`. Délais
+au zod dans `src/config.ts`, sur le modèle de `CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS`.
 
 ---
 
 ## A.3 : consommer `standby` et `messaging_handovers`
 
-Ils sont typés dans `src/webhooks/parse.ts` (lignes 89 à 109) mais **rien ne les lit en aval** : ils sont
-insérés bruts dans `webhook_events` et ignorés par `inbound.ts`, `delivery.ts` et `workflow-advance.ts`.
+Typés dans `src/webhooks/parse.ts` (lignes 89 à 109), **rien ne les lit en aval**. Deux traitements à
+brancher dans `src/webhooks/handler.ts`, **isolés** (un échec ne doit jamais faire échouer le job webhook
+partagé, cf. commentaire ligne 49) :
 
-Deux traitements à brancher dans `src/webhooks/handler.ts`, sur le modèle des blocs existants, **isolés**
-(un échec ne doit jamais faire échouer le job webhook partagé, cf. le commentaire ligne 49) :
+1. `messaging_handovers` → recaler `control_owner`. **C'est le SEUL écrivain légitime de la valeur `mba`.**
+2. `standby` (`message_echoes`) → afficher dans l'inbox ce que MBA a répondu.
 
-1. `messaging_handovers` → recaler `control_owner`. C'est la seule source de vérité côté Meta.
-2. `standby` (les `message_echoes`) → afficher dans l'inbox ce que MBA a répondu, pour que l'opérateur voie
-   la conversation complète et pas seulement sa moitié.
+⚠️ **La forme du payload est devinée.** `parse.ts:90` boucle sur `value['message_echoes']` et le commentaire
+ligne 100 avoue « shape peu documentée ». La doc Meta décrit la sémantique de `standby`, jamais la
+structure. Traiter tout champ comme optionnel, ne jamais planter, journaliser un payload non reconnu.
 
-⚠️ **La forme du payload est devinée.** `parse.ts:90` boucle sur `value['message_echoes']`, et le
-commentaire ligne 100 dit lui-même « Shape peu documentée ». La doc Meta téléchargée décrit la sémantique
-de `standby` mais **jamais la structure du corps**. Traiter tout champ comme optionnel, ne jamais planter
-sur une forme inattendue, et journaliser un payload non reconnu au lieu de le laisser tomber en silence.
-
-⚠️ **Piège de routage** : `parse.ts:65` boucle sur `value['messages']` **quel que soit le champ**. Quand
-MBA tient le fil, le message du client arrive sur `standby`. À vérifier au moment du branchement : notre
-code ne doit pas traiter un message standby comme un message à traiter normalement, sinon le scénario
-répondrait et **prendrait le contrôle à MBA** (envoyer suffit à prendre le contrôle).
+⚠️ **Piège de routage** : `parse.ts:65` boucle sur `value['messages']` **quel que soit le champ**. Quand MBA
+tient le fil, le message du client arrive sur `standby`. Notre code ne doit pas le traiter comme un message
+ordinaire, sinon le scénario répondrait et **prendrait le contrôle à MBA** (envoyer suffit à prendre).
 
 ---
 
-## A.4 : le garde-fou d'inactivité
+## A.5 : l'intention de la campagne, réécrit
 
-Il n'existe **aucun** release automatique côté Meta. Un contrôle jamais rendu (opérateur parti, onglet
-fermé, crash) laisse la conversation gelée et MBA muet, indéfiniment.
+La v1 était fausse trois fois : point de pose en branche morte, gel prématuré, et déduction `mba` sans
+retour. Nouvelle formulation.
 
-Patron à imiter, déjà présent quatre fois dans `src/worker.ts` : `setInterval` + `.unref()`, avec
-`clearInterval` à l'arrêt (lignes 311, 327, 348, 364, et le bloc de nettoyage ligne 368).
+**Une campagne porte une INTENTION de fin de parcours, pas un état posé à l'envoi.**
 
-Balayage : les conversations `control_owner = 'app_human'` dont `control_changed_at` est plus vieux qu'un
-délai configurable, remises à `app_workflow` (et plus tard `release` vers MBA quand il sera actif). L'index
-partiel de la migration sert exactement ce balayage.
-
-Délai en variable d'environnement au zod (`src/config.ts`), sur le modèle de
-`CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS`.
-
----
-
-## A.5 : le détenteur visé par campagne
-
-Règle validée par Julien le 2026-07-20, défaut **déduit** de la forme, **surchargeable** :
-
-| Campagne | Détenteur visé | Pourquoi |
+| Campagne | Intention | Matérialisée quand |
 |---|---|---|
-| Workflow finissant sur un bloc **inbox** | `app_human` | le bloc inbox dit qu'un humain prend le relais |
-| Workflow sans bloc inbox | `app_workflow` | le scénario continue |
-| Template seul | `mba` | personne chez nous n'attend la réponse |
+| Workflow finissant sur un bloc inbox | `app_human` | le run **atteint réellement** son état terminal inbox |
+| Workflow sans bloc inbox | `app_workflow` | jamais (c'est le défaut) |
+| Template seul | `app_workflow` | jamais. **Aucune déduction `mba`** |
 
-Points d'insertion : `src/campaign/types.ts` (le champ), `src/campaign/store.pg.ts` (`CreateCampaignInput`
-+ insert + select), `src/http/campaigns.ts` (validation du POST, allowlist stricte des trois valeurs),
-`src/campaign/engine.ts:158` (la pose après envoi), `web/app/campaigns/page.tsx` (le sélecteur).
+**Pourquoi pas de pose à l'envoi** : `walk` s'arrête au premier bloc bloquant, et le seul chemin vers le
+bloc inbox est `advance`, que A.2 gèle. Poser `app_human` à l'envoi gèlerait donc le scénario **à son
+premier message**, et la forme la plus courante (accroche automatique puis passage à un humain) cesserait
+de fonctionner pour tous les destinataires, sans erreur ni log.
 
-Détection du bloc inbox terminal : parcourir le graphe, chercher les nœuds sans arête sortante, regarder
-leur type. Le type `inbox` existe déjà (c'est le bloc terminal du builder).
+**Où matérialiser** : dans `executor.advance`, après le `setState` ligne 130, quand l'état atteint vaut
+`inbox`. Corollaire à traiter : aujourd'hui, quand un run atteint vraiment son bloc inbox, aucun détenteur
+n'est posé et l'inbox afficherait `app_workflow` sur une conversation que plus rien ne fait avancer.
 
-⚠️ **Question non tranchée, à tester en conditions réelles avant toute campagne de volume** : un envoi
-sortant prend-il implicitement le contrôle du fil côté Meta ? La doc ne le dit nulle part. Si oui, une
-campagne « template seul » coupe MBA sur tous ses destinataires jusqu'à un `release` **par destinataire**,
-avec le coût et le débit que ça implique. Tant que ce n'est pas vérifié, poser l'intention en base et **ne
-pas** appeler `release` en masse.
+**Pourquoi aucune déduction `mba`** : `mba` ne doit être écrit que par un `messaging_handovers` réellement
+reçu. Le déduire d'une campagne créerait un état sans chemin de retour chez un tenant où MBA n'est même pas
+actif (`mba_enabled` est faux par défaut, `settings/store.pg.ts:19`), et le seul remède serait un UPDATE
+manuel en production.
+
+**Points d'insertion** : `src/campaign/types.ts`, `src/campaign/store.pg.ts` (`CreateCampaignInput` et
+**les DEUX inserts**, lignes 77 et 480, cf. ci-dessous), `src/http/campaigns.ts` (validation, allowlist
+stricte), **`src/http/v1-sends.ts`** (oublié par la v1 : l'API publique crée aussi des campagnes, un
+intégrateur doit pouvoir déclarer l'intention), `web/app/campaigns/page.tsx`.
+
+⚠️ **Deux inserts de `campaigns`, pas un** : `store.pg.ts:77` (`insertCampaign`, sans appelant applicatif)
+et `store.pg.ts:480` (`createWithRecipients`, le seul chemin réel). Ne modifier que le premier perdrait le
+champ en silence. **C'est déjà arrivé sur `workflow_id`**, d'où le test de non-régression
+`stores.integration.test.ts:630`.
+
+⚠️ **Migration 0041 obligatoire** (`campaigns.target_control_owner`), livrée avec A.5. Sans elle, le premier
+POST de création de campagne tombe en 500 `column does not exist`, le mode de panne décrit dans
+`DEPLOY.md:65-69`.
 
 ---
 
 ## Les tests à écrire
 
-Le repo est à 922 tests. Ce qui doit être prouvé, et qui n'est pas visible à la lecture :
+1. **Un humain répond, le scénario ne bouge plus.** Le test qui justifie le bloc.
+2. **Un envoi automatisé ne dégrade pas `app_human`.** Mutation : retirer `only` doit faire échouer.
+3. **`upsertConversationByWaId` ne réinitialise pas le détenteur.** Mutation : l'ajouter au `DO UPDATE`
+   doit faire échouer.
+4. **`start` et `startFromNode` refusent d'écrire dans un fil tenu par un humain** (le trou de la v1).
+5. **Une conversation absente vaut `app_workflow`.**
+6. **Le garde vaut aussi pour `mba`**, pas seulement pour `app_human`.
+7. **Le webhook `standby` ne fait pas répondre le scénario.**
+8. **Le balayage libère `mba` comme `app_human`**, et jamais une conversation active.
+9. **Un run qui atteint son bloc inbox pose `app_human`** (A.5).
 
-1. **Un humain répond, le scénario ne bouge plus.** Le test qui justifie tout le bloc.
-2. **`upsertConversationByWaId` ne réinitialise pas le détenteur.** Mutation : ajouter `control_owner` au
-   `DO UPDATE` doit faire échouer ce test.
-3. **Une conversation absente vaut `app_workflow`.** Cas de la campagne vers un contact qui n'a jamais écrit.
-4. **Le garde vaut aussi pour `mba`**, pas seulement pour `app_human`.
-5. **Le webhook `standby` ne fait pas répondre le scénario** (celui-là protège du pire scénario MBA).
-6. **Le garde-fou d'inactivité ne libère que ce qui est trop vieux**, et jamais une conversation active.
-
-Fakes à mettre à jour, ils implémentent des interfaces en dur et cassent à la compilation dès qu'une clé
-est ajoutée : `tests/http-rbac.test.ts`, `tests/auth-live-state.test.ts`, `tests/http-campaigns.test.ts`,
+Fakes à mettre à jour, ils cassent à la compilation dès qu'une clé est ajoutée :
+`tests/http-rbac.test.ts`, `tests/auth-live-state.test.ts`, `tests/http-campaigns.test.ts`,
 `tests/contacts.test.ts`, plus les suites d'inbox et de workflow.
 
 ## Ordre de déploiement
 
-Migration ADD-only, donc **migrer avant de déployer**. Rappel du piège documenté dans `DEPLOY.md` : le
-`compose run` de migration part de l'IMAGE, pas du disque, donc `docker compose build mba-api` d'abord,
-sinon `migrate` répond « à jour, rien à appliquer » avec aplomb sans rien avoir appliqué.
+Migrations ADD-only, donc **migrer avant de déployer**, 0040 avec A.1/A.2/A.4 et 0041 avec A.5.
+
+Rappel du piège de `DEPLOY.md` : le `compose run` de migration part de l'**image**, pas du disque. Donc
+`docker compose build mba-api` d'abord, sinon `migrate` répond « à jour, rien à appliquer » avec aplomb
+sans rien avoir appliqué.
