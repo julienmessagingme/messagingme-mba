@@ -1,4 +1,4 @@
-# PLAN.md : plan global (au 2026-07-20)
+# PLAN.md : plan global (au 2026-07-21)
 
 Vue unique de tout ce qui reste, audit de scalabilité **et** lot de features confondus.
 Source des constats : `AUDIT-SCALE-2026-07-18.md` (les références Bn et « Railway n » y renvoient).
@@ -14,14 +14,14 @@ Pour une session qui démarre sans contexte.
 
 1. **`docs/MBA-ARCHITECTURE.md`** (10 min). Ce que MBA implique pour notre code, et pourquoi le
    chantier n° 1 se construit sans attendre Meta. C'est le document qui donne le sens du reste.
-2. **Ce fichier**, section « Bloc A » ci-dessous, puis les blocs 1, 3, 4, 5.
+2. **Ce fichier**, section « Bloc 1 » (le prochain chantier), puis 3, 4, 5.
 3. **`docs/MBA-API-REFERENCE.md`** seulement quand on code un appel MBA. 3 700 lignes, à consulter
    par chapitre, jamais en entier.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-20** : blocs 0 et 2 livrés et déployés en production (922 tests). Il reste le
-bloc A ci-dessous, puis 1, 3, 4, 5.
+**État au 2026-07-21** : blocs 0 et 2 livrés, bloc A aux 3/5, tout déployé en production (964 tests).
+**Prochain chantier : le bloc 1, sécurité.** Puis A.3 et A.5 (qui attendent MBA), puis 3, 4, 5.
 
 ---
 
@@ -72,30 +72,27 @@ apporte et que Meta ne fera pas.
 
 ---
 
-## Bloc A : le socle du passage de main (2 à 3 jours), À FAIRE EN PREMIER
+## ✅ Bloc A : FAIT aux 3/5 (2026-07-21), déployé en production
 
-**Pourquoi en premier, avant même la sécurité** : ces trois briques corrigent un bug qui existe
-**aujourd'hui en production**, elles se testent et se démontrent immédiatement, elles ne dépendent
-d'aucune acceptation de ToS, et elles sont la fondation de ce que Julien a désigné comme la
-plus-value centrale du produit. Le pourquoi est dans `docs/MBA-ARCHITECTURE.md`.
+**A.1, A.2 et A.4 sont livrés et déployés** (migrations 0040 et 0041 appliquées). Le bug de production
+est corrigé : un opérateur qui répond dans l'inbox gèle le scénario sur cette conversation.
 
-> **➡️ Le plan d'exécution détaillé est dans `docs/PLAN-BLOC-A.md` (version 2).** Migrations prêtes à
-> copier, points d'insertion avec numéros de ligne vérifiés, pièges, tests. **Le lire avant de coder.**
->
-> La v1 a été soumise à une chasse aux pièges : 29 trouvés, 25 confirmés, **13 bloquants**, dont trois
-> trous réels de ma part. **L'ordre du tableau ci-dessous est périmé**, le bon ordre est celui de la v2 :
-> **A.1 (élargi) → A.2 (élargi) → A.4 → A.3 → A.5 (réécrit)**. A.4 remonte et part dans le même
-> déploiement que A.2 : une capacité de gel sans sa soupape ne doit pas aller en production.
+| # | État | Quoi |
+|---|---|---|
+| A.1 | ✅ | `control_owner` sur `conversations` (app_workflow / app_human / mba) + `control_changed_at`. Pose sur les deux familles d'émetteurs. Badge dans l'inbox, bouton « Rendre la main », réglage de la durée sur l'Accueil |
+| A.2 | ✅ | Gel du scénario en DEUX points : `advance()` et `runFrom()` (ce dernier couvre `start` et `startFromNode`, qui envoient sans rien demander) |
+| A.4 | ✅ | Garde-fou d'inactivité (`src/inbox/control-sweep.ts`), délai réglable **par client** (`tenant_settings.control_handback_seconds`), défaut serveur 2 h |
+| A.3 | 🔲 | Consommer `standby` et `messaging_handovers`. **Le module existe** (`src/webhooks/handover.ts`, câblé et testé), mais il est INERTE tant que MBA n'est actif nulle part. Il reste à confronter la forme devinée du payload au réel |
+| A.5 | 🔲 | Intention de campagne (qui reprend la main après l'envoi). Voir `docs/PLAN-BLOC-A.md` §A.5, réécrit après la chasse aux pièges |
 
-| # | Action | Pourquoi | Effort |
-|---|---|---|---|
-| A.1 | **État de contrôle par conversation** : un détenteur parmi `app_workflow`, `app_human`, `mba`. Colonne sur `conversations`, posée à chaque envoi sortant (envoyer PREND le contrôle, il n'existe pas d'action `take`), recalée sur `messaging_handovers` | Le système n'a aucune notion de qui détient une conversation. C'est le manque structurant, MBA ou pas | M |
-| A.2 | **Exclusion humain / workflow** : `processWorkflowAdvance` (`src/webhooks/workflow-advance.ts`) doit refuser d'avancer quand le détenteur est `app_human` | **Bug réel en production** : aujourd'hui un humain répond dans l'inbox pendant que le workflow envoie sa suite, les deux écrivent au client | S |
-| A.3 | **Consommer `standby` et `messaging_handovers`** : ils sont typés dans `parse.ts` mais rien ne les lit en aval. Recaler l'état de contrôle, afficher les échanges vus en standby dans l'inbox | Le jour où MBA s'allume, la prod cesse **silencieusement** de voir les conversations. Aucune erreur levée | M |
-| A.4 | **Garde-fou d'inactivité** : rendre la main automatiquement au bout d'un délai configurable | Il n'existe **aucun** release automatique côté Meta. Contrôle jamais rendu (opérateur parti, crash) = conversation bloquée et MBA muet, indéfiniment | S |
-| A.5 | **Déclaration du détenteur visé par campagne** (cf. décision ci-dessus), défaut déduit de la forme, surchargeable | C'est l'écran qui matérialise « ça je fais répondre automatiquement, ça non » | M |
+**Ce qui a été RETIRÉ en cours de route, décision de Julien** : le garde qui bloquait les campagnes vers
+un contact tenu par un opérateur. Une campagne est un acte délibéré de l'entreprise, pas la continuation
+automatique d'un scénario. La règle est « un humain a la main, le scénario se tait », rien de plus.
 
-A.1 et A.2 se font ensemble et livrent seuls la valeur. A.5 dépend de A.1.
+**À vérifier au premier test MBA réel** (rien de tout ça n'est documenté par Meta) : la forme exacte des
+payloads `standby` et `messaging_handovers` (chercher `handover_recu` et `standby_echo` dans les logs du
+worker, le payload complet y est journalisé), si un envoi sortant prend le contrôle du fil, ce que fait
+un `release` quand on ne détient pas le contrôle, et le délai avant que MBA reprenne effectivement.
 
 ---
 

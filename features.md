@@ -211,6 +211,21 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Inbox
 
+- ✅ **Qui répond à ce client, à cet instant** (2026-07-21). Une conversation appartient à un seul
+  répondeur à la fois : le **scénario** (automatique), un **opérateur** (quelqu'un s'en occupe), ou
+  demain l'**agent de Meta**. Un badge le dit dans la liste et dans le fil, et n'apparaît que quand ce
+  n'est PAS le scénario : c'est l'exception qui doit se voir.
+- ✅ **Répondre depuis l'inbox met le scénario en pause** sur cette conversation. Avant, l'opérateur et
+  le scénario pouvaient écrire au client en même temps, et le client recevait deux messages sans
+  rapport. Le scénario n'est pas abandonné, il reprend là où il en était.
+- ✅ **Bouton « Rendre la main »** dans le fil, quand un opérateur détient la conversation. Le scénario
+  repart immédiatement, sans attendre le délai.
+- ✅ **Délai de reprise réglable par espace** (page Accueil, en minutes). Passé ce délai sans que
+  personne ne rende la main, la conversation repart toute seule : un onglet fermé ou un opérateur parti
+  ne bloquent jamais un client indéfiniment. Vide = 2 heures. `0` = jamais de reprise automatique, la
+  main reste à l'opérateur jusqu'à ce qu'il la rende.
+
+
 - ✅ **Conversations** : réponse texte dans la fenêtre de service 24 h ; hors fenêtre, envoi d'un template
   approuvé (seul moyen de re-contacter). Formulaires Flow remplis affichés en clair.
 - ✅ **Rafraîchissement automatique** : la liste (~15 s) et le fil ouvert (~4 s) se mettent à jour tout seuls,
