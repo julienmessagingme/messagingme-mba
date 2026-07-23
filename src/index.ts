@@ -26,6 +26,7 @@ import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
+import { resolveRatePerMinute } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList } from './crm/hubspot-import';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaTemplateClient } from './meta/templates';
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
       deleteDraftCampaign: (id, tenant) => repo.deleteDraftCampaign(id, tenant),
       getCampaignDetail: (id, tenant) => repo.getCampaignDetail(id, tenant),
       listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
+      defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
     },
     templates: {
       templates: new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION),
@@ -384,7 +386,8 @@ async function main(): Promise<void> {
         createContactByPhone: (tenant, phone) => contactStore.upsertByPhoneReturningId({ tenantId: tenant, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown' }),
         listContactsForBuildByIds: (tenant, ids) => repo.listContactsForBuildByIds(tenant, ids),
         createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
-        enqueue: (campaignId, count, rate) => enqueueCampaignRun(queue, campaignId, count, rate),
+        enqueue: (campaignId, count, rate) =>
+          enqueueCampaignRun(queue, campaignId, count, resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE)),
         idempotencyClaim: (tenant, key) => idempotencyStore.claim(tenant, key),
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),

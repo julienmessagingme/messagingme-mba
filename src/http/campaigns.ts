@@ -5,7 +5,7 @@ import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
-import { campaignJobExpireSeconds } from '../campaign/pacing';
+import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
 import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
@@ -40,6 +40,10 @@ export interface CampaignRouteDeps {
   deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
+  /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. Doit être le MÊME que celui
+   *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
+   *  throttle réel voient le même débit. Absent (tests) -> 0 = opt-out, comme avant ce défaut. */
+  defaultRatePerMinute?: number;
 }
 
 const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
@@ -203,7 +207,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // Lancement IMMÉDIAT. Dimensionne l'expiration du job sur le travail réel (nb destinataires en attente /
     // débit choisi) : un run throttlé long ne doit pas expirer et être rejoué en parallèle. Absent -> défaut file.
     const sizing = await deps.getRunSizing(campaignId);
-    const expireInSeconds = sizing ? campaignJobExpireSeconds(sizing.pendingCount, sizing.ratePerMinute) : undefined;
+    const expireInSeconds = sizing
+      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
+      : undefined;
     // singletonKey = campaignId : deux POST /run concurrents n'empilent pas deux jobs pour
     // la même campagne (le claim par destinataire est le garde-fou primaire, ceci le double).
     await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });

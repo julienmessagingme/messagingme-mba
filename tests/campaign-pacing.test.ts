@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { campaignJobExpireSeconds } from '../src/campaign/pacing';
+import { campaignJobExpireSeconds, resolveRatePerMinute } from '../src/campaign/pacing';
 
 /**
  * Lot 8 Phase 4 : dimensionnement du timeout d'un job campaign-run. Un timeout FIXE (ex. 7200 s) ne couvre
@@ -35,5 +35,46 @@ describe('campaignJobExpireSeconds', () => {
 
   it('monotone : plus de destinataires -> timeout >= (jamais plus petit)', () => {
     expect(campaignJobExpireSeconds(2000, 10)).toBeGreaterThanOrEqual(campaignJobExpireSeconds(1000, 10));
+  });
+});
+
+describe('resolveRatePerMinute (débit effectif partagé run-job / pacing)', () => {
+  it('rate posé sur la campagne -> prime sur le défaut serveur', () => {
+    expect(resolveRatePerMinute(60, 30)).toBe(60);
+    expect(resolveRatePerMinute(15, 30)).toBe(15);
+  });
+
+  it('rate null -> défaut serveur', () => {
+    expect(resolveRatePerMinute(null, 30)).toBe(30);
+  });
+
+  it('rate null + défaut serveur 0 (opt-out) -> 0 (aucun frein)', () => {
+    expect(resolveRatePerMinute(null, 0)).toBe(0);
+  });
+
+  it('rate <= 0 traité comme non posé -> défaut serveur', () => {
+    expect(resolveRatePerMinute(0, 30)).toBe(30);
+    expect(resolveRatePerMinute(-5, 30)).toBe(30);
+  });
+});
+
+describe('alignement pacing / run-job (pas de rejeu parallèle)', () => {
+  // Le piège : pacing et run-job doivent voir le MÊME débit. Si un défaut serveur < 30 est appliqué au run
+  // (run-job throttle), pacing doit l'estimer avec CE débit, pas avec son plancher de 30 (qui sous-estimerait la
+  // durée -> expireInSeconds trop court -> pg-boss rejoue en parallèle). On passe donc le rate RÉSOLU à pacing.
+  it('défaut serveur 15/min : la durée est estimée à 15/min, pas au plancher 30', () => {
+    const resolu = resolveRatePerMinute(null, 15); // = 15
+    const expire15 = campaignJobExpireSeconds(600, resolu);
+    const expire30 = campaignJobExpireSeconds(600, 30);
+    // 600 à 15/min = 2400 s de run ; à 30/min = 1200 s. L'estimation à 15 doit être STRICTEMENT plus grande
+    // que celle à 30, sinon le run réel (15/min) dépasserait un timeout dimensionné pour 30/min.
+    expect(expire15).toBeGreaterThan(expire30);
+    // Et elle couvre bien la durée réelle du run à 15/min (2400 s), avec marge.
+    expect(expire15).toBeGreaterThanOrEqual(2400);
+  });
+
+  it('défaut serveur >= 30 : pacing et run-job convergent (le plancher 30 ne mord jamais sur un rate positif)', () => {
+    // resolu = 30 ; effectiveRate = 30 ; identique au cas opt-out estimé à 30. Pas de sous-dimensionnement.
+    expect(campaignJobExpireSeconds(1000, resolveRatePerMinute(null, 30))).toBe(campaignJobExpireSeconds(1000, 30));
   });
 });

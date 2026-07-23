@@ -7,7 +7,9 @@ import type { Queue } from '../queue/queue';
  * dimensionné sur le travail réel (nb destinataires / débit) pour qu'un run throttlé long n'expire pas et
  * ne soit pas rejoué en parallèle.
  */
-export async function enqueueCampaignRun(queue: Queue, campaignId: string, pendingCount: number, ratePerMinute: number | null): Promise<void> {
-  const expireInSeconds = campaignJobExpireSeconds(pendingCount, ratePerMinute);
+export async function enqueueCampaignRun(queue: Queue, campaignId: string, pendingCount: number, resolvedRatePerMinute: number | null): Promise<void> {
+  // `resolvedRatePerMinute` = le débit DÉJÀ résolu par l'appelant (resolveRatePerMinute) : rate de la campagne
+  // sinon défaut serveur. pacing doit voir ce même débit que celui qu'appliquera run-job (sinon rejeu parallèle).
+  const expireInSeconds = campaignJobExpireSeconds(pendingCount, resolvedRatePerMinute);
   await queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, expireInSeconds });
 }

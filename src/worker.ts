@@ -251,6 +251,9 @@ async function main(): Promise<void> {
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
+      // Frein par défaut des campagnes sans ratePerMinute (0 = opt-out). Injecté ICI seulement : les tests de
+      // câblage de run-job ne le passent pas, donc une campagne à rate null y reste en opt-out (aucun frein).
+      defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
       // firstTemplateParams = variables du 1er template déjà résolues par contact (paramMapping de la campagne).
       startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) => {
@@ -351,6 +354,7 @@ async function main(): Promise<void> {
         listDue: () => repo.listDueScheduled(),
         enqueueRun: (id, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { singletonKey: id, expireInSeconds }),
         markRunning: (id) => repo.markScheduledRunning(id),
+        defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
       });
       // eslint-disable-next-line no-console
       if (n > 0) console.log(`schedule-sweep: ${n} campagne(s) programmée(s) lancée(s)`);

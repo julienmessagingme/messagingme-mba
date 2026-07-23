@@ -202,6 +202,62 @@ describe('campaignRunJob', () => {
     expect(acquires).toBe(1); // le limiteur statique fourni est utilisé tel quel
   });
 
+  it('défaut serveur : ratePerMinute null + defaultRatePerMinute 30 -> limiteur construit à 2000 ms, acquire par destinataire', async () => {
+    const intervals: number[] = [];
+    let acquires = 0;
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+      { id: 'r2', contactId: 'y', toE164: '+33622', resolvedParams: [], status: 'pending' },
+    ]);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        recipients,
+        defaultRatePerMinute: 30, // le worker l'injecte en prod ; ici on prouve qu'il freine une campagne sans rate
+        makeRateLimiter: (ms) => { intervals.push(ms); return { acquire: async () => { acquires += 1; } }; },
+      }),
+    );
+    expect(report.sent).toBe(2);
+    expect(intervals).toEqual([2000]); // ceil(60000/30), le défaut serveur s'applique comme un rate posé
+    expect(acquires).toBe(2);
+  });
+
+  it('défaut serveur : le rate posé sur la campagne PRIME sur le défaut serveur', async () => {
+    const intervals: number[] = [];
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => ({ ...campaign, ratePerMinute: 60 }),
+        recipients,
+        defaultRatePerMinute: 30,
+        makeRateLimiter: (ms) => { intervals.push(ms); return { acquire: async () => {} }; },
+      }),
+    );
+    expect(intervals).toEqual([1000]); // ceil(60000/60), le 60 de la campagne l'emporte sur le défaut 30
+  });
+
+  it('défaut serveur : defaultRatePerMinute 0 (opt-out) + ratePerMinute null -> aucun limiteur', async () => {
+    let made = 0;
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => ({ ...campaign, ratePerMinute: null }),
+        recipients,
+        defaultRatePerMinute: 0, // opt-out explicite : le défaut serveur désactivé remet le plein régime
+        makeRateLimiter: () => { made += 1; return { acquire: async () => {} }; },
+      }),
+    );
+    expect(made).toBe(0); // aucun frein construit
+    expect(report.sent).toBe(1);
+  });
+
   it('campagne inconnue -> throw', async () => {
     await expect(
       campaignRunJob({ campaignId: 'nope' }, deps({ getCampaign: async () => null })),

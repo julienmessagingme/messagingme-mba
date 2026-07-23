@@ -1,4 +1,4 @@
-import { campaignJobExpireSeconds } from './pacing';
+import { campaignJobExpireSeconds, resolveRatePerMinute } from './pacing';
 
 export interface ScheduleSweepDeps {
   /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. */
@@ -7,6 +7,10 @@ export interface ScheduleSweepDeps {
   enqueueRun(campaignId: string, expireInSeconds: number): Promise<void>;
   /** Passe la campagne 'scheduled' -> 'running' (garde status, anti-re-liste). Idempotent. */
   markRunning(campaignId: string): Promise<boolean>;
+  /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. MÊME valeur qu'au worker et à
+   *  la route campagnes, pour que l'estimation d'expiration voie le débit réel qu'appliquera run-job. Absent
+   *  (tests) -> 0 = opt-out. */
+  defaultRatePerMinute?: number;
 }
 
 /**
@@ -23,7 +27,10 @@ export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise
   let launched = 0;
   for (const c of due) {
     try {
-      await deps.enqueueRun(c.id, campaignJobExpireSeconds(c.pendingCount, c.ratePerMinute));
+      await deps.enqueueRun(
+        c.id,
+        campaignJobExpireSeconds(c.pendingCount, resolveRatePerMinute(c.ratePerMinute, deps.defaultRatePerMinute ?? 0)),
+      );
       await deps.markRunning(c.id);
       launched += 1;
     } catch (err) {

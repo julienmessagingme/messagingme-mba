@@ -34,6 +34,14 @@ export const schema = z.object({
   DRY_RUN: z.string().default('false'),
   /** Un destinataire `sending` plus vieux que ça est ramené à `pending` par le sweeper (ms). */
   STALE_SENDING_MS: z.coerce.number().default(15 * 60 * 1000),
+  /**
+   * Débit par défaut (messages/minute) d'une campagne SANS ratePerMinute explicite. Avant ce défaut, une telle
+   * campagne partait à plein régime (aucun frein). 30/min lisse le burst et protège la réputation du numéro, très
+   * loin du plafond API Meta (~80 msg/s). Mettre à 0 (ou vide) = opt-out : retour au comportement « aucun frein ».
+   * ⚠️ Doit rester >= le plancher de pacing.ts (30) sous peine de sous-dimensionner expireInSeconds ; en dessous,
+   * pacing résout le MÊME défaut via resolveRatePerMinute, donc l'estimation reste alignée sur le débit réel.
+   */
+  CAMPAIGN_DEFAULT_RATE_PER_MINUTE: z.coerce.number().int().min(0).max(80).default(30),
   /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   DATABASE_URL: z.string().default(''),
