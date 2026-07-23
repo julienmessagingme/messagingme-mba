@@ -50,3 +50,31 @@ jobs:
         run: npm run migrate
       - name: Tests d'intégration (pg-boss + stores + e2e contre Postgres éphémère)
         run: npm run test:integration
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          # Même version que l'image de production (node:22-alpine, web/Dockerfile).
+          node-version: 22
+          cache: npm
+          # Sans ce chemin, la clé de cache serait calculée sur le lockfile RACINE et raterait
+          # l'invalidation quand les deps de web/ changent.
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # Build AVANT tsc : next build régénère next-env.d.ts (gitignore) et .next/types, sans lesquels
+      # tsc plante sur des types fantômes. Le build fait déjà le type-check ET la passe ESLint de Next
+      # (qui n'échoue que sur des erreurs, pas des warnings). Aucun BACKEND_URL requis (fallback next.config.mjs).
+      - name: Build Next (type-check + lint inclus)
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Lint (next/core-web-vitals)
+        run: npm run lint
+      - name: Type-check exhaustif
+        run: npx tsc --noEmit
