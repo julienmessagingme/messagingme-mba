@@ -680,6 +680,17 @@ export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Prom
   return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
 }
 
+/**
+ * Demande au backend un lien d'install/re-consentement HubSpot SIGNÉ (le tenant est dans la signature, plus dans
+ * un `?tenant=` en clair forgeable). Route admin-only ; le tenant vient du JWT. `grant='lists'` pour le re-consentement.
+ */
+export function getHubspotInstallLink(tenantId: string, grant?: 'lists'): Promise<{ installUrl: string }> {
+  return request(`/tenants/${tenantId}/hubspot/install-link`, {
+    method: 'POST',
+    body: JSON.stringify(grant ? { grant } : {}),
+  });
+}
+
 /** Durée du gel après qu'un opérateur a pris la main, en secondes. null = défaut du serveur, 0 = jamais
  *  de reprise automatique (l'opérateur garde la main jusqu'à ce qu'il la rende). */
 export function setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<{ controlHandbackSeconds: number | null }> {

@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
+import { TenantConflictError } from '../account/es-store.pg';
 
 export interface EmbeddedSignupRouteDeps {
   /** config_id de la configuration ES (dashboard Meta, Facebook Login for Business). Vide -> feature OFF. */
@@ -81,8 +82,17 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     }
 
     const warnings: string[] = [];
-    // 3. Rattachement au workspace (réaffecte si le numéro était sur un autre workspace).
-    await deps.link({ tenantId: tenant, wabaId, phoneNumberId, displayPhoneNumber: phone.displayPhoneNumber, verifiedName: phone.verifiedName });
+    // 3. Rattachement au workspace. Un WABA/numéro déjà rattaché à un AUTRE workspace est REFUSÉ (409), pas réaffecté
+    //    en silence : on interrompt AVANT d'abonner les webhooks, de register ou de stocker le token. La migration
+    //    volontaire d'un numéro entre workspaces passe par le chemin admin dédié, pas par l'Embedded Signup.
+    try {
+      await deps.link({ tenantId: tenant, wabaId, phoneNumberId, displayPhoneNumber: phone.displayPhoneNumber, verifiedName: phone.verifiedName });
+    } catch (err) {
+      if (err instanceof TenantConflictError) {
+        return reply.code(409).send({ error: 'ce numéro ou ce WABA est déjà rattaché à un autre workspace' });
+      }
+      throw err;
+    }
 
     // 4. Webhooks du WABA -> notre app (idempotent). Échec = averti (sans webhooks : ni statuts ni réponses).
     try {

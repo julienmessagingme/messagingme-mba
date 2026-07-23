@@ -97,6 +97,10 @@ export class PgConversationAnalysisStore {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
+      // NB : ce `on conflict do update set tenant_id` a le même motif syntaxique que les upserts de l'Embedded Signup
+      // (es-store.pg.ts), mais N'EST PAS un vecteur de réaffectation inter-tenant : la clé de conflit est
+      // conversation_id, et une conversation appartient à un seul tenant, stable (save() reçoit le tenantId de la
+      // conversation elle-même). La réaffectation est donc un no-op, pas un hijack. Aucune garde `where` nécessaire ici.
       await client.query(
         `insert into conversation_analysis
            (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, entities,

@@ -25,6 +25,7 @@ import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
 import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { resolveScenario } from '../../src/ids/resolve';
 import { PgTenantSettingsStore } from '../../src/settings/store.pg';
+import { PgEmbeddedSignupStore, TenantConflictError } from '../../src/account/es-store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -695,6 +696,43 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       ['pn-red', tenantId],
     );
     expect(await quality.getRating('pn-red')).toBe('RED');
+  });
+
+  it('PgEmbeddedSignupStore : refuse de réaffecter un numéro/WABA à un autre workspace (TenantConflictError, ligne inchangée)', async () => {
+    const es = new PgEmbeddedSignupStore(pool);
+    const other = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-other') returning id`)).rows[0]!.id;
+    const wabaId = 'waba-es-conflict';
+    const pnId = 'pn-es-conflict';
+    try {
+      // Tenant A rattache le numéro : OK.
+      await es.linkTenant({ tenantId, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33500000000', verifiedName: 'A' });
+      // Tenant B tente de le réclamer : REFUS (pas de réaffectation silencieuse).
+      await expect(
+        es.linkTenant({ tenantId: other, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33511111111', verifiedName: 'B' }),
+      ).rejects.toBeInstanceOf(TenantConflictError);
+      // La ligne reste au tenant A (aucune bascule, aucun écrasement du display par B).
+      const row = (await pool.query<{ tenant_id: string; display_phone_number: string }>(
+        `select tenant_id, display_phone_number from phone_numbers where id = $1`, [pnId],
+      )).rows[0]!;
+      expect(row.tenant_id).toBe(tenantId);
+      expect(row.display_phone_number).toBe('+33500000000');
+      // Ré-onboarding LÉGITIME (même tenant A) : conflit d'id mais même tenant -> la garde laisse passer (rowCount 1),
+      // pas de TenantConflictError, et le display est bien mis à jour. C'est le point subtil de la garde `where`.
+      await es.linkTenant({ tenantId, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33522222222', verifiedName: 'A2' });
+      const reonboard = (await pool.query<{ tenant_id: string; display_phone_number: string }>(
+        `select tenant_id, display_phone_number from phone_numbers where id = $1`, [pnId],
+      )).rows[0]!;
+      expect(reonboard.tenant_id).toBe(tenantId);
+      expect(reonboard.display_phone_number).toBe('+33522222222');
+      // saveCredentials refuse aussi pour un autre tenant.
+      await es.saveCredentials(wabaId, tenantId, 'enc-A', null);
+      await expect(es.saveCredentials(wabaId, other, 'enc-B', null)).rejects.toBeInstanceOf(TenantConflictError);
+    } finally {
+      await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
+      await pool.query('delete from phone_numbers where id = $1', [pnId]);
+      await pool.query('delete from waba where id = $1', [wabaId]);
+      await pool.query('delete from tenants where id = $1', [other]);
+    }
   });
 
   it('reclaimStale : un `sending` trop vieux est ramené à `pending`', async () => {

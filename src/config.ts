@@ -123,8 +123,13 @@ export const schema = z.object({
   CONNECTOR_PUSH_SECRET: z.string().default(''),
   /** URL du canal SERVICE du connecteur (mba interroge les listes HubSpot, ex. http://mm-hubspot-api:8096). Vide -> import HubSpot INERTE (routes non montées). */
   HUBSPOT_SERVICE_URL: z.string().default(''),
-  /** Secret HMAC du canal service (== SERVICE_SECRET de mm-hubspot). Signe les appels /service/*. */
+  /** Secret HMAC du canal service (== SERVICE_SECRET de mm-hubspot). Signe les appels /service/*. Sert aussi à signer
+   *  le jeton d'install `/oauth/install?t=` (le tenant n'est plus passé en clair dans l'URL du lien HubSpot). */
   HUBSPOT_SERVICE_SECRET: z.string().default(''),
+  /** Origine PUBLIQUE du connecteur (ex. https://mm-hubspot.messagingme.app), celle que le NAVIGATEUR ouvre pour
+   *  l'install/re-consentement HubSpot. DISTINCTE de HUBSPOT_SERVICE_URL (URL interne Docker, injoignable du navigateur).
+   *  Vide -> la route de lien d'install répond 503 (le front garde son bouton mais l'action indique l'indisponibilité). */
+  HUBSPOT_CONNECTOR_PUBLIC_URL: z.string().default(''),
 }).superRefine((c, ctx) => {
   // Fail-fast en PRODUCTION si le secret JWT est faible/par défaut : sinon un déploiement
   // qui oublie AUTH_SECRET démarre sur une constante publique -> JWT admin forgeables

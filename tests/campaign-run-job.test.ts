@@ -258,6 +258,53 @@ describe('campaignRunJob', () => {
     expect(report.sent).toBe(1);
   });
 
+  it('garde d appartenance : numéro réaffecté à un autre tenant -> aucun envoi, rapport paused', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => campaign,
+        senderFor: () => sender,
+        recipients,
+        phoneNumberBelongsToTenant: async () => false, // le numéro n'appartient plus au tenant
+      }),
+    );
+    expect(report).toMatchObject({ sent: 0, paused: true });
+    expect(report.reason).toMatch(/rattaché/);
+    expect(sender.calls).toEqual([]); // rien n'est parti
+  });
+
+  it('garde d appartenance : numéro toujours rattaché -> envoi normal', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => campaign,
+        senderFor: () => sender,
+        recipients,
+        phoneNumberBelongsToTenant: async () => true,
+      }),
+    );
+    expect(report.sent).toBe(1);
+    expect(sender.calls).toEqual(['+33611']);
+  });
+
+  it('garde d appartenance ABSENTE (deps de test sans la garde) -> envoi normal, e2e non cassé', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    // deps() n'injecte PAS phoneNumberBelongsToTenant : la garde est sautée, comportement d'avant préservé.
+    const report = await campaignRunJob({ campaignId: 'c1' }, deps({ getCampaign: async () => campaign, senderFor: () => sender, recipients }));
+    expect(report.sent).toBe(1);
+  });
+
   it('campagne inconnue -> throw', async () => {
     await expect(
       campaignRunJob({ campaignId: 'nope' }, deps({ getCampaign: async () => null })),

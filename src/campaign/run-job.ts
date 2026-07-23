@@ -29,6 +29,13 @@ export interface RunJobDeps {
    * à rate null reste en opt-out (aucun frein), donc les tests de câblage existants ne changent pas.
    */
   defaultRatePerMinute?: number;
+  /**
+   * Revalide que le numéro d'envoi de la campagne appartient toujours à son tenant, juste avant d'envoyer. Défense
+   * contre une réaffectation de numéro survenue entre la création de la campagne et son exécution. OPTIONNEL :
+   * absent des deps, la garde est sautée (les tests et l'e2e qui n'insèrent pas de ligne phone_numbers ne cassent
+   * pas). Le worker l'injecte en prod.
+   */
+  phoneNumberBelongsToTenant?: (phoneNumberId: string, tenantId: string) => Promise<boolean>;
   /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'un envoi template).
    *  `firstTemplateParams` = variables du 1er template déjà résolues par contact (transmises à l'envoi). */
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void>;
@@ -54,6 +61,13 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   }
   const campaign = await deps.getCampaign(campaignId);
   if (!campaign) throw new Error(`campaign-run : campagne inconnue ${campaignId}`);
+
+  // Garde d'appartenance du numéro (optionnelle, injectée en prod par le worker). Si le numéro a été réaffecté à un
+  // autre tenant depuis la création de la campagne, on n'envoie RIEN et on remonte la raison dans le rapport (pas de
+  // colonne dédiée) plutôt que d'envoyer depuis un numéro qui n'est plus le nôtre.
+  if (deps.phoneNumberBelongsToTenant && !(await deps.phoneNumberBelongsToTenant(campaign.phoneNumberId, campaign.tenantId))) {
+    return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'numéro non rattaché à ce workspace (réaffecté ?)' };
+  }
 
   // Débit PAR CAMPAGNE : le rate posé sur la campagne prime ; à défaut, le défaut serveur (deps, absent en test
   // -> opt-out préservé). Un rate résolu > 0 instancie un RateLimiter dédié à CE run (intervalle minimal =

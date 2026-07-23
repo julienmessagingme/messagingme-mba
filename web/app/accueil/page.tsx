@@ -8,7 +8,7 @@ import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
   setHubspotListsEnabled as saveHubspotListsEnabled,
-  setControlHandbackSeconds,
+  setControlHandbackSeconds, getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
@@ -173,6 +173,24 @@ function AccueilInner({ session }: { session: Session }) {
       setHubspotListsEnabled(!next); // rollback
     } finally {
       setSavingLists(false);
+    }
+  }
+
+  const [installPending, setInstallPending] = useState(false);
+  /**
+   * Ouvre le lien d'install/re-consentement HubSpot. Le lien est demandé au backend (route admin-only), qui y met un
+   * jeton SIGNÉ : le tenant n'est plus passé en clair dans l'URL (elle était forgeable). On ouvre ensuite l'URL renvoyée.
+   */
+  async function openHubspotInstall(grant?: 'lists') {
+    if (!isAdmin || installPending) return;
+    setInstallPending(true);
+    try {
+      const { installUrl } = await getHubspotInstallLink(session.tenantId, grant);
+      window.open(installUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      alert(t("Impossible de générer le lien HubSpot pour le moment.", 'Could not generate the HubSpot link right now.'));
+    } finally {
+      setInstallPending(false);
     }
   }
 
@@ -350,14 +368,14 @@ function AccueilInner({ session }: { session: Session }) {
                     {/* Activé mais scope crm.lists.read pas encore accordé -> CTA de re-consentement CIBLÉ (ajoute le
                         scope à CE portail uniquement, sans re-solliciter les autres). */}
                     {isAdmin && hubspotListsEnabled && !account.hubspotPortal.listsScopeGranted && (
-                      <a
-                        href={`https://mm-hubspot.messagingme.app/oauth/install?tenant=${encodeURIComponent(session.tenantId)}&grant=lists`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-flex items-center rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
+                      <button
+                        type="button"
+                        onClick={() => void openHubspotInstall('lists')}
+                        disabled={installPending}
+                        className="mt-2 inline-flex items-center rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100 disabled:opacity-60"
                       >
                         {t("Autoriser l'accès aux listes HubSpot →", 'Authorize access to HubSpot lists →')}
-                      </a>
+                      </button>
                     )}
                     {hubspotListsEnabled && account.hubspotPortal.listsScopeGranted && (
                       <p className="mt-2 text-xs text-ink-500">{t("Accès aux listes autorisé. Choisis une liste HubSpot à l'étape « destinataires » d'une campagne.", "List access authorized. Pick a HubSpot list in a campaign's recipients step.")}</p>
@@ -417,14 +435,14 @@ function AccueilInner({ session }: { session: Session }) {
                     </p>
                   </div>
                   {isAdmin && (
-                    <a
-                      href={`https://mm-hubspot.messagingme.app/oauth/install?tenant=${encodeURIComponent(session.tenantId)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="shrink-0 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+                    <button
+                      type="button"
+                      onClick={() => void openHubspotInstall()}
+                      disabled={installPending}
+                      className="shrink-0 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
                     >
                       {t('Connecter HubSpot', 'Connect HubSpot')}
-                    </a>
+                    </button>
                   )}
                 </div>
               )}

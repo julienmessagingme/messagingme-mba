@@ -4,6 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
+import { TenantConflictError } from '../src/account/es-store.pg';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -97,6 +98,19 @@ describe('POST /embedded-signup/complete', () => {
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(502);
     expect(cap.linked).toHaveLength(0);
+    expect(cap.saved).toHaveLength(0);
+    await server.close();
+  });
+
+  it('numéro déjà rattaché à un AUTRE workspace (link throw TenantConflictError) -> 409, pas de subscribe/register/save', async () => {
+    const { server, cap } = app({
+      link: async () => { throw new TenantConflictError('phone_number', 'pn-1'); },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(409);
+    // le conflit interrompt AVANT les étapes suivantes : rien n'est abonné, registré, ni sauvegardé.
+    expect(cap.subscribed).toHaveLength(0);
+    expect(cap.registered).toHaveLength(0);
     expect(cap.saved).toHaveLength(0);
     await server.close();
   });

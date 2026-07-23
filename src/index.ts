@@ -228,6 +228,12 @@ async function main(): Promise<void> {
           },
         }
       : {}),
+    // Émission du lien d'install/re-consentement HubSpot signé (admin-only). Vide si l'origine publique du connecteur
+    // ou le secret ne sont pas configurés -> la route répond 503, le front garde son bouton.
+    hubspotInstall: {
+      connectorPublicUrl: config.HUBSPOT_CONNECTOR_PUBLIC_URL,
+      serviceSecret: config.HUBSPOT_SERVICE_SECRET,
+    },
     admin: {
       listUsers: (tenant) => userStore.list(tenant),
       setUserRole: (tenant, userId, role) => userStore.setRole(tenant, userId, role),

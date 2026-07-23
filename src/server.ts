@@ -24,6 +24,7 @@ import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
 import { registerHubspotImport } from './http/hubspot-import';
+import { registerHubspotInstall } from './http/hubspot-install';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
@@ -53,6 +54,7 @@ import type { ApiKeysRouteDeps } from './http/api-keys';
 import type { V1ContactsRouteDeps } from './http/v1-contacts';
 import type { V1SendsRouteDeps } from './http/v1-sends';
 import type { HubspotImportRouteDeps } from './http/hubspot-import';
+import type { HubspotInstallRouteDeps } from './http/hubspot-install';
 import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
 
@@ -108,6 +110,8 @@ export interface ServerDeps {
   v1?: { apiKeys: ApiKeyLookup; contacts: V1ContactsRouteDeps; sends?: V1SendsRouteDeps };
   /** Import de listes HubSpot (3e source de campagne) — réservé aux admins. */
   hubspotImport?: HubspotImportRouteDeps;
+  /** Émission du lien d'install/re-consentement HubSpot signé — réservé aux admins. */
+  hubspotInstall?: HubspotInstallRouteDeps;
 }
 
 /**
@@ -116,7 +120,7 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport) && !deps.auth) {
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport || deps.hubspotInstall) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
     throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
@@ -199,6 +203,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
   if (deps.embeddedSignup) registerEmbeddedSignup(app, deps.embeddedSignup, requireAdmin);
   if (deps.hubspotImport) registerHubspotImport(app, deps.hubspotImport, requireAdmin);
+  if (deps.hubspotInstall) registerHubspotInstall(app, deps.hubspotInstall, requireAdmin);
   if (deps.apiKeys) registerApiKeys(app, deps.apiKeys, requireAdmin);
   // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Le rate limiter est un SINGLETON
   // (partagé entre requêtes). Chaque route compose [requireApiKey, requireScope('<scope>')].
