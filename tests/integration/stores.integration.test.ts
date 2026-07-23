@@ -735,6 +735,33 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('PgEmbeddedSignupStore : lecture des credentials + markTokenInvalid (B1)', async () => {
+    const es = new PgEmbeddedSignupStore(pool);
+    const wabaId = 'waba-b1-read';
+    try {
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w') on conflict (id) do nothing`, [wabaId, tenantId]);
+      await es.saveCredentials(wabaId, tenantId, 'enc:TOK_LIVE', null);
+      // Lecture par WABA : token chiffré + état 'active' par défaut (migration 0043).
+      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active' });
+      // Lecture par tenant (jointure waba -> waba_credentials).
+      expect(await es.getCredentialsByTenant(tenantId)).toMatchObject({ wabaId, businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active' });
+      // markTokenInvalid : bascule 'invalid' + pose token_invalid_at, idempotent (garde la 1re date).
+      await es.markTokenInvalid(wabaId);
+      const after = await es.getCredentialsByWaba(wabaId);
+      expect(after?.tokenStatus).toBe('invalid');
+      const firstAt = (await pool.query<{ token_invalid_at: Date }>(`select token_invalid_at from waba_credentials where waba_id = $1`, [wabaId])).rows[0]!.token_invalid_at;
+      expect(firstAt).not.toBeNull();
+      await es.markTokenInvalid(wabaId); // 2e appel : no-op, date inchangée
+      const secondAt = (await pool.query<{ token_invalid_at: Date }>(`select token_invalid_at from waba_credentials where waba_id = $1`, [wabaId])).rows[0]!.token_invalid_at;
+      expect(secondAt).toEqual(firstAt);
+      // WABA inconnu -> null (déclenche le fallback token global côté résolveur).
+      expect(await es.getCredentialsByWaba('waba-inexistant')).toBeNull();
+    } finally {
+      await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
+      await pool.query('delete from waba where id = $1', [wabaId]);
+    }
+  });
+
   it('reclaimStale : un `sending` trop vieux est ramené à `pending`', async () => {
     const repo = new PgCampaignRepo(pool);
     const recipients = new PgRecipientStore(pool);

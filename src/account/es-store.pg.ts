@@ -84,4 +84,46 @@ export class PgEmbeddedSignupStore {
     );
     if ((res.rowCount ?? 0) === 0) throw new TenantConflictError('waba_credentials', wabaId);
   }
+
+  /**
+   * Lit le token business chiffré d'un WABA + son état. null si aucun credential (numéro branché à la main, hors
+   * Embedded Signup) -> l'appelant retombe sur le token global. C'est le chemin de LECTURE qui manquait (le
+   * chiffrement au repos ne servait à rien tant que personne ne relisait le token).
+   */
+  async getCredentialsByWaba(wabaId: string): Promise<{ businessTokenEnc: string; tokenStatus: 'active' | 'invalid' } | null> {
+    const res = await this.pool.query<{ business_token_enc: string; token_status: 'active' | 'invalid' }>(
+      `select business_token_enc, token_status from waba_credentials where waba_id = $1`,
+      [wabaId],
+    );
+    const r = res.rows[0];
+    return r ? { businessTokenEnc: r.business_token_enc, tokenStatus: r.token_status } : null;
+  }
+
+  /** Idem via le tenant (jointure waba -> waba_credentials, on prend le WABA le plus ancien du tenant). */
+  async getCredentialsByTenant(tenantId: string): Promise<{ wabaId: string; businessTokenEnc: string; tokenStatus: 'active' | 'invalid' } | null> {
+    const res = await this.pool.query<{ waba_id: string; business_token_enc: string; token_status: 'active' | 'invalid' }>(
+      `select c.waba_id, c.business_token_enc, c.token_status
+       from waba w
+       join waba_credentials c on c.waba_id = w.id
+       where w.tenant_id = $1
+       order by w.created_at
+       limit 1`,
+      [tenantId],
+    );
+    const r = res.rows[0];
+    return r ? { wabaId: r.waba_id, businessTokenEnc: r.business_token_enc, tokenStatus: r.token_status } : null;
+  }
+
+  /**
+   * Marque le token d'un WABA comme invalide (révoqué/expiré), détecté RÉACTIVEMENT sur une erreur d'auth Meta.
+   * Idempotent. N'écrase pas token_invalid_at si déjà invalide (garde la 1re date). Best-effort côté appelant.
+   */
+  async markTokenInvalid(wabaId: string): Promise<void> {
+    await this.pool.query(
+      `update waba_credentials
+       set token_status = 'invalid', token_invalid_at = coalesce(token_invalid_at, now()), updated_at = now()
+       where waba_id = $1 and token_status <> 'invalid'`,
+      [wabaId],
+    );
+  }
 }
