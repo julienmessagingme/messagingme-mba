@@ -44,7 +44,20 @@ export const schema = z.object({
   CAMPAIGN_DEFAULT_RATE_PER_MINUTE: z.coerce.number().int().min(0).max(80).default(30),
   /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
+  /** URL du pooler Supabase mode SESSION (port 5432). Sert à pg-boss (API + worker) ET, par défaut, au pool
+   *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts, db/backfill-codes.ts)
+   *  lisent CETTE var en direct (jamais APP_DATABASE_URL) -> DDL/seed toujours en session mode, c'est voulu. */
   DATABASE_URL: z.string().default(''),
+  /**
+   * URL du pooler Supabase mode TRANSACTION (port 6543) pour le POOL APPLICATIF (toutes les requêtes des stores,
+   * API + worker). Vide -> repli sur DATABASE_URL (session mode) = comportement d'avant (dégradation SÛRE si oubli).
+   * pg-boss reste IMPÉRATIVEMENT sur DATABASE_URL (session) : il maintient des connexions longues + une maintenance
+   * qui ne survivent pas au transaction pooling (le pooler réassigne le backend entre transactions).
+   * Bénéfice : sort les ~6 clients applicatifs (3 API + 3 worker) du budget SESSION (~15 partagé avec mm-hubspot),
+   * faisant tomber le pire cas de ~18 à ~8, enfin sous le plafond. ⚠️ Sûr car mba est search_path-agnostique
+   * (tables en public par défaut, mmhs TOUJOURS qualifié) et toutes ses transactions passent par un client dédié.
+   */
+  APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /**
    * Budget de connexions Postgres. Le pooler Supabase est en SESSION mode, plafonné à ~15 clients, et il est
