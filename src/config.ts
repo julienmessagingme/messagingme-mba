@@ -105,6 +105,9 @@ export const schema = z.object({
   CONVERSATION_ANALYSIS_BATCH: z.coerce.number().default(20),
   /** Cadence du garde-fou qui rend la main au scénario quand plus personne ne s'occupe d'une conversation. */
   CONTROL_SWEEP_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
+  /** Cadence du balayage de statut/qualité des numéros Meta (item 4.10). Défaut 20 min : 2 GET Graph par numéro
+   *  et par passage, large assez pour ne pas peser sur le rate-limit tant que le parc reste petit. */
+  PHONE_STATUS_SWEEP_INTERVAL_MS: z.coerce.number().default(20 * 60 * 1000),
   /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR revient au scénario. 2 h : assez long pour
    *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
    *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre

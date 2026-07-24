@@ -25,6 +25,10 @@ export type PullResult =
     }
   | { ok: false; authError: boolean };
 
+/** Champs persistables d'un pull réussi (= PullResult ok:true sans le drapeau `ok`). Ce que saveStatus écrit
+ *  en coalesce. Réutilisé par le sweeper de statut (item 4.10) pour typer sa dépendance `save`. */
+export type PhoneStatusPatch = Omit<Extract<PullResult, { ok: true }>, 'ok'>;
+
 /**
  * Mappe la réponse Graph -> PullResult. La qualité est TOUJOURS incluse (normalisée), y compris
  * 'UNKNOWN' : une dégradation GREEN -> UNKNOWN doit pouvoir ÉCRASER l'ancienne valeur en base

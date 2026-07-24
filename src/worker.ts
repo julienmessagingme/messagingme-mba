@@ -35,6 +35,9 @@ import { getEnrichment } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { PgPhoneStatusStore } from './account/store.pg';
+import { pullFromInfo, pullFromError } from './account/pull';
+import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
+import { PgOpsStore } from './ops/store.pg';
 import { MetaClientFactory } from './meta/factory';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
@@ -468,6 +471,50 @@ async function main(): Promise<void> {
   const idempotencySweeper = setInterval(() => void idempotencySweep(), 60 * 60 * 1000);
   idempotencySweeper.unref();
 
+  // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
+  // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les
+  // rafraîchit tous (cross-tenant, lecture Graph seule) et alerte sur jeton invalide / numéro non connecté /
+  // qualité rouge. Palliatif par polling (le temps réel = webhook quality, non câblé, cf. migration 0004).
+  // GATE : sans token Meta global, aucun pull possible (mêmes conditions que la route, index.ts) -> pas de sweep
+  // (évite un faux « AUTH » sur un client vide en dev/test). alertedPhones dédup par TRANSITION (perdu au restart).
+  let statusSweeper: NodeJS.Timeout | null = null;
+  if (config.META_ACCESS_TOKEN) {
+    const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
+    const statusStore = new PgPhoneStatusStore(pool);
+    const alertedPhones = new Map<string, PhoneProblem>();
+    const statusSweep = async (): Promise<void> => {
+      try {
+        const n = await runPhoneStatusSweep({
+          listNumbers: () => opsStore.listNumbersForStatusSweep(),
+          // Pull PAR TENANT (B1, repli global en sommeil) + waba_id DE LA LIGNE (bon WABA en multi-WABA). Un échec
+          // devient un PullResult (pullFromError -> authError), jamais un throw : la garde d'auth reste dérivable.
+          pull: async (num) => {
+            try {
+              const client = await metaFactory.phoneClientForTenant(num.tenantId);
+              const info = await client.get(num.id);
+              const waba = num.wabaId ? await client.getWabaHealth(num.wabaId).catch(() => undefined) : undefined;
+              return pullFromInfo(info, waba);
+            } catch (err) {
+              return pullFromError(err);
+            }
+          },
+          save: (id, patch) => statusStore.saveStatus(id, patch),
+          alert: (msg) => { void sendTelegram(`[mba-worker] ${msg}`); },
+          alertedState: alertedPhones,
+        });
+        // eslint-disable-next-line no-console
+        if (n > 0) console.log(`phone-status-sweep: ${n} alerte(s) de statut numéro`);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('phone-status-sweep erreur:', err instanceof Error ? err.message : err);
+        alert('sweeper:phone-status', `phone-status-sweep en échec : ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    void statusSweep();
+    statusSweeper = setInterval(() => void statusSweep(), config.PHONE_STATUS_SWEEP_INTERVAL_MS);
+    statusSweeper.unref();
+  }
+
   installGracefulShutdown(async () => {
     clearInterval(heartbeat);
     clearInterval(sweeper);
@@ -475,6 +522,7 @@ async function main(): Promise<void> {
     clearInterval(controlSweeper);
     clearInterval(idempotencySweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
+    if (statusSweeper) clearInterval(statusSweeper);
     await queue.stop();
     await pool.end();
   });
