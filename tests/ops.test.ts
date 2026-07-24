@@ -22,14 +22,26 @@ function app(opsToken = OPS, over: Partial<OpsRouteDeps> = {}) {
 const withTok = (t: string) => ({ headers: { 'x-ops-token': t } });
 
 describe('route /ops/overview', () => {
-  it('token correct -> 200 { tenants, daily, queues }', async () => {
+  it('token correct -> 200 { tenants, daily, queues, worker }', async () => {
     const server = app();
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ tenants: unknown[]; daily: unknown[]; queues: unknown[] }>();
+    const body = res.json<{ tenants: unknown[]; daily: unknown[]; queues: unknown[]; worker: unknown }>();
     expect(body.tenants).toHaveLength(1);
     expect(body.daily).toHaveLength(1);
     expect(body.queues).toHaveLength(1);
+    // getWorkerHeartbeat est OPTIONNEL : non fourni par app() -> worker = null, la route ne casse pas.
+    expect(body).toHaveProperty('worker');
+    expect(body.worker).toBeNull();
+    await server.close();
+  });
+
+  it('inclut le heartbeat worker quand le getter est fourni', async () => {
+    const hb = { beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:1', ageSeconds: 12 };
+    const server = app(OPS, { getWorkerHeartbeat: async () => hb });
+    const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ worker: unknown }>().worker).toEqual(hb);
     await server.close();
   });
 

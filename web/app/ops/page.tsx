@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, type OpsOverview, type TenantOverviewRow, type QueueLoadRow } from '@/lib/api';
+import { getOpsOverview, type OpsOverview, type TenantOverviewRow, type QueueLoadRow, type WorkerHeartbeat } from '@/lib/api';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
@@ -105,6 +105,8 @@ export default function OpsPage() {
               <Stat label={t('Contacts', 'Contacts')} value={fmtNum(totalContacts, locale)} />
             </div>
 
+            <WorkerCard worker={data.worker} />
+
             <QueueCard queues={data.queues} />
 
             {dailyFrom && dailyTo && data.daily.length > 0 && (
@@ -132,6 +134,42 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
       <div className="text-xs font-medium uppercase tracking-wide text-ink-400">{label}</div>
       <div className="mt-1 text-2xl font-bold tracking-tight text-ink-900">{value}</div>
+    </div>
+  );
+}
+
+/** Au-delà de ce délai sans battement, le worker est présumé mort (interval côté serveur = 20 s ; ~4 battements
+ *  manqués). En dessous, un simple hoquet réseau/DB ne doit pas afficher une fausse panne. */
+const WORKER_STALE_S = 90;
+
+/** Signal de vie du worker (item 4.9). Le worker est le SEUL process qui envoie les messages : un crash-loop
+ *  passait inaperçu (mba-api répond 200). Vert = battement récent ; rouge = silencieux/absent = à investiguer. */
+function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const alive = worker !== null && worker.ageSeconds <= WORKER_STALE_S;
+  const color = worker === null ? '#B8BEC9' : alive ? '#17C74E' : '#FF4D4F';
+  const label = worker === null ? t('Aucun signal', 'No signal') : alive ? t('Actif', 'Alive') : t('Silencieux', 'Silent');
+  const age = (s: number) => (s < 60 ? t(`il y a ${s} s`, `${s} s ago`) : t(`il y a ${Math.floor(s / 60)} min`, `${Math.floor(s / 60)} min ago`));
+  const fmtDate = (iso: string) => formatDate(iso, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <h3 className="mb-3 text-sm font-semibold tracking-tight text-ink-900">{t('Worker (envoi des messages)', 'Worker (message sending)')}</h3>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+          <span className="text-sm font-medium text-ink-900">{label}</span>
+        </span>
+        {worker ? (
+          <>
+            <span className="text-xs text-ink-500">{t('Dernier battement', 'Last heartbeat')} : <span className="tabular-nums text-ink-700">{age(worker.ageSeconds)}</span></span>
+            {worker.bootedAt && <span className="text-xs text-ink-500">{t('Démarré', 'Booted')} : <span className="text-ink-700">{fmtDate(worker.bootedAt)}</span></span>}
+            {worker.instance && <span className="font-mono text-[11px] text-ink-400">{worker.instance}</span>}
+          </>
+        ) : (
+          <span className="text-xs text-ink-500">{t('Le worker n’a jamais signalé de vie (jamais démarré, ou table absente).', 'The worker has never reported liveness (never started, or table missing).')}</span>
+        )}
+      </div>
     </div>
   );
 }

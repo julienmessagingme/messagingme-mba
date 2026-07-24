@@ -68,6 +68,13 @@ export const schema = z.object({
   DB_CONN_TIMEOUT_MS: z.coerce.number().default(8000),
   /** Secret de la surface d'exploitation cross-tenant `/ops` (lecture seule). Vide -> /ops désactivé (401). */
   OPS_TOKEN: z.string().default(''),
+  /** Alerte Telegram du worker (erreurs pg-boss, échecs de balayage). ENV-FIRST : le conteneur worker n'a PAS
+   *  accès au config.json de l'hôte utilisé par les crons ops. Vide -> aucune alerte (no-op silencieux). */
+  TELEGRAM_BOT_TOKEN: z.string().default(''),
+  TELEGRAM_CHAT_ID: z.string().default(''),
+  /** Cadence du heartbeat worker (ms). Défaut 20 s : écriture négligeable pour le pooler, assez fine pour
+   *  qu'un worker mort dépasse vite le seuil d'âge côté /ops. */
+  HEARTBEAT_INTERVAL_MS: z.coerce.number().default(20_000),
   /** Rate limit de l'API publique /v1 : requêtes par clé et par fenêtre (en mémoire, par process). */
   API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(60),
   API_KEY_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),

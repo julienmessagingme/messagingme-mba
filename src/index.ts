@@ -33,6 +33,7 @@ import { MetaMediaClient } from './meta/media';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
+import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
+  const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
   const transport = new FetchTransport();
   // Clients Meta phone/pricing/templates/flows : résolus PAR TENANT via metaFactory (B1, plus de singleton global).
@@ -353,6 +355,7 @@ async function main(): Promise<void> {
       getTenantOverview: () => opsStore.getTenantOverview(),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),
+      getWorkerHeartbeat: () => heartbeatStore.get(),
     },
     opsToken: config.OPS_TOKEN,
     support: {

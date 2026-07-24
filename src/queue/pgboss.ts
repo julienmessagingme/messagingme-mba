@@ -1,5 +1,6 @@
 import { PgBoss } from 'pg-boss';
 import type { Queue } from './queue';
+import { dlqName } from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -66,7 +67,7 @@ export class PgBossQueue implements Queue {
 
   private async ensure(name: string): Promise<void> {
     if (this.ensured.has(name)) return;
-    const dlq = `${name}-dlq`;
+    const dlq = dlqName(name); // convention -dlq partagée avec src/queue/names.ts (source unique, cf. /ops)
     await this.boss.createQueue(dlq);
     await this.boss.createQueue(name, {
       deadLetter: dlq,

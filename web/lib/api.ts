@@ -783,10 +783,20 @@ export interface QueueLoadRow {
   active: number;
   failed: number;
 }
+/** Signal de vie du worker (item 4.9). null = aucun battement (worker jamais démarré, ou table absente avant
+ *  migration 0044). `ageSeconds` élevé = worker probablement mort (crash-loop invisible côté mba-api). */
+export interface WorkerHeartbeat {
+  beatAt: string;
+  bootedAt: string | null;
+  instance: string | null;
+  ageSeconds: number;
+}
 export interface OpsOverview {
   tenants: TenantOverviewRow[];
   daily: DailyPoint[];
   queues: QueueLoadRow[];
+  /** Peut être absent d'une réponse antérieure au 4.9 -> traité comme null côté page. */
+  worker: WorkerHeartbeat | null;
 }
 
 /**

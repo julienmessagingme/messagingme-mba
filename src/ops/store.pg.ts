@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { ALL_QUEUES } from '../queue/names';
 
 /** Rollup par tenant pour la surface d'exploitation cross-tenant (lecture seule). */
 export interface TenantOverviewRow {
@@ -35,8 +36,6 @@ function safeSchema(schema: string): string {
   if (!/^[a-z_][a-z0-9_]*$/i.test(schema)) throw new Error(`schéma pgboss invalide: ${schema}`);
   return schema;
 }
-
-const QUEUE_NAMES = ['webhook', 'campaign-run', 'webhook-dlq', 'campaign-run-dlq'];
 
 /** Agrégats GLOBAUX cross-tenant (lecture seule stricte : aucune écriture, aucune méthode de mutation). */
 export class PgOpsStore {
@@ -108,16 +107,16 @@ export class PgOpsStore {
    * la table (pg-boss pas encore initialisé) -> renvoie des zéros plutôt que de planter la route.
    */
   async getQueueLoad(): Promise<QueueLoadRow[]> {
-    const zero = (): QueueLoadRow[] => QUEUE_NAMES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0 }));
+    const zero = (): QueueLoadRow[] => ALL_QUEUES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0 }));
     try {
       const res = await this.pool.query<{ name: string; state: string; count: string }>(
         `select name, state, count(*)::int as count
          from ${this.schema}.job
          where name = any($1) and state in ('created', 'retry', 'active', 'failed')
          group by name, state`,
-        [QUEUE_NAMES],
+        [ALL_QUEUES],
       );
-      const byQueue = new Map<string, QueueLoadRow>(QUEUE_NAMES.map((q) => [q, { queue: q, backlog: 0, active: 0, failed: 0 }]));
+      const byQueue = new Map<string, QueueLoadRow>(ALL_QUEUES.map((q) => [q, { queue: q, backlog: 0, active: 0, failed: 0 }]));
       for (const row of res.rows) {
         const q = byQueue.get(row.name);
         if (!q) continue;
@@ -126,7 +125,7 @@ export class PgOpsStore {
         else if (row.state === 'active') q.active += c;
         else if (row.state === 'failed') q.failed += c;
       }
-      return QUEUE_NAMES.map((q) => byQueue.get(q)!);
+      return ALL_QUEUES.map((q) => byQueue.get(q)!);
     } catch (err) {
       // 42P01 = undefined_table (schéma/table pgboss absent) -> pas d'erreur, juste des zéros.
       if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return zero();

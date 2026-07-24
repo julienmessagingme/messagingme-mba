@@ -575,9 +575,15 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const daily = await ops.getGlobalDaily(14);
     expect(Array.isArray(daily)).toBe(true);
 
-    // Queue load : tolère l'absence de pg-boss, sinon renvoie les 4 files avec des compteurs >= 0.
+    // Queue load : tolère l'absence de pg-boss, sinon renvoie les 8 files (4 bases + leurs DLQ, ALL_QUEUES)
+    // avec des compteurs >= 0. Ordre = ALL_QUEUES (chaque base immédiatement suivie de sa DLQ).
     const queues = await ops.getQueueLoad();
-    expect(queues.map((q) => q.queue)).toEqual(['webhook', 'campaign-run', 'webhook-dlq', 'campaign-run-dlq']);
+    expect(queues.map((q) => q.queue)).toEqual([
+      'webhook', 'webhook-dlq',
+      'campaign-run', 'campaign-run-dlq',
+      'analyze-conversation', 'analyze-conversation-dlq',
+      'push-analysis', 'push-analysis-dlq',
+    ]);
     for (const q of queues) {
       expect(q.backlog).toBeGreaterThanOrEqual(0);
       expect(q.active).toBeGreaterThanOrEqual(0);

@@ -43,15 +43,55 @@ import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
 import type { MessageSender } from './campaign/engine';
 import type { Campaign } from './campaign/types';
+import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
+import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 
 async function main(): Promise<void> {
   const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, { max: config.PGBOSS_MAX, connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS });
+
+  // Alerte Telegram throttlée (mémoire process) sur les signaux d'erreur d'un worker VIVANT. Le cas « worker
+  // MORT » (crash-loop au boot) n'est VOLONTAIREMENT pas auto-alerté ici : un process qui meurt ne peut pas
+  // throttler ses alertes entre redémarrages (la map en mémoire est perdue à chaque restart) -> il spammerait
+  // le chat. Ce cas est couvert par la STALENESS du heartbeat (worker_heartbeat.beat_at qui cesse d'avancer),
+  // lue par /ops et le cron watcher (qui, lui, déduplique via son fichier d'état).
+  const ALERT_THROTTLE_MS = 5 * 60_000;
+  const lastAlertAt = new Map<string, number>();
+  const alert = (key: string, text: string): void => {
+    const now = Date.now();
+    const prev = lastAlertAt.get(key);
+    if (prev !== undefined && now - prev < ALERT_THROTTLE_MS) return;
+    lastAlertAt.set(key, now);
+    void sendTelegram(`[mba-worker] ${text}`); // no-op si TELEGRAM_* absent, ne throw jamais
+  };
+
   // Idem côté worker, et c'est ici que ça comptait le plus : le worker est le SEUL composant qui envoie les
   // messages, et un event `error` non capté le tuait pendant que l'API continuait de répondre 200 sur /health.
-  // eslint-disable-next-line no-console
-  queue.onError((err) => console.error('[pg-boss:worker]', err instanceof Error ? err.message : err));
+  queue.onError((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.error('[pg-boss:worker]', msg);
+    alert('pgboss', `erreur pg-boss : ${msg}`);
+  });
   await queue.start();
+
+  // Heartbeat worker (item 4.9) : le worker est le seul process qui envoie, et rien ne prouvait qu'il vit.
+  // Il écrit un signal de vie best-effort ; /ops/overview en lit l'âge. Prouve que le PROCESS tourne (event loop
+  // non bloqué), PAS que pg-boss dépile — pour « files gelées » c'est le backlog de /ops qui sert.
+  const heartbeatStore = new PgWorkerHeartbeatStore(pool);
+  const instanceId = `${process.env.HOSTNAME ?? 'host'}:${process.pid}`;
+  const beat = async (boot: boolean): Promise<void> => {
+    try {
+      await heartbeatStore.beat(instanceId, boot);
+    } catch (err) {
+      // best-effort ABSOLU : une écriture heartbeat qui throw tuerait le worker. On log, on continue.
+      // eslint-disable-next-line no-console
+      console.error('heartbeat erreur (best-effort):', err instanceof Error ? err.message : err);
+    }
+  };
+  await beat(true);
+  const heartbeat = setInterval(() => void beat(false), config.HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref();
 
   // File webhook (Loop 1). Le PgRecipientStore applique les statuts de livraison ; le
   // PgInboxStore enregistre les messages entrants (réponses / taps de boutons) en conversations ;
@@ -354,6 +394,7 @@ async function main(): Promise<void> {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('sweeper erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:reclaim', `sweeper reclaim en échec : ${err instanceof Error ? err.message : err}`);
     }
   };
   void sweep();
@@ -376,6 +417,7 @@ async function main(): Promise<void> {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('schedule-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:schedule', `schedule-sweep en échec : ${err instanceof Error ? err.message : err}`);
     }
   };
   void scheduleSweep();
@@ -402,6 +444,7 @@ async function main(): Promise<void> {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('control-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:control', `control-sweep en échec : ${err instanceof Error ? err.message : err}`);
     }
   };
   void controlSweep();
@@ -418,6 +461,7 @@ async function main(): Promise<void> {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('idempotency-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:idempotency', `idempotency-sweep en échec : ${err instanceof Error ? err.message : err}`);
     }
   };
   void idempotencySweep();
@@ -425,8 +469,10 @@ async function main(): Promise<void> {
   idempotencySweeper.unref();
 
   installGracefulShutdown(async () => {
+    clearInterval(heartbeat);
     clearInterval(sweeper);
     clearInterval(scheduleSweeper);
+    clearInterval(controlSweeper);
     clearInterval(idempotencySweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     await queue.stop();
