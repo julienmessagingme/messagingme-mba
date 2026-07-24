@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildEvent, postAnalysis, makeOnAnalyzed, PushApiError } from '../src/analysis/connector-push';
-import { verifyMetaSignature } from '../src/lib/signature';
+import { signRequest } from '../src/lib/signature';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { StoredConversationAnalysis } from '../src/analysis/events';
 import type { Enrichment } from '../src/analysis/enrichment';
@@ -36,13 +36,17 @@ describe('buildEvent', () => {
 });
 
 describe('postAnalysis', () => {
-  it('poste avec X-MMA-Signature valide (2xx -> ok)', async () => {
+  it('poste avec x-mma-signature au format v1 (horodaté), lié au corps + chemin /ingest', async () => {
     const t = new FakeTransport(() => ok());
     await postAnalysis(buildEvent(stored, enr), { url: 'http://x/ingest', secret: 'S', transport: t });
     expect(t.calls).toHaveLength(1);
     expect(t.calls[0]!.url).toBe('http://x/ingest');
+    const header = t.calls[0]!.headers['x-mma-signature'];
+    const m = /^v1=(\d+)\.([0-9a-f]{16})\.([0-9a-f]{64})$/.exec(header ?? '');
+    expect(m).not.toBeNull();
+    // Recompute avec les ts/nonce du header + method POST + path '/ingest' + le corps réel -> doit matcher (byte-identique).
     const raw = JSON.stringify(t.calls[0]!.body);
-    expect(verifyMetaSignature(Buffer.from(raw), t.calls[0]!.headers['x-mma-signature'], 'S')).toBe(true);
+    expect(header).toBe(signRequest('S', { ts: Number(m![1]), nonce: m![2]!, method: 'POST', path: '/ingest', body: raw }));
   });
   it('429 -> rejoué puis succès', async () => {
     const t = new FakeTransport((n) => (n === 0 ? { status: 429, json: {} } : ok()));

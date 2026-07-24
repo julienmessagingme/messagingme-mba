@@ -1,4 +1,5 @@
-import { signHmac } from '../lib/signature';
+import { randomBytes } from 'node:crypto';
+import { signRequest } from '../lib/signature';
 import { withRetry } from '../meta/http';
 import type { HttpTransport } from '../meta/http';
 import { importContacts } from './import';
@@ -32,9 +33,14 @@ export interface HubspotList { listId: string; name: string; size: number | null
 
 /** POST signé (x-mm-service-signature) vers le connecteur, retry borné sur 429/5xx/réseau ; 409 reconsent -> terminal. */
 async function callService<T>(deps: ConnectorDeps, path: string, body: unknown): Promise<T> {
+  const fullUrl = `${deps.baseUrl}${path}`;
+  // Chemin signé = pathname de l'URL complète (robuste à un éventuel préfixe de proxy), tel que mm-hubspot voit req.url.
+  const signedPath = new URL(fullUrl).pathname;
   return withRetry(async () => {
     const raw = JSON.stringify(body);
-    const res = await deps.transport.post(`${deps.baseUrl}${path}`, body, { 'x-mm-service-signature': signHmac(deps.secret, raw) });
+    // ts + nonce FRAIS par tentative (voir postAnalysis) : le vérificateur mm-hubspot rejette un ts hors fenêtre.
+    const sig = signRequest(deps.secret, { ts: Date.now(), nonce: randomBytes(8).toString('hex'), method: 'POST', path: signedPath, body: raw });
+    const res = await deps.transport.post(fullUrl, body, { 'x-mm-service-signature': sig });
     if (res.status >= 200 && res.status < 300) return res.json as T;
     const j = res.json as { error?: string; reconsentUrl?: string } | undefined;
     if (res.status === 409 && j?.error === 'reconsent_required') throw new ReconsentRequiredError(j.reconsentUrl);

@@ -1,4 +1,5 @@
-import { signHmac } from '../lib/signature';
+import { randomBytes } from 'node:crypto';
+import { signRequest } from '../lib/signature';
 import { withRetry } from '../meta/http';
 import type { HttpTransport } from '../meta/http';
 import type { StoredConversationAnalysis, OnConversationAnalyzed } from './events';
@@ -51,9 +52,13 @@ export interface PostAnalysisDeps {
 
 /** POST signé de l'événement au connecteur, avec retry borné (backoff) sur 429/5xx/réseau. */
 export async function postAnalysis(event: EnrichedAnalyzedEvent, deps: PostAnalysisDeps): Promise<void> {
+  // Chemin signé = pathname de l'URL cible ('/ingest'), tel que mm-hubspot le voit (req.url sans query).
+  const path = new URL(deps.url).pathname;
   await withRetry(async () => {
     const raw = JSON.stringify(event);
-    const res = await deps.transport.post(deps.url, event, { 'x-mma-signature': signHmac(deps.secret, raw) });
+    // ts + nonce FRAIS par tentative : le backoff peut atteindre ~30 s, un ts figé sortirait de la fenêtre au 2e essai.
+    const sig = signRequest(deps.secret, { ts: Date.now(), nonce: randomBytes(8).toString('hex'), method: 'POST', path, body: raw });
+    const res = await deps.transport.post(deps.url, event, { 'x-mma-signature': sig });
     if (res.status >= 200 && res.status < 300) return;
     throw new PushApiError(res.status, res.status === 429 || res.status >= 500);
   });

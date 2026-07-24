@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fetchHubspotLists, importHubspotList, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-import';
-import { signHmac } from '../src/lib/signature';
+import { signRequest } from '../src/lib/signature';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { ContactStore, ContactUpsert } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
@@ -32,9 +32,13 @@ describe('fetchHubspotLists', () => {
     const t = new FakeTransport(() => ({ status: 200, json: { lists: [{ listId: '1', name: 'Chauds', size: 3, processingType: 'DYNAMIC' }] } }));
     const lists = await fetchHubspotLists(connector(t), 't1', 'chaud');
     expect(lists).toEqual([{ listId: '1', name: 'Chauds', size: 3, processingType: 'DYNAMIC' }]);
-    // signature du corps + endpoint.
+    // signature du corps au format v1 + endpoint.
     expect(t.posts[0]!.url).toBe('http://connector/service/lists');
-    expect(t.posts[0]!.headers['x-mm-service-signature']).toBe(signHmac(SECRET, JSON.stringify({ tenantId: 't1', query: 'chaud' })));
+    const header = t.posts[0]!.headers['x-mm-service-signature'];
+    const m = /^v1=(\d+)\.([0-9a-f]{16})\.([0-9a-f]{64})$/.exec(header ?? '');
+    expect(m).not.toBeNull();
+    const raw = JSON.stringify({ tenantId: 't1', query: 'chaud' });
+    expect(header).toBe(signRequest(SECRET, { ts: Number(m![1]), nonce: m![2]!, method: 'POST', path: '/service/lists', body: raw }));
   });
   it('409 reconsent_required -> ReconsentRequiredError (porte reconsentUrl)', async () => {
     const t = new FakeTransport(() => ({ status: 409, json: { error: 'reconsent_required', reconsentUrl: 'https://hub/install?grant=lists' } }));
