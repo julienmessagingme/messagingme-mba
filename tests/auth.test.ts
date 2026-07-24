@@ -82,7 +82,7 @@ describe('POST /auth/login', () => {
     await app.close();
   });
 
-  it('rate-limit : trop de tentatives -> 429', async () => {
+  it('rate-limit : trop de tentatives sur le MÊME email -> 429', async () => {
     const app = buildServer({
       queue: new FakeQueue(),
       auth: { users: new FakeUsers([admin]), secret: SECRET, loginRateLimit: { max: 3, windowMs: 60_000 } },
@@ -93,6 +93,23 @@ describe('POST /auth/login', () => {
     expect((await attempt()).statusCode).toBe(401);
     expect((await attempt()).statusCode).toBe(401);
     expect((await attempt()).statusCode).toBe(429); // 4e tentative bloquée
+    await app.close();
+  });
+
+  it('rate-limit : la clé porte l\'email -> un email saturé NE bloque PAS un autre (fin du plafond global)', async () => {
+    const app = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: new FakeUsers([admin]), secret: SECRET, loginRateLimit: { max: 3, windowMs: 60_000 } },
+    });
+    const attempt = (email: string) =>
+      app.inject({ method: 'POST', url: '/auth/login', headers: { 'content-type': 'application/json' }, payload: { email, password: 'nope' } });
+    // On sature victime@b.co (req.ip constant en test -> l'ancien code aurait bloqué TOUT le monde ici).
+    await attempt('victime@b.co');
+    await attempt('victime@b.co');
+    await attempt('victime@b.co');
+    expect((await attempt('victime@b.co')).statusCode).toBe(429);
+    // Un AUTRE email passe encore : plus de blocage transverse.
+    expect((await attempt('autre@b.co')).statusCode).toBe(401);
     await app.close();
   });
 });

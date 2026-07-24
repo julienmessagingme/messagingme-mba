@@ -72,6 +72,18 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
  * changement de mot de passe (gardé par `requireAuth` si fourni). Chaque endpoint a son propre rate-limiter
  * (ne pas partager l'instance du login). Anti-énumération : login/forgot ne révèlent jamais l'existence d'un email.
  */
+/**
+ * Clé de rate-limit : `req.ip::discriminant`. `req.ip` seul est INSUFFISANT sur ce déploiement : le front proxifie
+ * /api/backend/* vers mba-api, donc le pair TCP (req.ip) est TOUJOURS le conteneur mba-web, une constante. Un limiteur
+ * clé sur req.ip seul est alors GLOBAL à toute la plateforme (un seul attaquant bloque les logins de tous). Le
+ * discriminant (email normalisé, ou token pour reset/invite) rend la clé propre à la tentative -> plus de blocage
+ * transverse. NB : borner trustProxy pour récupérer la vraie IP client est un chantier séparé (chaîne XFF à vérifier
+ * en prod avant de risquer un spoofing) ; ce discriminant ferme le trou sans en dépendre.
+ */
+function rateKey(req: { ip: string }, discriminant: string): string {
+  return `${req.ip}::${discriminant}`;
+}
+
 export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireAuth?: Guard): void {
   const cfg = deps.loginRateLimit ?? { max: 10, windowMs: 60_000 };
   const limiter = new RateLimiter(cfg.max, cfg.windowMs);
@@ -82,16 +94,17 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   const googleLimiter = new RateLimiter(20, 60_000);
 
   app.post('/auth/login', async (req, reply) => {
-    if (!limiter.take(req.ip)) {
-      return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
-    }
-
     const b = (req.body ?? {}) as { email?: unknown; password?: unknown };
     if (typeof b.email !== 'string' || typeof b.password !== 'string' || b.email === '' || b.password === '') {
       return reply.code(400).send({ error: 'email et password requis' });
     }
+    const email = b.email.trim().toLowerCase();
+    // Rate-limit APRÈS le parse (la clé porte l'email) et AVANT le scrypt (protège le coût CPU du brute-force).
+    if (!limiter.take(rateKey(req, email))) {
+      return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    }
 
-    const user = await deps.users.findByEmail(b.email.trim().toLowerCase());
+    const user = await deps.users.findByEmail(email);
     // TOUJOURS vérifier un hash (leurre si user absent) : même temps CPU -> pas de fuite d'existence.
     const ok = await verifyPassword(b.password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !ok) {
@@ -111,9 +124,10 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   // Se connecter avec Google : vérifie le jeton ID, connecte un compte existant OU crée un espace (inconnu).
   app.post('/auth/google', async (req, reply) => {
     if (!deps.verifyGoogle || !deps.getUserByEmail || !deps.createTenantWithAdmin) return reply.code(503).send({ error: 'connexion Google indisponible' });
-    if (!googleLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const idToken = str((req.body as { idToken?: unknown } | undefined)?.idToken);
     if (idToken === '') return reply.code(400).send({ error: 'idToken requis' });
+    // Clé sur l'idToken Google : borne les tentatives par jeton, plus de blocage transverse.
+    if (!googleLimiter.take(rateKey(req, idToken))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const identity = await deps.verifyGoogle(idToken);
     if (!identity || !identity.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
     const existing = await deps.getUserByEmail(identity.email);
@@ -142,7 +156,6 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   // Inscription LIBRE : crée un nouvel espace + admin, connecte directement.
   app.post('/auth/signup', async (req, reply) => {
     if (!deps.createTenantWithAdmin) return reply.code(503).send({ error: 'inscription indisponible' });
-    if (!signupLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const b = (req.body ?? {}) as { workspaceName?: unknown; email?: unknown; password?: unknown; name?: unknown };
     const workspaceName = str(b.workspaceName).trim();
     const email = str(b.email).trim().toLowerCase();
@@ -150,6 +163,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     const name = str(b.name).trim() || null;
     if (workspaceName === '') return reply.code(400).send({ error: 'nom de l\'espace requis' });
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
+    if (!signupLimiter.take(rateKey(req, email))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     try {
       const { tenantId, userId } = await deps.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) });
@@ -164,8 +178,10 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
 
   // Mot de passe perdu : TOUJOURS 200 (anti-énumération), envoie un lien si le compte existe.
   app.post('/auth/forgot-password', async (req, reply) => {
-    if (!forgotLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const email = str((req.body as { email?: unknown } | undefined)?.email).trim().toLowerCase();
+    // Clé sur l'email : plus de blocage transverse. Le 429 renvoie une erreur distincte, mais SANS fuite d'existence :
+    // le take() précède tout accès à findByEmail, donc le seuil est identique que le compte existe ou non.
+    if (!forgotLimiter.take(rateKey(req, email))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const generic = { ok: true, message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.' };
     if (EMAIL_RE.test(email) && deps.tokens && deps.sendEmail && deps.appUrl) {
       try {
@@ -190,11 +206,12 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   // Réinitialisation : consomme le token (usage unique) et pose le nouveau mot de passe.
   app.post('/auth/reset-password', async (req, reply) => {
     if (!deps.tokens || !deps.setPassword) return reply.code(503).send({ error: 'réinitialisation indisponible' });
-    if (!resetLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const b = (req.body ?? {}) as { token?: unknown; password?: unknown };
     const token = str(b.token);
     const password = str(b.password);
     if (token === '') return reply.code(400).send({ error: 'token requis' });
+    // Clé sur le token (pas d'email ici) : borne le brute-force d'UN lien sans bloquer les autres.
+    if (!resetLimiter.take(rateKey(req, token))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('reset', token);
     if (!userId) return reply.code(400).send({ error: 'lien invalide ou expiré' });
@@ -205,11 +222,12 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
   // Acceptation d'invitation : consomme le token (usage unique), pose le mot de passe, connecte directement.
   app.post('/auth/invitations/accept', async (req, reply) => {
     if (!deps.tokens || !deps.setPassword || !deps.sessionUser) return reply.code(503).send({ error: 'invitations indisponibles' });
-    if (!acceptLimiter.take(req.ip)) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     const b = (req.body ?? {}) as { token?: unknown; password?: unknown };
     const token = str(b.token);
     const password = str(b.password);
     if (token === '') return reply.code(400).send({ error: 'token requis' });
+    // Clé sur le token d'invitation : borne le brute-force d'UN lien sans bloquer les autres.
+    if (!acceptLimiter.take(rateKey(req, token))) return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('invite', token);
     if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
