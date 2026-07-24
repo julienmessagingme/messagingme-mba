@@ -9,12 +9,14 @@ import type {
 } from './engine';
 import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute } from './pacing';
+import { TokenInvalidError } from '../meta/credentials';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
 
 export interface RunJobDeps {
   getCampaign(id: string): Promise<Campaign | null>;
-  /** Construit le sender pour la campagne (MetaClient sur son phone_number_id en prod, fake en test). */
-  senderFor(campaign: Campaign): MessageSender;
+  /** Construit le sender pour la campagne (MetaClient sur le token du tenant en prod, fake en test). Async : la
+   *  résolution du token par tenant (B1) lit la base + déchiffre. */
+  senderFor(campaign: Campaign): Promise<MessageSender>;
   recipients: RecipientStore;
   campaigns: CampaignStore;
   frequency: FrequencyStore;
@@ -79,8 +81,21 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   const rateLimiter: RateGate | undefined =
     rate > 0 ? makeLimiter(Math.ceil(60_000 / rate)) : deps.rateLimiter;
 
+  // Résolution du sender (token PAR TENANT). Un token révoqué/expiré -> TokenInvalidError : on met la campagne en
+  // PAUSE proprement (rapport paused + raison) au lieu de laisser le throw remonter, ce qui ferait rejouer le job
+  // en boucle par pg-boss. Miroir de la garde d'appartenance du numéro ci-dessus.
+  let sender: MessageSender;
+  try {
+    sender = await deps.senderFor(campaign);
+  } catch (err) {
+    if (err instanceof TokenInvalidError) {
+      return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'token WhatsApp révoqué/expiré, reconnectez le numéro' };
+    }
+    throw err;
+  }
+
   return runCampaign(campaign, {
-    sender: deps.senderFor(campaign),
+    sender,
     recipients: deps.recipients,
     campaigns: deps.campaigns,
     frequency: deps.frequency,

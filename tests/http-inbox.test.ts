@@ -60,14 +60,14 @@ describe('inbox routes', () => {
 
   it('POST reply (fenêtre ouverte) -> envoie et journalise (200)', async () => {
     let recorded: [string, string, string | null, string | undefined] | null = null;
-    let sent: [string, string, string] | null = null;
+    let sent: [string, string, string, string] | null = null;
     const a = app({
       recordOutbound: async (id, body, msgId, type) => { recorded = [id, body, msgId, type]; },
-      sendReply: async (pn, to, text) => { sent = [pn, to, text]; return 'wamid.OUT'; },
+      sendReply: async (tenant, pn, to, text) => { sent = [tenant, pn, to, text]; return 'wamid.OUT'; },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
     expect(res.statusCode).toBe(200);
-    expect(sent).toEqual(['pn1', '33611', 'Merci !']);
+    expect(sent).toEqual(['t1', 'pn1', '33611', 'Merci !']); // tenant passé en 1er (B1 : token par tenant)
     expect(recorded).toEqual(['c1', 'Merci !', 'wamid.OUT', 'text']);
     await a.close();
   });
@@ -106,11 +106,11 @@ describe('inbox routes', () => {
   });
 
   it('POST send-template -> envoie le template (200), autorisé hors fenêtre', async () => {
-    let sent: { pn: string; to: string; tpl: unknown } | null = null;
+    let sent: { tenant: string; pn: string; to: string; tpl: unknown } | null = null;
     let recordedType: string | undefined;
     const a = app({
       getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
-      sendTemplateMessage: async (pn, to, tpl) => { sent = { pn, to, tpl }; return 'wamid.TPL'; },
+      sendTemplateMessage: async (tenant, pn, to, tpl) => { sent = { tenant, pn, to, tpl }; return 'wamid.TPL'; },
       recordOutbound: async (_id, _body, _msg, type) => { recordedType = type; },
     });
     const res = await a.inject({
@@ -121,7 +121,7 @@ describe('inbox routes', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ messageId: string }>().messageId).toBe('wamid.TPL');
-    expect(sent).toMatchObject({ pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerMediaUrl: 'https://x.fr/v.mp4', headerFormat: 'VIDEO' } });
+    expect(sent).toMatchObject({ tenant: 't1', pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerMediaUrl: 'https://x.fr/v.mp4', headerFormat: 'VIDEO' } });
     expect(recordedType).toBe('template');
     await a.close();
   });

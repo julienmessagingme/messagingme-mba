@@ -9,7 +9,8 @@ import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
 import type { Guard } from '../auth/middleware';
 
 export interface FlowRouteDeps {
-  flows: MetaFlowClient;
+  /** Client flows Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
+  flowsFor(tenantId: string): Promise<MetaFlowClient>;
   getWabaId(tenantId: string): Promise<string | null>;
   insertFlow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
   listFlows(tenantId: string): Promise<FlowRow[]>;
@@ -211,7 +212,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
 
     const ref = randomUUID();
     const name = b.name.trim();
-    const { id, status } = await deps.flows.create(wabaId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) });
+    const { id, status } = await (await deps.flowsFor(tenant)).create(wabaId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) });
     await deps.insertFlow(tenant, id, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(201).send({ id, status, name, fields: mapped.fields });
   });
@@ -246,7 +247,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     // On GARDE le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
     const ref = existing.ref ?? randomUUID();
     const name = b.name.trim();
-    await deps.flows.updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta AVANT store
+    await (await deps.flowsFor(tenant)).updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta AVANT store
     await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping, cta);
     return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: mapped.fields });
   });
@@ -273,7 +274,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
     const mapping = source.mapping ?? {};
     const cta = source.cta ?? undefined;
-    const { id, status } = await deps.flows.create(wabaId, { name, screens: source.screens, ref, ...(cta ? { cta } : {}) });
+    const { id, status } = await (await deps.flowsFor(tenant)).create(wabaId, { name, screens: source.screens, ref, ...(cta ? { cta } : {}) });
     await deps.insertFlow(tenant, id, name, source.screens, ref, mapping, cta);
     return reply.code(201).send({ id, status, name, fields: fieldsOfScreens(source.screens) });
   });
@@ -289,7 +290,7 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { flowId } = req.params as { flowId: string };
     if (!(await deps.belongsTo(flowId, tenant))) return reply.code(404).send({ error: 'flow inconnu' });
-    await deps.flows.publish(flowId);
+    await (await deps.flowsFor(tenant)).publish(flowId);
     await deps.markPublished(flowId, tenant);
     return reply.code(200).send({ id: flowId, status: 'PUBLISHED' });
   });
@@ -303,8 +304,8 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     const { flowId } = req.params as { flowId: string };
     const flow = await deps.getFlow(flowId, tenant);
     if (!flow) return reply.code(404).send({ error: 'flow inconnu' });
-    if (flow.status === 'PUBLISHED') await deps.flows.deprecate(flowId);
-    else await deps.flows.delete(flowId);
+    if (flow.status === 'PUBLISHED') await (await deps.flowsFor(tenant)).deprecate(flowId);
+    else await (await deps.flowsFor(tenant)).delete(flowId);
     await deps.removeFlowRow(flowId, tenant);
     return reply.code(200).send({ id: flowId, deleted: true });
   });

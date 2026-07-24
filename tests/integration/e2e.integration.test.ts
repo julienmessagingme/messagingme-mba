@@ -71,7 +71,7 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
     // 3) Run avec sender fake.
     const runDeps = {
       getCampaign: (id: string) => repo.getCampaign(id),
-      senderFor: () => new FakeSender(),
+      senderFor: async () => new FakeSender(),
       recipients: new PgRecipientStore(pool),
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
@@ -116,7 +116,7 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
       const repo = new PgCampaignRepo(pool);
       const runDeps = {
         getCampaign: (id: string) => repo.getCampaign(id),
-        senderFor: () => new FakeSender(),
+        senderFor: async () => new FakeSender(),
         recipients: new PgRecipientStore(pool),
         campaigns: new PgCampaignStore(pool),
         frequency: new PgFrequencyStore(pool),

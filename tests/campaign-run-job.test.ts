@@ -11,6 +11,7 @@ import type {
 import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 import { MetaApiError } from '../src/meta/errors';
+import { TokenInvalidError } from '../src/meta/credentials';
 
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
@@ -67,7 +68,7 @@ const campaign: Campaign = {
 
 function deps(over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }): RunJobDeps {
   return {
-    senderFor: () => new FakeSender(),
+    senderFor: async () => new FakeSender(),
     recipients: new FakeRecipients([]),
     campaigns: new FakeCampaigns(),
     frequency: new FakeFreq(),
@@ -85,7 +86,7 @@ describe('campaignRunJob', () => {
     ]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ getCampaign: async () => campaign, senderFor: () => sender, recipients }),
+      deps({ getCampaign: async () => campaign, senderFor: async () => sender, recipients }),
     );
     expect(report).toMatchObject({ sent: 2, failed: 0, paused: false });
     expect(sender.calls).toEqual(['+33611', '+33622']);
@@ -99,7 +100,7 @@ describe('campaignRunJob', () => {
     ]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ getCampaign: async () => util, senderFor: () => sender, recipients }),
+      deps({ getCampaign: async () => util, senderFor: async () => sender, recipients }),
     );
     expect(report.sent).toBe(1);
     expect(sender.templateCalls).toEqual(['+33611']);
@@ -115,7 +116,7 @@ describe('campaignRunJob', () => {
     ]);
     const report = await campaignRunJob(
       { campaignId: 'c1' },
-      deps({ getCampaign: async () => campaign, senderFor: () => sender, recipients }),
+      deps({ getCampaign: async () => campaign, senderFor: async () => sender, recipients }),
     );
     expect(report).toMatchObject({ sent: 1, failed: 1 });
     expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
@@ -267,7 +268,7 @@ describe('campaignRunJob', () => {
       { campaignId: 'c1' },
       deps({
         getCampaign: async () => campaign,
-        senderFor: () => sender,
+        senderFor: async () => sender,
         recipients,
         phoneNumberBelongsToTenant: async () => false, // le numéro n'appartient plus au tenant
       }),
@@ -275,6 +276,33 @@ describe('campaignRunJob', () => {
     expect(report).toMatchObject({ sent: 0, paused: true });
     expect(report.reason).toMatch(/rattaché/);
     expect(sender.calls).toEqual([]); // rien n'est parti
+  });
+
+  it('token révoqué (senderFor throw TokenInvalidError) -> campagne en PAUSE, pas de rejeu pg-boss', async () => {
+    const recipients = new FakeRecipients([
+      { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+    ]);
+    // La résolution du token échoue (WABA marqué invalid). campaignRunJob doit CATCHER et renvoyer un rapport
+    // paused, PAS laisser le throw remonter (sinon pg-boss rejoue le job en boucle).
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => campaign,
+        senderFor: async () => { throw new TokenInvalidError('waba-x'); },
+        recipients,
+      }),
+    );
+    expect(report).toMatchObject({ sent: 0, paused: true });
+    expect(report.reason).toMatch(/révoqué|reconnectez/i);
+  });
+
+  it('une autre erreur pendant senderFor -> remonte (vraie panne, pas une pause déguisée)', async () => {
+    await expect(
+      campaignRunJob(
+        { campaignId: 'c1' },
+        deps({ getCampaign: async () => campaign, senderFor: async () => { throw new Error('réseau'); } }),
+      ),
+    ).rejects.toThrow(/réseau/);
   });
 
   it('garde d appartenance : numéro toujours rattaché -> envoi normal', async () => {
@@ -286,7 +314,7 @@ describe('campaignRunJob', () => {
       { campaignId: 'c1' },
       deps({
         getCampaign: async () => campaign,
-        senderFor: () => sender,
+        senderFor: async () => sender,
         recipients,
         phoneNumberBelongsToTenant: async () => true,
       }),
@@ -301,7 +329,7 @@ describe('campaignRunJob', () => {
       { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
     ]);
     // deps() n'injecte PAS phoneNumberBelongsToTenant : la garde est sautée, comportement d'avant préservé.
-    const report = await campaignRunJob({ campaignId: 'c1' }, deps({ getCampaign: async () => campaign, senderFor: () => sender, recipients }));
+    const report = await campaignRunJob({ campaignId: 'c1' }, deps({ getCampaign: async () => campaign, senderFor: async () => sender, recipients }));
     expect(report.sent).toBe(1);
   });
 

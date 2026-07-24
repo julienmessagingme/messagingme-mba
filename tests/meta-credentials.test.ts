@@ -81,6 +81,19 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
     expect(h.invalidated).toEqual(['wabaA']); // inchangé
   });
 
+  it('onError : un échec DB de markTokenInvalid est AVALÉ (best-effort), ne masque pas l\'erreur Meta', async () => {
+    const deps: CredentialsResolverDeps = {
+      getWabaIdForTenant: async () => 'wabaA',
+      getCredentialsByWaba: async () => ({ businessTokenEnc: 'enc:TOK', tokenStatus: 'active' }),
+      markTokenInvalid: async () => { throw new Error('DB down'); }, // l'écriture d'invalidation échoue
+      decrypt: (e) => e,
+      fallbackToken: 'GLOBAL',
+    };
+    const r = new MetaCredentialsResolver(deps);
+    // onError ne doit PAS throw : le guard de la fabrique compte dessus pour ensuite rethrow l'erreur Meta d'origine.
+    await expect(r.onError(new MetaApiError(401, { code: 190, message: 'x', type: 'OAuthException' }), 'wabaA')).resolves.toBeUndefined();
+  });
+
   it('onError : wabaId null (token global de repli) -> jamais d\'invalidation', async () => {
     const h = makeDeps();
     const r = new MetaCredentialsResolver(h.deps);

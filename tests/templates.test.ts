@@ -33,7 +33,7 @@ function app(fetchImpl: FetchLike, wabaId: string | null = 'waba1', getPublished
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     templates: {
-      templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl),
+      templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl),
       getWabaId: async () => wabaId,
       ...(getPublishedFlow ? { getPublishedFlow } : {}),
       ...(listActive ? { listActiveCampaignsForTemplate: listActive } : {}),
@@ -479,7 +479,7 @@ describe('routes templates — indices variable->champ (paramHints)', () => {
       queue: new FakeQueue(),
       auth: { users: noUsers, secret: SECRET },
       templates: {
-        templates: new MetaTemplateClient('tok', 'v23.0', fetchImpl),
+        templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fetchImpl),
         getWabaId: async () => 'waba1',
         saveParamHints: async (_t, name, language, hints) => { cap.saved.push({ name, language, hints }); },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

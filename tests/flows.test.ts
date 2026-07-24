@@ -110,7 +110,7 @@ function app(
     return { ok, status: ok ? 200 : 400, json: async () => (ok ? { id: 'flowNew', success: true, validation_errors: [] } : { error: { message: 'x', code: 100 } }) } as Response;
   };
   const deps: FlowRouteDeps = {
-    flows: new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch),
+    flowsFor: async () => new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch),
     getWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId),
     insertFlow: async (_t, id, name, _elements, ref, mapping) => { cap.inserted.push({ id, name, ref, mapping }); },
     listFlows: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], screens: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],

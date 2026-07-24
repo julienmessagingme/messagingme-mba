@@ -29,12 +29,7 @@ import { enqueueCampaignRun } from './campaign/enqueue';
 import { resolveRatePerMinute } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList } from './crm/hubspot-import';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
-import { MetaTemplateClient } from './meta/templates';
-import { MetaFlowClient } from './meta/flows';
 import { MetaMediaClient } from './meta/media';
-import { MetaPricingClient } from './meta/pricing';
-import { MetaPhoneNumberClient } from './meta/phone-number';
-import { MetaClient } from './meta/client';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
@@ -42,7 +37,9 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
-import { encryptSecret } from './crypto/secretbox';
+import { encryptSecret, decryptSecret } from './crypto/secretbox';
+import { MetaCredentialsResolver } from './meta/credentials';
+import { MetaClientFactory } from './meta/factory';
 import { buildTemplateComponents } from './meta/template-components';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
@@ -76,11 +73,28 @@ async function main(): Promise<void> {
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const workflowStore = new PgWorkflowStore(pool);
-  const phoneClient = new MetaPhoneNumberClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
   const transport = new FetchTransport();
-  const pricingClient = new MetaPricingClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
-  const flowClient = new MetaFlowClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION, config.META_FLOW_JSON_VERSION);
+  // Clients Meta phone/pricing/templates/flows : résolus PAR TENANT via metaFactory (B1, plus de singleton global).
+  // media reste global : endpoint /{appId}/uploads app-scoped (décision assumée, cf. .loop/bloc4.md).
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
+
+  // Résolution du token Meta PAR TENANT (B1). SOMMEIL : repli sur le token global tant qu'aucun WABA n'a de
+  // credentials propres -> le numéro Zadarma reste sur config.META_ACCESS_TOKEN, comportement identique.
+  const esCredentialsStore = new PgEmbeddedSignupStore(pool);
+  const metaCredentials = new MetaCredentialsResolver({
+    getWabaIdForTenant: (t) => repo.getTenantWabaId(t),
+    getCredentialsByWaba: (w) => esCredentialsStore.getCredentialsByWaba(w),
+    markTokenInvalid: (w) => esCredentialsStore.markTokenInvalid(w),
+    decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
+    fallbackToken: config.META_ACCESS_TOKEN,
+  });
+  const metaFactory = new MetaClientFactory({
+    resolver: metaCredentials,
+    transport,
+    version: config.META_GRAPH_VERSION,
+    marketingViaLite: config.META_MM_LITE === 'true',
+  });
+
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
   const sendAuthEmail = config.RESEND_API_KEY
     ? async ({ to, subject, text, html }: { to: string; subject: string; text: string; html?: string }) => {
@@ -136,7 +150,7 @@ async function main(): Promise<void> {
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
     },
     templates: {
-      templates: new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION),
+      templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
       getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
       listActiveCampaignsForTemplate: (tenant, name, language) => repo.listActiveCampaignsForTemplate(tenant, name, language),
@@ -169,12 +183,12 @@ async function main(): Promise<void> {
         return 'app_workflow';
       },
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
-      sendReply: async (phoneNumberId, to, text) => {
-        const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
+      sendReply: async (tenant, phoneNumberId, to, text) => {
+        const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
         return (await client.sendText(to, text)).messageId;
       },
-      sendTemplateMessage: async (phoneNumberId, to, tpl) => {
-        const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId, version: config.META_GRAPH_VERSION });
+      sendTemplateMessage: async (tenant, phoneNumberId, to, tpl) => {
+        const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
         const components = buildTemplateComponents({
           bodyParams: tpl.bodyParams,
           ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
@@ -191,16 +205,18 @@ async function main(): Promise<void> {
         const wabaId = await repo.getTenantWabaId(tenant);
         if (!wabaId) return null;
         const { startTs, endTs } = rangeToUnix(range);
-        return pricingClient.getPricingAnalytics(wabaId, startTs, endTs);
+        const pricing = await metaFactory.pricingClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
+        return pricing.getPricingAnalytics(wabaId, startTs, endTs);
       },
       getCampaignFunnel: (tenant, campaignId) => statsStore.getCampaignFunnel(tenant, campaignId),
       getErrorBreakdown: (tenant, range, templateName) => statsStore.getErrorBreakdown(tenant, range, templateName),
       getCostSeries: async (tenant, range, filter) => {
         const wabaId = await repo.getTenantWabaId(tenant);
         const { startTs, endTs } = rangeToUnix(range);
+        const pricingClientT = wabaId ? await metaFactory.pricingClientForTenant(tenant) : null;
         const [rows, pricing] = await Promise.all([
           statsStore.getCostVolume(tenant, range, filter),
-          wabaId ? pricingClient.getPricingAnalytics(wabaId, startTs, endTs) : Promise.resolve(null),
+          pricingClientT && wabaId ? pricingClientT.getPricingAnalytics(wabaId, startTs, endTs) : Promise.resolve(null),
         ]);
         const rates = {
           marketing: pricing?.byCategory['marketing']?.ratePerMessage ?? null,
@@ -251,7 +267,7 @@ async function main(): Promise<void> {
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
     },
     flows: {
-      flows: flowClient,
+      flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
       insertFlow: (tenantId, id, name, screens, ref, mapping, cta) => flowStore.insert({ id, tenantId, name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
       listFlows: (tenant) => flowStore.list(tenant),
@@ -305,13 +321,14 @@ async function main(): Promise<void> {
     account: {
       getPhoneNumber: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
       pullStatus: async (phoneNumberId, tenant) => {
-        if (!config.META_ACCESS_TOKEN) return null; // pas de token -> pas de pull live (statut sur le dernier connu)
+        if (!config.META_ACCESS_TOKEN) return null; // pas de token global -> pas de pull live (statut sur le dernier connu)
         try {
-          const info = await phoneClient.get(phoneNumberId);
+          const phoneClientT = await metaFactory.phoneClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
+          const info = await phoneClientT.get(phoneNumberId);
           // Santé WABA : 2e appel Graph, best-effort. Un échec (droits/état) ne casse pas le pull du numéro :
           // on retombe sur le statut du numéro seul (les champs WABA restent sur leur dernier connu via coalesce).
           const wabaId = await repo.getTenantWabaId(tenant);
-          const waba = wabaId ? await phoneClient.getWabaHealth(wabaId).catch(() => undefined) : undefined;
+          const waba = wabaId ? await phoneClientT.getWabaHealth(wabaId).catch(() => undefined) : undefined;
           return pullFromInfo(info, waba);
         } catch (err) {
           return pullFromError(err);

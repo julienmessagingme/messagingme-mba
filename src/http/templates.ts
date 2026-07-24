@@ -8,7 +8,8 @@ import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../meta/languages';
 
 export interface TemplateRouteDeps {
-  templates: MetaTemplateClient;
+  /** Client templates Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
+  templatesFor(tenantId: string): Promise<MetaTemplateClient>;
   /** WABA du tenant (les templates sont au niveau WABA). */
   getWabaId(tenantId: string): Promise<string | null>;
   /** Optionnel : pré-check « ce flowId est-il PUBLISHED pour ce tenant ? » avant d'appeler Meta.
@@ -182,7 +183,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(200).send({ templates: [] });
-    return reply.code(200).send({ templates: await deps.templates.list(wabaId) });
+    return reply.code(200).send({ templates: await (await deps.templatesFor(tenant)).list(wabaId) });
   });
 
   app.post('/tenants/:tenantId/templates', guard, async (req, reply) => {
@@ -207,7 +208,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     }
 
     const input: CreateTemplateInput = { name: b.name, language: b.language, ...parsed.fields };
-    const res = await deps.templates.create(wabaId, input);
+    const res = await (await deps.templatesFor(tenant)).create(wabaId, input);
     await saveHintsSafe(deps, tenant, b.name, b.language, b.paramHints);
     return reply.code(201).send(res);
   });
@@ -244,7 +245,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
     // SÉCURITÉ : on résout l'id CÔTÉ SERVEUR depuis le WABA du tenant (l'edit Meta est par id global,
     // non scopé WABA -> un id fourni par le client permettrait d'éditer le template d'un autre tenant).
-    const existing = (await deps.templates.list(wabaId)).find((t) => t.name === name && t.language === language);
+    const existing = (await (await deps.templatesFor(tenant)).list(wabaId)).find((t) => t.name === name && t.language === language);
     if (!existing) return reply.code(404).send({ error: 'template introuvable' });
     if (!existing.id) return reply.code(422).send({ error: 'id du template indisponible' });
     // Anti perte de données : un template avec HEADER / FOOTER / CAROUSEL verrait ces composants SUPPRIMÉS
@@ -266,7 +267,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
     }
 
-    const res = await deps.templates.update(existing.id, {
+    const res = await (await deps.templatesFor(tenant)).update(existing.id, {
       category: parsed.fields.category,
       body: parsed.fields.body,
       ...(parsed.fields.header ? { header: parsed.fields.header } : {}),
@@ -294,7 +295,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
 
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
-    const res = await deps.templates.remove(wabaId, name);
+    const res = await (await deps.templatesFor(tenant)).remove(wabaId, name);
     if (deps.removeParamHints) await deps.removeParamHints(tenant, name).catch(() => {});
     return reply.code(200).send(res);
   });

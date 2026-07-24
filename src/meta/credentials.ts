@@ -84,10 +84,17 @@ export class MetaCredentialsResolver {
     return { token, wabaId };
   }
 
-  /** Invalide un token (sur erreur d'auth au prochain appel) et PURGE le cache (sinon le token mort resterait servi). */
+  /** Invalide un token (sur erreur d'auth au prochain appel) et PURGE le cache (sinon le token mort resterait servi).
+   *  BEST-EFFORT : un échec de `markTokenInvalid` (DB) est avalé, sinon il masquerait l'erreur Meta d'origine que
+   *  l'appelant (le guard de la fabrique) doit rethrow. Le cache est purgé quoi qu'il arrive (relira l'état au prochain). */
   async invalidate(wabaId: string): Promise<void> {
     this.cache.delete(wabaId);
-    await this.deps.markTokenInvalid(wabaId);
+    try {
+      await this.deps.markTokenInvalid(wabaId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`markTokenInvalid ignoré pour ${wabaId}:`, err instanceof Error ? err.message : err);
+    }
   }
 
   /** À appeler dans un catch d'appel Meta : si c'est une erreur d'auth ET qu'un WABA propre est en cause, l'invalide. */

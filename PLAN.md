@@ -20,8 +20,10 @@ Pour une session qui démarre sans contexte.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-21** : blocs 0 et 2 livrés, bloc A aux 3/5, tout déployé en production (964 tests).
-**Prochain chantier : le bloc 1, sécurité.** Puis A.3 et A.5 (qui attendent MBA), puis 3, 4, 5.
+**État au 2026-07-23** : blocs 0, 2 et **3** livrés ; **bloc 1 (sécurité) codé et revu** ; bloc A aux 3/5.
+- **Bloc 3** : déployé côté CI (poussé sur origin), migration 0042 PAS ENCORE appliquée en prod, worker PAS redéployé (le frein 30/min n'est donc pas actif tant qu'on n'a pas redéployé). Déploiement à faire.
+- **Bloc 1** : reviewer PASS. **mba poussé sur origin (CI verte), mm-hubspot commité EN LOCAL non poussé.** Rien n'est en prod. Déploiement PHASÉ à mener (mm-hubspot d'abord, cf. `.loop/bloc1.md`). 2 déferrages assumés : retrait de `CARD_SECRET` (inerte) et route admin de réaffectation de numéro (feature).
+**Prochain chantier : le bloc 4** (Railway, 13 items), OU les déploiements en attente ci-dessus. Puis A.3/A.5 (attendent MBA), puis 5.
 
 ---
 

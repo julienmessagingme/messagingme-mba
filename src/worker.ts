@@ -35,8 +35,10 @@ import { getEnrichment } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { PgPhoneStatusStore } from './account/store.pg';
-import { MetaClient } from './meta/client';
-import { MetaTemplateClient } from './meta/templates';
+import { MetaClientFactory } from './meta/factory';
+import { MetaCredentialsResolver } from './meta/credentials';
+import { PgEmbeddedSignupStore } from './account/es-store.pg';
+import { decryptSecret } from './crypto/secretbox';
 import { FetchTransport } from './meta/http';
 import { DryRunSender } from './campaign/dry-run-sender';
 import type { MessageSender } from './campaign/engine';
@@ -65,6 +67,23 @@ async function main(): Promise<void> {
   const transport = new FetchTransport();
   const dryRun = config.DRY_RUN === 'true';
 
+  // Résolution du token Meta PAR TENANT (B1). En SOMMEIL tant qu'aucun WABA n'a de credentials propres : le
+  // résolveur retombe alors sur config.META_ACCESS_TOKEN -> comportement identique au token global d'avant.
+  const esStore = new PgEmbeddedSignupStore(pool);
+  const metaCredentials = new MetaCredentialsResolver({
+    getWabaIdForTenant: (t) => repo.getTenantWabaId(t),
+    getCredentialsByWaba: (w) => esStore.getCredentialsByWaba(w),
+    markTokenInvalid: (w) => esStore.markTokenInvalid(w),
+    decrypt: (enc) => decryptSecret(enc, config.ENCRYPTION_KEY),
+    fallbackToken: config.META_ACCESS_TOKEN,
+  });
+  const metaFactory = new MetaClientFactory({
+    resolver: metaCredentials,
+    transport,
+    version: config.META_GRAPH_VERSION,
+    marketingViaLite: config.META_MM_LITE === 'true',
+  });
+
   // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).
   const workflowStore = new PgWorkflowStore(pool);
   const runStore = new PgWorkflowRunStore(pool);
@@ -83,7 +102,7 @@ async function main(): Promise<void> {
     const key = `${waba}|${name}|${language}`;
     const cached = tplVarCache.get(key);
     if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count };
-    const tplClient = new MetaTemplateClient(config.META_ACCESS_TOKEN, config.META_GRAPH_VERSION);
+    const tplClient = await metaFactory.templateClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
     const list = await tplClient.list(waba);
     // Exact (nom + langue), sinon repli sur le nom seul (langue par défaut d'un template mono-langue).
     const tpl = list.find((t) => t.name === name && t.language === language) ?? list.find((t) => t.name === name);
@@ -118,7 +137,7 @@ async function main(): Promise<void> {
         console.error(`workflow sendTemplate: aucun numéro pour le tenant ${tenant}, template « ${name} » non envoyé`);
         return;
       }
-      const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
 
       // Campagne workflow : les variables du 1er template sont DÉJÀ résolues par contact (paramMapping de la campagne,
       // via buildRecipients). On les utilise directement, sans relire le corps live du template ni les hints (chemin
@@ -184,7 +203,7 @@ async function main(): Promise<void> {
         console.error(`workflow sendQuickMessage: aucun numéro pour le tenant ${tenant}, message rapide non envoyé à ${waId}`);
         return;
       }
-      const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
       const res = await client.sendInteractive(waId, body, buttons);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
@@ -202,7 +221,7 @@ async function main(): Promise<void> {
         console.error(`workflow sendFlow: aucun numéro pour le tenant ${tenant}, formulaire non envoyé à ${waId}`);
         return;
       }
-      const client = new MetaClient({ transport, token: config.META_ACCESS_TOKEN, phoneNumberId: pn, version: config.META_GRAPH_VERSION });
+      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
       // flow_token jamais vide (exigence Meta #131009) mais jetable : la corrélation passe par le _ref du flow_json.
       const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}` });
       // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
@@ -230,18 +249,11 @@ async function main(): Promise<void> {
     );
   });
 
-  // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta).
+  // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT
+  // (B1), avec intercepteur d'auth (un token révoqué invalide le WABA au lieu de brûler des appels).
   const dryRunSender = new DryRunSender();
-  const senderFor = (campaign: Campaign): MessageSender =>
-    dryRun
-      ? dryRunSender
-      : new MetaClient({
-          transport,
-          token: config.META_ACCESS_TOKEN,
-          phoneNumberId: campaign.phoneNumberId,
-          version: config.META_GRAPH_VERSION,
-          marketingViaLite: config.META_MM_LITE === 'true',
-        });
+  const senderFor = async (campaign: Campaign): Promise<MessageSender> =>
+    dryRun ? dryRunSender : metaFactory.senderForTenant(campaign.tenantId, campaign.phoneNumberId);
 
   await queue.work('campaign-run', async (data) => {
     await campaignRunJob(data, {

@@ -50,10 +50,10 @@ export interface InboxRouteDeps {
   ): Promise<void>;
   /** Numéro du tenant depuis lequel répondre. */
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
-  /** Envoie une réponse texte (fenêtre de service 24 h). Retourne le message_id. */
-  sendReply(phoneNumberId: string, to: string, text: string): Promise<string>;
-  /** Envoie un template (autorisé hors fenêtre). Retourne le message_id. */
-  sendTemplateMessage(phoneNumberId: string, to: string, tpl: OutboundTemplate): Promise<string>;
+  /** Envoie une réponse texte (fenêtre de service 24 h). `tenantId` -> token Meta PAR TENANT (B1). Retourne le message_id. */
+  sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
+  /** Envoie un template (autorisé hors fenêtre). `tenantId` -> token Meta PAR TENANT. Retourne le message_id. */
+  sendTemplateMessage(tenantId: string, phoneNumberId: string, to: string, tpl: OutboundTemplate): Promise<string>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -114,7 +114,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
-    const messageId = await deps.sendReply(phoneNumberId, ctx.waId, text);
+    const messageId = await deps.sendReply(tenant, phoneNumberId, ctx.waId, text);
     // L'opérateur prend le fil : le scénario cesse d'avancer sur ce contact, et une campagne ne l'écrasera
     // pas. Best-effort, APRÈS l'envoi réussi : un échec d'état ne doit pas faire croire à un message perdu.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
@@ -156,7 +156,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
-    const messageId = await deps.sendTemplateMessage(phoneNumberId, ctx.waId, {
+    const messageId = await deps.sendTemplateMessage(tenant, phoneNumberId, ctx.waId, {
       name: b.templateName,
       language: b.language,
       bodyParams,
