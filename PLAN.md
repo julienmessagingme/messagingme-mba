@@ -20,16 +20,17 @@ Pour une session qui démarre sans contexte.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 en cours (2/13)** ; bloc A aux 3/5.
+**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 en cours (3/13)** ; bloc A aux 3/5.
 
-**TOUT est en production et vérifié** (mba VPS = commit `9e0a1ac`, migrations 0042/0043 appliquées ; mm-hubspot VPS = `43232c1`, dépôt GitHub privé créé). Détail :
+**TOUT est en production et vérifié** (mba VPS = commit `4c251c4`, migrations 0042/0043/0044 appliquées ; mm-hubspot VPS = `43232c1`, dépôt GitHub privé). Détail :
 - **Bloc 3** ✅ déployé : migration 0042 (index), frein débit 30/min actif (worker redéployé), CI web.
 - **Bloc 1** ✅ déployé (phasé) : `/oauth/install?tenant=` forgeable FERMÉ (jeton signé `?t=`, `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT=false` en prod), verrou réaffectation numéro, garde cross-portail `/card/action`, CI mm-hubspot. 2 déferrages assumés : retrait `CARD_SECRET` (inerte), route admin réaffectation numéro (feature).
 - **Bloc 4** en cours (décision Julien 2026-07-24 : TOUT le bloc 4, dans l'ordre par valeur, Railway ACTÉ) :
   - **4.1 / B1** ✅ déployé, DORMANT (token Meta par tenant ; repli global tant qu'aucun `waba_credentials` -> Zadarma inchangé). Migration 0043.
   - **4.6** ✅ déployé (cœur) : rate-limit login clé sur `ip::email` (plus de plafond global). RESTE : borner trustProxy (needs vérif chaîne XFF Cloudflare->NPM->Next) + compteur DB (Railway multi-réplique).
-  - **RESTE 11 items** : 4.9/4.10 (angles morts worker/qualité), 4.5 (anti-rejeu HMAC cross-repo), 4.3 (mode transaction), 4.7 (health), 4.11 (CA Supabase), 4.12 (tsx deps), 4.4 (BACKEND_URL), 4.13 (restore), 4.2 (bind IPv6, Railway), 4.8 (advisory lock, Railway). Plans détaillés + vérifs adversariales : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
-**Prochain : reprendre le bloc 4 à 4.9 (ou 4.5).** Puis A.3/A.5 (attendent MBA), puis 5.
+  - **4.9** ✅ déployé + vérifié live : heartbeat worker (0044, `worker_heartbeat` battu toutes les 20s, best-effort) exposé dans `/ops` (champ `worker` + carte dashboard) ; `QUEUE_NAMES` 4 -> 8 files (source unique `src/queue/names.ts`) ; alerte Telegram env-first (bot ops) sur `queue.onError` + échecs sweepers, throttlée. Crash-loop boot couvert par staleness (pas auto-alerté). Reviewer PASS.
+  - **RESTE 10 items** : 4.5 (anti-rejeu HMAC cross-repo, **PROCHAIN**), 4.10 (sweeper qualité numéros), 4.3 (mode transaction), 4.7 (health), 4.11 (CA Supabase), 4.12 (tsx deps), 4.4 (BACKEND_URL), 4.13 (restore), 4.2 (bind IPv6, Railway), 4.8 (advisory lock, Railway). Plans détaillés + vérifs adversariales : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
+**Prochain : bloc 4 à 4.5.** Puis A.3/A.5 (attendent MBA), puis 5. ⚠️ Dernière migration = 0044, prochaine = 0045.
 
 ---
 
