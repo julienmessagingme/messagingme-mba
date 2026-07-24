@@ -20,10 +20,16 @@ Pour une session qui démarre sans contexte.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-23** : blocs 0, 2 et **3** livrés ; **bloc 1 (sécurité) codé et revu** ; bloc A aux 3/5.
-- **Bloc 3** : déployé côté CI (poussé sur origin), migration 0042 PAS ENCORE appliquée en prod, worker PAS redéployé (le frein 30/min n'est donc pas actif tant qu'on n'a pas redéployé). Déploiement à faire.
-- **Bloc 1** : reviewer PASS. **mba poussé sur origin (CI verte), mm-hubspot commité EN LOCAL non poussé.** Rien n'est en prod. Déploiement PHASÉ à mener (mm-hubspot d'abord, cf. `.loop/bloc1.md`). 2 déferrages assumés : retrait de `CARD_SECRET` (inerte) et route admin de réaffectation de numéro (feature).
-**Prochain chantier : le bloc 4** (Railway, 13 items), OU les déploiements en attente ci-dessus. Puis A.3/A.5 (attendent MBA), puis 5.
+**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 en cours (2/13)** ; bloc A aux 3/5.
+
+**TOUT est en production et vérifié** (mba VPS = commit `9e0a1ac`, migrations 0042/0043 appliquées ; mm-hubspot VPS = `43232c1`, dépôt GitHub privé créé). Détail :
+- **Bloc 3** ✅ déployé : migration 0042 (index), frein débit 30/min actif (worker redéployé), CI web.
+- **Bloc 1** ✅ déployé (phasé) : `/oauth/install?tenant=` forgeable FERMÉ (jeton signé `?t=`, `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT=false` en prod), verrou réaffectation numéro, garde cross-portail `/card/action`, CI mm-hubspot. 2 déferrages assumés : retrait `CARD_SECRET` (inerte), route admin réaffectation numéro (feature).
+- **Bloc 4** en cours (décision Julien 2026-07-24 : TOUT le bloc 4, dans l'ordre par valeur, Railway ACTÉ) :
+  - **4.1 / B1** ✅ déployé, DORMANT (token Meta par tenant ; repli global tant qu'aucun `waba_credentials` -> Zadarma inchangé). Migration 0043.
+  - **4.6** ✅ déployé (cœur) : rate-limit login clé sur `ip::email` (plus de plafond global). RESTE : borner trustProxy (needs vérif chaîne XFF Cloudflare->NPM->Next) + compteur DB (Railway multi-réplique).
+  - **RESTE 11 items** : 4.9/4.10 (angles morts worker/qualité), 4.5 (anti-rejeu HMAC cross-repo), 4.3 (mode transaction), 4.7 (health), 4.11 (CA Supabase), 4.12 (tsx deps), 4.4 (BACKEND_URL), 4.13 (restore), 4.2 (bind IPv6, Railway), 4.8 (advisory lock, Railway). Plans détaillés + vérifs adversariales : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
+**Prochain : reprendre le bloc 4 à 4.9 (ou 4.5).** Puis A.3/A.5 (attendent MBA), puis 5.
 
 ---
 
