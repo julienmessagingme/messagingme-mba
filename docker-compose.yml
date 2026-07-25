@@ -11,10 +11,11 @@ services:
     restart: unless-stopped
     # Healthcheck sur /live (LIVENESS, zéro DB) et NON /health (readiness) : une panne DB transitoire ou le
     # cold-start EMAXCONNSESSION (cf. DEPLOY.md) ferait boucler un restart si on ciblait /health. wget = busybox
-    # (node:22-alpine, pas de curl). ⚠️ compose seul ne redémarre PAS sur « unhealthy » (il faut un autoheal
-    # externe) : ce healthcheck est un signal d'observabilité (docker ps) tant qu'aucun autoheal n'est branché.
+    # (node:22-alpine, pas de curl). ⚠️ 127.0.0.1 et NON localhost : busybox wget résout localhost en ::1 (IPv6),
+    # or l'app bind 0.0.0.0 (IPv4 seul) -> « Connection refused » sur ::1. (Quand 4.2 fera binder en ::, réévaluer.)
+    # ⚠️ compose seul ne redémarre PAS sur « unhealthy » (il faut un autoheal externe) : signal d'observabilité (docker ps).
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8095/live || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8095/live || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
