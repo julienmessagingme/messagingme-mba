@@ -101,12 +101,16 @@ sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop 
 
 ## ⚠️ Crash-loop transitoire au redéploiement (EMAXCONNSESSION) — normal, s'auto-résout
 
-Juste après `up -d --build`, `mba-api` peut apparaître `Restarting (1)` pendant ~30-60 s et `/health`
-renvoyer 500. Cause : le pooler Supabase (session mode) est plafonné à **15 sessions** ; quand `mba-api`
-et `mba-worker` (deux instances pg-boss) cold-start EN MÊME TEMPS pendant que le pooler tient encore les
-sessions des conteneurs qu'on vient de tuer, le total dépasse 15 -> `EMAXCONNSESSION`. pg-boss émet un
-event `error` non capté (Timekeeper.onCron) qui tue le process -> Docker le relance -> crash-loop bref.
+Juste après `up -d --build`, `mba-api` peut apparaître `Restarting (1)` pendant ~30-60 s. Deux symptômes
+possibles, tous deux transitoires : soit le process redémarre (`/health` et `/live` injoignables -> NPM
+renvoie une 5xx), soit le process est up mais la DB pas encore joignable (`/health` = **503 readiness**,
+tandis que `/live` répond déjà 200). Cause : le pooler Supabase (session mode) est plafonné à **15 sessions** ;
+quand `mba-api` et `mba-worker` (deux instances pg-boss) cold-start EN MÊME TEMPS pendant que le pooler tient
+encore les sessions des conteneurs qu'on vient de tuer, le total dépasse 15 -> `EMAXCONNSESSION`. pg-boss émet
+un event `error` non capté (Timekeeper.onCron) qui tue le process -> Docker le relance -> crash-loop bref.
+(Depuis 4.3, le pool applicatif est en mode transaction sur `APP_DATABASE_URL:6543`, hors du budget session ->
+la contention au cold-start est réduite mais pas nulle, pg-boss restant en session.)
 **Ça se résout seul** dès que le pooler libère les sessions des conteneurs tués (quelques dizaines de
 secondes). Attendre puis revérifier : `sudo docker ps --filter name=mba-api` doit finir sur `Up` stable
-et `/health` sur 200. Ne PAS restart en boucle manuellement (ça relance le cold-start et prolonge la
-contention). Ce n'est pas lié au code déployé.
+et `/health` sur 200 (readiness OK). Ne PAS restart en boucle manuellement (ça relance le cold-start et
+prolonge la contention). Ce n'est pas lié au code déployé.

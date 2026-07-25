@@ -34,6 +34,7 @@ import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
+import { makeDbReadinessCheck } from './db/readiness';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
@@ -105,6 +106,8 @@ async function main(): Promise<void> {
     : undefined;
   const app = buildServer({
     queue,
+    // Readiness : `select 1` (timeout court 2 s) -> /health 503 si la DB est injoignable. /live reste trivial.
+    checkReadiness: makeDbReadinessCheck(pool, 2000),
     auth: {
       users: new PgUserAuthStore(pool),
       secret: config.AUTH_SECRET,

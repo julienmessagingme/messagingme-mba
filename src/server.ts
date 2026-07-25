@@ -60,6 +60,9 @@ import type { Queue } from './queue/queue';
 
 export interface ServerDeps {
   queue: Queue;
+  /** Sonde de readiness (DB joignable ?). OPTIONNEL pour préserver le design DB-free de buildServer : absent
+   *  (tests) -> /health répond 200 inconditionnel. Fourni (prod) -> /health = readiness (503 si rejette). */
+  checkReadiness?: () => Promise<void>;
   /** Défaut : config.META_VERIFY_TOKEN. Injectable en test. */
   verifyToken?: string;
   /** Défaut : config.META_APP_SECRET. Injectable en test. */
@@ -164,11 +167,22 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     reply.code(code).send({ error: code < 500 ? err.message : 'Internal Server Error' });
   });
 
-  app.get('/health', async () => ({
-    ok: true,
-    service: 'messagingme-mba',
-    ts: Date.now(),
-  }));
+  // LIVENESS : le process répond (event loop non bloqué). Zéro DB, zéro dep -> cible d'un healthcheck/restart.
+  // Ne JAMAIS y toucher la DB, sinon il devient une 2e readiness et perd son sens (« process vivant » ≠ « DB joignable »).
+  app.get('/live', async () => ({ ok: true }));
+
+  // READINESS : la DB est-elle joignable ? 503 si non (pool saturé / pooler injoignable), pour un monitoring externe.
+  // On CATCHE et on `reply.code(503)` DANS le handler : un throw serait converti en 500 par setErrorHandler ci-dessus.
+  // Sans checkReadiness (tests DB-free), on conserve le 200 inconditionnel d'avant (contrat de test préservé).
+  app.get('/health', async (_req, reply) => {
+    if (!deps.checkReadiness) return { ok: true, service: 'messagingme-mba', ts: Date.now() };
+    try {
+      await deps.checkReadiness();
+      return { ok: true, service: 'messagingme-mba', ts: Date.now() };
+    } catch {
+      return reply.code(503).send({ ok: false, service: 'messagingme-mba', ts: Date.now() });
+    }
+  });
 
   registerReceiver(app, deps.queue, {
     verifyToken: deps.verifyToken ?? config.META_VERIFY_TOKEN,
