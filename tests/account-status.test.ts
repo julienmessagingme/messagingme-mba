@@ -15,7 +15,8 @@ function rec(over: Partial<PhoneNumberRecord> = {}): PhoneNumberRecord {
   return {
     id: 'PN1', displayPhoneNumber: '+33 5 25 68 02 50', status: null, qualityRating: null, messagingLimitTier: null,
     nameStatus: null, codeVerificationStatus: null, throughputLevel: null, verifiedName: null,
-    wabaHealthStatus: null, accountReviewStatus: null, businessVerificationStatus: null, hubspotConnected: true,
+    wabaHealthStatus: null, accountReviewStatus: null, businessVerificationStatus: null,
+    marketingMessagesLiteApiStatus: null, ownerBusinessName: null, hubspotConnected: true,
     ...over,
   };
 }
@@ -64,14 +65,15 @@ describe('pullFromInfo / pullFromError', () => {
     expect(pullFromInfo({ qualityRating: 'green' })).toMatchObject({ ok: true, qualityRating: 'GREEN' });
     expect(pullFromInfo({ qualityRating: 'NA' })).toMatchObject({ ok: true, qualityRating: 'UNKNOWN' });
   });
-  it('porte les nouveaux champs Meta (name/verif/throughput/verified_name) + santé WABA', () => {
+  it('porte les nouveaux champs Meta (name/verif/throughput/verified_name) + santé WABA + MM Lite + business proprio', () => {
     const r = pullFromInfo(
       { status: 'CONNECTED', nameStatus: 'APPROVED', codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme' },
-      { healthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified' },
+      { healthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me' },
     );
     expect(r).toMatchObject({
       ok: true, nameStatus: 'APPROVED', codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme',
       wabaHealthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified',
+      marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me',
     });
   });
   it('champ absent -> omis (coalesce ne l\'écrasera pas) ; WABA absent -> aucun champ WABA', () => {
@@ -129,14 +131,16 @@ describe('MetaPhoneNumberClient.get', () => {
 });
 
 describe('MetaPhoneNumberClient.getWabaHealth', () => {
-  it('extrait can_send_message de l\'objet health_status + les statuts de revue', async () => {
+  it('extrait can_send_message de l\'objet health_status + les statuts de revue + MM Lite + business proprio', async () => {
     const { fn, calls } = makeFetch([
-      { ok: true, status: 200, json: { health_status: { can_send_message: 'AVAILABLE' }, account_review_status: 'APPROVED', business_verification_status: 'verified' } },
+      { ok: true, status: 200, json: { health_status: { can_send_message: 'AVAILABLE' }, account_review_status: 'APPROVED', business_verification_status: 'verified', marketing_messages_lite_api_status: 'ONBOARDED', owner_business_info: { name: 'Messaging Me', id: '103185632463539' } } },
     ]);
     const waba = await new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1');
-    expect(waba).toMatchObject({ healthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified' });
+    expect(waba).toMatchObject({ healthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me' });
     expect(calls[0]!.url).toContain('/v25.0/WABA1?fields=');
     expect(calls[0]!.url).toContain('health_status');
+    expect(calls[0]!.url).toContain('marketing_messages_lite_api_status');
+    expect(calls[0]!.url).toContain('owner_business_info');
   });
 
   it('tolère un health_status déjà en chaîne (selon version Graph)', async () => {
@@ -241,6 +245,7 @@ describe('route account-status', () => {
       pullStatus: async () => ({
         ok: true, status: 'CONNECTED', qualityRating: 'GREEN', nameStatus: 'APPROVED',
         codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme', wabaHealthStatus: 'AVAILABLE',
+        marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me',
       }),
     });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
@@ -248,7 +253,16 @@ describe('route account-status', () => {
     expect(body.phoneNumberId).toBe('PN1');
     expect(body.hubspotConnected).toBe(false); // vient du record (pas du pull)
     expect(body.nameStatus).toBe('APPROVED'); // frais prime le persisté PENDING_REVIEW
-    expect(body).toMatchObject({ codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme', wabaHealthStatus: 'AVAILABLE' });
+    expect(body).toMatchObject({ codeVerificationStatus: 'VERIFIED', throughputLevel: 'STANDARD', verifiedName: 'Acme', wabaHealthStatus: 'AVAILABLE', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me' });
+    await server.close();
+  });
+
+  it('aucun numéro : MM Lite + business proprio à null (pas undefined)', async () => {
+    const { server } = app({ getPhoneNumber: async () => null });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    const body = res.json<AccountStatusBody>();
+    expect(body.marketingMessagesLiteApiStatus).toBeNull();
+    expect(body.ownerBusinessName).toBeNull();
     await server.close();
   });
 
@@ -272,6 +286,7 @@ describe('route account-status', () => {
 interface AccountStatusBody {
   phoneNumberId: string | null; hubspotConnected: boolean; nameStatus: string | null;
   codeVerificationStatus: string | null; throughputLevel: string | null; verifiedName: string | null; wabaHealthStatus: string | null;
+  marketingMessagesLiteApiStatus: string | null; ownerBusinessName: string | null;
 }
 
 describe('toggle HubSpot par numéro (PATCH .../hubspot)', () => {

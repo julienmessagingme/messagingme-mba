@@ -22,6 +22,8 @@ export type PullResult =
       wabaHealthStatus?: string;
       accountReviewStatus?: string;
       businessVerificationStatus?: string;
+      marketingMessagesLiteApiStatus?: string;
+      ownerBusinessName?: string;
     }
   | { ok: false; authError: boolean };
 
@@ -50,6 +52,8 @@ export function pullFromInfo(info: PhoneNumberInfo, waba?: WabaInfo): PullResult
     ...(waba?.healthStatus !== undefined ? { wabaHealthStatus: waba.healthStatus } : {}),
     ...(waba?.accountReviewStatus !== undefined ? { accountReviewStatus: waba.accountReviewStatus } : {}),
     ...(waba?.businessVerificationStatus !== undefined ? { businessVerificationStatus: waba.businessVerificationStatus } : {}),
+    ...(waba?.marketingMessagesLiteApiStatus !== undefined ? { marketingMessagesLiteApiStatus: waba.marketingMessagesLiteApiStatus } : {}),
+    ...(waba?.ownerBusinessName !== undefined ? { ownerBusinessName: waba.ownerBusinessName } : {}),
   };
 }
 

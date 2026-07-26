@@ -18,6 +18,8 @@ export interface PhoneNumberRecord {
   wabaHealthStatus: string | null;
   accountReviewStatus: string | null;
   businessVerificationStatus: string | null;
+  marketingMessagesLiteApiStatus: string | null;
+  ownerBusinessName: string | null;
   /** Synchro HubSpot active pour ce numéro (toggle admin). Le backfill 0028 met les numéros existants à true. */
   hubspotConnected: boolean;
 }
@@ -40,6 +42,7 @@ export type StatusPatch = {
   status?: string; qualityRating?: string; messagingLimitTier?: string;
   nameStatus?: string; codeVerificationStatus?: string; throughputLevel?: string; verifiedName?: string;
   wabaHealthStatus?: string; accountReviewStatus?: string; businessVerificationStatus?: string;
+  marketingMessagesLiteApiStatus?: string; ownerBusinessName?: string;
 };
 
 export interface AccountRouteDeps {
@@ -84,6 +87,10 @@ export interface AccountStatusResponse {
   accountReviewStatus: string | null;
   /** Vérification d'entreprise (business_verification_status). null = inconnu. */
   businessVerificationStatus: string | null;
+  /** Onboarding API MM Lite (marketing_messages_lite_api_status : "ONBOARDED" / autre). null = inconnu / non communiqué. */
+  marketingMessagesLiteApiStatus: string | null;
+  /** Nom du business propriétaire du WABA (owner_business_info.name). null = inconnu. */
+  ownerBusinessName: string | null;
   /** Synchro HubSpot active pour le numéro principal (pastille + toggle). */
   hubspotConnected: boolean;
   /** Portail HubSpot lié au tenant (mmhs.tenant_portals). Sert à afficher le portail branché ou le CTA « Connecter HubSpot ». */
@@ -123,6 +130,8 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
         wabaHealthStatus: null,
         accountReviewStatus: null,
         businessVerificationStatus: null,
+        marketingMessagesLiteApiStatus: null,
+        ownerBusinessName: null,
         hubspotConnected: false,
         hubspotPortal,
         status: { dot: 'grey', label: 'Aucun numéro', reason: "Aucun numéro WhatsApp n'est rattaché à ce compte." },
@@ -143,6 +152,8 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
     let wabaHealthStatus = pn.wabaHealthStatus;
     let accountReviewStatus = pn.accountReviewStatus;
     let businessVerificationStatus = pn.businessVerificationStatus;
+    let marketingMessagesLiteApiStatus = pn.marketingMessagesLiteApiStatus;
+    let ownerBusinessName = pn.ownerBusinessName;
     let signals: AccountSignals;
 
     if (pull && pull.ok) {
@@ -157,6 +168,8 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
         ...(pull.wabaHealthStatus !== undefined ? { wabaHealthStatus: pull.wabaHealthStatus } : {}),
         ...(pull.accountReviewStatus !== undefined ? { accountReviewStatus: pull.accountReviewStatus } : {}),
         ...(pull.businessVerificationStatus !== undefined ? { businessVerificationStatus: pull.businessVerificationStatus } : {}),
+        ...(pull.marketingMessagesLiteApiStatus !== undefined ? { marketingMessagesLiteApiStatus: pull.marketingMessagesLiteApiStatus } : {}),
+        ...(pull.ownerBusinessName !== undefined ? { ownerBusinessName: pull.ownerBusinessName } : {}),
       });
       quality = normalizeQuality(pull.qualityRating ?? pn.qualityRating);
       numberStatus = pull.status ?? numberStatus;
@@ -169,6 +182,8 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
       wabaHealthStatus = pull.wabaHealthStatus ?? wabaHealthStatus;
       accountReviewStatus = pull.accountReviewStatus ?? accountReviewStatus;
       businessVerificationStatus = pull.businessVerificationStatus ?? businessVerificationStatus;
+      marketingMessagesLiteApiStatus = pull.marketingMessagesLiteApiStatus ?? marketingMessagesLiteApiStatus;
+      ownerBusinessName = pull.ownerBusinessName ?? ownerBusinessName;
       signals = { reachable: true, quality, numberStatus };
     } else if (pull && !pull.ok) {
       signals = { reachable: false, authError: pull.authError, quality, numberStatus };
@@ -191,6 +206,8 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
       wabaHealthStatus: wabaHealthStatus ?? null,
       accountReviewStatus: accountReviewStatus ?? null,
       businessVerificationStatus: businessVerificationStatus ?? null,
+      marketingMessagesLiteApiStatus: marketingMessagesLiteApiStatus ?? null,
+      ownerBusinessName: ownerBusinessName ?? null,
       hubspotConnected: pn.hubspotConnected,
       hubspotPortal,
       status: computeAccountStatus(signals),

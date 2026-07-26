@@ -26,6 +26,7 @@ import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { resolveScenario } from '../../src/ids/resolve';
 import { PgTenantSettingsStore } from '../../src/settings/store.pg';
 import { PgEmbeddedSignupStore, TenantConflictError } from '../../src/account/es-store.pg';
+import { PgPhoneStatusStore } from '../../src/account/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -702,6 +703,34 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       ['pn-red', tenantId],
     );
     expect(await quality.getRating('pn-red')).toBe('RED');
+  });
+
+  it('PgPhoneStatusStore : round-trip saveStatus -> getPhoneNumber des colonnes MM Lite + business proprio (0045)', async () => {
+    const store = new PgPhoneStatusStore(pool);
+    // Tenant isolé : getPhoneNumber renvoie le 1er numéro par created_at, un tenant dédié évite toute ambiguïté.
+    const tId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-waba-status') returning id`)).rows[0]!.id;
+    const wId = 'waba-status-0045';
+    const pId = 'pn-status-0045';
+    try {
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w')`, [wId, tId]);
+      await pool.query(`insert into phone_numbers (id, waba_id, tenant_id) values ($1, $2, $3)`, [pId, wId, tId]);
+      // Colonnes neuves nulles au départ (pas de backfill).
+      expect((await store.getPhoneNumber(tId))!.marketingMessagesLiteApiStatus).toBeNull();
+      // saveStatus persiste les 2 nouvelles colonnes (coalesce).
+      await store.saveStatus(pId, { marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me' });
+      const after = (await store.getPhoneNumber(tId))!;
+      expect(after.marketingMessagesLiteApiStatus).toBe('ONBOARDED');
+      expect(after.ownerBusinessName).toBe('Messaging Me');
+      // coalesce : un patch qui n'inclut pas ces champs ne les efface pas.
+      await store.saveStatus(pId, { status: 'CONNECTED' });
+      const kept = (await store.getPhoneNumber(tId))!;
+      expect(kept.marketingMessagesLiteApiStatus).toBe('ONBOARDED');
+      expect(kept.ownerBusinessName).toBe('Messaging Me');
+    } finally {
+      await pool.query('delete from phone_numbers where id = $1', [pId]);
+      await pool.query('delete from waba where id = $1', [wId]);
+      await pool.query('delete from tenants where id = $1', [tId]);
+    }
   });
 
   it('PgEmbeddedSignupStore : refuse de réaffecter un numéro/WABA à un autre workspace (TenantConflictError, ligne inchangée)', async () => {

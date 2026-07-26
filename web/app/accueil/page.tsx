@@ -252,6 +252,76 @@ function AccueilInner({ session }: { session: Session }) {
         <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
+          {/* Carte Meta Business Agent, remontée en tête du dashboard, avec la reprise après opérateur juste
+              en dessous du toggle (demande fondateur : les deux gouvernent qui répond au client). */}
+          <div data-testid="settings-card" className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
+            <div className="mb-3 flex items-start gap-3">
+              {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
+                <p className="mt-0.5 text-xs text-ink-500">
+                  {mbaEnabled
+                    ? t("Activé : l'agent IA répondra quand Meta ouvrira la fonctionnalité sur ton numéro.", 'Enabled: the AI agent will reply once Meta opens the feature on your number.')
+                    : t("Désactivé. Active-le pour préparer l'agent IA WhatsApp.", 'Disabled. Enable it to prepare the WhatsApp AI agent.')}
+                  <span className="ml-1 text-ink-400">{t("En attente d'ouverture Meta (mur ToS Business AI).", 'Awaiting Meta rollout (Business AI ToS wall).')}</span>
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                data-testid="mba-toggle"
+                onClick={toggleMba}
+                disabled={!isAdmin || savingMba}
+                aria-pressed={mbaEnabled}
+                title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition ${mbaEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${!isAdmin ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${mbaEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+              </button>
+              <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
+            </div>
+            {/* Reprise après intervention d'un opérateur, juste sous le toggle MBA. Gouverne le gel du scénario
+                quand un humain répond dans l'inbox. N'apparaît qu'avec un numéro (sinon aucune conversation). */}
+            {account?.hasNumber && (
+              <div className="mt-4 border-t border-ink-100 pt-3">
+                <div className="text-sm font-semibold text-ink-800">
+                  {t("Reprise après intervention d'un opérateur", 'Hand back after an operator steps in')}
+                </div>
+                <p className="mt-0.5 text-xs text-ink-500">
+                  {t(
+                    "Quand un opérateur répond dans l'inbox, le scénario se met en pause sur cette conversation. Voici combien de temps avant qu'il reprenne tout seul.",
+                    'When an operator replies from the inbox, the scenario pauses on that conversation. This is how long before it resumes on its own.',
+                  )}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    data-testid="handback-input"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={handback}
+                    onChange={(e) => setHandback(e.target.value)}
+                    onBlur={() => { void saveHandback(); }}
+                    disabled={!isAdmin || savingHandback}
+                    placeholder={t('par défaut', 'default')}
+                    className="w-28 rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
+                  />
+                  <span className="text-sm text-ink-600">{t('minutes', 'minutes')}</span>
+                  {savingHandback && <span className="text-xs text-ink-400">{t('enregistrement...', 'saving...')}</span>}
+                </div>
+                <p className="mt-1.5 text-xs text-ink-400">
+                  {handback.trim() === ''
+                    ? t('Vide : la valeur par défaut du service s’applique (2 heures).', 'Empty: the service default applies (2 hours).')
+                    : handback.trim() === '0'
+                      ? t('0 : le scénario ne reprend JAMAIS tout seul. Il faut rendre la main depuis la conversation.', '0: the scenario never resumes on its own. You must hand back from the conversation.')
+                      : t('Un opérateur peut rendre la main plus tôt, depuis la conversation.', 'An operator can hand back earlier, from the conversation.')}
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Invariant de cette cascade : « Aucun numéro » ne s'affiche QUE si account est chargé ET dit qu'il
               n'y en a pas. Tant qu'on ne sait pas, on le dit (chargement, puis erreur avec de quoi relancer).
               Affirmer une absence qu'on n'a pas constatée était toute la cause du symptôme rapporté. */}
@@ -276,7 +346,7 @@ function AccueilInner({ session }: { session: Session }) {
           ) : account && !account.hasNumber ? (
             <ConnectNumberZone tenantId={session.tenantId} isAdmin={isAdmin} onConnected={() => { setLoading(true); void load(); void loadAccount(); }} />
           ) : (
-            <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+            <div data-testid="numero-card" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Numéro WhatsApp', 'WhatsApp number')}</h3>
                 {account && (
@@ -383,44 +453,6 @@ function AccueilInner({ session }: { session: Session }) {
                   </div>
                 </div>
               )}
-              {/* Durée du gel : combien de temps une conversation reste à l'opérateur avant de repartir
-                  toute seule. C'est le réglage qui décide combien de temps un client peut rester sans
-                  réponse automatique, d'où le libellé explicite plutôt qu'un simple nombre. */}
-              {account?.hasNumber && (
-                <div className="mt-4 border-t border-ink-100 pt-3">
-                  <div className="text-sm font-semibold text-ink-800">
-                    {t("Reprise après intervention d'un opérateur", 'Hand back after an operator steps in')}
-                  </div>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    {t(
-                      "Quand un opérateur répond dans l'inbox, le scénario se met en pause sur cette conversation. Voici combien de temps avant qu'il reprenne tout seul.",
-                      'When an operator replies from the inbox, the scenario pauses on that conversation. This is how long before it resumes on its own.',
-                    )}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={handback}
-                      onChange={(e) => setHandback(e.target.value)}
-                      onBlur={() => { void saveHandback(); }}
-                      disabled={!isAdmin || savingHandback}
-                      placeholder={t('par défaut', 'default')}
-                      className="w-28 rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
-                    />
-                    <span className="text-sm text-ink-600">{t('minutes', 'minutes')}</span>
-                    {savingHandback && <span className="text-xs text-ink-400">{t('enregistrement...', 'saving...')}</span>}
-                  </div>
-                  <p className="mt-1.5 text-xs text-ink-400">
-                    {handback.trim() === ''
-                      ? t('Vide : la valeur par défaut du service s’applique (2 heures).', 'Empty: the service default applies (2 hours).')
-                      : handback.trim() === '0'
-                        ? t('0 : le scénario ne reprend JAMAIS tout seul. Il faut rendre la main depuis la conversation.', '0: the scenario never resumes on its own. You must hand back from the conversation.')
-                        : t('Un opérateur peut rendre la main plus tôt, depuis la conversation.', 'An operator can hand back earlier, from the conversation.')}
-                  </p>
-                </div>
-              )}
               {account?.hasNumber && account.hubspotPortal && !account.hubspotPortal.connected && (
                 // Aucun portail relié : on ne montre PAS le toggle par numéro (pousser sans portail ne fait rien).
                 // Le CTA lance l'install OAuth du connecteur en liant CE tenant (admin uniquement).
@@ -449,34 +481,6 @@ function AccueilInner({ session }: { session: Session }) {
             </div>
           )}
 
-          {/* Carte MBA (déplacée depuis Analytics) */}
-          <div className="flex flex-col rounded-2xl border border-ink-200 bg-gradient-to-br from-white to-navy-50 p-5 shadow-sm">
-            <div className="mb-3 flex items-start gap-3">
-              {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/meta-business-agent.png" alt="Meta Business Agent" className="h-10 w-10 shrink-0 rounded-lg object-contain" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold tracking-tight text-ink-900">Meta Business Agent</div>
-                <p className="mt-0.5 text-xs text-ink-500">
-                  {mbaEnabled
-                    ? t("Activé : l'agent IA répondra quand Meta ouvrira la fonctionnalité sur ton numéro.", 'Enabled: the AI agent will reply once Meta opens the feature on your number.')
-                    : t("Désactivé. Active-le pour préparer l'agent IA WhatsApp.", 'Disabled. Enable it to prepare the WhatsApp AI agent.')}
-                  <span className="ml-1 text-ink-400">{t("En attente d'ouverture Meta (mur ToS Business AI).", 'Awaiting Meta rollout (Business AI ToS wall).')}</span>
-                </p>
-              </div>
-            </div>
-            <div className="mt-auto flex items-center gap-3 pt-2">
-              <button
-                onClick={toggleMba}
-                disabled={!isAdmin || savingMba}
-                title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
-                className={`relative h-7 w-12 shrink-0 rounded-full transition ${mbaEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${!isAdmin ? 'cursor-not-allowed opacity-60' : ''}`}
-              >
-                <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${mbaEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-              </button>
-              <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
-            </div>
-          </div>
         </div>
       )}
     </div>

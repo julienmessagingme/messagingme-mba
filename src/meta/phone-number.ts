@@ -24,6 +24,10 @@ export interface WabaInfo {
   accountReviewStatus?: string;
   /** Vérification d'entreprise (`business_verification_status` : verified / not_verified / pending). */
   businessVerificationStatus?: string;
+  /** Statut d'onboarding de l'API MM Lite (`marketing_messages_lite_api_status` : ONBOARDED / ...). Mesuré lisible. */
+  marketingMessagesLiteApiStatus?: string;
+  /** Nom du business propriétaire du WABA (`owner_business_info.name`). Contexte du panneau statut compte. */
+  ownerBusinessName?: string;
 }
 
 /**
@@ -63,18 +67,23 @@ export class MetaPhoneNumberClient {
   }
 
   /**
-   * `GET /{waba_id}?fields=health_status,account_review_status,business_verification_status`. Santé globale du WABA
-   * (page Accueil). `health_status` est un OBJET côté Graph -> on extrait `can_send_message` (tolérant si Meta
-   * renvoie déjà une chaîne selon la version). Throw MetaApiError si non-2xx (même contrat que `get`).
+   * `GET /{waba_id}?fields=health_status,account_review_status,business_verification_status,
+   * marketing_messages_lite_api_status,owner_business_info`. Santé globale du WABA + statut MM Lite + business
+   * propriétaire (panneau statut du dashboard). `health_status` est un OBJET côté Graph -> on extrait
+   * `can_send_message` (tolérant si Meta renvoie déjà une chaîne selon la version) ; `owner_business_info.name`
+   * pour le nom du business. Throw MetaApiError si non-2xx (même contrat que `get`).
    */
   async getWabaHealth(wabaId: string): Promise<WabaInfo> {
-    const fields = 'health_status,account_review_status,business_verification_status';
+    const fields = 'health_status,account_review_status,business_verification_status,marketing_messages_lite_api_status,owner_business_info';
     const url = `${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}?fields=${fields}`;
     const res = await this.fetchImpl(url, { method: 'GET', headers: { authorization: `Bearer ${this.token}` } });
     const json = (await res.json().catch(() => null)) as
       | {
           health_status?: { can_send_message?: string } | string;
-          account_review_status?: string; business_verification_status?: string; error?: MetaErrorBody;
+          account_review_status?: string; business_verification_status?: string;
+          marketing_messages_lite_api_status?: string;
+          owner_business_info?: { name?: string; id?: string };
+          error?: MetaErrorBody;
         }
       | null;
     if (!res.ok) throw new MetaApiError(res.status, json?.error ?? null);
@@ -84,6 +93,8 @@ export class MetaPhoneNumberClient {
       healthStatus,
       accountReviewStatus: json?.account_review_status,
       businessVerificationStatus: json?.business_verification_status,
+      marketingMessagesLiteApiStatus: json?.marketing_messages_lite_api_status,
+      ownerBusinessName: json?.owner_business_info?.name,
     };
   }
 }
