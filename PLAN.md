@@ -20,9 +20,9 @@ Pour une session qui démarre sans contexte.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 en cours (9/13)** ; bloc A aux 3/5.
+**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 à 10/13** ; bloc A aux 3/5.
 
-**TOUT est en production et vérifié** (mba VPS = commit `0e55243`, migrations 0042/0043/0044 appliquées, `APP_DATABASE_URL`=6543 + `DB_SSL_CA_FILE` posées, DB_SSL_INSECURE retiré ; mm-hubspot VPS = `d27ba3f`, dépôt GitHub privé). Détail :
+**TOUT est en production et vérifié** (mba VPS = commit `385ec01`, migrations 0042/0043/0044 appliquées, `APP_DATABASE_URL`=6543 + `DB_SSL_CA_FILE` posées, DB_SSL_INSECURE retiré ; mm-hubspot VPS = `d27ba3f`, dépôt GitHub privé). Détail :
 - **Bloc 3** ✅ déployé : migration 0042 (index), frein débit 30/min actif (worker redéployé), CI web.
 - **Bloc 1** ✅ déployé (phasé) : `/oauth/install?tenant=` forgeable FERMÉ (jeton signé `?t=`, `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT=false` en prod), verrou réaffectation numéro, garde cross-portail `/card/action`, CI mm-hubspot. 2 déferrages assumés : retrait `CARD_SECRET` (inerte), route admin réaffectation numéro (feature).
 - **Bloc 4** en cours (décision Julien 2026-07-24 : TOUT le bloc 4, dans l'ordre par valeur, Railway ACTÉ) :
@@ -35,8 +35,9 @@ Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent s
   - **4.7** ✅ déployé + vérifié live : `/live` liveness triviale (zéro DB) + `/health` readiness (`select 1` timeout 2s, 503 si DB KO, catch+reply.code(503) pour éviter le 500). `checkReadiness` optionnel (tests DB-free gardent 200). Healthcheck compose sur `/live` (⚠️ `127.0.0.1` : busybox wget résout localhost en ::1, app bind IPv4 -> bug runtime attrapé en prod). health=healthy vérifié. Reviewer PASS.
   - **4.11** ✅ déployé + vérifié live : vérif TLS COMPLÈTE anti-MITM du pooler (avant : `DB_SSL_INSECURE`, chiffré non vérifié). CA Supabase (intermediate+root) bakée dans l'image (`certs/supabase-pooler-ca.crt`, cert public committé) -> `DB_SSL_CA_FILE`. `pgSsl()` CA_FILE prime sur INSECURE (rollback sûr), readFileSync durci. Couvre 5432 (pg-boss) + 6543 (app). DB_SSL_INSECURE retiré. Pré-vol en conteneur jetable. ⚠️ 2 images (api/worker) à rebuilder séparément (noté DEPLOY.md). CA expire 2031. Reviewer PASS.
   - **4.12** ✅ déployé + vérifié, 2 repos : tsx déplacé devDependencies -> dependencies (mba + mm-hubspot). La prod tourne en runtime tsx ; une install prod-only (npm ci --omit=dev, Railway) l'aurait cassé. Locks régénérés (reclassif seule, zéro bump). Inerte sur le VPS. /health 200 x2, tsx en image. Reviewer-agent sauté (manifeste trivial, auto-vérifié).
-  - **RESTE 4 items** : 4.4 (BACKEND_URL runtime, **PROCHAIN**), 4.13 (restore), 4.2 (bind IPv6, Railway), 4.8 (advisory lock, Railway). Plans détaillés + vérifs adversariales : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
-**Prochain : bloc 4 à 4.4.** Puis A.3/A.5 (attendent MBA), puis 5. ⚠️ Dernière migration = 0044, prochaine = 0045.
+  - **4.4-A** ✅ déployé + vérifié : BACKEND_URL du front en `build.args` (le rewrite Next est gelé au build) au lieu du `environment:` no-op. Comportement VPS inchangé (/api/backend/health -> 200). **Option B (route handler proxy runtime) DIFFÉRÉE au groupe Railway** (proxy sur 100% du trafic live, à QA golden paths dans ce contexte).
+  - **RESTE** : 4.13 (restore, **PROCHAIN**), puis **groupe Railway** : 4.4-B (proxy runtime), 4.2 (bind IPv6), 4.8 (advisory lock migrations). Plans détaillés + vérifs : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
+**Prochain : bloc 4 à 4.13, puis groupe Railway.** Puis A.3/A.5 (attendent MBA), puis 5. ⚠️ Dernière migration = 0044, prochaine = 0045.
 
 ---
 
