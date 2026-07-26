@@ -20,9 +20,9 @@ Pour une session qui démarre sans contexte.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 en cours (7/13)** ; bloc A aux 3/5.
+**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 en cours (8/13)** ; bloc A aux 3/5.
 
-**TOUT est en production et vérifié** (mba VPS = commit `e74d92a`, migrations 0042/0043/0044 appliquées, `APP_DATABASE_URL`=6543 posée ; mm-hubspot VPS = `526306b`, dépôt GitHub privé). Détail :
+**TOUT est en production et vérifié** (mba VPS = commit `b68430b`, migrations 0042/0043/0044 appliquées, `APP_DATABASE_URL`=6543 + `DB_SSL_CA_FILE` posées, DB_SSL_INSECURE retiré ; mm-hubspot VPS = `526306b`, dépôt GitHub privé). Détail :
 - **Bloc 3** ✅ déployé : migration 0042 (index), frein débit 30/min actif (worker redéployé), CI web.
 - **Bloc 1** ✅ déployé (phasé) : `/oauth/install?tenant=` forgeable FERMÉ (jeton signé `?t=`, `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT=false` en prod), verrou réaffectation numéro, garde cross-portail `/card/action`, CI mm-hubspot. 2 déferrages assumés : retrait `CARD_SECRET` (inerte), route admin réaffectation numéro (feature).
 - **Bloc 4** en cours (décision Julien 2026-07-24 : TOUT le bloc 4, dans l'ordre par valeur, Railway ACTÉ) :
@@ -33,8 +33,9 @@ Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent s
   - **4.10** ✅ déployé + vérifié live : sweeper worker (~20 min) qui rafraîchit status/quality_rating de tous les numéros (le pull n'était branché que dans la route Accueil) + alerte Telegram sur authError / non-CONNECTED / RED. `status-sweep.ts` (classification pure + dedup par transition Set mémoire, nettoyage sur `pull.ok` seul) ; `PgOpsStore.listNumbersForStatusSweep` (cross-tenant read-only). Pas de migration. Palliatif polling (webhook quality non câblé). Reviewer PASS (après correction d'un 🔴 sur la dedup).
   - **4.3** ✅ déployé + vérifié live (2 temps) : pool applicatif (API + worker) sur le pooler mode TRANSACTION via `APP_DATABASE_URL` (6543) ; pg-boss reste en session (5432). `resolveAppDatabaseUrl = APP_DATABASE_URL || DATABASE_URL` (repli sûr). Sûr car mba search_path-agnostique (public par défaut, mmhs qualifié, transactions via client dédié). Vérifié : /ops (queues 8 + heartbeat via 6543), transaction connect/begin/commit OK, zéro prepared-statement/EMAXCONN. Budget session ~18 -> ~8. Reviewer PASS.
   - **4.7** ✅ déployé + vérifié live : `/live` liveness triviale (zéro DB) + `/health` readiness (`select 1` timeout 2s, 503 si DB KO, catch+reply.code(503) pour éviter le 500). `checkReadiness` optionnel (tests DB-free gardent 200). Healthcheck compose sur `/live` (⚠️ `127.0.0.1` : busybox wget résout localhost en ::1, app bind IPv4 -> bug runtime attrapé en prod). health=healthy vérifié. Reviewer PASS.
-  - **RESTE 6 items** : 4.11 (CA Supabase, **PROCHAIN**), 4.12 (tsx deps), 4.4 (BACKEND_URL), 4.13 (restore), 4.2 (bind IPv6, Railway), 4.8 (advisory lock, Railway). Plans détaillés + vérifs adversariales : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
-**Prochain : bloc 4 à 4.11.** Puis A.3/A.5 (attendent MBA), puis 5. ⚠️ Dernière migration = 0044, prochaine = 0045.
+  - **4.11** ✅ déployé + vérifié live : vérif TLS COMPLÈTE anti-MITM du pooler (avant : `DB_SSL_INSECURE`, chiffré non vérifié). CA Supabase (intermediate+root) bakée dans l'image (`certs/supabase-pooler-ca.crt`, cert public committé) -> `DB_SSL_CA_FILE`. `pgSsl()` CA_FILE prime sur INSECURE (rollback sûr), readFileSync durci. Couvre 5432 (pg-boss) + 6543 (app). DB_SSL_INSECURE retiré. Pré-vol en conteneur jetable. ⚠️ 2 images (api/worker) à rebuilder séparément (noté DEPLOY.md). CA expire 2031. Reviewer PASS.
+  - **RESTE 5 items** : 4.12 (tsx en dependencies, 2 repos, **PROCHAIN**), 4.4 (BACKEND_URL runtime), 4.13 (restore), 4.2 (bind IPv6, Railway), 4.8 (advisory lock, Railway). Plans détaillés + vérifs adversariales : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
+**Prochain : bloc 4 à 4.12.** Puis A.3/A.5 (attendent MBA), puis 5. ⚠️ Dernière migration = 0044, prochaine = 0045.
 
 ---
 
