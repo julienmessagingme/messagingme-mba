@@ -78,3 +78,13 @@ jobs:
         run: npm run lint
       - name: Type-check exhaustif
         run: npx tsc --noEmit
+      - name: Tests unitaires front (vitest)
+        run: npm test
+      # E2E : les appels /api/backend/* sont mockés par page.route -> aucun backend ni base requis. Le webServer
+      # de Playwright build + sert le Next ; on installe juste le navigateur (avec ses deps système).
+      - name: Installer le navigateur E2E
+        run: npx playwright install --with-deps chromium
+      - name: Tests E2E (Playwright)
+        run: npm run test:e2e
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'

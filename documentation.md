@@ -358,7 +358,7 @@ wrapper une valeur backend/clé/comparaison dans `t()` ; chaînes au niveau modu
 
 **Lot 6 (2026-07-16), dates/nombres/libellés localisés** : le type `Locale` vit dans `web/lib/locale.ts` (**.ts pur** :
 le tsc racine n'a pas `--jsx`, importer un type depuis `i18n.tsx` casse le build → TS6142 ; i18n.tsx le ré-exporte).
-`day.ts` (`dayLabel`/`hourMin`/`formatDate`) et `format.ts` (`fmtNum`/`fmtPct`/`throughputLabel`/`tierLabel`) prennent
+`day.ts` (`dayLabel`/`hourMin`/`formatDate`) et `format.ts` (`fmtNum`/`fmtPct`/`sendingLimitLabel`/`tierLabel`) prennent
 un `locale` **REQUIS** (pas de défaut : tsc LISTE tous les appelants, aucun oubli possible). Les tags BCP47 (`fr-FR`/
 `en-GB`) sont CONFINÉS à ces 2 libs : grep `fr-FR` = 0 ailleurs dans `web/`. `dayKey` (en-CA = clé ISO de tri) et
 `fmtCost` restent indépendants de la langue.
@@ -464,9 +464,10 @@ Vue chronologique par lot. La vue thématique correspondante est dans les sectio
   Détail transversal : `brain/LEARNINGS.md` 2026-07-15. **Reste à faire** : le vrai tracking de livraison (todo).
 - **Campagne workflow : le 1er nœud DOIT être un template** (validé côté route via `getWorkflowGraph` + `entryNode`,
   400 sinon). Le mapping du 1er template est stocké sur la campagne (`param_mapping`), pas sur le template global.
-- **Débit Meta : `throughput_level` ≠ `messaging_limit_tier`.** throughput = débit d'envoi (STANDARD 80 msg/s, HIGH
-  1000/s) ; messaging_limit_tier = **cap de clients uniques par 24 h** (TIER_250/1K/10K/100K/UNLIMITED). Deux infos
-  distinctes à afficher séparément (`web/lib/format.ts` `throughputLabel`/`tierLabel`).
+- **Cap d'envoi Meta : `messaging_limit_tier`** = **cap de clients uniques par 24 h** (TIER_250/1K/10K/100K/UNLIMITED),
+  affiché via `web/lib/format.ts` `sendingLimitLabel` (repli honnête si Meta n'a pas évalué, jamais un faux chiffre).
+  Le débit brut `throughput_level` (STANDARD 80 msg/s, identique pour tous) N'EST PLUS affiché ni mappé (décision
+  produit F2 : sans valeur pour l'utilisateur). Le champ reste pull/persisté côté backend, juste non rendu.
 - **État HubSpot d'un numéro = lecture CROSS-SCHEMA** : mba lit `mmhs.tenant_portals`/`mmhs.portals` (schéma du
   connecteur mm-hubspot, même Supabase) via `getHubspotPortal` (best-effort, catch -> non connecté, jamais de 500).
   Le toggle par-numéro (`phone_numbers.hubspot_connected`) gate le push d'analyse. Bouton « Connecter HubSpot » =

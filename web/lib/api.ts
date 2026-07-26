@@ -724,6 +724,10 @@ export interface AccountStatusResponse {
   wabaHealthStatus: string | null;
   accountReviewStatus: string | null;
   businessVerificationStatus: string | null;
+  /** Onboarding API MM Lite (marketing_messages_lite_api_status). null = non communiqué par Meta. */
+  marketingMessagesLiteApiStatus: string | null;
+  /** Business propriétaire du WABA (owner_business_info.name). null = inconnu. */
+  ownerBusinessName: string | null;
   hubspotConnected: boolean;
   /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ».
    *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */

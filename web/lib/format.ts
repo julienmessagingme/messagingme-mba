@@ -22,27 +22,18 @@ export function fmtPct(num: number, den: number, locale: Locale): string {
 }
 
 /**
- * Débit d'envoi (throughput.level Meta) -> valeur chiffrée en clair (messages/seconde), pas le libellé brut
- * « STANDARD ». Palier standard = 80 msg/s, palier élevé = 1 000 msg/s (barèmes Meta Cloud API). Toute autre
- * valeur retombe sur le brut (NOT_APPLICABLE reste explicité). Fonction pure -> testable en isolation.
+ * Cap d'envoi 24 h (messaging_limit_tier Meta) -> nombre de clients contactables par 24 h, TOUJOURS affiché
+ * (repli honnête si Meta ne l'a pas encore évalué : jamais un faux chiffre). C'est le vrai plafond métier ;
+ * le débit brut (80 msg/s, identique pour tous) n'est PLUS affiché. Fonction pure -> testable en isolation.
  */
-export function throughputLabel(level: string, locale: Locale): string {
-  const fr: Record<string, string> = {
-    STANDARD: '80 messages / seconde',
-    HIGH: '1 000 messages / seconde',
-    NOT_APPLICABLE: 'Non applicable',
-  };
-  const en: Record<string, string> = {
-    STANDARD: '80 messages / second',
-    HIGH: '1,000 messages / second',
-    NOT_APPLICABLE: 'Not applicable',
-  };
-  return (locale === 'en' ? en : fr)[level.toUpperCase()] ?? level;
+export function sendingLimitLabel(tier: string | null | undefined, locale: Locale): string {
+  if (!tier) return locale === 'en' ? 'Not yet evaluated by Meta' : "Pas encore évalué par Meta";
+  return tierLabel(tier, locale);
 }
 
 /**
  * Palier de messagerie Meta (messaging_limit_tier) -> cap en clair (nombre de clients contactables par 24 h).
- * C'est le PLAFOND de conversations business ouvertes/jour, distinct du débit (throughputLabel). Fonction pure.
+ * Fonction pure. Passer par `sendingLimitLabel` pour l'affichage (gère le repli null).
  */
 export function tierLabel(tier: string, locale: Locale): string {
   const fr: Record<string, string> = {
@@ -64,4 +55,41 @@ export function tierLabel(tier: string, locale: Locale): string {
     UNLIMITED: 'Unlimited',
   };
   return (locale === 'en' ? en : fr)[tier.toUpperCase()] ?? tier;
+}
+
+/** Statut d'un signal de compte affiché dans le panneau : `tone` pilote la pastille (vert/ambre/gris). */
+export type StatusTone = 'ok' | 'warn' | 'unknown';
+export interface StatusBadge { label: string; tone: StatusTone }
+
+/**
+ * Onboarding de l'API MM Lite (marketing_messages_lite_api_status). `ONBOARDED` = approuvé (vert). Absence =
+ * inconnu/non communiqué (gris), JAMAIS un faux "Non". Fonction pure -> testable.
+ */
+export function mmLiteBadge(status: string | null | undefined, locale: Locale): StatusBadge {
+  if (!status) return { label: locale === 'en' ? 'Not reported' : 'Non communiqué', tone: 'unknown' };
+  const up = status.toUpperCase();
+  if (up === 'ONBOARDED') return { label: locale === 'en' ? 'Approved' : 'Approuvé', tone: 'ok' };
+  const fr: Record<string, string> = { NOT_ONBOARDED: 'Non activé', IN_REVIEW: 'En revue', ONBOARDING: 'En cours' };
+  const en: Record<string, string> = { NOT_ONBOARDED: 'Not enabled', IN_REVIEW: 'In review', ONBOARDING: 'In progress' };
+  return { label: (locale === 'en' ? en : fr)[up] ?? status, tone: 'warn' };
+}
+
+/** Revue du compte WABA (account_review_status : APPROVED / PENDING / REJECTED). Fonction pure. */
+export function accountReviewBadge(status: string | null | undefined, locale: Locale): StatusBadge {
+  if (!status) return { label: locale === 'en' ? 'Not reported' : 'Non communiqué', tone: 'unknown' };
+  const up = status.toUpperCase();
+  if (up === 'APPROVED') return { label: locale === 'en' ? 'Approved' : 'Approuvé', tone: 'ok' };
+  if (up === 'PENDING') return { label: locale === 'en' ? 'Pending' : 'En attente', tone: 'warn' };
+  if (up === 'REJECTED') return { label: locale === 'en' ? 'Rejected' : 'Refusé', tone: 'warn' };
+  return { label: status, tone: 'warn' };
+}
+
+/** Vérification d'entreprise (business_verification_status : verified / not_verified / pending). Fonction pure. */
+export function businessVerificationBadge(status: string | null | undefined, locale: Locale): StatusBadge {
+  if (!status) return { label: locale === 'en' ? 'Not reported' : 'Non communiqué', tone: 'unknown' };
+  const up = status.toUpperCase();
+  if (up === 'VERIFIED') return { label: locale === 'en' ? 'Verified' : 'Vérifiée', tone: 'ok' };
+  if (up === 'PENDING' || up === 'PENDING_SUBMISSION') return { label: locale === 'en' ? 'Pending' : 'En attente', tone: 'warn' };
+  if (up === 'NOT_VERIFIED') return { label: locale === 'en' ? 'Not verified' : 'Non vérifiée', tone: 'warn' };
+  return { label: status, tone: 'warn' };
 }

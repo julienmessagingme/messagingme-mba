@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
-import { fmtNum, fmtCost, throughputLabel, tierLabel } from '@/lib/format';
+import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, type StatusBadge } from '@/lib/format';
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
   setHubspotListsEnabled as saveHubspotListsEnabled,
@@ -370,12 +370,37 @@ function AccueilInner({ session }: { session: Session }) {
                       {qualityLabel(account.quality, t)}
                     </div>
                   </div>
-                  {account.tier && (
-                    <Field label={t("Cap d'envoi", 'Sending limit')} value={tierLabel(account.tier, locale)} />
-                  )}
+                  {/* Cap d'envoi 24 h TOUJOURS affiché (le vrai plafond métier). Le débit brut 80 msg/s, identique
+                      pour tous, a été retiré. Repli honnête si Meta n'a pas encore évalué le palier. */}
+                  <Field label={t("Cap d'envoi 24 h", 'Sending limit /24h')} value={sendingLimitLabel(account.tier, locale)} />
                   {account.nameStatus && <Field label={t('Nom', 'Name')} value={nameStatusLabel(account.nameStatus, t)} />}
-                  {account.throughputLevel && <Field label={t('Débit', 'Throughput')} value={throughputLabel(account.throughputLevel, locale)} />}
                   {account.wabaHealthStatus && <Field label={t('Santé du compte', 'Account health')} value={wabaHealthLabel(account.wabaHealthStatus, t)} />}
+                </div>
+              )}
+              {/* Statut du compte WhatsApp Business : MM Lite (demande fondateur), revue Meta, vérification
+                  d'entreprise, business propriétaire, et renvoi HONNÊTE vers le Business Manager pour le moyen
+                  de paiement (non lisible via l'API WhatsApp avec notre token). */}
+              {account?.hasNumber && (
+                <div data-testid="waba-status-panel" className="mt-4 border-t border-ink-100 pt-3">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-400">{t('Compte WhatsApp Business', 'WhatsApp Business account')}</div>
+                  <div className="flex flex-wrap gap-x-8 gap-y-3 text-xs">
+                    <BadgeField label={t('API MM Lite', 'MM Lite API')} badge={mmLiteBadge(account.marketingMessagesLiteApiStatus, locale)} />
+                    <BadgeField label={t('Revue du compte', 'Account review')} badge={accountReviewBadge(account.accountReviewStatus, locale)} />
+                    <BadgeField label={t("Vérification d'entreprise", 'Business verification')} badge={businessVerificationBadge(account.businessVerificationStatus, locale)} />
+                    {account.ownerBusinessName && <Field label={t('Business', 'Business')} value={account.ownerBusinessName} />}
+                  </div>
+                  <p className="mt-3 text-xs text-ink-500">
+                    {t('Moyen de paiement : à vérifier dans le', 'Payment method: check it in the')}{' '}
+                    <a
+                      href="https://business.facebook.com/billing_hub/accounts"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-brand-700 underline"
+                    >
+                      {t('Business Manager Meta', 'Meta Business Manager')}
+                    </a>
+                    {t(" (non exposé par l'API WhatsApp).", ' (not exposed by the WhatsApp API).')}
+                  </p>
                 </div>
               )}
               {account?.hasNumber && account.hubspotPortal?.connected && (
@@ -493,6 +518,20 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <div className="font-medium uppercase tracking-wide text-ink-400">{label}</div>
       <div className="mt-0.5 text-sm font-semibold text-ink-800">{value}</div>
+    </div>
+  );
+}
+
+/** Champ étiquette + pastille colorée selon le `tone` du badge (ok=vert, warn=ambre, unknown=gris). */
+function BadgeField({ label, badge }: { label: string; badge: StatusBadge }) {
+  const hex = badge.tone === 'ok' ? DOT_HEX.green : badge.tone === 'warn' ? DOT_HEX.amber : DOT_HEX.grey;
+  return (
+    <div>
+      <div className="font-medium uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-ink-800">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: hex }} />
+        {badge.label}
+      </div>
     </div>
   );
 }
