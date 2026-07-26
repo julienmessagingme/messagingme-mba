@@ -36,9 +36,13 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
+      # BACKEND_URL est GELÉ AU BUILD (rewrite Next figé dans routes-manifest.json) : il DOIT être un build arg,
+      # pas une var d'environnement runtime. L'ancien `environment: BACKEND_URL` était un no-op (rien ne le lit au
+      # runtime). ⚠️ Reste build-time : le rendre runtime (image portable Railway) = route handler proxy (item 4.4
+      # option B, différé à la bascule Railway où il sera QA sur les golden paths). Cf. web/Dockerfile:7-11.
+      args:
+        BACKEND_URL: http://mba-api:8095
     container_name: mba-web
-    environment:
-      - BACKEND_URL=http://mba-api:8095
     restart: unless-stopped
     networks: [mcp-robot_default]
 
