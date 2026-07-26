@@ -26,7 +26,16 @@ export function pgSsl(): PgSslConfig | false {
   if (process.env['DB_SSL'] === 'off') return false;
   const caFile = process.env['DB_SSL_CA_FILE'];
   if (caFile && caFile.trim()) {
-    return { ca: readFileSync(caFile, 'utf8'), rejectUnauthorized: true };
+    let ca: string;
+    try {
+      ca = readFileSync(caFile, 'utf8');
+    } catch (err) {
+      // pgSsl() est appelé À L'IMPORT de pool.ts et pgboss.ts : un fichier CA absent/illisible ferait crasher
+      // mba-api ET mba-worker au boot, pas en dégradé. On transforme l'ENOENT opaque en erreur qui NOMME la
+      // variable à corriger (le chemin cible est baké dans l'image, cf. Dockerfile ; un souci = typo dans l'env).
+      throw new Error(`DB_SSL_CA_FILE illisible (${caFile}) : ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { ca, rejectUnauthorized: true };
   }
   if (process.env['DB_SSL_INSECURE'] === 'true') {
     return { rejectUnauthorized: false };
