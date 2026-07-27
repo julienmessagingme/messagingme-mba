@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
-import type { ContactHistory } from '../src/crm/contact-history.pg';
+import type { ContactHistory, ContactSend } from '../src/crm/contact-history.pg';
 
 /**
  * Route d'historique d'un contact.
@@ -47,11 +47,15 @@ const FULL: ContactHistory = {
 };
 
 /** `c1` appartient à t1 ; tout autre identifiant est inconnu (le store renvoie null). */
-function app(history: (tenantId: string, contactId: string) => Promise<ContactHistory | null>) {
+function app(
+  history: (tenantId: string, contactId: string) => Promise<ContactHistory | null>,
+  exportSends?: (tenantId: string, contactId: string) => Promise<ContactSend[] | null>,
+) {
   const contacts: ContactsRouteDeps = {
     applyEdits: async () => null,
     listUserFields: async () => [],
     getContactHistory: history,
+    listSendsForExport: exportSends ?? (async (_t, id) => (id === 'c1' ? FULL.sends : null)),
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts });
 }
@@ -114,6 +118,39 @@ describe('GET /tenants/:t/contacts/:id/history', () => {
     const a = app(known);
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history' });
     expect(res.statusCode).toBe(401);
+    await a.close();
+  });
+});
+
+describe('GET /tenants/:t/contacts/:id/history/export (F5)', () => {
+  it('contact connu -> 200 { sends: [...] } (les envois non capés)', async () => {
+    const a = app(known);
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history/export', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ sends: ContactSend[] }>().sends[0]).toMatchObject({ campaignName: 'Promo été' });
+    await a.close();
+  });
+
+  it('contact inconnu -> 404', async () => {
+    const a = app(known);
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/AUTRUI/history/export', ...h(adminTok) });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('tenant de l\'URL != jeton -> 403 sans toucher au store', async () => {
+    let called = false;
+    const a = app(known, async () => { called = true; return null; });
+    const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/contacts/c1/history/export', ...h(adminTok) });
+    expect(res.statusCode).toBe(403);
+    expect(called).toBe(false);
+    await a.close();
+  });
+
+  it('agent -> 403 (admin-only)', async () => {
+    const a = app(known);
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/contacts/c1/history/export', ...h(agentTok) });
+    expect(res.statusCode).toBe(403);
     await a.close();
   });
 });

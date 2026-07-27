@@ -3,7 +3,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { ContactRow } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
-import type { ContactHistory } from '../crm/contact-history.pg';
+import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
 import { validateFieldValue, canonicalizeFieldValue } from '../crm/fields';
 
 export interface ContactsRouteDeps {
@@ -18,6 +18,8 @@ export interface ContactsRouteDeps {
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
+  /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
+  listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -102,5 +104,18 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const history = await deps.getContactHistory(tenant, contactId);
     if (!history) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send(history);
+  });
+
+  /**
+   * Envois du contact pour l'EXPORT CSV (F5), non capé. Renvoie du JSON `{ sends: [...] }` (le front construit et
+   * télécharge le CSV : le wrapper `request()` fait toujours res.json(), donc pas de CSV brut côté serveur). Admin-only.
+   */
+  app.get('/tenants/:tenantId/contacts/:contactId/history/export', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { contactId } = req.params as { contactId: string };
+    const sends = await deps.listSendsForExport(tenant, contactId);
+    if (!sends) return reply.code(404).send({ error: 'contact inconnu' });
+    return reply.code(200).send({ sends });
   });
 }

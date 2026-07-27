@@ -163,6 +163,10 @@ export interface ContactHistory {
 export function getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory> {
   return request<ContactHistory>(`/tenants/${tenantId}/contacts/${contactId}/history`);
 }
+/** Envois du contact pour l'export CSV (F5), NON capé (contrairement à getContactHistory borné à l'écran). */
+export function getContactSendsForExport(tenantId: string, contactId: string): Promise<{ sends: ContactSend[] }> {
+  return request<{ sends: ContactSend[] }>(`/tenants/${tenantId}/contacts/${contactId}/history/export`);
+}
 
 /** Un filtre sur la valeur d'un champ perso (jsonb, valeur texte) : égalité exacte ou sous-chaîne. */
 export interface ContactFieldFilter { key: string; op: 'eq' | 'contains'; value: string }
@@ -289,15 +293,20 @@ export interface CampaignSummary {
 }
 export interface CampaignRecipient {
   id: string;
+  contactId: string;
   toE164: string;
   status: string;
   messageId: string | null;
   error: string | null;
+  /** Code d'erreur Meta numérique (null hors échec). Pilote le bouton « Corriger + renvoyer » (F7). */
+  errorCode: number | null;
   sentAt: string | null;
   deliveryStatus: string | null;
   deliveryError: string | null;
 }
 export interface CampaignDetail extends CampaignSummary {
+  /** Mapping des variables du template (sert au bouton F7 : savoir quels champs corriger). */
+  paramMapping: TemplateParam[];
   recipients: CampaignRecipient[];
 }
 export interface PhoneNumber {
@@ -352,6 +361,11 @@ export function createCampaign(tenantId: string, input: CreateCampaignInput): Pr
 /** Lance une campagne : maintenant (sans `scheduledAt`) ou à une date future (ISO UTC absolu -> programmée). */
 export function runCampaign(campaignId: string, scheduledAt?: string): Promise<{ enqueued?: boolean; scheduled?: boolean; scheduledAt?: string }> {
   return request(`/campaigns/${campaignId}/run`, { method: 'POST', ...(scheduledAt ? { body: JSON.stringify({ scheduledAt }) } : {}) });
+}
+/** Renvoi d'un destinataire en échec de variable de template (F7) : après avoir corrigé la donnée du contact, re-résout
+ *  et remet le destinataire en file. 202 si repris ; 422 si la variable est toujours manquante. */
+export function retryRecipient(campaignId: string, recipientId: string): Promise<{ enqueued: boolean; recipientId: string }> {
+  return request(`/campaigns/${campaignId}/recipients/${recipientId}/retry`, { method: 'POST' });
 }
 /** Annule une campagne programmée : elle repasse en brouillon. */
 export function cancelSchedule(campaignId: string): Promise<{ cancelled: boolean }> {
@@ -670,6 +684,8 @@ export interface TenantSettings {
   hubspotListsEnabled: boolean;
   /** Pause des campagnes via listes HubSpot (F3-b). true = source HubSpot suspendue (pilotée par l'action Pause). */
   campaignsPaused: boolean;
+  /** Auto-relance des échecs de livraison (F6). */
+  autoRetryEnabled: boolean;
 }
 export function getSettings(tenantId: string): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`);
@@ -680,6 +696,10 @@ export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<Tena
 /** Active/désactive le toggle « Campagnes via données HubSpot ». */
 export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<{ hubspotListsEnabled: boolean }> {
   return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+}
+/** Active/désactive l'auto-relance des échecs de livraison (F6). */
+export function setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<{ autoRetryEnabled: boolean }> {
+  return request(`/tenants/${tenantId}/settings/auto-retry`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
 }
 
 /**

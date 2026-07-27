@@ -8,6 +8,7 @@ import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, bu
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
+  setAutoRetryEnabled as saveAutoRetryEnabled,
   setControlHandbackSeconds, getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
@@ -61,6 +62,8 @@ function AccueilInner({ session }: { session: Session }) {
   // Vrai brièvement après une REPRISE de pause : les analyses accumulées sont rattrapées côté worker (F3-a).
   const [catchupNotice, setCatchupNotice] = useState(false);
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
+  const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
+  const [savingAutoRetry, setSavingAutoRetry] = useState(false);
   // Durée du gel quand un opérateur prend la main. '' = valeur par défaut du serveur.
   const [handback, setHandback] = useState('');
   const [savingHandback, setSavingHandback] = useState(false);
@@ -108,6 +111,7 @@ function AccueilInner({ session }: { session: Session }) {
     if (cfg.status === 'fulfilled') {
       setMbaEnabled(cfg.value.mbaEnabled);
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
+      setAutoRetryEnabled(cfg.value.autoRetryEnabled);
       setHandback(cfg.value.controlHandbackSeconds === null ? '' : String(Math.round(cfg.value.controlHandbackSeconds / 60)));
     }
     if (m.status === 'rejected' || cfg.status === 'rejected') {
@@ -212,6 +216,20 @@ function AccueilInner({ session }: { session: Session }) {
       setHubspotListsEnabled(!next); // rollback
     } finally {
       setSavingLists(false);
+    }
+  }
+
+  async function toggleAutoRetry() {
+    if (!isAdmin) return;
+    const next = !autoRetryEnabled;
+    setSavingAutoRetry(true);
+    setAutoRetryEnabled(next); // optimiste
+    try {
+      await saveAutoRetryEnabled(session.tenantId, next);
+    } catch {
+      setAutoRetryEnabled(!next); // rollback
+    } finally {
+      setSavingAutoRetry(false);
     }
   }
 
@@ -359,6 +377,32 @@ function AccueilInner({ session }: { session: Session }) {
                 </p>
               </div>
             )}
+            {/* Auto-relance des échecs de livraison (F6). Effet différé/invisible : le texte explique ce que ça fait. */}
+            <div className="mt-4 border-t border-ink-100 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-ink-800">{t('Relancer automatiquement les échecs', 'Auto-retry failed sends')}</div>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    {t(
+                      "Un envoi bloqué par une limite Meta est relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au 2e échec.",
+                      'A send capped by a Meta limit is retried the next morning; an undeliverable number is retried once, then flagged unreachable in HubSpot on the second failure.',
+                    )}
+                  </p>
+                </div>
+                {isAdmin && (
+                  <button
+                    onClick={toggleAutoRetry}
+                    disabled={savingAutoRetry}
+                    data-testid="auto-retry-toggle"
+                    aria-pressed={autoRetryEnabled}
+                    title={t("Activer/désactiver l'auto-relance des échecs", 'Enable/disable auto-retry of failed sends')}
+                    className={`relative h-7 w-12 shrink-0 rounded-full transition ${autoRetryEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${savingAutoRetry ? 'opacity-60' : ''}`}
+                  >
+                    <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${autoRetryEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Invariant de cette cascade : « Aucun numéro » ne s'affiche QUE si account est chargé ET dit qu'il

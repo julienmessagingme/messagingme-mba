@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getContactHistory, type ContactHistory, type ContactSend, type ContactConversation } from '@/lib/api';
+import { getContactHistory, getContactSendsForExport, type ContactHistory, type ContactSend, type ContactConversation } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
+import { explainMetaError } from '@/lib/meta-errors';
+import { toCsv, downloadCsv } from '@/lib/csv';
 
 /**
  * Onglet « Historique » de la fiche contact : ce qu'on lui a envoyé, et ce qu'il nous a répondu.
@@ -21,6 +23,33 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
   const { locale } = useLocale();
   const [history, setHistory] = useState<ContactHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // Export CSV de l'historique des envois (F5), NON capé (getContactSendsForExport). Le CSV est construit et téléchargé
+  // côté client (le serveur renvoie du JSON). Colonnes : campagne, statut, livraison, type, template/scénario, envoyé
+  // le, type d'erreur (texte Meta brut), explication (traduite via explainMetaError).
+  async function exportCsv() {
+    setExporting(true);
+    setError(null);
+    try {
+      const { sends } = await getContactSendsForExport(tenantId, contactId);
+      const headers = [
+        t('Campagne', 'Campaign'), t('Statut', 'Status'), t('Livraison', 'Delivery'), t('Type', 'Type'),
+        t('Template / Scénario', 'Template / Scenario'), t('Envoyé le', 'Sent at'),
+        t("Type d'erreur", 'Error type'), t("Explication de l'erreur", 'Error explanation'),
+      ];
+      const rows = sends.map((s) => [
+        s.campaignName, s.status, s.deliveryStatus ?? '', s.category,
+        s.templateName ? `${s.templateName}${s.templateLanguage ? ` (${s.templateLanguage})` : ''}` : (s.workflowName ?? ''),
+        s.sentAt ?? '', s.error ?? '', explainMetaError(s.error) ?? '',
+      ]);
+      downloadCsv(`historique-${contactId}.csv`, toCsv(headers, rows));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Export impossible', 'Export failed'));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -40,9 +69,22 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
   return (
     <div className="mt-4 space-y-6">
       <section>
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
-          {t('Campagnes reçues', 'Campaigns received')} ({history.sends.length})
-        </h4>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+            {t('Campagnes reçues', 'Campaigns received')} ({history.sends.length})
+          </h4>
+          {history.sends.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void exportCsv()}
+              disabled={exporting}
+              data-testid="contact-history-export"
+              className="shrink-0 rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-60"
+            >
+              {exporting ? t('Export...', 'Exporting...') : t('Exporter en CSV', 'Export to CSV')}
+            </button>
+          )}
+        </div>
         {history.sends.length === 0 ? (
           <p className="text-sm text-ink-500">{t('Aucun envoi à ce contact.', 'No sends to this contact.')}</p>
         ) : (

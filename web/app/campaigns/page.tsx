@@ -16,6 +16,8 @@ import {
   listPhoneNumbers,
   createCampaign,
   runCampaign,
+  retryRecipient,
+  updateContact,
   cancelSchedule,
   archiveCampaign,
   unarchiveCampaign,
@@ -34,6 +36,7 @@ import {
   type UserFieldDef,
   type CampaignSummary,
   type CampaignDetail,
+  type CampaignRecipient,
   type CampaignCategory,
   type CreateCampaignInput,
   type RecipientCounts,
@@ -352,7 +355,7 @@ function CampaignsInner({ session }: { session: Session }) {
                 </div>
                 {detail?.id === c.id && (
                   <div className="mt-3">
-                    <DetailPanel detail={detail} pricing={pricing} onClose={() => setDetail(null)} />
+                    <DetailPanel detail={detail} pricing={pricing} tenantId={session.tenantId} onClose={() => setDetail(null)} onRetried={() => void openDetail(detail.id)} />
                   </div>
                 )}
               </li>
@@ -364,9 +367,42 @@ function CampaignsInner({ session }: { session: Session }) {
   );
 }
 
-function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pricing: PricingSummary | null; onClose: () => void }) {
+/** Codes d'erreur Meta « variable de template » renvoyables après correction (F7). Aligné sur le back. */
+const RETRYABLE_VAR_CODES = new Set([131009, 132012, 132000]);
+
+function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail: CampaignDetail; pricing: PricingSummary | null; tenantId: string; onClose: () => void; onRetried: () => void }) {
   const t = useT();
   const cost = estimateCampaignCost(detail.counts.sent, detail.category, pricing);
+  // Champs (source:field) du template : ce que l'admin peut corriger sur le contact avant de renvoyer (F7).
+  const fieldKeys = detail.paramMapping.filter((p) => p.source.type === 'field' && p.source.key).map((p) => p.source.key as string);
+  const [retryFor, setRetryFor] = useState<string | null>(null);
+  const [vals, setVals] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ rid: string; text: string; ok: boolean } | null>(null);
+
+  function openRetry(rid: string) {
+    setRetryFor(rid);
+    setVals(Object.fromEntries(fieldKeys.map((k) => [k, ''])));
+    setMsg(null);
+  }
+  async function submitRetry(r: CampaignRecipient) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      // Ne PATCH que les champs réellement saisis (MERGE côté serveur, n'écrase pas les autres).
+      const fields = Object.fromEntries(Object.entries(vals).filter(([, v]) => v.trim() !== ''));
+      if (Object.keys(fields).length > 0) await updateContact(tenantId, r.contactId, { fields });
+      await retryRecipient(detail.id, r.id);
+      setRetryFor(null);
+      setMsg({ rid: r.id, text: t('Renvoi en file. Le statut se met à jour au rafraîchissement.', 'Resend queued. Status updates on refresh.'), ok: true });
+      onRetried();
+    } catch (err) {
+      setMsg({ rid: r.id, text: err instanceof Error ? err.message : t('Renvoi impossible', 'Resend failed'), ok: false });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="mb-4 overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
@@ -391,16 +427,77 @@ function DetailPanel({ detail, pricing, onClose }: { detail: CampaignDetail; pri
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-100">
-            {detail.recipients.map((r) => (
-              <tr key={r.id}>
-                <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
-                <td className="px-4 py-2"><Badge status={r.status} /></td>
-                <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-400">-</span>}</td>
-                <td className="px-4 py-2 text-xs text-ink-500" title={r.deliveryError ?? r.error ?? undefined}>
-                  {explainMetaError(r.deliveryError ?? r.error) ?? r.messageId ?? '-'}
-                </td>
-              </tr>
-            ))}
+            {detail.recipients.map((r) => {
+              const retryable = r.status === 'failed' && r.errorCode !== null && RETRYABLE_VAR_CODES.has(r.errorCode);
+              return [
+                <tr key={r.id}>
+                  <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
+                  <td className="px-4 py-2"><Badge status={r.status} /></td>
+                  <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-400">-</span>}</td>
+                  <td className="px-4 py-2 text-xs text-ink-500" title={r.deliveryError ?? r.error ?? undefined}>
+                    <div>{explainMetaError(r.deliveryError ?? r.error) ?? r.messageId ?? '-'}</div>
+                    {retryable && retryFor !== r.id && (
+                      <button
+                        type="button"
+                        onClick={() => openRetry(r.id)}
+                        data-testid={`retry-${r.id}`}
+                        className="mt-1 rounded-md border border-brand-200 px-2 py-0.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
+                      >
+                        {t('Corriger + renvoyer', 'Fix + resend')}
+                      </button>
+                    )}
+                    {msg?.rid === r.id && (
+                      <p className={`mt-1 ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.text}</p>
+                    )}
+                  </td>
+                </tr>,
+                retryFor === r.id ? (
+                  <tr key={`${r.id}-form`} className="bg-ink-50/60">
+                    <td colSpan={4} className="px-4 py-3">
+                      <p className="mb-2 text-xs text-ink-600">
+                        {t("Corrige la ou les variables de template, puis renvoie ce message. La valeur est enregistrée sur le contact.", 'Fix the template variable(s), then resend this message. The value is saved on the contact.')}
+                      </p>
+                      {fieldKeys.length === 0 ? (
+                        <p className="mb-2 text-xs text-ink-500">{t('Aucune variable de champ à corriger : renvoi tel quel (le contact a peut-être été mis à jour ailleurs).', 'No field variable to fix: resend as-is (the contact may have been updated elsewhere).')}</p>
+                      ) : (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {fieldKeys.map((k) => (
+                            <label key={k} className="text-xs text-ink-700">
+                              <span className="mr-1 font-medium">{k}</span>
+                              <input
+                                value={vals[k] ?? ''}
+                                onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))}
+                                data-testid={`retry-field-${k}`}
+                                placeholder={t('nouvelle valeur', 'new value')}
+                                className="rounded border border-ink-300 px-2 py-1 text-sm outline-none focus:border-brand-500"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void submitRetry(r)}
+                          disabled={busy}
+                          data-testid={`retry-submit-${r.id}`}
+                          className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60"
+                        >
+                          {busy ? t('Renvoi...', 'Resending...') : t('Renvoyer', 'Resend')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setRetryFor(null); setMsg(null); }}
+                          className="rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition hover:bg-ink-50"
+                        >
+                          {t('Annuler', 'Cancel')}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : null,
+              ];
+            })}
           </tbody>
         </table>
         </div>

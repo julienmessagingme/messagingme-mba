@@ -425,6 +425,85 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await repo.scheduleCampaign(cId, '00000000-0000-0000-0000-000000000000', future)).toBe(false);
   });
 
+  it('PgCampaignRepo.resetRecipientForRetry (F7) : re-résout sur le contact à jour, remet en pending ; gardes famille/manquant/tenant', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const ct = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status, fields) values ($1, '+33600000077', 'opted_in', '{}'::jsonb) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const cId = await repo.insertCampaign({
+      tenantId, phoneNumberId: 'pn-retry', name: 'retry', category: 'marketing',
+      templateName: 't', templateLanguage: 'fr',
+      paramMapping: [{ position: 1, source: { type: 'field', key: 'prenom' } }],
+    });
+    await repo.insertRecipients(cId, [{ contactId: ct, toE164: '+33600000077', resolvedParams: [''] }]);
+    const rid = (await pool.query<{ id: string }>(`select id from campaign_recipients where campaign_id = $1`, [cId])).rows[0]!.id;
+    await pool.query(`update campaign_recipients set status='failed', error='131009 x', error_code=131009 where id=$1`, [rid]);
+
+    // Variable TOUJOURS manquante -> missing_var, aucun reset (on ne renverrait que le même 131009).
+    expect(await repo.resetRecipientForRetry(tenantId, cId, rid)).toEqual({ result: 'missing_var', missing: [1] });
+    expect((await pool.query<{ status: string }>(`select status from campaign_recipients where id=$1`, [rid])).rows[0]!.status).toBe('failed');
+
+    // Champ corrigé sur le contact -> queued + destinataire pending avec la NOUVELLE valeur résolue.
+    await pool.query(`update contacts set fields = '{"prenom":"Jean"}'::jsonb where id=$1`, [ct]);
+    expect(await repo.resetRecipientForRetry(tenantId, cId, rid)).toEqual({ result: 'queued', campaignId: cId });
+    const after = (await pool.query<{ status: string; error_code: number | null; resolved_params: string[] }>(
+      `select status, error_code, resolved_params from campaign_recipients where id=$1`, [rid])).rows[0]!;
+    expect(after.status).toBe('pending');
+    expect(after.error_code).toBeNull();
+    expect(after.resolved_params).toEqual(['Jean']);
+
+    // Code hors famille -> not_retryable. Tenant croisé -> not_found (jamais de reset cross-tenant).
+    await pool.query(`update campaign_recipients set status='failed', error_code=999999 where id=$1`, [rid]);
+    expect(await repo.resetRecipientForRetry(tenantId, cId, rid)).toEqual({ result: 'not_retryable' });
+    await pool.query(`update campaign_recipients set error_code=131009 where id=$1`, [rid]);
+    expect(await repo.resetRecipientForRetry('00000000-0000-0000-0000-000000000000', cId, rid)).toEqual({ result: 'not_found' });
+  });
+
+  it('PgCampaignRepo auto-relance (F6) : listRetry131049/131026(+2e), resetForRetry, markUnreachableDone (join auto_retry_enabled)', async () => {
+    const repo = new PgCampaignRepo(pool);
+    const arTenant = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-autoretry') returning id`)).rows[0]!.id;
+    try {
+      await pool.query(`insert into tenant_settings (tenant_id, auto_retry_enabled) values ($1, true) on conflict (tenant_id) do update set auto_retry_enabled = true`, [arTenant]);
+      const ct = (await pool.query<{ id: string }>(`insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1,'+33600000088','opted_in') returning id`, [arTenant])).rows[0]!.id;
+      const cId = await repo.insertCampaign({ tenantId: arTenant, phoneNumberId: 'pn-ar', name: 'ar', category: 'marketing', templateName: 't', templateLanguage: 'fr', paramMapping: [] });
+      await repo.insertRecipients(cId, [{ contactId: ct, toE164: '+33600000088', resolvedParams: ['X'] }]);
+      const rid = (await pool.query<{ id: string }>(`select id from campaign_recipients where campaign_id=$1`, [cId])).rows[0]!.id;
+
+      // 131049 = échec de LIVRAISON signalé par webhook (status reste 'sent', delivery_status='failed'), il y a >24h -> listé.
+      await pool.query(`update campaign_recipients set status='sent', delivery_status='failed', error_code=131049, delivery_updated_at = now() - interval '25 hours' where id=$1`, [rid]);
+      expect((await repo.listRetry131049(Date.now())).map((r) => r.id)).toContain(rid);
+      // 131049 récent (<24h) -> PAS listé.
+      await pool.query(`update campaign_recipients set delivery_updated_at = now() where id=$1`, [rid]);
+      expect((await repo.listRetry131049(Date.now())).map((r) => r.id)).not.toContain(rid);
+
+      // resetForRetry : « en échec » (webhook) -> pending, retry_count++, état de livraison périmé effacé.
+      expect(await repo.resetForRetry(rid)).toBe(true);
+      const afterReset = (await pool.query<{ status: string; retry_count: number; error_code: number | null; delivery_status: string | null }>(`select status, retry_count, error_code, delivery_status from campaign_recipients where id=$1`, [rid])).rows[0]!;
+      expect(afterReset).toMatchObject({ status: 'pending', retry_count: 1, error_code: null, delivery_status: null });
+
+      // 131026 2e échec de livraison (retry_count=1) -> SecondFail, PAS listRetry131026 (retry_count=0).
+      await pool.query(`update campaign_recipients set status='sent', delivery_status='failed', error_code=131026, retry_count=1 where id=$1`, [rid]);
+      expect((await repo.listRetry131026()).map((r) => r.id)).not.toContain(rid);
+      expect((await repo.listRetry131026SecondFail()).map((r) => r.id)).toContain(rid);
+      // markUnreachableDone -> retry_count=2 (terminal), plus listé.
+      expect(await repo.markUnreachableDone(rid)).toBe(true);
+      expect((await pool.query<{ retry_count: number }>(`select retry_count from campaign_recipients where id=$1`, [rid])).rows[0]!.retry_count).toBe(2);
+      expect((await repo.listRetry131026SecondFail()).map((r) => r.id)).not.toContain(rid);
+
+      // Tenant SANS auto_retry_enabled -> jamais listé (même sur un échec de livraison).
+      await pool.query(`update tenant_settings set auto_retry_enabled=false where tenant_id=$1`, [arTenant]);
+      await pool.query(`update campaign_recipients set status='sent', delivery_status='failed', error_code=131026, retry_count=0 where id=$1`, [rid]);
+      expect((await repo.listRetry131026()).map((r) => r.id)).not.toContain(rid);
+    } finally {
+      await pool.query('delete from campaign_recipients where campaign_id in (select id from campaigns where tenant_id=$1)', [arTenant]);
+      await pool.query('delete from campaigns where tenant_id=$1', [arTenant]);
+      await pool.query('delete from contacts where tenant_id=$1', [arTenant]);
+      await pool.query('delete from tenant_settings where tenant_id=$1', [arTenant]);
+      await pool.query('delete from tenants where id=$1', [arTenant]);
+    }
+  });
+
   it('PgCampaignRepo + stores : insert, listPending, markResult, setStatus, lastSentAt', async () => {
     const repo = new PgCampaignRepo(pool);
     const recipients = new PgRecipientStore(pool);

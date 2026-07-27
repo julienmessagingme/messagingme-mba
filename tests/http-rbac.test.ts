@@ -34,6 +34,7 @@ const campaigns: CampaignRouteDeps = {
   unarchiveCampaign: async () => true,
   deleteDraftCampaign: async () => true,
   getCampaignDetail: async () => null,
+  resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
   listPhoneNumbers: async () => [],
 };
 const inbox: InboxRouteDeps = {

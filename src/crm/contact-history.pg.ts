@@ -80,6 +80,8 @@ export interface ContactHistory {
 /** Bornes de lecture : un historique d'écran, pas un export. Au-delà, l'inbox et le détail de campagne. */
 const MAX_SENDS = 200;
 const MAX_CONVERSATIONS = 100;
+/** Borne HAUTE de l'export CSV (F5) : bien au-delà d'un écran, mais bornée pour ne pas ramener un volume illimité. */
+const EXPORT_MAX_SENDS = 5000;
 
 export class PgContactHistoryStore {
   constructor(private readonly pool: Pool) {}
@@ -96,13 +98,32 @@ export class PgContactHistoryStore {
     if (!owner.rows[0]) return null;
 
     const [sends, conversations] = await Promise.all([
-      this.listSends(tenantId, contactId),
+      this.listSends(tenantId, contactId, MAX_SENDS),
       this.listConversations(tenantId, contactId),
     ]);
     return { sends, conversations };
   }
 
-  private async listSends(tenantId: string, contactId: string): Promise<ContactSend[]> {
+  /**
+   * Envois d'un contact pour l'EXPORT CSV (F5) : mêmes lignes que l'historique d'écran mais SANS le cap 200 (borné à
+   * EXPORT_MAX_SENDS par sûreté, log si atteint). null si le contact n'appartient pas au tenant (404 côté route, pas
+   * une liste vide trompeuse sur une ressource interdite). Lecture seule, scopée tenant en SQL.
+   */
+  async listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null> {
+    const owner = await this.pool.query<{ id: string }>(
+      `select id from contacts where id = $1 and tenant_id = $2`,
+      [contactId, tenantId],
+    );
+    if (!owner.rows[0]) return null;
+    const sends = await this.listSends(tenantId, contactId, EXPORT_MAX_SENDS);
+    if (sends.length >= EXPORT_MAX_SENDS) {
+      // eslint-disable-next-line no-console
+      console.warn(JSON.stringify({ lvl: 'warn', msg: 'contact_history_export_truncated', tenantId, contactId, limit: EXPORT_MAX_SENDS }));
+    }
+    return sends;
+  }
+
+  private async listSends(tenantId: string, contactId: string, limit: number): Promise<ContactSend[]> {
     const res = await this.pool.query<{
       campaign_id: string; name: string; category: string;
       template_name: string | null; template_language: string | null; workflow_name: string | null;
@@ -119,7 +140,7 @@ export class PgContactHistoryStore {
          left join workflows w on w.id = c.workflow_id
        where r.contact_id = $2 and c.tenant_id = $1
        order by r.sent_at desc nulls last, c.created_at desc
-       limit ${MAX_SENDS}`,
+       limit ${limit}`,
       [tenantId, contactId],
     );
     return res.rows.map((r) => ({

@@ -47,6 +47,7 @@ function appWith(calls: Calls, deleteOk = true) {
     unarchiveCampaign: async (id) => { calls.writes.push(`unarchive:${id}`); return true; },
     deleteDraftCampaign: async (id) => { calls.writes.push(`delete:${id}`); return deleteOk; },
     getCampaignDetail: async () => null,
+    resetRecipientForRetry: async () => ({ result: 'not_found' as const }),
     listPhoneNumbers: async () => [],
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, campaigns });

@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { CampaignRepoLike } from '../src/campaign/create';
-import type { CreateCampaignInput } from '../src/campaign/store.pg';
+import type { CreateCampaignInput, RetryReset } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import type { WorkflowGraph } from '../src/workflow/graph';
 
@@ -66,6 +66,7 @@ interface Deps {
   listOpts?: Array<{ archived?: boolean } | undefined>; // capture des options reçues par listCampaigns
   archiveCalls?: Array<{ id: string; tenant: string; kind: 'archive' | 'unarchive' | 'delete' }>;
   deleteOk?: boolean; // deleteDraftCampaign renvoie ce booléen (défaut true)
+  retry?: RetryReset; // résultat de resetRecipientForRetry (F7)
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -94,6 +95,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
         id === 'known' && tenant === 't1'
           ? ({ id: 'known', name: 'Promo', category: 'marketing', status: 'completed', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', counts: { total: 1, pending: 0, sending: 0, sent: 1, failed: 0, skipped: 0 }, recipients: [{ id: 'r1', toE164: '+33611', status: 'sent', messageId: 'm-1', error: null, sentAt: '2026-07-05T00:00:00.000Z' }] } as never)
           : null,
+      resetRecipientForRetry: async () => d.retry ?? { result: 'not_found' as const },
       listPhoneNumbers: async () => [{ id: 'pn1', displayPhoneNumber: '+33600000000', verifiedName: 'Demo' }],
     },
   });
@@ -396,6 +398,54 @@ describe('lecture campagnes (GET)', () => {
     const app = appWith(new FakeRepo(contacts));
     const res = await app.inject({ method: 'GET', url: '/tenants/t1/campaigns' });
     expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+});
+
+describe('POST /campaigns/:cid/recipients/:rid/retry (F7)', () => {
+  const url = '/campaigns/known/recipients/r1/retry';
+
+  it('queued -> 202 + job campaign-run enqueué (réutilise runCampaign)', async () => {
+    const q = new FakeQueue();
+    const app = appWith(new FakeRepo(contacts), { queue: q, retry: { result: 'queued', campaignId: 'known' } });
+    const res = await app.inject({ method: 'POST', url, ...auth() });
+    expect(res.statusCode).toBe(202);
+    expect(res.json<{ enqueued: boolean; recipientId: string }>()).toEqual({ enqueued: true, recipientId: 'r1' });
+    expect(q.enqueued).toHaveLength(1);
+    expect(q.enqueued[0]).toMatchObject({ name: 'campaign-run', data: { campaignId: 'known' } });
+    expect(q.enqueued[0]?.opts?.singletonKey).toBe('known');
+    await app.close();
+  });
+
+  it('not_found -> 404 ; not_retryable -> 409 ; conflict -> 409 ; missing_var -> 422 (jamais d\'enqueue)', async () => {
+    const cases: Array<[RetryReset, number]> = [
+      [{ result: 'not_found' }, 404],
+      [{ result: 'not_retryable' }, 409],
+      [{ result: 'conflict' }, 409],
+      [{ result: 'missing_var', missing: [1] }, 422],
+    ];
+    for (const [retry, code] of cases) {
+      const q = new FakeQueue();
+      const app = appWith(new FakeRepo(contacts), { queue: q, retry });
+      const res = await app.inject({ method: 'POST', url, ...auth() });
+      expect(res.statusCode).toBe(code);
+      expect(q.enqueued).toEqual([]); // aucun run enfilé sur un échec de garde
+      await app.close();
+    }
+  });
+
+  it('missing_var -> renvoie la liste des positions manquantes', async () => {
+    const app = appWith(new FakeRepo(contacts), { retry: { result: 'missing_var', missing: [2, 3] } });
+    const res = await app.inject({ method: 'POST', url, ...auth() });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ missing: number[] }>().missing).toEqual([2, 3]);
+    await app.close();
+  });
+
+  it('agent -> 403 (admin-only)', async () => {
+    const app = appWith(new FakeRepo(contacts), { retry: { result: 'queued', campaignId: 'known' } });
+    const res = await app.inject({ method: 'POST', url, ...asAgent() });
+    expect(res.statusCode).toBe(403);
     await app.close();
   });
 });

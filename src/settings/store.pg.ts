@@ -10,6 +10,8 @@ export interface TenantSettings {
    * N'écrase jamais `hubspotListsEnabled` : la reprise (campaignsPaused -> false) restaure le réglage d'origine.
    */
   campaignsPaused: boolean;
+  /** Auto-relance des échecs de livraison (F6). true = le sweeper relance 131049/131026 selon la politique de recouvrement. */
+  autoRetryEnabled: boolean;
   /**
    * Durée du GEL après qu'un opérateur a pris la main, en secondes. Pendant ce temps, ni le scénario ni
    * l'agent de Meta n'écrivent au client.
@@ -25,8 +27,8 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; control_handback_seconds: number | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, control_handback_seconds from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -34,8 +36,18 @@ export class PgTenantSettingsStore {
       mbaEnabled: r?.mba_enabled ?? false,
       hubspotListsEnabled: r?.hubspot_lists_enabled ?? false,
       campaignsPaused: r?.campaigns_paused ?? false,
+      autoRetryEnabled: r?.auto_retry_enabled ?? false,
       controlHandbackSeconds: r?.control_handback_seconds ?? null,
     };
+  }
+
+  /** Active/désactive l'auto-relance des échecs (F6). Upsert ciblé : n'écrase aucun autre réglage. */
+  async setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, auto_retry_enabled, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set auto_retry_enabled = excluded.auto_retry_enabled, updated_at = now()`,
+      [tenantId, enabled],
+    );
   }
 
   async setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> {

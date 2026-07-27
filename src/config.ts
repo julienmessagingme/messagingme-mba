@@ -124,6 +124,8 @@ export const schema = z.object({
   /** Cadence du filet de sécurité du rattrapage HubSpot (F3-a) : relance le rattrapage des marques restées sur un
    *  numéro reconnecté. Défaut 10 min : action rare, lecture légère (distinct tenant_id), pas un chemin chaud. */
   HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS: z.coerce.number().default(10 * 60 * 1000),
+  /** Cadence du sweep d'auto-relance des échecs (F6). 15 min : assez fin pour la fenêtre matinale des 131049. */
+  AUTO_RETRY_SWEEP_INTERVAL_MS: z.coerce.number().default(15 * 60 * 1000),
   /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR revient au scénario. 2 h : assez long pour
    *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
    *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre

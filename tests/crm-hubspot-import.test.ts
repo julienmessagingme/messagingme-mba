@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fetchHubspotLists, importHubspotList, disconnectHubspot, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-import';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot, flagContactUnreachable, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-import';
 import { signRequest } from '../src/lib/signature';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { ContactStore, ContactUpsert } from '../src/crm/import';
@@ -69,6 +69,24 @@ describe('disconnectHubspot', () => {
   it('échec terminal (404) -> HubspotServiceError (l\'appelant ne coupe pas en base)', async () => {
     const t = new FakeTransport(() => ({ status: 404, json: { error: 'boom' } }));
     await expect(disconnectHubspot(connector(t), 't1')).rejects.toBeInstanceOf(HubspotServiceError);
+  });
+});
+
+describe('flagContactUnreachable', () => {
+  it('POST signé /service/contact-flag {tenantId,e164,flag:unreachable} -> {flagged}', async () => {
+    const t = new FakeTransport(() => ({ status: 200, json: { flagged: true } }));
+    const out = await flagContactUnreachable(connector(t), 't1', '+33611');
+    expect(out).toEqual({ flagged: true });
+    expect(t.posts[0]!.url).toBe('http://connector/service/contact-flag');
+    expect(t.posts[0]!.body).toEqual({ tenantId: 't1', e164: '+33611', flag: 'unreachable' });
+  });
+  it('portail non lié (404 tenant_not_connected) -> {flagged:false} SANS throw (rien à marquer)', async () => {
+    const t = new FakeTransport(() => ({ status: 404, json: { error: 'tenant_not_connected' } }));
+    expect(await flagContactUnreachable(connector(t), 't1', '+33611')).toEqual({ flagged: false });
+  });
+  it('autre échec terminal (409) -> lève HubspotServiceError', async () => {
+    const t = new FakeTransport(() => ({ status: 409, json: { error: 'portal_disconnected' } }));
+    await expect(flagContactUnreachable(connector(t), 't1', '+33611')).rejects.toBeInstanceOf(HubspotServiceError);
   });
 });
 

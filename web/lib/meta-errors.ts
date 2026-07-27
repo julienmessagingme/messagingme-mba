@@ -10,6 +10,7 @@ const CODES: Record<string, string> = {
   '131049': "Meta a limité cet envoi pour préserver la qualité (trop de marketing vers cet utilisateur récemment).",
   '130472': "Numéro inclus dans une expérimentation Meta de limitation marketing : message non envoyé.",
   '131045': "Numéro expéditeur non enregistré / problème de certificat côté Meta.",
+  '131009': "Template : une variable a une valeur invalide ou manquante. Corrige la valeur du champ puis renvoie.",
   '132000': "Template : le nombre de variables fournies ne correspond pas au template.",
   '132001': "Template introuvable ou non approuvé pour cette langue.",
   '132005': "Template : le texte traduit dépasse la limite de caractères.",

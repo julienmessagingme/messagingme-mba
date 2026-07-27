@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Queue } from '../queue/queue';
 import { createCampaignWithRecipients } from '../campaign/create';
 import type { CampaignRepoLike } from '../campaign/create';
-import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow } from '../campaign/store.pg';
+import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow, RetryReset } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
 import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
@@ -39,6 +39,9 @@ export interface CampaignRouteDeps {
   /** Supprime pour de bon une campagne JAMAIS lancée (scopée tenant). false si la garde métier refuse. */
   deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean>;
   getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null>;
+  /** Renvoi d'un destinataire en échec de variable de template (F7) : re-résout sur le contact à jour + remet en
+   *  pending. Résultat discriminé (queued/not_found/not_retryable/missing_var/conflict). */
+  resetRecipientForRetry(tenantId: string, campaignId: string, recipientId: string): Promise<RetryReset>;
   listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
   /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. Doit être le MÊME que celui
    *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
@@ -214,6 +217,30 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // la même campagne (le claim par destinataire est le garde-fou primaire, ceci le double).
     await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });
     return reply.code(202).send({ enqueued: true, campaignId });
+  });
+
+  /**
+   * Renvoi d'UN destinataire en échec de variable de template (F7). Après que l'admin a corrigé la donnée du contact,
+   * on re-résout le paramMapping sur le contact À JOUR et on remet le destinataire à `pending` (réutilise runCampaign,
+   * pas de nouveau chemin d'envoi). Gardes : famille de codes variables, statut `failed`, appartenance tenant. 422 si la
+   * variable est TOUJOURS manquante (on ne renvoie pas le même échec). Admin-only, tenant du JWT.
+   */
+  app.post('/campaigns/:campaignId/recipients/:recipientId/retry', guard, async (req, reply) => {
+    if (forbidNonAdmin(req, reply)) return;
+    const authTenant = req.auth?.tenantId ?? '';
+    const { campaignId, recipientId } = req.params as { campaignId: string; recipientId: string };
+    const r = await deps.resetRecipientForRetry(authTenant, campaignId, recipientId);
+    if (r.result === 'not_found') return reply.code(404).send({ error: 'destinataire inconnu' });
+    if (r.result === 'not_retryable') return reply.code(409).send({ error: 'destinataire non renvoyable (pas un échec de variable de template)' });
+    if (r.result === 'missing_var') return reply.code(422).send({ error: 'variable de template toujours manquante', missing: r.missing });
+    if (r.result === 'conflict') return reply.code(409).send({ error: 'destinataire déjà repris' });
+    // queued : enfile un run (le destinataire redevenu pending est renvoyé par runCampaign avec les valeurs corrigées).
+    const sizing = await deps.getRunSizing(campaignId);
+    const expireInSeconds = sizing
+      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
+      : undefined;
+    await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });
+    return reply.code(202).send({ enqueued: true, recipientId });
   });
 
   // Annule une campagne programmée : elle repasse en brouillon (le job différé n'a jamais été enfilé, rien à tuer).

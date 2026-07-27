@@ -59,6 +59,21 @@ export async function disconnectHubspot(deps: ConnectorDeps, tenantId: string): 
   return { disconnected: res.disconnected ?? false, revoked: res.revoked ?? false };
 }
 
+/**
+ * Marque un contact « injoignable en WhatsApp » dans HubSpot (F6, appelé au 2e échec de livraison 131026). Résout le
+ * contact par téléphone côté connecteur et pose la propriété. `tenant_not_connected` (404) = pas de portail lié -> on
+ * ignore proprement (rien à marquer), pas une erreur. Un échec réseau/5xx est rejoué (withRetry) ; un autre 4xx lève.
+ */
+export async function flagContactUnreachable(deps: ConnectorDeps, tenantId: string, e164: string): Promise<{ flagged: boolean }> {
+  try {
+    const res = await callService<{ flagged?: boolean }>(deps, '/service/contact-flag', { tenantId, e164, flag: 'unreachable' });
+    return { flagged: res.flagged ?? false };
+  } catch (err) {
+    if (err instanceof HubspotServiceError && err.status === 404) return { flagged: false }; // portail non lié : rien à marquer
+    throw err;
+  }
+}
+
 /** Liste les listes HubSpot du portail du tenant. Lève ReconsentRequiredError si crm.lists.read pas accordé. */
 export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, query?: string): Promise<HubspotList[]> {
   const res = await callService<{ lists: HubspotList[] }>(deps, '/service/lists', { tenantId, ...(query ? { query } : {}) });

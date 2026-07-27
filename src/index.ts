@@ -151,6 +151,7 @@ async function main(): Promise<void> {
       unarchiveCampaign: (id, tenant) => repo.unarchiveCampaign(id, tenant),
       deleteDraftCampaign: (id, tenant) => repo.deleteDraftCampaign(id, tenant),
       getCampaignDetail: (id, tenant) => repo.getCampaignDetail(id, tenant),
+      resetRecipientForRetry: (tenant, id, rid) => repo.resetRecipientForRetry(tenant, id, rid),
       listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
     },
@@ -236,6 +237,7 @@ async function main(): Promise<void> {
       getSettings: (tenant) => settingsStore.get(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
+      setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
@@ -308,6 +310,7 @@ async function main(): Promise<void> {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
       listUserFields: (tenant) => fieldStore.list(tenant),
       getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
+      listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
     },
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);

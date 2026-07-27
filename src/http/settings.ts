@@ -7,6 +7,8 @@ export interface SettingsRouteDeps {
   getSettings(tenantId: string): Promise<TenantSettings>;
   setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void>;
+  /** Auto-relance des échecs de livraison (F6). */
+  setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
 }
@@ -48,6 +50,17 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
     await deps.setHubspotListsEnabled(tenant, enabled);
     return reply.code(200).send({ hubspotListsEnabled: enabled });
+  });
+
+  // Toggle « Auto-relance des échecs » (F6, admin-only). Route dédiée (même raison que ci-dessus).
+  app.patch('/tenants/:tenantId/settings/auto-retry', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
+    if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled (booléen) requis' });
+    await deps.setAutoRetryEnabled(tenant, enabled);
+    return reply.code(200).send({ autoRetryEnabled: enabled });
   });
 
   /**

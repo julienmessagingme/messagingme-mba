@@ -34,7 +34,7 @@ export const defaultAccount: AccountFixture = {
   status: { dot: 'green', label: 'Compte opérationnel', reason: 'Numéro connecté, qualité verte.' },
 };
 
-const defaultSettings = { controlHandbackSeconds: null, mbaEnabled: false, hubspotListsEnabled: false };
+const defaultSettings = { controlHandbackSeconds: null, mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false };
 
 export async function mockAccueil(
   page: Page,

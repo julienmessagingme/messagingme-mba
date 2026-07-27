@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
 import type { BuildContact, BuiltRecipient } from './build';
-import type { TemplateParam } from '../crm/template';
+import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
@@ -49,17 +49,36 @@ export interface CampaignSummary {
   counts: RecipientCounts;
 }
 export interface CampaignDetail extends CampaignSummary {
+  /** Mapping des variables du template (positions -> source). Sert au front F7 (savoir quel champ corriger). */
+  paramMapping: TemplateParam[];
   recipients: Array<{
     id: string;
+    contactId: string;
     toE164: string;
     status: string;
     messageId: string | null;
     error: string | null;
+    /** Code d'erreur Meta numérique (null hors échec). Pilote le bouton « Corriger + renvoyer » (F7, famille variables). */
+    errorCode: number | null;
     sentAt: string | null;
     deliveryStatus: string | null;
     deliveryError: string | null;
   }>;
 }
+
+/** Codes d'erreur Meta « variable de template » (F7) : renvoyables après correction de la donnée du contact. */
+export const RETRYABLE_TEMPLATE_VAR_CODES = new Set([131009, 132012, 132000]);
+
+/** Destinataire candidat à une auto-relance (F6). */
+export interface AutoRetryRecipient { id: string; campaignId: string; tenantId: string; toE164: string; }
+
+/** Résultat d'une tentative de renvoi (F7). Discriminé pour que la route mappe proprement 404/409/422/202. */
+export type RetryReset =
+  | { result: 'queued'; campaignId: string }
+  | { result: 'not_found' }
+  | { result: 'not_retryable' }
+  | { result: 'missing_var'; missing: number[] }
+  | { result: 'conflict' };
 export interface PhoneNumberRow {
   id: string;
   displayPhoneNumber: string | null;
@@ -345,26 +364,143 @@ export class PgCampaignRepo {
     const h = head.rows[0];
     if (!h) return null;
     const recs = await this.pool.query<{
-      id: string; to_e164: string; status: string; message_id: string | null; error: string | null;
-      sent_at: Date | null; delivery_status: string | null; delivery_error: string | null;
+      id: string; contact_id: string; to_e164: string; status: string; message_id: string | null; error: string | null;
+      error_code: number | null; sent_at: Date | null; delivery_status: string | null; delivery_error: string | null;
     }>(
-      `select id, to_e164, status, message_id, error, sent_at, delivery_status, delivery_error
+      `select id, contact_id, to_e164, status, message_id, error, error_code, sent_at, delivery_status, delivery_error
        from campaign_recipients where campaign_id = $1 order by status, id limit 500`,
       [campaignId],
     );
+    // param_mapping est un jsonb, renvoyé déjà parsé par node-pg (comme getCampaign). '{}' -> [] si null.
+    const mapRes = await this.pool.query<{ param_mapping: TemplateParam[] | null }>(
+      `select param_mapping from campaigns where id = $1 and tenant_id = $2`,
+      [campaignId, tenantId],
+    );
     return {
       ...this.toSummary(h),
+      paramMapping: mapRes.rows[0]?.param_mapping ?? [],
       recipients: recs.rows.map((r) => ({
         id: r.id,
+        contactId: r.contact_id,
         toE164: r.to_e164,
         status: r.status,
         messageId: r.message_id,
         error: r.error,
+        errorCode: r.error_code,
         sentAt: r.sent_at ? r.sent_at.toISOString() : null,
         deliveryStatus: r.delivery_status,
         deliveryError: r.delivery_error,
       })),
     };
+  }
+
+  /**
+   * Renvoi d'UN destinataire en échec de variable de template (F7). Recharge le destinataire + sa campagne (scopé
+   * tenant) et le contact À JOUR, re-résout le paramMapping sur ce contact, et si tout est résolu remet le destinataire
+   * à `pending` avec les NOUVELLES valeurs (atomique, `where status='failed'`) -> le prochain `campaign-run` le renvoie
+   * (aucun nouveau chemin d'envoi : on réutilise runCampaign). Gardes : destinataire du tenant, status='failed', code
+   * d'erreur dans la famille variables. Une variable encore manquante -> `missing_var` (pas de reset : on renverrait le
+   * même 131009). L'appelant (route) enfile le run sur `queued`.
+   */
+  async resetRecipientForRetry(tenantId: string, campaignId: string, recipientId: string): Promise<RetryReset> {
+    const rec = await this.pool.query<{ contact_id: string; status: string; error_code: number | null; param_mapping: TemplateParam[] | null }>(
+      `select r.contact_id, r.status, r.error_code, c.param_mapping
+       from campaign_recipients r join campaigns c on c.id = r.campaign_id
+       where r.id = $1 and r.campaign_id = $2 and c.tenant_id = $3`,
+      [recipientId, campaignId, tenantId],
+    );
+    const row = rec.rows[0];
+    if (!row) return { result: 'not_found' };
+    if (row.status !== 'failed' || row.error_code === null || !RETRYABLE_TEMPLATE_VAR_CODES.has(row.error_code)) {
+      return { result: 'not_retryable' };
+    }
+    const ct = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; fields: Record<string, unknown> | null }>(
+      `select phone_e164, bsuid, profile_name, fields from contacts where id = $1 and tenant_id = $2`,
+      [row.contact_id, tenantId],
+    );
+    const contact = ct.rows[0];
+    if (!contact) return { result: 'not_found' };
+    const { values, missing } = resolveTemplateParams(row.param_mapping ?? [], {
+      phone_e164: contact.phone_e164, bsuid: contact.bsuid, profile_name: contact.profile_name, fields: contact.fields ?? {},
+    });
+    if (missing.length > 0) return { result: 'missing_var', missing };
+    const upd = await this.pool.query(
+      `update campaign_recipients set status = 'pending', resolved_params = $2::jsonb, error = null, error_code = null, claimed_at = null
+       where id = $1 and status = 'failed'`,
+      [recipientId, JSON.stringify(values)],
+    );
+    if ((upd.rowCount ?? 0) === 0) return { result: 'conflict' };
+    return { result: 'queued', campaignId };
+  }
+
+  /**
+   * Destinataires 131049 (marketing plafonné par Meta) prêts à une auto-relance (F6) : tenant `auto_retry_enabled`,
+   * `failed`, `retry_count=0`, échec il y a plus de 24 h (on relance « plus tard », pas dans la foulée). Le fenêtrage
+   * « début de journée » est décidé par l'appelant (fuseau), pas ici.
+   */
+  async listRetry131049(nowMs: number, limit = 500): Promise<AutoRetryRecipient[]> {
+    return this.listAutoRetry(`r.error_code = 131049 and r.retry_count = 0
+       and coalesce(r.delivery_updated_at, r.sent_at) < to_timestamp($1::double precision / 1000.0) - interval '24 hours'`, [nowMs], limit);
+  }
+
+  /** Destinataires 131026 (non délivrable) à retenter UNE fois (retry_count=0). */
+  async listRetry131026(limit = 500): Promise<AutoRetryRecipient[]> {
+    return this.listAutoRetry(`r.error_code = 131026 and r.retry_count = 0`, [], limit);
+  }
+
+  /** Destinataires 131026 ayant DÉJÀ été relancés une fois et re-échoué (retry_count=1) -> à marquer injoignable. */
+  async listRetry131026SecondFail(limit = 500): Promise<AutoRetryRecipient[]> {
+    return this.listAutoRetry(`r.error_code = 131026 and r.retry_count = 1`, [], limit);
+  }
+
+  /**
+   * Fabrique commune : destinataires EN ÉCHEC d'un tenant `auto_retry_enabled` matchant `cond`. « En échec » =
+   * `status='failed'` (rejet SYNCHRONE à l'envoi) OU `delivery_status='failed'` (échec ASYNCHRONE signalé par le
+   * webhook de livraison, `status` reste 'sent'). 131049/131026 arrivent quasi toujours par le webhook -> on DOIT
+   * inclure delivery_status (même définition d'échec que getCampaignDetail/les stats). Scopé par la jointure.
+   */
+  private async listAutoRetry(cond: string, params: unknown[], limit: number): Promise<AutoRetryRecipient[]> {
+    const res = await this.pool.query<{ id: string; campaign_id: string; tenant_id: string; to_e164: string }>(
+      `select r.id, r.campaign_id, c.tenant_id, r.to_e164
+       from campaign_recipients r
+         join campaigns c on c.id = r.campaign_id
+         join tenant_settings ts on ts.tenant_id = c.tenant_id
+       where ts.auto_retry_enabled = true and (r.status = 'failed' or r.delivery_status = 'failed') and ${cond}
+       order by r.id
+       limit ${limit}`,
+      params,
+    );
+    return res.rows.map((r) => ({ id: r.id, campaignId: r.campaign_id, tenantId: r.tenant_id, toE164: r.to_e164 }));
+  }
+
+  /**
+   * Remet un destinataire en `pending` pour une auto-relance (F6) : incrémente retry_count, pose retried_at, efface
+   * l'erreur (le prochain run le renvoie avec ses resolved_params inchangés). Atomique (`where status='failed'`).
+   */
+  async resetForRetry(id: string): Promise<boolean> {
+    // Efface AUSSI l'état de livraison périmé ET l'ancien message_id : sans ça, un destinataire relancé garderait
+    // `delivery_status='failed'` (fausse le compteur d'échecs), et une redélivrance tardive du webhook Meta
+    // (at-least-once) sur l'ANCIEN message_id ré-écrirait `delivery_status='failed'` pendant la relance. En nullifiant
+    // message_id, un webhook sur l'ancien wamid ne matche plus cette ligne (updateDeliveryByMessageId filtre message_id).
+    // Atomique sur « en échec » (synchrone OU webhook), même définition que listAutoRetry.
+    const res = await this.pool.query(
+      `update campaign_recipients set status = 'pending', retry_count = retry_count + 1, retried_at = now(),
+         error = null, error_code = null, message_id = null, delivery_status = null, delivery_error = null, delivery_updated_at = null, claimed_at = null
+       where id = $1 and (status = 'failed' or delivery_status = 'failed')`,
+      [id],
+    );
+    return (res.rowCount ?? 0) === 1;
+  }
+
+  /** Marque un destinataire comme injoignable traité (F6, 2e 131026) : retry_count=2 (terminal) pour ne plus le
+   *  re-marquer. À appeler APRÈS le flag HubSpot réussi. Atomique sur l'état attendu (131026, retry_count=1). */
+  async markUnreachableDone(id: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaign_recipients set retry_count = 2, retried_at = now()
+       where id = $1 and error_code = 131026 and retry_count = 1 and (status = 'failed' or delivery_status = 'failed')`,
+      [id],
+    );
+    return (res.rowCount ?? 0) === 1;
   }
 
   /** WABA du tenant (pour les opérations de templates, qui sont au niveau WABA). null si aucun. */

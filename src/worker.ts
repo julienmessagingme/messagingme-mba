@@ -13,6 +13,8 @@ import {
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
+import { runRetrySweep } from './campaign/retry-sweep';
+import { flagContactUnreachable } from './crm/hubspot-import';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgTenantSettingsStore } from './settings/store.pg';
@@ -464,6 +466,42 @@ async function main(): Promise<void> {
   const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
   scheduleSweeper.unref();
 
+  // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
+  // injoignable dans HubSpot au 2e échec). Gaté par le canal service (le flag injoignable en dépend) : monté seulement
+  // si le connecteur est configuré. Le sweep lui-même ne touche QUE les tenants ayant activé le toggle auto_retry.
+  const isMorningParis = (nowMs: number): boolean => {
+    const h = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }).format(new Date(nowMs)));
+    return h >= 8 && h < 12; // « début de journée »
+  };
+  let retrySweeper: NodeJS.Timeout | undefined;
+  if (config.HUBSPOT_SERVICE_URL) {
+    const retrySweep = async (): Promise<void> => {
+      try {
+        const res = await runRetrySweep({
+          isMorningWindow: () => isMorningParis(Date.now()),
+          list131049: () => repo.listRetry131049(Date.now()),
+          list131026: () => repo.listRetry131026(),
+          list131026SecondFail: () => repo.listRetry131026SecondFail(),
+          resetForRetry: (id) => repo.resetForRetry(id),
+          markUnreachableDone: (id) => repo.markUnreachableDone(id),
+          enqueueRun: (id) => queue.enqueue('campaign-run', { campaignId: id }, { singletonKey: id }),
+          flagUnreachable: async (tenantId, e164) => {
+            await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);
+          },
+        });
+        // eslint-disable-next-line no-console
+        if (res.retried > 0 || res.flagged > 0) console.log(`retry-sweep: ${res.retried} relancé(s), ${res.flagged} injoignable(s)`);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('retry-sweep erreur:', err instanceof Error ? err.message : err);
+        alert('sweeper:retry', `retry-sweep en échec : ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    void retrySweep();
+    retrySweeper = setInterval(() => void retrySweep(), config.AUTO_RETRY_SWEEP_INTERVAL_MS);
+    retrySweeper.unref();
+  }
+
   // Sweeper de CONTRÔLE : rend la main au scénario quand plus personne ne s'occupe d'une conversation.
   // Il n'existe AUCUN release automatique côté Meta : sans ce balayage, un opérateur qui ferme son onglet
   // (ou un worker qui meurt) gèlerait la conversation indéfiniment, scénario muet et client sans réponse.
@@ -556,6 +594,7 @@ async function main(): Promise<void> {
     clearInterval(heartbeat);
     clearInterval(sweeper);
     clearInterval(scheduleSweeper);
+    if (retrySweeper) clearInterval(retrySweeper);
     clearInterval(controlSweeper);
     clearInterval(idempotencySweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);

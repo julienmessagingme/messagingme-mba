@@ -45,9 +45,10 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, controlHandbackSeconds: null }),
+    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
+    setAutoRetryEnabled: async () => {},
     setControlHandbackSeconds: async () => {},
     ...over.settings,
   };
@@ -228,7 +229,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, controlHandbackSeconds: null }) } });
+    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
@@ -270,6 +271,22 @@ describe('settings route', () => {
     await ag.close();
     const bad = app();
     expect((await bad.inject({ method: 'PATCH', url: '/tenants/t1/settings/hubspot-lists', ...h(adminTok), payload: { enabled: 'oui' } })).statusCode).toBe(400);
+    await bad.close();
+  });
+
+  it('PATCH /settings/auto-retry admin -> 200 + persiste ; agent -> 403 ; body invalide -> 400 (F6)', async () => {
+    let saved: [string, boolean] | null = null;
+    const ok = app({ settings: { setAutoRetryEnabled: async (t, e) => { saved = [t, e]; } } });
+    const r1 = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: true } });
+    expect(r1.statusCode).toBe(200);
+    expect(r1.json<{ autoRetryEnabled: boolean }>().autoRetryEnabled).toBe(true);
+    expect(saved).toEqual(['t1', true]);
+    await ok.close();
+    const ag = app();
+    expect((await ag.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(agentTok), payload: { enabled: true } })).statusCode).toBe(403);
+    await ag.close();
+    const bad = app();
+    expect((await bad.inject({ method: 'PATCH', url: '/tenants/t1/settings/auto-retry', ...h(adminTok), payload: { enabled: 'oui' } })).statusCode).toBe(400);
     await bad.close();
   });
 
