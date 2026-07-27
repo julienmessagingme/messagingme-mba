@@ -6,7 +6,7 @@ import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, type StatusBadge } from '@/lib/format';
 import {
-  getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected,
+  getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
   setControlHandbackSeconds, getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
@@ -54,6 +54,12 @@ function AccueilInner({ session }: { session: Session }) {
   const [mbaEnabled, setMbaEnabled] = useState(false);
   const [savingMba, setSavingMba] = useState(false);
   const [savingHubspot, setSavingHubspot] = useState(false);
+  // Dialogue Pause vs Déconnexion complète (candidat 2), ouvert au clic « couper ». Nombre de numéros du tenant :
+  // sert à AVERTIR que la déconnexion (tenant-wide, le portail est lié par tenant) coupe TOUS les numéros.
+  const [showDisconnect, setShowDisconnect] = useState(false);
+  const [numbersCount, setNumbersCount] = useState(1);
+  // Vrai brièvement après une REPRISE de pause : les analyses accumulées sont rattrapées côté worker (F3-a).
+  const [catchupNotice, setCatchupNotice] = useState(false);
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
   // Durée du gel quand un opérateur prend la main. '' = valeur par défaut du serveur.
   const [handback, setHandback] = useState('');
@@ -148,15 +154,48 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
-  async function toggleHubspot() {
+  // Nombre de numéros du tenant : sert à avertir dans le dialogue de déconnexion (tenant-wide). Admin only, best-effort
+  // (un échec laisse le défaut 1 -> pas de faux avertissement).
+  useEffect(() => {
+    if (!isAdmin) return;
+    let alive = true;
+    listPhoneNumbers(session.tenantId).then((r) => { if (alive) setNumbersCount(r.phoneNumbers.length); }).catch(() => {});
+    return () => { alive = false; };
+  }, [isAdmin, session.tenantId]);
+
+  // PAUSE / REPRISE (F3-a). `next=false` -> pause (paused_at posé) ; `next=true` -> reprise (paused_at effacé + rattrapage).
+  async function applyHubspotState(next: boolean) {
     if (!isAdmin || !account?.phoneNumberId) return;
-    const next = !account.hubspotConnected;
+    const prev = { hubspotConnected: account.hubspotConnected, hubspotPausedAt: account.hubspotPausedAt };
     setSavingHubspot(true);
-    setAccount((a) => (a ? { ...a, hubspotConnected: next } : a)); // optimiste
+    setCatchupNotice(false);
+    setAccount((a) => (a ? { ...a, hubspotConnected: next, hubspotPausedAt: next ? null : new Date().toISOString() } : a));
     try {
-      await setHubspotConnected(session.tenantId, account.phoneNumberId, next);
+      const res = await setHubspotConnected(session.tenantId, account.phoneNumberId, next);
+      if (res.catchupTriggered) setCatchupNotice(true); // reprise après pause -> rattrapage en cours
     } catch {
-      setAccount((a) => (a ? { ...a, hubspotConnected: !next } : a)); // rollback
+      setAccount((a) => (a ? { ...a, ...prev } : a)); // rollback (statut + pause)
+    } finally {
+      setSavingHubspot(false);
+    }
+  }
+
+  // DÉCONNEXION COMPLÈTE (candidat 2) : délie le portail (le connecteur révoque le token si dernier tenant) et coupe
+  // la synchro. Optimiste : coupé SANS pause (paused_at=null -> libellé « coupée », pas « en pause »).
+  async function disconnectHubspotAction() {
+    if (!isAdmin || !account?.phoneNumberId) return;
+    // Capture COMPLÈTE pour le rollback, y compris le portail (une déconnexion délie le portail côté serveur).
+    const prev = { hubspotConnected: account.hubspotConnected, hubspotPausedAt: account.hubspotPausedAt, hubspotPortal: account.hubspotPortal };
+    setSavingHubspot(true);
+    setCatchupNotice(false);
+    // Optimiste : coupé (paused_at null -> « coupée », pas « en pause ») ET portail DÉLIÉ. Passer hubspotPortal à
+    // {connected:false} fait basculer l'UI vers « Connecter HubSpot » et masque le bloc synchro : plus de toggle
+    // fantôme qui reposerait hubspot_connected=true alors qu'aucun portail n'est lié (état orphelin).
+    setAccount((a) => (a ? { ...a, hubspotConnected: false, hubspotPausedAt: null, hubspotPortal: { connected: false } } : a));
+    try {
+      await disconnectHubspot(session.tenantId, account.phoneNumberId);
+    } catch {
+      setAccount((a) => (a ? { ...a, ...prev } : a)); // rollback complet : le connecteur a échoué, rien n'a été délié côté serveur
     } finally {
       setSavingHubspot(false);
     }
@@ -413,24 +452,39 @@ function AccueilInner({ session }: { session: Session }) {
                       <span className="font-mono text-brand-700">{account.hubspotPortal.hubDomain ?? account.hubspotPortal.hubId}</span>
                     </span>
                   </div>
+                  <a href="/tuto-hubspot" target="_blank" rel="noopener noreferrer" data-testid="hubspot-tuto-link" className="mt-1 inline-block text-xs text-brand-600 hover:underline">
+                    {t('Comment afficher les analyses dans HubSpot ? (tuto)', 'How to show analyses in HubSpot? (guide)')}
+                  </a>
                   <div className="mt-2 flex items-center justify-between">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 text-sm font-semibold text-ink-800">
+                      <div data-testid="hubspot-sync-state" className="flex items-center gap-1.5 text-sm font-semibold text-ink-800">
                         <span
                           className="h-2.5 w-2.5 rounded-full"
-                          style={{ backgroundColor: account.hubspotConnected ? DOT_HEX.green : DOT_HEX.grey }}
+                          style={{ backgroundColor: account.hubspotConnected ? DOT_HEX.green : account.hubspotPausedAt ? DOT_HEX.amber : DOT_HEX.grey }}
                         />
-                        {account.hubspotConnected ? t('Synchronisation activée', 'Sync enabled') : t('Synchronisation coupée', 'Sync disabled')}
+                        {account.hubspotConnected
+                          ? t('Synchronisation activée', 'Sync enabled')
+                          : account.hubspotPausedAt
+                            ? t('Synchronisation en pause', 'Sync paused')
+                            : t('Synchronisation coupée', 'Sync disabled')}
                       </div>
                       <p className="mt-0.5 text-xs text-ink-500">
                         {account.hubspotConnected
                           ? t('Les analyses de conversation sont synchronisées vers HubSpot.', 'Conversation analyses are synced to HubSpot.')
-                          : t('La synchronisation vers HubSpot est coupée pour ce numéro.', 'Sync to HubSpot is disabled for this number.')}
+                          : account.hubspotPausedAt
+                            ? t('En pause : les analyses produites pendant la pause seront renvoyées à HubSpot à la reprise.', 'Paused: analyses produced during the pause will be resent to HubSpot when you resume.')
+                            : t('La synchronisation vers HubSpot est coupée pour ce numéro.', 'Sync to HubSpot is disabled for this number.')}
                       </p>
+                      {catchupNotice && (
+                        <p data-testid="hubspot-catchup-notice" className="mt-1 rounded-lg bg-brand-50 px-2.5 py-1.5 text-xs text-brand-700">
+                          {t('Rattrapage en cours : les analyses accumulées pendant la pause sont renvoyées vers HubSpot.', 'Catching up: analyses accumulated during the pause are being resent to HubSpot.')}
+                        </p>
+                      )}
                     </div>
                     {isAdmin && account.phoneNumberId && (
                       <button
-                        onClick={toggleHubspot}
+                        data-testid="hubspot-sync-toggle"
+                        onClick={() => (account.hubspotConnected ? setShowDisconnect(true) : void applyHubspotState(true))}
                         disabled={savingHubspot}
                         title={t('Activer/couper la synchro HubSpot', 'Enable/disable HubSpot sync')}
                         aria-pressed={account.hubspotConnected}
@@ -440,6 +494,60 @@ function AccueilInner({ session }: { session: Session }) {
                       </button>
                     )}
                   </div>
+
+                  {/* Dialogue Pause vs Déconnexion complète (candidat 2), ouvert au clic « couper ». Tailwind pur, accessible
+                      (role=dialog, aria-modal, fermeture Escape + clic hors carte). Deux issues : pause réversible (F3-a) ou
+                      déconnexion complète (délie le portail + révoque le token côté connecteur). */}
+                  {showDisconnect && account.phoneNumberId && (
+                    <div
+                      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-4"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="hubspot-disconnect-title"
+                      data-testid="hubspot-disconnect-dialog"
+                      onClick={() => setShowDisconnect(false)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') setShowDisconnect(false); }}
+                    >
+                      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                        <h3 id="hubspot-disconnect-title" className="text-base font-semibold tracking-tight text-ink-900">
+                          {t('Couper la synchronisation HubSpot', 'Turn off HubSpot sync')}
+                        </h3>
+                        <p className="mt-1 text-sm text-ink-600">
+                          {t('Mettre en pause : réversible. À la reprise, les analyses produites pendant la pause sont renvoyées à HubSpot.', 'Pause: reversible. On resume, analyses produced during the pause are resent to HubSpot.')}
+                        </p>
+                        <p className="mt-2 text-sm text-ink-600">
+                          {t('Déconnexion complète : délie votre compte HubSpot et révoque son accès. Il faudra le reconnecter pour réactiver.', 'Full disconnect: unlinks your HubSpot account and revokes its access. You will need to reconnect it to re-enable.')}
+                        </p>
+                        {numbersCount > 1 && (
+                          <p data-testid="hubspot-disconnect-multi-warning" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            {t('Attention : la déconnexion coupe HubSpot pour TOUS vos numéros (le compte HubSpot est lié à votre espace, pas à un numéro).', 'Warning: disconnecting turns off HubSpot for ALL your numbers (the HubSpot account is linked to your workspace, not to a single number).')}
+                          </p>
+                        )}
+                        <div className="mt-4 flex flex-wrap justify-end gap-2">
+                          <button
+                            onClick={() => setShowDisconnect(false)}
+                            className="rounded-lg border border-ink-200 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+                          >
+                            {t('Annuler', 'Cancel')}
+                          </button>
+                          <button
+                            data-testid="hubspot-pause-btn"
+                            onClick={() => { setShowDisconnect(false); void applyHubspotState(false); }}
+                            className="rounded-lg bg-ink-100 px-3 py-2 text-sm font-semibold text-ink-800 transition hover:bg-ink-200"
+                          >
+                            {t('Mettre en pause', 'Pause')}
+                          </button>
+                          <button
+                            data-testid="hubspot-disconnect-btn"
+                            onClick={() => { setShowDisconnect(false); void disconnectHubspotAction(); }}
+                            className="rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
+                          >
+                            {t('Déconnexion complète', 'Full disconnect')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Toggle « Campagnes via données HubSpot » : autorise l'import de listes HubSpot comme destinataires. */}
                   <div className="mt-3 border-t border-ink-50 pt-3">
@@ -490,6 +598,9 @@ function AccueilInner({ session }: { session: Session }) {
                     <p className="mt-0.5 text-xs text-ink-500">
                       {t("Aucun portail HubSpot n'est relié à ce compte. Connecte-le pour synchroniser les analyses de conversation.", 'No HubSpot portal is linked to this account. Connect it to sync conversation analyses.')}
                     </p>
+                    <a href="/tuto-hubspot" target="_blank" rel="noopener noreferrer" data-testid="hubspot-tuto-link-cta" className="mt-1 inline-block text-xs text-brand-600 hover:underline">
+                      {t('Quoi faire dans HubSpot après la connexion ? (tuto)', 'What to do in HubSpot after connecting? (guide)')}
+                    </a>
                   </div>
                   {isAdmin && (
                     <button

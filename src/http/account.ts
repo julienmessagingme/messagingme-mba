@@ -22,6 +22,8 @@ export interface PhoneNumberRecord {
   ownerBusinessName: string | null;
   /** Synchro HubSpot active pour ce numéro (toggle admin). Le backfill 0028 met les numéros existants à true. */
   hubspotConnected: boolean;
+  /** Instant de mise en PAUSE (timestamptz texte). null = jamais activé OU actif ; non-null + connected=false = en pause (F3-a). */
+  hubspotPausedAt: string | null;
 }
 
 /**
@@ -52,10 +54,18 @@ export interface AccountRouteDeps {
   pullStatus(phoneNumberId: string, tenantId: string): Promise<PullResult | null>;
   /** Persiste le statut fraîchement pull (coalesce : n'écrase pas un connu par un undefined). */
   saveStatus(phoneNumberId: string, patch: StatusPatch): Promise<void>;
-  /** Active/coupe la synchro HubSpot d'un numéro (scopé tenant). false si le numéro n'appartient pas au tenant. */
-  setHubspotConnected(phoneNumberId: string, tenantId: string, connected: boolean): Promise<boolean>;
+  /** Active/coupe/pause la synchro HubSpot d'un numéro (scopé tenant). `updated=false` si le numéro n'appartient pas
+   *  au tenant ; `resumedFrom` non-null = on vient de REPRENDRE depuis une pause -> déclencher le rattrapage. */
+  setHubspotConnected(phoneNumberId: string, tenantId: string, connected: boolean): Promise<{ updated: boolean; resumedFrom: string | null }>;
+  /** Enfile le rattrapage HubSpot (best-effort) à la reprise après pause. No-op si le pipeline analyse/push est inerte. */
+  enqueueHubspotCatchup(tenantId: string): Promise<void>;
   /** Portail HubSpot lié à ce tenant (lecture cross-schema mmhs). `{ connected: false }` si aucun mapping. */
   getHubspotPortal(tenantId: string): Promise<HubspotPortalLink>;
+  /** Déconnexion complète : délie le portail HubSpot côté connecteur (mm-hubspot révoque le token si dernier tenant).
+   *  OPTIONNEL : absent si le canal service n'est pas configuré -> la route répond 503. À appeler AVANT le reset local. */
+  disconnectHubspot?(tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }>;
+  /** Reflet LOCAL de la déconnexion : coupe hubspot_connected de TOUS les numéros du tenant (après succès connecteur). */
+  disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -93,6 +103,8 @@ export interface AccountStatusResponse {
   ownerBusinessName: string | null;
   /** Synchro HubSpot active pour le numéro principal (pastille + toggle). */
   hubspotConnected: boolean;
+  /** Instant de pause (F3-a) : non-null + hubspotConnected=false -> « en pause » (vs « jamais activé » si null). */
+  hubspotPausedAt: string | null;
   /** Portail HubSpot lié au tenant (mmhs.tenant_portals). Sert à afficher le portail branché ou le CTA « Connecter HubSpot ». */
   hubspotPortal: HubspotPortalLink;
   status: ReturnType<typeof computeAccountStatus>;
@@ -133,6 +145,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
         marketingMessagesLiteApiStatus: null,
         ownerBusinessName: null,
         hubspotConnected: false,
+        hubspotPausedAt: null,
         hubspotPortal,
         status: { dot: 'grey', label: 'Aucun numéro', reason: "Aucun numéro WhatsApp n'est rattaché à ce compte." },
       };
@@ -209,6 +222,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
       marketingMessagesLiteApiStatus: marketingMessagesLiteApiStatus ?? null,
       ownerBusinessName: ownerBusinessName ?? null,
       hubspotConnected: pn.hubspotConnected,
+      hubspotPausedAt: pn.hubspotPausedAt,
       hubspotPortal,
       status: computeAccountStatus(signals),
     };
@@ -222,10 +236,43 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, re
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { phoneNumberId } = req.params as { phoneNumberId: string };
-    const body = (req.body ?? {}) as { connected?: unknown };
+    const body = (req.body ?? {}) as { connected?: unknown; action?: unknown };
     if (typeof body.connected !== 'boolean') return reply.code(400).send({ error: 'connected requis (booléen)' });
-    const updated = await deps.setHubspotConnected(phoneNumberId, tenant, body.connected);
+    if (body.action !== undefined && body.action !== 'pause' && body.action !== 'disconnect') {
+      return reply.code(400).send({ error: "action invalide ('pause' ou 'disconnect')" });
+    }
+    // DÉCONNEXION COMPLÈTE (candidat 2), uniquement en COUPANT : on délie le portail côté connecteur (qui révoque le
+    // token si dernier tenant) PUIS on coupe en base SEULEMENT si l'appel a réussi. Jamais l'inverse : couper en base
+    // avant confirmation laisserait un drift (mba « coupé » alors que le portail pousse encore). La déconnexion est
+    // tenant-wide (le portail est lié par tenant) -> tous les numéros du tenant passent coupés.
+    if (body.action === 'disconnect') {
+      if (body.connected !== false) return reply.code(400).send({ error: 'disconnect impose connected:false' });
+      if (!deps.disconnectHubspot) return reply.code(503).send({ error: 'canal de déconnexion HubSpot indisponible' });
+      let result: { disconnected: boolean; revoked: boolean };
+      try {
+        result = await deps.disconnectHubspot(tenant);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('disconnectHubspot (connecteur) échoué, reset local NON appliqué (anti-drift):', err instanceof Error ? err.message : err);
+        return reply.code(502).send({ error: 'échec de la déconnexion côté connecteur HubSpot' });
+      }
+      await deps.disconnectHubspotTenant(tenant);
+      return reply.code(200).send({ phoneNumberId, hubspotConnected: false, disconnected: result.disconnected });
+    }
+    const { updated, resumedFrom } = await deps.setHubspotConnected(phoneNumberId, tenant, body.connected);
     if (!updated) return reply.code(404).send({ error: 'numéro inconnu pour ce tenant' });
-    return reply.code(200).send({ phoneNumberId, hubspotConnected: body.connected });
+    // Reprise après pause (resumedFrom non-null) -> déclenche le rattrapage. BEST-EFFORT : un échec d'enqueue ne
+    // fait JAMAIS échouer le toggle (le registre durable = les marques pending_catchup, un futur resume les rejouera).
+    let catchupTriggered = false;
+    if (resumedFrom !== null) {
+      catchupTriggered = await deps.enqueueHubspotCatchup(tenant).then(() => true).catch((err) => {
+        // Journalisé (pas silencieux) : le filet de sécurité (sweep worker) rejouera les marques restées, donc pas
+        // de perte même si cet enqueue immédiat échoue.
+        // eslint-disable-next-line no-console
+        console.error('enqueueHubspotCatchup échoué (best-effort ; le sweep rattrapera):', err instanceof Error ? err.message : err);
+        return false;
+      });
+    }
+    return reply.code(200).send({ phoneNumberId, hubspotConnected: body.connected, catchupTriggered });
   });
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fetchHubspotLists, importHubspotList, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-import';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-import';
 import { signRequest } from '../src/lib/signature';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { ContactStore, ContactUpsert } from '../src/crm/import';
@@ -47,6 +47,28 @@ describe('fetchHubspotLists', () => {
   it('404 tenant_not_connected -> HubspotServiceError (non rejouable)', async () => {
     const t = new FakeTransport(() => ({ status: 404, json: { error: 'tenant_not_connected' } }));
     await expect(fetchHubspotLists(connector(t), 't1')).rejects.toBeInstanceOf(HubspotServiceError);
+  });
+});
+
+describe('disconnectHubspot', () => {
+  it('POST signé /service/unlink -> {disconnected, revoked}', async () => {
+    const t = new FakeTransport(() => ({ status: 200, json: { disconnected: true, revoked: true } }));
+    const out = await disconnectHubspot(connector(t), 't1');
+    expect(out).toEqual({ disconnected: true, revoked: true });
+    expect(t.posts[0]!.url).toBe('http://connector/service/unlink');
+    const header = t.posts[0]!.headers['x-mm-service-signature'];
+    const m = /^v1=(\d+)\.([0-9a-f]{16})\.([0-9a-f]{64})$/.exec(header ?? '');
+    expect(m).not.toBeNull();
+    const raw = JSON.stringify({ tenantId: 't1' });
+    expect(header).toBe(signRequest(SECRET, { ts: Number(m![1]), nonce: m![2]!, method: 'POST', path: '/service/unlink', body: raw }));
+  });
+  it('déjà délié ({disconnected:false}) -> SUCCÈS (pas une erreur), revoked false par défaut', async () => {
+    const t = new FakeTransport(() => ({ status: 200, json: { disconnected: false } }));
+    expect(await disconnectHubspot(connector(t), 't1')).toEqual({ disconnected: false, revoked: false });
+  });
+  it('échec terminal (404) -> HubspotServiceError (l\'appelant ne coupe pas en base)', async () => {
+    const t = new FakeTransport(() => ({ status: 404, json: { error: 'boom' } }));
+    await expect(disconnectHubspot(connector(t), 't1')).rejects.toBeInstanceOf(HubspotServiceError);
   });
 });
 

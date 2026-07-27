@@ -121,6 +121,9 @@ export const schema = z.object({
   /** Cadence du balayage de statut/qualité des numéros Meta (item 4.10). Défaut 20 min : 2 GET Graph par numéro
    *  et par passage, large assez pour ne pas peser sur le rate-limit tant que le parc reste petit. */
   PHONE_STATUS_SWEEP_INTERVAL_MS: z.coerce.number().default(20 * 60 * 1000),
+  /** Cadence du filet de sécurité du rattrapage HubSpot (F3-a) : relance le rattrapage des marques restées sur un
+   *  numéro reconnecté. Défaut 10 min : action rare, lecture légère (distinct tenant_id), pas un chemin chaud. */
+  HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS: z.coerce.number().default(10 * 60 * 1000),
   /** Inactivité au bout de laquelle un fil tenu par un OPÉRATEUR revient au scénario. 2 h : assez long pour
    *  qu'une pause déjeuner ne coupe pas un échange en cours, assez court pour qu'un onglet fermé ne gèle pas
    *  le contact jusqu'au lendemain. Il n'existe AUCUN release automatique côté Meta : ce délai est notre

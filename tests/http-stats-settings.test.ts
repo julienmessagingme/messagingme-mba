@@ -45,7 +45,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, controlHandbackSeconds: null }),
+    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, controlHandbackSeconds: null }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
     setControlHandbackSeconds: async () => {},
@@ -228,7 +228,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, controlHandbackSeconds: null }) } });
+    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, controlHandbackSeconds: null }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);

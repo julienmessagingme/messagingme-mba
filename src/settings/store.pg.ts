@@ -5,6 +5,12 @@ export interface TenantSettings {
   /** Toggle « Campagnes via données HubSpot » : OFF = aucun appel au connecteur. */
   hubspotListsEnabled: boolean;
   /**
+   * Pause des campagnes via listes HubSpot (F3-b). Piloté ENSEMBLE avec la pause du push (F3-a) par l'action Pause du
+   * toggle Synchronisation. true = campagnes listes suspendues (le gate effectif est `hubspotListsEnabled && !campaignsPaused`).
+   * N'écrase jamais `hubspotListsEnabled` : la reprise (campaignsPaused -> false) restaure le réglage d'origine.
+   */
+  campaignsPaused: boolean;
+  /**
    * Durée du GEL après qu'un opérateur a pris la main, en secondes. Pendant ce temps, ni le scénario ni
    * l'agent de Meta n'écrivent au client.
    *
@@ -19,14 +25,15 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; control_handback_seconds: number | null }>(
-      `select mba_enabled, hubspot_lists_enabled, control_handback_seconds from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; control_handback_seconds: number | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, control_handback_seconds from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
     return {
       mbaEnabled: r?.mba_enabled ?? false,
       hubspotListsEnabled: r?.hubspot_lists_enabled ?? false,
+      campaignsPaused: r?.campaigns_paused ?? false,
       controlHandbackSeconds: r?.control_handback_seconds ?? null,
     };
   }

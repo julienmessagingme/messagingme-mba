@@ -576,7 +576,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const daily = await ops.getGlobalDaily(14);
     expect(Array.isArray(daily)).toBe(true);
 
-    // Queue load : tolère l'absence de pg-boss, sinon renvoie les 8 files (4 bases + leurs DLQ, ALL_QUEUES)
+    // Queue load : tolère l'absence de pg-boss, sinon renvoie les 10 files (5 bases + leurs DLQ, ALL_QUEUES)
     // avec des compteurs >= 0. Ordre = ALL_QUEUES (chaque base immédiatement suivie de sa DLQ).
     const queues = await ops.getQueueLoad();
     expect(queues.map((q) => q.queue)).toEqual([
@@ -584,6 +584,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       'campaign-run', 'campaign-run-dlq',
       'analyze-conversation', 'analyze-conversation-dlq',
       'push-analysis', 'push-analysis-dlq',
+      'hubspot-catchup', 'hubspot-catchup-dlq',
     ]);
     for (const q of queues) {
       expect(q.backlog).toBeGreaterThanOrEqual(0);
@@ -728,6 +729,73 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(kept.ownerBusinessName).toBe('Messaging Me');
     } finally {
       await pool.query('delete from phone_numbers where id = $1', [pId]);
+      await pool.query('delete from waba where id = $1', [wId]);
+      await pool.query('delete from tenants where id = $1', [tId]);
+    }
+  });
+
+  it('PgPhoneStatusStore.setHubspotConnected : pause (ON->OFF pose paused_at) puis reprise (capture resumedFrom, efface) (F3-a)', async () => {
+    const store = new PgPhoneStatusStore(pool);
+    const tId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-hubspot-pause') returning id`)).rows[0]!.id;
+    const wId = 'waba-hs-pause';
+    const pId = 'pn-hs-pause';
+    try {
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w')`, [wId, tId]);
+      await pool.query(`insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, hubspot_connected) values ($1, $2, $3, '+33500000099', true)`, [pId, wId, tId]);
+      const settings = new PgTenantSettingsStore(pool);
+      // Numéro inconnu du tenant -> updated:false (aucune ligne verrouillée).
+      expect(await store.setHubspotConnected('pn-absent', tId, false)).toEqual({ updated: false, resumedFrom: null });
+      // ON -> OFF : début de pause, paused_at posé, resumedFrom null (ce n'est pas une reprise).
+      const pause = await store.setHubspotConnected(pId, tId, false);
+      expect(pause.updated).toBe(true);
+      expect(pause.resumedFrom).toBeNull();
+      const afterPause = (await store.getPhoneNumber(tId))!;
+      expect(afterPause.hubspotConnected).toBe(false);
+      expect(afterPause.hubspotPausedAt).not.toBeNull();
+      // getHubspotGateStatus (snapshot du push-job) : coupé + en pause.
+      expect(await store.getHubspotGateStatus(tId, '+33500000099')).toEqual({ connected: false, pausedAt: afterPause.hubspotPausedAt });
+      // F3-b : la MÊME action Pause a posé campaigns_paused=true (même transaction) -> gate listes fermé.
+      expect((await settings.get(tId)).campaignsPaused).toBe(true);
+      // OFF(pause) -> ON : reprise, resumedFrom = l'instant de pause capturé (même texte), paused_at effacé.
+      const resume = await store.setHubspotConnected(pId, tId, true);
+      expect(resume.updated).toBe(true);
+      expect(resume.resumedFrom).toBe(afterPause.hubspotPausedAt);
+      const afterResume = (await store.getPhoneNumber(tId))!;
+      expect(afterResume.hubspotConnected).toBe(true);
+      expect(afterResume.hubspotPausedAt).toBeNull();
+      expect(await store.getHubspotGateStatus(tId, '+33500000099')).toEqual({ connected: true, pausedAt: null });
+      // F3-b : reprise -> campaigns_paused=false -> gate listes rouvert (réglage d'origine hubspot_lists_enabled restauré).
+      expect((await settings.get(tId)).campaignsPaused).toBe(false);
+    } finally {
+      await pool.query('delete from phone_numbers where id = $1', [pId]);
+      await pool.query('delete from waba where id = $1', [wId]);
+      await pool.query('delete from tenants where id = $1', [tId]);
+    }
+  });
+
+  it('setHubspotConnected : campaigns_paused est une AGRÉGATION tenant (multi-numéros) — reprendre un numéro ne rouvre pas si un autre reste en pause (F3-b)', async () => {
+    const store = new PgPhoneStatusStore(pool);
+    const settings = new PgTenantSettingsStore(pool);
+    const tId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-hubspot-multi') returning id`)).rows[0]!.id;
+    const wId = 'waba-hs-multi';
+    try {
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w')`, [wId, tId]);
+      await pool.query(`insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, hubspot_connected) values ('pn-multi-a', $1, $2, '+33500000101', true)`, [wId, tId]);
+      await pool.query(`insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, hubspot_connected) values ('pn-multi-b', $1, $2, '+33500000102', true)`, [wId, tId]);
+      // Pause A -> au moins un numéro en pause -> campaigns_paused true.
+      await store.setHubspotConnected('pn-multi-a', tId, false);
+      expect((await settings.get(tId)).campaignsPaused).toBe(true);
+      // Pause B aussi -> toujours true.
+      await store.setHubspotConnected('pn-multi-b', tId, false);
+      expect((await settings.get(tId)).campaignsPaused).toBe(true);
+      // Reprise de B SEUL -> A reste en pause -> le flag NE se rouvre PAS (c'était le bug du miroir !connected).
+      await store.setHubspotConnected('pn-multi-b', tId, true);
+      expect((await settings.get(tId)).campaignsPaused).toBe(true);
+      // Reprise de A -> plus aucun numéro en pause -> campaigns_paused false.
+      await store.setHubspotConnected('pn-multi-a', tId, true);
+      expect((await settings.get(tId)).campaignsPaused).toBe(false);
+    } finally {
+      await pool.query('delete from phone_numbers where tenant_id = $1', [tId]);
       await pool.query('delete from waba where id = $1', [wId]);
       await pool.query('delete from tenants where id = $1', [tId]);
     }

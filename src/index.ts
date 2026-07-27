@@ -27,7 +27,7 @@ import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { resolveRatePerMinute } from './campaign/pacing';
-import { fetchHubspotLists, importHubspotList } from './crm/hubspot-import';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot } from './crm/hubspot-import';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
 import { PgPhoneStatusStore } from './account/store.pg';
@@ -242,7 +242,12 @@ async function main(): Promise<void> {
     ...(config.HUBSPOT_SERVICE_URL
       ? {
           hubspotImport: {
-            isListsEnabled: async (tenant: string) => (await settingsStore.get(tenant)).hubspotListsEnabled,
+            // Accès listes = réglage utilisateur + flag pause (F3-b). La pause du toggle Synchronisation pose
+            // campaigns_paused (même transaction que hubspot_paused_at), sans écraser hubspot_lists_enabled. La route compose.
+            listsAccess: async (tenant: string) => {
+              const s = await settingsStore.get(tenant);
+              return { enabled: s.hubspotListsEnabled, paused: s.campaignsPaused };
+            },
             fetchLists: (tenant: string, query?: string) => fetchHubspotLists({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant, query),
             importList: (tenant: string, listId: string, listName: string) =>
               importHubspotList({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, { contacts: contactStore, userFields: fieldStore }, tenant, listId, listName),
@@ -341,7 +346,20 @@ async function main(): Promise<void> {
       },
       saveStatus: (id, patch) => phoneStatusStore.saveStatus(id, patch),
       setHubspotConnected: (id, tenant, connected) => phoneStatusStore.setHubspotConnected(id, tenant, connected),
+      // Rattrapage HubSpot (F3-a) : enfile un seul job hubspot-catchup (le worker liste les marques et re-pousse).
+      // NO-OP si le pipeline analyse/push est inerte (mêmes conditions que le worker qui consomme la file).
+      enqueueHubspotCatchup: async (tenant) => {
+        if (!(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '')) return;
+        await queue.enqueue('hubspot-catchup', { tenantId: tenant }, { singletonKey: `catchup:${tenant}` });
+      },
       getHubspotPortal: (tenant) => phoneStatusStore.getHubspotPortal(tenant),
+      // Déconnexion complète (candidat 2) : appel service signé vers mm-hubspot (unlink + révocation token). Monté
+      // seulement si le canal service est configuré (sinon la route répond 503, le front garde son bouton).
+      ...(config.HUBSPOT_SERVICE_URL
+        ? { disconnectHubspot: (tenant: string) => disconnectHubspot({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant) }
+        : {}),
+      // Reflet local (toujours dispo) : coupe hubspot_connected de tous les numéros du tenant après succès connecteur.
+      disconnectHubspotTenant: (tenant) => phoneStatusStore.disconnectHubspotTenant(tenant),
     },
     me: { getUser: (userId) => userStore.getById(userId) },
     workflows: {

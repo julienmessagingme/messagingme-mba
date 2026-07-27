@@ -10,7 +10,7 @@
  * sont enregistrées qu'à l'exécution (analyse activée / push connecteur), mais la file EXISTE côté /ops même
  * désactivée — getQueueLoad renvoie zéro job si aucun n'a été enfilé — donc on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis'] as const;
+export const BASE_QUEUES = ['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup'] as const;
 
 /**
  * Convention de nommage de la dead-letter queue d'une file. UNE seule définition : PgBossQueue.ensure()

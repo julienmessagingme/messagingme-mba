@@ -6,13 +6,13 @@ import { BASE_QUEUES, ALL_QUEUES, dlqName } from '../src/queue/names';
  * au worker sans l'ajouter à BASE_QUEUES, ou si la convention -dlq diverge de PgBossQueue.ensure(), ce test casse.
  */
 describe('queue names (source unique)', () => {
-  it('BASE_QUEUES = les 4 files travaillées par le worker', () => {
-    expect([...BASE_QUEUES]).toEqual(['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis']);
+  it('BASE_QUEUES = les 5 files travaillées par le worker', () => {
+    expect([...BASE_QUEUES]).toEqual(['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup']);
   });
 
-  it('ALL_QUEUES = 8 entrées : chaque file de base + sa DLQ', () => {
-    expect(ALL_QUEUES).toHaveLength(8);
-    expect(new Set(ALL_QUEUES).size).toBe(8); // aucun doublon
+  it('ALL_QUEUES = 10 entrées : chaque file de base + sa DLQ', () => {
+    expect(ALL_QUEUES).toHaveLength(10);
+    expect(new Set(ALL_QUEUES).size).toBe(10); // aucun doublon
     for (const q of BASE_QUEUES) {
       expect(ALL_QUEUES).toContain(q);
       expect(ALL_QUEUES).toContain(dlqName(q));

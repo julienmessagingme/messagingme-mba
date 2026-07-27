@@ -33,6 +33,7 @@ import { runAnalysisSweep } from './analysis/sweep';
 import { createLlmClient } from './analysis/llm-client';
 import { getEnrichment } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
+import { hubspotCatchupJob } from './analysis/catchup-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
@@ -332,6 +333,7 @@ async function main(): Promise<void> {
   // File analyze-conversation (Pièce 1). INERTE tant que CONVERSATION_ANALYSIS_ENABLED != 'true' : aucun worker,
   // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).
   let analysisSweeper: NodeJS.Timeout | null = null;
+  let catchupSweeper: NodeJS.Timeout | null = null;
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
     const analysisStore = new PgConversationAnalysisStore(pool);
     const llmClient = createLlmClient(
@@ -345,18 +347,53 @@ async function main(): Promise<void> {
       const phoneStatusStore = new PgPhoneStatusStore(pool);
       await queue.work('push-analysis', (data) =>
         pushAnalysisJob(data, {
+          // Refetch FRAIS (F3-a) : le payload ne porte qu'une référence, on relit l'analyse courante ICI.
+          getStoredAnalysis: (id) => analysisStore.getStored(id),
           getEnrichment: (id) => getEnrichment(pool, id),
-          // GATE par numéro : ne pousse au connecteur mm-hubspot QUE si la ligne du tenant est hubspot_connected=true.
-          isHubspotConnected: (tenantId, line) => phoneStatusStore.isHubspotConnectedForNumber(tenantId, line),
+          // GATE + décision de rattrapage en UN snapshot : connected (pousse ou non) + pausedAt (marque ou non).
+          getHubspotGateStatus: (tenantId, line) => phoneStatusStore.getHubspotGateStatus(tenantId, line),
           post: (event) => postAnalysis(event, { url: config.CONNECTOR_PUSH_URL, secret: config.CONNECTOR_PUSH_SECRET, transport }),
+          // Skip en pause -> marque à rattraper (décision prise par le job sur le snapshot) ; post réussi -> efface la marque.
+          markPendingCatchup: (id) => analysisStore.markPendingCatchup(id),
+          clearPendingCatchup: (id) => analysisStore.clearPendingCatchup(id),
           // eslint-disable-next-line no-console
           log: (m) => console.log(m),
         }),
       );
+      // Rattrapage (F3-a) : à la reprise après pause, re-enfile un push (ref seule) par conversation marquée. Même
+      // gating d'inertie que push-analysis (dans le if(pushEnabled)) : si le push est off, le catch-up n'est pas consommé.
+      await queue.work('hubspot-catchup', (data) =>
+        hubspotCatchupJob(data, {
+          listPendingCatchup: (tenantId) => analysisStore.listConversationIdsPendingCatchup(tenantId),
+          enqueuePush: (ref) => queue.enqueue('push-analysis', ref),
+          // eslint-disable-next-line no-console
+          log: (m) => console.log(m),
+        }),
+      );
+      // FILET DE SÉCURITÉ (F3-a) : indépendamment d'une reprise, relance périodiquement le rattrapage pour tout
+      // tenant dont un numéro est RECONNECTÉ mais garde des marques pending_catchup (reprise dont l'enqueue avait
+      // échoué, ou marque posée juste après que le catch-up de reprise ait déjà listé). Rend le rattrapage
+      // éventuellement complet SANS dépendre d'un futur clic de reprise. best-effort + unref : ne tue pas le worker.
+      const catchupSweep = async (): Promise<void> => {
+        try {
+          const tenants = await analysisStore.listTenantsReadyForCatchup();
+          for (const tenantId of tenants) await queue.enqueue('hubspot-catchup', { tenantId }, { singletonKey: `catchup:${tenantId}` });
+          // eslint-disable-next-line no-console
+          if (tenants.length > 0) console.log(`hubspot-catchup-sweep: ${tenants.length} tenant(s) relancé(s)`);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('hubspot-catchup-sweep erreur:', err instanceof Error ? err.message : err);
+          alert('sweeper:hubspot-catchup', `hubspot-catchup-sweep en échec : ${err instanceof Error ? err.message : err}`);
+        }
+      };
+      void catchupSweep();
+      catchupSweeper = setInterval(() => void catchupSweep(), config.HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS);
+      catchupSweeper.unref();
     }
     const onAnalyzed = makeOnAnalyzed({
       enabled: pushEnabled,
-      enqueue: (stored) => queue.enqueue('push-analysis', stored),
+      // Enfile une RÉFÉRENCE (pas le snapshot) : le handler push-analysis refetch l'état frais (F3-a).
+      enqueue: (stored) => queue.enqueue('push-analysis', { conversationId: stored.conversationId, tenantId: stored.tenantId }),
       // eslint-disable-next-line no-console
       onError: (err) => console.error('push-analysis enqueue échoué (best-effort):', err instanceof Error ? err.message : err),
     });
@@ -522,6 +559,7 @@ async function main(): Promise<void> {
     clearInterval(controlSweeper);
     clearInterval(idempotencySweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
+    if (catchupSweeper) clearInterval(catchupSweeper);
     if (statusSweeper) clearInterval(statusSweeper);
     await queue.stop();
     await pool.end();
@@ -531,7 +569,7 @@ async function main(): Promise<void> {
     'webhook',
     'campaign-run',
     ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : []),
-    ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '' ? ['push-analysis'] : []),
+    ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '' ? ['push-analysis', 'hubspot-catchup'] : []),
   ];
   // eslint-disable-next-line no-console
   console.log(`messagingme-mba worker démarré (files: ${files.join(', ')})${dryRun ? ' [DRY_RUN]' : ''}`);

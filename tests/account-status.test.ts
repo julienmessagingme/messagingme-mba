@@ -16,7 +16,7 @@ function rec(over: Partial<PhoneNumberRecord> = {}): PhoneNumberRecord {
     id: 'PN1', displayPhoneNumber: '+33 5 25 68 02 50', status: null, qualityRating: null, messagingLimitTier: null,
     nameStatus: null, codeVerificationStatus: null, throughputLevel: null, verifiedName: null,
     wabaHealthStatus: null, accountReviewStatus: null, businessVerificationStatus: null,
-    marketingMessagesLiteApiStatus: null, ownerBusinessName: null, hubspotConnected: true,
+    marketingMessagesLiteApiStatus: null, ownerBusinessName: null, hubspotConnected: true, hubspotPausedAt: null,
     ...over,
   };
 }
@@ -166,15 +166,21 @@ const h = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
 function app(over: Partial<AccountRouteDeps> = {}) {
   const saved: Array<{ id: string; patch: unknown }> = [];
   const hubspotCalls: Array<{ id: string; tenant: string; connected: boolean }> = [];
+  const catchupCalls: string[] = [];
+  const disconnectCalls: string[] = [];
+  const disconnectTenantCalls: string[] = [];
   const deps: AccountRouteDeps = {
     getPhoneNumber: async () => rec(),
     pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'GREEN', messagingLimitTier: 'TIER_1K', displayPhoneNumber: '+33 5 25 68 02 50' }),
     saveStatus: async (id, patch) => { saved.push({ id, patch }); },
-    setHubspotConnected: async (id, tenant, connected) => { hubspotCalls.push({ id, tenant, connected }); return true; },
+    setHubspotConnected: async (id, tenant, connected) => { hubspotCalls.push({ id, tenant, connected }); return { updated: true, resumedFrom: null }; },
+    enqueueHubspotCatchup: async (tenant) => { catchupCalls.push(tenant); },
     getHubspotPortal: async () => ({ connected: false }),
+    disconnectHubspot: async (tenant) => { disconnectCalls.push(tenant); return { disconnected: true, revoked: true }; },
+    disconnectHubspotTenant: async (tenant) => { disconnectTenantCalls.push(tenant); return { updated: true }; },
     ...over,
   };
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, account: deps }), saved, hubspotCalls };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, account: deps }), saved, hubspotCalls, catchupCalls, disconnectCalls, disconnectTenantCalls };
 }
 
 describe('route account-status', () => {
@@ -324,9 +330,89 @@ describe('toggle HubSpot par numéro (PATCH .../hubspot)', () => {
   });
 
   it('numéro inconnu pour le tenant -> 404', async () => {
-    const { server } = app({ setHubspotConnected: async () => false });
+    const { server } = app({ setHubspotConnected: async () => ({ updated: false, resumedFrom: null }) });
     const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
     expect(res.statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('reprise APRÈS pause (resumedFrom non-null) -> déclenche le rattrapage, catchupTriggered:true', async () => {
+    const { server, catchupCalls } = app({ setHubspotConnected: async () => ({ updated: true, resumedFrom: '2026-07-20T10:00:00Z' }) });
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ catchupTriggered: boolean }>().catchupTriggered).toBe(true);
+    expect(catchupCalls).toEqual(['t1']);
+    await server.close();
+  });
+
+  it('1re activation (resumedFrom null) -> PAS de rattrapage, catchupTriggered:false', async () => {
+    const { server, catchupCalls } = app({ setHubspotConnected: async () => ({ updated: true, resumedFrom: null }) });
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ catchupTriggered: boolean }>().catchupTriggered).toBe(false);
+    expect(catchupCalls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('enqueueHubspotCatchup qui throw -> le toggle reste 200 (best-effort), catchupTriggered:false', async () => {
+    const { server } = app({
+      setHubspotConnected: async () => ({ updated: true, resumedFrom: '2026-07-20T10:00:00Z' }),
+      enqueueHubspotCatchup: async () => { throw new Error('pg-boss down'); },
+    });
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ catchupTriggered: boolean }>().catchupTriggered).toBe(false);
+    await server.close();
+  });
+
+  // Déconnexion complète (candidat 2) : action:'disconnect' en coupant -> appel connecteur PUIS reset local.
+  it('disconnect : appelle le connecteur PUIS coupe en base -> 200 {disconnected:true}, PAS de setHubspotConnected (pause)', async () => {
+    const { server, hubspotCalls, disconnectCalls, disconnectTenantCalls } = app();
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: false, action: 'disconnect' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ disconnected: boolean; hubspotConnected: boolean }>()).toMatchObject({ disconnected: true, hubspotConnected: false });
+    expect(disconnectCalls).toEqual(['t1']); // unlink connecteur avec le tenant scopé
+    expect(disconnectTenantCalls).toEqual(['t1']); // reset local ensuite
+    expect(hubspotCalls).toHaveLength(0); // le chemin pause n'est PAS emprunté
+    await server.close();
+  });
+
+  it('disconnect avec connected:true -> 400 (contradiction), aucun appel', async () => {
+    const { server, disconnectCalls } = app();
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: true, action: 'disconnect' } });
+    expect(res.statusCode).toBe(400);
+    expect(disconnectCalls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('action invalide -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: false, action: 'nope' } });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('disconnect mais canal connecteur non configuré (dep absente) -> 503, aucun reset local', async () => {
+    const { server, disconnectTenantCalls } = app({ disconnectHubspot: undefined });
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: false, action: 'disconnect' } });
+    expect(res.statusCode).toBe(503);
+    expect(disconnectTenantCalls).toHaveLength(0);
+    await server.close();
+  });
+
+  it('disconnect : le connecteur échoue -> 502 et reset local NON appliqué (anti-drift)', async () => {
+    const { server, disconnectTenantCalls } = app({ disconnectHubspot: async () => { throw new Error('connecteur down'); } });
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { connected: false, action: 'disconnect' } });
+    expect(res.statusCode).toBe(502);
+    expect(disconnectTenantCalls).toHaveLength(0); // on ne coupe PAS en base si l'unlink connecteur a échoué
+    await server.close();
+  });
+
+  it('disconnect agent -> 403 (réservé admin), aucun appel connecteur', async () => {
+    const { server, disconnectCalls } = app();
+    const res = await server.inject({ method: 'PATCH', url, ...h(agentTok), payload: { connected: false, action: 'disconnect' } });
+    expect(res.statusCode).toBe(403);
+    expect(disconnectCalls).toHaveLength(0);
     await server.close();
   });
 });

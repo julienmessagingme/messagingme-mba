@@ -23,7 +23,7 @@ const LIST: HubspotList = { listId: '1', name: 'Chauds', size: 3, processingType
 function app(over: Partial<HubspotImportRouteDeps> = {}) {
   const cap = { fetchCalls: 0, imports: [] as Array<{ listId: string; listName: string }> };
   const deps: HubspotImportRouteDeps = {
-    isListsEnabled: async () => true,
+    listsAccess: async () => ({ enabled: true, paused: false }),
     fetchLists: async () => { cap.fetchCalls += 1; return [LIST]; },
     importList: async (_t, listId, listName) => { cap.imports.push({ listId, listName }); return { report: { created: 2, updated: 0, skipped: 0, errors: [] }, truncated: false, skippedNoPhone: 1, tags: [`HubSpot: ${listName}`] }; },
     ...over,
@@ -33,11 +33,19 @@ function app(over: Partial<HubspotImportRouteDeps> = {}) {
 
 describe('GET /tenants/:t/hubspot/lists', () => {
   it('toggle OFF -> {available:false} SANS appeler le connecteur', async () => {
-    const { server, cap } = app({ isListsEnabled: async () => false });
+    const { server, cap } = app({ listsAccess: async () => ({ enabled: false, paused: false }) });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/hubspot/lists', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ available: false });
     expect(cap.fetchCalls).toBe(0); // aucun appel réseau quand OFF
+    await server.close();
+  });
+  it('EN PAUSE (toggle ON mais numéro en pause) -> {available:false, reason:paused} SANS appeler le connecteur (F3-b)', async () => {
+    const { server, cap } = app({ listsAccess: async () => ({ enabled: true, paused: true }) });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/hubspot/lists', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ available: false, reason: 'paused' });
+    expect(cap.fetchCalls).toBe(0); // la pause ne sollicite pas le connecteur
     await server.close();
   });
   it('toggle ON -> {available:true, lists}', async () => {
@@ -72,9 +80,12 @@ describe('POST /tenants/:t/hubspot/import', () => {
     expect(cap.imports[0]).toEqual({ listId: '1', listName: 'Chauds' });
     await server.close();
   });
-  it('listId manquant -> 400 ; toggle OFF -> 409 ; reconsent -> 409', async () => {
+  it('listId manquant -> 400 ; toggle OFF -> 409 ; EN PAUSE -> 409 reason:paused ; reconsent -> 409', async () => {
     expect((await app().server.inject({ method: 'POST', url: '/tenants/t1/hubspot/import', ...h(adminTok), payload: {} })).statusCode).toBe(400);
-    expect((await app({ isListsEnabled: async () => false }).server.inject({ method: 'POST', url: '/tenants/t1/hubspot/import', ...h(adminTok), payload: { listId: '1' } })).statusCode).toBe(409);
+    expect((await app({ listsAccess: async () => ({ enabled: false, paused: false }) }).server.inject({ method: 'POST', url: '/tenants/t1/hubspot/import', ...h(adminTok), payload: { listId: '1' } })).statusCode).toBe(409);
+    const pausedRes = await app({ listsAccess: async () => ({ enabled: true, paused: true }) }).server.inject({ method: 'POST', url: '/tenants/t1/hubspot/import', ...h(adminTok), payload: { listId: '1' } });
+    expect(pausedRes.statusCode).toBe(409);
+    expect(pausedRes.json<{ reason?: string }>().reason).toBe('paused');
     const rec = app({ importList: async () => { throw new ReconsentRequiredError('u'); } });
     const res = await rec.server.inject({ method: 'POST', url: '/tenants/t1/hubspot/import', ...h(adminTok), payload: { listId: '1' } });
     expect(res.statusCode).toBe(409);

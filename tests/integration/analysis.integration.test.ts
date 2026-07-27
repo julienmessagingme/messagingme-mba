@@ -142,6 +142,45 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(status).toBe('done'); // borne µs-exacte : le dernier message n'est PAS > borne
   });
 
+  it('getStored : relit l\'analyse courante (mapping camelCase + jsonb), null si absente (F3-a)', async () => {
+    const store = new PgConversationAnalysisStore(pool);
+    const conv = await insertConv('33600100050', { status: 'queued' });
+    const a: ConversationAnalysis = {
+      sentiment: 'negatif', intent: 'reclamation', topic: 'retard', resolved: false, entities: { ref: 'X' },
+      action_suggestion: 'escalader', confidence: 0.75, justification: 'client mécontent', handled_by: 'humain', exchanges_count: 4,
+    };
+    await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    const stored = await store.getStored(conv);
+    expect(stored).toMatchObject({ conversationId: conv, tenantId, sentiment: 'negatif', intent: 'reclamation', action_suggestion: 'escalader', handled_by: 'humain', exchanges_count: 4 });
+    expect(stored!.confidence).toBeCloseTo(0.75);
+    expect(stored!.entities).toEqual({ ref: 'X' });
+    expect(await store.getStored('00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+
+  it('pending_catchup : markPendingCatchup (inconditionnel) + list + clear ; listTenantsReadyForCatchup exige un numéro reconnecté (F3-a)', async () => {
+    const store = new PgConversationAnalysisStore(pool);
+    const conv = await insertConv('33600100061', { status: 'queued' });
+    const a: ConversationAnalysis = {
+      sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true, entities: {},
+      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 1,
+    };
+    await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    expect(await store.listConversationIdsPendingCatchup(tenantId)).not.toContain(conv);
+    // Marque inconditionnelle (la décision « en pause ? » est prise en amont par le push-job sur son snapshot).
+    await store.markPendingCatchup(conv);
+    expect(await store.listConversationIdsPendingCatchup(tenantId)).toContain(conv);
+    // listTenantsReadyForCatchup : SANS numéro connecté, le tenant n'est PAS prêt (ses marques attendent la reprise).
+    expect(await store.listTenantsReadyForCatchup()).not.toContain(tenantId);
+    // Avec un numéro RECONNECTÉ, le tenant devient prêt (le sweep le rattrapera).
+    await pool.query(`insert into waba (id, tenant_id, name) values ($1,$2,'w') on conflict (id) do nothing`, ['waba-catchup', tenantId]);
+    await pool.query(`insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, hubspot_connected) values ('pn-catchup','waba-catchup',$1,'+33600100061',true)`, [tenantId]);
+    expect(await store.listTenantsReadyForCatchup()).toContain(tenantId);
+    // clear -> plus de marque, plus prêt.
+    await store.clearPendingCatchup(conv);
+    expect(await store.listConversationIdsPendingCatchup(tenantId)).not.toContain(conv);
+    expect(await store.listTenantsReadyForCatchup()).not.toContain(tenantId);
+  });
+
   it('réouverture : un nouvel inbound sur une conversation done repasse en pending', async () => {
     const inbox = new PgInboxStore(pool);
     const waId = '33600100040';

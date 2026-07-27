@@ -18,6 +18,7 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
   const t = useT();
   const [lists, setLists] = useState<HubspotList[] | null>(null);
   const [reconsentUrl, setReconsentUrl] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -30,8 +31,12 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
     setLoading(true);
     setError(null);
     setReconsentUrl(null);
+    setPaused(false);
     try {
       const res = await listHubspotLists(tenantId);
+      // Synchro en pause (F3-b) : available:false + reason:'paused'. Message DISTINCT du portail vide, sinon l'admin
+      // croit à tort que sa liste a disparu côté HubSpot.
+      if (res.reason === 'paused') { setPaused(true); setLists([]); return; }
       if (!res.available) { setLists([]); return; } // toggle OFF (ne devrait pas arriver ici, défensif)
       if (res.reason === 'reconsent_required') { setReconsentUrl(res.reconsentUrl ?? null); setLists([]); return; }
       setLists(res.lists ?? []);
@@ -72,6 +77,10 @@ export function HubspotListImport({ tenantId, onImported, onBusyChange }: {
 
       {loading ? (
         <p className="mt-4 text-sm text-ink-500">{t('Chargement des listes…', 'Loading lists…')}</p>
+      ) : paused ? (
+        <div className="mt-4 rounded-lg bg-amber-50 px-3 py-3 text-sm text-amber-800" data-testid="hubspot-lists-paused">
+          <p>{t("Synchronisation HubSpot en pause. Les campagnes via listes reprennent dès que tu réactives la synchro sur l'accueil.", 'HubSpot sync is paused. List campaigns resume as soon as you re-enable sync on the home page.')}</p>
+        </div>
       ) : reconsentUrl ? (
         <div className="mt-4 rounded-lg bg-amber-50 px-3 py-3 text-sm text-amber-800">
           <p>{t("L'accès aux listes HubSpot n'est pas encore autorisé pour ce portail.", 'Access to HubSpot lists is not yet authorized for this portal.')}</p>

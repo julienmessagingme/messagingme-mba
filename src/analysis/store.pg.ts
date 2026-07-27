@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import type { AnalysisContext } from './analyzer';
 import type { AnalysisMessage } from './engine';
 import type { ConversationAnalysis } from './schema';
+import type { StoredConversationAnalysis } from './events';
 
 /** Une conversation réclamée pour analyse. */
 export interface ClaimedConversation {
@@ -156,5 +157,94 @@ export class PgConversationAnalysisStore {
   /** Marque la conversation en échec d'analyse (sortie LLM structurellement invalide : on ne rejoue pas en boucle). */
   async markFailed(conversationId: string): Promise<void> {
     await this.pool.query(`update conversations set analysis_status = 'failed' where id = $1`, [conversationId]);
+  }
+
+  /**
+   * Relit l'analyse COURANTE d'une conversation (F3-a). Le job push-analysis ne transporte plus qu'une référence
+   * {conversationId, tenantId} et refetch l'état frais ICI : sans ça, un rattrapage rejouerait un snapshot figé
+   * qui, si la conversation a été réanalysée entre-temps (analyzed_at avancé -> eventId neuf), s'ingérerait comme
+   * "nouveau" côté mm-hubspot avec un contenu périmé. null si l'analyse a disparu. `entities` (jsonb) est déjà parsé.
+   */
+  async getStored(conversationId: string): Promise<StoredConversationAnalysis | null> {
+    const res = await this.pool.query<{
+      conversation_id: string; tenant_id: string; sentiment: string; intent: string; topic: string;
+      resolved: boolean; handled_by: string; exchanges_count: number; entities: Record<string, unknown>;
+      action_suggestion: string; confidence: number; justification: string;
+    }>(
+      `select conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count,
+              entities, action_suggestion, confidence, justification
+       from conversation_analysis where conversation_id = $1`,
+      [conversationId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    // Les CHECK SQL (0027) garantissent des valeurs d'enum valides -> cast direct vers les unions du schéma.
+    return {
+      conversationId: r.conversation_id,
+      tenantId: r.tenant_id,
+      sentiment: r.sentiment as ConversationAnalysis['sentiment'],
+      intent: r.intent as ConversationAnalysis['intent'],
+      topic: r.topic,
+      resolved: r.resolved,
+      handled_by: r.handled_by as ConversationAnalysis['handled_by'],
+      exchanges_count: r.exchanges_count,
+      entities: r.entities ?? {},
+      action_suggestion: r.action_suggestion as ConversationAnalysis['action_suggestion'],
+      confidence: r.confidence,
+      justification: r.justification,
+    };
+  }
+
+  /**
+   * Conversations à RATTRAPER pour un tenant (F3-a) : celles marquées `pending_catchup` par le push-job pendant une
+   * pause. C'est le registre DURABLE du backlog (indépendant de paused_at, qui peut être effacé à la reprise).
+   * Borné (défaut 2000) ; ordre stable. Réutilise l'index (tenant_id, created_at) de 0027.
+   */
+  async listConversationIdsPendingCatchup(tenantId: string, limit = 2000): Promise<string[]> {
+    const n = Math.max(1, Math.min(5000, Math.floor(limit)));
+    const res = await this.pool.query<{ conversation_id: string }>(
+      `select conversation_id from conversation_analysis
+       where tenant_id = $1 and pending_catchup = true order by created_at asc limit $2`,
+      [tenantId, n],
+    );
+    return res.rows.map((r) => r.conversation_id);
+  }
+
+  /**
+   * Marque une analyse à rattraper (INCONDITIONNEL). La décision « faut-il marquer ? » (numéro en pause vs jamais
+   * activé) est prise par l'appelant à partir du MÊME snapshot que le gate (push-job -> getHubspotGateStatus),
+   * pas re-vérifiée ici : c'est ce qui ferme la course TOCTOU (une re-lecture « en pause ? » pouvait rater la
+   * marque si une reprise s'intercalait). UPDATE par id seul : idempotent, ne dépend d'aucun état concurrent.
+   */
+  async markPendingCatchup(conversationId: string): Promise<void> {
+    await this.pool.query(
+      `update conversation_analysis set pending_catchup = true where conversation_id = $1`,
+      [conversationId],
+    );
+  }
+
+  /**
+   * Tenants PRÊTS à rattraper (filet de sécurité du sweep worker) : ceux qui ont des marques `pending_catchup`
+   * ET au moins un numéro RECONNECTÉ. Exclut les tenants encore en pause (leurs marques attendent la reprise) et
+   * ne dépend PAS d'un événement de reprise : rattrape les marques restées si l'enqueue de reprise avait échoué,
+   * ou posées juste après que le catch-up de reprise ait déjà listé. Borné.
+   */
+  async listTenantsReadyForCatchup(limit = 200): Promise<string[]> {
+    const n = Math.max(1, Math.min(1000, Math.floor(limit)));
+    const res = await this.pool.query<{ tenant_id: string }>(
+      `select distinct ca.tenant_id from conversation_analysis ca
+       join phone_numbers pn on pn.tenant_id = ca.tenant_id and pn.hubspot_connected = true
+       where ca.pending_catchup = true limit $1`,
+      [n],
+    );
+    return res.rows.map((r) => r.tenant_id);
+  }
+
+  /** Efface la marque de rattrapage d'une conversation (appelé par le push-job APRÈS un post réussi : la reprise a bien poussé). */
+  async clearPendingCatchup(conversationId: string): Promise<void> {
+    await this.pool.query(
+      `update conversation_analysis set pending_catchup = false where conversation_id = $1 and pending_catchup = true`,
+      [conversationId],
+    );
   }
 }

@@ -668,6 +668,8 @@ export interface TenantSettings {
   controlHandbackSeconds: number | null;
   mbaEnabled: boolean;
   hubspotListsEnabled: boolean;
+  /** Pause des campagnes via listes HubSpot (F3-b). true = source HubSpot suspendue (pilotée par l'action Pause). */
+  campaignsPaused: boolean;
 }
 export function getSettings(tenantId: string): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`);
@@ -729,6 +731,8 @@ export interface AccountStatusResponse {
   /** Business propriétaire du WABA (owner_business_info.name). null = inconnu. */
   ownerBusinessName: string | null;
   hubspotConnected: boolean;
+  /** Instant de pause de la synchro (F3-a). null = jamais activé OU actif ; non-null + hubspotConnected=false = en pause. */
+  hubspotPausedAt: string | null;
   /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ».
    *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */
   hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean };
@@ -737,21 +741,33 @@ export interface AccountStatusResponse {
 export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {
   return request<AccountStatusResponse>(`/tenants/${tenantId}/account-status`);
 }
-/** Active/coupe la synchro HubSpot d'un numéro (toggle admin). Coupe/active vraiment le push d'analyse. */
-export function setHubspotConnected(tenantId: string, phoneNumberId: string, connected: boolean): Promise<{ phoneNumberId: string; hubspotConnected: boolean }> {
+/** Active/coupe/pause la synchro HubSpot d'un numéro (toggle admin). `catchupTriggered` = true si on vient de
+ *  reprendre après une pause (le rattrapage des analyses accumulées est en cours côté worker). */
+export function setHubspotConnected(tenantId: string, phoneNumberId: string, connected: boolean): Promise<{ phoneNumberId: string; hubspotConnected: boolean; catchupTriggered: boolean }> {
   return request(`/tenants/${tenantId}/phone-numbers/${encodeURIComponent(phoneNumberId)}/hubspot`, {
     method: 'PATCH',
     body: JSON.stringify({ connected }),
+  });
+}
+/** Déconnexion COMPLÈTE (candidat 2) : délie le portail HubSpot du tenant (le connecteur révoque le token si dernier
+ *  tenant) et coupe la synchro de TOUS les numéros du tenant. `disconnected:false` = déjà délié (succès idempotent). */
+export function disconnectHubspot(tenantId: string, phoneNumberId: string): Promise<{ phoneNumberId: string; hubspotConnected: boolean; disconnected: boolean }> {
+  return request(`/tenants/${tenantId}/phone-numbers/${encodeURIComponent(phoneNumberId)}/hubspot`, {
+    method: 'PATCH',
+    body: JSON.stringify({ connected: false, action: 'disconnect' }),
   });
 }
 
 // --- Import de listes HubSpot (3e source de campagne) ---
 
 export interface HubspotList { listId: string; name: string; size: number | null; processingType: string }
-/** Réponse du GET /hubspot/lists : `available:false` si le toggle est OFF ; sinon lists (ou re-consentement requis). */
+/**
+ * Réponse du GET /hubspot/lists : `available:false` si le toggle est OFF (sans reason) OU si la synchro est en pause
+ * (`reason:'paused'`, F3-b) ; sinon lists (ou re-consentement requis).
+ */
 export interface HubspotListsResult {
   available: boolean;
-  reason?: 'reconsent_required';
+  reason?: 'reconsent_required' | 'paused';
   reconsentUrl?: string;
   lists?: HubspotList[];
 }

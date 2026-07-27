@@ -499,6 +499,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const [source, setSource] = useState<'crm' | 'file' | 'hubspot'>('crm');
   // Toggle « Campagnes via données HubSpot » (réglé sur l'accueil) : gate le 3e bouton de source.
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
+  // Campagnes via listes HubSpot en pause (F3-b, flag tenant campaignsPaused) : on grise la source HubSpot pour ne
+  // pas envoyer l'admin vers un panneau vide pendant la pause.
+  const [hubspotPaused, setHubspotPaused] = useState(false);
   // Filtres UI (alimentent ContactFilters). tagMode 'and' = tous, 'or' = au moins un.
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
   const [tagMode, setTagMode] = useState<'and' | 'or'>('and');
@@ -542,7 +545,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         if (alive) setLoadingRefs(false);
       }
       const cfg = await settingsPromise;
-      if (alive && cfg) setHubspotListsEnabled(cfg.hubspotListsEnabled);
+      if (alive && cfg) { setHubspotListsEnabled(cfg.hubspotListsEnabled); setHubspotPaused(cfg.campaignsPaused); }
     })();
     return () => { alive = false; };
   }, [tenantId]);
@@ -960,9 +963,13 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           </button>
           <button
             type="button"
-            disabled={importBusy || !hubspotListsEnabled}
+            disabled={importBusy || !hubspotListsEnabled || hubspotPaused}
             onClick={() => chooseSource('hubspot')}
-            title={hubspotListsEnabled ? undefined : t('Active « Campagnes via données HubSpot » sur l\'accueil', 'Enable "Campaigns from HubSpot data" on the home page')}
+            title={
+              hubspotPaused
+                ? t("Synchronisation HubSpot en pause. Réactive-la sur l'accueil.", 'HubSpot sync is paused. Re-enable it on the home page.')
+                : hubspotListsEnabled ? undefined : t('Active « Campagnes via données HubSpot » sur l\'accueil', 'Enable "Campaigns from HubSpot data" on the home page')
+            }
             className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${source === 'hubspot' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
           >
             🔗 {t('HubSpot', 'HubSpot')}

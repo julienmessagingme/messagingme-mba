@@ -48,6 +48,17 @@ async function callService<T>(deps: ConnectorDeps, path: string, body: unknown):
   });
 }
 
+/**
+ * Déconnexion complète (candidat 2) : délie le tenant de son portail HubSpot côté connecteur (mm-hubspot révoque le
+ * refresh token si c'était le dernier tenant). Idempotent : `{disconnected:false}` = déjà délié = SUCCÈS (2xx). Un
+ * échec terminal (4xx/5xx après retries) lève HubspotServiceError -> l'appelant NE coupe PAS l'état local (pas de
+ * drift : on ne veut jamais que mba affiche « coupé » alors que le connecteur pousse encore vers HubSpot).
+ */
+export async function disconnectHubspot(deps: ConnectorDeps, tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }> {
+  const res = await callService<{ disconnected?: boolean; revoked?: boolean }>(deps, '/service/unlink', { tenantId });
+  return { disconnected: res.disconnected ?? false, revoked: res.revoked ?? false };
+}
+
 /** Liste les listes HubSpot du portail du tenant. Lève ReconsentRequiredError si crm.lists.read pas accordé. */
 export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, query?: string): Promise<HubspotList[]> {
   const res = await callService<{ lists: HubspotList[] }>(deps, '/service/lists', { tenantId, ...(query ? { query } : {}) });
