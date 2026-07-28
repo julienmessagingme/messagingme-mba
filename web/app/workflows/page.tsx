@@ -5,8 +5,9 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
-import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, type WorkflowSummary } from '@/lib/api';
-import { useT } from '@/lib/i18n';
+import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, type WorkflowSummary } from '@/lib/api';
+import { useT, useLocale } from '@/lib/i18n';
+import { formatDate, hourMin } from '@/lib/day';
 
 export default function WorkflowsPage() {
   // Suspense : useSearchParams (deep-link ?open=) exige une frontière Suspense au build (Next 15).
@@ -23,11 +24,21 @@ export default function WorkflowsPage() {
 
 function WorkflowsInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [editing, setEditing] = useState<WorkflowSummary | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Menu « 3 points » ouvert (id de la ligne) + renommage en cours.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<WorkflowSummary | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+
+  // Date + heure de création (fuseau Paris). Vide/invalide (objet transitoire juste après création) -> '-'.
+  const createdLabel = (iso: string): string =>
+    iso && !Number.isNaN(Date.parse(iso)) ? `${formatDate(iso, locale)} ${hourMin(iso, locale)}` : '-';
   const searchParams = useSearchParams();
   const deepLinkId = searchParams.get('open');
   const deepLinkApplied = useRef(false);
@@ -78,13 +89,51 @@ function WorkflowsInner({ session }: { session: Session }) {
     }
   }
   async function remove(w: WorkflowSummary) {
+    setMenuFor(null);
     if (!window.confirm(t(`Supprimer le scénario « ${w.name} » ?`, `Delete the scenario "${w.name}"?`))) return;
     setError(null);
+    setBusy(true);
     try {
       await deleteWorkflow(session.tenantId, w.id);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Suppression impossible', 'Unable to delete'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function duplicate(w: WorkflowSummary) {
+    setMenuFor(null);
+    setError(null);
+    setBusy(true);
+    try {
+      await duplicateWorkflow(session.tenantId, w.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Duplication impossible', 'Unable to duplicate'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  function startRename(w: WorkflowSummary) {
+    setMenuFor(null);
+    setRenaming(w);
+    setRenameVal(w.name);
+  }
+  async function submitRename() {
+    if (busy || !renaming) return;
+    const name = renameVal.trim();
+    if (name === '' || name === renaming.name) { setRenaming(null); return; }
+    setError(null);
+    setBusy(true);
+    try {
+      await updateWorkflow(session.tenantId, renaming.id, { name });
+      setRenaming(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Renommage impossible', 'Unable to rename'));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -134,6 +183,7 @@ function WorkflowsInner({ session }: { session: Session }) {
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
                 <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-5 py-2 font-medium">{t('Blocs', 'Blocks')}</th>
+                <th className="px-5 py-2 font-medium">{t('Créé le', 'Created')}</th>
                 <th className="px-5 py-2 text-right font-medium">{t('Actions', 'Actions')}</th>
               </tr>
             </thead>
@@ -145,10 +195,32 @@ function WorkflowsInner({ session }: { session: Session }) {
                     {w.code && <div className="font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{w.code}</div>}
                   </td>
                   <td className="px-5 py-3 text-ink-500">{w.graph.nodes.length}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-ink-500">{createdLabel(w.createdAt)}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => open(w)} className="font-medium text-brand-600 hover:text-brand-700">{t('Ouvrir', 'Open')}</button>
-                      <button onClick={() => remove(w)} className="text-coral hover:text-coral/80">{t('Supprimer', 'Delete')}</button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setMenuFor((m) => (m === w.id ? null : w.id))}
+                          disabled={busy}
+                          className="rounded px-1.5 py-0.5 text-lg leading-none text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-50"
+                          aria-label={t('Plus d\'actions', 'More actions')}
+                          data-testid={`workflow-menu-${w.id}`}
+                        >
+                          ⋯
+                        </button>
+                        {menuFor === w.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                            <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-left text-sm shadow-lg">
+                              <button onClick={() => startRename(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Renommer', 'Rename')}</button>
+                              <button onClick={() => duplicate(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Dupliquer', 'Duplicate')}</button>
+                              <div className="my-1 border-t border-ink-100" />
+                              <button onClick={() => remove(w)} className="block w-full px-4 py-2 text-left text-coral hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -157,6 +229,27 @@ function WorkflowsInner({ session }: { session: Session }) {
           </table>
         )}
       </div>
+
+      {renaming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setRenaming(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Renommer le scénario', 'Rename scenario')}</h3>
+            <input
+              autoFocus
+              value={renameVal}
+              onChange={(e) => setRenameVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void submitRename(); if (e.key === 'Escape') setRenaming(null); }}
+              className="mt-4 w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              placeholder={t('Nom du scénario', 'Scenario name')}
+              data-testid="workflow-rename-input"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setRenaming(null)} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+              <button onClick={() => void submitRename()} disabled={busy || renameVal.trim() === ''} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">{t('Renommer', 'Rename')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

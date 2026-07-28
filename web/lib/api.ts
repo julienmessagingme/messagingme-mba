@@ -1027,6 +1027,10 @@ export function updateWorkflow(tenantId: string, id: string, patch: { name?: str
 export function deleteWorkflow(tenantId: string, id: string): Promise<unknown> {
   return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'DELETE' });
 }
+/** Duplique un scénario (nom « X (copie) », graphe cloné avec codes de node frais). Renvoie le nouveau scénario. */
+export function duplicateWorkflow(tenantId: string, id: string): Promise<{ id: string; name: string; graph: WorkflowGraph }> {
+  return request(`/tenants/${tenantId}/workflows/${id}/duplicate`, { method: 'POST', body: JSON.stringify({}) });
+}
 
 /** Un bloc (node) aplati depuis les scénarios, pour la page Contenu > Blocs. `code` = nod_... ou null. */
 export interface NodeListItem {

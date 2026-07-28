@@ -221,3 +221,53 @@ describe('routes workflows', () => {
     await server.close();
   });
 });
+
+describe('POST /tenants/:t/workflows/:id/duplicate', () => {
+  const SRC_CODE = 'nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS'; // code valide du tenant t1 (k7m2p3)
+  const source = (): WorkflowRow => sampleRow({
+    name: 'Promo',
+    graph: {
+      nodes: [{ id: 'n1', type: 'template', position: { x: 5, y: 9 }, data: { code: SRC_CODE, templateName: 'x' } }],
+      edges: [],
+    },
+  });
+
+  it('201, nom « (copie) », graphe cloné, codes de node RE-MINTÉS (différents de la source)', async () => {
+    const { server, cap } = app({ getWorkflow: async (id) => (id === 'w1' ? source() : null), listWorkflows: async () => [source()] });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ name: string }>().name).toBe('Promo (copie)');
+    expect(cap.created[0]!.name).toBe('Promo (copie)');
+    const g = cap.created[0]!.graph as { nodes: Array<{ id: string; position: unknown; data: { code?: string } }> };
+    expect(g.nodes[0]!.id).toBe('n1');                 // structure clonée
+    expect(g.nodes[0]!.position).toEqual({ x: 5, y: 9 });
+    expect(g.nodes[0]!.data.code).toMatch(/^nod_k7m2p3_[0-9A-HJKMNP-TV-Z]{26}$/); // code frais valide
+    expect(g.nodes[0]!.data.code).not.toBe(SRC_CODE);  // PAS celui de la source
+    await server.close();
+  });
+
+  it('incrémente « (copie 2) » si le nom est déjà pris', async () => {
+    const { server, cap } = app({ getWorkflow: async (id) => (id === 'w1' ? source() : null), listWorkflows: async () => [source(), sampleRow({ name: 'Promo (copie)' })] });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(201);
+    expect(cap.created[0]!.name).toBe('Promo (copie 2)');
+    await server.close();
+  });
+
+  it('id inconnu -> 404, aucune création', async () => {
+    const { server, cap } = app({ getWorkflow: async () => null });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/ghost/duplicate', ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(404);
+    expect(cap.created).toHaveLength(0);
+    await server.close();
+  });
+
+  it('agent -> 403 (admin-only) ; tenant != token -> 403', async () => {
+    const { server } = app({ getWorkflow: async () => source() });
+    const agent = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(agentTok), payload: {} });
+    const cross = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(otherTok), payload: {} });
+    expect(agent.statusCode).toBe(403);
+    expect(cross.statusCode).toBe(403);
+    await server.close();
+  });
+});

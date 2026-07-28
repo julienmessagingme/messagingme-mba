@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER } from '@/lib/nodeMeta';
+import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 
 type RFNode = Node<Record<string, unknown>>;
 type RFEdge = Edge;
@@ -358,6 +359,17 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
     return null;
   })();
 
+  // Auto-arranger : recalcule les positions (couches horizontales) et recadre. Le changement de position est
+  // capté par l'auto-save existant (effet sur [nodes, edges]) -> persistance automatique, aucun appel API dédié.
+  function autoArrange() {
+    const layout = autoLayoutHorizontal(
+      nodes.map((n) => ({ id: n.id })),
+      edges.map((e) => ({ source: e.source, target: e.target })),
+    );
+    setNodes((ns) => ns.map((n) => { const p = layout.get(n.id); return p ? { ...n, position: p } : n; }));
+    requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 300 }));
+  }
+
   return (
     <div className="flex flex-col gap-3 lg:h-full">
       <div className="flex flex-wrap items-center gap-2">
@@ -367,6 +379,15 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
+        <button
+          onClick={autoArrange}
+          disabled={nodes.length === 0}
+          className="rounded-md border border-ink-200 px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+          title={t('Aligner les blocs automatiquement (disposition horizontale)', 'Auto-arrange blocks (horizontal layout)')}
+          data-testid="workflow-autoarrange"
+        >
+          ⇥ {t('Auto-arranger', 'Auto-arrange')}
+        </button>
         <div className="ml-auto flex items-center gap-2 text-xs">
           {saveError ? (
             <>

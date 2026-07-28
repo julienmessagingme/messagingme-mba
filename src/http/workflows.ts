@@ -70,6 +70,33 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     return reply.code(201).send({ id, name: b.name.trim(), graph });
   });
 
+  // Dupliquer un scénario : clone le graphe en un NOUVEAU scénario. Nom « X (copie) » (puis « (copie 2) »… si
+  // pris). Codes de node RE-MINTÉS : sans ça, mintNodeCodes CONSERVE les codes valides du même tenant -> la copie
+  // partagerait les identifiants publics de l'original (contrat API cassé). Le `code` du scénario est minté frais
+  // par createWorkflow (insert). Aucune méthode store dédiée : réutilise getWorkflow/listWorkflows/createWorkflow.
+  app.post('/tenants/:tenantId/workflows/:id/duplicate', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const source = await deps.getWorkflow(id, tenant);
+    if (!source) return reply.code(404).send({ error: 'workflow inconnu' });
+
+    const taken = new Set((await deps.listWorkflows(tenant)).map((w) => w.name));
+    let name = `${source.name} (copie)`;
+    for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
+
+    // Retire le code de chaque node AVANT de re-minter -> tous les codes sont frais (jamais conservés de la source).
+    const stripped: WorkflowGraph = {
+      nodes: source.graph.nodes.map((node) => ({ ...node, data: { ...node.data, code: undefined } })),
+      edges: source.graph.edges,
+    };
+    const graph = mintNodeCodes(stripped, await deps.tenantCode(tenant));
+    const { id: newId } = await deps.createWorkflow(tenant, name, graph);
+    if (deps.declareTags) { try { await deps.declareTags(tenant, tagsInGraph(graph)); } catch { /* best-effort */ } }
+    return reply.code(201).send({ id: newId, name, graph });
+  });
+
   app.get('/tenants/:tenantId/workflows', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
