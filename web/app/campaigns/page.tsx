@@ -559,9 +559,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
-  // Débit d'envoi (« vitesse du canon ») : null = débit maximum (aucun throttle, comportement par défaut).
-  // Sinon 1..80 messages/min (plafond WhatsApp). Envoyé au backend seulement s'il est non-null.
-  const [ratePerMinute, setRatePerMinute] = useState<number | null>(null);
+  // Débit d'envoi (« vitesse du canon ») : jauge TOUJOURS active, 1..80 messages/min (plafond WhatsApp), défaut 60.
+  // On protège la réputation du numéro d'entrée de jeu plutôt que d'envoyer au max par défaut.
+  const [ratePerMinute, setRatePerMinute] = useState<number>(60);
   // Lancement rapatrié sur l'écran (étape 2) : idle -> creating -> launching (avec polling inline) -> done|error.
   // Programmation : idle -> creating -> scheduled (pas de polling, le worker déclenche l'envoi à l'échéance).
   const [launch, setLaunch] = useState<{
@@ -843,11 +843,10 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
   // Payload de création partagé par le brouillon (submit) et le lancement direct (createAndLaunch).
   function buildCreateInput(): CreateCampaignInput {
-    // ratePerMinute omis quand null (débit max) : on n'envoie la clé que si un plafond est choisi.
-    const rate = ratePerMinute != null ? { ratePerMinute } : {};
+    // Débit TOUJOURS choisi (jauge, défaut 60) : on envoie systématiquement le plafond 1..80.
     return mode === 'workflow'
-      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected], ...rate }
-      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected], ...rate };
+      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected], ratePerMinute }
+      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected], ratePerMinute };
   }
 
   // Remise à zéro pour « Nouvelle campagne » après un lancement réussi (sans quitter l'écran de création).
@@ -859,7 +858,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     setWfError(null);
     setError(null);
     setOk(null);
-    setRatePerMinute(null); // retour au débit maximum (défaut)
+    setRatePerMinute(60); // retour au débit par défaut (jauge à 60/min)
     setTiming('now');
     setScheduledLocal('');
     setLaunch({ phase: 'idle' });
@@ -986,8 +985,10 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const contentReady = mode === 'workflow'
     ? (workflowId !== '' && wfError === null && varsComplete)
     : (templateName !== '' && varsComplete);
+  // Nommer la campagne est un PRÉALABLE (étape 0) : tant que c'est vide, les zones Destinataires/Message sont grisées.
+  const nameSet = name.trim() !== '';
   // Étape 1 prête = ce qui active l'étape 2 (indépendant du busy/launch en cours).
-  const step1Ready = phoneNumberId !== '' && name.trim() !== '' && contentReady && selected.size > 0;
+  const step1Ready = phoneNumberId !== '' && nameSet && contentReady && selected.size > 0;
   const canSubmit = step1Ready && !busy;
   // Lancement en cours (création + polling) : verrouille les boutons des deux étapes. Couvre aussi la phase
   // 'creating' de la programmation (créer + programmer), donc le retour liste est gelé pendant l'opération.
@@ -1006,38 +1007,45 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         <h2 className="mt-0.5 text-base font-semibold tracking-tight text-ink-900">{t('Préparation', 'Preparation')}</h2>
         <p className="mt-1 text-xs text-ink-500">{t('Choisis un template approuvé et les contacts.', 'Choose an approved template and contacts.')}</p>
 
-      {/* Nom de la campagne : au-dessus des 3 zones */}
+      {/* ÉTAPE 0 : nommer la campagne AVANT tout. Tant que c'est vide, les zones Destinataires/Message sont grisées. */}
       <div className="mt-4">
-        <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom de la campagne (interne)', 'Campaign name (internal)')}</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} max-w-md`} placeholder={t('Promo été', 'Summer promo')} />
+        <label className="mb-1 block text-sm font-medium text-ink-700">
+          {t('Nom de la campagne (interne)', 'Campaign name (internal)')} <span className="text-red-500">*</span>
+        </label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          data-testid="campaign-name"
+          autoFocus
+          className={`${inputCls} max-w-md ${!nameSet ? 'border-brand-400 ring-2 ring-brand-100' : ''}`}
+          placeholder={t('Promo été', 'Summer promo')}
+        />
+        {!nameSet && <p className="mt-1 text-xs text-brand-600">{t('Donne un nom à ta campagne pour continuer.', 'Name your campaign to continue.')}</p>}
       </div>
 
-      {/* 3 zones côte à côte (empilées sur mobile) : Expéditeur | Destinataires | Message. Grille élargie en xl
-          car l'écran est désormais pleine largeur. */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_minmax(0,1fr)]">
-        {/* ZONE 1 : Expéditeur (un seul numéro en général) */}
-        <div className="rounded-xl border border-ink-200 bg-ink-50/30 p-4">
-          <h3 className="text-sm font-semibold text-ink-800">{t('Expéditeur', 'Sender')}</h3>
-          <div className="mt-2">
-            {numbers.length === 0 ? (
-              <p className="text-xs text-amber-700">{t('Aucun numéro provisionné pour ce tenant.', 'No number provisioned for this tenant.')}</p>
-            ) : numbers.length === 1 ? (
-              <div className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-800">
-                <div className="font-medium">{numbers[0]!.displayPhoneNumber ?? numbers[0]!.id}</div>
-                {numbers[0]!.verifiedName && <div className="text-xs text-ink-400">{numbers[0]!.verifiedName}</div>}
-              </div>
-            ) : (
-              <select value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className={inputCls}>
-                {numbers.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.displayPhoneNumber ?? n.id} {n.verifiedName ? `(${n.verifiedName})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-        </div>
+      {/* Expéditeur : bandeau PLEINE LARGEUR au-dessus des 2 zones (le numéro est en général unique). */}
+      <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-ink-200 bg-ink-50/30 px-4 py-3">
+        <h3 className="text-sm font-semibold text-ink-800">{t('Expéditeur', 'Sender')}</h3>
+        {numbers.length === 0 ? (
+          <p className="text-xs text-amber-700">{t('Aucun numéro provisionné pour ce tenant.', 'No number provisioned for this tenant.')}</p>
+        ) : numbers.length === 1 ? (
+          <span className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-800">
+            <span className="font-medium">{numbers[0]!.displayPhoneNumber ?? numbers[0]!.id}</span>
+            {numbers[0]!.verifiedName && <span className="ml-2 text-xs text-ink-400">{numbers[0]!.verifiedName}</span>}
+          </span>
+        ) : (
+          <select value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} className={`${inputCls} max-w-xs`}>
+            {numbers.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.displayPhoneNumber ?? n.id} {n.verifiedName ? `(${n.verifiedName})` : ''}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
 
+      {/* Destinataires + Message : 2 colonnes PLEINE LARGEUR. Grisées tant que la campagne n'a pas de nom (étape 0). */}
+      <div className={`mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 ${!nameSet ? 'pointer-events-none select-none opacity-40' : ''}`} aria-disabled={!nameSet}>
         {/* ZONE 2 : Destinataires : source (liste CRM / fichier / HubSpot) + filtres du mini-CRM */}
         <div className="rounded-xl border border-ink-200 p-4">
         <div className="mb-2 flex items-center justify-between">
@@ -1218,7 +1226,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         <label className="mb-1 block text-sm font-medium text-ink-700">{t('Que veux-tu leur envoyer ?', 'What do you want to send them?')}</label>
         <div className="inline-flex gap-1 rounded-lg bg-ink-100 p-1 text-sm">
           {([
-            { m: 'template', label: t('Un template', 'A template'), tip: t('Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL.', 'Best for sending a simple message with one or more buttons (CTA) that point to URLs.') },
+            { m: 'template', label: t('Un template', 'A template'), tip: t('Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL. Si le client répond, le Meta Business Agent prend le relais.', 'Best for sending a simple message with one or more buttons (CTA) that point to URLs. If the customer replies, the Meta Business Agent takes over.') },
             { m: 'workflow', label: t('Un scénario', 'A scenario'), tip: t('Privilégiez cette méthode pour enchaîner plusieurs étapes : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un formulaire, ...).', 'Best for chaining several steps: sending a template THEN other elements (adding a tag, a field, sending a form, ...).') },
           ] as const).map(({ m, label, tip }) => (
             <span key={m} className="group relative">
@@ -1334,49 +1342,33 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         </div>
       </div>
 
-      {/* Débit d'envoi (« vitesse du canon ») : placé après le grid pour disposer de la sélection (durée estimée
-          sur selected.size). Défaut = maximum (ratePerMinute null). « Limiter » borne à 1..80 messages/min. */}
-      <div className="mt-4 rounded-xl border border-ink-200 p-4">
+      {/* Débit d'envoi : jauge TOUJOURS active (défaut 60/min, réglable 1..80). Grisée tant que la campagne n'a pas de nom.
+          Placée après le grid pour disposer de la sélection (durée estimée sur selected.size). */}
+      <div className={`mt-4 rounded-xl border border-ink-200 p-4 ${!nameSet ? 'pointer-events-none select-none opacity-40' : ''}`} aria-disabled={!nameSet}>
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-medium text-ink-700">{t("Débit d'envoi", 'Sending rate')}</h3>
-            <p className="mt-0.5 text-xs text-ink-500">{t('Par défaut, envoi au débit maximum.', 'By default, sending at maximum speed.')}</p>
-          </div>
-          <label className="flex shrink-0 items-center gap-2 text-sm text-ink-700">
-            <input
-              type="checkbox"
-              checked={ratePerMinute != null}
-              onChange={(e) => setRatePerMinute(e.target.checked ? 80 : null)}
-              className="accent-brand-500"
-            />
-            {t("Limiter la vitesse d'envoi", 'Limit the sending speed')}
-          </label>
+          <h3 className="text-sm font-medium text-ink-700">{t("Débit d'envoi", 'Sending rate')}</h3>
+          <span className="shrink-0 text-sm font-semibold text-ink-800">{ratePerMinute} {t('messages / min', 'messages / min')}</span>
         </div>
-
-        {ratePerMinute != null && (
-          <div className="mt-3">
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={1}
-                max={80}
-                step={1}
-                value={ratePerMinute}
-                onChange={(e) => setRatePerMinute(Number(e.target.value))}
-                className="flex-1 accent-brand-500"
-              />
-              <span className="w-32 shrink-0 text-right text-sm font-medium text-ink-800">{ratePerMinute} {t('messages / min', 'messages / min')}</span>
-            </div>
-            {selected.size > 0 && (
-              <p className="mt-2 text-xs text-ink-500">
-                {t(`~${Math.ceil(selected.size / ratePerMinute)} min pour envoyer ${selected.size} message(s)`, `~${Math.ceil(selected.size / ratePerMinute)} min to send ${selected.size} message(s)`)}
-              </p>
-            )}
-            <p className="mt-2 text-[11px] text-ink-400">
-              {t('Le plafond est 80/min (limite WhatsApp). Baisser le débit protège la réputation du numéro.', 'The cap is 80/min (WhatsApp limit). Lowering the rate protects the number reputation.')}
-            </p>
-          </div>
+        <div className="mt-3 flex items-center gap-3">
+          <input
+            type="range"
+            min={1}
+            max={80}
+            step={1}
+            value={ratePerMinute}
+            onChange={(e) => setRatePerMinute(Number(e.target.value))}
+            data-testid="campaign-rate"
+            className="flex-1 accent-brand-500"
+          />
+        </div>
+        {selected.size > 0 && (
+          <p className="mt-2 text-xs text-ink-500">
+            {t(`~${Math.ceil(selected.size / ratePerMinute)} min pour envoyer ${selected.size} message(s)`, `~${Math.ceil(selected.size / ratePerMinute)} min to send ${selected.size} message(s)`)}
+          </p>
         )}
+        <p className="mt-2 text-[11px] text-ink-400">
+          {t('Défaut 60/min. Plafond 80/min (limite WhatsApp) ; baisser le débit protège la réputation du numéro.', 'Default 60/min. Cap 80/min (WhatsApp limit); lowering the rate protects the number reputation.')}
+        </p>
       </div>
 
       {/* Avertissements de préparation : restent en bas de l'étape 1 (variables incomplètes, erreur de création). */}
