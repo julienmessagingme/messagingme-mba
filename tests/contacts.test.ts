@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { ContactsRouteDeps } from '../src/http/contacts';
-import type { ContactRow } from '../src/crm/contact-store.pg';
+import type { ContactRow, BulkTarget, BulkEdits } from '../src/crm/contact-store.pg';
 import type { UserFieldDef } from '../src/crm/types';
 
 const SECRET = 'test-secret';
@@ -28,10 +28,13 @@ const FIELDS: UserFieldDef[] = [
   { key: 'consent', label: 'Consentement', type: 'boolean' },
 ];
 
-interface Cap { merged: Array<Record<string, string>>; added: string[][]; removed: string[][]; removedFields: string[][]; names: Array<string | null> }
+interface Cap {
+  merged: Array<Record<string, string>>; added: string[][]; removed: string[][]; removedFields: string[][]; names: Array<string | null>;
+  bulk: Array<{ target: BulkTarget; edits: BulkEdits }>; deleted: BulkTarget[];
+}
 
 function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow | null } = {}) {
-  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [] };
+  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [] };
   const deps: ContactsRouteDeps = {
     applyEdits: async (_t, _id, edits) => {
       const result = opts.contact === undefined ? CONTACT : opts.contact;
@@ -43,6 +46,8 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
       if (edits.profileName !== undefined) cap.names.push(edits.profileName);
       return result;
     },
+    applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return 3; },
+    softDeleteMany: async (_t, target) => { cap.deleted.push(target); return 5; },
     listUserFields: async () => FIELDS,
     getContactHistory: async () => ({ sends: [], conversations: [] }),
     listSendsForExport: async () => [],
@@ -194,6 +199,124 @@ describe('routes contacts — édition fiche', () => {
     const { server } = app();
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', headers: { 'content-type': 'application/json' }, payload: { addTags: ['x'] } });
     expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+});
+
+describe('POST /tenants/:t/contacts/bulk — action en masse', () => {
+  it('add_tag par ids -> 200, applyEditsMany reçoit la cible ids + addTags, renvoie affected', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { ids: ['a', 'b', 'a'] }, action: { type: 'add_tag', tags: ['vip', 'vip'] } } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ affected: number }>().affected).toBe(3);
+    expect(cap.bulk).toHaveLength(1);
+    expect(cap.bulk[0]!.target).toEqual({ ids: ['a', 'b'] }); // parse dédup les ids
+    expect(cap.bulk[0]!.edits).toEqual({ addTags: ['vip'] });   // et les tags
+    await server.close();
+  });
+
+  it('remove_tag par filtres + excludeIds -> 200, la cible passe filters + excludeIds', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { filters: { tags: ['vip'] }, excludeIds: ['x'] }, action: { type: 'remove_tag', tags: ['vip'] } } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.bulk[0]!.target).toEqual({ filters: { tags: ['vip'] }, excludeIds: ['x'] });
+    expect(cap.bulk[0]!.edits).toEqual({ removeTags: ['vip'] });
+    await server.close();
+  });
+
+  it('set_field valide -> 200, la valeur booléenne est CANONICALISÉE (oui -> true)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { ids: ['a'] }, action: { type: 'set_field', key: 'consent', value: 'oui' } } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.bulk[0]!.edits).toEqual({ setField: { key: 'consent', value: 'true' } });
+    await server.close();
+  });
+
+  it('set_field clé inconnue -> 400, aucune action', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { ids: ['a'] }, action: { type: 'set_field', key: 'inconnu', value: 'x' } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.bulk).toHaveLength(0);
+    await server.close();
+  });
+
+  it('set_field valeur invalide pour le type -> 400, aucune action', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { ids: ['a'] }, action: { type: 'set_field', key: 'age', value: 'pas-un-nombre' } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.bulk).toHaveLength(0);
+    await server.close();
+  });
+
+  it('action inconnue -> 400', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { ids: ['a'] }, action: { type: 'boom' } } });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('cible absente -> 400 (jamais d\'UPDATE global)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { action: { type: 'add_tag', tags: ['vip'] } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.bulk).toHaveLength(0);
+    await server.close();
+  });
+
+  it('cible ids vide -> 400', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok), payload: { target: { ids: [] }, action: { type: 'add_tag', tags: ['vip'] } } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.bulk).toHaveLength(0);
+    await server.close();
+  });
+
+  it('agent -> 403 (admin-only)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(agentTok), payload: { target: { ids: ['a'] }, action: { type: 'add_tag', tags: ['vip'] } } });
+    expect(res.statusCode).toBe(403);
+    expect(cap.bulk).toHaveLength(0);
+    await server.close();
+  });
+
+  it('tenant != token -> 403', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/AUTRE/contacts/bulk', ...h(adminTok), payload: { target: { ids: ['a'] }, action: { type: 'add_tag', tags: ['vip'] } } });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('sans token -> 401', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', headers: { 'content-type': 'application/json' }, payload: { target: { ids: ['a'] }, action: { type: 'add_tag', tags: ['vip'] } } });
+    expect(res.statusCode).toBe(401);
+    await server.close();
+  });
+});
+
+describe('POST /tenants/:t/contacts/bulk-delete — suppression douce en masse', () => {
+  it('par ids -> 200, softDeleteMany reçoit la cible, renvoie affected', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(adminTok), payload: { target: { ids: ['a', 'b'] } } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ affected: number }>().affected).toBe(5);
+    expect(cap.deleted).toEqual([{ ids: ['a', 'b'] }]);
+    await server.close();
+  });
+
+  it('cible absente -> 400 (jamais de suppression globale)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(cap.deleted).toHaveLength(0);
+    await server.close();
+  });
+
+  it('agent -> 403 (admin-only)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(agentTok), payload: { target: { ids: ['a'] } } });
+    expect(res.statusCode).toBe(403);
+    expect(cap.deleted).toHaveLength(0);
     await server.close();
   });
 });

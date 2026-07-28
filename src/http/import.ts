@@ -5,6 +5,7 @@ import { importContacts } from '../crm/import';
 import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/contact-store.pg';
+import { isContactFieldOp } from '../crm/contact-store.pg';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 
@@ -19,12 +20,14 @@ export interface ImportRouteDeps extends ImportDeps {
 }
 
 /** Parse les critères de « Liste de contacts » depuis les query params (tous optionnels, valeurs = strings).
- *  `tags`=CSV, `fields`=JSON `[{key,op,value}]` (défensif : ignoré si illisible). Bornes anti-abus. */
-function parseFilters(q: Record<string, unknown>): ContactFilters {
+ *  `tags`/`tagsExclude`=CSV, `fields`=JSON `[{key,op,value}]` (défensif : ignoré si illisible). Bornes anti-abus.
+ *  Exporté pour le test de round-trip anti-drift (filtersToQuery côté web <-> parseFilters ici). */
+export function parseFilters(q: Record<string, unknown>): ContactFilters {
   const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
-  const tags = typeof q.tags === 'string'
-    ? [...new Set(q.tags.split(',').map((t) => t.trim()).filter((t) => t !== ''))].slice(0, 50)
-    : [];
+  const csv = (v: unknown): string[] =>
+    typeof v === 'string' ? [...new Set(v.split(',').map((t) => t.trim()).filter((t) => t !== ''))].slice(0, 50) : [];
+  const tags = csv(q.tags);
+  const tagsExclude = csv(q.tagsExclude);
   let fieldFilters: ContactFieldFilter[] = [];
   if (typeof q.fields === 'string' && q.fields.trim() !== '') {
     try {
@@ -32,8 +35,13 @@ function parseFilters(q: Record<string, unknown>): ContactFilters {
       if (Array.isArray(parsed)) {
         fieldFilters = parsed
           .map((f) => f as { key?: unknown; op?: unknown; value?: unknown })
-          .filter((f) => typeof f.key === 'string' && typeof f.value === 'string')
-          .map((f): ContactFieldFilter => ({ key: String(f.key).slice(0, 120), op: f.op === 'contains' ? 'contains' : 'eq', value: String(f.value).slice(0, 500) }))
+          .filter((f) => typeof f.key === 'string')
+          // `empty`/`not_empty` n'ont pas de valeur ; op inconnu -> `eq` (défensif, donnée externe).
+          .map((f): ContactFieldFilter => ({
+            key: String(f.key).slice(0, 120),
+            op: isContactFieldOp(f.op) ? f.op : 'eq',
+            value: typeof f.value === 'string' ? String(f.value).slice(0, 500) : '',
+          }))
           .slice(0, 20);
       }
     } catch { /* filtre de champ illisible -> ignoré (donnée externe) */ }
@@ -42,6 +50,7 @@ function parseFilters(q: Record<string, unknown>): ContactFilters {
   return {
     ...(tags.length > 0 ? { tags } : {}),
     ...(q.tagMode === 'or' ? { tagMode: 'or' as const } : {}),
+    ...(tagsExclude.length > 0 ? { tagsExclude } : {}),
     ...(optInRaw === 'opted_in' || optInRaw === 'opted_out' || optInRaw === 'unknown' ? { optIn: optInRaw } : {}),
     ...(str(q.phonePrefix) ? { phonePrefix: str(q.phonePrefix) } : {}),
     ...(str(q.phoneContains) ? { phoneContains: str(q.phoneContains) } : {}),
@@ -52,7 +61,7 @@ function parseFilters(q: Record<string, unknown>): ContactFilters {
 
 /** Un des filtres avancés est-il posé ? (sinon on garde le chemin `listContacts` historique, avec `tag`.) */
 function hasFilters(f: ContactFilters): boolean {
-  return Boolean(f.tags?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.fieldFilters?.length);
+  return Boolean(f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.fieldFilters?.length);
 }
 
 /** Construit un mapping par défaut depuis la reconnaissance de colonnes. */

@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { ContactRow } from '../crm/contact-store.pg';
+import type { ContactRow, ContactFilters, ContactFieldFilter, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
+import { isContactFieldOp } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
 import { validateFieldValue, canonicalizeFieldValue } from '../crm/fields';
@@ -14,12 +15,73 @@ export interface ContactsRouteDeps {
     contactId: string,
     edits: { fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[]; profileName?: string | null },
   ): Promise<ContactRow | null>;
+  /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
+  applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
+  /** Suppression DOUCE en masse sur une cible. Renvoie le nb supprimé. */
+  softDeleteMany(tenantId: string, target: BulkTarget): Promise<number>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
   listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
+}
+
+/** Borne les listes d'ids d'une action en masse (dédup, non vides). Au-delà du plafond, on tronque
+ *  (le front vise plutôt `{filters, excludeIds}` que d'envoyer 100k ids). */
+const asIdArray = (v: unknown): string[] =>
+  Array.isArray(v) ? [...new Set(v.map(String).map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 100_000) : [];
+
+/** Normalise un ContactFilters depuis un corps JSON (défensif : donnée cliente). Mêmes règles que `parseFilters`
+ *  (query params) côté import.ts, opérateurs via la whitelist partagée `isContactFieldOp`. */
+function normalizeContactFilters(raw: unknown): ContactFilters {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const r = raw as Record<string, unknown>;
+  const tagArr = (v: unknown): string[] =>
+    Array.isArray(v) ? [...new Set(v.map(String).map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 50) : [];
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  const tags = tagArr(r.tags);
+  const tagsExclude = tagArr(r.tagsExclude);
+  let fieldFilters: ContactFieldFilter[] = [];
+  if (Array.isArray(r.fieldFilters)) {
+    fieldFilters = r.fieldFilters
+      // Garde-fou : un élément null / non-objet (corps JSON hostile, ex. `fieldFilters: [null]`) ne doit PAS
+      // planter en 500 sur `f.key`. Miroir de la robustesse try/catch de parseFilters côté import.ts.
+      .filter((f): f is { key?: unknown; op?: unknown; value?: unknown } => f !== null && typeof f === 'object' && !Array.isArray(f))
+      .filter((f) => typeof f.key === 'string')
+      .map((f): ContactFieldFilter => ({
+        key: String(f.key).slice(0, 120),
+        op: isContactFieldOp(f.op) ? f.op : 'eq',
+        value: typeof f.value === 'string' ? String(f.value).slice(0, 500) : '',
+      }))
+      .slice(0, 20);
+  }
+  const optIn = str(r.optIn);
+  return {
+    ...(tags.length > 0 ? { tags } : {}),
+    ...(r.tagMode === 'or' ? { tagMode: 'or' as const } : {}),
+    ...(tagsExclude.length > 0 ? { tagsExclude } : {}),
+    ...(optIn === 'opted_in' || optIn === 'opted_out' || optIn === 'unknown' ? { optIn } : {}),
+    ...(str(r.phonePrefix) ? { phonePrefix: str(r.phonePrefix) } : {}),
+    ...(str(r.phoneContains) ? { phoneContains: str(r.phoneContains) } : {}),
+    ...(str(r.nameSearch) ? { nameSearch: str(r.nameSearch) } : {}),
+    ...(fieldFilters.length > 0 ? { fieldFilters } : {}),
+  };
+}
+
+/** Cible d'une action en masse depuis le corps : `ids` non vides -> par ids ; sinon `filters` (+ `excludeIds`).
+ *  null si aucune cible exploitable (-> 400, jamais un UPDATE global par erreur). */
+function parseBulkTarget(raw: unknown): BulkTarget | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const t = raw as { ids?: unknown; filters?: unknown; excludeIds?: unknown };
+  if (Array.isArray(t.ids) && t.ids.length > 0) {
+    const ids = asIdArray(t.ids);
+    return ids.length > 0 ? { ids } : null;
+  }
+  if (t.filters !== undefined) {
+    return { filters: normalizeContactFilters(t.filters), excludeIds: asIdArray(t.excludeIds) };
+  }
+  return null;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -117,5 +179,57 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const sends = await deps.listSendsForExport(tenant, contactId);
     if (!sends) return reply.code(404).send({ error: 'contact inconnu' });
     return reply.code(200).send({ sends });
+  });
+
+  /**
+   * Action en masse (mini-CRM, admin-only) : ajouter/retirer un tag OU poser la valeur d'un champ sur une
+   * cible (ids cochés OU filtres + exclusions). Une seule action par appel. Le champ est validé contre les
+   * définitions user_fields du tenant (clé inconnue -> 400 ; valeur invalide pour le type -> 400, comme la
+   * fiche). La cible est toujours re-scopée `tenant_id` + `deleted_at is null` côté store. Renvoie `{ affected }`.
+   */
+  app.post('/tenants/:tenantId/contacts/bulk', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+
+    const b = (req.body ?? {}) as { target?: unknown; action?: unknown };
+    const target = parseBulkTarget(b.target);
+    if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
+    const action = (b.action ?? {}) as { type?: unknown; tags?: unknown; key?: unknown; value?: unknown };
+
+    if (action.type === 'add_tag' || action.type === 'remove_tag') {
+      const tags = asStringArray(action.tags);
+      if (tags.length === 0) return reply.code(400).send({ error: 'tag(s) requis' });
+      const edits: BulkEdits = action.type === 'add_tag' ? { addTags: tags } : { removeTags: tags };
+      const affected = await deps.applyEditsMany(tenant, target, edits);
+      return reply.code(200).send({ affected });
+    }
+
+    if (action.type === 'set_field') {
+      const key = typeof action.key === 'string' ? action.key.trim() : '';
+      if (key === '') return reply.code(400).send({ error: 'champ requis (key)' });
+      const def = new Map((await deps.listUserFields(tenant)).map((d) => [d.key, d])).get(key);
+      if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
+      const val = String(action.value ?? '');
+      if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
+      const affected = await deps.applyEditsMany(tenant, target, { setField: { key, value: canonicalizeFieldValue(def.type, val) } });
+      return reply.code(200).send({ affected });
+    }
+
+    return reply.code(400).send({ error: 'action inconnue (add_tag | remove_tag | set_field)' });
+  });
+
+  /**
+   * Suppression DOUCE en masse (mini-CRM, admin-only). Route SÉPARÉE de /bulk (action destructive isolée).
+   * Réversible en base, préserve l'historique de campagnes. Renvoie `{ affected }`.
+   */
+  app.post('/tenants/:tenantId/contacts/bulk-delete', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const target = parseBulkTarget((req.body as { target?: unknown } | undefined)?.target);
+    if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
+    const affected = await deps.softDeleteMany(tenant, target);
+    return reply.code(200).send({ affected });
   });
 }

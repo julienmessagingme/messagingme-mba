@@ -567,7 +567,7 @@ export class PgCampaignRepo {
       fields: Record<string, unknown>; opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
     }>(
       `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
-       from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+       from contacts where tenant_id = $1 and deleted_at is null and id = any($2::uuid[])`,
       [tenantId, ids],
     );
     return res.rows.map((r) => ({
@@ -586,7 +586,7 @@ export class PgCampaignRepo {
       opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
     }>(
       `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
-       from contacts where tenant_id = $1`,
+       from contacts where tenant_id = $1 and deleted_at is null`,
       [tenantId],
     );
     return res.rows.map((r) => ({

@@ -1,19 +1,27 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { CsvImport } from '@/components/CsvImport';
 import type { Session } from '@/lib/session';
 import {
   listContacts,
+  queryContacts,
   updateContact,
   listUserFields,
   createUserField,
   listTags,
   contactIdentity,
+  bulkContactAction,
+  bulkDeleteContacts,
   type Contact,
   type UserFieldDef,
   type UserFieldKind,
+  type ContactFilters,
+  type ContactFieldFilter,
+  type ContactFieldOp,
+  type BulkTarget,
+  type BulkAction,
 } from '@/lib/api';
 import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { useT, useLocale } from '@/lib/i18n';
@@ -23,9 +31,25 @@ export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
 }
 
+/** Un filtre du mini-CRM est-il posé ? (sinon on garde le chemin `listContacts` historique, cap 500.) */
+function filtersActive(f: ContactFilters): boolean {
+  return Boolean(
+    f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch ||
+    (f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.value.trim() !== '')),
+  );
+}
+
+/** Bascule un id dans un Set (retourne un NOUVEAU Set pour React). */
+function toggleSet(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  return next;
+}
+
 function ContactsInner({ session }: { session: Session }) {
   const t = useT();
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'import'>('list');
@@ -33,23 +57,61 @@ function ContactsInner({ session }: { session: Session }) {
   const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
 
-  const reload = useCallback(async () => {
+  // Filtres (mini-CRM). Objet ContactFilters édité par le panneau. La sérialisation vit dans web/lib/contact-filters.
+  const [filters, setFilters] = useState<ContactFilters>({});
+  const [showFilters, setShowFilters] = useState(false);
+  const active = useMemo(() => filtersActive(filters), [filters]);
+
+  // Sélection. 'ids' = cases cochées (`selected`) ; 'all' = tous les correspondants, `excluded` = décochés.
+  const [allMode, setAllMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // Action en masse ouverte (modale). null = fermée.
+  const [action, setAction] = useState<BulkAction['type'] | 'delete' | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const LIMIT = 500;
+  // Garde anti-course : chaque `load` prend un numéro de séquence ; une réponse périmée (filtre changé entre
+  // temps, ou GET rejoué après un 5xx transitoire) est ignorée. Sans ça, une réponse lente d'un filtre ANCIEN
+  // pourrait écraser la liste + le total courants, et fausser le compteur montré dans la confirmation de suppression.
+  const reqSeq = useRef(0);
+
+  const load = useCallback(async () => {
+    const seq = ++reqSeq.current;
     setError(null);
     try {
-      const { contacts } = await listContacts(session.tenantId, { limit: 500 });
-      setContacts(contacts);
+      if (filtersActive(filters)) {
+        const res = await queryContacts(session.tenantId, filters, { limit: LIMIT });
+        if (seq !== reqSeq.current) return;
+        setContacts(res.contacts);
+        setTotal(res.total ?? res.contacts.length);
+      } else {
+        const { contacts } = await listContacts(session.tenantId, { limit: LIMIT });
+        if (seq !== reqSeq.current) return;
+        setContacts(contacts);
+        // >= cap : total réel inconnu (pas de « tout sélectionner » sûr tant qu'on n'a pas filtré).
+        setTotal(contacts.length < LIMIT ? contacts.length : null);
+      }
     } catch (err) {
+      if (seq !== reqSeq.current) return;
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
-  }, [session.tenantId]);
+  }, [session.tenantId, filters]);
 
+  // Debounce sur les filtres (350 ms) : évite un fetch par frappe.
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    setLoading(true);
+    const id = setTimeout(() => { void load(); }, 350);
+    return () => clearTimeout(id);
+  }, [load]);
 
-  // Définitions user fields + tags existants (pour la fiche) : chargés une fois.
+  // Changement de filtres -> la sélection précédente n'a plus de sens (jeu de résultats différent) : reset.
+  const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
+  useEffect(() => { setAllMode(false); setSelected(new Set()); setExcluded(new Set()); }, [filtersKey]);
+
+  // Définitions user fields + tags existants (fiche + filtres + actions) : chargés une fois.
   useEffect(() => {
     listUserFields(session.tenantId).then(({ fields }) => setUserFields(fields)).catch(() => setUserFields([]));
     listTags(session.tenantId).then(({ tags }) => setTagSuggestions(tags.map((t) => t.tag))).catch(() => setTagSuggestions([]));
@@ -60,9 +122,39 @@ function ContactsInner({ session }: { session: Session }) {
     setDetail(updated);
     setContacts((list) => list.map((c) => (c.id === updated.id ? updated : c)));
   }
-  // Un champ créé depuis la fiche s'ajoute aux définitions (dispo tout de suite + pour les autres contacts).
   function onFieldCreated(def: UserFieldDef) {
     setUserFields((defs) => (defs.some((d) => d.key === def.key) ? defs : [...defs, def]));
+  }
+
+  // ---- Sélection ----
+  const loadedIds = useMemo(() => contacts.map((c) => c.id), [contacts]);
+  const isRowChecked = (id: string) => (allMode ? !excluded.has(id) : selected.has(id));
+  const selectedCount = allMode ? Math.max((total ?? loadedIds.length) - excluded.size, 0) : selected.size;
+  const allLoadedChecked = loadedIds.length > 0 && loadedIds.every((id) => isRowChecked(id));
+  const moreThanLoaded = total != null && total > loadedIds.length;
+
+  function toggleRow(id: string) {
+    if (allMode) setExcluded((prev) => toggleSet(prev, id));
+    else setSelected((prev) => toggleSet(prev, id));
+  }
+  function toggleHeader() {
+    if (allMode) { clearSelection(); return; }
+    setSelected(allLoadedChecked ? new Set() : new Set(loadedIds));
+  }
+  function selectAllMatching() { setAllMode(true); setSelected(new Set()); setExcluded(new Set()); }
+  function clearSelection() { setAllMode(false); setSelected(new Set()); setExcluded(new Set()); }
+
+  // Cible d'action : par ids cochés, OU par filtres + exclusions (jamais un payload massif d'UUID).
+  const currentTarget = (): BulkTarget => (allMode ? { filters, excludeIds: [...excluded] } : { ids: [...selected] });
+
+  async function onActionDone(affected: number) {
+    setAction(null);
+    setMenuOpen(false);
+    clearSelection();
+    await load();
+    // Rafraîchit aussi les suggestions de tags (un add_tag a pu créer un nouveau tag).
+    listTags(session.tenantId).then(({ tags }) => setTagSuggestions(tags.map((tg) => tg.tag))).catch(() => {});
+    void affected;
   }
 
   if (mode === 'import') {
@@ -71,19 +163,26 @@ function ContactsInner({ session }: { session: Session }) {
         <button onClick={() => setMode('list')} className="mb-4 text-sm text-brand-600 hover:underline">
           ← {t('Retour aux contacts', 'Back to contacts')}
         </button>
-        {/* On rafraîchit la liste en fond mais on NE navigue PAS : l'utilisateur voit le rapport d'import
-            (créés / mis à jour / ignorés + erreurs par ligne), puis revient via « Retour aux contacts ». */}
-        <CsvImport tenantId={session.tenantId} onImported={() => { void reload(); }} />
+        <CsvImport tenantId={session.tenantId} onImported={() => { void load(); }} />
       </div>
     );
   }
 
+  const countLabel = total != null ? String(total) : `${contacts.length}+`;
+
   return (
     <section>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Contacts', 'Contacts')} ({contacts.length})</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Contacts', 'Contacts')} ({countLabel})</h2>
         <div className="flex items-center gap-3">
-          <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
+          <button
+            onClick={() => setShowFilters((s) => !s)}
+            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${active ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-ink-200 text-ink-600 hover:bg-ink-50'}`}
+            data-testid="contacts-toggle-filters"
+          >
+            {t('Filtres', 'Filters')}{active ? ' •' : ''}
+          </button>
+          <button onClick={() => void load()} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
           <button
             onClick={() => setMode('import')}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
@@ -92,8 +191,77 @@ function ContactsInner({ session }: { session: Session }) {
           </button>
         </div>
       </div>
+
+      {showFilters && (
+        <ContactFilterPanel
+          filters={filters}
+          onChange={setFilters}
+          userFields={userFields}
+          tagSuggestions={tagSuggestions}
+          onClear={() => setFilters({})}
+        />
+      )}
+
+      {/* Barre de sélection + action : apparaît dès qu'un contact est coché. */}
+      {selectedCount > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50/50 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-ink-700">
+            <span className="font-medium">{t(`${selectedCount} sélectionné(s)`, `${selectedCount} selected`)}</span>
+            {!allMode && moreThanLoaded && allLoadedChecked && (
+              <button onClick={selectAllMatching} className="text-brand-600 hover:underline" data-testid="contacts-select-all-matching">
+                {t(`Sélectionner les ${total} contacts correspondants`, `Select all ${total} matching contacts`)}
+              </button>
+            )}
+            <button onClick={clearSelection} className="text-ink-500 hover:underline">{t('Tout désélectionner', 'Clear selection')}</button>
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
+              data-testid="contacts-action"
+            >
+              {t('Action', 'Action')} ▾
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-lg">
+                  <button onClick={() => { setAction('add_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un tag', 'Add a tag')}</button>
+                  <button onClick={() => { setAction('remove_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Retirer un tag', 'Remove a tag')}</button>
+                  <button onClick={() => { setAction('set_field'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un champ', 'Set a field')}</button>
+                  <div className="my-1 border-t border-ink-100" />
+                  <button onClick={() => { setAction('delete'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left text-red-600 hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      <ContactsTable contacts={contacts} loading={loading} onSelect={setDetail} />
+      <ContactsTable
+        contacts={contacts}
+        loading={loading}
+        onSelect={setDetail}
+        isRowChecked={isRowChecked}
+        onToggleRow={toggleRow}
+        onToggleHeader={toggleHeader}
+        headerChecked={allMode || allLoadedChecked}
+      />
+
+      {action && (
+        <BulkActionModal
+          action={action}
+          tenantId={session.tenantId}
+          target={currentTarget()}
+          count={selectedCount}
+          userFields={userFields}
+          tagSuggestions={tagSuggestions}
+          onDone={onActionDone}
+          onClose={() => setAction(null)}
+        />
+      )}
+
       {detail && (
         <ContactDetail
           contact={detail}
@@ -106,6 +274,258 @@ function ContactsInner({ session }: { session: Session }) {
         />
       )}
     </section>
+  );
+}
+
+/** Panneau de filtres du mini-CRM (contrôlé). Édite un ContactFilters. La sérialisation (filtersToQuery) et le
+ *  parse serveur (parseFilters) partagent le même format : tout ajout ici doit être répercuté aux deux bouts. */
+function ContactFilterPanel({ filters, onChange, userFields, tagSuggestions, onClear }: {
+  filters: ContactFilters;
+  onChange: (f: ContactFilters) => void;
+  userFields: UserFieldDef[];
+  tagSuggestions: string[];
+  onClear: () => void;
+}) {
+  const t = useT();
+  const [tagInput, setTagInput] = useState('');
+  const [tagExInput, setTagExInput] = useState('');
+  const set = (patch: Partial<ContactFilters>) => onChange({ ...filters, ...patch });
+  const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
+  const tags = filters.tags ?? [];
+  const tagsExclude = filters.tagsExclude ?? [];
+  const addTag = (v: string) => { const x = v.trim(); if (x && !tags.includes(x)) set({ tags: [...tags, x] }); setTagInput(''); };
+  const addTagEx = (v: string) => { const x = v.trim(); if (x && !tagsExclude.includes(x)) set({ tagsExclude: [...tagsExclude, x] }); setTagExInput(''); };
+  const rmTag = (x: string) => set({ tags: tags.filter((v) => v !== x) });
+  const rmTagEx = (x: string) => set({ tagsExclude: tagsExclude.filter((v) => v !== x) });
+
+  // Filtres de champ (hors email, géré à part). fieldFilters de la vue = tous sauf key === 'email'.
+  const fieldRows = (filters.fieldFilters ?? []).filter((f) => f.key !== 'email');
+  const emailRow = (filters.fieldFilters ?? []).find((f) => f.key === 'email');
+  const setFieldFilters = (rows: ContactFieldFilter[], email: ContactFieldFilter | undefined) =>
+    set({ fieldFilters: email ? [...rows, email] : rows });
+  // MIROIR EXACT de la liste d'options du <select> (qui exclut 'email', géré par le contrôle Email dédié) : sinon
+  // une ligne par défaut key='email' serait filtrée hors des lignes génériques ET écraserait le filtre Email.
+  const fieldKeys = userFields.filter((d) => d.key !== 'email');
+  const addRow = () => setFieldFilters([...fieldRows, { key: fieldKeys[0]?.key ?? '', op: 'contains', value: '' }], emailRow);
+  const updRow = (i: number, patch: Partial<ContactFieldFilter>) =>
+    setFieldFilters(fieldRows.map((r, j) => (j === i ? { ...r, ...patch } : r)), emailRow);
+  const rmRow = (i: number) => setFieldFilters(fieldRows.filter((_, j) => j !== i), emailRow);
+
+  // Email : mode dérivé de la ligne email courante.
+  const emailMode: '' | 'not_empty' | 'empty' | 'eq' = emailRow ? (emailRow.op === 'not_contains' ? '' : (emailRow.op as 'not_empty' | 'empty' | 'eq')) : '';
+  const setEmail = (m: '' | 'not_empty' | 'empty' | 'eq', value = emailRow?.value ?? '') =>
+    setFieldFilters(fieldRows, m === '' ? undefined : { key: 'email', op: m, value: m === 'eq' ? value : '' });
+
+  const opLabels: Record<ContactFieldOp, string> = {
+    contains: t('contient', 'contains'),
+    not_contains: t('ne contient pas', "doesn't contain"),
+    eq: t('égal à', 'equals'),
+    empty: t('vide', 'empty'),
+    not_empty: t('rempli', 'filled'),
+  };
+  const needsValue = (op: ContactFieldOp) => op === 'contains' || op === 'not_contains' || op === 'eq';
+
+  return (
+    <div className="mb-4 space-y-3 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
+          {t('Nom contient', 'Name contains')}
+          <input value={filters.nameSearch ?? ''} onChange={(e) => set({ nameSearch: e.target.value || undefined })} className={inputCls} placeholder={t('ex. Marc', 'e.g. Marc')} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
+          {t('Consentement', 'Consent')}
+          <select value={filters.optIn ?? ''} onChange={(e) => set({ optIn: (e.target.value || undefined) as ContactFilters['optIn'] })} className={`${inputCls} bg-white`}>
+            <option value="">{t('tous', 'all')}</option>
+            <option value="opted_in">opt-in</option>
+            <option value="opted_out">opt-out</option>
+            <option value="unknown">{t('inconnu', 'unknown')}</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
+          Email
+          <div className="flex gap-2">
+            <select value={emailMode} onChange={(e) => setEmail(e.target.value as typeof emailMode)} className={`${inputCls} bg-white`}>
+              <option value="">{t('tous', 'all')}</option>
+              <option value="not_empty">{t('rempli', 'filled')}</option>
+              <option value="empty">{t('vide', 'empty')}</option>
+              <option value="eq">{t('valeur précise', 'exact value')}</option>
+            </select>
+            {emailMode === 'eq' && (
+              <input value={emailRow?.value ?? ''} onChange={(e) => setEmail('eq', e.target.value)} className={`${inputCls} flex-1`} placeholder="jean@ex.fr" />
+            )}
+          </div>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
+          {t('Téléphone commence par', 'Phone starts with')}
+          <input value={filters.phonePrefix ?? ''} onChange={(e) => set({ phonePrefix: e.target.value || undefined })} className={inputCls} placeholder="+336" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-500">
+          {t('Téléphone contient', 'Phone contains')}
+          <input value={filters.phoneContains ?? ''} onChange={(e) => set({ phoneContains: e.target.value || undefined })} className={inputCls} placeholder="42 42" />
+        </label>
+      </div>
+
+      {/* Tags possède (ET/OU) */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 text-xs text-ink-500">
+          {t('Possède les tags', 'Has tags')}
+          <div className="inline-flex overflow-hidden rounded-md border border-ink-200">
+            {(['and', 'or'] as const).map((m) => (
+              <button key={m} onClick={() => set({ tagMode: m })} className={`px-2 py-0.5 text-xs ${(filters.tagMode ?? 'and') === m ? 'bg-brand-500 text-white' : 'bg-white text-ink-600'}`}>
+                {m === 'and' ? t('tous', 'all') : t('au moins un', 'any')}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {tags.map((x) => (
+            <span key={x} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+              {x}<button onClick={() => rmTag(x)} className="text-brand-400 hover:text-coral">×</button>
+            </span>
+          ))}
+          <input list="filter-tag-suggestions" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputCls} w-28`} />
+        </div>
+      </div>
+
+      {/* Tags ne possède pas */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-ink-500">{t('Ne possède pas les tags', "Doesn't have tags")}</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {tagsExclude.map((x) => (
+            <span key={x} className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-600">
+              {x}<button onClick={() => rmTagEx(x)} className="text-ink-400 hover:text-coral">×</button>
+            </span>
+          ))}
+          <input list="filter-tag-suggestions" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputCls} w-28`} />
+        </div>
+      </div>
+      <datalist id="filter-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
+
+      {/* Filtres de champ perso (répétables, hors email) */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-ink-500">{t('Champs', 'Fields')}</span>
+        {fieldRows.map((r, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <select value={r.key} onChange={(e) => updRow(i, { key: e.target.value })} className={`${inputCls} bg-white`}>
+              {fieldKeys.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+            </select>
+            <select value={r.op} onChange={(e) => updRow(i, { op: e.target.value as ContactFieldOp })} className={`${inputCls} bg-white`}>
+              {(['contains', 'not_contains', 'eq', 'empty', 'not_empty'] as ContactFieldOp[]).map((op) => <option key={op} value={op}>{opLabels[op]}</option>)}
+            </select>
+            {needsValue(r.op) && <input value={r.value} onChange={(e) => updRow(i, { value: e.target.value })} className={`${inputCls} flex-1`} placeholder={t('valeur', 'value')} />}
+            <button onClick={() => rmRow(i)} className="text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+          </div>
+        ))}
+        {fieldRows.length < 5 && fieldKeys.length > 0 && (
+          <button onClick={addRow} className="self-start text-sm font-medium text-brand-600 hover:text-brand-700">+ {t('Filtre de champ', 'Field filter')}</button>
+        )}
+      </div>
+
+      <div className="flex justify-end border-t border-ink-100 pt-2">
+        <button onClick={onClear} className="text-xs text-ink-500 hover:text-coral">{t('Réinitialiser les filtres', 'Reset filters')}</button>
+      </div>
+    </div>
+  );
+}
+
+/** Modale d'une action en masse : formulaire adapté (tag / champ / suppression), appelle l'API bulk avec la
+ *  cible calculée, puis onDone(affected). La suppression est douce (réversible en base) mais on confirme fort. */
+function BulkActionModal({ action, tenantId, target, count, userFields, tagSuggestions, onDone, onClose }: {
+  action: BulkAction['type'] | 'delete';
+  tenantId: string;
+  target: BulkTarget;
+  count: number;
+  userFields: UserFieldDef[];
+  tagSuggestions: string[];
+  onDone: (affected: number) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [tag, setTag] = useState('');
+  const [fieldKey, setFieldKey] = useState(userFields.find((d) => d.key !== 'email')?.key ?? userFields[0]?.key ?? '');
+  const [fieldVal, setFieldVal] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
+  const titles: Record<string, string> = {
+    add_tag: t('Ajouter un tag', 'Add a tag'),
+    remove_tag: t('Retirer un tag', 'Remove a tag'),
+    set_field: t('Ajouter un champ', 'Set a field'),
+    delete: t('Supprimer les contacts', 'Delete contacts'),
+  };
+
+  const canSubmit = action === 'delete'
+    ? true
+    : action === 'set_field'
+      ? fieldKey !== '' && fieldVal.trim() !== ''
+      : tag.trim() !== '';
+
+  async function submit() {
+    if (busy) return; // garde de ré-entrance : un double Entrée (inputs non désactivés) ne double pas l'appel
+    setBusy(true);
+    setError(null);
+    try {
+      let affected: number;
+      if (action === 'delete') {
+        affected = (await bulkDeleteContacts(tenantId, target)).affected;
+      } else {
+        const act: BulkAction = action === 'set_field'
+          ? { type: 'set_field', key: fieldKey, value: fieldVal.trim() }
+          : { type: action, tags: [tag.trim()] };
+        affected = (await bulkContactAction(tenantId, target, act)).affected;
+      }
+      onDone(affected);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Action impossible', 'Action failed'));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold tracking-tight text-ink-900">{titles[action]}</h3>
+        <p className="mt-1 text-sm text-ink-500">{t(`${count} contact(s) concerné(s).`, `${count} contact(s) affected.`)}</p>
+
+        <div className="mt-4 space-y-3">
+          {(action === 'add_tag' || action === 'remove_tag') && (
+            <>
+              <input list="bulk-tag-suggestions" autoFocus value={tag} onChange={(e) => setTag(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Nom du tag', 'Tag name')} className={inputCls} />
+              <datalist id="bulk-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
+            </>
+          )}
+          {action === 'set_field' && (
+            <div className="flex flex-col gap-2">
+              <select value={fieldKey} onChange={(e) => setFieldKey(e.target.value)} className={`${inputCls} bg-white`}>
+                {userFields.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select>
+              <input autoFocus value={fieldVal} onChange={(e) => setFieldVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Valeur à poser', 'Value to set')} className={inputCls} />
+              <p className="text-xs text-ink-400">{t('La valeur écrase le champ sur tous les contacts sélectionnés.', 'The value overwrites the field on all selected contacts.')}</p>
+            </div>
+          )}
+          {action === 'delete' && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              {t(`Les ${count} contact(s) seront retirés de la liste. Réversible côté base, mais ils disparaissent du CRM et ne seront plus destinataires de campagne.`, `The ${count} contact(s) will be removed from the list. Reversible in the database, but they disappear from the CRM and won't receive campaigns.`)}
+            </p>
+          )}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+          <button
+            onClick={() => void submit()}
+            disabled={busy || !canSubmit}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-500 hover:bg-brand-600'}`}
+            data-testid="bulk-submit"
+          >
+            {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : t('Appliquer', 'Apply')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -130,7 +550,15 @@ function fieldValue(c: Contact, key: string): string | null {
   return v == null || String(v).trim() === '' ? null : String(v);
 }
 
-function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; loading: boolean; onSelect: (c: Contact) => void }) {
+function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow, onToggleHeader, headerChecked }: {
+  contacts: Contact[];
+  loading: boolean;
+  onSelect: (c: Contact) => void;
+  isRowChecked: (id: string) => boolean;
+  onToggleRow: (id: string) => void;
+  onToggleHeader: () => void;
+  headerChecked: boolean;
+}) {
   const t = useT();
   if (loading) return <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>;
   if (contacts.length === 0)
@@ -141,9 +569,12 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
     );
   return (
     <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
-      <table className="w-full min-w-[880px] text-sm">
+      <table className="w-full min-w-[920px] text-sm">
         <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
           <tr>
+            <th className="w-10 px-4 py-2.5">
+              <input type="checkbox" checked={headerChecked} onChange={onToggleHeader} aria-label={t('Tout sélectionner', 'Select all')} data-testid="contacts-select-all" className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-400" />
+            </th>
             <th className="px-4 py-2.5 font-medium">{t('Nom', 'Name')}</th>
             <th className="px-4 py-2.5 font-medium">{t('Prénom', 'First name')}</th>
             <th className="px-4 py-2.5 font-medium">{t('Téléphone', 'Phone')}</th>
@@ -157,23 +588,27 @@ function ContactsTable({ contacts, loading, onSelect }: { contacts: Contact[]; l
           {contacts.map((c) => {
             const badge = OPT_IN_LABEL[c.optInStatus] ?? OPT_IN_LABEL.unknown!;
             const waId = waIdOf(c);
+            const checked = isRowChecked(c.id);
             return (
-              <tr key={c.id} onClick={() => onSelect(c)} className="cursor-pointer transition hover:bg-brand-50">
-                <td className="px-4 py-2.5 font-medium text-ink-900">{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
-                <td className="px-4 py-2.5">{fieldValue(c, 'prenom') ?? <span className="text-ink-400">-</span>}</td>
-                <td className="px-4 py-2.5 font-mono text-xs">{c.phoneE164 ?? <span className="text-ink-400">-</span>}</td>
-                <td className="px-4 py-2.5 font-mono text-xs">
+              <tr key={c.id} className={`transition hover:bg-brand-50 ${checked ? 'bg-brand-50/60' : ''}`}>
+                <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={checked} onChange={() => onToggleRow(c.id)} aria-label={t('Sélectionner', 'Select')} className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-400" />
+                </td>
+                <td className="cursor-pointer px-4 py-2.5 font-medium text-ink-900" onClick={() => onSelect(c)}>{c.profileName ?? <span className="font-normal text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5" onClick={() => onSelect(c)}>{fieldValue(c, 'prenom') ?? <span className="text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>{c.phoneE164 ?? <span className="text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>
                   {c.bsuid
                     ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={c.bsuid}>{c.bsuid}</span></span>
                     : <span className="text-ink-400">-</span>}
                 </td>
-                <td className="px-4 py-2.5 font-mono text-xs">
+                <td className="cursor-pointer px-4 py-2.5 font-mono text-xs" onClick={() => onSelect(c)}>
                   {waId
                     ? <span className="inline-flex max-w-[160px] items-center gap-1"><span className="truncate" title={waId}>{waId}</span></span>
                     : <span className="text-ink-400">-</span>}
                 </td>
-                <td className="px-4 py-2.5 text-xs text-ink-700">{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
-                <td className="px-4 py-2.5">
+                <td className="cursor-pointer px-4 py-2.5 text-xs text-ink-700" onClick={() => onSelect(c)}>{fieldValue(c, 'email') ?? <span className="text-ink-400">-</span>}</td>
+                <td className="cursor-pointer px-4 py-2.5" onClick={() => onSelect(c)}>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
                 </td>
               </tr>

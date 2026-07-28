@@ -168,32 +168,10 @@ export function getContactSendsForExport(tenantId: string, contactId: string): P
   return request<{ sends: ContactSend[] }>(`/tenants/${tenantId}/contacts/${contactId}/history/export`);
 }
 
-/** Un filtre sur la valeur d'un champ perso (jsonb, valeur texte) : égalité exacte ou sous-chaîne. */
-export interface ContactFieldFilter { key: string; op: 'eq' | 'contains'; value: string }
-
-/** Critères composables de la « Liste de contacts » (source de campagne). Tous optionnels. */
-export interface ContactFilters {
-  tags?: string[];
-  tagMode?: 'and' | 'or';
-  optIn?: 'opted_in' | 'opted_out' | 'unknown';
-  phonePrefix?: string;
-  phoneContains?: string;
-  nameSearch?: string;
-  fieldFilters?: ContactFieldFilter[];
-}
-
-/** Encode des ContactFilters en query string (miroir de parseFilters côté serveur). */
-function filtersToQuery(f: ContactFilters): URLSearchParams {
-  const qs = new URLSearchParams();
-  if (f.tags && f.tags.length > 0) qs.set('tags', f.tags.join(','));
-  if (f.tagMode === 'or') qs.set('tagMode', 'or');
-  if (f.optIn) qs.set('optIn', f.optIn);
-  if (f.phonePrefix) qs.set('phonePrefix', f.phonePrefix);
-  if (f.phoneContains) qs.set('phoneContains', f.phoneContains);
-  if (f.nameSearch) qs.set('nameSearch', f.nameSearch);
-  if (f.fieldFilters && f.fieldFilters.length > 0) qs.set('fields', JSON.stringify(f.fieldFilters));
-  return qs;
-}
+// Types + sérialisation des filtres : module PUR `./contact-filters` (testable sans navigateur, miroir du parse
+// serveur). Ré-exportés ici pour ne pas casser les imports existants (`import { ContactFilters } from '../lib/api'`).
+export type { ContactFieldOp, ContactFieldFilter, ContactFilters, BulkTarget } from './contact-filters';
+import { filtersToQuery, type ContactFilters, type BulkTarget } from './contact-filters';
 
 /** Contacts correspondant aux filtres (paginé) + total (compteur réel). Source « Liste de contacts ». */
 export function queryContacts(tenantId: string, filters: ContactFilters, opts?: { limit?: number; offset?: number }): Promise<{ contacts: Contact[]; total?: number }> {
@@ -214,6 +192,21 @@ export function countContacts(tenantId: string, filters: ContactFilters): Promis
 export function contactIdsForFilters(tenantId: string, filters: ContactFilters): Promise<{ ids: string[] }> {
   const suffix = filtersToQuery(filters).toString();
   return request<{ ids: string[] }>(`/tenants/${tenantId}/contacts/ids${suffix ? `?${suffix}` : ''}`);
+}
+
+/** Action en masse du mini-CRM (admin) : ajouter/retirer un tag OU poser un champ, sur une cible (ids ou filtres).
+ *  Renvoie le nombre de contacts touchés. */
+export type BulkAction =
+  | { type: 'add_tag'; tags: string[] }
+  | { type: 'remove_tag'; tags: string[] }
+  | { type: 'set_field'; key: string; value: string };
+export function bulkContactAction(tenantId: string, target: BulkTarget, action: BulkAction): Promise<{ affected: number }> {
+  return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk`, { method: 'POST', body: JSON.stringify({ target, action }) });
+}
+
+/** Suppression DOUCE en masse (admin). Réversible en base, préserve l'historique de campagnes. */
+export function bulkDeleteContacts(tenantId: string, target: BulkTarget): Promise<{ affected: number }> {
+  return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk-delete`, { method: 'POST', body: JSON.stringify({ target }) });
 }
 
 // `listAllContacts` a vécu ici sans appelant : elle paginait correctement, avec un commentaire promettant de
