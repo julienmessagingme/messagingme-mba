@@ -17,7 +17,7 @@ import {
   type UserFieldDef,
 } from '@/lib/api';
 import { resizeToDataUrl, dataUrlBase64Length } from '@/lib/image';
-import { isDefaultSaveTo } from '@/lib/flow-mapping';
+import { isDefaultSaveTo, suggestBaseField, BASE_SAVE_FIELDS } from '@/lib/flow-mapping';
 import { FlowScreen, conditionText, type FlowScreenElement } from '@/components/FlowScreen';
 import { useT } from '@/lib/i18n';
 
@@ -515,25 +515,47 @@ export function FlowBuilder({
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-ink-500">{t('Enregistrer dans', 'Save to')}</span>
-                    {e.type === 'optin' ? (
-                      // Consentement : cible = champ Oui/Non uniquement (le serveur refuse un champ non booléen).
-                      // Sans cible = champ de consentement par défaut (whatsapp_optin), qui ouvre le statut opt-in.
-                      <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
-                        <option value="">{t('Consentement WhatsApp (par défaut)', 'WhatsApp consent (default)')}</option>
-                        {userFields.filter((uf) => uf.type === 'boolean').map((uf) => (
-                          <option key={uf.key} value={uf.key}>{uf.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
-                        <option value="">{t("Nouveau champ (d'après le libellé)", 'New field (from label)')}</option>
-                        {userFields.map((uf) => (
-                          <option key={uf.key} value={uf.key}>{uf.label}</option>
-                        ))}
-                      </select>
-                    )}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-ink-500">{t('Enregistrer dans', 'Save to')}</span>
+                      {e.type === 'optin' ? (
+                        // Consentement : cible = champ Oui/Non uniquement (le serveur refuse un champ non booléen).
+                        // Sans cible = champ de consentement par défaut (whatsapp_optin), qui ouvre le statut opt-in.
+                        <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
+                          <option value="">{t('Consentement WhatsApp (par défaut)', 'WhatsApp consent (default)')}</option>
+                          {userFields.filter((uf) => uf.type === 'boolean').map((uf) => (
+                            <option key={uf.key} value={uf.key}>{uf.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        // Champs de BASE (Nom/Prénom/Email) toujours proposés, PUIS les champs perso (hors clés de
+                        // base pour éviter le doublon). Sans cible = nouveau champ dérivé du libellé (défaut serveur).
+                        <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
+                          <option value="">{t("Nouveau champ (d'après le libellé)", 'New field (from label)')}</option>
+                          <optgroup label={t('Champs de base', 'Base fields')}>
+                            {BASE_SAVE_FIELDS.map((bf) => (
+                              <option key={bf.key} value={bf.key}>{bf.label}</option>
+                            ))}
+                          </optgroup>
+                          {userFields.some((uf) => !BASE_SAVE_FIELDS.some((bf) => bf.key === uf.key)) && (
+                            <optgroup label={t('Mes champs', 'My fields')}>
+                              {userFields.filter((uf) => !BASE_SAVE_FIELDS.some((bf) => bf.key === uf.key)).map((uf) => (
+                                <option key={uf.key} value={uf.key}>{uf.label}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      )}
+                    </div>
+                    {/* Suggestion : le libellé ressemble à un champ de base et aucune cible n'est encore choisie. */}
+                    {e.type !== 'optin' && e.saveTo === '' && (() => {
+                      const sug = suggestBaseField(e.label);
+                      return sug ? (
+                        <button type="button" onClick={() => patch(e.uid, { saveTo: sug.key } as Partial<BElem>)} className="text-[11px] font-medium text-brand-600 hover:text-brand-700">
+                          {t(`💡 Enregistrer sur le champ de base « ${sug.label} »`, `💡 Save to base field "${sug.label}"`)}
+                        </button>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               )}

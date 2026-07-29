@@ -13,12 +13,22 @@ export interface FlowMappingLookup {
   } | null>;
 }
 
+/**
+ * Cible spéciale du champ de BASE « Nom » : c'est un attribut (profile_name), pas une clé de contacts.fields.
+ * SENTINELLE `@profile_name` : le `@` ne peut JAMAIS être produit par slugify (le mapping par défaut d'un champ
+ * est `slug(label)`, jamais `@...`), donc SEUL le choix EXPLICITE du champ de base « Nom » cible profile_name.
+ * Un champ libellé « Name » laissé en mapping par défaut slugifie en `name` (≠ sentinelle) -> va dans fields, comme
+ * avant. ⚠️ Doit rester STRICTEMENT égale à PROFILE_NAME_SAVE_KEY côté web (test anti-drift). */
+export const PROFILE_NAME_TARGET = '@profile_name';
+
 /** Écrit les valeurs saisies sur le contact (MERGE) + ouvre le gate marketing sur consentement explicite.
  *  No-op si contact inconnu (V1). Les retours sont ignorés ici -> `unknown`. */
 export interface ContactFieldWriter {
   mergeFieldsByPhone(tenantId: string, waId: string, values: Record<string, unknown>): Promise<unknown>;
   /** Consentement marketing explicite capté par un Flow (composant OptIn coché) : opt_in_status='opted_in'. */
   markOptedIn(tenantId: string, waId: string, source: string): Promise<unknown>;
+  /** Champ de base « Nom » (profile_name) : écrit hors de contacts.fields. */
+  setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<unknown>;
 }
 
 /**
@@ -53,7 +63,16 @@ export async function processFlowCompletions(
         mapped[target] = value;
         if (flow.optinFieldKeys.includes(fieldKey) && value === 'true') consented = true;
       }
+      // Le champ de base « Nom » (target 'name') est un attribut (profile_name), pas une clé de contacts.fields :
+      // on le sort du merge et on le route à part. Le reste est mergé dans fields comme d'habitude.
+      let profileName: string | undefined;
+      if (Object.prototype.hasOwnProperty.call(mapped, PROFILE_NAME_TARGET)) {
+        const v = mapped[PROFILE_NAME_TARGET];
+        profileName = typeof v === 'string' ? v : String(v ?? '');
+        delete mapped[PROFILE_NAME_TARGET];
+      }
       if (Object.keys(mapped).length > 0) await writer.mergeFieldsByPhone(flow.tenantId, c.waId, mapped);
+      if (profileName !== undefined && profileName.trim() !== '') await writer.setProfileNameByPhone(flow.tenantId, c.waId, profileName.trim());
       if (consented) await writer.markOptedIn(flow.tenantId, c.waId, 'flow');
     } catch (err) {
       // eslint-disable-next-line no-console

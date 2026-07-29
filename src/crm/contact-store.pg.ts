@@ -158,6 +158,27 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * Écrit le NOM (profile_name) du contact d'un numéro : sert au champ de BASE « Nom » d'un WhatsApp Flow, qui
+   * est un attribut (pas une clé de `contacts.fields`) et ne peut donc pas passer par mergeFieldsByPhone. Même
+   * matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus PUIS bsuid, 1 contact). Merge-only : ne crée
+   * pas de fiche pour un numéro inconnu. Nom vide -> no-op (on n'écrase pas par du vide). Renvoie le nb touché.
+   */
+  async setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<number> {
+    const n = name.trim();
+    if (n === '') return 0;
+    const res = await this.pool.query(
+      `update contacts set profile_name = $3, updated_at = now()
+       where id = (
+         select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1
+       )`,
+      [tenantId, waId, n],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * Ajoute des tags (union dédupliquée) au contact d'un numéro (bloc « ajout de tag » d'un workflow). Même
    * matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus, 1 contact). Merge-only : ne crée pas de
    * fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).

@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { extractFlowCompletions } from '../src/webhooks/inbound';
-import { processFlowCompletions } from '../src/webhooks/flow-mapping';
+import { processFlowCompletions, PROFILE_NAME_TARGET } from '../src/webhooks/flow-mapping';
 import type { FlowMappingLookup, ContactFieldWriter } from '../src/webhooks/flow-mapping';
 import type { FlowFieldType } from '../src/meta/flow-json';
+import { PROFILE_NAME_SAVE_KEY, BASE_SAVE_FIELDS } from '../web/lib/flow-mapping';
+
+describe('anti-drift : sentinelle profile_name web <-> serveur', () => {
+  it('PROFILE_NAME_SAVE_KEY (web) === PROFILE_NAME_TARGET (serveur) === clé du champ de base « Nom »', () => {
+    expect(PROFILE_NAME_SAVE_KEY).toBe(PROFILE_NAME_TARGET);
+    expect(BASE_SAVE_FIELDS.find((f) => f.label === 'Nom')!.key).toBe(PROFILE_NAME_TARGET);
+  });
+});
 
 function nfm(responseJson: unknown, opts: { from?: string; contacts?: unknown[]; phoneNumberId?: string } = {}) {
   return {
@@ -69,6 +77,7 @@ class FakeLookup implements FlowMappingLookup {
 class FakeWriter implements ContactFieldWriter {
   readonly writes: Array<{ tenantId: string; waId: string; values: Record<string, unknown> }> = [];
   readonly optIns: Array<{ tenantId: string; waId: string; source: string }> = [];
+  readonly names: Array<{ tenantId: string; waId: string; name: string }> = [];
   constructor(private readonly throwOnce = false) {}
   async mergeFieldsByPhone(tenantId: string, waId: string, values: Record<string, unknown>): Promise<void> {
     if (this.throwOnce && this.writes.length === 0) {
@@ -79,6 +88,9 @@ class FakeWriter implements ContactFieldWriter {
   }
   async markOptedIn(tenantId: string, waId: string, source: string): Promise<void> {
     this.optIns.push({ tenantId, waId, source });
+  }
+  async setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<void> {
+    this.names.push({ tenantId, waId, name });
   }
 }
 
@@ -92,6 +104,34 @@ describe('processFlowCompletions', () => {
     expect(writer.writes[0]!.values).not.toHaveProperty('flow_token');
     expect(writer.writes[0]!.values).not.toHaveProperty('_ref');
     expect(writer.optIns).toHaveLength(0); // aucun champ optin -> pas de consentement
+  });
+
+  it('cible « @profile_name » (champ de base Nom) -> setProfileNameByPhone, PAS dans le merge fields', async () => {
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { nom_famille: PROFILE_NAME_TARGET, mail: 'email' } });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', nom_famille: 'Dupont', mail: 'a@b.fr' }, { from: '33611' }), lookup, writer);
+    // email -> fields ; @profile_name -> profile_name (jamais dans le merge)
+    expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { email: 'a@b.fr' } }]);
+    expect(writer.writes[0]!.values).not.toHaveProperty(PROFILE_NAME_TARGET);
+    expect(writer.names).toEqual([{ tenantId: 't1', waId: '33611', name: 'Dupont' }]);
+  });
+
+  it('cible « @profile_name » seule -> aucun merge fields (pas de merge vide), juste le nom', async () => {
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { nom_famille: PROFILE_NAME_TARGET } });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', nom_famille: 'Dupont' }, { from: '33611' }), lookup, writer);
+    expect(writer.writes).toHaveLength(0);
+    expect(writer.names).toEqual([{ tenantId: 't1', waId: '33611', name: 'Dupont' }]);
+  });
+
+  it('cible littérale « name » (collision de slug d\'un libellé « Name » par défaut) -> fields, PAS profile_name', async () => {
+    // Régression du fix : un champ libellé « Name » laissé en mapping par défaut slugifie en 'name' (≠ sentinelle
+    // '@profile_name'). Il ne doit PAS détourner profile_name : la valeur va dans fields comme avant.
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { name: 'name' } });
+    const writer = new FakeWriter();
+    await processFlowCompletions(nfm({ _ref: 'R', name: 'Dupont' }, { from: '33611' }), lookup, writer);
+    expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { name: 'Dupont' } }]);
+    expect(writer.names).toHaveLength(0); // profile_name JAMAIS touché
   });
 
   it('OptIn coché (true) -> champ booléen canonique « true » + markOptedIn(source=flow) une fois', async () => {
