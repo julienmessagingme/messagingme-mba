@@ -7,7 +7,7 @@ WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · mini-CRM · Campagnes · Scénario · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics (Quantitatif / Qualitatif) · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
+Admin : **Inbox · mini-CRM · Campagnes · Scénario · Guide MBA · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics (Quantitatif / Qualitatif) · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
 Les groupes **Contenu**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
@@ -36,6 +36,14 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Contacts & CRM
 
+- ✅ **mini-CRM : moteur de filtres + actions en masse** (2026-07-28) : l'écran Contacts filtre par **tag**
+  (possède / ne possède pas, tous ou au moins un), **opt-in**, **nom**, **téléphone** (commence par / contient),
+  **valeur de champ** (contient / ne contient pas / vide / rempli / égal) et un contrôle **Email** dédié (rempli /
+  vide / valeur précise), cumulables. On **coche** des contacts (ou « Tout sélectionner (N) » qui vise tout le
+  segment filtré, résolu côté serveur), puis un menu **« Action »** applique en masse : **ajouter / retirer un tag**,
+  **poser un champ** (une valeur sur toute la sélection), **supprimer**. La suppression est **douce** (réversible en
+  base, l'historique de campagnes est préservé) ; un contact supprimé disparaît des listes ET n'est plus destinataire
+  de campagne. Ré-importer son numéro le ressuscite.
 - ✅ **Contacts / opt-in** : import CSV (reconnaissance de colonnes, normalisation E.164, mapping des
   colonnes vers des user fields), opt-in tracé, tags. **Identité = numéro OU BSUID** (compte WhatsApp d'un
   client qui n'a pas partagé son numéro, post-octobre) : la colonne « Identifiant » et la fiche affichent l'un
@@ -59,7 +67,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   **filtrable par type** (Envoi template / Message rapide / Formulaire / Ajout de tag / Ajout de champ / Inbox),
   avec pour chaque bloc son **code public (`nod_…`) toujours visible** (ou « non codé » pour un bloc jamais
   re-sauvegardé), un résumé de son contenu, et un lien qui ouvre le scénario correspondant. C'est la vue qui
-  sert à retrouver le code d'un bloc précis (adressage d'une future API).
+  sert à retrouver le code d'un bloc précis (adressage d'une future API). **Recherche** (2026-07-28) : un champ
+  texte filtre les blocs par **contenu, nom du scénario, code ou type**, insensible à la casse et aux accents,
+  **cumulable** avec le filtre de type. Filtrage instantané côté client.
 - ✅ **User fields** (menu Contenu) : éditer le libellé / le type, supprimer. La **clé est verrouillée**
   (renommer la clé casserait le mapping des campagnes) -> on édite label/type seulement. **Champs de base
   « système »** (Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email) : toujours présents, **non supprimables**,
@@ -110,7 +120,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   valeur déjà connue de la fiche contact. Badge « 👁 Visible si… » dans l'aperçu.
 - ✅ Chaque **champ de saisie se range dans un user field du contact** (« Nouveau champ » d'après le libellé,
   ou un user field existant). À la réception du formulaire rempli, les valeurs atterrissent dans la fiche contact
-  + la réponse apparaît dans l'inbox.
+  + la réponse apparaît dans l'inbox. **Champs de base proposés** (2026-07-28) : le menu « Enregistrer dans »
+  propose désormais les champs de BASE (**Nom, Prénom, Email**) en plus des champs perso, et **suggère** celui qui
+  correspond au libellé du champ (« Email » → Email, « Nom » → Nom…), insensible casse/accents. Le champ de base
+  « Nom » alimente le nom d'affichage du contact (profile_name), les autres la fiche.
 - ✅ **Consentement (OptIn) exploitable** (2026-07-17) : dans le constructeur, un champ « Consentement » se range
   dans le **champ Oui/Non de ton choix** (par défaut « Consentement WhatsApp », créé automatiquement). Quand le
   contact coche la case et envoie, on enregistre le champ ET **on passe son statut opt-in à « accepté »** : il
@@ -129,6 +142,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   `+` / poubelle sur chaque flèche pour insérer ou couper, bouton « + Créer un bloc », panneau de config par
   bloc. Blocs : **envoi de template**, **message rapide**, **inbox** (remonte la conversation à un humain),
   **formulaire** (envoie un WhatsApp Flow), **ajout de tag**, **ajout de champ**. (Éditeur React Flow.)
+  **Bouton « Auto-arranger »** (2026-07-28) : réaligne les blocs en couches horizontales lisibles en un clic
+  (les positions sont enregistrées par l'auto-save).
+- ✅ **Gérer un scénario depuis la liste** (2026-07-28) : le tableau récap garde « Ouvrir » et ajoute un menu
+  **3 points** par ligne : **Renommer**, **Dupliquer** (copie « (copie) », « (copie 2) »…), **Supprimer**. Une
+  colonne **« Créé le »** (date + heure) situe chaque scénario.
 - ✅ **Enregistrement AUTOMATIQUE** : plus de bouton « Enregistrer » ni de statut « brouillon » : le scénario se
   sauvegarde tout seul ~1 s après chaque modification (indicateur « Enregistré à HH:MM »), y compris quand on
   quitte la page ou ferme l'onglet. En cas d'échec réseau : indicateur rouge + « réessayer ».
@@ -180,16 +198,19 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
     (nom, nombre de contacts, active/statique), on importe ses contacts (taggés `HubSpot: <nom>`, opt-in JAMAIS
     présumé), et la campagne cible aussitôt ce tag. Si le portail n'a pas encore autorisé l'accès aux listes, une
     CTA de re-consentement s'affiche (ajoute la permission « Lists » à ce portail uniquement).
-- ✅ **Débit d'envoi réglable** : par défaut la campagne part au débit maximum ; on peut **limiter la vitesse**
-  (curseur 1 à 80 messages/min, le plafond WhatsApp) pour protéger la réputation du numéro, avec la **durée
-  estimée** affichée. Le débit est respecté pour de vrai côté serveur.
+- ✅ **Débit d'envoi réglable** : une **jauge par défaut à 60 messages/min** (toujours visible depuis 2026-07-28,
+  plus de case « Limiter »), ajustable de 1 à 80/min (le plafond WhatsApp) pour protéger la réputation du numéro,
+  avec la **durée estimée** affichée. Le débit est respecté pour de vrai côté serveur.
 - ✅ **Lancer maintenant OU plus tard** (ÉTAPE 2) : « Maintenant » lance sur place (avec un suivi inline des
   envois) ; « Plus tard » ouvre un **calendrier** (date + heure) et **programme** la campagne, qui partira toute
   seule à l'échéance. Une campagne programmée porte un badge « planifiée » + sa date dans la liste, et se
   **désprogramme** en un clic.
-- ✅ **Ancien écran 3 zones conservé DANS l'étape 1** : le **nom en haut**, puis trois panneaux côte à côte :
-  **Expéditeur** (le numéro, affiché en texte s'il n'y en a qu'un) | **Destinataires** (source + filtres ci-dessus) |
-  **Message** (toggle **Template OU Scénario**, aperçu, variables). **Tooltip** au survol template vs scénario.
+- ✅ **Écran de préparation (étape 1)** : le **nom est une « étape 0 » obligatoire** (2026-07-28), qui **grise les
+  zones Destinataires / Message / débit tant qu'il est vide** (le lancement était déjà bloqué, c'est explicite
+  visuellement) ; puis **Expéditeur en bandeau pleine largeur au-dessus** (le numéro, affiché en texte s'il n'y en
+  a qu'un), et **Destinataires** (source + filtres) et **Message** (toggle **Template OU Scénario**, aperçu,
+  variables) en deux cadres pleine largeur. **Tooltip** au survol template vs scénario, qui précise que **si le
+  client répond, le Meta Business Agent prend le relais**.
 - ✅ **La miniature du template montre ses BOUTONS** (réponse rapide / lien / formulaire), que ce soit un template
   direct ou le 1er template d'un scénario. Lancement, suivi des destinataires (statut interne + cycle de livraison
   Meta), auto-refresh. (Suivi de livraison Meta non câblé pour les campagnes workflow en V1 : leur statut
@@ -316,11 +337,23 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   qualité, nb d'utilisateurs / contacts / messages / templates, dernier envoi. **Signal de charge pg-boss**
   (files en attente / actifs / échoués) pour décider d'une bascule d'infra. Messages échangés/jour (global).
 
+## Guide MBA (menu « Guide MBA »)
+
+- ✅ **Page de guidage `/mba`** (2026-07-28) : page de contenu **côté client** (ton produit) qui explique
+  l'**agent MBA** (le répondeur intelligent WhatsApp de Meta). Sections : ce qu'il fait (répond seul, passe la
+  main à l'Inbox, vous gardez le contrôle) ; **paramétrer en 5 étapes** (activer via les conditions Meta Business
+  AI + éligibilité → base de connaissance → personnalité → tester → activer et garder la main) ; **gestion des
+  connecteurs** avec les DEUX sens bien séparés (**pendant la conversation** = l'agent consulte un système externe,
+  sur mesure via accompagnement ; **vers votre CRM** = les conversations remontent, HubSpot dispo + lien vers son
+  guide) ; **prérequis + transparence des coûts** ; encart **« bientôt configurable ici »**. Page de PRÉPARATION :
+  la config live s'ouvrira quand Meta rendra l'agent disponible pour le numéro (gating vertical + ToS).
+
 ## À venir / hors périmètre
 
 - 🚧 **Onboarding guidé (Embedded Signup)** : bouton + popup + backend **construits et déployés** (OFF par défaut) ;
   en attente de validation Meta (Tech Provider + App Review, soumis 2026-07-16). Option pool de numéros = plus tard.
-- 🔲 **Agent MBA** (auto-réponse IA) : bloqué par les ToS Meta Business AI (gating vertical). Parqué.
+- 🚧 **Agent MBA** (auto-réponse IA, configuration LIVE) : bloqué par les ToS Meta Business AI (gating vertical).
+  La **page de guidage `/mba` existe** (préparation) ; la config en direct s'y ouvrira à l'éligibilité.
 - 🔲 **Abonnement / Billing** (Stripe) : menus câblés (désactivés), intégration hors lot.
 - 🔲 **Rapport mensuel auto** : score agent + stats campagnes.
 - Hors V1 (discipline anti tailor-made) : multicanal, segments avancés, A/B testing.

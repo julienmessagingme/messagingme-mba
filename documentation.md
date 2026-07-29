@@ -411,6 +411,34 @@ touchée, les uuid internes restent la source de vérité des relations.
   d'ouverture RÉEL (traversée des blocs synchrones dans WorkflowBuilder). L'avance du run sur `nfm_reply`
   est la mécanique existante (fallback 1re arête, dédup lastMessageId) : inchangée.
 
+## Lot UX 6 clusters (2026-07-28, migration 0049)
+
+- **Mini-CRM — filtres + actions en masse** (`src/crm/contact-store.pg.ts`) : `buildContactWhere` et
+  `buildBulkSelector` extraits en **fonctions PURES exportées** (testables sans DB), avec `deleted_at is null`
+  TOUJOURS dans le WHERE. Opérateurs de champ étendus (`ContactFieldOp` : eq/contains/not_contains/empty/not_empty)
+  + `tagsExclude` (« ne possède pas »), whitelist partagée `CONTACT_FIELD_OPS`/`isContactFieldOp` (miroir du parse
+  serveur `parseFilters` et du corps `normalizeContactFilters`). Méthodes ensemblistes `applyEditsMany` (une seule
+  clause `tags=` add+remove, MERGE jsonb pour set_field) et `softDeleteMany`. Cible = ids OU `{filters, excludeIds}`
+  (jamais un payload de 100k UUID). Routes `POST /tenants/:t/contacts/bulk` + `/bulk-delete` (admin-only).
+  Migration **0049** : colonne `deleted_at` + index partiel `idx_contacts_active`. ⚠️ Soft-delete propagé à
+  `listContactsForBuild`/`listContactsForBuildByIds` (campaign/store.pg.ts) + `findByPhone` ; l'upsert par numéro
+  remet `deleted_at=null` (résurrection). Front : `web/lib/contact-filters.ts` (types + `filtersToQuery`, PUR).
+- **Scénarios** : `autoLayoutHorizontal` (`web/lib/workflow-layout.ts`, PUR) = disposition en couches gauche->droite
+  (relaxation « plus long chemin » bornée à N itérations, sûre sur cycles). Route duplicate `POST /workflows/:id/
+  duplicate` au niveau route (réutilise getWorkflow/listWorkflows/createWorkflow/tenantCode) : nom « (copie) »
+  unique + **codes de node RE-MINTÉS** (strip `data.code` avant `mintNodeCodes`, sinon conservés = doublons).
+  Colonne date via `formatDate` (`web/lib/day.ts`).
+- **Contenu > Blocs** : `web/lib/node-search.ts` (`filterNodes<T>`, `normalizeSearch`, PUR) — filtrage client
+  cumulable type + texte (haystack : type/summary/workflowName/code, insensible accents/casse). La page charge tous
+  les blocs une fois (dataset borné).
+- **Flow field mapping** : `web/lib/flow-mapping.ts` (`BASE_SAVE_FIELDS`, `suggestBaseField`, PUR). Cible du champ
+  de base « Nom » = **sentinelle `PROFILE_NAME_SAVE_KEY = '@profile_name'`** (impossible à produire par `slugify`,
+  qui n'émet que `[a-z0-9_]`) -> `processFlowCompletions` (webhook report) route `@profile_name` vers
+  `setProfileNameByPhone` (nouvelle méthode du writer = `PgContactStore`), le reste dans `contacts.fields`. Test
+  anti-drift : `PROFILE_NAME_SAVE_KEY` (web) === `PROFILE_NAME_TARGET` (serveur).
+- **Guide MBA** : page de CONTENU `web/app/mba/page.tsx` (nav `web/components/AppShell.tsx`, tab `mba`), aucune
+  logique. Ton client, zéro mention d'infra. Config live parquée (ToS Meta Business AI + gating vertical).
+
 ## Gotchas et décisions (journal, déplacé de CLAUDE.md)
 
 Vue chronologique par lot. La vue thématique correspondante est dans les sections ci-dessus.

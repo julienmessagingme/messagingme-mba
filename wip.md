@@ -1,5 +1,27 @@
 # wip.md — travail en cours
 
+## Lot UX 6 chantiers (2026-07-28) : LIVE ✅
+
+Lot de 6 demandes produit/UX de Julien, en feature-loop (plan validé → boucle code / reviewer(s) séparé(s) /
+tests → commit + deploy par cluster). **Tout en prod.** Détail usage : `features.md`.
+- **Mini-CRM** (mig **0049** soft-delete) : moteur de filtres sur l'écran Contacts (5 ops de champ,
+  tag possède/ne possède pas, Email dédié) + sélection multi + « tout sélectionner (N) » + menu Action
+  (tag +/-, poser un champ, **suppression douce** réversible). Soft-delete propagé aux chemins d'envoi ; ré-upsert ressuscite.
+- **Scénarios** : bouton **Auto-arranger** (fonction pure `autoLayoutHorizontal`) + menu 3 points
+  (Renommer via PATCH existant / Dupliquer route neuve, codes de node re-mintés / Supprimer) + colonne date.
+- **Campagnes UX** : nom obligatoire étape-0 (grise le reste), Expéditeur en bandeau, jauge de débit défaut 60,
+  hover template « MBA prend le relais ».
+- **Contenu > Blocs** : recherche cumulable (mot-clé/contenu/type), fonction pure `filterNodes`, filtrage client.
+- **Flow field mapping** : champs de base (Nom/Prénom/Email) proposés + suggérés par libellé ; « Nom » routé
+  vers `profile_name` via la **sentinelle `@profile_name`** (impossible à produire par slugify → pas de collision).
+- **Guide MBA** : page `/mba` de guidage client (contenu, pas de logique).
+
+**Qualité** : reviewers séparés par cluster → **7 🔴 réels corrigés** (fuite soft-delete sur les ENVOIS,
+crash 500 `fieldFilters:[null]`, collision clé email `addRow`, course réseau sur compteur de suppression,
+SQL double-`tags=`, détournement `profile_name` par slug, 1re fuite campagne). Apprentissages : `brain/LEARNINGS.md`
+(2026-07-28). Tests : **~1116 → 1151**. 1 migration (0049). 8 commits sur `main`, déployés (`13d39b7`→`8de2565`).
+⚠️ **Prochaine migration mba = 0050.** Restent les vérifs visuelles Julien (hors boucle).
+
 ## Pièce 1 — passe d'analyse : durcissement du balayage (2026-07-14) ✅
 
 Enquête sur un symptôme d'activation (une conversation coincée en `analysis_status='queued'` sans
