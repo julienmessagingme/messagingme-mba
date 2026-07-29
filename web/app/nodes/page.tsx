@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import Link from 'next/link';
 import type { Session } from '@/lib/session';
 import { listNodes, type NodeListItem, type WorkflowNodeType } from '@/lib/api';
+import { filterNodes } from '@/lib/node-search';
 import { NODE_META, NODE_ORDER } from '@/lib/nodeMeta';
 import { useT } from '@/lib/i18n';
 
@@ -16,25 +17,31 @@ function NodesInner({ session }: { session: Session }) {
   const t = useT();
   const [nodes, setNodes] = useState<NodeListItem[]>([]);
   const [filter, setFilter] = useState<WorkflowNodeType | 'all'>('all');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // On charge TOUS les blocs une fois ; le filtrage (type + texte, cumulatifs) est instantané côté client
+  // (dataset borné, déjà entièrement renvoyé par le serveur). Plus de rechargement par type.
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await listNodes(session.tenantId, filter === 'all' ? undefined : filter);
+      const res = await listNodes(session.tenantId);
       setNodes(res.nodes);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId, filter]);
+  }, [session.tenantId, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Filtres cumulables : typologie (chips) ET recherche texte (contenu / scénario / code / type).
+  const visible = useMemo(() => filterNodes(nodes, filter, query), [nodes, filter, query]);
 
   const chip = (on: boolean) =>
     `rounded-full border px-3 py-1 text-sm transition ${on ? 'border-brand-500 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-600 hover:bg-ink-100'}`;
@@ -49,6 +56,14 @@ function NodesInner({ session }: { session: Session }) {
         )}</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t('Rechercher un bloc (contenu, scénario, code…)', 'Search a block (content, scenario, code…)')}
+        className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        data-testid="nodes-search"
+      />
 
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setFilter('all')} className={chip(filter === 'all')}>{t('Tous', 'All')}</button>
@@ -65,15 +80,15 @@ function NodesInner({ session }: { session: Session }) {
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
           {filter === 'all' ? t('Tous les blocs', 'All blocks') : `${NODE_META[filter].emoji} ${t(NODE_META[filter].label[0], NODE_META[filter].label[1])}`}
-          <span className="ml-2 text-xs font-normal text-ink-400">({nodes.length})</span>
+          <span className="ml-2 text-xs font-normal text-ink-400">({visible.length})</span>
         </div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
-        ) : nodes.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t(
-            'Aucun bloc pour ce type. Les blocs sont créés dans l’éditeur de scénario.',
-            'No block for this type. Blocks are created in the scenario editor.',
-          )}</p>
+        ) : visible.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-ink-500">{nodes.length === 0 ? t(
+            'Aucun bloc pour l’instant. Les blocs sont créés dans l’éditeur de scénario.',
+            'No block yet. Blocks are created in the scenario editor.',
+          ) : t('Aucun bloc ne correspond à ta recherche.', 'No block matches your search.')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -85,7 +100,7 @@ function NodesInner({ session }: { session: Session }) {
               </tr>
             </thead>
             <tbody>
-              {nodes.map((n, i) => {
+              {visible.map((n, i) => {
                 const meta = NODE_META[n.type];
                 return (
                   <tr key={`${n.workflowId}-${n.code ?? i}`} className="border-b border-ink-50 last:border-0">
