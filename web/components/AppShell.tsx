@@ -8,7 +8,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'mba' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -24,6 +24,7 @@ const icons = {
   flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
   support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
   developers: 'M8 6l-5 6 5 6M16 6l5 6-5 6M13 4l-2 16',
+  mba: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM6 19l.7 1.9L8.6 21l-1.9.7L6 23.6l-.7-1.9L3.4 21l1.9-.1L6 19z',
 };
 
 interface NavChild { key: string; href: string; label: string }
@@ -56,6 +57,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
+    { key: 'mba', href: '/mba', label: t('Guide MBA', 'MBA guide'), d: icons.mba },
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
       { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
       { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
