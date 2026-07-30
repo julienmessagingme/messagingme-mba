@@ -27,6 +27,15 @@ export interface ContactFilters {
 /** Cible d'une action en masse : ids explicites, OU filtres re-résolus côté serveur (+ exclusions des lignes décochées). */
 export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeIds?: string[] };
 
+/** Un filtre est-il posé ? (distingue « aucun résultat » de « aucun contact du tout », et gate le chemin
+ *  requêtable vs la liste par défaut). Partagé par le mini-CRM et la sélection de destinataires de campagne. */
+export function filtersActive(f: ContactFilters): boolean {
+  return Boolean(
+    f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch ||
+    f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.value.trim() !== ''),
+  );
+}
+
 /** Encode des ContactFilters en query string (miroir de parseFilters côté serveur, src/http/import.ts). */
 export function filtersToQuery(f: ContactFilters): URLSearchParams {
   const qs = new URLSearchParams();

@@ -47,13 +47,14 @@ import {
   type Contact,
   type ImportReport,
   type ContactFilters,
-  type ContactFieldFilter,
   type TagCount,
   type WorkflowSummary,
   type WorkflowGraph,
   type WorkflowNode,
 } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample } from '@/lib/fields';
+import { filtersActive } from '@/lib/contact-filters';
+import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
  *  indisponible. Sur-estime l'utility en fenêtre de service gratuite -> à présenter comme « ~ estimé ». */
@@ -599,14 +600,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // Campagnes via listes HubSpot en pause (F3-b, flag tenant campaignsPaused) : on grise la source HubSpot pour ne
   // pas envoyer l'admin vers un panneau vide pendant la pause.
   const [hubspotPaused, setHubspotPaused] = useState(false);
-  // Filtres UI (alimentent ContactFilters). tagMode 'and' = tous, 'or' = au moins un.
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
-  const [tagMode, setTagMode] = useState<'and' | 'or'>('and');
-  const [optIn, setOptIn] = useState<'' | 'opted_in' | 'opted_out' | 'unknown'>('');
-  const [phonePrefix, setPhonePrefix] = useState('');
-  const [phoneContains, setPhoneContains] = useState('');
-  const [nameSearch, setNameSearch] = useState('');
-  const [fieldFilters, setFieldFilters] = useState<ContactFieldFilter[]>([]);
+  // Filtres de la source CRM : UN objet ContactFilters, édité par le composant PARTAGÉ ContactFilterPanel
+  // (même moteur de recherche que le mini-CRM, pas de 2e implémentation parallèle).
+  const [filters, setFilters] = useState<ContactFilters>({});
   // Résultats : liste affichée (<= 500), total réel (compteur), sélection ciblée.
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -658,24 +654,11 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     }
   }, [tenantId]);
 
-  // Construit ContactFilters depuis l'UI : n'inclut une clé que si elle est renseignée (miroir de filtersToQuery).
-  const buildFilters = useCallback((): ContactFilters => {
-    const f: ContactFilters = {};
-    if (tagFilter.size > 0) { f.tags = [...tagFilter]; f.tagMode = tagMode; }
-    if (optIn) f.optIn = optIn;
-    if (phonePrefix.trim()) f.phonePrefix = phonePrefix.trim();
-    if (phoneContains.trim()) f.phoneContains = phoneContains.trim();
-    if (nameSearch.trim()) f.nameSearch = nameSearch.trim();
-    const ff = fieldFilters.filter((r) => r.key && r.value.trim()).map((r) => ({ key: r.key, op: r.op, value: r.value.trim() }));
-    if (ff.length > 0) f.fieldFilters = ff;
-    return f;
-  }, [tagFilter, tagMode, optIn, phonePrefix, phoneContains, nameSearch, fieldFilters]);
-
   // Rechargement DEBOUNCÉ (350 ms) de la liste + du compteur quand les filtres changent (source 'crm' seulement).
   // Au rechargement, on re-coche tous les contacts chargés (comportement « tout ciblé » par défaut).
   useEffect(() => {
     if (source !== 'crm') { setCountLoading(false); return; }
-    const f = buildFilters();
+    const f = filters;
     setCountLoading(true);
     const timer = setTimeout(() => {
       const seq = ++reqSeq.current;
@@ -694,7 +677,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       })();
     }, 350);
     return () => clearTimeout(timer);
-  }, [source, tenantId, buildFilters]);
+  }, [source, tenantId, filters]);
 
   const selectedTemplate = templates.find((tpl) => tpl.name === templateName);
   // Valeurs d'aperçu par variable (échantillon lisible selon le mapping) pour la miniature WhatsApp.
@@ -786,13 +769,8 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // tag(s) comme seul filtre et en vidant tout le reste, pour que le compteur/liste (étape Destinataires) ne
   // montrent qu'eux. tagMode 'or' si plusieurs tags (au moins un), 'and' sinon.
   function applyImportedTags(tags: string[]) {
-    setTagFilter(new Set(tags));
-    setTagMode(tags.length > 1 ? 'or' : 'and');
-    setOptIn('');
-    setPhonePrefix('');
-    setPhoneContains('');
-    setNameSearch('');
-    setFieldFilters([]);
+    // Cible les importés : leur(s) tag(s) comme SEUL filtre, tout le reste vidé (tagMode 'or' si plusieurs).
+    setFilters(tags.length > 1 ? { tags, tagMode: 'or' } : { tags });
   }
 
   // Callback de CsvImport (source fichier) : on pivote sur la source CRM filtrée par le(s) tag(s) de l'import.
@@ -806,36 +784,26 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   function toggleContact(id: string) {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
-  function toggleTag(tag: string) {
-    setTagFilter((s) => { const n = new Set(s); if (n.has(tag)) n.delete(tag); else n.add(tag); return n; });
-  }
-  function addFieldFilter() {
-    setFieldFilters((r) => (r.length >= 5 ? r : [...r, { key: '', op: 'eq', value: '' }]));
-  }
-  function updateFieldFilter(i: number, patch: Partial<ContactFieldFilter>) {
-    setFieldFilters((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  }
-  function removeFieldFilter(i: number) {
-    setFieldFilters((r) => r.filter((_, j) => j !== i));
-  }
   // « Tout sélectionner (N) » : résout côté serveur TOUS les ids correspondants (au-delà des 500 affichés).
   async function selectAllMatching() {
     try {
-      const { ids } = await contactIdsForFilters(tenantId, buildFilters());
+      const { ids } = await contactIdsForFilters(tenantId, filters);
       if (!mountedRef.current) return;
       setSelected(new Set(ids));
     } catch { /* silencieux */ }
   }
-  const customFields = customFieldsOnly(userFields);
   // Un filtre est actif dès qu'une clé est posée -> distingue « aucun résultat » de « aucun contact du tout ».
-  const hasActiveFilters = Object.keys(buildFilters()).length > 0;
+  const hasActiveFilters = filtersActive(filters);
   // Le récap d'import n'est PERTINENT que tant que le filtre affiché == exactement les tags importés (rien
   // d'autre). Dès que l'utilisateur touche un filtre, la sélection diverge des importés -> on masque le récap.
   const importMsgFresh = importMsg !== null
-    && tagFilter.size === importMsg.tags.length
-    && importMsg.tags.every((tg) => tagFilter.has(tg))
-    && !optIn && !phonePrefix.trim() && !phoneContains.trim() && !nameSearch.trim()
-    && fieldFilters.filter((r) => r.key && r.value.trim()).length === 0;
+    && (filters.tags?.length ?? 0) === importMsg.tags.length
+    && importMsg.tags.every((tg) => filters.tags?.includes(tg))
+    // tagMode DOIT aussi matcher ce qu'a posé applyImportedTags ('or' si plusieurs tags, absent sinon) : sans
+    // ça, basculer le ET/OU rétrécit la requête mais laisserait le bandeau « importés » affiché à tort.
+    && (importMsg.tags.length > 1 ? filters.tagMode === 'or' : !filters.tagMode)
+    && !filters.optIn && !filters.phonePrefix && !filters.phoneContains && !filters.nameSearch
+    && !(filters.tagsExclude?.length) && !(filters.fieldFilters?.length);
 
   function toParamMapping(): TemplateParam[] {
     return vars.map((v, i) => ({ position: i + 1, source: selToSource(v.sel, v.value) }));
@@ -1099,83 +1067,16 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
                 <button type="button" onClick={() => setImportMsg(null)} className="shrink-0 leading-none text-emerald-500 hover:text-emerald-800" aria-label={t('Fermer', 'Close')}>×</button>
               </div>
             )}
-            {/* Tags : puces multi-sélection alimentées par listTags (pas dérivées des contacts chargés). */}
-            {tags.length > 0 && (
-              <div className="mb-2">
-                <div className="flex flex-wrap items-center gap-1">
-                  <span className="text-[11px] text-ink-400">{t('Tags :', 'Tags:')}</span>
-                  {tags.map((tc) => (
-                    <button
-                      type="button"
-                      key={tc.tag}
-                      onClick={() => toggleTag(tc.tag)}
-                      className={`rounded-full px-2 py-0.5 text-xs transition ${tagFilter.has(tc.tag) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-600 hover:bg-ink-200'}`}
-                    >
-                      {tc.tag} <span className="opacity-60">{tc.count}</span>
-                    </button>
-                  ))}
-                  {tagFilter.size > 0 && (
-                    <button type="button" onClick={() => setTagFilter(new Set())} className="text-[11px] text-brand-600 hover:underline">{t('réinitialiser', 'reset')}</button>
-                  )}
-                </div>
-                {/* Combinaison des tags : « tous » (and) vs « au moins un » (or). N'a de sens qu'à partir de 2 tags. */}
-                {tagFilter.size > 1 && (
-                  <div className="mt-1 inline-flex gap-1 rounded-lg bg-ink-100 p-0.5 text-[11px]">
-                    {([['and', t('tous', 'all')], ['or', t('au moins un', 'any')]] as const).map(([m, label]) => (
-                      <button type="button" key={m} onClick={() => setTagMode(m)} className={`rounded-md px-2 py-0.5 ${tagMode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Opt-in / Nom / Téléphone (commence par + contient) */}
-            <div className="mb-2 grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Opt-in', 'Opt-in')}</span>
-                <select value={optIn} onChange={(e) => setOptIn(e.target.value as typeof optIn)} className={`${inputCls} py-1.5`}>
-                  <option value="">{t('Tous', 'All')}</option>
-                  <option value="opted_in">{t('Opté-in', 'Opted-in')}</option>
-                  <option value="opted_out">{t('Opté-out', 'Opted-out')}</option>
-                  <option value="unknown">{t('Inconnu', 'Unknown')}</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Nom contient', 'Name contains')}</span>
-                <input value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} className={`${inputCls} py-1.5`} placeholder={t('nom', 'name')} />
-              </label>
-              <label className="block">
-                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Tél. commence par', 'Phone starts with')}</span>
-                <input value={phonePrefix} onChange={(e) => setPhonePrefix(e.target.value)} className={`${inputCls} py-1.5`} placeholder="+336" />
-              </label>
-              <label className="block">
-                <span className="mb-0.5 block text-[11px] text-ink-500">{t('Tél. contient', 'Phone contains')}</span>
-                <input value={phoneContains} onChange={(e) => setPhoneContains(e.target.value)} className={`${inputCls} py-1.5`} placeholder="06" />
-              </label>
+            {/* Recherche/filtres : composant PARTAGÉ avec le mini-CRM (une seule implémentation, pas deux moteurs). */}
+            <div className="mb-2">
+              <ContactFilterPanel
+                filters={filters}
+                onChange={setFilters}
+                userFields={userFields}
+                tagSuggestions={tags.map((tc) => tc.tag)}
+                onClear={() => setFilters({})}
+              />
             </div>
-
-            {/* Filtres de champ perso (répétables, max 5). Une ligne ne compte que si champ ET valeur remplis. */}
-            {customFields.length > 0 && (
-              <div className="mb-2 space-y-1.5">
-                {fieldFilters.map((r, i) => (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <select value={r.key} onChange={(e) => updateFieldFilter(i, { key: e.target.value })} className={`${inputCls} flex-1 py-1.5`}>
-                      <option value="">{t('Champ…', 'Field…')}</option>
-                      {customFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                    </select>
-                    <select value={r.op} onChange={(e) => updateFieldFilter(i, { op: e.target.value as ContactFieldFilter['op'] })} className={`${inputCls} w-24 py-1.5`}>
-                      <option value="eq">{t('est', 'is')}</option>
-                      <option value="contains">{t('contient', 'contains')}</option>
-                    </select>
-                    <input value={r.value} onChange={(e) => updateFieldFilter(i, { value: e.target.value })} className={`${inputCls} w-28 py-1.5`} placeholder={t('valeur', 'value')} />
-                    <button type="button" onClick={() => removeFieldFilter(i)} className="shrink-0 rounded p-1 text-ink-400 hover:text-red-600" title={t('Retirer', 'Remove')}>✕</button>
-                  </div>
-                ))}
-                {fieldFilters.length < 5 && (
-                  <button type="button" onClick={addFieldFilter} className="text-[11px] text-brand-600 hover:underline">+ {t('filtre de champ', 'field filter')}</button>
-                )}
-              </div>
-            )}
 
             {/* Compteur live (débounce) + contrôles de sélection sur gros volumes. */}
             <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
