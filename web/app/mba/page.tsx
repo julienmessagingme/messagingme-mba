@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useT } from '@/lib/i18n';
 
 export default function MbaPage() {
-  return <AppShell active="mba">{() => <MbaGuide />}</AppShell>;
+  return <AppShell active="mba-guide">{() => <MbaGuide />}</AppShell>;
 }
 
 /** Icône décorative (SVG inline, aucune dépendance). */

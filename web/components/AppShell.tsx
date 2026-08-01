@@ -8,7 +8,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'mba' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -45,6 +45,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   // Chaque groupe DOIT figurer ici : un groupe absent de cet initialiseur reste replié même quand on arrive
   // directement sur une de ses pages, et l'élément actif est alors invisible.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => ({
+    mba: ['mba-guide', 'mba-settings'].includes(active),
     contenu: ['templates', 'flows', 'nodes', 'tags', 'fields'].includes(active),
     analytics: ['dashboard', 'dashboard-quali'].includes(active),
     developers: ['api-docs', 'api-keys'].includes(active),
@@ -57,7 +58,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
-    { key: 'mba', href: '/mba', label: t('Guide MBA', 'MBA guide'), d: icons.mba },
+    { key: 'mba', label: t('MBA', 'MBA'), d: icons.mba, children: [
+      { key: 'mba-guide', href: '/mba', label: t('Guide', 'Guide') },
+      { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
+    ] },
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
       { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
       { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
@@ -108,6 +112,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   // Groupe de nav actif. Sans cette table, `itemCls(group === item.key)` ne s'allume jamais sur un parent de
   // groupe et l'entrée reste grise alors qu'on est sur une de ses pages.
   const GROUP_OF: Partial<Record<Tab, string>> = {
+    'mba-guide': 'mba', 'mba-settings': 'mba',
     dashboard: 'analytics', 'dashboard-quali': 'analytics',
     templates: 'contenu', flows: 'contenu', nodes: 'contenu', tags: 'contenu', fields: 'contenu',
     'api-docs': 'developers', 'api-keys': 'developers',
