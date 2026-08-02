@@ -102,6 +102,7 @@ function InboxInner({ session }: { session: Session }) {
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [onlyTodo, setOnlyTodo] = useState(false); // filtre « À traiter » : conversations que le scénario ne gère plus (control_owner != app_workflow)
 
   const reload = useCallback(async () => {
     setError(null);
@@ -138,23 +139,35 @@ function InboxInner({ session }: { session: Session }) {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [reload]);
 
+  // « À traiter » = le scénario ne gère plus le fil (opérateur a pris la main, ou node inbox a escaladé, ou MBA).
+  const todoCount = conversations.filter((c) => c.controlOwner !== 'app_workflow').length;
+  const visible = onlyTodo ? conversations.filter((c) => c.controlOwner !== 'app_workflow') : conversations;
+
   return (
     <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[320px_1fr]">
       <section className="lg:flex lg:min-h-0 lg:flex-col">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Conversations', 'Conversations')} ({conversations.length})</h2>
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
+        </div>
+        <div className="mb-3 flex gap-1 text-xs">
+          <button onClick={() => setOnlyTodo(false)} className={`rounded-md px-2 py-1 ${!onlyTodo ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>{t('Toutes', 'All')}</button>
+          <button onClick={() => setOnlyTodo(true)} data-testid="inbox-filter-todo" className={`rounded-md px-2 py-1 ${onlyTodo ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>
+            {t('À traiter', 'To handle')}{todoCount > 0 ? ` (${todoCount})` : ''}
+          </button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         {loading ? (
           <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
-        ) : conversations.length === 0 ? (
+        ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            {t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
+            {conversations.length === 0
+              ? t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')
+              : t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')}
           </div>
         ) : (
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
-            {conversations.map((c) => (
+            {visible.map((c) => (
               <li key={c.id}>
                 <button
                   onClick={() => setSelected(c)}
