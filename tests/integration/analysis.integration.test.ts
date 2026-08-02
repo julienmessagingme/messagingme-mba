@@ -185,7 +185,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const inbox = new PgInboxStore(pool);
     const waId = '33600100040';
     await insertConv(waId, { status: 'done' });
-    await inbox.recordInbound(tenantId, { waId, phoneNumberId: 'pn', body: 'Encore une question', type: 'text', buttonPayload: null, messageId: 'wamid-REOPEN', profileName: null });
+    await inbox.recordInbound(tenantId, { waId, phoneNumberId: 'pn', body: 'Encore une question', type: 'text', buttonPayload: null, messageId: 'wamid-REOPEN', profileName: null, field: 'messages' });
     const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where tenant_id = $1 and wa_id = $2`, [tenantId, waId])).rows[0]!.analysis_status;
     expect(status).toBe('pending');
   });

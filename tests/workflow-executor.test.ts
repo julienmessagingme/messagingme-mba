@@ -25,6 +25,7 @@ class FakeRuns {
 function make(graph: WorkflowGraph) {
   const runs = new FakeRuns();
   const calls: string[] = [];
+  const escalations: string[] = []; // capture séparée : les assertions `calls` existantes restent inchangées
   const ex = new WorkflowExecutor({
     runs,
     getGraph: async () => graph,
@@ -35,8 +36,9 @@ function make(graph: WorkflowGraph) {
     sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
     sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
     sendFlow: async (_t, _w, flowId, body, cta) => { calls.push(`flow:${flowId}:${body}:${cta}`); },
+    escalateToHuman: async (_t, w) => { escalations.push(w); },
   });
-  return { ex, runs, calls };
+  return { ex, runs, calls, escalations };
 }
 
 describe('WorkflowExecutor', () => {
@@ -69,6 +71,14 @@ describe('WorkflowExecutor', () => {
     await ex.advance('t1', '33600', 'msg1');
     expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
     expect(calls).toEqual(['tag:vip', 'tpl:promo']); // pas de nouvel envoi (inbox n'a pas d'action)
+  });
+
+  it('atteindre le node inbox escalade à un humain (escalateToHuman) ; pas d’escalade tant qu’on n’y est pas', async () => {
+    const { ex, escalations } = make(linear);
+    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    expect(escalations).toEqual([]); // start s'arrête au template (waiting), pas encore inbox
+    await ex.advance('t1', '33600', 'msg1'); // le contact répond -> node inbox
+    expect(escalations).toEqual(['33600']);
   });
 
   // Garde fenêtre 24 h (Lot 7) : `start` = chemin campagne, HORS fenêtre de service -> un scénario qui OUVRE

@@ -14,6 +14,10 @@ export interface InboundMessage {
   body: string | null;
   buttonPayload: string | null;
   profileName: string | null;
+  /** `field` du change webhook source ('messages' pour un vrai entrant, 'standby' quand un autre app tient le
+   *  fil...). Sert au consommateur d'AVANCE de scénario à ignorer un standby (ne pas répondre / reprendre le
+   *  contrôle au MBA). L'INBOX, elle, enregistre tout (voir les échanges vus en standby). null si absent. */
+  field: string | null;
 }
 
 /** Complétion d'un WhatsApp Flow (nfm_reply parsé) : le discriminant `ref` identifie le flow (donc le
@@ -93,6 +97,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
       const contacts = asArray(value['contacts']).map(asRecord);
       const fallbackWaId = str(contacts[0]?.['wa_id']);
       const profileName = str(asRecord(contacts[0]?.['profile'])['name']);
+      const field = str(asRecord(changeRaw)['field']) ?? null; // 'messages' | 'standby' | ... (null si absent)
       for (const msgRaw of asArray(value['messages'])) {
         const msg = asRecord(msgRaw);
         const messageId = str(msg['id']);
@@ -107,6 +112,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
           body,
           buttonPayload,
           profileName,
+          field,
         });
       }
     }

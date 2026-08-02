@@ -15,6 +15,10 @@ export interface WorkflowAdvanceDeps {
  */
 export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdvanceDeps): Promise<void> {
   for (const m of extractInbound(payload)) {
+    // Ne PAS faire avancer le scénario sur un `standby` (le MBA tient le fil) : répondre reprendrait implicitement
+    // le contrôle au MBA. L'inbox, elle, enregistre bien ce message (processInbound, non filtré) pour rester visible.
+    // field null (anciennes fixtures) -> on avance (rétro-compat).
+    if (m.field && m.field !== 'messages') continue;
     // Isolation PAR MESSAGE : une erreur sur un contact ne doit pas empêcher l'avance des autres contacts
     // du même webhook (Meta peut batcher plusieurs messages). Calqué sur processFlowCompletions.
     try {

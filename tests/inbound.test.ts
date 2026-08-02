@@ -15,6 +15,19 @@ describe('extractInbound', () => {
     expect(r[0]).toMatchObject({ phoneNumberId: 'pn1', waId: '33611', messageId: 'wamid.1', type: 'text', body: 'coucou', buttonPayload: null });
   });
 
+  it('un change `standby` est EXTRAIT avec son field (l’inbox doit le voir ; c’est l’avance de scénario qui filtre)', () => {
+    const p = { entry: [{ changes: [{ field: 'standby', value: { metadata: { phone_number_id: 'pn1' }, messages: [{ id: 'wamid.s', from: '33611', type: 'text', text: { body: 'hello' } }] } }] }] };
+    const r = extractInbound(p);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ messageId: 'wamid.s', field: 'standby' });
+  });
+
+  it('un vrai message porte field=messages ; un change SANS field -> field null (rétro-compat fixtures)', () => {
+    expect(extractInbound(payload([{ id: 'wamid.f', from: '33611', type: 'text', text: { body: 'x' } }]))[0]).toMatchObject({ field: 'messages' });
+    const p = { entry: [{ changes: [{ value: { metadata: { phone_number_id: 'pn1' }, messages: [{ id: 'wamid.n', from: '33611', type: 'text', text: { body: 'hi' } }] } }] }] };
+    expect(extractInbound(p)[0]).toMatchObject({ field: null });
+  });
+
   it('tap de bouton quick-reply (type button)', () => {
     const r = extractInbound(payload([{ id: 'wamid.2', from: '33611', type: 'button', button: { text: 'Oui', payload: 'YES' } }]));
     expect(r[0]).toMatchObject({ type: 'button', body: 'Oui', buttonPayload: 'YES' });

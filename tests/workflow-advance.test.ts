@@ -58,4 +58,17 @@ describe('processWorkflowAdvance', () => {
     });
     expect(seen).toEqual([{ w: '33600', bp: null }, { w: '33602', bp: 'btn:1' }]);
   });
+
+  it('un change `standby` (MBA tient le fil) NE fait PAS avancer le scénario', async () => {
+    const calls: string[] = [];
+    const p = { entry: [{ changes: [{ field: 'standby', value: {
+      metadata: { phone_number_id: 'PN1' }, contacts: [{ wa_id: '33600' }],
+      messages: [{ id: 'ms', from: '33600', type: 'text', text: { body: 'coucou' } }],
+    } }] }] };
+    await processWorkflowAdvance(p, {
+      phoneNumberTenant: async () => 't1',
+      advance: async (_t, _w, m) => { calls.push(m); },
+    });
+    expect(calls).toEqual([]); // le message est vu par l'inbox (processInbound), mais le scénario n'avance pas
+  });
 });

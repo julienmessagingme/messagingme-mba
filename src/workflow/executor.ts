@@ -44,6 +44,12 @@ export interface WorkflowExecutorDeps {
    * les suites de tests à deps minimales. Renvoie null si le contact est introuvable -> même repli 'false'.
    */
   evalContext?(tenantId: string, waId: string): Promise<EvalContext | null>;
+  /**
+   * Le run vient d'atteindre un bloc `inbox` : la conversation passe à un humain (control_owner=app_human).
+   * Sans ça, atteindre le bloc inbox n'était qu'un arrêt de run silencieux, et le badge d'inbox affichait encore
+   * « le scénario répond » alors que plus rien n'avançait (trou A.5). OPTIONNEL : absent -> comportement historique.
+   */
+  escalateToHuman?(tenantId: string, waId: string): Promise<void>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -138,6 +144,8 @@ export class WorkflowExecutor {
     await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams);
     const state = restToState(rest);
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
+    // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
+    if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
   }
 
   /**
@@ -185,5 +193,6 @@ export class WorkflowExecutor {
     const { actions, rest } = walk(graph, next, ctx);
     await this.apply(tenantId, waId, actions);
     await this.deps.runs.setState(run.id, { ...restToState(rest), lastMessageId: messageId });
+    if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
   }
 }

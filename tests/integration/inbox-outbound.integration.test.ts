@@ -61,7 +61,7 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
   it('inbound PUIS outbound sur le même wa_id -> une seule conversation, les deux messages', async () => {
     const store = new PgInboxStore(pool);
     const waId = '33600000999';
-    await store.recordInbound(tenantId, { waId, phoneNumberId: 'pn-test', body: 'Bonjour', type: 'text', buttonPayload: null, messageId: 'wamid-IN', profileName: null });
+    await store.recordInbound(tenantId, { waId, phoneNumberId: 'pn-test', body: 'Bonjour', type: 'text', buttonPayload: null, messageId: 'wamid-IN', profileName: null, field: 'messages' });
     await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo »', messageId: 'wamid-OUT', templateName: 'promo' });
     const convs = await conversationId(waId);
     expect(convs).toHaveLength(1); // pas de doublon : outbound tombe sur la conversation de l'inbound

@@ -163,6 +163,10 @@ async function main(): Promise<void> {
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
     mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
+    // Un run qui atteint un bloc `inbox` remonte la conversation à un humain : on pose control_owner=app_human,
+    // mais SEULEMENT si le fil était encore à nous (`only: ['app_workflow']`) pour ne pas écraser une prise de
+    // main concurrente. Rend le badge honnête (fin du trou où le scénario semblait « répondre » sans plus avancer).
+    escalateToHuman: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }); },
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
     evalContext: async (tenant, waId) => {
