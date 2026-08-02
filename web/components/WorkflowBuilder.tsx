@@ -518,11 +518,12 @@ function ConfigPanel({
         <button onClick={onDelete} className="text-xs text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
       </div>
 
-      {/* Fenêtre 24 h : le serveur REFUSE un graphe qui ouvre sur un flow/message rapide (400 à l'auto-save). */}
+      {/* Lot D : ouvrir sur un flow/message rapide est désormais AUTORISÉ (l'enregistrement passe). Ce n'est plus
+          une erreur mais une CONSÉQUENCE à connaître : le scénario sort du champ des campagnes broadcast. */}
       {isEntry && (wfType === 'flow' || wfType === 'quick_message') && (
-        <p className="rounded-lg border border-coral/40 bg-coral/5 px-2.5 py-2 text-[11px] leading-snug text-coral">
-          {t('Ce bloc ne peut pas OUVRIR le scénario (message hors fenêtre 24 h) : relie un bloc « Envoi template » en amont, sinon l’enregistrement est refusé.',
-            'This block cannot OPEN the scenario (message outside the 24 h window): connect a “Send template” block upstream, otherwise saving is rejected.')}
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-800">
+          {t('Ce scénario ne pourra pas être lancé en campagne (une campagne part sur une audience froide, il faut un template en ouverture). Il reste utilisable quand le contact vient d’écrire. Pour l’ouvrir aux campagnes, mets un bloc « Envoi template » en tête.',
+            'This scenario cannot be launched as a campaign (a campaign targets a cold audience, so it needs a template first). It stays usable when the contact has just written. To open it to campaigns, put a “Send template” block first.')}
         </p>
       )}
 

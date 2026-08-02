@@ -134,8 +134,10 @@ export class WorkflowExecutor {
     const ctx = await this.buildCtx(tenantId, contact.waId, graph);
     const { actions, rest } = walk(graph, startNodeId, ctx);
     // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
-    // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Le save du graphe refuse
-    // déjà cette forme (400) ; ceci est la défense runtime pour les graphes antérieurs à la garde.
+    // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Depuis le Lot D, le SAVE
+    // n'interdit plus cette forme (un scénario peut ouvrir sur un message de session, il est alors réservé aux
+    // déclenchements en fenêtre garantie) : c'est `POST /campaigns` qui refuse un tel scénario en campagne, et
+    // CETTE garde est le filet runtime si un autre chemin tentait quand même un `start` classique.
     if (!opts.allowSessionOpen && actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);

@@ -71,7 +71,11 @@ describe('routes workflows', () => {
     await server.close();
   });
 
-  it('POST/PATCH : graphe qui OUVRE sur un flow ou un message rapide -> 400 (fenêtre 24 h)', async () => {
+  // Lot D : le SAVE n'impose PLUS qu'un scénario commence par un template. Un scénario qui ouvre sur un
+  // formulaire / message rapide est valide et enregistrable : il est réservé aux déclenchements où la fenêtre
+  // de service 24 h est garantie (contact qui vient d'écrire), et c'est `POST /campaigns` qui refuse de le
+  // lancer en broadcast (garde INDÉPENDANTE, verrouillée par tests/http-campaigns.test.ts).
+  it('POST/PATCH : graphe qui OUVRE sur un flow ou un message rapide -> ENREGISTRÉ (plus de 400 depuis le Lot D)', async () => {
     const { server, cap } = app();
     // tag -> flow en ouverture (la chaîne synchrone compte aussi comme ouverture).
     const flowEntry = {
@@ -82,13 +86,15 @@ describe('routes workflows', () => {
       edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
     };
     const post = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'X', graph: flowEntry } });
-    expect(post.statusCode).toBe(400);
-    expect(post.json<{ error: string }>().error).toContain('template');
+    expect(post.statusCode).toBe(201);
     const qmEntry = { nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { body: 'Salut', quickReplies: ['Oui'] } }], edges: [] };
     const patch = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: qmEntry } });
-    expect(patch.statusCode).toBe(400);
-    expect(cap.created).toEqual([]);
-    expect(cap.updated).toEqual([]);
+    expect(patch.statusCode).toBe(200);
+    // Les deux graphes sont bien PERSISTÉS (et non acceptés puis silencieusement vidés).
+    expect(cap.created).toHaveLength(1);
+    const saved = cap.created[0]!.graph as { nodes: Array<{ type: string }> };
+    expect(saved.nodes.map((nd) => nd.type)).toEqual(['tag', 'flow']);
+    expect(cap.updated).toHaveLength(1);
     await server.close();
   });
 

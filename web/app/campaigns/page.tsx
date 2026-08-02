@@ -54,6 +54,7 @@ import {
 } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample } from '@/lib/fields';
 import { filtersActive } from '@/lib/contact-filters';
+import { entryNodeOf, isCampaignEligible } from '@/lib/campaign-eligibility';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
@@ -537,14 +538,6 @@ function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]):
   return customFields.some((f) => f.key === key) ? `field:${key}` : 'sys:name';
 }
 
-/** Bloc d'entrée d'un workflow = un bloc SANS arête entrante (défaut : le 1er bloc). null si vide.
- *  Miroir de `entryNode` côté serveur : sert à vérifier que le workflow commence par un envoi de template. */
-function entryNodeOf(graph: WorkflowGraph): WorkflowNode | null {
-  if (graph.nodes.length === 0) return null;
-  const hasIncoming = new Set(graph.edges.map((e) => e.target));
-  return graph.nodes.find((nn) => !hasIncoming.has(nn.id)) ?? graph.nodes[0] ?? null;
-}
-
 function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void }) {
   const t = useT();
   const [phoneNumberId, setPhoneNumberId] = useState('');
@@ -557,6 +550,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const [mode, setMode] = useState<'template' | 'workflow'>('template');
   const [workflowId, setWorkflowId] = useState('');
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  // Nombre TOTAL de scénarios du tenant, avant le filtre d'éligibilité campagne : sans lui, « aucun scénario »
+  // s'afficherait alors qu'il en existe (mais qu'aucun ne démarre par un template), message faux et déroutant.
+  const [workflowsTotal, setWorkflowsTotal] = useState(0);
   // Message bloquant si le 1er bloc du workflow choisi n'est pas un envoi de template (pas de cible au mapping).
   const [wfError, setWfError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -631,7 +627,12 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
         if (!alive) return;
         setTemplates(tpl.templates.filter((x) => x.status === 'APPROVED'));
-        setWorkflows(w.workflows);
+        // Le sélecteur ne propose QUE les scénarios lançables en broadcast (entrée = template configuré). Depuis
+        // le Lot D, un scénario peut légitimement démarrer autrement (formulaire, message rapide) : il reste
+        // valide, mais réservé aux déclenchements en fenêtre garantie, donc hors campagne. Même filtre APPROVED
+        // que les templates : ne jamais proposer ce qui ne partira pas.
+        setWorkflows(w.workflows.filter((x) => isCampaignEligible(x.graph)));
+        setWorkflowsTotal(w.workflows.length);
         setUserFields(uf.fields);
         setTags(tg.tags);
       } catch {
@@ -1219,7 +1220,14 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           </Field>
           <Field label={t('Scénario', 'Scenario')}>
             {workflows.length === 0 ? (
-              <p className="text-xs text-amber-700">{t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario. Create one from the "Scenario" menu on the left.')}</p>
+              <p className="text-xs text-amber-700" data-testid="wf-none">
+                {workflowsTotal === 0
+                  ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario. Create one from the "Scenario" menu on the left.')
+                  : t(
+                      "Aucun scénario utilisable en campagne : une campagne part sur une audience froide, le scénario doit donc commencer par un envoi de template configuré. Tes autres scénarios restent utilisables quand le contact vient d'écrire.",
+                      'No scenario usable in a campaign: a campaign targets a cold audience, so the scenario must start with a configured template send. Your other scenarios remain usable when the contact has just written.',
+                    )}
+              </p>
             ) : (
               <select value={workflowId} onChange={(e) => { void chooseWorkflow(e.target.value); }} className={inputCls}>
                 <option value="">{t('Choisir un scénario…', 'Choose a scenario…')}</option>

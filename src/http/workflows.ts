@@ -6,9 +6,19 @@ import type { WorkflowGraph } from '../workflow/graph';
 import type { WorkflowRow } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
 import { collectNodes } from '../workflow/node-list';
-import { opensOutsideServiceWindow } from '../workflow/engine';
 
-const OPENS_SESSION_MSG = 'le premier message d’un scénario doit être un template : un formulaire ou un message rapide en ouverture partirait hors fenêtre de service 24 h';
+/**
+ * NOTE (Lot D) : le SAVE n'exige PLUS qu'un scénario commence par un template. Un scénario peut désormais
+ * ouvrir sur un formulaire / message rapide : il n'est simplement pas utilisable en CAMPAGNE broadcast (audience
+ * froide, hors fenêtre 24 h), mais il est parfaitement valide pour un déclenchement où la fenêtre est garantie
+ * (contact qui vient d'écrire : /v1/sends cible node, avance par webhook, et demain les déclencheurs Automation).
+ *
+ * Les deux protections qui comptent restent EN PLACE et sont indépendantes de ce save :
+ *  - garde CAMPAGNE (`http/campaigns.ts`) : POST /campaigns refuse en 400 un workflow dont l'entrée n'est pas un
+ *    template. C'est elle qui empêche réellement un envoi hors fenêtre (Meta 131047).
+ *  - garde RUNTIME (`workflow/executor.ts` runFrom) : `start()` refuse de démarrer un run dont les actions
+ *    ouvrent par un message de session, sauf `allowSessionOpen` (posé par le seul chemin qui a vérifié la fenêtre).
+ */
 
 export interface WorkflowRouteDeps {
   createWorkflow(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }>;
@@ -63,8 +73,6 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     // graph optionnel à la création (démarrage vide) ; s'il est fourni, il doit être valide.
     const parsed = b.graph === undefined ? { nodes: [], edges: [] } : parseGraph(b.graph);
     if (parsed === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
-    // Fenêtre 24 h : seul un template peut OUVRIR un scénario (une campagne démarre hors fenêtre de service).
-    if (opensOutsideServiceWindow(parsed)) return reply.code(400).send({ error: OPENS_SESSION_MSG });
     // Mint SERVEUR des codes publics de node (nod_<client>_<ulid>) : rempli/re-minté ici, jamais imposé par le client.
     const graph = mintNodeCodes(parsed, await deps.tenantCode(tenant));
     const { id } = await deps.createWorkflow(tenant, b.name.trim(), graph);
@@ -143,9 +151,6 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (b.graph !== undefined) {
       const graph = parseGraph(b.graph);
       if (graph === null) return reply.code(400).send({ error: 'graphe invalide (nodes/edges, types, arêtes orphelines)' });
-      // Fenêtre 24 h : seul un template peut OUVRIR un scénario (cf POST). L'auto-save du builder remonte
-      // ce 400 dans l'indicateur d'enregistrement, avec le node fautif marqué dans l'éditeur.
-      if (opensOutsideServiceWindow(graph)) return reply.code(400).send({ error: OPENS_SESSION_MSG });
       // Mint SERVEUR des codes de node (code valide du tenant conservé, absent/étranger re-minté).
       patch.graph = mintNodeCodes(graph, await deps.tenantCode(tenant));
     }
