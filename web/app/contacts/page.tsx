@@ -477,7 +477,7 @@ function FieldValueInput({ type, value, onChange }: { type: UserFieldKind; value
       </select>
     );
   }
-  const inputType = type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'url' ? 'url' : 'text';
+  const inputType = type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'datetime' ? 'datetime-local' : type === 'url' ? 'url' : 'text';
   return <input type={inputType} value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={type === 'url' ? 'https://…' : t('valeur', 'value')} />;
 }
 
@@ -760,6 +760,7 @@ function ContactDetail({
                     <option value="text">{t('texte', 'text')}</option>
                     <option value="number">{t('nombre', 'number')}</option>
                     <option value="date">{t('date', 'date')}</option>
+                    <option value="datetime">{t('date et heure', 'date & time')}</option>
                     <option value="boolean">{t('oui/non', 'yes/no')}</option>
                     <option value="url">{t('lien', 'link')}</option>
                   </select>

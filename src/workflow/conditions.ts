@@ -178,6 +178,9 @@ function matchNumberOp(value: string | null, op: NumberOp, target: string): bool
   const empty = value === null || value.trim() === '';
   if (op === 'empty') return empty;
   if (op === 'not_empty') return !empty;
+  // Cible (seuil) vide = pas de contrainte -> true, comme matchStringOp/buildContactWhere. Sans ça, `Number('')===0`
+  // ferait matcher `x >= 0` pour presque tout contact numérique renseigné (seuil oublié dans le constructeur d'UI).
+  if (target.trim() === '') return true;
   // Valeur absente/vide -> ne matche AUCUNE comparaison (eq/neq/lt/lte/gt/gte). Sans ce garde, `Number(null)===0`
   // (piège JS, ≠ `Number(undefined)=NaN`) ferait matcher `age < 18` pour TOUT contact sans `age` renseigné.
   // Cohérent avec matchStringOp (eq faux si absent).

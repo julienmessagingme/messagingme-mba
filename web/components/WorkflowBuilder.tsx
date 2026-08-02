@@ -16,6 +16,7 @@ import {
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
+import { ConditionBuilder, type ConditionGroup } from './ConditionBuilder';
 
 type RFNode = Node<Record<string, unknown>>;
 type RFEdge = Edge;
@@ -30,7 +31,17 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
   if (wfType === 'quick_message') return (data.body as string)?.trim() || t('message + réponses rapides…', 'message + quick replies…');
   if (wfType === 'flow') return (data.flowName as string) || t('choisir un formulaire…', 'choose a form…');
   if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir un tag…', 'choose a tag…');
-  if (wfType === 'field') return (data.fieldLabel as string) ? `${data.fieldLabel as string} = ${(data.value as string) || '…'}` : t('choisir un champ…', 'choose a field…');
+  if (wfType === 'field') {
+    const label = data.fieldLabel as string;
+    if (!label) return t('choisir un champ…', 'choose a field…');
+    return data.valueKind === 'now' ? `${label} = ${t('maintenant', 'now')}` : `${label} = ${(data.value as string) || '…'}`;
+  }
+  if (wfType === 'condition') {
+    const n = Array.isArray(data.clauses) ? data.clauses.length : 0;
+    if (n === 0) return t('définir une condition…', 'set a condition…');
+    const m = data.match === 'any' ? t('au moins une', 'at least one') : t('toutes', 'all');
+    return n === 1 ? t(`${m} de 1 condition`, `${m} of 1 condition`) : t(`${m} de ${n} conditions`, `${m} of ${n} conditions`);
+  }
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
 
@@ -47,6 +58,7 @@ function WFNode({ id, data, selected }: NodeProps) {
       ? (data.quickReplies as unknown[]).map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
       : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
+  const isCondition = wfType === 'condition';
   return (
     <div className={`relative w-44 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
@@ -82,6 +94,21 @@ function WFNode({ id, data, selected }: NodeProps) {
               </div>
             );
           })}
+        </div>
+      ) : isCondition ? (
+        // Node condition : DEUX sorties fixes, à droite. Les id 'true'/'false' sont ceux que le moteur route
+        // (engine.walk). Chaque sortie se relie à un bloc différent.
+        <div className="border-t border-ink-200">
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-emerald-700 first:border-t-0">
+            <span className="shrink-0">✓</span>
+            <span className="truncate">{t('Si réunie', 'If met')}</span>
+            <Handle type="source" id="true" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-emerald-500" title={t('Si la condition est réunie', 'If the condition is met')} />
+          </div>
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-coral first:border-t-0">
+            <span className="shrink-0">✕</span>
+            <span className="truncate">{t('Sinon', 'Otherwise')}</span>
+            <Handle type="source" id="false" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-coral" title={t('Sinon (condition non réunie)', 'Otherwise (condition not met)')} />
+          </div>
         </div>
       ) : (
         // Aucun quick-reply (0 bouton, ou seulement URL/formulaire) -> une seule sortie bas (le bloc peut
@@ -245,7 +272,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
         setSelectedId(nid);
         return [
           ...eds.filter((e) => e.id !== edgeId),
-          { id: uid(), source: edge.source, target: nid, ...EDGE_OPTS },
+          // La moitié AMONT hérite du sourceHandle d'origine ('true'/'false' d'une condition, 'btn:<i>' d'un bouton) :
+          // sans ça, insérer un bloc sur la branche « Si réunie » la déconnecterait silencieusement au runtime.
+          { id: uid(), source: edge.source, target: nid, ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}), ...EDGE_OPTS },
           { id: uid(), source: nid, target: edge.target, ...EDGE_OPTS },
         ];
       });
@@ -353,7 +382,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
       const node = nodes.find((n) => n.id === cur);
       if (!node) return null;
       const wfType = (node.data as { wfType?: string }).wfType;
-      if (wfType !== 'tag' && wfType !== 'field') return node.id;
+      // tag/field/condition = synchrones (traversés). La condition a deux sorties ; on suit la 1re arête (hint UI :
+      // le vrai gate reste `opensOutsideServiceWindow` serveur, branch-aware, qui refuse le save au besoin).
+      if (wfType !== 'tag' && wfType !== 'field' && wfType !== 'condition') return node.id;
       cur = edges.find((e) => e.source === cur)?.target ?? null;
     }
     return null;
@@ -562,8 +593,27 @@ function ConfigPanel({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
-            <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={cls} placeholder={t('valeur à poser', 'value to set')} />
+            <select value={d.valueKind === 'now' ? 'now' : 'fixed'} onChange={(e) => onPatch({ valueKind: e.target.value === 'now' ? 'now' : 'fixed' })} className={`${cls} bg-white`}>
+              <option value="fixed">{t('valeur fixe', 'fixed value')}</option>
+              <option value="now">{t('maintenant (date + heure)', 'now (date + time)')}</option>
+            </select>
+            {d.valueKind === 'now' ? (
+              <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc — utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block — useful for a “before / after” condition.')}</p>
+            ) : (
+              <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
+            )}
           </div>
+        </div>
+      )}
+      {wfType === 'condition' && (
+        <div className="space-y-2">
+          <p className="text-[11px] leading-snug text-ink-400">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Relie chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
+          <ConditionBuilder
+            group={{ match: (d.match as 'all' | 'any') ?? 'all', clauses: Array.isArray(d.clauses) ? (d.clauses as ConditionGroup['clauses']) : [] }}
+            onChange={(g) => onPatch({ match: g.match, clauses: g.clauses })}
+            fields={fields}
+            tags={tags.map((tg) => tg.tag)}
+          />
         </div>
       )}
       {wfType === 'inbox' && (

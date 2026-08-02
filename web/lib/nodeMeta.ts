@@ -10,9 +10,10 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
   tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] },
   field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] },
+  condition: { emoji: '🔀', label: ['Condition', 'Condition'] },
 };
 
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'tag', 'field', 'inbox'];
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'tag', 'field', 'condition', 'inbox'];
 
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme
  *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].emoji` sur `undefined`) qui

@@ -112,6 +112,12 @@ describe('clause field — nombre typé (valueType) & valeur absente (régressio
     expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'lt', value: '18', valueType: 'number' }]), eq18)).toBe(false);
     expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'gt', value: '18', valueType: 'number' }]), eq18)).toBe(false);
   });
+  it('seuil numérique VIDE (oublié dans l’UI) -> pas de contrainte (true), pas `x >= 0`', () => {
+    const trente = ctx({ fields: { age: '30' } });
+    // avec le bug (Number('')===0), `age < ''` donnerait `30 < 0` -> false ; corrigé -> true (contrainte non posée)
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'lt', value: '', valueType: 'number' }]), trente)).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'gte', value: '', valueType: 'number' }]), trente)).toBe(true);
+  });
 });
 
 describe('clause optin', () => {

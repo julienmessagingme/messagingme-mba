@@ -17,6 +17,7 @@ function FieldsInner({ session }: { session: Session }) {
     { value: 'text', label: t('Texte', 'Text') },
     { value: 'number', label: t('Nombre', 'Number') },
     { value: 'date', label: t('Date', 'Date') },
+    { value: 'datetime', label: t('Date et heure', 'Date & time') },
     { value: 'boolean', label: t('Oui/Non', 'Yes/No') },
     { value: 'url', label: t('Lien', 'Link') },
   ];

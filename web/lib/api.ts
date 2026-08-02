@@ -671,6 +671,11 @@ export function listAnalyzedConversations(
   return request<{ conversations: AnalyzedConversation[] }>(`/tenants/${tenantId}/stats/conversations/list${base}${extra}`);
 }
 
+/** Horaires d'un jour. `closed` = fermé (aucune plage). `open`/`close` = 'HH:MM' (heure locale du tenant). */
+export interface DayHours { closed: boolean; open: string; close: string }
+/** Heures d'ouverture par jour, clés '0'..'6' (0 = dimanche). Miroir de `BusinessHours` serveur. */
+export type BusinessHours = Record<string, DayHours>;
+
 export interface TenantSettings {
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   controlHandbackSeconds: number | null;
@@ -680,6 +685,10 @@ export interface TenantSettings {
   campaignsPaused: boolean;
   /** Auto-relance des échecs de livraison (F6). */
   autoRetryEnabled: boolean;
+  /** Fuseau IANA du tenant (ex. 'Europe/Paris'). Base des conditions NOW / jour de semaine / heures d'ouverture. */
+  timezone: string;
+  /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). */
+  businessHours: BusinessHours;
 }
 export function getSettings(tenantId: string): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`);
@@ -711,6 +720,15 @@ export function getHubspotInstallLink(tenantId: string, grant?: 'lists'): Promis
  *  de reprise automatique (l'opérateur garde la main jusqu'à ce qu'il la rende). */
 export function setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<{ controlHandbackSeconds: number | null }> {
   return request(`/tenants/${tenantId}/settings/control-handback`, { method: 'PATCH', body: JSON.stringify({ seconds }) });
+}
+
+/** Fuseau IANA du tenant (base des conditions temporelles : NOW, jour de semaine, heures d'ouverture). */
+export function setTimezone(tenantId: string, timezone: string): Promise<{ timezone: string }> {
+  return request(`/tenants/${tenantId}/settings/timezone`, { method: 'PATCH', body: JSON.stringify({ timezone }) });
+}
+/** Heures d'ouverture par jour (corps `{ '0'..'6': { closed, open 'HH:MM', close 'HH:MM' } }`, 7 jours requis). */
+export function setBusinessHours(tenantId: string, businessHours: BusinessHours): Promise<{ businessHours: BusinessHours }> {
+  return request(`/tenants/${tenantId}/settings/business-hours`, { method: 'PATCH', body: JSON.stringify({ businessHours }) });
 }
 
 // --- Accueil : profil courant + statut compte WhatsApp ---
@@ -986,7 +1004,7 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 
 // --- Workflows (bot builder : graphe de blocs) ---
 
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field';
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
