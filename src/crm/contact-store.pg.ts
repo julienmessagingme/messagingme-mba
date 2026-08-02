@@ -244,6 +244,28 @@ export class PgContactStore implements ContactStore {
     return r ? { phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields ?? {} } : null;
   }
 
+  /**
+   * État d'un contact par wa_id pour ÉVALUER une condition de scénario (node « Si ») : fields + tags + opt-in +
+   * attributs name/phone/bsuid. Même matching que `getResolvableByPhone` (E.164 exact `'+' || wa_id` PUIS chiffres
+   * nus PUIS bsuid, 1 contact, préférence à l'exact). `null` si hors base -> l'appelant retombe sur la branche
+   * 'false' (déterministe). Étend `getResolvableByPhone` (qui n'a ni tags ni opt-in), forme alignée sur `EvalContext`.
+   */
+  async getContactStateByWaId(
+    tenantId: string,
+    waId: string,
+  ): Promise<{ fields: Record<string, unknown>; tags: string[]; optIn: string; name: string | null; phone: string | null; bsuid: string | null } | null> {
+    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string; fields: Record<string, unknown> | null; tags: string[] | null }>(
+      `select phone_e164, bsuid, profile_name, opt_in_status, fields, tags from contacts where tenant_id = $1
+         and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+       order by (phone_e164 = '+' || $2) desc limit 1`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r
+      ? { fields: r.fields ?? {}, tags: r.tags ?? [], optIn: r.opt_in_status, name: r.profile_name, phone: r.phone_e164, bsuid: r.bsuid }
+      : null;
+  }
+
   private static rowToContact(r: {
     id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date;

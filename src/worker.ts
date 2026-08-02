@@ -163,6 +163,14 @@ async function main(): Promise<void> {
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
     mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
+    // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
+    // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
+    evalContext: async (tenant, waId) => {
+      const state = await contactStore.getContactStateByWaId(tenant, waId);
+      if (!state) return null;
+      const settings = await settingsStore.get(tenant);
+      return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours };
+    },
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
     // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime — y compris par
     // un ancien workflow non re-sauvegardé — atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.

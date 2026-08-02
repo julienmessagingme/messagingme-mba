@@ -34,6 +34,12 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
       out = key === '' ? '' : val === '' ? key : `${key} = ${val}`;
       break;
     }
+    case 'condition': {
+      const clauses = Array.isArray(data.clauses) ? data.clauses.length : 0;
+      const combineur = data.match === 'any' ? 'au moins une' : 'toutes';
+      out = clauses === 0 ? 'Condition' : `Si ${combineur} de ${clauses} condition${clauses > 1 ? 's' : ''}`;
+      break;
+    }
     case 'inbox': out = ''; break;
     default: out = '';
   }

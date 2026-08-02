@@ -71,6 +71,22 @@ describe('collectNodes', () => {
     expect(out[5]!.summary).toBe('legacy_key = v');
   });
 
+  it('résumé du node condition (combineur + pluriel), et data.clauses opaque -> pas de throw', () => {
+    const rows = [
+      wf('w1', 'W', [
+        node({ id: 'n1', type: 'condition', data: { clauses: [] } }), // 0 clause
+        node({ id: 'n2', type: 'condition', data: { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] } }), // 1, toutes
+        node({ id: 'n3', type: 'condition', data: { match: 'any', clauses: [{ kind: 'tag' }, { kind: 'optin' }] } }), // 2, au moins une
+        node({ id: 'n4', type: 'condition', data: { clauses: 'pas-un-array' } }), // opaque -> pas de throw
+      ]),
+    ];
+    const out = collectNodes(rows);
+    expect(out[0]!.summary).toBe('Condition');
+    expect(out[1]!.summary).toBe('Si toutes de 1 condition');
+    expect(out[2]!.summary).toBe('Si au moins une de 2 conditions');
+    expect(out[3]!.summary).toBe('Condition');
+  });
+
   it('liste vide si aucun workflow', () => {
     expect(collectNodes([])).toEqual([]);
   });

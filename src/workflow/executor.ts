@@ -1,6 +1,7 @@
 import { walk, entryNode, nextNode, nextNodeByHandle } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton } from './engine';
 import type { WorkflowGraph } from './graph';
+import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow } from './run-store.pg';
 
 export interface WorkflowExecutorDeps {
@@ -32,6 +33,13 @@ export interface WorkflowExecutorDeps {
    * suites de tests qui construisent des deps minimales. En production il est toujours câblé.
    */
   mayAct?(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * Construit le CONTEXTE d'évaluation d'un contact (état contact : fields/tags/opt-in/attributs + fuseau &
+   * horaires du tenant + `now`) pour les blocs `condition` et le bloc `field` en mode NOW. OPTIONNEL : absent,
+   * les conditions prennent la branche 'false' DÉTERMINISTE et un bloc field NOW pose une valeur vide -> préserve
+   * les suites de tests à deps minimales. Renvoie null si le contact est introuvable -> même repli 'false'.
+   */
+  evalContext?(tenantId: string, waId: string): Promise<EvalContext | null>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -54,6 +62,26 @@ export class WorkflowExecutor {
    * `walk` depuis un seul point d'entrée s'arrête au 1er bloc template/flow (bloquant) -> il produit AU PLUS une
    * action `sendTemplate`, donc ces params ne s'appliquent qu'à ce 1er envoi (jamais à un template ultérieur).
    */
+  /**
+   * Construit le contexte d'évaluation UNIQUEMENT si le graphe en a besoin (au moins un node `condition` ou un
+   * bloc `field` en mode NOW) : évite 2 requêtes DB par étape pour les scénarios tag/template purs (l'immense
+   * majorité, qui n'ont jamais de condition). Une erreur de `evalContext` (timeout pool, réseau Supabase) est
+   * ABSORBÉE -> ctx undefined -> conditions 'false' (fail-closed) : un scénario qui n'utilise PAS la fonctionnalité
+   * n'est jamais bloqué par une panne de sa plomberie.
+   */
+  private async buildCtx(tenantId: string, waId: string, graph: WorkflowGraph): Promise<EvalContext | undefined> {
+    if (!this.deps.evalContext) return undefined;
+    const needsCtx = graph.nodes.some((n) => n.type === 'condition' || (n.type === 'field' && n.data.valueKind === 'now'));
+    if (!needsCtx) return undefined;
+    try {
+      return (await this.deps.evalContext(tenantId, waId)) ?? undefined;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow: evalContext a échoué pour ${waId}, conditions -> 'false' (fail-closed)`, err);
+      return undefined;
+    }
+  }
+
   private async apply(tenantId: string, waId: string, actions: WorkflowAction[], firstTemplateParams?: string[]): Promise<void> {
     for (const a of actions) {
       if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
@@ -89,7 +117,8 @@ export class WorkflowExecutor {
       console.log(`workflow ${workflowId}: fil détenu par un humain ou par MBA, run non démarré pour ${contact.waId}`);
       return;
     }
-    const { actions, rest } = walk(graph, startNodeId);
+    const ctx = await this.buildCtx(tenantId, contact.waId, graph);
+    const { actions, rest } = walk(graph, startNodeId, ctx);
     // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
     // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Le save du graphe refuse
     // déjà cette forme (400) ; ceci est la défense runtime pour les graphes antérieurs à la garde.
@@ -144,7 +173,8 @@ export class WorkflowExecutor {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
       return;
     }
-    const { actions, rest } = walk(graph, next);
+    const ctx = await this.buildCtx(tenantId, waId, graph);
+    const { actions, rest } = walk(graph, next, ctx);
     await this.apply(tenantId, waId, actions);
     await this.deps.runs.setState(run.id, { ...restToState(rest), lastMessageId: messageId });
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
+import type { EvalContext } from '../src/workflow/conditions';
 import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
 
 const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
@@ -264,5 +265,83 @@ describe('WorkflowExecutor', () => {
     await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' }, ['Julie']);
     await ex.advance('t1', '33600', 'm1');
     expect(captured).toEqual([['Julie'], undefined]);
+  });
+});
+
+describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par evalContext)', () => {
+  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null) {
+    const runs = new FakeRuns();
+    const calls: string[] = [];
+    const ex = new WorkflowExecutor({
+      runs,
+      getGraph: async () => graph,
+      applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
+      setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
+      sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
+      sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
+      sendFlow: async (_t, _w, flowId) => { calls.push(`flow:${flowId}`); },
+      evalContext: async () => ctx,
+    });
+    return { ex, runs, calls };
+  }
+  const baseCtx = (over: Partial<EvalContext> = {}): EvalContext => ({
+    fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+    now: new Date('2026-08-02T14:30:00Z'), timeZone: 'Europe/Paris',
+    businessHours: {
+      '0': { closed: true, open: '', close: '' }, '1': { closed: false, open: '09:00', close: '18:00' },
+      '2': { closed: false, open: '09:00', close: '18:00' }, '3': { closed: false, open: '09:00', close: '18:00' },
+      '4': { closed: false, open: '09:00', close: '18:00' }, '5': { closed: false, open: '09:00', close: '18:00' },
+      '6': { closed: true, open: '', close: '' },
+    },
+    ...over,
+  });
+  // condition(vip ?) --true--> tag gold ; --false--> tag std
+  const condGraph: WorkflowGraph = {
+    nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }), n('g', 'tag', { tag: 'gold' }), n('s', 'tag', { tag: 'std' })],
+    edges: [eh('e1', 'c', 'g', 'true'), eh('e2', 'c', 's', 'false')],
+  };
+
+  it('start : condition à l\'entrée route selon le ctx (vrai -> gold)', async () => {
+    const { ex, calls } = makeEval(condGraph, baseCtx({ tags: ['vip'] }));
+    await ex.start('t1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:gold']);
+  });
+  it('start : condition fausse -> branche std', async () => {
+    const { ex, calls } = makeEval(condGraph, baseCtx({ tags: [] }));
+    await ex.start('t1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:std']);
+  });
+  it('advance : condition APRÈS un template route selon le ctx', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }), n('g', 'tag', { tag: 'gold' }), n('s', 'tag', { tag: 'std' })],
+      edges: [e('e0', 'tpl', 'c'), eh('e1', 'c', 'g', 'true'), eh('e2', 'c', 's', 'false')],
+    };
+    const { ex, calls } = makeEval(g, baseCtx({ tags: ['vip'] }));
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tpl:promo']);
+    await ex.advance('t1', '33600', 'm1');
+    expect(calls).toEqual(['tpl:promo', 'tag:gold']);
+  });
+  it('start : bloc field NOW -> setField reçoit l\'ISO UTC du ctx', async () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'vu_le', valueKind: 'now' })], edges: [] };
+    const { ex, calls } = makeEval(g, baseCtx({ now: new Date('2026-08-02T14:30:00Z') }));
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['field:vu_le=2026-08-02T14:30:00.000Z']);
+  });
+  it('evalContext renvoie null (contact introuvable) -> branche false déterministe', async () => {
+    const { ex, calls } = makeEval(condGraph, null);
+    await ex.start('t1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:std']);
+  });
+  it('start : une BRANCHE de condition qui OUVRE par quick_message reste refusée par la garde 24h (aucun envoi, aucun run)', async () => {
+    // condition (clauses vide -> all -> true) --true--> quick_message (ouverture session) ; --false--> template
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [] }), n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] }), n('tpl', 'template', { templateName: 'p' })],
+      edges: [eh('e1', 'c', 'q', 'true'), eh('e2', 'c', 'tpl', 'false')],
+    };
+    const { ex, runs, calls } = makeEval(g, baseCtx());
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual([]);
+    expect(runs.run).toBeNull();
   });
 });

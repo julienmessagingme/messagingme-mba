@@ -1,10 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { walk, entryNode, nextNode, nextNodeByHandle, opensOutsideServiceWindow } from '../src/workflow/engine';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
+import type { EvalContext, BusinessHours } from '../src/workflow/conditions';
 
 const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}): WorkflowGraph['nodes'][number] => ({ id, type, position: { x: 0, y: 0 }, data });
 const e = (id: string, source: string, target: string) => ({ id, source, target });
 const eh = (id: string, source: string, target: string, sourceHandle: string) => ({ id, source, target, sourceHandle });
+
+const BH_9_18: BusinessHours = {
+  '0': { closed: true, open: '', close: '' }, '1': { closed: false, open: '09:00', close: '18:00' },
+  '2': { closed: false, open: '09:00', close: '18:00' }, '3': { closed: false, open: '09:00', close: '18:00' },
+  '4': { closed: false, open: '09:00', close: '18:00' }, '5': { closed: false, open: '09:00', close: '18:00' },
+  '6': { closed: true, open: '', close: '' },
+};
+const evalCtx = (over: Partial<EvalContext> = {}): EvalContext => ({
+  fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
+  now: new Date('2026-08-03T12:00:00Z'), timeZone: 'Europe/Paris', businessHours: BH_9_18, ...over,
+});
 
 // tag(vip) -> template(promo) -> inbox
 const linear: WorkflowGraph = {
@@ -119,6 +131,21 @@ describe('opensOutsideServiceWindow (garde fenêtre 24 h à l\'ouverture)', () =
   it('graphe vide -> false', () => {
     expect(opensOutsideServiceWindow({ nodes: [], edges: [] })).toBe(false);
   });
+  it('condition dont une branche OUVRE par un message de session -> true (branch-aware)', () => {
+    // condition --true--> quick_message (ouverture session illégale) ; --false--> template (légal)
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [] }), n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] }), n('tpl', 'template', { templateName: 'p' })],
+      edges: [eh('e1', 'c', 'q', 'true'), eh('e2', 'c', 'tpl', 'false')],
+    };
+    expect(opensOutsideServiceWindow(g)).toBe(true);
+  });
+  it('condition dont les DEUX branches sont légales (template) -> false', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [] }), n('a', 'template', { templateName: 'a' }), n('b', 'template', { templateName: 'b' })],
+      edges: [eh('e1', 'c', 'a', 'true'), eh('e2', 'c', 'b', 'false')],
+    };
+    expect(opensOutsideServiceWindow(g)).toBe(false);
+  });
 });
 
 describe('walk', () => {
@@ -165,5 +192,114 @@ describe('walk', () => {
     const r = walk(g, 'tpl');
     expect(r.actions).toEqual([]);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'tpl' });
+  });
+});
+
+describe('walk : node condition (branche « Si réunie » / « Sinon »)', () => {
+  // condition(tag vip ?) --true--> tag(gold) ; --false--> tag(std)
+  const cond: WorkflowGraph = {
+    nodes: [
+      n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }),
+      n('g', 'tag', { tag: 'gold' }), n('s', 'tag', { tag: 'std' }),
+    ],
+    edges: [eh('e1', 'c', 'g', 'true'), eh('e2', 'c', 's', 'false')],
+  };
+  it('condition vraie -> sortie true (aucune action de condition, on continue)', () => {
+    const r = walk(cond, 'c', evalCtx({ tags: ['vip'] }));
+    expect(r.actions).toEqual([{ kind: 'tag', tag: 'gold' }]);
+    expect(r.rest).toEqual({ status: 'done' });
+  });
+  it('condition fausse -> sortie false', () => {
+    expect(walk(cond, 'c', evalCtx({ tags: ['autre'] })).actions).toEqual([{ kind: 'tag', tag: 'std' }]);
+  });
+  it('sans contexte (ctx absent : analyse de graphe pure) -> branche false DÉTERMINISTE', () => {
+    expect(walk(cond, 'c').actions).toEqual([{ kind: 'tag', tag: 'std' }]);
+  });
+  it('sortie false en arête simple (repli nextNode) quand aucun handle false', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }), n('s', 'tag', { tag: 'std' })],
+      edges: [e('e1', 'c', 's')],
+    };
+    expect(walk(g, 'c', evalCtx({ tags: [] })).actions).toEqual([{ kind: 'tag', tag: 'std' }]);
+  });
+  it('data de condition malformée -> coerce défensif (clauses non-array -> [] -> all vrai) -> sortie true', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { clauses: 'pas-un-array' }), n('g', 'tag', { tag: 'gold' }), n('s', 'tag', { tag: 'std' })],
+      edges: [eh('e1', 'c', 'g', 'true'), eh('e2', 'c', 's', 'false')],
+    };
+    expect(walk(g, 'c', evalCtx()).actions).toEqual([{ kind: 'tag', tag: 'gold' }]);
+  });
+  it('condition sans sortie câblée -> done sans action', () => {
+    const g: WorkflowGraph = { nodes: [n('c', 'condition', { match: 'all', clauses: [] })], edges: [] };
+    expect(walk(g, 'c', evalCtx())).toEqual({ actions: [], rest: { status: 'done' } });
+  });
+  it('boucle de conditions -> anti-cycle -> done (pas de boucle infinie)', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('a', 'condition', { match: 'all', clauses: [] }), n('b', 'condition', { match: 'all', clauses: [] })],
+      edges: [eh('e1', 'a', 'b', 'true'), eh('e2', 'b', 'a', 'true')],
+    };
+    expect(walk(g, 'a', evalCtx()).rest).toEqual({ status: 'done' });
+  });
+  it('sortie « true » SEULE câblée + condition FAUSSE -> done (ne VOLE PAS la branche true)', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }), n('g', 'tag', { tag: 'gold' })],
+      edges: [eh('e1', 'c', 'g', 'true')], // seule la sortie 'true' est câblée
+    };
+    const r = walk(g, 'c', evalCtx({ tags: [] })); // condition fausse
+    expect(r.actions).toEqual([]); // n'emprunte PAS l'arête 'true'
+    expect(r.rest).toEqual({ status: 'done' });
+  });
+  it('sortie « false » SEULE câblée + condition VRAIE -> done (symétrique)', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }), n('s', 'tag', { tag: 'std' })],
+      edges: [eh('e1', 'c', 's', 'false')],
+    };
+    const r = walk(g, 'c', evalCtx({ tags: ['vip'] })); // condition vraie
+    expect(r.actions).toEqual([]);
+    expect(r.rest).toEqual({ status: 'done' });
+  });
+});
+
+describe('walk : le ctx reflète les tag/field posés PLUS TÔT dans la même chaîne synchrone', () => {
+  it('field NOW -> condition datetime not_empty sur CE champ -> branche true (cas d’usage phare)', () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('f', 'field', { fieldKey: 'visite_le', valueKind: 'now' }),
+        n('c', 'condition', { match: 'all', clauses: [{ kind: 'datetime', key: 'visite_le', op: 'not_empty' }] }),
+        n('a', 'tag', { tag: 'vu' }), n('b', 'tag', { tag: 'pas_vu' }),
+      ],
+      edges: [e('e0', 'f', 'c'), eh('e1', 'c', 'a', 'true'), eh('e2', 'c', 'b', 'false')],
+    };
+    // Contact SANS visite_le en base : c'est le field NOW qui vient de le poser dans CE walk.
+    const r = walk(g, 'f', evalCtx({ fields: {} }));
+    expect(r.actions).toContainEqual({ kind: 'tag', tag: 'vu' });
+    expect(r.actions).not.toContainEqual({ kind: 'tag', tag: 'pas_vu' });
+  });
+  it('tag -> condition has CE MÊME tag -> branche true', () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('t', 'tag', { tag: 'vip' }),
+        n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }),
+        n('a', 'tag', { tag: 'oui' }), n('b', 'tag', { tag: 'non' }),
+      ],
+      edges: [e('e0', 't', 'c'), eh('e1', 'c', 'a', 'true'), eh('e2', 'c', 'b', 'false')],
+    };
+    expect(walk(g, 't', evalCtx({ tags: [] })).actions).toEqual([{ kind: 'tag', tag: 'vip' }, { kind: 'tag', tag: 'oui' }]);
+  });
+});
+
+describe('walk : bloc field en mode NOW (horodatage courant)', () => {
+  it('valueKind now -> valeur = ISO UTC du contexte (comparable par une condition datetime)', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'derniere_visite', valueKind: 'now' }), n('ib', 'inbox')], edges: [e('e', 'f', 'ib')] };
+    const r = walk(g, 'f', evalCtx({ now: new Date('2026-08-02T14:30:00Z') }));
+    expect(r.actions).toEqual([{ kind: 'field', key: 'derniere_visite', value: '2026-08-02T14:30:00.000Z' }]);
+  });
+  it('valueKind now SANS contexte -> valeur vide (non exécuté hors run)', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'x', valueKind: 'now' })], edges: [] };
+    expect(walk(g, 'f').actions).toEqual([{ kind: 'field', key: 'x', value: '' }]);
+  });
+  it('field valeur FIXE inchangé (pas de valueKind)', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'ville', value: 'Lyon' })], edges: [] };
+    expect(walk(g, 'f', evalCtx()).actions).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
   });
 });

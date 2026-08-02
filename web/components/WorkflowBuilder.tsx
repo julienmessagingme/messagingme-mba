@@ -14,7 +14,7 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 
 type RFNode = Node<Record<string, unknown>>;
@@ -40,7 +40,7 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
 function WFNode({ id, data, selected }: NodeProps) {
   const t = useT();
   const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
-  const meta = NODE_META[wfType];
+  const meta = nodeMetaOf(wfType); // tolérant : un type pas encore connu du front (ex. condition) -> repli neutre
   const buttons = wfType === 'template' && Array.isArray(data.templateButtons)
     ? (data.templateButtons as Array<{ type?: string; text?: string }>)
     : wfType === 'quick_message' && Array.isArray(data.quickReplies)
@@ -454,7 +454,7 @@ function ConfigPanel({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-ink-900">{NODE_META[wfType].emoji} {t(...NODE_META[wfType].label)}</span>
+        <span className="text-sm font-semibold text-ink-900">{nodeMetaOf(wfType).emoji} {t(...nodeMetaOf(wfType).label)}</span>
         <button onClick={onDelete} className="text-xs text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
       </div>
 

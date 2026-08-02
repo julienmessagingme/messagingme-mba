@@ -56,6 +56,19 @@ export function evaluateConditionGroup(group: ConditionGroup, ctx: EvalContext):
   return group.match === 'any' ? results.some(Boolean) : results.every(Boolean);
 }
 
+/**
+ * Coerce des `data` de node OPAQUES (issues du graphe JSON, potentiellement malformées) en `ConditionGroup`
+ * sûr : `match` par défaut 'all', `clauses` -> [] si absent/non-array. Les clauses individuelles restent
+ * opaques : `evaluateClause` est défensif (kind inconnu -> false, throw isolé -> false). Frontière moteur (walk).
+ */
+export function coerceConditionGroup(data: unknown): ConditionGroup {
+  const d = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  return {
+    match: d.match === 'any' ? 'any' : 'all',
+    clauses: Array.isArray(d.clauses) ? (d.clauses as Clause[]) : [],
+  };
+}
+
 function evaluateClause(c: Clause, ctx: EvalContext): boolean {
   switch (c.kind) {
     case 'tag': {
@@ -190,7 +203,11 @@ function matchBoolOp(value: string | null, op: BoolOp): boolean {
 }
 
 function relMs(amount: number | undefined, unit: TimeUnit | undefined): number {
-  const n = Number.isFinite(amount) ? Number(amount) : 0;
+  // Coercer AVANT valider (miroir de matchNumberOp) : `amount` vient de node.data OPAQUE et peut arriver en
+  // string ('24'). Number.isFinite ne coerce pas, donc `Number.isFinite('24')` est faux -> il retomberait à 0
+  // (relMs=0 -> older_than vrai pour toute date passée). On coerce d'abord, puis on valide le résultat.
+  const num = Number(amount);
+  const n = Number.isFinite(num) ? num : 0;
   const per = unit === 'days' ? 86400000 : unit === 'hours' ? 3600000 : 60000; // défaut minutes
   return n * per;
 }

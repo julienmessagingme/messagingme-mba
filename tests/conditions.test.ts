@@ -178,6 +178,14 @@ describe('clause datetime', () => {
     expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'newer_than', amount: 60, unit: 'minutes' }]), demiH)).toBe(true);
     expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: 60, unit: 'minutes' }]), demiH)).toBe(false);
   });
+  it('amount en STRING numérique (donnée opaque) est coercé, pas traité comme absent', () => {
+    const now = new Date('2026-08-10T12:00:00Z');
+    const vieux = ctx({ now, fields: { last: '2026-08-08T12:00:00Z' } }); // il y a 2 jours
+    // amount:'1' coercé -> 1 jour -> 2 jours > 1 jour -> older_than vrai
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: '1' as unknown as number, unit: 'days' }]), vieux)).toBe(true);
+    // amount:'5' coercé -> 5 jours -> 2 jours < 5 jours -> older_than FAUX (avec le bug relMs=0, ce serait vrai)
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: '5' as unknown as number, unit: 'days' }]), vieux)).toBe(false);
+  });
 });
 
 describe('clause weekday (dans le fuseau)', () => {

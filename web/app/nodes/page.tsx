@@ -6,7 +6,7 @@ import Link from 'next/link';
 import type { Session } from '@/lib/session';
 import { listNodes, type NodeListItem, type WorkflowNodeType } from '@/lib/api';
 import { filterNodes } from '@/lib/node-search';
-import { NODE_META, NODE_ORDER } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { useT } from '@/lib/i18n';
 
 export default function NodesPage() {
@@ -101,7 +101,7 @@ function NodesInner({ session }: { session: Session }) {
             </thead>
             <tbody>
               {visible.map((n, i) => {
-                const meta = NODE_META[n.type];
+                const meta = nodeMetaOf(n.type); // tolérant : un node d'un type pas encore connu du front -> repli neutre
                 return (
                   <tr key={`${n.workflowId}-${n.code ?? i}`} className="border-b border-ink-50 last:border-0">
                     <td className="whitespace-nowrap px-5 py-3 text-ink-800"><span className="mr-1.5">{meta.emoji}</span>{t(meta.label[0], meta.label[1])}</td>
