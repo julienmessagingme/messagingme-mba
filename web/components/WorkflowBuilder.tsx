@@ -406,7 +406,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-ink-500">{t('+ Créer un bloc :', '+ Create a block:')}</span>
         {NODE_ORDER.map((nt) => (
-          <button key={nt} onClick={() => addNode(nt)} className="rounded-md border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
+          <button key={nt} data-testid={`add-node-${nt}`} onClick={() => addNode(nt)} className="rounded-md border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}

@@ -95,7 +95,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
               </div>
               <span className={`text-xs ${tzStatus === 'error' ? 'text-coral' : 'text-ink-400'}`}>{statusText(tzStatus)}</span>
             </div>
-            <select value={timezone} onChange={(e) => onTimezone(e.target.value)} className={`${inputCls} w-full bg-white sm:w-96`}>
+            <select data-testid="param-timezone" value={timezone} onChange={(e) => onTimezone(e.target.value)} className={`${inputCls} w-full bg-white sm:w-96`}>
               {TIMEZONES.map((o) => <option key={o.iana} value={o.iana}>{timezoneLabel(o)}</option>)}
             </select>
           </section>
@@ -134,6 +134,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
             </div>
             <div className="mt-4 flex items-center gap-3">
               <button
+                data-testid="param-save-hours"
                 onClick={saveHours}
                 disabled={!allValid || bhStatus === 'saving'}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-ink-200"
