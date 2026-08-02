@@ -422,7 +422,7 @@ export class PgCampaignRepo {
     if (!contact) return { result: 'not_found' };
     const { values, missing } = resolveTemplateParams(row.param_mapping ?? [], {
       phone_e164: contact.phone_e164, bsuid: contact.bsuid, profile_name: contact.profile_name, fields: contact.fields ?? {},
-    });
+    }, { now: new Date() });
     if (missing.length > 0) return { result: 'missing_var', missing };
     const upd = await this.pool.query(
       `update campaign_recipients set status = 'pending', resolved_params = $2::jsonb, error = null, error_code = null, claimed_at = null

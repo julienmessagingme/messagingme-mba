@@ -309,7 +309,7 @@ export interface PhoneNumber {
   verifiedName: string | null;
 }
 export interface ParamSource {
-  type: 'attribute' | 'field' | 'literal';
+  type: 'attribute' | 'field' | 'literal' | 'now';
   key?: string;
   value?: string;
 }

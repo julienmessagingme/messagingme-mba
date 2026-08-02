@@ -3,7 +3,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader } from '../meta/templates';
 import type { CampaignStatus } from '../campaign/types';
-import { parseParamHints } from '../crm/template';
+import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../meta/languages';
 
@@ -147,11 +147,16 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
     footer = b.footer.trim();
   }
 
-  // Nb de variables {{n}} dans le corps -> exiger autant d'exemples.
-  const varCount = new Set(((b.body as string).match(/\{\{\s*\d+\s*\}\}/g) ?? [])).size;
+  // Nb de variables du corps = MAX des positions {{n}} (source unique countTemplateVariables : un corps non contigu
+  // `{{1}} {{3}}` attend 3 params, pas 2 -> évite 132000). On exige autant d'exemples, chacun NON vide (Meta rejette
+  // un exemple vide, 132012) : l'UI applique déjà un repli, ceci est la défense côté API directe.
+  const varCount = countTemplateVariables(b.body as string);
   const example = Array.isArray(b.example) ? b.example.map(String) : [];
   if (varCount > 0 && example.length < varCount) {
     return { error: `exemples manquants : ${varCount} variable(s) dans le corps` };
+  }
+  if (example.some((e) => e.trim() === '')) {
+    return { error: 'chaque exemple de variable doit être non vide (Meta rejette un exemple vide)' };
   }
 
   return {

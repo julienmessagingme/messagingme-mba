@@ -171,7 +171,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       // Résolution des variables de template (missing_variable) sur les éligibles. Scénario : params vide.
       // Cible NODE : `params` est déjà refusé en amont (400) -> le tableau est vide, personne n'est écarté
       // pour une variable qui ne serait de toute façon jamais envoyée.
-      const built = buildRecipients(category, params, eligible);
+      const built = buildRecipients(category, params, eligible, { now: new Date() });
       for (const s of built.skipped) skipped.push({ phone: s.toE164, reason: 'missing_variable' });
 
       const name = `[API] ${label}`.slice(0, 120);

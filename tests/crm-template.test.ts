@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveTemplateParams, countTemplateVariables } from '../src/crm/template';
+import { resolveTemplateParams, countTemplateVariables, formatNow, validateParamMapping, refreshNowParams } from '../src/crm/template';
 import type { TemplateParam } from '../src/crm/template';
 
 const contact = {
@@ -87,5 +87,39 @@ describe('countTemplateVariables', () => {
     expect(countTemplateVariables('{{1}} {{2}} {{3}}')).toBe(3);
     expect(countTemplateVariables('Aucune variable ici')).toBe(0);
     expect(countTemplateVariables('{{ 2 }} avec espaces')).toBe(2);
+  });
+});
+
+describe('source NOW (date du jour)', () => {
+  it('formatNow -> JJ/MM/AAAA dans le fuseau (bascule de jour respectée)', () => {
+    expect(formatNow(new Date('2026-08-02T12:00:00Z'), 'Europe/Paris')).toBe('02/08/2026');
+    // 23:30 UTC le 2 août = déjà le 3 août à Paris (été UTC+2), mais encore le 2 à New York (UTC-4)
+    expect(formatNow(new Date('2026-08-02T23:30:00Z'), 'Europe/Paris')).toBe('03/08/2026');
+    expect(formatNow(new Date('2026-08-02T23:30:00Z'), 'America/New_York')).toBe('02/08/2026');
+  });
+  it('resolveTemplateParams résout NOW avec opts.now (fuseau tenant)', () => {
+    const params: TemplateParam[] = [{ position: 1, source: { type: 'now' } }];
+    expect(resolveTemplateParams(params, contact, { now: new Date('2026-08-02T12:00:00Z'), tz: 'Europe/Paris' })).toEqual({ values: ['02/08/2026'], missing: [] });
+  });
+  it('NOW SANS opts.now (chemin qui ne fournit pas now) -> position manquante, jamais un envoi faux', () => {
+    const params: TemplateParam[] = [{ position: 1, source: { type: 'now' } }];
+    expect(resolveTemplateParams(params, contact)).toEqual({ values: [''], missing: [1] });
+  });
+  it('validateParamMapping accepte une source now (corps HTTP)', () => {
+    expect(validateParamMapping([{ position: 1, source: { type: 'now' } }])).toEqual([{ position: 1, source: { type: 'now' } }]);
+  });
+  it('refreshNowParams : rafraîchit les positions NOW à l’envoi, laisse les autres inchangées', () => {
+    const mapping: TemplateParam[] = [
+      { position: 1, source: { type: 'field', key: 'ville' } },
+      { position: 2, source: { type: 'now' } },
+    ];
+    const resolved = ['Lyon', '02/08/2026']; // NOW figé au 2 août à la CRÉATION
+    expect(refreshNowParams(resolved, mapping, { now: new Date('2026-08-05T12:00:00Z'), tz: 'Europe/Paris' })).toEqual(['Lyon', '05/08/2026']);
+  });
+  it('refreshNowParams : no-op sans source NOW, ou sans opts.now', () => {
+    const noNow: TemplateParam[] = [{ position: 1, source: { type: 'field', key: 'ville' } }];
+    expect(refreshNowParams(['Lyon'], noNow, { now: new Date('2026-08-05T12:00:00Z') })).toEqual(['Lyon']);
+    const withNow: TemplateParam[] = [{ position: 1, source: { type: 'now' } }];
+    expect(refreshNowParams(['02/08/2026'], withNow, {})).toEqual(['02/08/2026']); // pas de now fourni -> inchangé
   });
 });

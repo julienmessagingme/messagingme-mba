@@ -1,5 +1,5 @@
 import { resolveTemplateParams } from '../crm/template';
-import type { ResolvableContact, TemplateParam } from '../crm/template';
+import type { ResolvableContact, TemplateParam, ResolveOpts } from '../crm/template';
 import { optInAllows } from './guardrails';
 import type { CampaignCategory } from './types';
 
@@ -39,6 +39,7 @@ export function buildRecipients(
   category: CampaignCategory,
   paramMapping: TemplateParam[],
   contacts: BuildContact[],
+  opts?: ResolveOpts,
 ): BuildResult {
   const seen = new Set<string>();
   const recipients: BuiltRecipient[] = [];
@@ -49,7 +50,7 @@ export function buildRecipients(
     if (!optInAllows(category, c)) continue;
     if (seen.has(to)) continue;
     seen.add(to);
-    const { values, missing } = resolveTemplateParams(paramMapping, c);
+    const { values, missing } = resolveTemplateParams(paramMapping, c, opts);
     if (missing.length > 0) {
       skipped.push({ contactId: c.id, toE164: to, reason: 'missing_variable', missing });
       continue;

@@ -1,5 +1,6 @@
 import type { Campaign, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
 import { frequencyAllows, qualityGate, buildComponents } from './guardrails';
+import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError } from '../meta/errors';
@@ -131,6 +132,11 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
 
     if (deps.rateLimiter) await deps.rateLimiter.acquire();
 
+    // Variables du template : les positions de source NOW sont rafraîchies à l'instant de l'ENVOI (les autres
+    // ont été résolues à la création). Sans ça, une campagne programmée/draft enverrait la date de sa CRÉATION.
+    // Fuseau par défaut (Europe/Paris), cf. DEFAULT_NOW_TZ.
+    const params = refreshNowParams(r.resolvedParams, campaign.paramMapping, { now: new Date(now()) });
+
     // Envoi isolé : SEULE une erreur du sender (Meta) marque le destinataire `failed`.
     let res: SendResult;
     try {
@@ -149,13 +155,13 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         const waId = waIdOf(r.toE164);
         // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
         // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
-        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, r.resolvedParams);
+        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, params);
         res = { messageId: `wf-${campaign.workflowId}` };
       } else {
         const tpl: TemplateSpec = {
           name: campaign.templateName,
           language: campaign.templateLanguage,
-          components: buildComponents(r.resolvedParams),
+          components: buildComponents(params),
         };
         // Numéro E.164 -> `to`, BSUID -> `recipient` (source unique messagingTarget). sendTemplate route
         // de la même façon en interne, donc l'utility passe l'identité brute.
@@ -186,7 +192,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // template est loggé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise pas l'envoi.
     if (deps.recordOutbound && !campaign.workflowId) {
       const waId = waIdOf(r.toE164);
-      const body = `Template « ${campaign.templateName} »${r.resolvedParams.length > 0 ? ` (${r.resolvedParams.join(', ')})` : ''}`;
+      const body = `Template « ${campaign.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
       try {
         await deps.recordOutbound(campaign.tenantId, waId, {
           body,

@@ -516,6 +516,7 @@ interface VarRow {
 
 /** Option choisie -> ParamSource envoyée au backend. */
 function selToSource(sel: string, value: string): TemplateParam['source'] {
+  if (sel === 'now') return { type: 'now' };
   if (sel === 'literal') return { type: 'literal', value };
   if (sel.startsWith('sys:')) {
     const f = SYSTEM_FIELDS.find((s) => `sys:${s.key}` === sel);
@@ -528,6 +529,7 @@ function selToSource(sel: string, value: string): TemplateParam['source'] {
  *  un indice vers un champ inexistant (ex. indice périmé « nom » d'un champ supprimé) retombe sur « Nom » : sinon
  *  le `<select>` afficherait la 1re option (« Nom ») tout en gardant en interne un `sel` fantôme qui saute le contact. */
 function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]): string {
+  if (s.type === 'now') return 'now';
   if (s.type === 'literal') return 'literal';
   if (s.type === 'attribute') return `sys:${s.key ?? 'name'}`;
   const key = s.key ?? '';
@@ -1463,7 +1465,7 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
   const custom = customFieldsOnly(fields);
   // Ids d'options valides : sert de filet -> si un `sel` n'y est pas (ex. champ perso supprimé), on l'affiche
   // explicitement (« à re-sélectionner ») au lieu de laisser le <select> montrer la 1re option en douce.
-  const validIds = new Set<string>([...SYSTEM_FIELDS.map((f) => `sys:${f.key}`), ...custom.map((f) => `field:${f.key}`), 'literal']);
+  const validIds = new Set<string>([...SYSTEM_FIELDS.map((f) => `sys:${f.key}`), ...custom.map((f) => `field:${f.key}`), 'literal', 'now']);
   return (
     <div className="mt-3">
       <label className="mb-1 block text-sm font-medium text-ink-700">{t('Variables', 'Variables')} ({vars.length})</label>
@@ -1486,6 +1488,7 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
                 </optgroup>
               )}
               <optgroup label={t('Autre', 'Other')}>
+                <option value="now">{t('Date du jour (auto)', "Today's date (auto)")}</option>
                 <option value="literal">{t('Texte fixe', 'Fixed text')}</option>
               </optgroup>
             </select>

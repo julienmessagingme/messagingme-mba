@@ -27,7 +27,7 @@ export async function createCampaignWithRecipients(
   const ids = input.contactIds && input.contactIds.length > 0 ? new Set(input.contactIds) : null;
   const contacts = ids ? all.filter((c) => ids.has(c.id)) : all;
   // recipients = envoyables ; skipped = variable manquante (ex. prénom absent) -> remontés pour l'avertissement.
-  const { recipients, skipped } = buildRecipients(input.category, input.paramMapping, contacts);
+  const { recipients, skipped } = buildRecipients(input.category, input.paramMapping, contacts, { now: new Date() });
   const result = await repo.createWithRecipients(input, recipients);
   return { ...result, skipped };
 }

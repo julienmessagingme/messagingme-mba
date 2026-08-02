@@ -24,6 +24,9 @@ export function buildWorkflowTemplateComponents(opts: {
    * jamais de `text:''`). Absent -> résolution par hints (chemin advance/webhook, inchangé).
    */
   explicitParams?: string[];
+  /** Horodatage courant + fuseau, pour la source de variable NOW (date du jour). Absent -> pas de NOW résolu. */
+  now?: Date;
+  tz?: string;
   /**
    * Jeton de session pour un bouton FLOW (formulaire). Meta l'EXIGE non vide à l'envoi d'un template NAVIGATE
    * (sinon #131009 « Parameter value is not valid »). La corrélation de la réponse côté mba passe par `_ref` baké
@@ -33,7 +36,7 @@ export function buildWorkflowTemplateComponents(opts: {
 }): { components: unknown[]; missing: number[] } {
   const resolved = opts.explicitParams !== undefined
     ? { values: opts.explicitParams, missing: opts.explicitParams.flatMap((v, i) => (v === '' ? [i + 1] : [])) }
-    : opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact) : { values: [], missing: [] };
+    : opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact, { now: opts.now, tz: opts.tz }) : { values: [], missing: [] };
   const bodyComponents = resolved.values.length > 0 ? buildTemplateComponents({ bodyParams: resolved.values }) : [];
   const flowToken = opts.flowToken && opts.flowToken !== '' ? opts.flowToken : 'mba-flow';
   // Un composant par bouton, à l'INDEX du template (préservé) : quick-reply -> payload contrôlé (`btn:<i>`) ;

@@ -3,7 +3,22 @@ import { waIdOf } from './identity';
 export type ParamSource =
   | { type: 'field'; key: string }
   | { type: 'attribute'; key: 'name' | 'phone' | 'bsuid' | 'wa_id' }
+  | { type: 'now' }
   | { type: 'literal'; value: string };
+
+/** Fuseau par défaut pour la source NOW quand l'appelant n'en fournit pas. ⚠️ v1 : AUCUN chemin d'envoi ne
+ *  fournit `tz` aujourd'hui -> NOW s'affiche toujours dans ce fuseau (marché principal FR), même si le tenant a
+ *  configuré un autre fuseau (respecté, lui, par les CONDITIONS). Raffinement par tenant = évolution possible. */
+const DEFAULT_NOW_TZ = 'Europe/Paris';
+
+/** Contexte de résolution non lié au contact : `now` (source NOW) + fuseau d'affichage. Optionnel — un template
+ *  qui n'utilise pas la source NOW n'en a pas besoin. */
+export interface ResolveOpts { now?: Date; tz?: string }
+
+/** Formate la source NOW en date du jour (JJ/MM/AAAA) dans le fuseau du tenant. */
+export function formatNow(now: Date, tz: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: tz }).format(now);
+}
 
 export interface TemplateParam {
   /** Position de la variable dans le template ({{1}} -> 1). */
@@ -26,6 +41,7 @@ function isValidSource(s: unknown): s is ParamSource {
   if (src.type === 'literal') return typeof src.value === 'string';
   if (src.type === 'field') return typeof src.key === 'string' && src.key !== '';
   if (src.type === 'attribute') return src.key === 'name' || src.key === 'phone' || src.key === 'bsuid' || src.key === 'wa_id';
+  if (src.type === 'now') return true;
   return false;
 }
 
@@ -79,10 +95,14 @@ export function parseParamHints(raw: unknown): Array<{ position: number; source:
   return out;
 }
 
-function valueOf(source: ParamSource, c: ResolvableContact): unknown {
+function valueOf(source: ParamSource, c: ResolvableContact, opts?: ResolveOpts): unknown {
   switch (source.type) {
     case 'literal':
       return source.value;
+    case 'now':
+      // NOW ne dépend pas du contact : date du jour dans le fuseau tenant. Sans `now` fourni par l'appelant
+      // (chemin qui ne supporte pas NOW), la valeur est absente -> position `missing` (jamais un envoi faux).
+      return opts?.now ? formatNow(opts.now, opts.tz ?? DEFAULT_NOW_TZ) : undefined;
     case 'attribute':
       // Switch EXHAUSTIF par clé : un ternaire binaire ferait retomber bsuid/wa_id sur le téléphone (bug muet).
       switch (source.key) {
@@ -123,8 +143,8 @@ export function countTemplateVariables(body: string): number {
 }
 
 /** Valeur d'une source pour un contact : non-vide -> string, sinon `undefined` (déclenche `missing`). `fallback` = défaut design explicite, compte comme rempli. */
-function resolveOne(source: ParamSource, contact: ResolvableContact, fallback?: string): string | undefined {
-  const v = valueOf(source, contact);
+function resolveOne(source: ParamSource, contact: ResolvableContact, fallback?: string, opts?: ResolveOpts): string | undefined {
+  const v = valueOf(source, contact, opts);
   const s = v === null || v === undefined || v === '' ? undefined : String(v);
   const withFallback = s ?? (fallback !== undefined && fallback !== '' ? fallback : undefined);
   return withFallback;
@@ -134,7 +154,7 @@ function resolveOne(source: ParamSource, contact: ResolvableContact, fallback?: 
  * Résout les variables d'un template pour un contact (voie directe : mapping 1..N contigu). Valeur absente ->
  * position marquée `missing` (jamais `''` envoyé). C'est la glue « coller les infos du CRM dans les templates ».
  */
-export function resolveTemplateParams(params: TemplateParam[], contact: ResolvableContact): ResolvedParams {
+export function resolveTemplateParams(params: TemplateParam[], contact: ResolvableContact, opts?: ResolveOpts): ResolvedParams {
   const sorted = [...params].sort((a, b) => a.position - b.position);
   // Les params WhatsApp sont positionnels : on exige 1..N contigus et uniques,
   // sinon l'array résolu (indexé par ordre) désalignerait les variables.
@@ -146,7 +166,7 @@ export function resolveTemplateParams(params: TemplateParam[], contact: Resolvab
   const values: string[] = [];
   const missing: number[] = [];
   sorted.forEach((p) => {
-    const resolved = resolveOne(p.source, contact, p.fallback);
+    const resolved = resolveOne(p.source, contact, p.fallback, opts);
     if (resolved === undefined) missing.push(p.position);
     values.push(resolved ?? '');
   });
@@ -164,15 +184,33 @@ export function resolveHintParams(
   hints: Array<{ position: number; source: ParamSource }>,
   count: number,
   contact: ResolvableContact,
+  opts?: ResolveOpts,
 ): ResolvedParams {
   const byPos = new Map(hints.map((h) => [h.position, h.source]));
   const values: string[] = [];
   const missing: number[] = [];
   for (let pos = 1; pos <= count; pos += 1) {
     const src = byPos.get(pos);
-    const resolved = src ? resolveOne(src, contact) : undefined;
+    const resolved = src ? resolveOne(src, contact, undefined, opts) : undefined;
     if (resolved === undefined) missing.push(pos);
     values.push(resolved ?? '');
   }
   return { values, missing };
+}
+
+/**
+ * Rafraîchit les positions de source NOW dans des params DÉJÀ résolus, à l'instant de l'ENVOI. Les campagnes
+ * résolvent field/attribute/literal à la CRÉATION (état contact figé, resolved_params stockés), mais NOW doit
+ * refléter le jour de l'ENVOI, pas de la création : une campagne créée lundi et envoyée jeudi (programmée/draft)
+ * doit afficher jeudi. Les autres positions sont laissées INCHANGÉES. No-op s'il n'y a aucune source NOW ou pas de
+ * `now`. À appeler au plus près de l'envoi (moteur de campagne).
+ */
+export function refreshNowParams(resolvedParams: string[], paramMapping: TemplateParam[], opts: ResolveOpts): string[] {
+  if (!opts.now || !paramMapping.some((p) => p.source.type === 'now')) return resolvedParams;
+  const out = [...resolvedParams];
+  const nowStr = formatNow(opts.now, opts.tz ?? DEFAULT_NOW_TZ);
+  for (const p of paramMapping) {
+    if (p.source.type === 'now' && p.position >= 1 && p.position <= out.length) out[p.position - 1] = nowStr;
+  }
+  return out;
 }

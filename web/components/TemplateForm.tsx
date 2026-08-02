@@ -33,6 +33,7 @@ interface VarSource { source: ParamSource; label: string }
 /** Exemple déterministe (jamais vide) exigé par Meta, selon le champ choisi. Zéro IA : valeur plausible par
  *  clé connue, sinon par type de champ. */
 function deterministicExample(source: ParamSource, fieldType?: string): string {
+  if (source.type === 'now') return '31/12/2026'; // date du jour (JJ/MM/AAAA), exemple Meta déterministe
   // Champ de base (attribut) : exemple propre par clé (Nom, Téléphone, BSUID, WhatsApp ID) via la source commune.
   if (source.type === 'attribute') return systemFieldExample(source.key ?? '');
   if (source.type === 'literal') return source.value?.trim() || 'exemple';
@@ -56,6 +57,7 @@ function deterministicExample(source: ParamSource, fieldType?: string): string {
 /** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). Aligné sur la source commune
  *  SYSTEM_FIELDS (mêmes libellés que la campagne) : un attribut bsuid/wa_id n'est plus mal étiqueté « Nom ». */
 function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (fr: string, en?: string) => string): string {
+  if (source.type === 'now') return t('Date du jour (auto)', "Today's date (auto)");
   if (source.type === 'literal') return t('Texte fixe', 'Fixed text');
   const sys = SYSTEM_FIELDS.find((f) => f.source.type === source.type && f.source.key === source.key);
   if (sys) return sys.label;
@@ -192,6 +194,7 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
   // Email) + les champs perso (hors clés système). Exactement la même liste que le sélecteur de la campagne (VarsEditor)
   // -> cohérence de bout en bout, et on peut enfin rattacher une variable à BSUID / WhatsApp ID à la création.
   const fieldOptions: FieldOption[] = [
+    { source: { type: 'now' } as ParamSource, label: t('Date du jour (auto)', "Today's date (auto)"), group: 'base' as const },
     ...SYSTEM_FIELDS.map((f) => ({ source: f.source, label: f.label, group: 'base' as const })),
     ...customFieldsOnly(userFields).map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type, group: 'custom' as const })),
   ];
