@@ -94,7 +94,7 @@ function NodesInner({ session }: { session: Session }) {
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
                 <th className="px-5 py-2 font-medium">{t('Type', 'Type')}</th>
-                <th className="px-5 py-2 font-medium">{t('Contenu', 'Content')}</th>
+                <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
                 <th className="px-5 py-2 font-medium">{t('Scénario', 'Scenario')}</th>
                 <th className="px-5 py-2 font-medium">{t('Code', 'Code')}</th>
               </tr>
@@ -105,7 +105,8 @@ function NodesInner({ session }: { session: Session }) {
                 return (
                   <tr key={`${n.workflowId}-${n.code ?? i}`} className="border-b border-ink-50 last:border-0">
                     <td className="whitespace-nowrap px-5 py-3 text-ink-800"><span className="mr-1.5">{meta.emoji}</span>{t(meta.label[0], meta.label[1])}</td>
-                    <td className="px-5 py-3 text-ink-600">{n.summary || <span className="text-ink-300">{t('(vide)', '(empty)')}</span>}</td>
+                    {/* Repli le temps que les blocs soient renommés : nom libre, sinon le résumé auto, sinon (sans nom). */}
+                    <td className="px-5 py-3 text-ink-600">{n.name || n.summary || <span className="text-ink-300">{t('(sans nom)', '(unnamed)')}</span>}</td>
                     <td className="px-5 py-3">
                       <Link href={`/workflows?open=${encodeURIComponent(n.workflowId)}`} className="text-brand-600 hover:underline">{n.workflowName}</Link>
                     </td>

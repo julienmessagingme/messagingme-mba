@@ -9,6 +9,8 @@ import type { WorkflowRow } from './store.pg';
 export interface NodeListItem {
   code: string | null;
   type: WorkflowNodeType;
+  /** Nom libre donné par l'utilisateur au bloc (`data.name`), borné. Vide si non renseigné. */
+  name: string;
   workflowId: string;
   workflowName: string;
   /** Résumé humain, dérivé de `data` selon le type (même logique que le builder). Borné, jamais null. */
@@ -60,6 +62,7 @@ export function collectNodes(workflows: WorkflowRow[], type?: WorkflowNodeType):
       out.push({
         code: NOD_RE.test(raw) ? raw : null,
         type: n.type,
+        name: String(n.data.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 64),
         workflowId: wf.id,
         workflowName: wf.name,
         summary: summarize(n.type, n.data),

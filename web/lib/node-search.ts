@@ -5,6 +5,8 @@
 
 export interface SearchableNode {
   type: string;
+  /** Nom libre du bloc (peut être vide). */
+  name: string;
   /** Résumé/contenu humain du bloc. */
   summary: string;
   /** Nom du scénario qui porte le bloc. */
@@ -29,7 +31,7 @@ export function filterNodes<T extends SearchableNode>(items: T[], type: string, 
   return items.filter((n) => {
     if (type !== 'all' && n.type !== type) return false;
     if (q === '') return true;
-    const hay = normalizeSearch([n.type, n.summary, n.workflowName, n.code ?? ''].join(' '));
+    const hay = normalizeSearch([n.type, n.name, n.summary, n.workflowName, n.code ?? ''].join(' '));
     return hay.includes(q);
   });
 }

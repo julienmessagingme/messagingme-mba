@@ -1055,6 +1055,8 @@ export function duplicateWorkflow(tenantId: string, id: string): Promise<{ id: s
 export interface NodeListItem {
   code: string | null;
   type: WorkflowNodeType;
+  /** Nom libre du bloc (data.name), vide si non renseigné. */
+  name: string;
   workflowId: string;
   workflowName: string;
   summary: string;

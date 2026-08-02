@@ -87,6 +87,20 @@ describe('collectNodes', () => {
     expect(out[3]!.summary).toBe('Condition');
   });
 
+  it('extrait le nom libre du bloc (data.name) : trimé, espaces resserrés, borné 64, vide si absent', () => {
+    const rows = [
+      wf('w1', 'W', [
+        node({ id: 'n1', type: 'tag', data: { tag: 'x', name: '  Relance   J+3  ' } }),
+        node({ id: 'n2', type: 'tag', data: { tag: 'y' } }), // pas de nom
+        node({ id: 'n3', type: 'tag', data: { tag: 'z', name: 'a'.repeat(100) } }), // borné
+      ]),
+    ];
+    const out = collectNodes(rows);
+    expect(out[0]!.name).toBe('Relance J+3');
+    expect(out[1]!.name).toBe('');
+    expect(out[2]!.name.length).toBe(64);
+  });
+
   it('liste vide si aucun workflow', () => {
     expect(collectNodes([])).toEqual([]);
   });

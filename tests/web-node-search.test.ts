@@ -4,10 +4,10 @@ import { filterNodes, normalizeSearch, type SearchableNode } from '../web/lib/no
 // Fonctions PURES (aucune dépendance React) : gate testable de la recherche Contenu > Blocs.
 
 const NODES: SearchableNode[] = [
-  { type: 'template', summary: 'promo_ete', workflowName: 'Onboarding', code: 'nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS' },
-  { type: 'tag', summary: 'VIP', workflowName: 'Relance', code: null },
-  { type: 'quick_message', summary: 'Bonjour, un café ?', workflowName: 'Accueil', code: null },
-  { type: 'field', summary: 'Ville = Paris', workflowName: 'Onboarding', code: null },
+  { type: 'template', name: 'Bienvenue perso', summary: 'promo_ete', workflowName: 'Onboarding', code: 'nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS' },
+  { type: 'tag', name: '', summary: 'VIP', workflowName: 'Relance', code: null },
+  { type: 'quick_message', name: '', summary: 'Bonjour, un café ?', workflowName: 'Accueil', code: null },
+  { type: 'field', name: '', summary: 'Ville = Paris', workflowName: 'Onboarding', code: null },
 ];
 
 describe('normalizeSearch', () => {
@@ -29,6 +29,10 @@ describe('filterNodes', () => {
 
   it('recherche par contenu (summary)', () => {
     expect(filterNodes(NODES, 'all', 'promo').map((n) => n.type)).toEqual(['template']);
+  });
+
+  it('recherche par nom du bloc', () => {
+    expect(filterNodes(NODES, 'all', 'bienvenue').map((n) => n.type)).toEqual(['template']);
   });
 
   it('recherche par nom de scénario', () => {

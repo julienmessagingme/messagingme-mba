@@ -72,7 +72,7 @@ function WFNode({ id, data, selected }: NodeProps) {
       >✕</button>
       <div className="flex items-center gap-1.5 rounded-t-xl border-b border-ink-200 bg-white px-2 py-1">
         <span className="text-xs">{meta.emoji}</span>
-        <span className="truncate text-[11px] font-semibold text-ink-800">{t(...meta.label)}</span>
+        <span className="truncate text-[11px] font-semibold text-ink-800">{String(data.name ?? '').trim() || t(...meta.label)}</span>
       </div>
       <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data, t)}</div>
       {hasQR ? (
@@ -496,6 +496,11 @@ function ConfigPanel({
             'This block cannot OPEN the scenario (message outside the 24 h window): connect a “Send template” block upstream, otherwise saving is rejected.')}
         </p>
       )}
+
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom du bloc', 'Block name')}</label>
+        <input value={(d.name as string) ?? ''} maxLength={64} onChange={(e) => onPatch({ name: e.target.value })} className={cls} placeholder={t('optionnel (ex. « Relance J+3 »)', 'optional (e.g. “Follow-up D+3”)')} />
+      </div>
 
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-600">{t('Type de bloc', 'Block type')}</label>
