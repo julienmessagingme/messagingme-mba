@@ -199,6 +199,44 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * Retire des tags du contact d'un numéro (bloc Action « retirer un tag »). Même matching que addTagsByPhone
+   * (E.164 exact PUIS chiffres nus PUIS bsuid, 1 contact). Merge-only : ne crée pas de fiche. Renvoie le nb touché.
+   */
+  async removeTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
+    const clean = [...new Set(tags.map((t) => t.trim()).filter((t) => t !== ''))];
+    if (clean.length === 0) return 0;
+    const res = await this.pool.query(
+      `update contacts set tags = (select coalesce(array_agg(t), '{}') from unnest(tags) t where t <> all($3::text[])), updated_at = now()
+       where id = (
+         select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1
+       )`,
+      [tenantId, waId, clean],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
+   * Vide des champs (retire les clés de `contacts.fields`) du contact d'un numéro (bloc Action « vider un champ »).
+   * Même matching que mergeFieldsByPhone. Merge-only : ne crée pas de fiche. Renvoie le nb de contacts touchés.
+   */
+  async clearFieldsByPhone(tenantId: string, waId: string, keys: string[]): Promise<number> {
+    const clean = [...new Set(keys.map((k) => k.trim()).filter((k) => k !== ''))];
+    if (clean.length === 0) return 0;
+    const res = await this.pool.query(
+      `update contacts set fields = fields - $3::text[], updated_at = now()
+       where id = (
+         select id from contacts where tenant_id = $1
+           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+         order by (phone_e164 = '+' || $2) desc limit 1
+       )`,
+      [tenantId, waId, clean],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * Auto-crée (ou rafraîchit) une fiche contact depuis un message ENTRANT. Le `wa_id` est classé en numéro
    * OU BSUID (règle `classifyWaId`). Upsert par l'index unique correspondant : ne régresse JAMAIS l'opt-in
    * (posé à 'unknown' seulement à la création, source 'inbound'), et ne met à jour que le nom de profil

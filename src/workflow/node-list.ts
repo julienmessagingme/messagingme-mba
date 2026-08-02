@@ -42,6 +42,17 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
       out = clauses === 0 ? 'Condition' : `Si ${combineur} de ${clauses} condition${clauses > 1 ? 's' : ''}`;
       break;
     }
+    case 'action': {
+      const kind = String(data.actionKind ?? '');
+      const tag = s(data.tag);
+      const key = s(data.fieldLabel ?? data.fieldKey ?? data.key);
+      if (kind === 'add_tag') out = tag === '' ? '' : `+ ${tag}`;
+      else if (kind === 'remove_tag') out = tag === '' ? '' : `− ${tag}`;
+      else if (kind === 'set_field') { const val = data.valueKind === 'now' ? 'maintenant' : s(data.value); out = key === '' ? '' : val === '' ? key : `${key} = ${val}`; }
+      else if (kind === 'clear_field') out = key === '' ? '' : `${key} (vidé)`;
+      else out = '';
+      break;
+    }
     case 'inbox': out = ''; break;
     default: out = '';
   }

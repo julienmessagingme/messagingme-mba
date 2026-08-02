@@ -13,6 +13,10 @@ export interface WorkflowExecutorDeps {
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   applyTag(tenantId: string, waId: string, tag: string): Promise<void>;
   setField(tenantId: string, waId: string, key: string, value: string): Promise<void>;
+  /** Retire un tag du contact (bloc Action « retirer un tag »). */
+  removeTag(tenantId: string, waId: string, tag: string): Promise<void>;
+  /** Vide un champ du contact = retire la clé (bloc Action « vider un champ »). */
+  clearField(tenantId: string, waId: string, key: string): Promise<void>;
   /**
    * `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton).
    * `explicitParams` (optionnel) = variables du corps DÉJÀ résolues (campagne workflow, 1er template) : si fourni,
@@ -71,7 +75,9 @@ export class WorkflowExecutor {
    */
   private async buildCtx(tenantId: string, waId: string, graph: WorkflowGraph): Promise<EvalContext | undefined> {
     if (!this.deps.evalContext) return undefined;
-    const needsCtx = graph.nodes.some((n) => n.type === 'condition' || (n.type === 'field' && n.data.valueKind === 'now'));
+    const needsCtx = graph.nodes.some((n) => n.type === 'condition'
+      || (n.type === 'field' && n.data.valueKind === 'now')
+      || (n.type === 'action' && n.data.actionKind === 'set_field' && n.data.valueKind === 'now'));
     if (!needsCtx) return undefined;
     try {
       return (await this.deps.evalContext(tenantId, waId)) ?? undefined;
@@ -85,7 +91,9 @@ export class WorkflowExecutor {
   private async apply(tenantId: string, waId: string, actions: WorkflowAction[], firstTemplateParams?: string[]): Promise<void> {
     for (const a of actions) {
       if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
+      else if (a.kind === 'removeTag') await this.deps.removeTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
+      else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);
       else if (a.kind === 'sendQuickMessage') await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons);
       else if (a.kind === 'sendFlow') await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta);
       else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);

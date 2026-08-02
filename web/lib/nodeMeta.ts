@@ -8,12 +8,14 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   quick_message: { emoji: '⚡', label: ['Message rapide', 'Quick message'] },
   inbox: { emoji: '💬', label: ['Inbox', 'Inbox'] },
   flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
-  tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] },
-  field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] },
+  tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] }, // legacy : plus dans la palette, gardé pour le rendu des anciens blocs
+  field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] }, // legacy : idem
   condition: { emoji: '🔀', label: ['Condition', 'Condition'] },
+  action: { emoji: '⚙️', label: ['Action', 'Action'] },
 };
 
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'tag', 'field', 'condition', 'inbox'];
+// La palette ne propose plus `tag`/`field` séparés : le bloc « Action » les regroupe (ajouter/retirer tag, màj/vider champ).
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'action', 'condition', 'inbox'];
 
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme
  *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].emoji` sur `undefined`) qui

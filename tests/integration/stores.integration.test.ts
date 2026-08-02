@@ -752,6 +752,8 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       getGraph: async (id, t) => (await wfStore.getById(id, t))?.graph ?? null,
       applyTag: (t, w, tag) => contactStore.addTagsByPhone(t, w, [tag]).then(() => undefined),
       setField: (t, w, k, v) => contactStore.mergeFieldsByPhone(t, w, { [k]: v }).then(() => undefined),
+      removeTag: (t, w, tag) => contactStore.removeTagsByPhone(t, w, [tag]).then(() => undefined),
+      clearField: (t, w, k) => contactStore.clearFieldsByPhone(t, w, [k]).then(() => undefined),
       sendTemplate: async (_t, _w, name) => { sends.push(name); },
       sendQuickMessage: async (_t, _w, body) => { sends.push(`qm:${body}`); },
       sendFlow: async (_t, _w, flowId) => { sends.push(`flow:${flowId}`); },

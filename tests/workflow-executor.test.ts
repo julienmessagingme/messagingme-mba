@@ -30,6 +30,8 @@ function make(graph: WorkflowGraph) {
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
     setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
+    removeTag: async (_t, _w, tag) => { calls.push(`untag:${tag}`); },
+    clearField: async (_t, _w, k) => { calls.push(`clear:${k}`); },
     sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
     sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
     sendFlow: async (_t, _w, flowId, body, cta) => { calls.push(`flow:${flowId}:${body}:${cta}`); },
@@ -49,6 +51,16 @@ describe('WorkflowExecutor', () => {
     await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual(['tag:vip', 'tpl:promo']);
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+  });
+
+  it('start : bloc action « retirer tag » puis « vider champ » appelle removeTag / clearField', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('a1', 'action', { actionKind: 'remove_tag', tag: 'vip' }), n('a2', 'action', { actionKind: 'clear_field', fieldKey: 'statut' }), n('ib', 'inbox')],
+      edges: [e('e1', 'a1', 'a2'), e('e2', 'a2', 'ib')],
+    };
+    const { ex, calls } = make(g);
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['untag:vip', 'clear:statut']);
   });
 
   it('advance : le contact répond -> la conversation arrive en inbox (run terminé)', async () => {
@@ -188,6 +200,8 @@ describe('WorkflowExecutor', () => {
       getGraph: async () => graph,
       applyTag: async () => {},
       setField: async () => {},
+      removeTag: async () => {},
+      clearField: async () => {},
       sendTemplate: async (_t, _w, _name, _lang, _btns, explicitParams) => { captured.push(explicitParams); },
       sendQuickMessage: async () => {},
       sendFlow: async () => {},
@@ -277,6 +291,8 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       getGraph: async () => graph,
       applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); },
       setField: async (_t, _w, k, v) => { calls.push(`field:${k}=${v}`); },
+      removeTag: async (_t, _w, tag) => { calls.push(`untag:${tag}`); },
+      clearField: async (_t, _w, k) => { calls.push(`clear:${k}`); },
       sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
       sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
       sendFlow: async (_t, _w, flowId) => { calls.push(`flow:${flowId}`); },

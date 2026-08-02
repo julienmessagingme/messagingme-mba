@@ -101,6 +101,24 @@ describe('collectNodes', () => {
     expect(out[2]!.name.length).toBe(64);
   });
 
+  it('résumé du node action (4 sous-actions + set NOW)', () => {
+    const rows = [
+      wf('w1', 'W', [
+        node({ id: 'n1', type: 'action', data: { actionKind: 'add_tag', tag: 'vip' } }),
+        node({ id: 'n2', type: 'action', data: { actionKind: 'remove_tag', tag: 'vip' } }),
+        node({ id: 'n3', type: 'action', data: { actionKind: 'set_field', fieldLabel: 'Ville', value: 'Lyon' } }),
+        node({ id: 'n4', type: 'action', data: { actionKind: 'clear_field', fieldLabel: 'Ville' } }),
+        node({ id: 'n5', type: 'action', data: { actionKind: 'set_field', fieldLabel: 'Vu', valueKind: 'now' } }),
+      ]),
+    ];
+    const out = collectNodes(rows);
+    expect(out[0]!.summary).toBe('+ vip');
+    expect(out[1]!.summary).toBe('− vip');
+    expect(out[2]!.summary).toBe('Ville = Lyon');
+    expect(out[3]!.summary).toBe('Ville (vidé)');
+    expect(out[4]!.summary).toBe('Vu = maintenant');
+  });
+
   it('liste vide si aucun workflow', () => {
     expect(collectNodes([])).toEqual([]);
   });

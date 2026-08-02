@@ -1004,7 +1004,7 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 
 // --- Workflows (bot builder : graphe de blocs) ---
 
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition';
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;

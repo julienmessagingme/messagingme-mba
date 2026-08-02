@@ -27,8 +27,12 @@ export interface WorkflowRouteDeps {
 function tagsInGraph(graph: WorkflowGraph): string[] {
   const out = new Set<string>();
   for (const n of graph.nodes) {
-    if (n.type !== 'tag') continue;
-    const t = String((n.data as { tag?: unknown }).tag ?? '').trim().slice(0, 64);
+    const d = n.data as { tag?: unknown; actionKind?: unknown };
+    // Bloc `tag` legacy OU bloc `action` en mode « ajouter un tag » : on déclare le tag posé dans le référentiel.
+    // Un retrait de tag (remove_tag) ne « dé-déclare » rien -> ignoré ici.
+    const isTagAdd = n.type === 'tag' || (n.type === 'action' && d.actionKind === 'add_tag');
+    if (!isTagAdd) continue;
+    const t = String(d.tag ?? '').trim().slice(0, 64);
     if (t !== '') out.add(t);
   }
   return [...out];

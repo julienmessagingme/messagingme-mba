@@ -183,6 +183,14 @@ async function main(): Promise<void> {
       try { await tagStore.create(tenant, clean); } catch { /* déclaration best-effort */ }
     },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
+    // Retrait : même normalisation (trim + slice 64) que l'ajout, pour matcher le tag stocké. Le référentiel Tags
+    // n'est PAS touché (retirer un tag d'un contact ne « dé-déclare » pas le tag du référentiel du tenant).
+    removeTag: async (tenant, waId, tag) => {
+      const clean = tag.trim().slice(0, 64);
+      if (clean === '') return;
+      await contactStore.removeTagsByPhone(tenant, waId, [clean]);
+    },
+    clearField: async (tenant, waId, key) => { await contactStore.clearFieldsByPhone(tenant, waId, [key]); },
     sendTemplate: async (tenant, waId, name, language, buttons, explicitParams) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       const pn = await repo.getTenantPhoneNumberId(tenant);

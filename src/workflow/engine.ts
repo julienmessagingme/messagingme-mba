@@ -15,7 +15,9 @@ export interface WorkflowButton { type: string; text: string }
 
 export type WorkflowAction =
   | { kind: 'tag'; tag: string }
+  | { kind: 'removeTag'; tag: string }
   | { kind: 'field'; key: string; value: string }
+  | { kind: 'clearField'; key: string }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
   | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[] }
   | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string };
@@ -99,6 +101,23 @@ function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null 
     const value = node.data.valueKind === 'now' ? (ctx ? ctx.now.toISOString() : '') : String(node.data.value ?? '');
     return { kind: 'field', key, value };
   }
+  if (node.type === 'action') {
+    // Bloc unifié : la sous-action est portée par `data.actionKind`. add_tag/set_field produisent les MÊMES
+    // actions que les blocs legacy tag/field ; remove_tag/clear_field sont les nouveaux retraits. Bloc incomplet
+    // (tag/clé vide) -> null (no-op), comme les autres blocs.
+    const kind = String(node.data.actionKind ?? '');
+    const tag = String(node.data.tag ?? '').trim();
+    const key = String(node.data.fieldKey ?? node.data.key ?? '').trim();
+    if (kind === 'add_tag') return tag ? { kind: 'tag', tag } : null;
+    if (kind === 'remove_tag') return tag ? { kind: 'removeTag', tag } : null;
+    if (kind === 'set_field') {
+      if (!key) return null;
+      const value = node.data.valueKind === 'now' ? (ctx ? ctx.now.toISOString() : '') : String(node.data.value ?? '');
+      return { kind: 'field', key, value };
+    }
+    if (kind === 'clear_field') return key ? { kind: 'clearField', key } : null;
+    return null;
+  }
   if (node.type === 'template') {
     const templateName = String(node.data.templateName ?? '').trim();
     if (!templateName) return null;
@@ -138,15 +157,21 @@ function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null 
  * bloquant (template/flow -> waiting, inbox -> inbox) ou en fin de chaîne (done). Anti-cycle : un bloc déjà
  * visité arrête le parcours (done). Un `startNodeId` inconnu -> done sans action.
  */
-/** Répercute une action SYNCHRONE (tag/field) sur la copie de travail du contexte, pour qu'une condition
- *  rencontrée plus loin dans le MÊME walk la voie (l'écriture en base n'a lieu qu'après, via executor.apply).
- *  Même normalisation de tag que le worker (trim + slice 64, dédup). */
+/** Répercute une action SYNCHRONE (tag/field, ajout OU retrait) sur la copie de travail du contexte, pour qu'une
+ *  condition rencontrée plus loin dans le MÊME walk la voie (l'écriture en base n'a lieu qu'après, via
+ *  executor.apply). Même normalisation de tag que le worker (trim + slice 64, dédup). `clearField` retire la clé
+ *  (une condition `champ vide` en aval doit voir le champ absent, comme le SQL `fields - key`). */
 function applyToWork(work: EvalContext, a: WorkflowAction): void {
   if (a.kind === 'tag') {
     const t = a.tag.trim().slice(0, 64);
     if (t !== '' && !work.tags.includes(t)) work.tags.push(t);
+  } else if (a.kind === 'removeTag') {
+    const t = a.tag.trim().slice(0, 64);
+    work.tags = work.tags.filter((x) => x !== t);
   } else if (a.kind === 'field') {
     work.fields[a.key] = a.value;
+  } else if (a.kind === 'clearField') {
+    delete work.fields[a.key];
   }
 }
 

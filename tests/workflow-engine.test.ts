@@ -303,3 +303,50 @@ describe('walk : bloc field en mode NOW (horodatage courant)', () => {
     expect(walk(g, 'f', evalCtx()).actions).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
   });
 });
+
+describe('node action (bloc unifié tag/field : ajouter/retirer/màj/vider)', () => {
+  const only = (kind: string, data: Record<string, unknown> = {}): WorkflowGraph => ({ nodes: [n('a', 'action', { actionKind: kind, ...data })], edges: [] });
+  it('les 4 sous-actions produisent la bonne WorkflowAction', () => {
+    expect(walk(only('add_tag', { tag: 'vip' }), 'a').actions).toEqual([{ kind: 'tag', tag: 'vip' }]);
+    expect(walk(only('remove_tag', { tag: 'vip' }), 'a').actions).toEqual([{ kind: 'removeTag', tag: 'vip' }]);
+    expect(walk(only('set_field', { fieldKey: 'ville', value: 'Lyon' }), 'a').actions).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
+    expect(walk(only('clear_field', { fieldKey: 'ville' }), 'a').actions).toEqual([{ kind: 'clearField', key: 'ville' }]);
+  });
+  it('set_field mode NOW dans un bloc action', () => {
+    expect(walk(only('set_field', { fieldKey: 'vu_le', valueKind: 'now' }), 'a', evalCtx({ now: new Date('2026-08-02T14:30:00Z') })).actions)
+      .toEqual([{ kind: 'field', key: 'vu_le', value: '2026-08-02T14:30:00.000Z' }]);
+  });
+  it('bloc action incomplet (tag/clé vide, actionKind inconnu) -> no-op', () => {
+    expect(walk(only('add_tag', { tag: '' }), 'a').actions).toEqual([]);
+    expect(walk(only('clear_field'), 'a').actions).toEqual([]);
+    expect(walk(only('wat'), 'a').actions).toEqual([]);
+  });
+  it('applyToWork : retirer un tag est vu par une condition « n’a pas le tag » en aval (même walk)', () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('a', 'action', { actionKind: 'remove_tag', tag: 'vip' }),
+        n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'not_has', tag: 'vip' }] }),
+        n('ok', 'tag', { tag: 'sorti' }), n('ko', 'tag', { tag: 'reste' }),
+      ],
+      edges: [e('e0', 'a', 'c'), eh('e1', 'c', 'ok', 'true'), eh('e2', 'c', 'ko', 'false')],
+    };
+    expect(walk(g, 'a', evalCtx({ tags: ['vip'] })).actions).toContainEqual({ kind: 'tag', tag: 'sorti' });
+  });
+  it('applyToWork : vider un champ est vu par une condition « champ vide » en aval (même walk)', () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('a', 'action', { actionKind: 'clear_field', fieldKey: 'statut' }),
+        n('c', 'condition', { match: 'all', clauses: [{ kind: 'field', key: 'statut', op: 'empty' }] }),
+        n('ok', 'tag', { tag: 'vidé' }), n('ko', 'tag', { tag: 'plein' }),
+      ],
+      edges: [e('e0', 'a', 'c'), eh('e1', 'c', 'ok', 'true'), eh('e2', 'c', 'ko', 'false')],
+    };
+    expect(walk(g, 'a', evalCtx({ fields: { statut: 'actif' } })).actions).toContainEqual({ kind: 'tag', tag: 'vidé' });
+  });
+  it('opensOutsideServiceWindow : un bloc action est synchrone (jamais une ouverture)', () => {
+    // action -> quick_message (ouverture session) -> reste détecté comme ouverture ; action seul n'ouvre rien.
+    expect(opensOutsideServiceWindow(only('add_tag', { tag: 'x' }))).toBe(false);
+    const g: WorkflowGraph = { nodes: [n('a', 'action', { actionKind: 'add_tag', tag: 'x' }), n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] })], edges: [e('e', 'a', 'q')] };
+    expect(opensOutsideServiceWindow(g)).toBe(true); // l'action est traversée (synchrone), le quick_message ouvre
+  });
+});

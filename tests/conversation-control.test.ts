@@ -42,6 +42,8 @@ function executor(mayAct: boolean | undefined, trace: Trace) {
       setState: async (_id, state) => { trace.states.push(state); },
     },
     getGraph: async () => GRAPH,
+    removeTag: async () => {},
+    clearField: async () => {},
     applyTag: async () => {},
     setField: async () => {},
     sendTemplate: async (_t, _w, name) => { trace.sent.push(name); },

@@ -36,6 +36,16 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     if (!label) return t('choisir un champ…', 'choose a field…');
     return data.valueKind === 'now' ? `${label} = ${t('maintenant', 'now')}` : `${label} = ${(data.value as string) || '…'}`;
   }
+  if (wfType === 'action') {
+    const kind = data.actionKind as string;
+    const tag = (data.tag as string) ?? '';
+    const label = (data.fieldLabel as string) ?? '';
+    if (kind === 'add_tag') return tag ? `+ ${tag}` : t('ajouter un tag…', 'add a tag…');
+    if (kind === 'remove_tag') return tag ? `− ${tag}` : t('retirer un tag…', 'remove a tag…');
+    if (kind === 'set_field') return !label ? t('mettre à jour un champ…', 'update a field…') : data.valueKind === 'now' ? `${label} = ${t('maintenant', 'now')}` : `${label} = ${(data.value as string) || '…'}`;
+    if (kind === 'clear_field') return label ? `${label} ${t('(vidé)', '(cleared)')}` : t('vider un champ…', 'clear a field…');
+    return t('choisir une action…', 'choose an action…');
+  }
   if (wfType === 'condition') {
     const n = Array.isArray(data.clauses) ? data.clauses.length : 0;
     if (n === 0) return t('définir une condition…', 'set a condition…');
@@ -216,7 +226,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
 
   const addNode = useCallback((wfType: WorkflowNodeType) => {
     const id = uid();
-    setNodes((ns) => [...ns, { id, type: 'wf', position: { x: 60 + (ns.length % 4) * 60, y: 60 + ns.length * 30 }, data: { wfType } }]);
+    // Le bloc Action démarre sur « ajouter un tag » (sinon actionKind vide -> bloc no-op tant que non choisi).
+    const data = wfType === 'action' ? { wfType, actionKind: 'add_tag' } : { wfType };
+    setNodes((ns) => [...ns, { id, type: 'wf', position: { x: 60 + (ns.length % 4) * 60, y: 60 + ns.length * 30 }, data }]);
     setSelectedId(id);
   }, [setNodes]);
 
@@ -268,7 +280,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
         const nid = uid();
         const x = src && tgt ? (src.position.x + tgt.position.x) / 2 : 120;
         const y = src && tgt ? (src.position.y + tgt.position.y) / 2 : 120;
-        setNodes((ns) => [...ns, { id: nid, type: 'wf', position: { x, y }, data: { wfType: 'tag' as WorkflowNodeType } }]);
+        setNodes((ns) => [...ns, { id: nid, type: 'wf', position: { x, y }, data: { wfType: 'action' as WorkflowNodeType, actionKind: 'add_tag' } }]);
         setSelectedId(nid);
         return [
           ...eds.filter((e) => e.id !== edgeId),
@@ -384,7 +396,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
       const wfType = (node.data as { wfType?: string }).wfType;
       // tag/field/condition = synchrones (traversés). La condition a deux sorties ; on suit la 1re arête (hint UI :
       // le vrai gate reste `opensOutsideServiceWindow` serveur, branch-aware, qui refuse le save au besoin).
-      if (wfType !== 'tag' && wfType !== 'field' && wfType !== 'condition') return node.id;
+      if (wfType !== 'tag' && wfType !== 'field' && wfType !== 'condition' && wfType !== 'action') return node.id;
       cur = edges.find((e) => e.source === cur)?.target ?? null;
     }
     return null;
@@ -505,6 +517,8 @@ function ConfigPanel({
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-600">{t('Type de bloc', 'Block type')}</label>
         <select value={wfType} onChange={(e) => onPatch({ wfType: e.target.value })} className={`${cls} bg-white`}>
+          {/* Bloc legacy (tag/field hors palette) : on garde son type comme option pour ne pas afficher un select vide. */}
+          {!NODE_ORDER.includes(wfType) && <option value={wfType}>{t(...nodeMetaOf(wfType).label)}</option>}
           {NODE_ORDER.map((nt) => <option key={nt} value={nt}>{t(...NODE_META[nt].label)}</option>)}
         </select>
         {typeof d.code === 'string' && d.code !== '' && (
@@ -610,6 +624,63 @@ function ConfigPanel({
           </div>
         </div>
       )}
+      {wfType === 'action' && (() => {
+        const kind = (d.actionKind as string) ?? 'add_tag';
+        const isTag = kind === 'add_tag' || kind === 'remove_tag';
+        return (
+          <div className="space-y-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Action', 'Action')}</label>
+              <select value={kind} onChange={(e) => onPatch({ actionKind: e.target.value })} className={`${cls} bg-white`}>
+                <option value="add_tag">{t('Ajouter un tag', 'Add a tag')}</option>
+                <option value="remove_tag">{t('Retirer un tag', 'Remove a tag')}</option>
+                <option value="set_field">{t('Mettre à jour un champ', 'Update a field')}</option>
+                <option value="clear_field">{t('Vider un champ', 'Clear a field')}</option>
+              </select>
+            </div>
+            {isTag ? (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-ink-600">{kind === 'add_tag' ? t('Tag à ajouter', 'Tag to add') : t('Tag à retirer', 'Tag to remove')}</label>
+                <input
+                  list="wf-tags"
+                  value={(d.tag as string) ?? ''}
+                  onChange={(e) => onPatch({ tag: e.target.value })}
+                  onBlur={(e) => { if (kind === 'add_tag') onCommitTag(e.target.value); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (kind === 'add_tag') onCommitTag((e.target as HTMLInputElement).value); } }}
+                  className={cls}
+                  placeholder={t('vip, prospect…', 'vip, prospect…')}
+                />
+                <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
+                {kind === 'add_tag' && <p className="mt-1 text-[11px] text-ink-400">{t('Le tag est ajouté à Contenus > Tags dès que tu quittes le champ.', 'The tag is added to Content > Tags as soon as you leave the field.')}</p>}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-ink-600">{t('Champ', 'Field')}</label>
+                  <select value={(d.fieldKey as string) ?? ''} onChange={(e) => { const f = fields.find((x) => x.key === e.target.value); onPatch({ fieldKey: e.target.value, fieldLabel: f?.label ?? '' }); }} className={`${cls} bg-white`}>
+                    <option value="">{t('Choisir…', 'Choose…')}</option>
+                    {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                  </select>
+                </div>
+                {kind === 'set_field' && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
+                    <select value={d.valueKind === 'now' ? 'now' : 'fixed'} onChange={(e) => onPatch({ valueKind: e.target.value === 'now' ? 'now' : 'fixed' })} className={`${cls} bg-white`}>
+                      <option value="fixed">{t('valeur fixe', 'fixed value')}</option>
+                      <option value="now">{t('maintenant (date + heure)', 'now (date + time)')}</option>
+                    </select>
+                    {d.valueKind === 'now' ? (
+                      <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc.', 'Sets the date and time when the contact reaches this block.')}</p>
+                    ) : (
+                      <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {wfType === 'condition' && (
         <div className="space-y-2">
           <p className="text-[11px] leading-snug text-ink-400">{t('Le contact tire le fil « Si réunie » (vert) quand la condition est vraie, sinon « Sinon » (rouge). Relie chaque sortie à un bloc.', 'The contact follows “If met” (green) when the condition is true, otherwise “Otherwise” (red). Connect each output to a block.')}</p>
