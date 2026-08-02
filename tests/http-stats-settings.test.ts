@@ -45,11 +45,13 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null }),
+    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
     setAutoRetryEnabled: async () => {},
     setControlHandbackSeconds: async () => {},
+    setTimezone: async () => {},
+    setBusinessHours: async () => {},
     ...over.settings,
   };
   return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, stats, settings });
@@ -229,11 +231,38 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null }) } });
+    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
     await a.close();
+  });
+
+  it('PATCH /settings/timezone : IANA valide -> 200 + posé ; invalide -> 400 ; agent -> 403', async () => {
+    let saved: [string, string] | null = null;
+    const ok = app({ settings: { setTimezone: async (t, tz) => { saved = [t, tz]; } } });
+    const r1 = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/timezone', ...h(adminTok), payload: { timezone: 'America/New_York' } });
+    expect(r1.statusCode).toBe(200);
+    expect(saved).toEqual(['t1', 'America/New_York']);
+    const bad = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/timezone', ...h(adminTok), payload: { timezone: 'Mars/Olympus' } });
+    expect(bad.statusCode).toBe(400);
+    const agent = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/timezone', ...h(agentTok), payload: { timezone: 'Europe/Paris' } });
+    expect(agent.statusCode).toBe(403);
+    await ok.close();
+  });
+
+  it('PATCH /settings/business-hours : 7 jours valides -> 200 ; plage inversée -> 400 ; jour manquant -> 400', async () => {
+    let saved: unknown = null;
+    const ok = app({ settings: { setBusinessHours: async (_t, h2) => { saved = h2; } } });
+    const week = (open: string, close: string) => Object.fromEntries(Array.from({ length: 7 }, (_, d) => [String(d), d === 0 || d === 6 ? { closed: true, open: '', close: '' } : { closed: false, open, close }]));
+    const good = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/business-hours', ...h(adminTok), payload: { businessHours: week('09:00', '18:00') } });
+    expect(good.statusCode).toBe(200);
+    expect((saved as Record<string, { open: string }>)['1']!.open).toBe('09:00');
+    const inverted = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/business-hours', ...h(adminTok), payload: { businessHours: week('18:00', '09:00') } });
+    expect(inverted.statusCode).toBe(400);
+    const missing = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/business-hours', ...h(adminTok), payload: { businessHours: { '1': { closed: false, open: '09:00', close: '18:00' } } } });
+    expect(missing.statusCode).toBe(400);
+    await ok.close();
   });
 
   it('GET /settings agent -> 403 (admin-only, Feature 2 RBAC)', async () => {

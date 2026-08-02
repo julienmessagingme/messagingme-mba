@@ -13,7 +13,7 @@ export function slugify(label: string): string {
   return s || 'field';
 }
 
-export const USER_FIELD_TYPES: readonly UserFieldType[] = ['text', 'number', 'date', 'boolean', 'url'];
+export const USER_FIELD_TYPES: readonly UserFieldType[] = ['text', 'number', 'date', 'datetime', 'boolean', 'url'];
 
 export function isUserFieldType(t: string): t is UserFieldType {
   return (USER_FIELD_TYPES as readonly string[]).includes(t);
@@ -34,6 +34,9 @@ export function validateFieldValue(type: UserFieldType, value: string): boolean 
   if (v.length > 1000) return false;
   if (type === 'number') return Number.isFinite(Number(v));
   if (type === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+  // datetime : date + heure ISO 8601. Accepte le format `datetime-local` (`YYYY-MM-DDTHH:MM`, heure MURALE sans
+  // fuseau, interprétée dans le fuseau tenant à l'évaluation) ET une forme absolue avec `Z`/offset (ce que pose NOW).
+  if (type === 'datetime') return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.test(v) && !Number.isNaN(Date.parse(v));
   if (type === 'boolean') return ['true', 'false', 'oui', 'non', '1', '0'].includes(v.toLowerCase());
   if (type === 'url') return /^https?:\/\/\S+$/i.test(v);
   return true; // text

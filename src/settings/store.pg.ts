@@ -1,7 +1,25 @@
 import type { Pool } from 'pg';
+import type { BusinessHours } from '../workflow/conditions';
+
+/** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
+export const DEFAULT_TIMEZONE = 'Europe/Paris';
+/** Horaires d'ouverture par défaut : Lun-Ven 9h-18h, week-end fermé (jour '0' = dimanche). */
+export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
+  '0': { closed: true, open: '', close: '' },
+  '1': { closed: false, open: '09:00', close: '18:00' },
+  '2': { closed: false, open: '09:00', close: '18:00' },
+  '3': { closed: false, open: '09:00', close: '18:00' },
+  '4': { closed: false, open: '09:00', close: '18:00' },
+  '5': { closed: false, open: '09:00', close: '18:00' },
+  '6': { closed: true, open: '', close: '' },
+};
 
 export interface TenantSettings {
   mbaEnabled: boolean;
+  /** Fuseau IANA du tenant (ex. 'Europe/Paris'). Défaut serveur si non réglé. Base de NOW / weekday / horaires. */
+  timezone: string;
+  /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). Défaut serveur si non réglé. */
+  businessHours: BusinessHours;
   /** Toggle « Campagnes via données HubSpot » : OFF = aucun appel au connecteur. */
   hubspotListsEnabled: boolean;
   /**
@@ -27,8 +45,8 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -38,7 +56,27 @@ export class PgTenantSettingsStore {
       campaignsPaused: r?.campaigns_paused ?? false,
       autoRetryEnabled: r?.auto_retry_enabled ?? false,
       controlHandbackSeconds: r?.control_handback_seconds ?? null,
+      timezone: r?.timezone ?? DEFAULT_TIMEZONE,
+      businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
     };
+  }
+
+  /** Règle le fuseau IANA du tenant (validé en amont par la route). Upsert ciblé : n'écrase aucun autre réglage. */
+  async setTimezone(tenantId: string, timezone: string): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, timezone, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set timezone = excluded.timezone, updated_at = now()`,
+      [tenantId, timezone],
+    );
+  }
+
+  /** Règle les heures d'ouverture (déjà normalisées par la route). Upsert ciblé. */
+  async setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, business_hours, updated_at) values ($1, $2::jsonb, now())
+       on conflict (tenant_id) do update set business_hours = excluded.business_hours, updated_at = now()`,
+      [tenantId, JSON.stringify(hours)],
+    );
   }
 
   /** Active/désactive l'auto-relance des échecs (F6). Upsert ciblé : n'écrase aucun autre réglage. */

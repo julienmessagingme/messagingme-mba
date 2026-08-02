@@ -1,4 +1,4 @@
-export type UserFieldType = 'text' | 'number' | 'date' | 'boolean' | 'url';
+export type UserFieldType = 'text' | 'number' | 'date' | 'datetime' | 'boolean' | 'url';
 
 export interface UserFieldDef {
   key: string;

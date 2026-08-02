@@ -239,6 +239,8 @@ async function main(): Promise<void> {
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
+      setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
+      setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
     },
     // Import de listes HubSpot (3e source de campagne) : monté seulement si le canal service est configuré.
     ...(config.HUBSPOT_SERVICE_URL

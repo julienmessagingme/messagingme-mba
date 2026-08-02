@@ -100,6 +100,16 @@ describe('validateFieldValue', () => {
     expect(validateFieldValue('text', 'quoi que ce soit')).toBe(true);
     expect(validateFieldValue('text', '')).toBe(false);
   });
+
+  it('datetime : ISO date+heure (murale ou absolue), rejette date nue / format libre', () => {
+    expect(validateFieldValue('datetime', '2026-08-03T14:30')).toBe(true);          // datetime-local
+    expect(validateFieldValue('datetime', '2026-08-03T14:30:00')).toBe(true);
+    expect(validateFieldValue('datetime', '2026-08-03T12:30:00Z')).toBe(true);       // absolu (NOW)
+    expect(validateFieldValue('datetime', '2026-08-03T14:30:00+02:00')).toBe(true);
+    expect(validateFieldValue('datetime', '2026-08-03')).toBe(false);                // date nue = pas datetime
+    expect(validateFieldValue('datetime', '03/08/2026 14:30')).toBe(false);
+    expect(validateFieldValue('datetime', 'demain')).toBe(false);
+  });
 });
 
 describe('canonicalizeFieldValue', () => {

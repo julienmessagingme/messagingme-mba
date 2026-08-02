@@ -1102,7 +1102,7 @@ export function revokeApiKey(tenantId: string, id: string): Promise<{ id: string
   return request(`/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' });
 }
 
-export type UserFieldKind = 'text' | 'number' | 'date' | 'boolean' | 'url';
+export type UserFieldKind = 'text' | 'number' | 'date' | 'datetime' | 'boolean' | 'url';
 export interface UserFieldDef {
   key: string;
   label: string;
