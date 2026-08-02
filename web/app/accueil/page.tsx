@@ -9,9 +9,9 @@ import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
   setAutoRetryEnabled as saveAutoRetryEnabled,
-  setControlHandbackSeconds, getHubspotInstallLink,
+  setControlHandbackSeconds, setReturnBehavior as saveReturnBehavior, getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
-  type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
+  type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig, type ReturnBehavior,
 } from '@/lib/api';
 
 export default function AccueilPage() {
@@ -67,6 +67,9 @@ function AccueilInner({ session }: { session: Session }) {
   // Durée du gel quand un opérateur prend la main. '' = valeur par défaut du serveur.
   const [handback, setHandback] = useState('');
   const [savingHandback, setSavingHandback] = useState(false);
+  // Destination du fil à la reprise (C.4). '' = pas de choix explicite (repli usine `resume`).
+  const [returnBehavior, setReturnBehaviorState] = useState<ReturnBehavior | ''>('');
+  const [savingReturn, setSavingReturn] = useState(false);
   const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,6 +116,7 @@ function AccueilInner({ session }: { session: Session }) {
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
       setAutoRetryEnabled(cfg.value.autoRetryEnabled);
       setHandback(cfg.value.controlHandbackSeconds === null ? '' : String(Math.round(cfg.value.controlHandbackSeconds / 60)));
+      setReturnBehaviorState(cfg.value.returnBehavior ?? '');
     }
     if (m.status === 'rejected' || cfg.status === 'rejected') {
       const reason = (m.status === 'rejected' ? m.reason : cfg.status === 'rejected' ? cfg.reason : null) as unknown;
@@ -270,6 +274,23 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
+  /**
+   * Enregistre la destination par défaut d'un fil à la reprise (C.4). '' = pas de choix explicite (repli
+   * usine `resume`). Sauvegarde optimiste au changement du select.
+   */
+  async function saveReturn(next: ReturnBehavior | '') {
+    if (!isAdmin) return;
+    setReturnBehaviorState(next);
+    setSavingReturn(true);
+    try {
+      await saveReturnBehavior(session.tenantId, next === '' ? null : next);
+    } catch {
+      /* pas de rollback : l'absence de confirmation signale l'échec, le choix reste à l'écran */
+    } finally {
+      setSavingReturn(false);
+    }
+  }
+
   const firstName = firstNameOf(me);
   const kpiRow = useMemo(
     () => [
@@ -375,6 +396,31 @@ function AccueilInner({ session }: { session: Session }) {
                       ? t('0 : le scénario ne reprend JAMAIS tout seul. Il faut rendre la main depuis la conversation.', '0: the scenario never resumes on its own. You must hand back from the conversation.')
                       : t('Un opérateur peut rendre la main plus tôt, depuis la conversation.', 'An operator can hand back earlier, from the conversation.')}
                 </p>
+                {/* Destination du fil à la reprise (C.4) : rendre au scénario, ou le laisser à traiter dans
+                    l'inbox. Surchargeable fil par fil depuis la conversation. */}
+                <div className="mt-3 border-t border-ink-100 pt-3">
+                  <label htmlFor="return-behavior" className="text-sm font-medium text-ink-700">
+                    {t('À la reprise, le fil…', 'On resume, the thread…')}
+                  </label>
+                  <select
+                    id="return-behavior"
+                    data-testid="return-behavior-select"
+                    value={returnBehavior}
+                    onChange={(e) => { void saveReturn(e.target.value as ReturnBehavior | ''); }}
+                    disabled={!isAdmin || savingReturn}
+                    className="mt-1 block w-full max-w-xs rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
+                  >
+                    <option value="">{t('Par défaut (repart au scénario)', 'Default (resumes the scenario)')}</option>
+                    <option value="resume">{t('Repart au scénario automatique', 'Resumes the automatic scenario')}</option>
+                    <option value="inbox">{t('Reste à traiter (l’humain garde la main)', 'Stays to handle (the human keeps control)')}</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-ink-400">
+                    {returnBehavior === 'inbox'
+                      ? t('Après une prise en main, le fil reste dans « À traiter » jusqu’à ce qu’un opérateur rende la main.', 'After an operator steps in, the thread stays under « To handle » until someone hands back.')
+                      : t('Après une prise en main, le fil repart tout seul au scénario (comportement historique).', 'After an operator steps in, the thread resumes the scenario on its own (historical behavior).')}
+                    {savingReturn && <span className="ml-2 text-ink-400">{t('enregistrement...', 'saving...')}</span>}
+                  </p>
+                </div>
               </div>
             )}
             {/* Auto-relance des échecs de livraison (F6). Effet différé/invisible : le texte explique ce que ça fait. */}

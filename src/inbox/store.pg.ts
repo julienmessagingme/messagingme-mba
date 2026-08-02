@@ -9,6 +9,14 @@ import type { InboxStore, InboundMessage } from '../webhooks/inbound';
  */
 export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
 
+/**
+ * Que devient un fil après une prise en main opérateur, au moment où le sweep de handback voudrait le rendre
+ * au scénario (C.4). `resume` = rendu au scénario (comportement historique). `inbox` = reste à l'humain,
+ * visible dans « À traiter », jamais rendu automatiquement. Réglé par tenant (défaut) et/ou par conversation
+ * (surcharge). L'absence de choix (null en base) retombe sur le repli usine `resume`.
+ */
+export type ReturnBehavior = 'resume' | 'inbox';
+
 export interface ConversationSummary {
   id: string;
   waId: string;
@@ -131,9 +139,11 @@ export class PgInboxStore implements InboxStore {
    */
   async listHeldControl(
     limit = 500,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>> {
-    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null }>(
-      `select tenant_id, wa_id, control_owner, control_changed_at
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; returnBehavior: ReturnBehavior | null }>> {
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string; control_owner: ControlOwner; control_changed_at: Date | null; return_behavior: ReturnBehavior | null }>(
+      // `return_behavior` (surcharge par conversation, C.4) descend avec le lot : le sweep en a besoin pour
+      // décider, sans requête par conversation, si un fil humain doit rester à l'inbox plutôt qu'être rendu.
+      `select tenant_id, wa_id, control_owner, control_changed_at, return_behavior
        from conversations
        where control_owner <> 'app_workflow'
        order by control_changed_at nulls first
@@ -145,7 +155,19 @@ export class PgInboxStore implements InboxStore {
       waId: r.wa_id,
       owner: r.control_owner,
       changedAt: r.control_changed_at,
+      returnBehavior: r.return_behavior === 'inbox' || r.return_behavior === 'resume' ? r.return_behavior : null,
     }));
+  }
+
+  /**
+   * Surcharge par conversation de la destination de reprise (C.4). `null` retire la surcharge -> le fil suit
+   * le défaut du tenant. UPDATE ciblé par (tenant, wa_id) : ne crée jamais de conversation vide.
+   */
+  async setConversationReturnBehavior(tenantId: string, waId: string, behavior: ReturnBehavior | null): Promise<void> {
+    await this.pool.query(
+      `update conversations set return_behavior = $3 where tenant_id = $1 and wa_id = $2`,
+      [tenantId, waId, behavior],
+    );
   }
 
   async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
@@ -210,20 +232,21 @@ export class PgInboxStore implements InboxStore {
   async getConversationContext(
     conversationId: string,
     tenantId: string,
-  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null> {
-    const res = await this.pool.query<{ wa_id: string; last_in: Date | null }>(
-      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in') as last_in
+  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean; returnBehavior: ReturnBehavior | null } | null> {
+    const res = await this.pool.query<{ wa_id: string; last_in: Date | null; return_behavior: ReturnBehavior | null }>(
+      `select c.wa_id, c.return_behavior, max(m.created_at) filter (where m.direction = 'in') as last_in
        from conversations c
        left join conversation_messages m on m.conversation_id = c.id
        where c.id = $1 and c.tenant_id = $2
-       group by c.wa_id`,
+       group by c.wa_id, c.return_behavior`,
       [conversationId, tenantId],
     );
     const r = res.rows[0];
     if (!r) return null;
     const lastIn = r.last_in;
     const windowOpen = !!lastIn && Date.now() - lastIn.getTime() < 24 * 3600 * 1000;
-    return { waId: r.wa_id, lastInboundAt: lastIn ? lastIn.toISOString() : null, windowOpen };
+    const returnBehavior = r.return_behavior === 'inbox' || r.return_behavior === 'resume' ? r.return_behavior : null;
+    return { waId: r.wa_id, lastInboundAt: lastIn ? lastIn.toISOString() : null, windowOpen, returnBehavior };
   }
 
   /**

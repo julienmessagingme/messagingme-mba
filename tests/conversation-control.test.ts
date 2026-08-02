@@ -271,3 +271,97 @@ describe('durée du gel réglable PAR CLIENT', () => {
     expect(demandes).toEqual([]);
   });
 });
+
+describe('destination de reprise (C.4) : rendre au scénario vs laisser en inbox', () => {
+  type Held = { tenantId: string; waId: string; owner: 'app_workflow' | 'app_human' | 'mba'; changedAt: Date | null; returnBehavior?: 'resume' | 'inbox' | null };
+  /** Sweep avec un défaut de destination par tenant + surcharge possible par conversation. Délai humain = 2 h. */
+  function withDest(
+    held: Held[],
+    destParTenant: Record<string, 'resume' | 'inbox'>,
+  ): { deps: ControlSweepDeps; rendues: string[]; demandesDest: string[][] } {
+    const rendues: string[] = [];
+    const demandesDest: string[][] = [];
+    return {
+      rendues,
+      demandesDest,
+      deps: {
+        listHeldControl: async () => held,
+        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+        returnBehaviorByTenant: async (ids) => { demandesDest.push([...ids]); return new Map(Object.entries(destParTenant)); },
+        timeouts: { app_human: 2 * H, mba: 24 * H },
+        now: () => T0,
+      },
+    };
+  }
+
+  it('défaut tenant `inbox` -> un fil humain inactif reste à l’humain (jamais rendu)', async () => {
+    const { deps, rendues } = withDest(
+      [{ tenantId: 't1', waId: 'reste', owner: 'app_human', changedAt: ago(100 * H) }],
+      { t1: 'inbox' },
+    );
+    expect(await runControlSweep(deps)).toBe(0);
+    expect(rendues).toEqual([]);
+  });
+
+  it('défaut tenant `resume` -> comportement historique : le fil inactif est rendu', async () => {
+    const { deps, rendues } = withDest(
+      [{ tenantId: 't1', waId: 'rendu', owner: 'app_human', changedAt: ago(3 * H) }],
+      { t1: 'resume' },
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['rendu']);
+  });
+
+  it('surcharge conversation `inbox` prime sur défaut tenant `resume`', async () => {
+    const { deps, rendues } = withDest(
+      [
+        { tenantId: 't1', waId: 'surcharge-inbox', owner: 'app_human', changedAt: ago(100 * H), returnBehavior: 'inbox' },
+        { tenantId: 't1', waId: 'suit-defaut', owner: 'app_human', changedAt: ago(100 * H) },
+      ],
+      { t1: 'resume' },
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['suit-defaut']); // seul celui qui suit le défaut `resume` est rendu
+  });
+
+  it('surcharge conversation `resume` prime sur défaut tenant `inbox`', async () => {
+    const { deps, rendues } = withDest(
+      [
+        { tenantId: 't1', waId: 'surcharge-resume', owner: 'app_human', changedAt: ago(3 * H), returnBehavior: 'resume' },
+        { tenantId: 't1', waId: 'suit-inbox', owner: 'app_human', changedAt: ago(3 * H) },
+      ],
+      { t1: 'inbox' },
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['surcharge-resume']);
+  });
+
+  it('sans choix explicite (tenant absent) -> repli `resume` : le comportement par défaut est préservé', async () => {
+    const { deps, rendues } = withDest(
+      [{ tenantId: 'sansChoix', waId: 'rendu', owner: 'app_human', changedAt: ago(3 * H) }],
+      {},
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['rendu']);
+  });
+
+  it('la destination ne concerne QUE le gel humain, pas le garde-fou MBA', async () => {
+    // Un défaut `inbox` ne doit pas empêcher le garde-fou technique MBA (24 h) de libérer un fil MBA figé.
+    const { deps, rendues } = withDest(
+      [{ tenantId: 't1', waId: 'agent', owner: 'mba', changedAt: ago(30 * H) }],
+      { t1: 'inbox' },
+    );
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['agent']);
+  });
+
+  it('dep destination absente -> repli `resume` (rétro-compatibilité des suites existantes)', async () => {
+    const deps: ControlSweepDeps = {
+      listHeldControl: async () => [{ tenantId: 't1', waId: 'rendu', owner: 'app_human', changedAt: ago(3 * H) }],
+      setControlOwner: async () => true,
+      timeouts: { app_human: 2 * H },
+      now: () => T0,
+    };
+    expect(await runControlSweep(deps)).toBe(1);
+  });
+});

@@ -149,6 +149,11 @@ function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null 
     if (!body || !buttons.some((b) => b.text.trim() !== '')) return null;
     return { kind: 'sendQuickMessage', body, buttons };
   }
+  // MBA (envoi vers MBA / désactivation) : PRÉ-CÂBLAGE INERTE. Aucune action tant que MBA n'est pas actif
+  // (agent_eligibility 403). `null` = no-op synchrone : `walk` traverse le bloc comme un tag/field vide et
+  // continue. On ne pose JAMAIS `control_owner='mba'` ici (réservé au webhook messaging_handovers), et aucun
+  // appel thread_control n'est branché : ce sont des placeholders, câblés le jour de l'activation MBA.
+  if (node.type === 'mba_handoff' || node.type === 'mba_disable') return null;
   return null;
 }
 

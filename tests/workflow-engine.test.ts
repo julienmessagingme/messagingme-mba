@@ -63,6 +63,35 @@ describe('walk : action sendTemplate porte les boutons du template', () => {
   });
 });
 
+describe('walk : blocs MBA (pré-câblage inerte)', () => {
+  it('mba_handoff / mba_disable ne produisent AUCUNE action et sont traversés (synchrones, no-op)', async () => {
+    // tag(vip) -> mba_handoff -> mba_disable -> template : les deux blocs MBA sont inertes, le walk les traverse
+    // comme des blocs vides et s'arrête au template (waiting). Aucune action mba, aucun effet.
+    const g: WorkflowGraph = {
+      nodes: [
+        n('t', 'tag', { tag: 'vip' }),
+        n('h', 'mba_handoff'),
+        n('d', 'mba_disable'),
+        n('tpl', 'template', { templateName: 'promo', language: 'fr' }),
+      ],
+      edges: [e('e1', 't', 'h'), e('e2', 'h', 'd'), e('e3', 'd', 'tpl')],
+    };
+    const r = walk(g, 't');
+    expect(r.actions).toEqual([
+      { kind: 'tag', tag: 'vip' },
+      { kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [] },
+    ]);
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'tpl' });
+  });
+
+  it('un bloc MBA seul en fin de chaîne -> done sans action (jamais terminal comme inbox)', () => {
+    const g: WorkflowGraph = { nodes: [n('h', 'mba_handoff')], edges: [] };
+    const r = walk(g, 'h');
+    expect(r.actions).toEqual([]);
+    expect(r.rest).toEqual({ status: 'done' });
+  });
+});
+
 describe('walk : quick_message', () => {
   it('corps + réponses -> action sendQuickMessage (ordre préservé), waiting', () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Ça te va ?', quickReplies: ['Oui', 'Non'] })], edges: [] };

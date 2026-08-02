@@ -12,10 +12,16 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] }, // legacy : idem
   condition: { emoji: '🔀', label: ['Condition', 'Condition'] },
   action: { emoji: '⚙️', label: ['Action', 'Action'] },
+  mba_handoff: { emoji: '🤖', label: ['Envoi vers MBA', 'Send to MBA'] },
+  mba_disable: { emoji: '🚫', label: ['Désactivation MBA', 'Disable MBA'] },
 };
 
 // La palette ne propose plus `tag`/`field` séparés : le bloc « Action » les regroupe (ajouter/retirer tag, màj/vider champ).
 export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'action', 'condition', 'inbox'];
+
+// Blocs MBA : pré-câblage INERTE, présentés à part et GRISÉS tant que le tenant n'a pas MBA actif (ToS Meta non
+// signées, agent_eligibility 403). Hors NODE_ORDER pour ne pas polluer le sélecteur de type ni la palette normale.
+export const MBA_NODE_ORDER: WorkflowNodeType[] = ['mba_handoff', 'mba_disable'];
 
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme
  *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].emoji` sur `undefined`) qui

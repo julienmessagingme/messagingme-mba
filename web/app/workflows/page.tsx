@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
-import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, type WorkflowSummary } from '@/lib/api';
+import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, type WorkflowSummary } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 
@@ -26,6 +26,8 @@ function WorkflowsInner({ session }: { session: Session }) {
   const t = useT();
   const { locale } = useLocale();
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  // MBA actif chez le tenant ? Gouverne l'activation des blocs MBA (grisés sinon) dans le builder. Défaut prudent : false.
+  const [mbaEnabled, setMbaEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -53,6 +55,11 @@ function WorkflowsInner({ session }: { session: Session }) {
       setLoading(false);
     }
   }, [session.tenantId, t]);
+
+  // MBA actif ? Best-effort, non bloquant : un échec laisse les blocs MBA grisés (défaut prudent).
+  useEffect(() => {
+    void getSettings(session.tenantId).then((s) => setMbaEnabled(s.mbaEnabled)).catch(() => {});
+  }, [session.tenantId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -146,7 +153,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         <div className="min-h-0 flex-1">
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} mbaEnabled={mbaEnabled} />
         </div>
       </div>
     );

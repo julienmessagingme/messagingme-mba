@@ -6,7 +6,12 @@
 
 // `action` = bloc unifié (ajouter/retirer un tag, mettre à jour/vider un champ) via `data.actionKind`. Les types
 // `tag`/`field` restent lus pour les scénarios existants (legacy), mais la palette ne crée plus que `action`.
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action'] as const;
+// `mba_handoff` (envoi vers MBA) / `mba_disable` (désactivation MBA) = PRÉ-CÂBLAGE INERTE : reconnus par le
+// moteur pour qu'un graphe les contenant valide, mais SANS effet à l'exécution (aucune action, aucun appel Meta,
+// jamais de `control_owner='mba'` local, cette pose reste réservée au webhook messaging_handovers). Grisés dans
+// la palette tant que le tenant n'a pas MBA actif (agent_eligibility 403 / ToS non signées). Le vrai câblage
+// thread_control viendra le jour de l'activation MBA (tâche séparée).
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'mba_handoff', 'mba_disable'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

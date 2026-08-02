@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
-import type { ConversationSummary, ConversationMessage } from '../inbox/store.pg';
+import type { ConversationSummary, ConversationMessage, ReturnBehavior } from '../inbox/store.pg';
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
 export interface OutboundTemplate {
@@ -16,11 +16,13 @@ export interface OutboundTemplate {
 
 export interface InboxRouteDeps {
   listConversations(tenantId: string): Promise<ConversationSummary[]>;
-  /** wa_id + état de la fenêtre de service 24 h. null si conversation absente/autre tenant. */
+  /** wa_id + état de la fenêtre de service 24 h + surcharge de reprise du fil (C.4). null si conversation absente/autre tenant. */
   getConversationContext(
     conversationId: string,
     tenantId: string,
-  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
+  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean; returnBehavior: ReturnBehavior | null } | null>;
+  /** Pose/retire la surcharge de reprise d'UN fil (C.4). null = suit le défaut du tenant. Optionnel (deps de test minimales). */
+  setConversationReturnBehavior?(tenantId: string, waId: string, behavior: ReturnBehavior | null): Promise<void>;
   getMessages(conversationId: string): Promise<ConversationMessage[]>;
   /**
    * Un opérateur vient d'écrire : il PREND le fil. Posé depuis la route et non depuis le store, parce que
@@ -94,6 +96,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       // pourquoi et ne sait pas s'il doit rendre la main. Défaut `app_workflow` quand le dep est absent,
       // qui est l'état d'une conversation dont personne n'a pris le contrôle.
       controlOwner: deps.getControlOwner ? await deps.getControlOwner(tenant, ctx.waId) : 'app_workflow',
+      // Surcharge de reprise de CE fil (C.4) : null = suit le défaut du tenant. L'inbox l'affiche pour que
+      // l'opérateur sache si, à la reprise, ce fil précis restera à l'humain ou repartira au scénario.
+      returnBehavior: ctx.returnBehavior,
       messages: await deps.getMessages(conversationId),
     });
   });
@@ -184,5 +189,25 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (!deps.releaseControl) return reply.code(503).send({ error: 'reprise indisponible sur cette instance' });
     const owner = await deps.releaseControl(tenant, ctx.waId);
     return reply.code(200).send({ controlOwner: owner });
+  });
+
+  /**
+   * Surcharge de la destination de reprise d'UN fil (C.4) : `resume` (repart au scénario), `inbox` (reste à
+   * l'humain), ou `null` (suit le défaut du tenant). Ne prend PAS le contrôle et ne rend PAS la main tout de
+   * suite : elle ne fait que dire au sweep de handback quoi faire quand il examinera ce fil.
+   */
+  app.patch('/tenants/:tenantId/conversations/:conversationId/return-behavior', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const raw = (req.body as { behavior?: unknown } | null)?.behavior;
+    if (raw !== null && raw !== 'resume' && raw !== 'inbox') {
+      return reply.code(400).send({ error: "behavior invalide ('resume' | 'inbox' | null)" });
+    }
+    if (!deps.setConversationReturnBehavior) return reply.code(503).send({ error: 'réglage indisponible sur cette instance' });
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    await deps.setConversationReturnBehavior(tenant, ctx.waId, raw);
+    return reply.code(200).send({ returnBehavior: raw });
   });
 }

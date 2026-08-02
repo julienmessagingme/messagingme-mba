@@ -172,6 +172,9 @@ async function main(): Promise<void> {
       // Un opérateur qui écrit prend le fil : le scénario se gèle sur ce contact, les campagnes le sautent.
       takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
+      // Surcharge de reprise d'un fil (C.4) : dit au sweep de handback s'il faut, pour CE fil, le rendre au
+      // scénario ou le laisser à l'humain. Ne bascule pas le contrôle par elle-même.
+      setConversationReturnBehavior: (tenant, waId, behavior) => inboxStore.setConversationReturnBehavior(tenant, waId, behavior),
       /**
        * L'opérateur rend la main. Aujourd'hui la conversation repart au scénario.
        *
@@ -239,6 +242,7 @@ async function main(): Promise<void> {
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
+      setReturnBehavior: (tenant, behavior) => settingsStore.setReturnBehavior(tenant, behavior),
       setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
       setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
     },

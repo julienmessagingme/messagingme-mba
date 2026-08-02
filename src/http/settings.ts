@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { TenantSettings } from '../settings/store.pg';
+import type { ReturnBehavior } from '../inbox/store.pg';
 import type { BusinessHours, DayHours } from '../workflow/conditions';
 
 export interface SettingsRouteDeps {
@@ -12,6 +13,8 @@ export interface SettingsRouteDeps {
   setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
+  /** Défaut de destination de reprise après prise en main (C.4). null = repli usine `resume`. */
+  setReturnBehavior(tenantId: string, behavior: ReturnBehavior | null): Promise<void>;
   /** Fuseau IANA du tenant. */
   setTimezone(tenantId: string, timezone: string): Promise<void>;
   /** Heures d'ouverture par jour ('0'..'6'). */
@@ -123,6 +126,24 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
     }
     await deps.setControlHandbackSeconds(tenant, raw);
     return reply.code(200).send({ controlHandbackSeconds: raw });
+  });
+
+  /**
+   * Défaut du tenant pour la destination d'un fil après une prise en main opérateur (C.4). Route dédiée,
+   * admin-only. `resume` = le sweep de handback rend le fil au scénario (comportement historique) ; `inbox`
+   * = le fil reste à l'humain (« À traiter »), jamais rendu automatiquement. `null` retire le choix explicite
+   * -> repli usine `resume`. Une surcharge par conversation prime sur ce défaut.
+   */
+  app.patch('/tenants/:tenantId/settings/return-behavior', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const raw = (req.body as { behavior?: unknown } | null)?.behavior;
+    if (raw !== null && raw !== 'resume' && raw !== 'inbox') {
+      return reply.code(400).send({ error: "behavior invalide ('resume' | 'inbox' | null)" });
+    }
+    await deps.setReturnBehavior(tenant, raw);
+    return reply.code(200).send({ returnBehavior: raw });
   });
 
   // Fuseau horaire du tenant (admin-only). Base de NOW / weekday / heures d'ouverture du node condition.

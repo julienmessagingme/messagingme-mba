@@ -4,9 +4,9 @@ import { parseGraph, isWorkflowNodeType } from '../src/workflow/graph';
 const node = (id: string, type: string, over: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data: {}, ...over });
 
 describe('isWorkflowNodeType', () => {
-  it('accepte les 5 types, rejette le reste', () => {
-    for (const t of ['template', 'inbox', 'flow', 'tag', 'field']) expect(isWorkflowNodeType(t)).toBe(true);
-    expect(isWorkflowNodeType('mba')).toBe(false);
+  it('accepte les types connus (dont les blocs MBA inertes), rejette le reste', () => {
+    for (const t of ['template', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'mba_handoff', 'mba_disable']) expect(isWorkflowNodeType(t)).toBe(true);
+    expect(isWorkflowNodeType('mba')).toBe(false); // 'mba' seul n'est pas un type (c'est mba_handoff / mba_disable)
     expect(isWorkflowNodeType(3)).toBe(false);
   });
 });

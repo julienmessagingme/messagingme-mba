@@ -14,7 +14,7 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { ConditionBuilder, type ConditionGroup } from './ConditionBuilder';
 
@@ -52,6 +52,9 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     const m = data.match === 'any' ? t('au moins une', 'at least one') : t('toutes', 'all');
     return n === 1 ? t(`${m} de 1 condition`, `${m} of 1 condition`) : t(`${m} de ${n} conditions`, `${m} of ${n} conditions`);
   }
+  // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
+  if (wfType === 'mba_handoff') return t('passe la main à MBA (inerte)', 'hands off to MBA (inert)');
+  if (wfType === 'mba_disable') return t('désactive MBA (inerte)', 'disables MBA (inert)');
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
 
@@ -186,7 +189,7 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
  * point bas d'un bloc vers un autre). +/poubelle sur chaque flèche. Panneau de config par bloc. PB1 : édition
  * + sauvegarde du graphe (pas d'exécution). Le graphe est validé/sanitisé côté serveur au save.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph }) {
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -394,9 +397,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
       const node = nodes.find((n) => n.id === cur);
       if (!node) return null;
       const wfType = (node.data as { wfType?: string }).wfType;
-      // tag/field/condition = synchrones (traversés). La condition a deux sorties ; on suit la 1re arête (hint UI :
-      // le vrai gate reste `opensOutsideServiceWindow` serveur, branch-aware, qui refuse le save au besoin).
-      if (wfType !== 'tag' && wfType !== 'field' && wfType !== 'condition' && wfType !== 'action') return node.id;
+      // tag/field/condition/action + MBA (inertes) = synchrones (traversés). La condition a deux sorties ; on suit
+      // la 1re arête (hint UI : le vrai gate reste `opensOutsideServiceWindow` serveur, branch-aware, qui refuse au besoin).
+      if (wfType !== 'tag' && wfType !== 'field' && wfType !== 'condition' && wfType !== 'action' && wfType !== 'mba_handoff' && wfType !== 'mba_disable') return node.id;
       cur = edges.find((e) => e.source === cur)?.target ?? null;
     }
     return null;
@@ -419,6 +422,20 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph }: { tenant
         <span className="text-xs text-ink-500">{t('+ Créer un bloc :', '+ Create a block:')}</span>
         {NODE_ORDER.map((nt) => (
           <button key={nt} data-testid={`add-node-${nt}`} onClick={() => addNode(nt)} className="rounded-md border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
+            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
+          </button>
+        ))}
+        {/* Blocs MBA : pré-câblage inerte. GRISÉS + non cliquables tant que MBA n'est pas actif chez le tenant
+            (agent_eligibility 403 / ToS non signées). Visibles pour préparer, non exploitables. */}
+        {MBA_NODE_ORDER.map((nt) => (
+          <button
+            key={nt}
+            data-testid={`add-node-${nt}`}
+            onClick={() => { if (mbaEnabled) addNode(nt); }}
+            disabled={!mbaEnabled}
+            title={mbaEnabled ? undefined : t('Disponible quand MBA sera actif sur votre numéro', 'Available once MBA is active on your number')}
+            className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
+          >
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
@@ -694,6 +711,18 @@ function ConfigPanel({
       )}
       {wfType === 'inbox' && (
         <p className="text-xs text-ink-500">{t("Quand le contact répond (quick-reply), la conversation remonte dans l'inbox pour un humain.", 'When the contact replies (quick-reply), the conversation moves to the inbox for a human.')}</p>
+      )}
+      {(wfType === 'mba_handoff' || wfType === 'mba_disable') && (
+        <div className="rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2 text-xs text-ink-500">
+          <p className="font-medium text-ink-600">
+            {wfType === 'mba_handoff'
+              ? t("Passe la main à l'agent MBA de Meta.", "Hands the thread off to Meta's MBA agent.")
+              : t('Désactive MBA sur ce fil.', 'Disables MBA on this thread.')}
+          </p>
+          <p className="mt-1">
+            {t("Bloc préparé mais INERTE : il ne fait rien tant que MBA n'est pas actif sur votre numéro (accord Meta requis). Aucune configuration pour l'instant.", "Prepared but INERT: it does nothing until MBA is active on your number (Meta agreement required). No configuration for now.")}
+          </p>
+        </div>
       )}
     </div>
   );

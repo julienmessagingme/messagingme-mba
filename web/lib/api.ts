@@ -482,6 +482,10 @@ export function uploadMedia(tenantId: string, dataUrl: string): Promise<{ handle
  */
 export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
 
+/** Destination d'un fil après une prise en main opérateur (C.4). `resume` = rendu au scénario ; `inbox` =
+ *  reste à l'humain. Réglé par tenant (défaut) et/ou par conversation (surcharge). Miroir du serveur. */
+export type ReturnBehavior = 'resume' | 'inbox';
+
 export interface Conversation {
   id: string;
   waId: string;
@@ -508,6 +512,8 @@ export interface ConversationThread {
   windowOpen: boolean;
   lastInboundAt: string | null;
   controlOwner: ControlOwner;
+  /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
+  returnBehavior: ReturnBehavior | null;
   messages: InboxMessage[];
 }
 export function getConversationMessages(tenantId: string, conversationId: string): Promise<ConversationThread> {
@@ -516,6 +522,11 @@ export function getConversationMessages(tenantId: string, conversationId: string
 /** L'opérateur rend la main : le scénario (ou l'agent de Meta) reprend la conversation. */
 export function releaseConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/release`, { method: 'POST' });
+}
+/** Surcharge de reprise de CE fil (C.4) : `resume` (repart au scénario), `inbox` (reste à l'humain), ou
+ *  null (suit le défaut du tenant). Ne bascule pas le contrôle : réglage lu par le sweep de handback. */
+export function setConversationReturnBehavior(tenantId: string, conversationId: string, behavior: ReturnBehavior | null): Promise<{ returnBehavior: ReturnBehavior | null }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/return-behavior`, { method: 'PATCH', body: JSON.stringify({ behavior }) });
 }
 export function replyConversation(tenantId: string, conversationId: string, text: string): Promise<{ messageId: string }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
@@ -679,6 +690,9 @@ export type BusinessHours = Record<string, DayHours>;
 export interface TenantSettings {
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   controlHandbackSeconds: number | null;
+  /** Défaut : à la reprise d'un fil pris en main, `resume` (rendu au scénario) ou `inbox` (reste à l'humain).
+   *  null = pas de choix explicite -> repli usine `resume`. Surchargeable par conversation. */
+  returnBehavior: ReturnBehavior | null;
   mbaEnabled: boolean;
   hubspotListsEnabled: boolean;
   /** Pause des campagnes via listes HubSpot (F3-b). true = source HubSpot suspendue (pilotée par l'action Pause). */
@@ -720,6 +734,11 @@ export function getHubspotInstallLink(tenantId: string, grant?: 'lists'): Promis
  *  de reprise automatique (l'opérateur garde la main jusqu'à ce qu'il la rende). */
 export function setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<{ controlHandbackSeconds: number | null }> {
   return request(`/tenants/${tenantId}/settings/control-handback`, { method: 'PATCH', body: JSON.stringify({ seconds }) });
+}
+
+/** Défaut du tenant pour la destination de reprise (C.4). `resume` | `inbox` | null (repli usine `resume`). */
+export function setReturnBehavior(tenantId: string, behavior: ReturnBehavior | null): Promise<{ returnBehavior: ReturnBehavior | null }> {
+  return request(`/tenants/${tenantId}/settings/return-behavior`, { method: 'PATCH', body: JSON.stringify({ behavior }) });
 }
 
 /** Fuseau IANA du tenant (base des conditions temporelles : NOW, jour de semaine, heures d'ouverture). */
@@ -1004,7 +1023,8 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 
 // --- Workflows (bot builder : graphe de blocs) ---
 
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action';
+// `mba_handoff`/`mba_disable` : pré-câblage inerte (envoi vers MBA / désactivation MBA), grisés tant que MBA n'est pas actif.
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'mba_handoff' | 'mba_disable';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
