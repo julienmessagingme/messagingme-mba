@@ -1,6 +1,7 @@
 'use client';
 
 import { getSession, clearSession } from './session';
+import type { UserFieldKind } from './field-kinds';
 
 const BASE = '/api/backend';
 
@@ -1102,7 +1103,10 @@ export function revokeApiKey(tenantId: string, id: string): Promise<{ id: string
   return request(`/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' });
 }
 
-export type UserFieldKind = 'text' | 'number' | 'date' | 'datetime' | 'boolean' | 'url';
+// Types de champ perso : source runtime `USER_FIELD_KINDS` + type dérivé, dans `./field-kinds` (module PUR).
+// Ré-exportés ici pour ne pas casser les imports existants (`import { UserFieldKind } from '@/lib/api'`).
+export { USER_FIELD_KINDS } from './field-kinds';
+export type { UserFieldKind } from './field-kinds';
 export interface UserFieldDef {
   key: string;
   label: string;

@@ -38,11 +38,19 @@ describe('matchStringOp — parité sémantique avec buildContactWhere (mini-CRM
     expect(matchStringOp('Lyon', 'not_contains', 'paris')).toBe(true);
     expect(matchStringOp(null, 'not_contains', 'paris')).toBe(true);
   });
-  it('empty / not_empty', () => {
+  it('empty / not_empty (pas de trim : miroir SQL `is null or = ""`)', () => {
     expect(matchStringOp(null, 'empty', '')).toBe(true);
-    expect(matchStringOp('  ', 'empty', '')).toBe(true);
+    // '  ' (espaces seuls) n'est PAS vide côté SQL (`'  ' = ''` est faux) : le node condition doit classer pareil.
+    expect(matchStringOp('  ', 'empty', '')).toBe(false);
+    expect(matchStringOp('  ', 'not_empty', '')).toBe(true);
     expect(matchStringOp('x', 'empty', '')).toBe(false);
     expect(matchStringOp('x', 'not_empty', '')).toBe(true);
+  });
+  it('cible vide = filtre non posé (buildContactWhere fait `continue`) -> toujours vrai', () => {
+    expect(matchStringOp('Lyon', 'eq', '')).toBe(true);
+    expect(matchStringOp('Lyon', 'contains', '')).toBe(true);
+    expect(matchStringOp('Lyon', 'not_contains', '')).toBe(true);
+    expect(matchStringOp(null, 'eq', '')).toBe(true);
   });
 });
 
@@ -76,6 +84,36 @@ describe('clause field (texte / nombre / booléen / champs de base)', () => {
   });
 });
 
+describe('clause field — nombre typé (valueType) & valeur absente (régressions du reviewer Phase 1)', () => {
+  it('eq NUMÉRIQUE quand valueType=number : 5.0 == 5', () => {
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'score', op: 'eq', value: '5', valueType: 'number' }]), ctx({ fields: { score: '5.0' } }))).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'score', op: 'eq', value: '5', valueType: 'number' }]), ctx({ fields: { score: '6' } }))).toBe(false);
+  });
+  it('eq TEXTE (sans valueType) reste une égalité de chaîne, jamais Number()', () => {
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'ref', op: 'eq', value: '5' }]), ctx({ fields: { ref: '5.0' } }))).toBe(false); // '5.0' !== '5'
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'ref', op: 'eq', value: '5' }]), ctx({ fields: { ref: '5' } }))).toBe(true);
+    // garde-fou anti-régression : un champ texte gardé `eq` ne doit JAMAIS partir en Number('Paris')=NaN -> false
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'ville', op: 'eq', value: 'Paris' }]), ctx({ fields: { ville: 'Paris' } }))).toBe(true);
+  });
+  it('champ numérique ABSENT -> ne matche AUCUNE comparaison (piège Number(null)===0)', () => {
+    const sans = ctx({ fields: {} }); // aucun champ `age`
+    for (const op of ['lt', 'lte', 'gt', 'gte', 'neq', 'eq'] as const) {
+      expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op, value: '18', valueType: 'number' }]), sans)).toBe(false);
+    }
+  });
+  it('neq numérique sur valeur présente', () => {
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'neq', value: '18', valueType: 'number' }]), ctx({ fields: { age: '20' } }))).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'neq', value: '18', valueType: 'number' }]), ctx({ fields: { age: '18' } }))).toBe(false);
+  });
+  it('lte/gte inclusifs, lt/gt exclusifs à la borne d’égalité', () => {
+    const eq18 = ctx({ fields: { age: '18' } });
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'lte', value: '18', valueType: 'number' }]), eq18)).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'gte', value: '18', valueType: 'number' }]), eq18)).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'lt', value: '18', valueType: 'number' }]), eq18)).toBe(false);
+    expect(evaluateConditionGroup(grp([{ kind: 'field', key: 'age', op: 'gt', value: '18', valueType: 'number' }]), eq18)).toBe(false);
+  });
+});
+
 describe('clause optin', () => {
   it('compare le statut', () => {
     expect(evaluateConditionGroup(grp([{ kind: 'optin', value: 'opted_in' }]), ctx({ optIn: 'opted_in' }))).toBe(true);
@@ -95,6 +133,12 @@ describe('fuseau horaire (DST)', () => {
   it('parseInstant : forme absolue (Z/offset) inchangée', () => {
     expect(parseInstant('2026-08-03T12:00:00Z', PARIS).toISOString()).toBe('2026-08-03T12:00:00.000Z');
   });
+  it('parseInstant : heure murale au bord d’une bascule DST (correction 2 passes)', () => {
+    // Printemps 2026 Paris : saut à 02:00->03:00 local (01:00 UTC). 01:30 local est ENCORE CET (+1) -> 00:30 UTC.
+    expect(parseInstant('2026-03-29T01:30', PARIS).toISOString()).toBe('2026-03-29T00:30:00.000Z');
+    // Automne 2026 Paris : retour à 03:00->02:00 local (01:00 UTC). 01:30 local (avant le retour) est CEST (+2) -> 23:30 UTC la veille.
+    expect(parseInstant('2026-10-25T01:30', PARIS).toISOString()).toBe('2026-10-24T23:30:00.000Z');
+  });
 });
 
 describe('clause datetime', () => {
@@ -112,6 +156,27 @@ describe('clause datetime', () => {
   it('empty / not_empty ; valeur illisible -> false', () => {
     expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'rdv', op: 'empty' }]), base)).toBe(true);
     expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'rdv', op: 'after', value: 'now' }]), ctx({ ...base, fields: { rdv: 'pas-une-date' } }))).toBe(false);
+  });
+  it('before / after vs une DATE FIXE (pas now) ; base fixe illisible -> false', () => {
+    const c = ctx({ ...base, fields: { rdv: '2026-08-12T10:00:00Z' } });
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'rdv', op: 'after', value: '2026-08-10T00:00:00Z' }]), c)).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'rdv', op: 'before', value: '2026-08-10T00:00:00Z' }]), c)).toBe(false);
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'rdv', op: 'before', value: 'pas-une-date' }]), c)).toBe(false);
+  });
+  it('older_than / newer_than : borne EXACTE (diff == amount) -> false des deux côtés (inégalités strictes)', () => {
+    const now = new Date('2026-08-10T10:00:00Z');
+    const sept = ctx({ now, fields: { last: '2026-08-03T10:00:00Z' } }); // exactement 7 jours
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: 7, unit: 'days' }]), sept)).toBe(false);
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'newer_than', amount: 7, unit: 'days' }]), sept)).toBe(false);
+  });
+  it('unités heures / minutes de older_than/newer_than', () => {
+    const now = new Date('2026-08-10T12:00:00Z');
+    const deuxH = ctx({ now, fields: { last: '2026-08-10T10:00:00Z' } }); // il y a 2 h
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: 1, unit: 'hours' }]), deuxH)).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: 3, unit: 'hours' }]), deuxH)).toBe(false);
+    const demiH = ctx({ now, fields: { last: '2026-08-10T11:30:00Z' } }); // il y a 30 min
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'newer_than', amount: 60, unit: 'minutes' }]), demiH)).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'datetime', key: 'last', op: 'older_than', amount: 60, unit: 'minutes' }]), demiH)).toBe(false);
   });
 });
 
@@ -136,6 +201,14 @@ describe('clause business_hours', () => {
     expect(evaluateConditionGroup(grp([{ kind: 'business_hours', op: 'within' }]), ctx({ now: new Date('2026-08-03T12:00:00Z') }))).toBe(true);
     expect(evaluateConditionGroup(grp([{ kind: 'business_hours', op: 'outside' }]), ctx({ now: new Date('2026-08-03T20:00:00Z') }))).toBe(true);
   });
+  it('borne [open, close) : open inclus, close exclu ; plage close<=open -> jamais ouvert', () => {
+    // Lundi été (UTC+2) : 09:00 Paris = 07:00 UTC (open, inclus) ; 18:00 Paris = 16:00 UTC (close, exclu)
+    expect(withinBusinessHours(new Date('2026-08-03T07:00:00Z'), PARIS, BH)).toBe(true);
+    expect(withinBusinessHours(new Date('2026-08-03T16:00:00Z'), PARIS, BH)).toBe(false);
+    // Plage inversée (open >= close, mal saisie) -> jamais ouvert quelle que soit l'heure
+    const inv: BusinessHours = { ...BH, '1': { closed: false, open: '18:00', close: '09:00' } };
+    expect(withinBusinessHours(new Date('2026-08-03T12:00:00Z'), PARIS, inv)).toBe(false);
+  });
 });
 
 describe('clause time_of_day & identity', () => {
@@ -147,6 +220,11 @@ describe('clause time_of_day & identity', () => {
     expect(evaluateConditionGroup(grp([{ kind: 'identity', op: 'has_phone' }]), ctx({ phone: '+33611' }))).toBe(true);
     expect(evaluateConditionGroup(grp([{ kind: 'identity', op: 'has_phone' }]), ctx({ phone: null }))).toBe(false);
     expect(evaluateConditionGroup(grp([{ kind: 'identity', op: 'has_email' }]), ctx({ fields: { email: 'a@b.fr' } }))).toBe(true);
+  });
+  it('identity has_bsuid (vrai/faux) & has_email faux', () => {
+    expect(evaluateConditionGroup(grp([{ kind: 'identity', op: 'has_bsuid' }]), ctx({ bsuid: 'BSU_abc' }))).toBe(true);
+    expect(evaluateConditionGroup(grp([{ kind: 'identity', op: 'has_bsuid' }]), ctx({ bsuid: null }))).toBe(false);
+    expect(evaluateConditionGroup(grp([{ kind: 'identity', op: 'has_email' }]), ctx({ fields: {} }))).toBe(false);
   });
 });
 
@@ -160,5 +238,19 @@ describe('combinaison ET / OU', () => {
   it('groupe vide : all -> vrai, any -> faux', () => {
     expect(evaluateConditionGroup(grp([], 'all'), ctx())).toBe(true);
     expect(evaluateConditionGroup(grp([], 'any'), ctx())).toBe(false);
+  });
+});
+
+describe('robustesse défensive (Phase 2 nourrira l’évaluateur avec des données de graphe opaques)', () => {
+  it('une clause qui throw est isolée -> false, sans casser le groupe', () => {
+    // ctx.tags malformé (null) -> `.includes` throw -> la clause vaut false via le try/catch, pas d'exception qui remonte.
+    const ctxBad = { ...ctx(), tags: null as unknown as string[] };
+    expect(evaluateConditionGroup(grp([{ kind: 'tag', op: 'has', tag: 'vip' }]), ctxBad)).toBe(false);
+    // en OU avec une clause valide vraie, le groupe reste évaluable (la clause cassée ne le fait pas planter)
+    expect(evaluateConditionGroup(grp([{ kind: 'tag', op: 'has', tag: 'vip' }, { kind: 'optin', value: 'unknown' }], 'any'), ctxBad)).toBe(true);
+  });
+  it('op non reconnu sur un champ -> clause non satisfaite (false), pas de throw', () => {
+    const weird = { kind: 'field', key: 'age', op: 'wat' } as unknown as Clause;
+    expect(evaluateConditionGroup(grp([weird]), ctx({ fields: { age: '18' } }))).toBe(false);
   });
 });

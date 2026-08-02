@@ -18,7 +18,7 @@ export type DateTimeOp = 'before' | 'after' | 'older_than' | 'newer_than' | 'emp
 
 export type Clause =
   | { kind: 'tag'; op: 'has' | 'not_has'; tag: string }
-  | { kind: 'field'; key: string; op: StringOp | NumberOp | BoolOp; value?: string }
+  | { kind: 'field'; key: string; op: StringOp | NumberOp | BoolOp; value?: string; valueType?: 'number' }
   | { kind: 'datetime'; key: string; op: DateTimeOp; value?: string; amount?: number; unit?: TimeUnit }
   | { kind: 'optin'; value: 'opted_in' | 'opted_out' | 'unknown' }
   | { kind: 'weekday'; op: 'is_weekday' | 'is_weekend' | 'is_one_of'; days?: Weekday[] }
@@ -65,8 +65,15 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
     case 'field': {
       const v = attributeOrField(ctx, c.key);
       if (c.op === 'is_true' || c.op === 'is_false') return matchBoolOp(v, c.op);
-      if (isNumberOp(c.op)) return matchNumberOp(v, c.op, c.value ?? '');
-      return matchStringOp(v, c.op, c.value ?? '');
+      // `eq`/`empty`/`not_empty` sont PARTAGÉS texte/nombre : on ne compare en NUMÉRIQUE que si le champ est
+      // typé nombre (`valueType`) OU si l'op n'a de sens QUE numériquement (lt/lte/gt/gte/neq). Sinon sémantique
+      // texte (miroir buildContactWhere). Un champ texte gardé `eq` reste une égalité de CHAÎNE — crucial, sinon
+      // `Number('Paris')=NaN` renverrait toujours false pour toute égalité de texte.
+      if (isNumberOp(c.op) && (c.valueType === 'number' || isNumberOnlyOp(c.op))) {
+        return matchNumberOp(v, c.op, c.value ?? '');
+      }
+      if (isStringOp(c.op)) return matchStringOp(v, c.op, c.value ?? '');
+      return false; // op non reconnu pour un champ -> clause non satisfaite (défensif)
     }
     case 'datetime': {
       const raw = attributeOrField(ctx, c.key);
@@ -103,7 +110,7 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
     case 'identity':
       if (c.op === 'has_phone') return !!(ctx.phone && ctx.phone.trim() !== '');
       if (c.op === 'has_bsuid') return !!(ctx.bsuid && ctx.bsuid.trim() !== '');
-      return !!(strOrNull(ctx.fields.email) ?? strOrNull(ctx.fields.Email));
+      return !!strOrNull(ctx.fields.email);
   }
 }
 
@@ -124,15 +131,28 @@ function strOrNull(v: unknown): string | null {
 
 // --- Opérateurs (matchStringOp = miroir de buildContactWhere) ---
 
-const NUMBER_OPS = new Set(['neq', 'lt', 'lte', 'gt', 'gte']);
+// Ops numériques COMPLET (inclut eq/empty/not_empty, partagés avec le texte). `NUMBER_ONLY_OPS` = le sous-ensemble
+// qui n'a de sens QUE numériquement -> force la comparaison numérique même sans `valueType`. `STRING_OPS` = le jeu
+// texte (= `ContactFieldOp` du mini-CRM), pour router sans cast.
+const NUMBER_OPS = new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'empty', 'not_empty']);
+const NUMBER_ONLY_OPS = new Set(['neq', 'lt', 'lte', 'gt', 'gte']);
+const STRING_OPS = new Set(['eq', 'contains', 'not_contains', 'empty', 'not_empty']);
 function isNumberOp(op: string): op is NumberOp { return NUMBER_OPS.has(op); }
+function isNumberOnlyOp(op: string): boolean { return NUMBER_ONLY_OPS.has(op); }
+function isStringOp(op: string): op is StringOp { return STRING_OPS.has(op); }
 
 /** Miroir EXACT de la sémantique SQL de `buildContactWhere` (mini-CRM). `coalesce(value,'')` pour contains ;
  *  `ilike` = insensible à la casse ; eq = égalité stricte, faux si valeur absente. */
 export function matchStringOp(value: string | null, op: StringOp, target: string): boolean {
-  const empty = value === null || value.trim() === '';
+  // PAS de trim : miroir EXACT du SQL `fields ->> key is null or = ''` (buildContactWhere). `strOrNull` a déjà
+  // réduit '' à null en amont ; une valeur d'espaces seuls ('  ') reste NON vide, comme en SQL — sinon le node
+  // condition et le ciblage mini-CRM classeraient le même contact différemment (rupture de parité anti-slop).
+  const empty = value === null || value === '';
   if (op === 'empty') return empty;
   if (op === 'not_empty') return !empty;
+  // Cible vide sur eq/contains/not_contains : buildContactWhere NE POSE PAS le filtre (aucune contrainte -> le
+  // contact passe). On mirroir : cible vide -> true, jamais une contrainte silencieuse qui exclurait tout le monde.
+  if (target === '') return true;
   const hay = (value ?? '').toLowerCase();
   const needle = target.toLowerCase();
   if (op === 'contains') return hay.includes(needle);
@@ -145,6 +165,10 @@ function matchNumberOp(value: string | null, op: NumberOp, target: string): bool
   const empty = value === null || value.trim() === '';
   if (op === 'empty') return empty;
   if (op === 'not_empty') return !empty;
+  // Valeur absente/vide -> ne matche AUCUNE comparaison (eq/neq/lt/lte/gt/gte). Sans ce garde, `Number(null)===0`
+  // (piège JS, ≠ `Number(undefined)=NaN`) ferait matcher `age < 18` pour TOUT contact sans `age` renseigné.
+  // Cohérent avec matchStringOp (eq faux si absent).
+  if (empty) return false;
   const a = Number(value);
   const b = Number(target);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
@@ -194,8 +218,9 @@ function tzOffsetMinutes(date: Date, timeZone: string): number {
 
 /**
  * Interprète une chaîne date/heure en INSTANT. Avec `Z`/offset -> absolu direct. Sinon (heure MURALE
- * `YYYY-MM-DDTHH:MM`) -> interprétée dans le fuseau tenant (offset calculé au voisinage, une itération : exact
- * hors ~1 h de bascule DST, acceptable). Une date nue `YYYY-MM-DD` est traitée comme minuit local.
+ * `YYYY-MM-DDTHH:MM`) -> interprétée dans le fuseau tenant. Une date nue `YYYY-MM-DD` est traitée comme minuit
+ * local. L'offset est calculé en DEUX passes (voir corps) -> exact jusqu'au bord d'une bascule DST ; seule
+ * l'heure inexistante (saut de printemps) ou ambiguë (retour d'automne) du changement d'heure reste un cas limite.
  */
 export function parseInstant(value: string, timeZone: string): Date {
   const v = value.trim();
@@ -203,8 +228,13 @@ export function parseInstant(value: string, timeZone: string): Date {
   const wall = /T\d{2}:\d{2}/.test(v) ? v : `${v}T00:00`;
   const guess = new Date(`${wall}Z`); // d'abord comme si UTC
   if (Number.isNaN(guess.getTime())) return guess;
-  const off = tzOffsetMinutes(guess, timeZone);
-  return new Date(guess.getTime() - off * 60000);
+  // Deux passes d'offset : l'offset lu depuis le `guess` naïf peut être celui du MAUVAIS côté d'une bascule DST
+  // (l'instant corrigé retombe dans l'autre offset -> erreur d'1 h dans la fenêtre de transition). On recalcule
+  // l'offset depuis l'instant corrigé, qui est du bon côté hors du saut lui-même.
+  const off1 = tzOffsetMinutes(guess, timeZone);
+  const corrected = new Date(guess.getTime() - off1 * 60000);
+  const off2 = tzOffsetMinutes(corrected, timeZone);
+  return new Date(guess.getTime() - off2 * 60000);
 }
 
 /** Jour de la semaine (0 dimanche … 6 samedi) dans le fuseau. */

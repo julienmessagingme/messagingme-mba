@@ -24,7 +24,7 @@ import { PgFlowStore } from '../../src/flow/store.pg';
 import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
 import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { resolveScenario } from '../../src/ids/resolve';
-import { PgTenantSettingsStore } from '../../src/settings/store.pg';
+import { PgTenantSettingsStore, DEFAULT_TIMEZONE, DEFAULT_BUSINESS_HOURS } from '../../src/settings/store.pg';
 import { PgEmbeddedSignupStore, TenantConflictError } from '../../src/account/es-store.pg';
 import { PgPhoneStatusStore } from '../../src/account/store.pg';
 
@@ -964,17 +964,48 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await recipients.listPending(campaignId)).toHaveLength(1); // de retour pending
   });
 
+  // Forme COMPLÈTE de TenantSettings (7 clés) : évite les toEqual qui périment quand un réglage est ajouté.
+  const settingsShape = (over: object = {}) => ({
+    mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+    controlHandbackSeconds: null, timezone: DEFAULT_TIMEZONE, businessHours: DEFAULT_BUSINESS_HOURS, ...over,
+  });
+
   it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {
     const store = new PgTenantSettingsStore(pool);
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-settings') returning id`)).rows[0]!.id;
     try {
-      expect(await store.get(t)).toEqual({ mbaEnabled: false, hubspotListsEnabled: false, controlHandbackSeconds: null }); // défauts
+      expect(await store.get(t)).toEqual(settingsShape()); // défauts
       await store.setMbaEnabled(t, true);
       await store.setHubspotListsEnabled(t, true);
-      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: true, controlHandbackSeconds: null });
+      expect(await store.get(t)).toEqual(settingsShape({ mbaEnabled: true, hubspotListsEnabled: true }));
       // Le toggle listes n'écrase PAS mba_enabled (upsert ciblé par colonne).
       await store.setHubspotListsEnabled(t, false);
-      expect(await store.get(t)).toEqual({ mbaEnabled: true, hubspotListsEnabled: false, controlHandbackSeconds: null });
+      expect(await store.get(t)).toEqual(settingsShape({ mbaEnabled: true }));
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
+  it('PgTenantSettingsStore : timezone + business_hours round-trip SQL/JSONB, upsert ciblé', async () => {
+    const store = new PgTenantSettingsStore(pool);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-tz') returning id`)).rows[0]!.id;
+    try {
+      const d = await store.get(t); // colonnes null -> défauts serveur
+      expect(d.timezone).toBe(DEFAULT_TIMEZONE);
+      expect(d.businessHours).toEqual(DEFAULT_BUSINESS_HOURS);
+      await store.setMbaEnabled(t, true);
+      const hours = {
+        '0': { closed: true, open: '', close: '' }, '1': { closed: false, open: '10:00', close: '19:00' },
+        '2': { closed: false, open: '10:00', close: '19:00' }, '3': { closed: false, open: '10:00', close: '19:00' },
+        '4': { closed: false, open: '10:00', close: '19:00' }, '5': { closed: false, open: '10:00', close: '19:00' },
+        '6': { closed: true, open: '', close: '' },
+      };
+      await store.setTimezone(t, 'America/New_York');
+      await store.setBusinessHours(t, hours);
+      const g = await store.get(t);
+      expect(g.timezone).toBe('America/New_York');
+      expect(g.businessHours).toEqual(hours); // round-trip JSONB -> objet
+      expect(g.mbaEnabled).toBe(true); // upsert ciblé n'a rien écrasé
     } finally {
       await pool.query('delete from tenants where id = $1', [t]);
     }
@@ -988,7 +1019,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       await store.setMbaEnabled(a, true);
       await store.setControlHandbackSeconds(a, 900);
       // Le réglage du délai n'écrase PAS les autres toggles (upsert ciblé par colonne).
-      expect(await store.get(a)).toEqual({ mbaEnabled: true, hubspotListsEnabled: false, controlHandbackSeconds: 900 });
+      expect(await store.get(a)).toEqual(settingsShape({ mbaEnabled: true, controlHandbackSeconds: 900 }));
 
       // 0 = jamais de reprise automatique. Doit être conservé tel quel, PAS confondu avec « pas réglé ».
       await store.setControlHandbackSeconds(a, 0);

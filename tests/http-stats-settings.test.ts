@@ -248,6 +248,9 @@ describe('settings route', () => {
     expect(bad.statusCode).toBe(400);
     const agent = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/timezone', ...h(agentTok), payload: { timezone: 'Europe/Paris' } });
     expect(agent.statusCode).toBe(403);
+    // tenant croisé (token scopé t1 -> /tenants/AUTRE) -> 403
+    const cross = await ok.inject({ method: 'PATCH', url: '/tenants/AUTRE/settings/timezone', ...h(adminTok), payload: { timezone: 'Europe/Paris' } });
+    expect(cross.statusCode).toBe(403);
     await ok.close();
   });
 
@@ -262,6 +265,9 @@ describe('settings route', () => {
     expect(inverted.statusCode).toBe(400);
     const missing = await ok.inject({ method: 'PATCH', url: '/tenants/t1/settings/business-hours', ...h(adminTok), payload: { businessHours: { '1': { closed: false, open: '09:00', close: '18:00' } } } });
     expect(missing.statusCode).toBe(400);
+    // tenant croisé -> 403
+    const cross = await ok.inject({ method: 'PATCH', url: '/tenants/AUTRE/settings/business-hours', ...h(adminTok), payload: { businessHours: week('09:00', '18:00') } });
+    expect(cross.statusCode).toBe(403);
     await ok.close();
   });
 

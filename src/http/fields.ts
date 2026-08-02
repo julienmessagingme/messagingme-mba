@@ -42,7 +42,7 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const b = (req.body ?? {}) as { label?: unknown; type?: unknown };
     if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label requis' });
-    if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|boolean|url)' });
+    if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|datetime|boolean|url)' });
     const def: UserFieldDef = { key: slugify(b.label.trim()), label: b.label.trim(), type: b.type };
     // La clé dérivée ne doit pas fantômiser un champ de base (ex. « BSUID » -> 'bsuid', « Prénom » -> 'prenom').
     if (isSystemFieldKey(def.key)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
