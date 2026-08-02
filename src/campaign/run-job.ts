@@ -40,9 +40,9 @@ export interface RunJobDeps {
   phoneNumberBelongsToTenant?: (phoneNumberId: string, tenantId: string) => Promise<boolean>;
   /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'un envoi template).
    *  `firstTemplateParams` = variables du 1er template déjà résolues par contact (transmises à l'envoi). */
-  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void>;
+  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean>;
   /** Campagne NODE (/v1/sends) : démarre le workflow à un bloc précis (fenêtre 24 h déjà vérifiée en amont). */
-  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void>;
+  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). */
   recordOutbound?: (
     tenantId: string,

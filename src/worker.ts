@@ -337,15 +337,19 @@ async function main(): Promise<void> {
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
       // firstTemplateParams = variables du 1er template déjà résolues par contact (paramMapping de la campagne).
+      // Renvoie false si le run n'a pas démarré (scénario supprimé entre-temps, fil détenu par un humain/MBA,
+      // ou graphe devenu non lançable) -> la campagne marque le destinataire en échec au lieu de le compter envoyé.
       startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) => {
         const wf = await workflowStore.getById(workflowId, tenant);
-        if (wf) await workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams);
+        if (!wf) return false;
+        return workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams);
       },
       // Campagne NODE (/v1/sends) : démarre le workflow au bloc ciblé. Fenêtre 24 h déjà vérifiée à la création
       // de l'envoi -> l'executor n'applique pas la garde (startFromNode).
       startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId) => {
         const wf = await workflowStore.getById(workflowId, tenant);
-        if (wf) await workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId);
+        if (!wf) return false;
+        return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId);
       },
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),

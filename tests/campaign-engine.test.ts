@@ -143,6 +143,48 @@ describe('runCampaign', () => {
     expect(captured).toEqual([['X'], ['X']]);
   });
 
+  /**
+   * Un run de workflow qui NE DÉMARRE PAS ne doit JAMAIS être compté comme envoyé (revue Lot D).
+   *
+   * Le trou : `startWorkflow` renvoyait void, donc le moteur posait un messageId synthétique et marquait `sent`
+   * quoi qu'il arrive. Une campagne pouvait afficher « 500 envoyés, 0 échec » alors que 0 message était parti
+   * (fil repris par un opérateur, scénario supprimé, ou devenu non lançable après édition).
+   */
+  it('campagne WORKFLOW : un run NON démarré (false) -> destinataire `failed` avec raison, jamais `sent`', async () => {
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const report = await runCampaign(wf, deps({
+      recipients,
+      // r1 ne démarre pas (ex. fil repris par un opérateur), r2 démarre normalement.
+      startWorkflow: async (_t, _w, waId) => waId !== '33611',
+    }));
+    expect(report).toMatchObject({ sent: 1, failed: 1 });
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
+    expect(recipients.results.get('r1')?.error).toMatch(/non lançable/);
+    expect(recipients.results.get('r2')).toMatchObject({ status: 'sent' });
+  });
+
+  it('campagne NODE : un run NON démarré (false) -> `failed`, jamais `sent`', async () => {
+    const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(node, deps({
+      recipients,
+      startWorkflowFromNode: async () => false, // bloc de départ disparu entre la création et l'exécution
+    }));
+    expect(report).toMatchObject({ sent: 0, failed: 1 });
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
+  });
+
+  it('un câblage qui renvoie void reste traité comme un démarrage réussi (rétro-compatibilité)', async () => {
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async () => { /* void : ne sait pas dire s'il a démarré */ },
+    }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+  });
+
   // Aiguillage des 3 formes de campagne (cible node de /v1/sends, D-1).
   it('campagne NODE (workflowId + startNodeId) : passe par startWorkflowFromNode, PAS par startWorkflow', async () => {
     const fromNode: string[] = [];

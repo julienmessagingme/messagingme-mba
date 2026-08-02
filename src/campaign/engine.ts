@@ -53,14 +53,18 @@ export interface EngineDeps {
    * Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template).
    * `firstTemplateParams` = variables du 1er template DÉJÀ résolues par contact (buildRecipients à partir du
    * paramMapping de la campagne) -> l'executor les passe telles quelles au 1er envoi (pas de re-résolution).
+   *
+   * Renvoie `false` quand le run n'a PAS démarré (scénario supprimé, fil détenu par un humain/MBA, ouverture
+   * hors fenêtre) : le destinataire est alors marqué en ÉCHEC, jamais compté comme envoyé. `void` toléré pour
+   * les câblages qui ne savent pas le dire (traité comme un démarrage réussi, comportement historique).
    */
-  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void>;
+  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean>;
   /**
    * Campagne NODE (/v1/sends, D-1) : démarre le workflow à un bloc PRÉCIS. Pas de `firstTemplateParams` (la
    * cible node n'est pas une ouverture de template paramétrée) et pas de garde fenêtre 24 h dans l'executor :
    * la fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi.
    */
-  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void>;
+  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -137,15 +141,19 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Fuseau par défaut (Europe/Paris), cf. DEFAULT_NOW_TZ.
     const params = refreshNowParams(r.resolvedParams, campaign.paramMapping, { now: new Date(now()) });
 
-    // Envoi isolé : SEULE une erreur du sender (Meta) marque le destinataire `failed`.
+    // Envoi isolé : une erreur du sender (Meta) marque le destinataire `failed`. Un run de workflow qui NE
+    // DÉMARRE PAS aussi (`started === false`) : sans ça, la campagne affichait « envoyé » pour un destinataire
+    // dont aucun message n'est parti (scénario supprimé, fil repris par un opérateur, ouverture hors fenêtre).
     let res: SendResult;
+    let notStarted: string | null = null;
     try {
       if (campaign.workflowId && campaign.startNodeId) {
         // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
         // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
         const waId = waIdOf(r.toE164);
-        await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
+        const started = await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
+        if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible, ou fil repris par un opérateur / MBA)';
         res = { messageId: `wf-${campaign.workflowId}` };
       } else if (campaign.workflowId) {
         // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
@@ -155,7 +163,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         const waId = waIdOf(r.toE164);
         // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
         // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
-        await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, params);
+        const started = await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, params);
+        if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, scénario supprimé, ou fil repris par un opérateur / MBA)';
         res = { messageId: `wf-${campaign.workflowId}` };
       } else {
         const tpl: TemplateSpec = {
@@ -174,6 +183,15 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
       const errorCode = err instanceof MetaApiError && typeof err.code === 'number' ? err.code : undefined;
       await deps.recipients.markResult(r.id, { status: 'failed', error: msg, ...(errorCode !== undefined ? { errorCode } : {}) });
+      report.failed += 1;
+      continue;
+    }
+
+    // Le workflow n'a pas démarré : AUCUN message n'est parti pour ce destinataire. On le marque en échec (avec
+    // la raison) au lieu de le compter en `sent` : une campagne « 500 envoyés, 0 échec » alors que rien n'est
+    // parti est un mensonge affiché, et il masque la vraie cause (fil repris, scénario devenu non lançable).
+    if (notStarted !== null) {
+      await deps.recipients.markResult(r.id, { status: 'failed', error: notStarted });
       report.failed += 1;
       continue;
     }

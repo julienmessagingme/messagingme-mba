@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { isCampaignEligible } from '@/lib/campaign-eligibility';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { ConditionBuilder, type ConditionGroup } from './ConditionBuilder';
 
@@ -383,27 +384,16 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
-  // Le node qui OUVRE réellement le scénario (miroir de engine.walk) : depuis la racine (sans arête
-  // entrante, défaut 1er node), on traverse les blocs SYNCHRONES (tag/field) ; le 1er bloc bloquant
-  // atteint est celui qui ouvre. Un flow/quick_message à cette place = 400 au save (fenêtre 24 h) ->
-  // le badge d'alerte doit s'afficher sur LUI, même derrière une chaîne tag -> flow (revue Lot 7).
-  const openingNodeId = (() => {
+  // Bloc RACINE (sans arête entrante) + éligibilité CAMPAGNE, calculée avec le MÊME helper que le sélecteur de
+  // campagne (source unique : `isCampaignEligible`). L'avertissement se pose sur la RACINE, et non sur le 1er
+  // bloc « ouvrant » : la règle campagne porte sur la racine, donc « tag -> template » est inéligible alors que
+  // son bloc ouvrant est un template parfaitement valide (c'était le trou du 1er jet, relevé en revue).
+  const rootNodeId = (() => {
     if (nodes.length === 0) return null;
     const hasIncoming = new Set(edges.map((e) => e.target));
-    let cur: string | null = (nodes.find((n) => !hasIncoming.has(n.id)) ?? nodes[0]!).id;
-    const seen = new Set<string>();
-    while (cur && !seen.has(cur)) {
-      seen.add(cur);
-      const node = nodes.find((n) => n.id === cur);
-      if (!node) return null;
-      const wfType = (node.data as { wfType?: string }).wfType;
-      // tag/field/condition/action + MBA (inertes) = synchrones (traversés). La condition a deux sorties ; on suit
-      // la 1re arête (hint UI : le vrai gate reste `opensOutsideServiceWindow` serveur, branch-aware, qui refuse au besoin).
-      if (wfType !== 'tag' && wfType !== 'field' && wfType !== 'condition' && wfType !== 'action' && wfType !== 'mba_handoff' && wfType !== 'mba_disable') return node.id;
-      cur = edges.find((e) => e.source === cur)?.target ?? null;
-    }
-    return null;
+    return (nodes.find((n) => !hasIncoming.has(n.id)) ?? nodes[0]!).id;
   })();
+  const campaignEligible = nodes.length === 0 || isCampaignEligible(fromRF(nodes, edges));
 
   // Auto-arranger : recalcule les positions (couches horizontales) et recadre. Le changement de position est
   // capté par l'auto-save existant (effet sur [nodes, edges]) -> persistance automatique, aucun appel API dédié.
@@ -491,7 +481,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} isEntry={selected.id === openingNodeId} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -502,9 +492,14 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 const cls = 'w-full rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 function ConfigPanel({
-  node, isEntry, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
+  node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
 }: {
-  node: RFNode; isEntry: boolean; onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
+  node: RFNode;
+  /** Ce bloc est-il la RACINE du scénario (sans arête entrante) ? C'est lui que la règle campagne regarde. */
+  isRoot: boolean;
+  /** Le scénario est-il lançable en campagne broadcast (racine = template configuré) ? */
+  campaignEligible: boolean;
+  onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
   onCommitTag: (tag: string) => void;
 }) {
@@ -518,12 +513,17 @@ function ConfigPanel({
         <button onClick={onDelete} className="text-xs text-coral hover:underline">{t('Supprimer', 'Delete')}</button>
       </div>
 
-      {/* Lot D : ouvrir sur un flow/message rapide est désormais AUTORISÉ (l'enregistrement passe). Ce n'est plus
-          une erreur mais une CONSÉQUENCE à connaître : le scénario sort du champ des campagnes broadcast. */}
-      {isEntry && (wfType === 'flow' || wfType === 'quick_message') && (
+      {/* Lot D : ouvrir sur autre chose qu'un template est désormais AUTORISÉ (l'enregistrement passe). Ce n'est
+          plus une erreur mais une CONSÉQUENCE à connaître : le scénario sort du champ des campagnes broadcast.
+          L'avertissement se pose sur la RACINE et suit la MÊME règle que le sélecteur de campagne
+          (`isCampaignEligible`), donc il couvre aussi « tag -> template » et un template sans nom choisi. */}
+      {isRoot && !campaignEligible && (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-800">
-          {t('Ce scénario ne pourra pas être lancé en campagne (une campagne part sur une audience froide, il faut un template en ouverture). Il reste utilisable quand le contact vient d’écrire. Pour l’ouvrir aux campagnes, mets un bloc « Envoi template » en tête.',
-            'This scenario cannot be launched as a campaign (a campaign targets a cold audience, so it needs a template first). It stays usable when the contact has just written. To open it to campaigns, put a “Send template” block first.')}
+          {wfType === 'template'
+            ? t('Choisis le template de ce bloc : tant qu’il est vide, ce scénario ne pourra pas être lancé en campagne.',
+                'Pick this block’s template: while it is empty, this scenario cannot be launched as a campaign.')
+            : t('Ce scénario ne pourra pas être lancé en campagne (une campagne part sur une audience froide, il faut un envoi de template en PREMIER bloc). Il reste utilisable quand le contact vient d’écrire. Pour l’ouvrir aux campagnes, mets un bloc « Envoi template » en tête.',
+                'This scenario cannot be launched as a campaign (a campaign targets a cold audience, so the FIRST block must be a template send). It stays usable when the contact has just written. To open it to campaigns, put a “Send template” block first.')}
         </p>
       )}
 

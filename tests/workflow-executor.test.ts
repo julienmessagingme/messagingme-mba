@@ -263,9 +263,11 @@ describe('WorkflowExecutor', () => {
       expect(calls).toEqual(['flow:fl1:Formulaire : RDV:Envoyer']);
     });
 
-    it('bloc SUPPRIMÉ entre-temps (nodeId inconnu) -> aucune action, aucun run, aucun throw', async () => {
+    it('bloc SUPPRIMÉ entre-temps (nodeId inconnu) -> aucune action, aucun run, aucun throw, et le NON-démarrage est signalé', async () => {
       const { ex, runs, calls } = make(linear);
-      await expect(ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'disparu')).resolves.toBeUndefined();
+      // `false` = rien n'est parti : c'est ce que la campagne doit voir pour marquer le destinataire en échec
+      // au lieu de le compter comme envoyé (revue Lot D).
+      await expect(ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'disparu')).resolves.toBe(false);
       expect(calls).toEqual([]);
       expect(runs.run).toBeNull();
     });

@@ -114,6 +114,11 @@ export class WorkflowExecutor {
    * ⚠️ `opts.allowSessionOpen` est la SEULE façon de lever la garde fenêtre 24 h, et il n'est posé que par
    * `startFromNode` (appelé par /v1/sends, qui a DÉJÀ vérifié la fenêtre par destinataire). Le défaut
    * (`start`, campagne classique) garde la garde : ne jamais l'inverser.
+   *
+   * Renvoie `false` quand le run N'A PAS démarré : bloc de départ absent du graphe (bloc supprimé entre-temps),
+   * fil détenu par un humain/MBA, ou ouverture par un message de session hors fenêtre. Sans ce signal, l'appelant
+   * campagne comptait le destinataire en `sent` alors que rien n'était parti (campagne « 500 envoyés, 0 échec »
+   * pour 0 message réel). `true` = le parcours a bien été appliqué.
    */
   private async runFrom(
     tenantId: string,
@@ -122,14 +127,22 @@ export class WorkflowExecutor {
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
     opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[] } = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     // Un scénario n'écrit JAMAIS dans un fil détenu par un opérateur ou par MBA. Ce garde est ici, et pas
     // seulement dans `advance`, parce que `start` et `startFromNode` passent par `runFrom` : sans lui, une
     // campagne démarrerait un parcours en plein échange humain, et les deux écriraient au client.
     if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {
       // eslint-disable-next-line no-console
       console.log(`workflow ${workflowId}: fil détenu par un humain ou par MBA, run non démarré pour ${contact.waId}`);
-      return;
+      return false;
+    }
+    // Bloc de départ absent du graphe (supprimé entre la création de l'envoi et son exécution) : `walk` renverrait
+    // un `done` vide, indiscernable d'un parcours réussi sans action. On le signale explicitement, sinon la
+    // campagne compterait « envoyé » un destinataire pour qui rien n'est parti.
+    if (!graph.nodes.some((n) => n.id === startNodeId)) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow ${workflowId}: bloc de départ ${startNodeId} introuvable, run non démarré pour ${contact.waId}`);
+      return false;
     }
     const ctx = await this.buildCtx(tenantId, contact.waId, graph);
     const { actions, rest } = walk(graph, startNodeId, ctx);
@@ -141,24 +154,28 @@ export class WorkflowExecutor {
     if (!opts.allowSessionOpen && actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
-      return;
+      return false;
     }
     await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams);
     const state = restToState(rest);
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
+    return true;
   }
 
   /**
    * Démarre un run : parcourt depuis l'entrée, applique les actions, persiste l'état (sauf 100% synchrone -> done).
    * `firstTemplateParams` (campagne workflow) = variables du 1er template déjà résolues par contact -> passées à
    * l'envoi du 1er template SANS re-résolution via les hints stockés. Garde fenêtre 24 h APPLIQUÉE.
+   *
+   * Renvoie `false` si le run n'a PAS démarré (cf. `runFrom`), y compris sur un graphe VIDE : l'appelant
+   * campagne doit pouvoir marquer le destinataire en échec plutôt que de le compter comme envoyé.
    */
-  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, firstTemplateParams?: string[]): Promise<void> {
+  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, firstTemplateParams?: string[]): Promise<boolean> {
     const entry = entryNode(graph);
-    if (!entry) return;
-    await this.runFrom(tenantId, workflowId, graph, contact, entry, firstTemplateParams ? { firstTemplateParams } : {});
+    if (!entry) return false;
+    return this.runFrom(tenantId, workflowId, graph, contact, entry, firstTemplateParams ? { firstTemplateParams } : {});
   }
 
   /**
@@ -166,8 +183,8 @@ export class WorkflowExecutor {
    * PAS appliquée ici : l'appelant a déjà écarté les contacts hors fenêtre (`out_of_window`), et l'intérêt même
    * de la cible node est d'envoyer un message de session (quick_message/flow) à quelqu'un qui vient d'écrire.
    */
-  async startFromNode(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, startNodeId: string): Promise<void> {
-    await this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true });
+  async startFromNode(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, startNodeId: string): Promise<boolean> {
+    return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true });
   }
 
   /**
