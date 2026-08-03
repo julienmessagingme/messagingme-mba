@@ -1,5 +1,29 @@
 # wip.md — travail en cours
 
+## Lots A-F + E.2 (2026-08-02/03) : LIVE ✅
+
+Gros lot demandé par Julien, exécuté en feature-loop avec un reviewer séparé par sous-lot (revues
+adversariales multi-lentilles). Tout est déployé.
+
+- **A** nom libre par bloc + page Contenu > Blocs en Type | Nom | Scénario | Code.
+- **B** bloc « Action » unique (ajouter/retirer tag, mettre à jour/vider champ) qui remplace les blocs tag et
+  champ dans la palette (les anciens restent lisibles, zéro migration).
+- **C** cohérence du contrôle du fil : routage standby, un scénario qui atteint le bloc inbox passe la main,
+  filtre « À traiter », comportement au retour réglable par espace et par conversation (mig 0051), blocs MBA
+  grisés et inertes.
+- **D** un scénario peut démarrer sans template ; en contrepartie le sélecteur de campagne ne propose que les
+  scénarios lançables.
+- **E** section Automation : déclencheurs mot-clé et nouveau contact (mig 0052).
+- **F** tester un scénario par lien wa.me + QR, conversation de test exclue des stats et de l'analyse (mig 0053).
+- **E.2** déclencheurs tag ajouté et conversation analysée, via une file `automation-event` (pont API vers worker).
+
+Ce que les revues ont rattrapé, et qui vaut d'être retenu : un run de campagne non démarré était compté comme
+envoyé ; l'émission « tag ajouté » passait par un point partagé avec les campagnes (envoi de masse possible) ;
+un anti-rebond par contact ne borne rien à l'échelle d'une population (d'où un plafond horaire) ; un parcours
+en attente sans expiration rendait un contact injoignable à vie.
+
+Tests 1151 -> 1376. Prochaine migration = 0054.
+
 ## Lot UX 6 chantiers (2026-07-28) : LIVE ✅
 
 Lot de 6 demandes produit/UX de Julien, en feature-loop (plan validé → boucle code / reviewer(s) séparé(s) /
@@ -328,7 +352,11 @@ surfacé dans Analytics. Détail usage : `features.md §Analytics`. Détail tech
    business « Messaging Me » ID 103185632463539). **Reste l'App Review, encore en review** (~20 j). Rien à
    faire côté produit d'ici là : quand ce dernier feu passe au vert, le bouton marche de bout en bout et on
    tourne la vraie vidéo de démo. Surveiller mails Meta + onglet Required actions. Voir `todo.md`.
-3. **Programme 16 features : TERMINÉ (16/16 + socle codes publics).** Restent les chantiers hors programme
+3. **Lots A-F + E.2 : TERMINÉS et déployés (2026-08-03).** La console sait désormais déclencher un scénario sur
+   un événement (Automation) et se tester sans campagne (lien wa.me + QR). Suites identifiées en revue mais NON
+   traitées : cf `todo.md` (sweeper des parcours en attente, contact de test compté dans la stat Contacts,
+   signal « nouveau contact » perdu si le webhook est rejoué).
+4. **Programme 16 features : TERMINÉ (16/16 + socle codes publics).** Restent les chantiers hors programme
    (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
    **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
 

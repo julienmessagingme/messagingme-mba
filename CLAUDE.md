@@ -73,6 +73,24 @@ passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` pui
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)
 
+### Automation (règles d'archi issues des revues, 2026-08-03)
+
+- **Prochaine migration = 0054.** Les migrations ne sont PAS auto-appliquées : construire l'image AVANT de
+  migrer (une migration ajoutée après le dernier build est absente de l'image, et `migrate` répond « à jour »
+  sans rien appliquer). Cf `DEPLOY.md`.
+- **L'émission d'un événement d'automation est gouvernée par le CHEMIN appelant, jamais par la dépendance
+  partagée.** L'exécuteur de scénario sert AUSSI les campagnes : publier depuis la pose de tag ferait émettre un
+  événement par destinataire d'une campagne. Le défaut est « n'émet pas » ; seuls les démarrages unitaires
+  (réponse d'un contact, automation, test) passent le drapeau.
+- **Aucun chemin de MASSE n'émet** (action en masse du mini-CRM, import CSV, API publique, campagne). Ajouter
+  une émission sur un de ces chemins = envoi de masse involontaire et facturé. Test de garde dans
+  `tests/contacts.test.ts` et `tests/workflow-executor.test.ts`.
+- **Toute nouvelle file pg-boss doit entrer dans `BASE_QUEUES`** (`src/queue/names.ts`), sinon elle est
+  invisible de `/ops` et sa DLQ n'est surveillée par personne. Le test `tests/queue-names.test.ts` dérive la
+  liste des `queue.work(...)` du worker et casse si on l'oublie.
+- **Une garde de validation se calcule sur l'état EFFECTIF après écriture** (`patch ?? courant`), jamais sur le
+  corps de la requête : sinon elle ne ferme qu'un sens (cf. la garde anti-boucle de « conversation analysée »).
+
 ### Sécurité (deltas projet)
 
 Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse` sur webhooks + JSON LLM, signature de webhook entrant, entrée LLM délimitée) : section « Conventions de code » du CLAUDE.md global. Spécifique à MBA :

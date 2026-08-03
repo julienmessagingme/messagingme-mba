@@ -137,6 +137,22 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
   curseur + setter `autonomy_level` ; 5b = N3 (Deal auto) après mesure.
 - **Drop différés** : rien (0030 a droppé `workflows.status` ; codes = additifs).
 
+## Suites des revues Automation (2026-08-03) — identifiées, NON traitées
+
+Trois points relevés par les revues adversariales des lots E/E.2/F, jugés non bloquants et laissés de côté.
+Chacun est un compromis assumé, pas un oubli.
+
+- **Pas de sweeper des parcours en attente.** Un parcours qu'un contact ne fait jamais avancer reste « en
+  attente » indéfiniment. Aujourd'hui une automation l'ignore au bout de 7 jours (fenêtre d'âge), ce qui
+  débloque le contact, mais la ligne reste en base. Un balayage qui les clôt proprement serait plus sain.
+- **Le numéro qui teste un scénario compte dans la statistique Contacts.** Les messages du test sont bien
+  exclus des chiffres et de l'analyse, mais la fiche contact créée par le test, elle, est comptée comme
+  n'importe quel contact. L'écran de test le dit, ce n'est donc pas un mensonge, juste une imprécision.
+- **Le signal « nouveau contact » ne survit pas à un rejeu du webhook.** Si le traitement d'un message échoue
+  après la création de la fiche et qu'il est rejoué, le contact n'est plus « nouveau » : un déclencheur
+  « nouveau contact » ne partira pas pour lui. Le rendre infaillible imposerait une requête de comptage sur
+  chaque message entrant, prix jugé trop élevé pour un cas qui suppose déjà un incident.
+
 ## Post-live — prochaines actions
 
 - ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent

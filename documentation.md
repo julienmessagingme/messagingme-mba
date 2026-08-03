@@ -439,6 +439,37 @@ touchée, les uuid internes restent la source de vérité des relations.
 - **Guide MBA** : page de CONTENU `web/app/mba/page.tsx` (nav `web/components/AppShell.tsx`, tab `mba`), aucune
   logique. Ton client, zéro mention d'infra. Config live parquée (ToS Meta Business AI + gating vertical).
 
+## Automation : déclencher un scénario sur un événement (Lots E / E.2, 2026-08-03, migrations 0052-0053)
+
+**Modèle.** Table `automations` (tenant, nom, `enabled`, `trigger_kind`, `trigger_config` jsonb,
+`condition_group` jsonb réutilisant le ConditionGroup du bloc « Si », scénario cible, bloc de départ
+optionnel, `cooldown_seconds`) + `automation_fires` (une ligne par couple automation/contact, écrasée à chaque
+tir) qui sert à la fois l'anti-rebond et le plafond horaire.
+
+**Découpage.** `automation/match.ts` est PUR (correspondance déclencheur/événement, anti-rebond) donc testable
+sans base. `automation/runner.ts` compose les filtres avec l'IO injectée. `automation/store.pg.ts` est le seul
+à toucher Postgres. Le runner réutilise `WorkflowExecutor` tel quel, il hérite donc de ses gardes.
+
+**Les filtres, dans l'ordre (du moins cher au plus cher).** Correspondance pure (aucune requête) → anti-rebond
+par contact → plafond horaire par automation → `conditionGroup` (contexte contact chargé une seule fois, et
+seulement s'il sert) → un seul parcours actif par contact → gardes de l'exécuteur (fil détenu, fenêtre 24 h).
+
+**Deux voies d'entrée.** Les événements issus d'un message entrant sont traités DANS le job webhook
+(`webhooks/triggers.ts`, isolé comme ses voisins pour ne jamais mettre le job partagé en échec). Les autres
+passent par la file `automation-event` : l'API pose un tag mais ne sait pas démarrer un scénario, c'est le
+worker qui tient l'exécuteur. L'analyse de conversation, elle, émet en direct depuis le worker.
+
+**Fenêtre de service.** Un déclencheur issu d'un message PROUVE que la fenêtre est ouverte : le scénario peut
+alors ouvrir par un message de session. Un déclencheur à froid (tag, analyse) ne la prouve pas et garde la
+protection : le scénario doit ouvrir par un template.
+
+**Priorité du jeton de test.** `webhooks/test-token.ts` s'exécute AVANT l'avance de scénario et les
+automations, et signale les messages qu'il a consommés pour qu'un seul message ne déclenche jamais deux choses.
+
+**Ce qui borne les envois** : anti-rebond par contact (1 h par défaut), plafond par automation (200/h), un seul
+parcours actif par contact, et l'émission gouvernée par le chemin (les campagnes n'émettent pas). Voir
+`CLAUDE.md` pour les règles à ne pas casser.
+
 ## Gotchas et décisions (journal, déplacé de CLAUDE.md)
 
 Vue chronologique par lot. La vue thématique correspondante est dans les sections ci-dessus.
