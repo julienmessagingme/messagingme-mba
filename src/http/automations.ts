@@ -24,6 +24,9 @@ const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() 
 
 /** Borne haute de l'anti-rebond : 7 jours, comme le gel de contrôle. Au-delà ce n'est plus un anti-rebond. */
 const MAX_COOLDOWN = 7 * 24 * 3600;
+/** Plancher pour « conversation analysée » : doit rester au-dessus du délai d'inactivité qui déclenche une
+ *  analyse (25 min par défaut), sinon le scénario et l'analyse se relancent mutuellement. Voir la garde plus bas. */
+const MIN_ANALYSIS_COOLDOWN = 3600;
 
 /** Config du déclencheur, validée SELON son type. Renvoie un message d'erreur, ou null si tout va bien. */
 function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, unknown>): string | null {
@@ -36,6 +39,16 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
   if (kind === 'tag_added') {
     // Sans tag, l'automation partirait sur n'importe quel tag posé : on refuse plutôt que de deviner.
     if (!nonEmpty(cfg.tag)) return 'tag requis pour un déclencheur « tag ajouté »';
+    return null;
+  }
+  if (kind === 'conversation_analyzed') {
+    // Les deux filtres sont FACULTATIFS (aucun = déclenche à chaque analyse, choix explicite), mais s'ils
+    // sont fournis ils doivent être exploitables : un sentiment hors nomenclature ne matcherait jamais.
+    const s = cfg.sentiment;
+    if (s !== undefined && s !== null && s !== '' && s !== 'positif' && s !== 'neutre' && s !== 'negatif') {
+      return "sentiment invalide ('positif' | 'neutre' | 'negatif')";
+    }
+    if (cfg.unresolvedOnly !== undefined && typeof cfg.unresolvedOnly !== 'boolean') return 'unresolvedOnly (booléen)';
     return null;
   }
   return null; // new_contact : aucune config
@@ -51,8 +64,9 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
     out.name = b.name.trim().slice(0, 120);
   }
   if (b.triggerKind !== undefined || !partial) {
-    // Sous-ensemble CRÉABLE : `tag_added` est compris par le moteur mais rien ne l'émet encore (cf. match.ts).
-    if (!isCreatableTriggerKind(b.triggerKind)) return { error: "triggerKind invalide ('keyword' | 'new_contact')" };
+    if (!isCreatableTriggerKind(b.triggerKind)) {
+      return { error: "triggerKind invalide ('keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed')" };
+    }
     out.triggerKind = b.triggerKind;
   }
   if (b.triggerConfig !== undefined || !partial) {
@@ -92,6 +106,15 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
     out.cooldownSeconds = c as number | null;
   } else if (!partial) {
     out.cooldownSeconds = null;
+  }
+
+  // Garde anti-boucle propre au déclencheur « conversation analysée ». Le scénario déclenché ÉCRIT dans la
+  // conversation, ce qui la rouvre à l'analyse ; une nouvelle analyse tombe ~25 min plus tard et pourrait
+  // re-déclencher, indéfiniment, SANS que le client ait rien fait. Le défaut (1 h) casse ce cycle, mais un
+  // anti-rebond court ou nul le laisserait tourner et facturer un message toutes les 25 minutes.
+  if (out.triggerKind === 'conversation_analyzed' && out.cooldownSeconds !== undefined
+      && out.cooldownSeconds !== null && out.cooldownSeconds < MIN_ANALYSIS_COOLDOWN) {
+    return { error: `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle` };
   }
 
   // La config n'a de sens que rapportée à son type. Sur un PATCH, modifier l'un sans l'autre laisserait passer
@@ -149,6 +172,16 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     if (Object.keys(parsed.input).length === 0) return reply.code(400).send({ error: 'rien à modifier' });
     if (parsed.input.workflowId !== undefined && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
+    }
+    // Garde anti-boucle sur le type EFFECTIF. `parseBody` ne peut la poser que si le corps porte `triggerKind` ;
+    // un PATCH qui ne change QUE l'anti-rebond passerait donc à travers et permettrait d'écrire 0 s sur une
+    // automation « conversation analysée » existante, rouvrant exactement la boucle que la garde ferme.
+    if (parsed.input.cooldownSeconds !== undefined && parsed.input.cooldownSeconds !== null
+        && parsed.input.cooldownSeconds < MIN_ANALYSIS_COOLDOWN && parsed.input.triggerKind === undefined) {
+      const courant = (await deps.list(tenant)).find((a) => a.id === id);
+      if (courant?.triggerKind === 'conversation_analyzed') {
+        return reply.code(400).send({ error: `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle` });
+      }
     }
     const ok = await deps.update(id, tenant, parsed.input);
     if (!ok) return reply.code(404).send({ error: 'automation inconnue' });

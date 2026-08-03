@@ -1193,15 +1193,14 @@ export function completeEmbeddedSignup(
 
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---
 
-/** Types de déclencheur PROPOSÉS à la création. Le moteur en connaît d'autres (tag_added) qui ne sont pas
- *  encore émis : ils ne sont donc pas offerts ici. Miroir de `AUTOMATION_TRIGGER_KINDS_CREATABLE` serveur. */
-export type AutomationTriggerKind = 'keyword' | 'new_contact';
+/** Types de déclencheur proposés à la création. Miroir de `AUTOMATION_TRIGGER_KINDS_CREATABLE` serveur. */
+export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed';
 
 export interface Automation {
   id: string;
   name: string;
   enabled: boolean;
-  triggerKind: AutomationTriggerKind | 'tag_added';
+  triggerKind: AutomationTriggerKind;
   triggerConfig: Record<string, unknown>;
   conditionGroup: { match: 'all' | 'any'; clauses: unknown[] } | null;
   workflowId: string;

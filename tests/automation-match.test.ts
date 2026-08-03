@@ -79,7 +79,7 @@ describe('déclencheur nouveau contact', () => {
   });
 });
 
-describe('déclencheur tag ajouté (moteur prêt, pas encore émis)', () => {
+describe('déclencheur tag ajouté (émis depuis E.2, chemins unitaires seulement)', () => {
   const a = auto({ triggerKind: 'tag_added', triggerConfig: { tag: 'VIP' } });
   it('compare le tag normalisé', () => {
     expect(matchesTrigger(a, { kind: 'tag_added', waId: '33611', tag: 'vip' })).toBe(true);
@@ -88,10 +88,43 @@ describe('déclencheur tag ajouté (moteur prêt, pas encore émis)', () => {
   it('tag non configuré -> ne déclenche jamais (sinon il partirait sur TOUS les tags)', () => {
     expect(matchesTrigger(auto({ triggerKind: 'tag_added', triggerConfig: {} }), { kind: 'tag_added', waId: '33611', tag: 'vip' })).toBe(false);
   });
-  it('n’est PAS proposé à la création tant que rien ne l’émet (honnêteté produit)', () => {
-    expect(isCreatableTriggerKind('keyword')).toBe(true);
-    expect(isCreatableTriggerKind('new_contact')).toBe(true);
-    expect(isCreatableTriggerKind('tag_added')).toBe(false);
+  it('est proposé à la création depuis E.2 (la file `automation-event` l’émet)', () => {
+    for (const k of ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed']) {
+      expect(isCreatableTriggerKind(k), k).toBe(true);
+    }
+    expect(isCreatableTriggerKind('nawak')).toBe(false);
+  });
+});
+
+describe('déclencheur « conversation analysée » (E.2)', () => {
+  const ev = (sentiment: string, resolved: boolean): AutomationEvent => ({ kind: 'analysis', waId: '33611', sentiment, resolved });
+  const anal = (cfg: Record<string, unknown>) => auto({ triggerKind: 'conversation_analyzed', triggerConfig: cfg });
+
+  it('filtre par ressenti (catégoriel, pas de score numérique)', () => {
+    const a = anal({ sentiment: 'negatif' });
+    expect(matchesTrigger(a, ev('negatif', true))).toBe(true);
+    expect(matchesTrigger(a, ev('positif', true))).toBe(false);
+  });
+
+  it('filtre « non résolue » seul', () => {
+    const a = anal({ unresolvedOnly: true });
+    expect(matchesTrigger(a, ev('positif', false))).toBe(true);
+    expect(matchesTrigger(a, ev('negatif', true))).toBe(false); // résolue -> on ne relance pas
+  });
+
+  it('les deux filtres sont CUMULATIFS', () => {
+    const a = anal({ sentiment: 'negatif', unresolvedOnly: true });
+    expect(matchesTrigger(a, ev('negatif', false))).toBe(true);
+    expect(matchesTrigger(a, ev('negatif', true))).toBe(false);
+    expect(matchesTrigger(a, ev('neutre', false))).toBe(false);
+  });
+
+  it('aucun filtre -> déclenche à CHAQUE analyse (choix explicite, pas un oubli)', () => {
+    expect(matchesTrigger(anal({}), ev('positif', true))).toBe(true);
+  });
+
+  it('ne réagit pas aux autres types d’événement', () => {
+    expect(matchesTrigger(anal({ sentiment: 'negatif' }), msg('negatif'))).toBe(false);
   });
 });
 

@@ -50,6 +50,12 @@ export interface WorkflowExecutorDeps {
    * « le scénario répond » alors que plus rien n'avançait (trou A.5). OPTIONNEL : absent -> comportement historique.
    */
   escalateToHuman?(tenantId: string, waId: string): Promise<void>;
+  /**
+   * Publie « ce tag vient d'être posé » pour les automations. Appelée UNIQUEMENT sur un démarrage unitaire
+   * (réponse d'un contact, automation, test), jamais depuis une campagne : voir la note de `apply`.
+   * Absente -> aucune publication (rétro-compatible).
+   */
+  emitTagAdded?(tenantId: string, waId: string, tag: string): Promise<void>;
 }
 
 function restToState(rest: WalkRest): RunState {
@@ -94,15 +100,38 @@ export class WorkflowExecutor {
     }
   }
 
-  private async apply(tenantId: string, waId: string, actions: WorkflowAction[], firstTemplateParams?: string[]): Promise<void> {
+  /**
+   * Applique les actions d'un parcours. `emitEvents` = ce démarrage est-il UNITAIRE (un contact, ici et
+   * maintenant) ? Seuls ces chemins publient les événements d'automation (« tag ajouté »).
+   *
+   * ⚠️ Pourquoi ce n'est PAS la dep `applyTag` qui publie : le même exécuteur sert les CAMPAGNES. Une campagne
+   * workflow sur 5 000 destinataires dont le graphe contient un bloc Action poserait 5 000 événements, donc
+   * potentiellement 5 000 scénarios et autant de messages facturés que personne n'a demandés. Le défaut est
+   * donc `false` : on n'émet que si l'appelant prouve qu'il est unitaire.
+   */
+  private async apply(
+    tenantId: string,
+    waId: string,
+    actions: WorkflowAction[],
+    firstTemplateParams?: string[],
+    emitEvents = false,
+  ): Promise<void> {
+    const posedTags: string[] = [];
     for (const a of actions) {
-      if (a.kind === 'tag') await this.deps.applyTag(tenantId, waId, a.tag);
+      if (a.kind === 'tag') { await this.deps.applyTag(tenantId, waId, a.tag); posedTags.push(a.tag); }
       else if (a.kind === 'removeTag') await this.deps.removeTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
       else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);
       else if (a.kind === 'sendQuickMessage') await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons);
       else if (a.kind === 'sendFlow') await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta);
       else await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
+    }
+    // Publication APRÈS toutes les actions, et seulement sur un chemin unitaire. Best-effort : la pose du tag
+    // est acquise, un incident de file ne doit pas faire échouer le parcours en cours.
+    if (emitEvents && posedTags.length > 0 && this.deps.emitTagAdded) {
+      for (const tag of posedTags) {
+        try { await this.deps.emitTagAdded(tenantId, waId, tag); } catch { /* best-effort */ }
+      }
     }
   }
 
@@ -126,7 +155,7 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[] } = {},
+    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean } = {},
   ): Promise<boolean> {
     // Un scénario n'écrit JAMAIS dans un fil détenu par un opérateur ou par MBA. Ce garde est ici, et pas
     // seulement dans `advance`, parce que `start` et `startFromNode` passent par `runFrom` : sans lui, une
@@ -156,7 +185,7 @@ export class WorkflowExecutor {
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
       return false;
     }
-    await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams);
+    await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true);
     const state = restToState(rest);
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
@@ -172,10 +201,15 @@ export class WorkflowExecutor {
    * Renvoie `false` si le run n'a PAS démarré (cf. `runFrom`), y compris sur un graphe VIDE : l'appelant
    * campagne doit pouvoir marquer le destinataire en échec plutôt que de le compter comme envoyé.
    */
-  async start(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, firstTemplateParams?: string[]): Promise<boolean> {
+  async start(
+    tenantId: string, workflowId: string, graph: WorkflowGraph,
+    contact: { waId: string; contactId: string | null },
+    firstTemplateParams?: string[],
+    opts: { emitEvents?: boolean } = {},
+  ): Promise<boolean> {
     const entry = entryNode(graph);
     if (!entry) return false;
-    return this.runFrom(tenantId, workflowId, graph, contact, entry, firstTemplateParams ? { firstTemplateParams } : {});
+    return this.runFrom(tenantId, workflowId, graph, contact, entry, { ...(firstTemplateParams ? { firstTemplateParams } : {}), ...opts });
   }
 
   /**
@@ -187,10 +221,14 @@ export class WorkflowExecutor {
    * ⚠️ À n'appeler QUE sur un chemin où la fenêtre est prouvée par un inbound récent. Un déclencheur qui ne
    * prouve pas la fenêtre (ex. un tag posé depuis le CRM) doit passer par `start()`, qui garde la protection.
    */
-  async startInWindow(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }): Promise<boolean> {
+  async startInWindow(
+    tenantId: string, workflowId: string, graph: WorkflowGraph,
+    contact: { waId: string; contactId: string | null },
+    opts: { emitEvents?: boolean } = {},
+  ): Promise<boolean> {
     const entry = entryNode(graph);
     if (!entry) return false;
-    return this.runFrom(tenantId, workflowId, graph, contact, entry, { allowSessionOpen: true });
+    return this.runFrom(tenantId, workflowId, graph, contact, entry, { allowSessionOpen: true, ...opts });
   }
 
   /**
@@ -198,8 +236,12 @@ export class WorkflowExecutor {
    * PAS appliquée ici : l'appelant a déjà écarté les contacts hors fenêtre (`out_of_window`), et l'intérêt même
    * de la cible node est d'envoyer un message de session (quick_message/flow) à quelqu'un qui vient d'écrire.
    */
-  async startFromNode(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }, startNodeId: string): Promise<boolean> {
-    return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true });
+  async startFromNode(
+    tenantId: string, workflowId: string, graph: WorkflowGraph,
+    contact: { waId: string; contactId: string | null }, startNodeId: string,
+    opts: { emitEvents?: boolean } = {},
+  ): Promise<boolean> {
+    return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true, ...opts });
   }
 
   /**
@@ -225,7 +267,8 @@ export class WorkflowExecutor {
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
     const { actions, rest } = walk(graph, next, ctx);
-    await this.apply(tenantId, waId, actions);
+    // Un contact qui répond est unitaire par nature : ses tags publient.
+    await this.apply(tenantId, waId, actions, undefined, true);
     await this.deps.runs.setState(run.id, { ...restToState(rest), lastMessageId: messageId });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
   }

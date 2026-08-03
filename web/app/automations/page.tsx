@@ -29,6 +29,9 @@ function AutomationsInner({ session }: { session: Session }) {
   const [triggerKind, setTriggerKind] = useState<AutomationTriggerKind>('keyword');
   const [keywords, setKeywords] = useState('');
   const [mode, setMode] = useState<'contains' | 'equals'>('contains');
+  const [tag, setTag] = useState('');
+  const [sentiment, setSentiment] = useState<'' | 'positif' | 'neutre' | 'negatif'>('negatif');
+  const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [workflowId, setWorkflowId] = useState('');
 
   const load = useCallback(async () => {
@@ -57,11 +60,18 @@ function AutomationsInner({ session }: { session: Session }) {
         triggerKind,
         triggerConfig: triggerKind === 'keyword'
           ? { keywords: keywords.split(',').map((k) => k.trim()).filter((k) => k !== ''), mode }
-          : {},
+          : triggerKind === 'tag_added'
+            ? { tag: tag.trim() }
+            : triggerKind === 'conversation_analyzed'
+              ? { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) }
+              : {},
         workflowId,
         enabled: false, // jamais active à la création : on l'allume explicitement après relecture
       });
-      setCreating(false); setName(''); setKeywords(''); setWorkflowId('');
+      // Remise à zéro COMPLÈTE : un filtre resté collé (ressenti, « non résolue ») produirait une
+      // automation plus restrictive que voulu, sans que rien ne le signale à l'écran.
+      setCreating(false); setName(''); setKeywords(''); setTag(''); setWorkflowId('');
+      setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Création impossible', 'Unable to create'));
@@ -91,6 +101,10 @@ function AutomationsInner({ session }: { session: Session }) {
     }
   }
 
+  // Libellé affiché = EXACTEMENT celui du sélecteur : l'admin doit relire ce qu'il a choisi, pas la valeur brute.
+  const sentimentLabel = (s: string): string =>
+    s === 'negatif' ? t('négatif', 'negative') : s === 'neutre' ? t('neutre', 'neutral') : s === 'positif' ? t('positif', 'positive') : s;
+
   const describeTrigger = (a: Automation): string => {
     if (a.triggerKind === 'keyword') {
       const words = Array.isArray(a.triggerConfig.keywords) ? (a.triggerConfig.keywords as unknown[]).map(String) : [];
@@ -98,10 +112,21 @@ function AutomationsInner({ session }: { session: Session }) {
       return `${m} ${words.map((w) => `« ${w} »`).join(t(' ou ', ' or '))}`;
     }
     if (a.triggerKind === 'new_contact') return t('1er message d’un nouveau contact', 'first message from a new contact');
-    return t('tag ajouté', 'tag added');
+    if (a.triggerKind === 'tag_added') return `${t('tag « ', 'tag "')}${String(a.triggerConfig.tag ?? '')}${t(' » ajouté', '" added')}`;
+    if (a.triggerKind === 'conversation_analyzed') {
+      const s = String(a.triggerConfig.sentiment ?? '');
+      const parts = [
+        s !== '' ? `${t('ressenti ', 'sentiment ')}${sentimentLabel(s)}` : t('toute conversation analysée', 'any analyzed conversation'),
+        a.triggerConfig.unresolvedOnly === true ? t('non résolue', 'unresolved') : '',
+      ].filter((x) => x !== '');
+      return parts.join(', ');
+    }
+    return a.triggerKind;
   };
 
-  const canSubmit = name.trim() !== '' && workflowId !== '' && (triggerKind !== 'keyword' || keywords.trim() !== '');
+  const canSubmit = name.trim() !== '' && workflowId !== ''
+    && (triggerKind !== 'keyword' || keywords.trim() !== '')
+    && (triggerKind !== 'tag_added' || tag.trim() !== '');
 
   return (
     <div className="space-y-5 p-4">
@@ -109,8 +134,17 @@ function AutomationsInner({ session }: { session: Session }) {
         <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Automation', 'Automation')}</h2>
         <p className="mt-1 max-w-3xl text-sm text-ink-500">
           {t(
-            'Lance un scénario automatiquement quand un événement se produit, sans campagne. Le scénario part uniquement si le client vient d’écrire (fenêtre de 24 h), et jamais si un opérateur a pris la main sur la conversation.',
-            'Start a scenario automatically when an event happens, without a campaign. The scenario only runs if the customer has just written (24 h window), and never if an operator has taken over the conversation.',
+            'Lance un scénario automatiquement quand un événement se produit, sans campagne. Un scénario ne part jamais si un opérateur a pris la main sur la conversation.',
+            'Start a scenario automatically when an event happens, without a campaign. A scenario never runs if an operator has taken over the conversation.',
+          )}
+        </p>
+        {/* Deux familles de déclencheurs, et la différence change ce que le scénario a le droit d'envoyer.
+            Le dire ici évite la promesse fausse « le client vient toujours d'écrire », qui n'était vraie que
+            tant que seuls le mot-clé et le nouveau contact existaient. */}
+        <p className="mt-2 max-w-3xl text-xs text-ink-400">
+          {t(
+            'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé et conversation analysée arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
+            'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added and conversation analyzed happen cold: the scenario must start with a template send, otherwise nothing goes out.',
           )}
         </p>
       </div>
@@ -132,8 +166,53 @@ function AutomationsInner({ session }: { session: Session }) {
             <select value={triggerKind} onChange={(e) => setTriggerKind(e.target.value as AutomationTriggerKind)} data-testid="automation-trigger" className={inputCls}>
               <option value="keyword">{t('le client envoie un mot-clé', 'the customer sends a keyword')}</option>
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
+              <option value="tag_added">{t('un tag est posé sur un contact', 'a tag is added to a contact')}</option>
+              <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
             </select>
           </div>
+          {triggerKind === 'tag_added' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tag déclencheur', 'Triggering tag')}</label>
+              <input value={tag} onChange={(e) => setTag(e.target.value)} data-testid="automation-tag" className={inputCls} placeholder={t('rappeler', 'callback')} />
+              <p className="mt-1 text-xs text-ink-400">
+                {t(
+                  'Vaut pour un tag posé sur une FICHE contact ou par un bloc Action d’un scénario. Un tag posé en masse ou par import ne déclenche rien : cela lancerait autant de scénarios que de contacts. Pour toucher une liste, utilise une campagne.',
+                  'Applies to a tag added on a contact RECORD or by a scenario Action block. A tag added in bulk or by import triggers nothing: it would start as many scenarios as contacts. To reach a list, use a campaign.',
+                )}
+              </p>
+            </div>
+          )}
+          {triggerKind === 'conversation_analyzed' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-ink-700">{t('Ressenti du client', 'Customer sentiment')}</label>
+                <select value={sentiment} onChange={(e) => setSentiment(e.target.value as '' | 'positif' | 'neutre' | 'negatif')} data-testid="automation-sentiment" className={inputCls}>
+                  <option value="negatif">{t('négatif', 'negative')}</option>
+                  <option value="neutre">{t('neutre', 'neutral')}</option>
+                  <option value="positif">{t('positif', 'positive')}</option>
+                  <option value="">{t('peu importe', 'any')}</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 pb-1.5 text-sm text-ink-700">
+                  <input type="checkbox" checked={unresolvedOnly} onChange={(e) => setUnresolvedOnly(e.target.checked)} className="h-4 w-4" />
+                  {t('seulement si la demande n’a pas été résolue', 'only if the request was not resolved')}
+                </label>
+              </div>
+              <p className="text-xs text-ink-400 sm:col-span-2">
+                {t(
+                  'L’analyse tourne quand la conversation est retombée inactive : ce déclencheur est donc différé, pas immédiat. Le client n’écrivant plus, le scénario doit commencer par un envoi de template.',
+                  'Analysis runs once the conversation has gone idle: this trigger is therefore delayed, not immediate. As the customer is no longer writing, the scenario must start with a template send.',
+                )}
+              </p>
+              <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 sm:col-span-2">
+                {t(
+                  'Ce déclencheur repose sur l’analyse de conversation. Si elle n’est pas activée sur ton compte, l’automation s’affichera « active » mais ne partira jamais : vérifie-le dans Analytics > Qualitatif avant de compter dessus.',
+                  'This trigger relies on conversation analysis. If it is not enabled on your account, the automation will show as "enabled" but will never run: check Analytics > Qualitative before relying on it.',
+                )}
+              </p>
+            </div>
+          )}
           {triggerKind === 'keyword' && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div>

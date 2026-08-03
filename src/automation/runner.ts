@@ -51,7 +51,9 @@ export interface AutomationRunnerDeps {
 
 /** Les types de déclencheur qu'un événement donné peut activer (évite de charger des automations hors sujet). */
 function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
-  return ev.kind === 'message' ? ['keyword', 'new_contact'] : ['tag_added'];
+  if (ev.kind === 'message') return ['keyword', 'new_contact'];
+  if (ev.kind === 'tag_added') return ['tag_added'];
+  return ['conversation_analyzed'];
 }
 
 /**

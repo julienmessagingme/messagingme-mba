@@ -36,6 +36,7 @@ import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
 import { PgAutomationStore } from './automation/store.pg';
+import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from './automation/event-job';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
@@ -321,6 +322,16 @@ async function main(): Promise<void> {
       listUserFields: (tenant) => fieldStore.list(tenant),
       getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
       listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
+      // Automations « tag ajouté » (E.2) : l'API ne sait pas démarrer un scénario (c'est le worker qui tient
+      // l'exécuteur), elle publie donc un événement par tag posé. Un contact sans identité joignable (ni
+      // numéro ni BSUID) n'a rien à déclencher.
+      emitTagAdded: async (tenant, contactId, tags) => {
+        const waId = await contactStore.waIdOfContact(tenant, contactId);
+        if (!waId) return;
+        for (const tag of tags) {
+          await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
+        }
+      },
     },
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);

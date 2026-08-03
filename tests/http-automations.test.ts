@@ -68,7 +68,9 @@ describe('routes automations', () => {
     const bad: Array<Record<string, unknown>> = [
       { ...VALID, name: '' },                                        // nom vide
       { ...VALID, triggerKind: 'nawak' },                            // type inconnu
-      { ...VALID, triggerKind: 'tag_added', triggerConfig: { tag: 'vip' } }, // connu du moteur mais pas créable
+      { ...VALID, triggerKind: 'tag_added', triggerConfig: {} },      // tag manquant -> partirait sur TOUS les tags
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { sentiment: 'ravi' } }, // hors nomenclature
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { unresolvedOnly: 'oui' } },
       { ...VALID, triggerConfig: { keywords: [] } },                 // aucun mot-clé -> ne partirait jamais
       { ...VALID, triggerConfig: { keywords: ['  '] } },             // que du vide
       { ...VALID, triggerConfig: { keywords: ['rdv'], mode: 'nawak' } },
@@ -83,6 +85,43 @@ describe('routes automations', () => {
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
     }
     expect(cap.created).toEqual([]);
+    await server.close();
+  });
+
+  it('POST accepte les déclencheurs ajoutés par E.2 (tag posé, conversation analysée)', async () => {
+    const { server, cap } = app();
+    const ok: Array<Record<string, unknown>> = [
+      { ...VALID, triggerKind: 'tag_added', triggerConfig: { tag: 'rappeler' } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { sentiment: 'negatif', unresolvedOnly: true } },
+      { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: {} }, // sans filtre : choix explicite
+    ];
+    for (const payload of ok) {
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(201);
+    }
+    expect(cap.created).toHaveLength(3);
+    expect(cap.created.every((c) => c.input.enabled === false)).toBe(true); // toujours créées désactivées
+    await server.close();
+  });
+
+  it('« conversation analysée » : un anti-rebond court est REFUSÉ (il ferait boucler analyse et scénario)', async () => {
+    // Le scénario déclenché écrit dans la conversation, ce qui la rouvre à l'analyse (~25 min plus tard).
+    // Avec un anti-rebond nul ou court, un message facturé partirait indéfiniment sans action du client.
+    const { server, cap } = app();
+    const anal = { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { sentiment: 'negatif' } };
+    const zero = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...anal, cooldownSeconds: 0 } });
+    const court = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...anal, cooldownSeconds: 600 } });
+    const ok = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...anal, cooldownSeconds: 3600 } });
+    const defaut = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...anal, cooldownSeconds: null } });
+    expect([zero.statusCode, court.statusCode, ok.statusCode, defaut.statusCode]).toEqual([400, 400, 201, 201]);
+    expect(cap.created).toHaveLength(2);
+    await server.close();
+  });
+
+  it('un anti-rebond nul reste permis pour les AUTRES déclencheurs (le client doit agir pour relancer)', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, cooldownSeconds: 0 } });
+    expect(res.statusCode).toBe(201);
     await server.close();
   });
 

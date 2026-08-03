@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import type { ContactStore, ContactUpsert } from './import';
-import { classifyWaId } from './identity';
+import { classifyWaId, waIdOf } from './identity';
 
 export interface ContactRow {
   id: string;
@@ -320,6 +320,24 @@ export class PgContactStore implements ContactStore {
     return res.rows[0]?.id ?? null;
   }
 
+  /**
+   * `wa_id` d'un contact (numéro en chiffres nus, sinon BSUID). Réciproque de `findIdByWaId`, utilisée quand un
+   * événement part d'une fiche (édition mini-CRM) alors que le moteur de scénario, lui, raisonne par wa_id.
+   * null = contact absent du tenant, ou sans identité joignable (ni téléphone ni BSUID).
+   */
+  async waIdOfContact(tenantId: string, contactId: string): Promise<string | null> {
+    const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null }>(
+      `select phone_e164, bsuid from contacts where id = $1 and tenant_id = $2 and deleted_at is null`,
+      [contactId, tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    // Règle de routage WhatsApp = `waIdOf` (crm/identity), DÉFINITION DE RÉFÉRENCE. Ne pas la réécrire ici :
+    // deux copies divergeraient le jour où le format de stockage évolue, et l'événement partirait avec un
+    // wa_id que le reste du moteur ne résout plus.
+    return waIdOf(r.phone_e164, r.bsuid);
+  }
+
   private static rowToContact(r: {
     id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
@@ -349,11 +367,14 @@ export class PgContactStore implements ContactStore {
     tenantId: string,
     contactId: string,
     edits: { fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[]; profileName?: string | null },
-  ): Promise<ContactRow | null> {
+  ): Promise<{ contact: ContactRow; addedTags: string[] } | null> {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      const exists = await client.query('select 1 from contacts where id = $1 and tenant_id = $2 for update', [contactId, tenantId]);
+      // On lit les tags AVANT dans le verrou déjà pris : ça ne coûte rien de plus et c'est la seule façon de
+      // savoir lesquels sont RÉELLEMENT nouveaux. L'ajout est une union, donc reposer un tag déjà présent ne
+      // change rien en base : l'annoncer comme « tag ajouté » relancerait un scénario pour un non-événement.
+      const exists = await client.query<{ tags: string[] | null }>('select tags from contacts where id = $1 and tenant_id = $2 for update', [contactId, tenantId]);
       if ((exists.rowCount ?? 0) === 0) {
         await client.query('rollback');
         return null;
@@ -379,7 +400,9 @@ export class PgContactStore implements ContactStore {
       const res = await client.query(PgContactStore.SELECT_ONE, [contactId, tenantId]);
       await client.query('commit');
       const r = res.rows[0];
-      return r ? PgContactStore.rowToContact(r) : null;
+      if (!r) return null;
+      const avant = new Set(exists.rows[0]?.tags ?? []);
+      return { contact: PgContactStore.rowToContact(r), addedTags: edits.addTags.filter((t) => !avant.has(t)) };
     } catch (err) {
       await client.query('rollback').catch(() => {});
       throw err;

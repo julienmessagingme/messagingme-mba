@@ -31,10 +31,12 @@ const FIELDS: UserFieldDef[] = [
 interface Cap {
   merged: Array<Record<string, string>>; added: string[][]; removed: string[][]; removedFields: string[][]; names: Array<string | null>;
   bulk: Array<{ target: BulkTarget; edits: BulkEdits }>; deleted: BulkTarget[];
+  /** Émissions « tag ajouté » vers la file d'automation (E.2) : doit rester VIDE sur les chemins de masse. */
+  emitted: string[][];
 }
 
 function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow | null } = {}) {
-  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [] };
+  const cap: Cap = { merged: [], added: [], removed: [], removedFields: [], names: [], bulk: [], deleted: [], emitted: [] };
   const deps: ContactsRouteDeps = {
     applyEdits: async (_t, _id, edits) => {
       const result = opts.contact === undefined ? CONTACT : opts.contact;
@@ -44,13 +46,15 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
       if (edits.removeTags.length) cap.removed.push(edits.removeTags);
       if (edits.removeFields && edits.removeFields.length) cap.removedFields.push(edits.removeFields);
       if (edits.profileName !== undefined) cap.names.push(edits.profileName);
-      return result;
+      // Le store ne renvoie que les tags RÉELLEMENT nouveaux : ici, ceux qui ne sont pas déjà sur la fiche.
+      return { contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)) };
     },
     applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return 3; },
     softDeleteMany: async (_t, target) => { cap.deleted.push(target); return 5; },
     listUserFields: async () => FIELDS,
     getContactHistory: async () => ({ sends: [], conversations: [] }),
     listSendsForExport: async () => [],
+    emitTagAdded: async (_t, _id, tags) => { cap.emitted.push(tags); },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), cap };
@@ -317,6 +321,52 @@ describe('POST /tenants/:t/contacts/bulk-delete — suppression douce en masse',
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(agentTok), payload: { target: { ids: ['a'] } } });
     expect(res.statusCode).toBe(403);
     expect(cap.deleted).toHaveLength(0);
+    await server.close();
+  });
+});
+
+/**
+ * Émission « tag ajouté » vers les automations (E.2).
+ *
+ * L'invariant que ces tests verrouillent est CELUI QUI COÛTE DE L'ARGENT : un tag posé en MASSE ne doit
+ * jamais émettre, sinon poser un tag sur 5 000 contacts démarre 5 000 scénarios et facture 5 000 messages
+ * que personne n'a demandés. Sans ce test, un contributeur ajouterait l'appel à la route en masse « par
+ * symétrie » et toute la suite resterait verte.
+ */
+describe('routes contacts — émission « tag ajouté » (automations)', () => {
+  it('édition d’UNE fiche avec un tag NOUVEAU -> émet ce tag', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['rappeler'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.emitted).toEqual([['rappeler']]);
+    await server.close();
+  });
+
+  it('tag DÉJÀ présent sur la fiche -> aucune émission (reposer un tag n’est pas un événement)', async () => {
+    // CONTACT porte déjà 'vip' : la base ne change pas, le scénario ne doit donc pas repartir.
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['vip'] } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.emitted).toEqual([]);
+    await server.close();
+  });
+
+  it('action EN MASSE -> AUCUNE émission (garde anti-envoi de masse)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok),
+      payload: { target: { filters: {} }, action: { type: 'add_tag', tags: ['rappeler'] } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(cap.bulk).toHaveLength(1);  // l'action en masse a bien eu lieu…
+    expect(cap.emitted).toEqual([]);   // …mais sans déclencher la moindre automation
+    await server.close();
+  });
+
+  it('une file indisponible ne fait PAS échouer l’édition de fiche', async () => {
+    const { server } = app({ emitTagAdded: async () => { throw new Error('file indisponible'); } });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: { addTags: ['rappeler'] } });
+    expect(res.statusCode).toBe(200);
     await server.close();
   });
 });

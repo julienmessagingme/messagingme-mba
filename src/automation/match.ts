@@ -11,15 +11,18 @@ import type { ConditionGroup } from '../workflow/conditions';
 /**
  * Types de déclencheur livrés. Volontairement fermé : une valeur inconnue en base ne déclenche jamais rien.
  *
- * `tag_added` est CONNU du moteur (le matching est écrit et testé) mais N'EST PAS proposé à la création, car
- * rien ne l'ÉMET encore : un tag peut être posé depuis l'API (fiche contact, action en masse, import, API
- * publique), or l'API est un autre process que le worker et ne sait pas démarrer un scénario. L'émettre
- * proprement demande une file dédiée. Tant qu'elle n'existe pas, proposer ce déclencheur reviendrait à vendre
- * une automation qui ne part jamais.
+ * `tag_added` (E.2) est émis via la file `automation-event` : un tag peut être posé depuis l'API (autre
+ * process que le worker), qui ne sait pas démarrer un scénario elle-même. ⚠️ Seuls les chemins UNITAIRES
+ * émettent (bloc Action d'un scénario, édition d'une fiche) : un import CSV ou une action en masse
+ * n'émettent PAS, sinon poser un tag sur 5 000 contacts enverrait 5 000 messages facturés d'un coup. Pour
+ * toucher une liste, l'outil est la campagne.
+ *
+ * `conversation_analyzed` (E.2) vient du point de sortie de l'analyse (`OnConversationAnalyzed`). Il est donc
+ * DIFFÉRÉ par construction : l'analyse tourne quand la conversation est inactive, pas à chaud sur un message.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added'] as const;
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed'] as const;
 /** Ce que l'UI/API autorise à CRÉER aujourd'hui (sous-ensemble de ce que le moteur sait faire). */
-export const AUTOMATION_TRIGGER_KINDS_CREATABLE = ['keyword', 'new_contact'] as const;
+export const AUTOMATION_TRIGGER_KINDS_CREATABLE = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed'] as const;
 export function isCreatableTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS_CREATABLE as readonly string[]).includes(v);
 }
@@ -46,10 +49,12 @@ export interface AutomationRow {
   cooldownSeconds: number | null;
 }
 
-/** L'événement observé, forme normalisée par l'appelant (webhook, sweep, hook applicatif). */
+/** L'événement observé, forme normalisée par l'appelant (webhook, file d'événements, hook d'analyse). */
 export type AutomationEvent =
   | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean }
-  | { kind: 'tag_added'; waId: string; tag: string };
+  | { kind: 'tag_added'; waId: string; tag: string }
+  /** Une conversation vient d'être analysée : `sentiment` catégoriel (pas de score numérique) + `resolved`. */
+  | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean };
 
 /** Minuscules, sans accents, espaces resserrés : même esprit que la recherche de blocs (web/lib/node-search). */
 export function normalizeText(v: string): string {
@@ -92,6 +97,16 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     if (ev.kind !== 'tag_added') return false;
     const wanted = normalizeText(String(a.triggerConfig.tag ?? ''));
     return wanted !== '' && normalizeText(ev.tag) === wanted;
+  }
+  if (a.triggerKind === 'conversation_analyzed') {
+    if (ev.kind !== 'analysis') return false;
+    // Deux filtres CUMULATIFS et tous deux facultatifs : `sentiment` (catégoriel, pas de score) et
+    // `unresolvedOnly` (la demande n'a pas été réglée). Aucun des deux -> déclenche à CHAQUE analyse, ce qui
+    // est un choix explicite de l'utilisateur, pas un défaut de configuration.
+    const wantSentiment = String(a.triggerConfig.sentiment ?? '').trim();
+    if (wantSentiment !== '' && ev.sentiment !== wantSentiment) return false;
+    if (a.triggerConfig.unresolvedOnly === true && ev.resolved) return false;
+    return true;
   }
   return false;
 }

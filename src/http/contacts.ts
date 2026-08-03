@@ -14,7 +14,7 @@ export interface ContactsRouteDeps {
     tenantId: string,
     contactId: string,
     edits: { fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[]; profileName?: string | null },
-  ): Promise<ContactRow | null>;
+  ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /** Suppression DOUCE en masse sur une cible. Renvoie le nb supprimé. */
@@ -25,6 +25,15 @@ export interface ContactsRouteDeps {
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
   listSendsForExport(tenantId: string, contactId: string): Promise<ContactSend[] | null>;
+  /**
+   * Signale qu'un tag vient d'être posé sur UN contact, pour les automations « tag ajouté » (E.2). Best-effort :
+   * l'édition de la fiche a déjà réussi, un échec ici ne doit pas la faire échouer.
+   *
+   * Volontairement absent de l'action EN MASSE et de l'import : poser un tag sur des milliers de contacts
+   * déclencherait autant de scénarios, donc autant de messages facturés. Pour toucher une liste, c'est la
+   * campagne. Absent -> aucune émission (rétro-compatible).
+   */
+  emitTagAdded?(tenantId: string, contactId: string, tags: string[]): Promise<void>;
 }
 
 /** Borne les listes d'ids d'une action en masse (dédup, non vides). Au-delà du plafond, on tronque
@@ -146,7 +155,17 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     // Une transaction : MERGE/suppression fields + Nom + tags, ou 404 si le contact n'est pas dans le tenant.
     const updated = await deps.applyEdits(tenant, contactId, { fields: values, removeFields, addTags, removeTags, ...(profileName !== undefined ? { profileName } : {}) });
     if (!updated) return reply.code(404).send({ error: 'contact inconnu' });
-    return reply.code(200).send({ contact: updated });
+    // Automations « tag ajouté » (E.2), sur les tags RÉELLEMENT nouveaux : reposer un tag déjà présent ne
+    // change rien en base, le déclencheur ne doit donc pas partir. APRÈS l'écriture réussie et en best-effort
+    // (un incident de file ne transforme pas une édition de fiche réussie en erreur pour l'opérateur), mais
+    // l'échec est JOURNALISÉ : sans trace, une automation muette serait indébogable.
+    if (updated.addedTags.length > 0 && deps.emitTagAdded) {
+      await deps.emitTagAdded(tenant, contactId, updated.addedTags).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('emitTagAdded ignoré (best-effort):', err instanceof Error ? err.message : err);
+      });
+    }
+    return reply.code(200).send({ contact: updated.contact });
   });
 
   /**

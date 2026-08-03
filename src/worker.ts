@@ -29,6 +29,7 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
+import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { WorkflowExecutor } from './workflow/executor';
 import { buildWorkflowTemplateComponents } from './workflow/template-send';
@@ -194,6 +195,15 @@ async function main(): Promise<void> {
       await contactStore.addTagsByPhone(tenant, waId, [clean]);
       try { await tagStore.create(tenant, clean); } catch { /* déclaration best-effort */ }
     },
+    // Publication « tag ajouté » pour les automations. Portée par une dep SÉPARÉE de `applyTag`, et appelée
+    // par l'exécuteur uniquement sur un démarrage UNITAIRE : le même exécuteur sert les campagnes, où poser un
+    // tag sur 5 000 destinataires enfilerait 5 000 événements. Passe par la file (et non un appel direct) pour
+    // qu'un scénario qui pose son propre tag déclencheur ne s'enchaîne pas en récursion synchrone.
+    emitTagAdded: async (tenant, waId, tag) => {
+      const clean = tag.trim().slice(0, 64);
+      if (clean === '') return;
+      await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId: tenant, event: { kind: 'tag_added', waId, tag: clean } } satisfies AutomationEventJob);
+    },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
     // Retrait : même normalisation (trim + slice 64) que l'ajout, pour matcher le tag stocké. Le référentiel Tags
     // n'est PAS touché (retirer un tag d'un contact ne « dé-déclare » pas le tag du référentiel du tenant).
@@ -320,15 +330,31 @@ async function main(): Promise<void> {
       // Le contact existe déjà (l'upsert d'inbound a tourné juste avant) : on relie le run à sa fiche si on la trouve.
       const contactId = await contactStore.findIdByWaId(tenant, waId);
       const contact = { waId, contactId };
-      if (startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, startNodeId);
+      // Démarrage UNITAIRE (un contact, sur un événement) : les tags posés par ce parcours publient à leur
+      // tour, contrairement à une campagne. L'anti-rebond du runner borne l'enchaînement.
+      const unitaire = { emitEvents: true };
+      if (startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, startNodeId, unitaire);
       // Fenêtre PROUVÉE ouverte (le contact vient d'écrire) -> le scénario peut ouvrir par un message rapide ou
       // un formulaire, ce que le Lot D a rendu possible et que l'écran Automation annonce. Sinon, garde normale.
       return windowOpen
-        ? workflowExecutor.startInWindow(tenant, workflowId, wf.graph, contact)
-        : workflowExecutor.start(tenant, workflowId, wf.graph, contact);
+        ? workflowExecutor.startInWindow(tenant, workflowId, wf.graph, contact, unitaire)
+        : workflowExecutor.start(tenant, workflowId, wf.graph, contact, undefined, unitaire);
     },
     defaultCooldownSeconds: config.AUTOMATION_COOLDOWN_SECONDS,
   };
+
+  // File `automation-event` (E.2) : les événements qui ne viennent PAS du webhook (tag posé depuis l'API,
+  // analyse de conversation terminée). L'API ne sait pas démarrer un scénario, elle publie ; le worker exécute.
+  // Un payload inexploitable est ignoré proprement plutôt que de faire boucler la file jusqu'à la DLQ.
+  await queue.work(AUTOMATION_EVENT_QUEUE, async (data) => {
+    const job = parseAutomationEventJob(data);
+    if (!job) {
+      // eslint-disable-next-line no-console
+      console.error('automation-event: payload inexploitable, ignoré');
+      return;
+    }
+    await runAutomations(job.tenantId, job.event, automationRunnerDeps);
+  });
 
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(
@@ -378,7 +404,7 @@ async function main(): Promise<void> {
           const wf = await workflowStore.getById(workflowId, tenant);
           if (!wf) return false;
           const contactId = await contactStore.findIdByWaId(tenant, waId);
-          return workflowExecutor.startInWindow(tenant, workflowId, wf.graph, { waId, contactId });
+          return workflowExecutor.startInWindow(tenant, workflowId, wf.graph, { waId, contactId }, { emitEvents: true });
         },
       },
     );
@@ -485,13 +511,41 @@ async function main(): Promise<void> {
       catchupSweeper = setInterval(() => void catchupSweep(), config.HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS);
       catchupSweeper.unref();
     }
-    const onAnalyzed = makeOnAnalyzed({
+    const pushAnalyzed = makeOnAnalyzed({
       enabled: pushEnabled,
       // Enfile une RÉFÉRENCE (pas le snapshot) : le handler push-analysis refetch l'état frais (F3-a).
       enqueue: (stored) => queue.enqueue('push-analysis', { conversationId: stored.conversationId, tenantId: stored.tenantId }),
       // eslint-disable-next-line no-console
       onError: (err) => console.error('push-analysis enqueue échoué (best-effort):', err instanceof Error ? err.message : err),
     });
+
+    // DEUX consommateurs du même point de sortie : le push connecteur (Pièce 2) et, depuis E.2, les
+    // automations « conversation analysée » (relancer un client mécontent, par exemple). Chacun est isolé :
+    // un échec de l'un ne prive pas l'autre, et aucun ne fait échouer le job d'analyse lui-même.
+    const onAnalyzed: typeof pushAnalyzed = async (stored) => {
+      // Chaque consommateur a SON try/catch ici : l'isolation devient une propriété de cette composition, et
+      // non un pari sur le fait que l'appelé avale ses erreurs. Sans ça, un push qui lèverait sauterait
+      // l'automation ET ferait rejouer le job d'analyse, donc re-facturerait l'appel LLM.
+      try {
+        await pushAnalyzed(stored);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('push connecteur ignoré (best-effort):', err instanceof Error ? err.message : err);
+      }
+      try {
+        // L'analyse identifie une CONVERSATION ; le moteur de scénario raisonne par wa_id.
+        const ctx = await inboxStore.getConversationContext(stored.conversationId, stored.tenantId);
+        if (!ctx) return;
+        await runAutomations(
+          stored.tenantId,
+          { kind: 'analysis', waId: ctx.waId, sentiment: stored.sentiment, resolved: stored.resolved },
+          automationRunnerDeps,
+        );
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('automation « conversation analysée » ignorée (best-effort):', err instanceof Error ? err.message : err);
+      }
+    };
 
     const onConversationReady = (conversationId: string, tenantId: string): Promise<void> =>
       queue.enqueue('analyze-conversation', { conversationId, tenantId }, { singletonKey: conversationId });
@@ -703,6 +757,7 @@ async function main(): Promise<void> {
   const files = [
     'webhook',
     'campaign-run',
+    AUTOMATION_EVENT_QUEUE,
     ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : []),
     ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '' ? ['push-analysis', 'hubspot-catchup'] : []),
   ];

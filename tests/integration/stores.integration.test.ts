@@ -329,12 +329,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     )).rows[0]!.id;
 
     // MERGE fields (garde ville, ajoute age) + addTags dédup (vip déjà là).
-    const c1 = await store.applyEdits(tenantId, contactId, { fields: { age: '42' }, addTags: ['prospect', 'vip'], removeTags: [] });
+    const c1 = (await store.applyEdits(tenantId, contactId, { fields: { age: '42' }, addTags: ['prospect', 'vip'], removeTags: [] }))?.contact ?? null;
     expect(c1!.fields).toMatchObject({ ville: 'Lyon', age: '42' });
     expect([...c1!.tags].sort()).toEqual(['prospect', 'vip']); // union dédup
 
     // removeTags : retire tous les tags -> '{}' (pas NULL) ; fields intacts.
-    const c2 = await store.applyEdits(tenantId, contactId, { fields: {}, addTags: [], removeTags: ['vip', 'prospect'] });
+    const c2 = (await store.applyEdits(tenantId, contactId, { fields: {}, addTags: [], removeTags: ['vip', 'prospect'] }))?.contact ?? null;
     expect(c2!.tags).toEqual([]);
     expect(c2!.fields).toMatchObject({ ville: 'Lyon', age: '42' });
 
