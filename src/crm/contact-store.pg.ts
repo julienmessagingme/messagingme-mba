@@ -304,6 +304,22 @@ export class PgContactStore implements ContactStore {
       : null;
   }
 
+  /**
+   * Id du contact par wa_id, avec le MÊME matching que `getContactStateByWaId` (E.164 exact `'+' || wa_id`, puis
+   * chiffres nus, puis bsuid ; un seul contact, préférence à l'exact). Sert à RELIER un run de scénario déclenché
+   * par une automation à la fiche du contact : sans lui, le run partirait avec `contactId: null` alors que la
+   * fiche existe (l'upsert d'inbound vient de tourner). null = aucune fiche (rien à relier, pas une erreur).
+   */
+  async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from contacts where tenant_id = $1
+         and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+       order by (phone_e164 = '+' || $2) desc limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   private static rowToContact(r: {
     id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
     fields: Record<string, unknown>; tags: string[] | null; created_at: Date;

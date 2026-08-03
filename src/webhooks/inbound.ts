@@ -160,8 +160,10 @@ export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
   return out;
 }
 
-/** Auto-création d'une fiche contact depuis un message entrant (par numéro OU BSUID). */
-export type InboundContactUpsert = (tenantId: string, m: InboundMessage) => Promise<void>;
+/** Auto-création d'une fiche contact depuis un message entrant (par numéro OU BSUID).
+ *  Renvoie idéalement le résultat de l'upsert : `created` est LE signal « 1er message d'un contact inconnu »,
+ *  consommé par le déclencheur d'automation `new_contact`. `void` reste accepté (câblages qui ne le disent pas). */
+export type InboundContactUpsert = (tenantId: string, m: InboundMessage) => Promise<void | 'created' | 'updated' | 'skipped'>;
 
 /**
  * Mappe chaque message entrant à son tenant et l'enregistre. Si `upsertContact` est fourni, crée/rafraîchit

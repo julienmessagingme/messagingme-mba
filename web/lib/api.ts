@@ -1190,3 +1190,46 @@ export function completeEmbeddedSignup(
 ): Promise<EsCompleteResult> {
   return request<EsCompleteResult>(`/tenants/${tenantId}/embedded-signup/complete`, { method: 'POST', body: JSON.stringify(input) });
 }
+
+// --- Automations (Lot E : déclencher un scénario sur un événement) ---
+
+/** Types de déclencheur PROPOSÉS à la création. Le moteur en connaît d'autres (tag_added) qui ne sont pas
+ *  encore émis : ils ne sont donc pas offerts ici. Miroir de `AUTOMATION_TRIGGER_KINDS_CREATABLE` serveur. */
+export type AutomationTriggerKind = 'keyword' | 'new_contact';
+
+export interface Automation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  triggerKind: AutomationTriggerKind | 'tag_added';
+  triggerConfig: Record<string, unknown>;
+  conditionGroup: { match: 'all' | 'any'; clauses: unknown[] } | null;
+  workflowId: string;
+  startNodeId: string | null;
+  /** null = anti-rebond par défaut du service. 0 = aucun garde-fou. */
+  cooldownSeconds: number | null;
+}
+
+export interface AutomationInput {
+  name: string;
+  triggerKind: AutomationTriggerKind;
+  triggerConfig: Record<string, unknown>;
+  workflowId: string;
+  enabled?: boolean;
+  conditionGroup?: unknown;
+  startNodeId?: string | null;
+  cooldownSeconds?: number | null;
+}
+
+export function listAutomations(tenantId: string): Promise<{ automations: Automation[] }> {
+  return request(`/tenants/${tenantId}/automations`);
+}
+export function createAutomation(tenantId: string, input: AutomationInput): Promise<{ id: string }> {
+  return request(`/tenants/${tenantId}/automations`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function updateAutomation(tenantId: string, id: string, patch: Partial<AutomationInput>): Promise<{ id: string }> {
+  return request(`/tenants/${tenantId}/automations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteAutomation(tenantId: string, id: string): Promise<void> {
+  return request(`/tenants/${tenantId}/automations/${id}`, { method: 'DELETE' });
+}

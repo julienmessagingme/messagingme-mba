@@ -35,6 +35,7 @@ import { pullFromInfo, pullFromError } from './account/pull';
 import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
+import { PgAutomationStore } from './automation/store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
@@ -76,6 +77,7 @@ async function main(): Promise<void> {
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
+  const automationStore = new PgAutomationStore(pool);
   const transport = new FetchTransport();
   // Clients Meta phone/pricing/templates/flows : résolus PAR TENANT via metaFactory (B1, plus de singleton global).
   // media reste global : endpoint /{appId}/uploads app-scoped (décision assumée, cf. .loop/bloc4.md).
@@ -382,6 +384,15 @@ async function main(): Promise<void> {
       deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
       // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
       declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },
+    },
+    // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
+    automations: {
+      list: (tenant) => automationStore.list(tenant),
+      create: (tenant, input) => automationStore.create(tenant, input),
+      update: (id, tenant, patch) => automationStore.update(id, tenant, patch),
+      remove: (id, tenant) => automationStore.remove(id, tenant),
+      // Un tenant ne peut cibler QUE ses propres scénarios (même garde que la campagne workflow).
+      workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
     },
     ops: {
       getTenantOverview: () => opsStore.getTenantOverview(),

@@ -27,6 +27,9 @@ import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { countTemplateVariables } from './crm/template';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
+import { PgAutomationStore } from './automation/store.pg';
+import { runAutomations } from './automation/runner';
+import type { AutomationTriggerKind } from './automation/match';
 import { WorkflowExecutor } from './workflow/executor';
 import { buildWorkflowTemplateComponents } from './workflow/template-send';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
@@ -132,6 +135,7 @@ async function main(): Promise<void> {
 
   // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).
   const workflowStore = new PgWorkflowStore(pool);
+  const automationStore = new PgAutomationStore(pool);
   const runStore = new PgWorkflowRunStore(pool);
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
@@ -158,6 +162,15 @@ async function main(): Promise<void> {
     return { count };
   };
 
+  // Contexte d'évaluation du contact (état CRM + fuseau/horaires du tenant). Partagé par les blocs `condition`
+  // d'un scénario ET par le filtre `conditionGroup` d'une automation : une seule définition, même sémantique.
+  const buildEvalContext = async (tenant: string, waId: string) => {
+    const state = await contactStore.getContactStateByWaId(tenant, waId);
+    if (!state) return null;
+    const settings = await settingsStore.get(tenant);
+    return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours };
+  };
+
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
@@ -169,12 +182,7 @@ async function main(): Promise<void> {
     escalateToHuman: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }); },
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
-    evalContext: async (tenant, waId) => {
-      const state = await contactStore.getContactStateByWaId(tenant, waId);
-      if (!state) return null;
-      const settings = await settingsStore.get(tenant);
-      return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours };
-    },
+    evalContext: buildEvalContext,
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
     // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime — y compris par
     // un ancien workflow non re-sauvegardé — atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.
@@ -295,6 +303,33 @@ async function main(): Promise<void> {
     },
   });
 
+  // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
+  // ci-dessus, donc hérite gratuitement de ses gardes (fil détenu par un humain/MBA, ouverture hors fenêtre 24 h).
+  const automationRunnerDeps = {
+    listEnabled: (tenant: string, kinds: readonly AutomationTriggerKind[]) => automationStore.listEnabled(tenant, kinds),
+    lastFiredAt: (id: string, waId: string) => automationStore.lastFiredAt(id, waId),
+    markFired: (id: string, waId: string) => automationStore.markFired(id, waId),
+    clearFired: (id: string, waId: string) => automationStore.clearFired(id, waId),
+    // Un seul parcours actif par contact : sinon un message qui répond à un scénario EN COURS et contient le
+    // mot-clé enverrait deux messages, et laisserait le run précédent orphelin (l'avance n'en retrouve qu'un).
+    hasWaitingRun: async (tenant: string, waId: string) => (await runStore.findWaitingByWaId(tenant, waId)) !== null,
+    evalContext: buildEvalContext,
+    startWorkflow: async (tenant: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean) => {
+      const wf = await workflowStore.getById(workflowId, tenant);
+      if (!wf) return false;
+      // Le contact existe déjà (l'upsert d'inbound a tourné juste avant) : on relie le run à sa fiche si on la trouve.
+      const contactId = await contactStore.findIdByWaId(tenant, waId);
+      const contact = { waId, contactId };
+      if (startNodeId) return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, contact, startNodeId);
+      // Fenêtre PROUVÉE ouverte (le contact vient d'écrire) -> le scénario peut ouvrir par un message rapide ou
+      // un formulaire, ce que le Lot D a rendu possible et que l'écran Automation annonce. Sinon, garde normale.
+      return windowOpen
+        ? workflowExecutor.startInWindow(tenant, workflowId, wf.graph, contact)
+        : workflowExecutor.start(tenant, workflowId, wf.graph, contact);
+    },
+    defaultCooldownSeconds: config.AUTOMATION_COOLDOWN_SECONDS,
+  };
+
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(
       data, eventStore, recipientStore, inboxStore,
@@ -302,7 +337,9 @@ async function main(): Promise<void> {
       { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp) },
       // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
-      (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName).then(() => {}),
+      // Le résultat ('created') est le signal « 1er message d'un contact inconnu » : le handler le capture
+      // pour le déclencheur d'automation `new_contact`. Ne PAS le jeter.
+      (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName),
       // Pré-câblage MBA : bascules de contrôle et messages de l'agent Meta. Inerte tant que MBA n'est
       // activé nulle part, mais déjà branché pour que le premier test réel soit OBSERVABLE.
       {
@@ -311,6 +348,13 @@ async function main(): Promise<void> {
         setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
         recordAgentMessage: (t, w, body, messageId) =>
           inboxStore.recordOutboundByWaId(t, w, { body, messageId, type: 'mba' }),
+      },
+      // Automations (Lot E) : un message entrant peut DÉMARRER un scénario (mot-clé, 1er message d'un nouveau
+      // contact). `isNewContact` est injecté par le handler (il vient de l'upsert ci-dessus). La garde de
+      // contrôle du fil est celle de l'executor : un scénario déclenché n'écrit pas dans un fil tenu par un humain.
+      {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        run: (tenant, ev) => runAutomations(tenant, ev, automationRunnerDeps),
       },
     );
   });

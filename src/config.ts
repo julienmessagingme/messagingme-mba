@@ -134,6 +134,11 @@ export const schema = z.object({
   /** Idem pour un fil tenu par MBA. Beaucoup plus long : l'agent est censé répondre seul, on ne le préempte
    *  qu'en cas de silence anormal. */
   CONTROL_MBA_TIMEOUT_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
+  /** Anti-rebond par défaut d'une automation (Lot E) : délai minimum entre deux déclenchements de la MÊME
+   *  automation pour le MÊME contact, quand le client n'a rien réglé. 1 h : assez long pour absorber un client
+   *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une
+   *  vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou, à ses risques). */
+  AUTOMATION_COOLDOWN_SECONDS: z.coerce.number().default(3600),
   /** Provider LLM de l'analyse. UNE seule implémentation existe. `z.enum` et non `z.string` : une valeur
    *  inconnue était acceptée par la config et TUAIT le conteneur worker au premier appel d'analyse, avec une
    *  erreur qui ne nommait pas la variable. Elle est maintenant refusée au boot. */

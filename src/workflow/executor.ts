@@ -179,6 +179,21 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Démarre un run depuis l'ENTRÉE, pour un contact dont la fenêtre de service 24 h est GARANTIE OUVERTE parce
+   * qu'il vient d'écrire (automation déclenchée par un message entrant). La garde fenêtre n'a alors pas lieu
+   * d'être : le scénario peut légitimement ouvrir par un message rapide ou un formulaire, ce qui est justement
+   * l'usage que le Lot D a rendu possible.
+   *
+   * ⚠️ À n'appeler QUE sur un chemin où la fenêtre est prouvée par un inbound récent. Un déclencheur qui ne
+   * prouve pas la fenêtre (ex. un tag posé depuis le CRM) doit passer par `start()`, qui garde la protection.
+   */
+  async startInWindow(tenantId: string, workflowId: string, graph: WorkflowGraph, contact: { waId: string; contactId: string | null }): Promise<boolean> {
+    const entry = entryNode(graph);
+    if (!entry) return false;
+    return this.runFrom(tenantId, workflowId, graph, contact, entry, { allowSessionOpen: true });
+  }
+
+  /**
    * Démarre un run à un bloc ARBITRAIRE du graphe (cible `node` de /v1/sends, D-1). La garde fenêtre 24 h n'est
    * PAS appliquée ici : l'appelant a déjà écarté les contacts hors fenêtre (`out_of_window`), et l'intérêt même
    * de la cible node est d'envoyer un message de session (quick_message/flow) à quelqu'un qui vient d'écrire.

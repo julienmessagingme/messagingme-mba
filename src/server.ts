@@ -19,6 +19,7 @@ import { registerAccount } from './http/account';
 import { registerMe } from './http/me';
 import { registerOps } from './http/ops';
 import { registerWorkflows } from './http/workflows';
+import { registerAutomations } from './http/automations';
 import { registerEmbeddedSignup } from './http/embedded-signup';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
@@ -49,6 +50,7 @@ import type { AccountRouteDeps } from './http/account';
 import type { MeRouteDeps } from './http/me';
 import type { OpsRouteDeps } from './http/ops';
 import type { WorkflowRouteDeps } from './http/workflows';
+import type { AutomationRouteDeps } from './http/automations';
 import type { EmbeddedSignupRouteDeps } from './http/embedded-signup';
 import type { ApiKeysRouteDeps } from './http/api-keys';
 import type { V1ContactsRouteDeps } from './http/v1-contacts';
@@ -105,6 +107,8 @@ export interface ServerDeps {
   opsToken?: string;
   /** Bot builder (workflows) — réservé aux admins. */
   workflows?: WorkflowRouteDeps;
+  /** Automations (Lot E) : lecture ouverte aux comptes authentifiés, ÉCRITURES admin-only (garde dans la route). */
+  automations?: AutomationRouteDeps;
   /** Embedded Signup Meta (connexion du numéro, Tech Provider) — réservé aux admins. */
   embeddedSignup?: EmbeddedSignupRouteDeps;
   /** CRUD des clés d'API (console admin, JWT) — réservé aux admins. */
@@ -215,6 +219,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.support) registerSupport(app, deps.support, requireAuth);
   if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
+  if (deps.automations) registerAutomations(app, deps.automations, requireAuth);
   if (deps.embeddedSignup) registerEmbeddedSignup(app, deps.embeddedSignup, requireAdmin);
   if (deps.hubspotImport) registerHubspotImport(app, deps.hubspotImport, requireAdmin);
   if (deps.hubspotInstall) registerHubspotInstall(app, deps.hubspotInstall, requireAdmin);

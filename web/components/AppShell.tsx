@@ -8,7 +8,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -59,6 +59,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
+    { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.flow },
     { key: 'mba', label: t('MBA', 'MBA'), d: icons.mba, children: [
       { key: 'mba-guide', href: '/mba', label: t('Guide', 'Guide') },
       { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
