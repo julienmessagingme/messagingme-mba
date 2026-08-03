@@ -105,7 +105,7 @@ export class PgStatsStore {
          union all
          select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') d, m.template_category, count(*) cnt
          from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
-         where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
+         where cv.tenant_id = $1 and not cv.is_test and m.direction = 'out' and m.type = 'template'
            and m.template_category is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
            -- Anti double-compte : un template de campagne DIRECTE est déjà compté via campaign_recipients (Pièce 0
            -- le logge aussi dans conversation_messages, même wamid) -> on l'exclut ici. Les envois inbox manuels
@@ -126,7 +126,7 @@ export class PgStatsStore {
        )
        select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d, count(*)::int as count
        from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
-       where cv.tenant_id = $1 and m.created_at >= b.start_ts and m.created_at < b.end_ts
+       where cv.tenant_id = $1 and not cv.is_test and m.created_at >= b.start_ts and m.created_at < b.end_ts
          and (m.direction = 'in' or (m.direction = 'out' and m.type is distinct from 'template'))
        group by d order by d`,
       [tenantId, from, to, TZ],
@@ -167,7 +167,7 @@ export class PgStatsStore {
          union all
          select m.template_name as name, m.template_category as category, count(*) cnt
          from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
-         where cv.tenant_id = $1 and m.direction = 'out' and m.type = 'template'
+         where cv.tenant_id = $1 and not cv.is_test and m.direction = 'out' and m.type = 'template'
            and m.template_name is not null and m.created_at >= b.start_ts and m.created_at < b.end_ts
            -- Anti double-compte : template de campagne directe déjà compté via campaign_recipients (même wamid).
            and not exists (
@@ -199,7 +199,7 @@ export class PgStatsStore {
          count(r.id) filter (where r.sent_at is not null and exists (
            select 1 from conversations cv
              join conversation_messages m on m.conversation_id = cv.id
-           where cv.tenant_id = c.tenant_id
+           where cv.tenant_id = c.tenant_id and not cv.is_test
              and cv.wa_id = regexp_replace(r.to_e164, '[^0-9]', '', 'g')
              and m.direction = 'in'
              and m.created_at > r.sent_at

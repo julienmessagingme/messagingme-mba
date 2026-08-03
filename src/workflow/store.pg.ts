@@ -66,6 +66,38 @@ export class PgWorkflowStore {
     const res = await this.pool.query(`delete from workflows where id = $1 and tenant_id = $2`, [id, tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
+
+  /**
+   * Jeton de test du scénario, créé À LA DEMANDE et STABLE ensuite : le lien wa.me et son QR restent valables,
+   * on ne les régénère pas à chaque essai. Renvoie le jeton existant s'il y en a déjà un (idempotent), sinon
+   * en pose un neuf. null si le scénario n'appartient pas au tenant.
+   *
+   * `coalesce` dans l'UPDATE + `returning` : un seul aller-retour, et deux clics simultanés sur « Tester » ne
+   * peuvent pas produire deux jetons (le second lit celui que le premier vient d'écrire).
+   */
+  async ensureTestToken(id: string, tenantId: string, token: string): Promise<string | null> {
+    const res = await this.pool.query<{ test_token: string }>(
+      `update workflows set test_token = coalesce(test_token, $3), updated_at = updated_at
+       where id = $1 and tenant_id = $2 returning test_token`,
+      [id, tenantId, token],
+    );
+    return res.rows[0]?.test_token ?? null;
+  }
+
+  /**
+   * Scénario associé à un jeton de test. CHEMIN CHAUD (un message entrant qui ressemble à un jeton) : sert
+   * l'index unique partiel `workflows_test_token_key`. Pas de scope tenant en entrée, justement parce que le
+   * jeton est ce qui DÉSIGNE le tenant : c'est l'appelant qui vérifie ensuite que le numéro correspond.
+   */
+  async findByTestToken(token: string): Promise<WorkflowRow | null> {
+    const res = await this.pool.query<Row>(
+      `select id, tenant_id, name, code, graph, created_at, updated_at from workflows
+       where test_token = $1 limit 1`,
+      [token],
+    );
+    const r = res.rows[0];
+    return r ? toRow(r) : null;
+  }
 }
 
 interface Row {

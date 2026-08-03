@@ -170,6 +170,22 @@ export class PgInboxStore implements InboxStore {
     );
   }
 
+  /**
+   * Marque le fil comme une conversation de TEST (jeton de test d'un scénario, Lot F). Sens unique : une
+   * conversation née d'un test le reste, ses messages de test y sont pour toujours. Exclut le fil de l'analyse
+   * (donc du push HubSpot par construction) et des statistiques, pour qu'un essai interne ne soit pas compté
+   * comme un vrai client dans le tableau de bord.
+   *
+   * UPDATE SEUL : le message entrant qui porte le jeton a déjà créé la conversation (`recordInbound` tourne
+   * avant), donc il n'y a jamais rien à créer ici.
+   */
+  async markConversationTest(tenantId: string, waId: string): Promise<void> {
+    await this.pool.query(
+      `update conversations set is_test = true where tenant_id = $1 and wa_id = $2 and not is_test`,
+      [tenantId, waId],
+    );
+  }
+
   async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
     const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview);

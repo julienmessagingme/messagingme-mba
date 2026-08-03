@@ -19,13 +19,15 @@ export interface ClaimedConversation {
 export class PgConversationAnalysisStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Réclame en lot les conversations inactives (last_message_at ancien) encore `pending` -> `queued`. */
+  /** Réclame en lot les conversations inactives (last_message_at ancien) encore `pending` -> `queued`.
+   *  Les fils de TEST (jeton de test d'un scénario) sont exclus : ils ne sont pas de vraies conversations
+   *  client, donc ni analyse LLM (coût inutile), ni poussée vers HubSpot par construction. */
   async claimForAnalysis(inactivityMs: number, limit: number): Promise<ClaimedConversation[]> {
     const res = await this.pool.query<{ id: string; tenant_id: string }>(
       `update conversations set analysis_status = 'queued', analysis_queued_at = now()
        where id in (
          select id from conversations
-         where analysis_status = 'pending' and last_message_at < now() - make_interval(secs => $1 / 1000.0)
+         where analysis_status = 'pending' and not is_test and last_message_at < now() - make_interval(secs => $1 / 1000.0)
          order by last_message_at asc
          limit $2
          for update skip locked

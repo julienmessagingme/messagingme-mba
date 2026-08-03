@@ -6,6 +6,7 @@ import type { WorkflowGraph } from '../workflow/graph';
 import type { WorkflowRow } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
 import { collectNodes } from '../workflow/node-list';
+import { newTestToken, waMeTestLink } from '../workflow/test-token';
 
 /**
  * NOTE (Lot D) : le SAVE n'exige PLUS qu'un scénario commence par un template. Un scénario peut désormais
@@ -31,6 +32,10 @@ export interface WorkflowRouteDeps {
   /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort).
    *  Absent -> pas de déclaration (rétro-compatible). */
   declareTags?(tenantId: string, tags: string[]): Promise<void>;
+  /** Pose (une fois) le jeton de test du scénario et le renvoie. null si le scénario n'est pas au tenant. */
+  ensureTestToken?(id: string, tenantId: string, token: string): Promise<string | null>;
+  /** Numéro WhatsApp affiché du tenant, pour construire le lien wa.me. null si aucun numéro connecté. */
+  getDisplayPhoneNumber?(tenantId: string): Promise<string | null>;
 }
 
 /** Tags saisis dans les blocs `tag` du graphe (dédupliqués, trim + tronqués à 64 comme la route Tags). */
@@ -170,5 +175,25 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const ok = await deps.deleteWorkflow(id, tenant);
     if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
     return reply.code(200).send({ ok: true });
+  });
+
+  /**
+   * Lien de TEST d'un scénario (Lot F) : renvoie le jeton, le lien wa.me et le numéro, pour que le client
+   * teste depuis SON téléphone sans campagne. POST et non GET : le premier appel POSE le jeton (écriture).
+   * Idempotent ensuite (le jeton est stable, le QR reste valable).
+   *
+   * `link` null = aucun numéro WhatsApp connecté : on renvoie quand même le jeton (le testeur peut écrire le
+   * mot à la main), plutôt qu'un lien cassé.
+   */
+  app.post('/tenants/:tenantId/workflows/:id/test-link', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.ensureTestToken) return reply.code(503).send({ error: 'test indisponible sur cette instance' });
+    const { id } = req.params as { id: string };
+    const token = await deps.ensureTestToken(id, tenant, newTestToken());
+    if (token === null) return reply.code(404).send({ error: 'workflow inconnu' });
+    const phone = deps.getDisplayPhoneNumber ? await deps.getDisplayPhoneNumber(tenant) : null;
+    return reply.code(200).send({ token, phone, link: waMeTestLink(phone, token) });
   });
 }

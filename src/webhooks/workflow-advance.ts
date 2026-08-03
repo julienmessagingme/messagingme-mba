@@ -13,8 +13,11 @@ export interface WorkflowAdvanceDeps {
  * dans le handler (ne doit JAMAIS faire échouer le job webhook partagé avec les statuts/inbox/flow). Le
  * bouton tapé (`m.buttonPayload`) sélectionne la branche ; une réponse texte suit la 1re arête sortante.
  */
-export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdvanceDeps): Promise<void> {
+export async function processWorkflowAdvance(payload: unknown, deps: WorkflowAdvanceDeps, consumed?: ReadonlySet<string>): Promise<void> {
   for (const m of extractInbound(payload)) {
+    // Message déjà consommé par une étape prioritaire (jeton de test) : ce n'est pas une réponse du contact
+    // à son parcours, le traiter comme telle ferait avancer le scénario d'un cran pour rien.
+    if (consumed?.has(m.messageId)) continue;
     // Ne PAS faire avancer le scénario sur un `standby` (le MBA tient le fil) : répondre reprendrait implicitement
     // le contrôle au MBA. L'inbox, elle, enregistre bien ce message (processInbound, non filtré) pour rester visible.
     // field null (anciennes fixtures) -> on avance (rétro-compat).

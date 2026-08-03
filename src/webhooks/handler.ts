@@ -5,12 +5,14 @@ import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
 import { processHandovers } from './handover';
 import { processTriggers } from './triggers';
+import { processTestTokens } from './test-token';
 import type { DeliveryStore } from './delivery';
 import type { InboxStore, InboundContactUpsert } from './inbound';
 import type { FlowMappingLookup, ContactFieldWriter } from './flow-mapping';
 import type { WorkflowAdvanceDeps } from './workflow-advance';
 import type { HandoverDeps } from './handover';
 import type { TriggerDeps } from './triggers';
+import type { TestTokenDeps } from './test-token';
 import type { EventStore } from './store';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
@@ -36,10 +38,18 @@ export async function handleWebhookJob(
   handover?: HandoverDeps,
   /** Automations (Lot E). `isNewContact` est fourni ICI : il vient de l'upsert d'inbound, pas d'une requête. */
   triggers?: Omit<TriggerDeps, 'isNewContact'>,
+  /** Jetons de test d'un scénario (Lot F). Prioritaires sur l'avance et sur les automations. */
+  testTokens?: TestTokenDeps,
 ): Promise<void> {
   const events = parseWebhook(raw);
+  // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
+  // rejeu » (Meta redélivre quand l'ACK se perd, pg-boss réessaie un job interrompu). On le retient pour les
+  // seules étapes NON idempotentes par ailleurs, aujourd'hui le démarrage d'un test (un rejeu renverrait la
+  // séquence au testeur et facturerait les templates une seconde fois).
+  const alreadySeen = new Set<string>();
   for (const ev of events) {
-    await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
+    const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
+    if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
   if (delivery) await processStatuses(events, delivery);
   // Contacts CRÉÉS par ce webhook (clé `tenant:waId`). Le signal « 1er message d'un contact inconnu » n'existe
@@ -69,10 +79,22 @@ export async function handleWebhookJob(
       console.error('handleWebhookJob: mapping flow ignoré:', err instanceof Error ? err.message : err);
     }
   }
+  // Jetons de test d'un scénario (Lot F). AVANT l'avance et les automations, VOLONTAIREMENT : un jeton n'est
+  // ni une réponse à un parcours en cours, ni un mot-clé ordinaire. Les messages qu'il consomme sont écartés
+  // des deux étapes suivantes, sinon un seul message déclencherait deux choses. ISOLÉ comme les autres.
+  let consumed: ReadonlySet<string> = new Set();
+  if (testTokens) {
+    try {
+      consumed = await processTestTokens(raw, testTokens, alreadySeen);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handleWebhookJob: jeton de test ignoré:', err instanceof Error ? err.message : err);
+    }
+  }
   // Avance des workflows sur les réponses. ISOLÉ également (même raison : ne pas DLQ le webhook partagé).
   if (workflowAdvance) {
     try {
-      await processWorkflowAdvance(raw, workflowAdvance);
+      await processWorkflowAdvance(raw, workflowAdvance, consumed);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: avance workflow ignorée:', err instanceof Error ? err.message : err);
@@ -100,7 +122,7 @@ export async function handleWebhookJob(
         // CONSOMMÉ une seule fois : si Meta batche deux messages du même nouveau contact dans le même webhook,
         // seul le PREMIER est un « 1er message ». Sans le retrait, le second déclencherait aussi l'accueil.
         isNewContact: async (tenantId, waId) => createdContacts.delete(`${tenantId}:${waId}`),
-      });
+      }, consumed);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: automations ignorées:', err instanceof Error ? err.message : err);

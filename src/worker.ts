@@ -356,6 +356,31 @@ async function main(): Promise<void> {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         run: (tenant, ev) => runAutomations(tenant, ev, automationRunnerDeps),
       },
+      // Jetons de test d'un scénario (Lot F) : le testeur envoie le mot de son lien wa.me / QR depuis son
+      // propre téléphone. C'est LUI qui ouvre la fenêtre 24 h, donc le scénario peut démarrer en session.
+      {
+        phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
+        findByTestToken: async (token) => {
+          const wf = await workflowStore.findByTestToken(token);
+          return wf ? { workflowId: wf.id, tenantId: wf.tenantId } : null;
+        },
+        // Même garde que l'exécuteur, mais vérifiée AVANT les écritures : un opérateur (ou MBA) qui tient le
+        // fil garde la priorité, et on ne casse pas l'état du contact pour un test qui ne partira pas.
+        mayStart: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
+        markConversationTest: (tenant, waId) => inboxStore.markConversationTest(tenant, waId),
+        // Un testeur qui relance son lien veut repartir du DÉBUT : on clôt le parcours resté en attente,
+        // sinon il resterait orphelin (l'avance ne retrouve qu'un run à la fois par contact).
+        endWaitingRun: async (tenant, waId) => {
+          const run = await runStore.findWaitingByWaId(tenant, waId);
+          if (run) await runStore.setState(run.id, { currentNode: run.currentNode, status: 'done' });
+        },
+        startTestRun: async (tenant, workflowId, waId) => {
+          const wf = await workflowStore.getById(workflowId, tenant);
+          if (!wf) return false;
+          const contactId = await contactStore.findIdByWaId(tenant, waId);
+          return workflowExecutor.startInWindow(tenant, workflowId, wf.graph, { waId, contactId });
+        },
+      },
     );
   });
 

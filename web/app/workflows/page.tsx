@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
-import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, type WorkflowSummary } from '@/lib/api';
+import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 
@@ -37,6 +37,9 @@ function WorkflowsInner({ session }: { session: Session }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<WorkflowSummary | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  // Lien de test (Lot F) : jeton stable + lien wa.me + QR (rendu en data-URL par la lib, aucun appel réseau).
+  const [testing, setTesting] = useState<{ wf: WorkflowSummary; link: WorkflowTestLink; qr: string | null } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Date + heure de création (fuseau Paris). Vide/invalide (objet transitoire juste après création) -> '-'.
   const createdLabel = (iso: string): string =>
@@ -109,6 +112,31 @@ function WorkflowsInner({ session }: { session: Session }) {
       setBusy(false);
     }
   }
+  /**
+   * Ouvre le panneau « Tester le scénario » : demande (ou récupère) le jeton stable du scénario, puis rend le
+   * QR du lien wa.me. Le QR est calculé DANS le navigateur (data-URL), aucun service externe n'est appelé :
+   * un lien de test ne doit pas transiter par un tiers.
+   */
+  async function openTest(w: WorkflowSummary) {
+    setMenuFor(null);
+    setError(null);
+    setBusy(true);
+    setCopied(false);
+    try {
+      const link = await createWorkflowTestLink(session.tenantId, w.id);
+      let qr: string | null = null;
+      if (link.link) {
+        const QRCode = (await import('qrcode')).default;
+        qr = await QRCode.toDataURL(link.link, { width: 220, margin: 1 });
+      }
+      setTesting({ wf: w, link, qr });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Lien de test indisponible', 'Test link unavailable'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function duplicate(w: WorkflowSummary) {
     setMenuFor(null);
     setError(null);
@@ -220,6 +248,7 @@ function WorkflowsInner({ session }: { session: Session }) {
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
                             <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-left text-sm shadow-lg">
+                              <button onClick={() => { void openTest(w); }} data-testid={`workflow-test-${w.id}`} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Tester le scénario', 'Test scenario')}</button>
                               <button onClick={() => startRename(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Renommer', 'Rename')}</button>
                               <button onClick={() => duplicate(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Dupliquer', 'Duplicate')}</button>
                               <div className="my-1 border-t border-ink-100" />
@@ -236,6 +265,59 @@ function WorkflowsInner({ session }: { session: Session }) {
           </table>
         )}
       </div>
+
+      {testing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setTesting(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()} data-testid="workflow-test-panel">
+            <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Tester « ', 'Test "')}{testing.wf.name}{t(' »', '"')}</h3>
+            <p className="mt-1 text-sm text-ink-500">
+              {t(
+                'Scanne ce QR code avec ton téléphone, ou ouvre le lien. WhatsApp s’ouvre avec le mot déjà écrit : appuie sur Envoyer et le scénario démarre sur ton propre numéro.',
+                'Scan this QR code with your phone, or open the link. WhatsApp opens with the word already typed: press Send and the scenario starts on your own number.',
+              )}
+            </p>
+
+            {testing.link.link ? (
+              <>
+                {testing.qr && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={testing.qr} alt={t('QR code du lien de test', 'Test link QR code')} className="mx-auto my-4 h-[220px] w-[220px] rounded-lg border border-ink-200" />
+                )}
+                <div className="flex items-center gap-2">
+                  <input readOnly value={testing.link.link} className="w-full rounded-lg border border-ink-300 bg-ink-50 px-3 py-1.5 text-xs text-ink-600" />
+                  <button
+                    onClick={() => { void navigator.clipboard.writeText(testing.link.link ?? '').then(() => setCopied(true)); }}
+                    className="shrink-0 rounded-lg border border-ink-300 px-3 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50"
+                  >
+                    {copied ? t('Copié', 'Copied') : t('Copier', 'Copy')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="my-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {t(
+                  'Aucun numéro WhatsApp connecté : envoie le mot ci-dessous à ton numéro professionnel pour lancer le test.',
+                  'No WhatsApp number connected: send the word below to your business number to start the test.',
+                )}
+              </p>
+            )}
+
+            <p className="mt-3 text-xs text-ink-500">
+              {t('Mot à envoyer : ', 'Word to send: ')}
+              <code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-ink-800">{testing.link.token}</code>
+            </p>
+            <p className="mt-2 text-xs text-ink-400">
+              {t(
+                'Ce lien est permanent pour ce scénario. La conversation de test est marquée comme telle : ses messages ne comptent ni dans les statistiques, ni dans l’analyse. Le numéro qui teste apparaît en revanche comme un contact du mini-CRM, comme n’importe quel numéro qui écrit.',
+                'This link is permanent for this scenario. The test conversation is flagged as such: its messages count neither in statistics nor in analysis. The testing number does appear as a mini-CRM contact, like any number that writes in.',
+              )}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => setTesting(null)} className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600">{t('Fermer', 'Close')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {renaming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={() => setRenaming(null)}>

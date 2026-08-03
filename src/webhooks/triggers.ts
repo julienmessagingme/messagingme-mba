@@ -20,9 +20,12 @@ export interface TriggerDeps {
   run(tenantId: string, ev: AutomationEvent): Promise<number>;
 }
 
-export async function processTriggers(payload: unknown, deps: TriggerDeps): Promise<void> {
+export async function processTriggers(payload: unknown, deps: TriggerDeps, consumed?: ReadonlySet<string>): Promise<void> {
   for (const m of extractInbound(payload)) {
     if (m.field && m.field !== 'messages') continue; // standby : le MBA tient le fil
+    // Message déjà consommé par une étape prioritaire (jeton de test) : il a déjà démarré un scénario, une
+    // automation par mot-clé ne doit pas en démarrer un second par-dessus.
+    if (consumed?.has(m.messageId)) continue;
     // Isolation PAR MESSAGE : une erreur sur un contact ne doit pas priver les autres de leur déclenchement.
     try {
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);

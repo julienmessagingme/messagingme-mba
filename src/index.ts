@@ -384,6 +384,9 @@ async function main(): Promise<void> {
       deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
       // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
       declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },
+      // Lien de test (Lot F) : jeton stable posé au 1er clic, + numéro affiché pour construire le lien wa.me.
+      ensureTestToken: (id, tenant, token) => workflowStore.ensureTestToken(id, tenant, token),
+      getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
     },
     // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {

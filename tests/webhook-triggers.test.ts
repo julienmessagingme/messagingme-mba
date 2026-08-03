@@ -130,4 +130,91 @@ describe('handleWebhookJob : intégration des automations', () => {
       inboundPayload('33611', 'rdv'), eventStore, undefined, inbox, undefined, undefined, async () => 'updated',
     )).resolves.toBeUndefined();
   });
+
+  // --- Lot F : priorité du jeton de test ---
+
+  it('un JETON de test est prioritaire : il démarre le test, et n’est traité NI par l’avance NI par une automation', async () => {
+    // Sans cette priorité, un seul message ferait trois choses : démarrer le test, avancer d'un cran le
+    // parcours en attente, et déclencher une automation par mot-clé. Le client recevrait plusieurs messages.
+    // Jeton FICTIF (aucun secret) : valeur figée pour rendre les assertions lisibles.
+    const MOT_TEST = 'test-a7k2m9p3';
+    const advanced: string[] = [];
+    const triggered: string[] = [];
+    const started: string[] = [];
+    await handleWebhookJob(
+      inboundPayload('33611', MOT_TEST), eventStore, undefined, inbox, undefined,
+      { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
+      async () => 'updated',
+      undefined,
+      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
+      {
+        phoneNumberTenant: async () => 't1',
+        findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
+        mayStart: async () => true,
+        markConversationTest: async () => {},
+        endWaitingRun: async () => {},
+        startTestRun: async (_t, wf) => { started.push(wf); return true; },
+      },
+    );
+    expect(started).toEqual(['wf1']);
+    expect(advanced).toEqual([]);   // l'avance n'a PAS vu le message
+    expect(triggered).toEqual([]);  // les automations non plus
+  });
+
+  it('un message ORDINAIRE passe toujours à l’avance et aux automations (le jeton ne bloque rien d’autre)', async () => {
+    const advanced: string[] = [];
+    const triggered: string[] = [];
+    await handleWebhookJob(
+      inboundPayload('33611', 'je veux un rdv'), eventStore, undefined, inbox, undefined,
+      { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
+      async () => 'updated',
+      undefined,
+      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
+      {
+        phoneNumberTenant: async () => 't1',
+        findByTestToken: async () => null,
+        mayStart: async () => true,
+        markConversationTest: async () => {},
+        endWaitingRun: async () => {},
+        startTestRun: async () => true,
+      },
+    );
+    expect(advanced).toEqual(['33611']);
+    expect(triggered).toEqual(['33611']);
+  });
+
+  it('REJEU du webhook : le jeton ne relance PAS le scénario (pas de double envoi facturé)', async () => {
+    // `insertEvent` renvoie false quand l'événement était déjà enregistré : c'est le signal de rejeu, que le
+    // handler traduit en « ne pas redémarrer le test ». Toutes les autres étapes sont déjà idempotentes.
+    const started: string[] = [];
+    const deja = { insertEvent: async () => false }; // événement DÉJÀ vu
+    await handleWebhookJob(
+      inboundPayload('33611', 'test-a7k2m9p3'), deja, undefined, inbox, undefined, undefined,
+      async () => 'updated', undefined, undefined,
+      {
+        phoneNumberTenant: async () => 't1',
+        findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
+        mayStart: async () => true,
+        markConversationTest: async () => {},
+        endWaitingRun: async () => {},
+        startTestRun: async (_t, wf) => { started.push(wf); return true; },
+      },
+    );
+    expect(started).toEqual([]);
+  });
+
+  it('un jeton de test qui PLANTE ne fait pas échouer le job webhook', async () => {
+    await expect(handleWebhookJob(
+      inboundPayload('33611', 'test-a7k2m9p3'), eventStore, undefined, inbox, undefined, undefined,
+      async () => 'updated', undefined, undefined,
+      {
+        phoneNumberTenant: async () => { throw new Error('base indisponible'); },
+        findByTestToken: async () => null,
+        mayStart: async () => true,
+        markConversationTest: async () => {},
+        endWaitingRun: async () => {},
+        startTestRun: async () => true,
+      },
+    )).resolves.toBeUndefined();
+  });
 });

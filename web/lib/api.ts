@@ -1233,3 +1233,9 @@ export function updateAutomation(tenantId: string, id: string, patch: Partial<Au
 export function deleteAutomation(tenantId: string, id: string): Promise<void> {
   return request(`/tenants/${tenantId}/automations/${id}`, { method: 'DELETE' });
 }
+
+/** Lien de test d'un scénario (Lot F) : jeton stable + lien wa.me pré-rempli. `link` null = aucun numéro connecté. */
+export interface WorkflowTestLink { token: string; phone: string | null; link: string | null }
+export function createWorkflowTestLink(tenantId: string, workflowId: string): Promise<WorkflowTestLink> {
+  return request(`/tenants/${tenantId}/workflows/${workflowId}/test-link`, { method: 'POST' });
+}

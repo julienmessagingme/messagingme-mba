@@ -102,7 +102,10 @@ export class PgConversationStatsStore {
          count(*) filter (where confidence >= 0.7 and confidence < 0.9)::int as c_70_90,
          count(*) filter (where confidence >= 0.9)::int as c_gte90
        from conversation_analysis ca, bounds b
-       where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts`,
+       where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
+         -- Les fils de TEST (jeton de test d'un scénario) ne sont pas de vrais échanges client : ils ne pèsent
+         -- pas dans le qualitatif. Ceinture-bretelles : ils sont déjà écartés de l'analyse en amont.
+         and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)`,
       [tenantId, from, to, TZ],
     );
 
@@ -115,6 +118,7 @@ export class PgConversationStatsStore {
        from conversation_analysis ca, bounds b
        where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
          and btrim(topic) <> ''
+         and not exists (select 1 from conversations cv where cv.id = ca.conversation_id and cv.is_test)
        group by 1 order by n desc, topic asc limit 10`,
       [tenantId, from, to, TZ],
     );
@@ -161,7 +165,7 @@ export class PgConversationStatsStore {
        from conversation_analysis ca
          join conversations c on c.id = ca.conversation_id
          left join contacts ct on ct.id = c.contact_id, bounds b
-       where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
+       where ca.tenant_id = $1 and not c.is_test and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
          and ($5::text is null or ca.sentiment = $5::text)
          and ($6::text is null or ca.intent = $6::text)
          and ($7::text is null or ca.action_suggestion = $7::text)
