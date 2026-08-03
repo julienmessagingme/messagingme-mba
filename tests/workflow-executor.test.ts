@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
+import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { EvalContext } from '../src/workflow/conditions';
 import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
@@ -371,5 +372,58 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
     expect(calls).toEqual([]);
     expect(runs.run).toBeNull();
+  });
+});
+
+/**
+ * INVARIANT le plus coûteux du lot Automation : un tag posé par un scénario ne publie « tag ajouté » QUE si ce
+ * scénario a été lancé pour UN contact. Le même exécuteur sert les campagnes : sans ce garde-fou, une campagne
+ * workflow de 5 000 destinataires dont le graphe contient un bloc Action publierait 5 000 événements, donc
+ * potentiellement 5 000 scénarios et autant de messages facturés que personne n'a demandés.
+ */
+describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’action', () => {
+  const graphe: WorkflowGraph = { nodes: [n('t', 'tag', { tag: 'vip' })], edges: [] };
+
+  function exec(over: Partial<WorkflowExecutorDeps> = {}) {
+    const emitted: string[] = [];
+    const deps: WorkflowExecutorDeps = {
+      runs: { start: async () => ({ id: 'r1' }), findWaitingByWaId: async () => null, setState: async () => {} },
+      getGraph: async () => graphe,
+      applyTag: async () => true, // le tag est réellement nouveau
+      setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
+      sendTemplate: async () => {}, sendQuickMessage: async () => {}, sendFlow: async () => {},
+      emitTagAdded: async (_t, _w, tag) => { emitted.push(tag); },
+      ...over,
+    };
+    return { ex: new WorkflowExecutor(deps), emitted };
+  }
+
+  it('CAMPAGNE (start sans option) -> AUCUNE publication', async () => {
+    const { ex, emitted } = exec();
+    await ex.start('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' });
+    expect(emitted).toEqual([]);
+  });
+
+  it('campagne ciblant un bloc (startFromNode sans option) -> AUCUNE publication', async () => {
+    const { ex, emitted } = exec();
+    await ex.startFromNode('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, 't');
+    expect(emitted).toEqual([]);
+  });
+
+  it('démarrage UNITAIRE (automation / test) -> publication', async () => {
+    const { ex, emitted } = exec();
+    await ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true });
+    expect(emitted).toEqual(['vip']);
+  });
+
+  it('tag DÉJÀ présent (applyTag renvoie false) -> aucune publication même en unitaire', async () => {
+    const { ex, emitted } = exec({ applyTag: async () => false });
+    await ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true });
+    expect(emitted).toEqual([]);
+  });
+
+  it('une publication qui échoue ne fait pas échouer le parcours', async () => {
+    const { ex } = exec({ emitTagAdded: async () => { throw new Error('file indisponible'); } });
+    await expect(ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true })).resolves.toBe(true);
   });
 });

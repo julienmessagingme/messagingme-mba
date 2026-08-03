@@ -12,6 +12,8 @@ export interface AutomationRouteDeps {
   remove(id: string, tenantId: string): Promise<boolean>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Garde d'appartenance (comme la campagne workflow). */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
+  /** UNE automation par id (scopée tenant). Lecture ciblée : `list` est capée, donc aveugle au-delà du plafond. */
+  getById(id: string, tenantId: string): Promise<AutomationRow | null>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -25,8 +27,23 @@ const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() 
 /** Borne haute de l'anti-rebond : 7 jours, comme le gel de contrôle. Au-delà ce n'est plus un anti-rebond. */
 const MAX_COOLDOWN = 7 * 24 * 3600;
 /** Plancher pour « conversation analysée » : doit rester au-dessus du délai d'inactivité qui déclenche une
- *  analyse (25 min par défaut), sinon le scénario et l'analyse se relancent mutuellement. Voir la garde plus bas. */
+ *  analyse (25 min par défaut), sinon le scénario et l'analyse se relancent mutuellement. Voir `refuseIfLoopy`. */
 const MIN_ANALYSIS_COOLDOWN = 3600;
+
+/**
+ * Refuse une combinaison (type, anti-rebond) qui rouvrirait la boucle analyse <-> scénario.
+ *
+ * Raisonne sur l'état EFFECTIF, jamais sur le seul corps de la requête : la boucle s'ouvre aussi bien en
+ * baissant le délai d'une automation déjà « conversation analysée » qu'en basculant vers ce type une
+ * automation dont le délai est déjà trop court. Deux gardes séparées ne voyaient chacune qu'un des deux sens.
+ * Renvoie le message d'erreur, ou null.
+ */
+function refuseIfLoopy(kind: AutomationTriggerKind | undefined, cooldown: number | null | undefined): string | null {
+  if (kind !== 'conversation_analyzed') return null;
+  if (cooldown === undefined || cooldown === null) return null; // null = défaut du serveur, largement au-dessus
+  if (cooldown >= MIN_ANALYSIS_COOLDOWN) return null;
+  return `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle`;
+}
 
 /** Config du déclencheur, validée SELON son type. Renvoie un message d'erreur, ou null si tout va bien. */
 function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, unknown>): string | null {
@@ -108,15 +125,6 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
     out.cooldownSeconds = null;
   }
 
-  // Garde anti-boucle propre au déclencheur « conversation analysée ». Le scénario déclenché ÉCRIT dans la
-  // conversation, ce qui la rouvre à l'analyse ; une nouvelle analyse tombe ~25 min plus tard et pourrait
-  // re-déclencher, indéfiniment, SANS que le client ait rien fait. Le défaut (1 h) casse ce cycle, mais un
-  // anti-rebond court ou nul le laisserait tourner et facturer un message toutes les 25 minutes.
-  if (out.triggerKind === 'conversation_analyzed' && out.cooldownSeconds !== undefined
-      && out.cooldownSeconds !== null && out.cooldownSeconds < MIN_ANALYSIS_COOLDOWN) {
-    return { error: `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle` };
-  }
-
   // La config n'a de sens que rapportée à son type. Sur un PATCH, modifier l'un sans l'autre laisserait passer
   // une config invalide (ex. `{triggerConfig:{keywords:[]}}` -> automation « active » mais qui ne part jamais) :
   // on exige donc les deux ensemble, plutôt que de valider à moitié.
@@ -158,6 +166,8 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     if (!(await deps.workflowBelongsToTenant(input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
+    const boucle = refuseIfLoopy(input.triggerKind, input.cooldownSeconds);
+    if (boucle) return reply.code(400).send({ error: boucle });
     const { id } = await deps.create(tenant, input);
     return reply.code(201).send({ id, ...input });
   });
@@ -173,15 +183,17 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     if (parsed.input.workflowId !== undefined && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
-    // Garde anti-boucle sur le type EFFECTIF. `parseBody` ne peut la poser que si le corps porte `triggerKind` ;
-    // un PATCH qui ne change QUE l'anti-rebond passerait donc à travers et permettrait d'écrire 0 s sur une
-    // automation « conversation analysée » existante, rouvrant exactement la boucle que la garde ferme.
-    if (parsed.input.cooldownSeconds !== undefined && parsed.input.cooldownSeconds !== null
-        && parsed.input.cooldownSeconds < MIN_ANALYSIS_COOLDOWN && parsed.input.triggerKind === undefined) {
-      const courant = (await deps.list(tenant)).find((a) => a.id === id);
-      if (courant?.triggerKind === 'conversation_analyzed') {
-        return reply.code(400).send({ error: `pour « conversation analysée », l'anti-rebond doit valoir au moins ${MIN_ANALYSIS_COOLDOWN} s (ou null pour le défaut) : le scénario rouvre l'analyse en écrivant, un délai plus court boucle` });
-      }
+    // Garde anti-boucle sur l'état EFFECTIF après ce PATCH. On ne relit l'automation courante que si le corps
+    // ne suffit pas à trancher : modifier le type SANS le délai, ou le délai SANS le type, ouvre la boucle
+    // aussi sûrement que les deux à la fois.
+    if (parsed.input.triggerKind !== undefined || parsed.input.cooldownSeconds !== undefined) {
+      const besoinRelecture = parsed.input.triggerKind === undefined || parsed.input.cooldownSeconds === undefined;
+      const courant = besoinRelecture ? await deps.getById(id, tenant) : null;
+      if (besoinRelecture && !courant) return reply.code(404).send({ error: 'automation inconnue' });
+      const kindEffectif = parsed.input.triggerKind ?? courant?.triggerKind;
+      const cooldownEffectif = parsed.input.cooldownSeconds !== undefined ? parsed.input.cooldownSeconds : courant?.cooldownSeconds;
+      const boucle = refuseIfLoopy(kindEffectif, cooldownEffectif);
+      if (boucle) return reply.code(400).send({ error: boucle });
     }
     const ok = await deps.update(id, tenant, parsed.input);
     if (!ok) return reply.code(404).send({ error: 'automation inconnue' });

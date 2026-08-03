@@ -191,9 +191,12 @@ async function main(): Promise<void> {
       // Même valeur normalisée (trim + slice 64) posée SUR le contact ET déclarée dans le référentiel -> pas de
       // doublon 'vip ' vs 'vip' ni tag>64 tronqué d'un côté seulement (Contenus > Tags = union des deux sources).
       const clean = tag.trim().slice(0, 64);
-      if (clean === '') return;
-      await contactStore.addTagsByPhone(tenant, waId, [clean]);
+      if (clean === '') return false;
+      const { added } = await contactStore.addTagsByPhoneReturningNew(tenant, waId, [clean]);
       try { await tagStore.create(tenant, clean); } catch { /* déclaration best-effort */ }
+      // Dit à l'exécuteur si le tag était RÉELLEMENT nouveau : sinon un scénario qui repasse sur le même bloc
+      // annoncerait « tag ajouté » à chaque passage, et relancerait une automation pour un non-événement.
+      return added.length > 0;
     },
     // Publication « tag ajouté » pour les automations. Portée par une dep SÉPARÉE de `applyTag`, et appelée
     // par l'exécuteur uniquement sur un démarrage UNITAIRE : le même exécuteur sert les campagnes, où poser un
@@ -322,7 +325,9 @@ async function main(): Promise<void> {
     clearFired: (id: string, waId: string) => automationStore.clearFired(id, waId),
     // Un seul parcours actif par contact : sinon un message qui répond à un scénario EN COURS et contient le
     // mot-clé enverrait deux messages, et laisserait le run précédent orphelin (l'avance n'en retrouve qu'un).
-    hasWaitingRun: async (tenant: string, waId: string) => (await runStore.findWaitingByWaId(tenant, waId)) !== null,
+    hasWaitingRun: (tenant: string, waId: string) => runStore.hasRecentWaitingRun(tenant, waId, config.AUTOMATION_WAITING_RUN_MAX_AGE_MS),
+    firedSince: (id: string, since: Date) => automationStore.firedSince(id, since),
+    maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
     startWorkflow: async (tenant: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean) => {
       const wf = await workflowStore.getById(workflowId, tenant);

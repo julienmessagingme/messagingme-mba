@@ -212,3 +212,28 @@ describe('runAutomations', () => {
     });
   });
 });
+
+describe('plafond par automation (borne le fan-out de masse)', () => {
+  // L'anti-rebond est par (automation, CONTACT) : il ne borne RIEN à l'échelle d'une population. Or un seul
+  // acte d'exploitation peut produire des milliers d'événements (une campagne directe rouvre l'analyse de tous
+  // ses destinataires, qui repartent ensuite en « conversation analysée »). Ce plafond est le seul garde-fou.
+  it('plafond atteint -> aucun démarrage, et le tir n’est pas consommé', async () => {
+    const { deps, trace } = make([auto()], { firedSince: async () => 200, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, deps)).toBe(0);
+    expect(trace.started).toEqual([]);
+    expect(trace.fired).toEqual([]);
+  });
+
+  it('sous le plafond -> déclenchement normal', async () => {
+    const { deps, trace } = make([auto()], { firedSince: async () => 199, maxFiresPerHour: 200 });
+    expect(await runAutomations('t1', MSG, deps)).toBe(1);
+    expect(trace.started).toHaveLength(1);
+  });
+
+  it('plafond à 0 ou dep absente -> aucun plafond (rétro-compatible)', async () => {
+    const zero = make([auto()], { firedSince: async () => 10_000, maxFiresPerHour: 0 });
+    expect(await runAutomations('t1', MSG, zero.deps)).toBe(1);
+    const absent = make([auto()]); // pas de firedSince du tout
+    expect(await runAutomations('t1', MSG, absent.deps)).toBe(1);
+  });
+});

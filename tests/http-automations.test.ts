@@ -37,6 +37,8 @@ function app(over: Partial<AutomationRouteDeps> = {}) {
   };
   const deps: AutomationRouteDeps = {
     list: async () => [],
+    // État courant d'UNE automation : c'est lui que la garde anti-boucle relit sur un PATCH partiel.
+    getById: async (id) => (id === 'a1' ? { id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'conversation_analyzed', triggerConfig: {}, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 3600 } : null),
     create: async (tenant, input) => { cap.created.push({ tenant, input }); return { id: 'a1' }; },
     update: async (id, tenant, patch) => { cap.updated.push({ id, tenant, patch }); return id === 'a1'; },
     remove: async (id, tenant) => { cap.removed.push({ id, tenant }); return id === 'a1'; },
@@ -116,6 +118,39 @@ describe('routes automations', () => {
     expect([zero.statusCode, court.statusCode, ok.statusCode, defaut.statusCode]).toEqual([400, 400, 201, 201]);
     expect(cap.created).toHaveLength(2);
     await server.close();
+  });
+
+  describe('garde anti-boucle : les DEUX sens du PATCH', () => {
+    // Le trou attrapé en revue : la garde regardait le corps de la requête, pas l'état effectif. Elle ne
+    // fermait donc qu'un sens, et il en existe deux pour rouvrir la boucle analyse <-> scénario.
+    it('sens 1 : baisser le délai d’une automation DÉJÀ « conversation analysée » -> refusé', async () => {
+      const { server, cap } = app(); // getById('a1') = conversation_analyzed, cooldown 3600
+      const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { cooldownSeconds: 0 } });
+      expect(res.statusCode).toBe(400);
+      expect(cap.updated).toEqual([]);
+      await server.close();
+    });
+
+    it('sens 2 : basculer vers « conversation analysée » une automation au délai DÉJÀ court -> refusé', async () => {
+      const { server, cap } = app({
+        getById: async () => ({ id: 'a1', tenantId: 't1', name: 'A', enabled: true, triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: 0 }),
+      });
+      const res = await server.inject({
+        method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok),
+        payload: { triggerKind: 'conversation_analyzed', triggerConfig: {} },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(cap.updated).toEqual([]);
+      await server.close();
+    });
+
+    it('délai suffisant -> accepté (la garde ne bloque pas un usage légitime)', async () => {
+      const { server, cap } = app();
+      const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { cooldownSeconds: 7200 } });
+      expect(res.statusCode).toBe(200);
+      expect(cap.updated).toHaveLength(1);
+      await server.close();
+    });
   });
 
   it('un anti-rebond nul reste permis pour les AUTRES déclencheurs (le client doit agir pour relancer)', async () => {

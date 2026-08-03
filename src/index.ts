@@ -402,6 +402,7 @@ async function main(): Promise<void> {
     // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {
       list: (tenant) => automationStore.list(tenant),
+      getById: (id, tenant) => automationStore.getById(id, tenant),
       create: (tenant, input) => automationStore.create(tenant, input),
       update: (id, tenant, patch) => automationStore.update(id, tenant, patch),
       remove: (id, tenant) => automationStore.remove(id, tenant),

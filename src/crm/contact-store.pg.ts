@@ -184,18 +184,33 @@ export class PgContactStore implements ContactStore {
    * fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
    */
   async addTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
+    return (await this.addTagsByPhoneReturningNew(tenantId, waId, tags)).touched;
+  }
+
+  /**
+   * Comme `addTagsByPhone`, mais dit AUSSI lesquels étaient réellement nouveaux.
+   *
+   * L'ajout est une union : reposer un tag déjà présent réécrit la ligne sans rien changer, donc le `rowCount`
+   * vaut 1 dans les deux cas et ne prouve rien. Or « tag ajouté » déclenche un scénario, donc un envoi facturé :
+   * annoncer un ajout qui n'a pas eu lieu enverrait un message pour un non-événement. `RETURNING` l'état d'avant
+   * (via une sous-requête) donne le delta sans aller-retour supplémentaire.
+   */
+  async addTagsByPhoneReturningNew(tenantId: string, waId: string, tags: string[]): Promise<{ touched: number; added: string[] }> {
     const clean = [...new Set(tags.map((t) => t.trim()).filter((t) => t !== ''))];
-    if (clean.length === 0) return 0;
-    const res = await this.pool.query(
-      `update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now()
-       where id = (
-         select id from contacts where tenant_id = $1
+    if (clean.length === 0) return { touched: 0, added: [] };
+    const res = await this.pool.query<{ avant: string[] | null }>(
+      `update contacts c set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(c.tags || $3::text[]) t), updated_at = now()
+       from (
+         select id, tags from contacts where tenant_id = $1
            and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
          order by (phone_e164 = '+' || $2) desc limit 1
-       )`,
+       ) src
+       where c.id = src.id
+       returning src.tags as avant`,
       [tenantId, waId, clean],
     );
-    return res.rowCount ?? 0;
+    const avant = new Set(res.rows[0]?.avant ?? []);
+    return { touched: res.rowCount ?? 0, added: (res.rowCount ?? 0) === 0 ? [] : clean.filter((t) => !avant.has(t)) };
   }
 
   /**
@@ -312,7 +327,7 @@ export class PgContactStore implements ContactStore {
    */
   async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
-      `select id from contacts where tenant_id = $1
+      `select id from contacts where tenant_id = $1 and deleted_at is null
          and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
        order by (phone_e164 = '+' || $2) desc limit 1`,
       [tenantId, waId],
@@ -402,7 +417,14 @@ export class PgContactStore implements ContactStore {
       const r = res.rows[0];
       if (!r) return null;
       const avant = new Set(exists.rows[0]?.tags ?? []);
-      return { contact: PgContactStore.rowToContact(r), addedTags: edits.addTags.filter((t) => !avant.has(t)) };
+      // Le retrait s'applique APRÈS l'ajout dans cette transaction : un tag présent dans addTags ET removeTags
+      // n'est pas sur le contact à la fin. L'annoncer « ajouté » enverrait un message pour un tag inexistant.
+      // On se fie donc à l'état FINAL réellement écrit, pas seulement au snapshot d'avant.
+      const apres = new Set(PgContactStore.rowToContact(r).tags);
+      return {
+        contact: PgContactStore.rowToContact(r),
+        addedTags: edits.addTags.filter((t) => !avant.has(t) && apres.has(t)),
+      };
     } catch (err) {
       await client.query('rollback').catch(() => {});
       throw err;

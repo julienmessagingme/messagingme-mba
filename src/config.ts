@@ -139,6 +139,15 @@ export const schema = z.object({
    *  qui répète son mot-clé ou un scénario qui repose le tag déclencheur, assez court pour ne pas bloquer une
    *  vraie 2e demande dans la journée. Réglable par automation (0 = aucun garde-fou, à ses risques). */
   AUTOMATION_COOLDOWN_SECONDS: z.coerce.number().default(3600),
+  /** Plafond de déclenchements par automation et par heure. L'anti-rebond est par (automation, CONTACT) et ne
+   *  borne rien à l'échelle d'une population : un seul acte d'exploitation (une campagne directe qui rouvre
+   *  l'analyse de tous ses destinataires) peut produire des milliers d'événements. 200/h laisse passer tout
+   *  usage normal et transforme une erreur de configuration en incident borné plutôt qu'en facture. 0 = pas de plafond. */
+  AUTOMATION_MAX_FIRES_PER_HOUR: z.coerce.number().default(200),
+  /** Au-delà de ce délai sans avancer, un parcours en attente est considéré ABANDONNÉ et ne bloque plus le
+   *  déclenchement d'une automation pour ce contact. Sans cette borne, un contact qui ne répond jamais serait
+   *  définitivement injoignable par une automation. 7 jours : bien au-delà d'un aller-retour normal. */
+  AUTOMATION_WAITING_RUN_MAX_AGE_MS: z.coerce.number().default(7 * 24 * 3600 * 1000),
   /** Provider LLM de l'analyse. UNE seule implémentation existe. `z.enum` et non `z.string` : une valeur
    *  inconnue était acceptée par la config et TUAIT le conteneur worker au premier appel d'analyse, avec une
    *  erreur qui ne nommait pas la variable. Elle est maintenant refusée au boot. */

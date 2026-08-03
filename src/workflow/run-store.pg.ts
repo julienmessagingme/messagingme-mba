@@ -29,6 +29,23 @@ export class PgWorkflowRunStore {
     return { id: res.rows[0]!.id };
   }
 
+  /**
+   * Un run est-il en attente pour ce contact ET assez RÉCENT pour qu'on le considère encore vivant ?
+   *
+   * Un run `waiting` n'expire jamais tout seul : seul le contact peut le faire avancer en répondant. Sans borne
+   * d'âge, un contact qui ne répond pas resterait « occupé » à vie, et aucune automation ne pourrait plus jamais
+   * le toucher, en silence. On considère donc qu'au-delà de `maxAgeMs` le parcours est abandonné.
+   */
+  async hasRecentWaitingRun(tenantId: string, waId: string, maxAgeMs: number): Promise<boolean> {
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::int as n from workflow_runs
+       where tenant_id = $1 and wa_id = $2 and status = 'waiting'
+         and updated_at >= now() - make_interval(secs => $3 / 1000.0)`,
+      [tenantId, waId, maxAgeMs],
+    );
+    return Number(res.rows[0]?.n ?? 0) > 0;
+  }
+
   /** LE run en attente d'un contact (par tenant + numéro). Un seul actif à la fois par contact (V1). */
   async findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null> {
     const res = await this.pool.query<{

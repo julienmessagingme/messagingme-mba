@@ -176,8 +176,8 @@ function AutomationsInner({ session }: { session: Session }) {
               <input value={tag} onChange={(e) => setTag(e.target.value)} data-testid="automation-tag" className={inputCls} placeholder={t('rappeler', 'callback')} />
               <p className="mt-1 text-xs text-ink-400">
                 {t(
-                  'Vaut pour un tag posé sur une FICHE contact ou par un bloc Action d’un scénario. Un tag posé en masse ou par import ne déclenche rien : cela lancerait autant de scénarios que de contacts. Pour toucher une liste, utilise une campagne.',
-                  'Applies to a tag added on a contact RECORD or by a scenario Action block. A tag added in bulk or by import triggers nothing: it would start as many scenarios as contacts. To reach a list, use a campaign.',
+                  'Vaut pour un tag posé sur une FICHE contact, ou par un bloc Action d’un scénario lancé pour UN contact (réponse à un message, autre automation, test). Un tag posé en masse, par import, ou par un scénario lancé en CAMPAGNE ne déclenche rien : cela lancerait autant de scénarios que de contacts. Pour toucher une liste, utilise une campagne.',
+                  'Applies to a tag added on a contact RECORD, or by an Action block of a scenario started for ONE contact (reply to a message, another automation, a test). A tag added in bulk, by import, or by a scenario started as a CAMPAIGN triggers nothing: it would start as many scenarios as contacts. To reach a list, use a campaign.',
                 )}
               </p>
             </div>

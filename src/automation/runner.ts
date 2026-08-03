@@ -46,6 +46,18 @@ export interface AutomationRunnerDeps {
   startWorkflow(tenantId: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean): Promise<boolean>;
   /** Anti-rebond appliqué aux automations qui n'ont rien réglé (`cooldownSeconds` null). */
   defaultCooldownSeconds: number;
+  /**
+   * Nombre de déclenchements de cette automation depuis `since`. Sert le PLAFOND horaire ci-dessous.
+   * Absent -> aucun plafond (rétro-compatible pour les suites de tests à deps minimales).
+   */
+  firedSince?(automationId: string, since: Date): Promise<number>;
+  /**
+   * Plafond de déclenchements par automation et par heure. L'anti-rebond est par (automation, CONTACT) : il
+   * n'empêche donc rien à l'échelle d'une population. Or un seul acte d'exploitation peut produire des milliers
+   * d'événements d'un coup (une campagne directe rouvre l'analyse de tous ses destinataires, qui repartent
+   * ensuite en « conversation analysée »). Ce plafond est la seule chose qui borne la facture dans ce cas.
+   */
+  maxFiresPerHour?: number;
   now?: () => number;
 }
 
@@ -90,10 +102,29 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
         if (!ctx || !evaluateConditionGroup(a.conditionGroup, ctx)) continue;
       }
 
+      // Plafond par automation : borne le fan-out d'un événement de masse (analyse rouverte pour toute une
+      // campagne, par exemple). Vérifié APRÈS l'anti-rebond (moins cher) et AVANT tout démarrage.
+      if (deps.firedSince && deps.maxFiresPerHour !== undefined && deps.maxFiresPerHour > 0) {
+        const depuis = new Date(now() - 3600_000);
+        if ((await deps.firedSince(a.id, depuis)) >= deps.maxFiresPerHour) {
+          // eslint-disable-next-line no-console
+          console.error(`automation ${a.id} (${a.name}) : plafond de ${deps.maxFiresPerHour} déclenchements/heure atteint, déclenchement ignoré`);
+          continue;
+        }
+      }
+
       // Un seul parcours actif par contact. Sans cette garde, un contact qui répond à un scénario en cours ET
       // dont le message contient le mot-clé recevrait DEUX messages, et le premier run resterait orphelin
       // (`findWaitingByWaId` n'en retrouve qu'un). On ne marque pas le tir : ce n'est pas un déclenchement.
-      if (await deps.hasWaitingRun(tenantId, ev.waId)) continue;
+      //
+      // ⚠️ Un run `waiting` n'expire pas tout seul : `hasWaitingRun` doit donc porter une FENÊTRE d'âge côté
+      // câblage, sinon un contact qui ne répond jamais resterait bloqué pour toujours. Le saut est journalisé :
+      // un déclencheur muet sans trace est indébogable.
+      if (await deps.hasWaitingRun(tenantId, ev.waId)) {
+        // eslint-disable-next-line no-console
+        console.log(`automation ${a.id} : un parcours est déjà en attente pour ${ev.waId}, déclenchement ignoré`);
+        continue;
+      }
 
       // Anti-boucle : on marque AVANT de démarrer, pour qu'un scénario qui repose lui-même le déclencheur ne
       // reboucle pas même si le démarrage lève une exception à mi-chemin (un envoi a pu partir).

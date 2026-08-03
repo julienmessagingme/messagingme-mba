@@ -11,7 +11,10 @@ export interface WorkflowExecutorDeps {
     setState(id: string, state: RunState): Promise<void>;
   };
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
-  applyTag(tenantId: string, waId: string, tag: string): Promise<void>;
+  /** Pose un tag. Renvoie idéalement `true` si le tag était RÉELLEMENT nouveau : c'est cette information qui
+   *  décide d'émettre « tag ajouté » (reposer un tag déjà présent n'est pas un événement). `void` accepté
+   *  (câblages/fakes qui ne le disent pas) et alors traité comme nouveau, comportement historique. */
+  applyTag(tenantId: string, waId: string, tag: string): Promise<void | boolean>;
   setField(tenantId: string, waId: string, key: string, value: string): Promise<void>;
   /** Retire un tag du contact (bloc Action « retirer un tag »). */
   removeTag(tenantId: string, waId: string, tag: string): Promise<void>;
@@ -118,7 +121,11 @@ export class WorkflowExecutor {
   ): Promise<void> {
     const posedTags: string[] = [];
     for (const a of actions) {
-      if (a.kind === 'tag') { await this.deps.applyTag(tenantId, waId, a.tag); posedTags.push(a.tag); }
+      if (a.kind === 'tag') {
+        const nouveau = await this.deps.applyTag(tenantId, waId, a.tag);
+        // `false` = le contact portait déjà ce tag : rien n'a changé, donc rien à annoncer.
+        if (nouveau !== false) posedTags.push(a.tag);
+      }
       else if (a.kind === 'removeTag') await this.deps.removeTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
       else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);

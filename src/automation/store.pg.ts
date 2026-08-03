@@ -80,6 +80,16 @@ export class PgAutomationStore {
     return res.rows.map(toRow).filter((a): a is AutomationRow => a !== null);
   }
 
+  /** UNE automation par id, scopée tenant. Lecture ciblée, contrairement à `list` qui est capée. */
+  async getById(id: string, tenantId: string): Promise<AutomationRow | null> {
+    const res = await this.pool.query<Raw>(
+      `select ${COLS} from automations where id = $1 and tenant_id = $2`,
+      [id, tenantId],
+    );
+    const r = res.rows[0];
+    return r ? toRow(r) : null;
+  }
+
   async create(tenantId: string, input: AutomationInput): Promise<{ id: string }> {
     const res = await this.pool.query<{ id: string }>(
       `insert into automations (tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds)
@@ -136,6 +146,21 @@ export class PgAutomationStore {
        on conflict (automation_id, wa_id) do update set fired_at = now()`,
       [automationId, waId],
     );
+  }
+
+  /**
+   * Nombre de déclenchements de CETTE automation depuis `since`. Sert le plafond horaire : l'anti-rebond est
+   * par (automation, contact) et ne borne donc RIEN à l'échelle d'une population. Or un seul acte d'exploitation
+   * peut produire des milliers d'événements d'un coup (une campagne directe rouvre l'analyse de tous ses
+   * destinataires, qui repartent ensuite en « conversation analysée »). Sans plafond, une automation sans filtre
+   * enverrait un message facturé par contact touché.
+   */
+  async firedSince(automationId: string, since: Date): Promise<number> {
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::int as n from automation_fires where automation_id = $1 and fired_at >= $2`,
+      [automationId, since],
+    );
+    return Number(res.rows[0]?.n ?? 0);
   }
 
   /** Annule un déclenchement enregistré (le scénario n'a finalement pas démarré, donc rien n'est parti). */
