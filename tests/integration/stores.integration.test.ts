@@ -966,10 +966,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await recipients.listPending(campaignId)).toHaveLength(1); // de retour pending
   });
 
-  // Forme COMPLÈTE de TenantSettings (7 clés) : évite les toEqual qui périment quand un réglage est ajouté.
+  // Forme COMPLÈTE de TenantSettings (8 clés) : évite les toEqual qui périment quand un réglage est ajouté.
+  // ⚠️ À COMPLÉTER quand un réglage arrive dans TenantSettings, sinon ces tests cassent (comportement voulu :
+  // ils signalent qu'un champ neuf n'a pas été relu ici). `returnBehavior` a été ajouté au Lot C.4.
   const settingsShape = (over: object = {}) => ({
     mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-    controlHandbackSeconds: null, timezone: DEFAULT_TIMEZONE, businessHours: DEFAULT_BUSINESS_HOURS, ...over,
+    controlHandbackSeconds: null, returnBehavior: null, timezone: DEFAULT_TIMEZONE, businessHours: DEFAULT_BUSINESS_HOURS, ...over,
   });
 
   it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {
