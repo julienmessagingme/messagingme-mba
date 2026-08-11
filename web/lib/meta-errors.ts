@@ -10,12 +10,17 @@ const CODES: Record<string, string> = {
   '131049': "Meta a limité cet envoi pour préserver la qualité (trop de marketing vers cet utilisateur récemment).",
   '130472': "Numéro inclus dans une expérimentation Meta de limitation marketing : message non envoyé.",
   '131045': "Numéro expéditeur non enregistré / problème de certificat côté Meta.",
-  '131009': "Template : une variable a une valeur invalide ou manquante. Corrige la valeur du champ puis renvoie.",
+  '131009':
+    "Meta a refusé une valeur envoyée avec le template (variable, image d'en-tête ou de carte, jeton de formulaire). Vérifie la valeur puis renvoie.",
   '132000': "Template : le nombre de variables fournies ne correspond pas au template.",
   '132001': "Template introuvable ou non approuvé pour cette langue.",
   '132005': "Template : le texte traduit dépasse la limite de caractères.",
   '132007': "Template : contenu refusé par une politique Meta.",
-  '132012': "Template : format d'une variable invalide.",
+  // Meta dit « les paramètres ne correspondent pas à la structure du template ». Ne PAS restreindre ça à
+  // « une variable » : ce code tombe aussi sur un carousel, une image d'en-tête ou un bouton mal formé, et un
+  // libellé trop étroit envoie chercher une variable sur un template qui n'en a aucune.
+  '132012':
+    "Template : ce qui a été envoyé ne correspond pas à sa structure (variables, image d'en-tête, carousel ou boutons). Vérifie le template côté Meta.",
   '132015': "Template en pause (qualité trop basse).",
   '132016': "Template désactivé (qualité trop basse).",
   '133010': "Numéro non enregistré sur la plateforme.",

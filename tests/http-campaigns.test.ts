@@ -64,6 +64,7 @@ interface Deps {
   cancelOk?: boolean; // cancelSchedule renvoie ce booléen (défaut true)
   scheduled?: Array<{ id: string; when: string }>; // capture des programmations
   listOpts?: Array<{ archived?: boolean } | undefined>; // capture des options reçues par listCampaigns
+  campaignsOverride?: unknown[]; // remplace la liste par défaut renvoyée par listCampaigns
   archiveCalls?: Array<{ id: string; tenant: string; kind: 'archive' | 'unarchive' | 'delete' }>;
   deleteOk?: boolean; // deleteDraftCampaign renvoie ce booléen (défaut true)
   retry?: RetryReset; // résultat de resetRecipientForRetry (F7)
@@ -84,6 +85,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       cancelSchedule: async () => d.cancelOk ?? true,
       listCampaigns: async (tenant, opts) => {
         d.listOpts?.push(opts);
+        if (d.campaignsOverride) return d.campaignsOverride as never;
         return [
           { id: 'camp-1', name: 'Promo', category: 'marketing', status: 'draft', phoneNumberId: 'pn1', templateName: 'promo', templateLanguage: 'fr', createdAt: '2026-07-05T00:00:00.000Z', archivedAt: null, counts: { total: 2, pending: 2, sending: 0, sent: 0, failed: 0, skipped: 0 }, _t: tenant } as never,
         ];
@@ -358,6 +360,21 @@ describe('lecture campagnes (GET)', () => {
     const body = res.json<{ campaigns: Array<{ name: string; counts: { total: number } }> }>();
     expect(body.campaigns[0]?.name).toBe('Promo');
     expect(body.campaigns[0]?.counts.total).toBe(2);
+    await app.close();
+  });
+
+  it('campagne SCÉNARIO -> la route transporte templateName null + workflowName (plus de « template () »)', async () => {
+    // Le store rend désormais null (au lieu de ''), la route ne remodèle rien : ce test verrouille la traversée.
+    const app = appWith(new FakeRepo(contacts), {
+      campaignsOverride: [
+        { id: 'camp-wf', name: 'Relance', category: 'marketing', status: 'completed', phoneNumberId: 'pn1', templateName: null, templateLanguage: null, workflowName: 'Relance promo', createdAt: '2026-08-10T09:05:00.000Z', archivedAt: null, counts: { total: 1, pending: 0, sending: 0, sent: 1, failed: 0, skipped: 0 } },
+      ],
+    });
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/campaigns', ...auth() });
+    expect(res.statusCode).toBe(200);
+    const c = res.json<{ campaigns: Array<{ templateName: string | null; workflowName: string | null }> }>().campaigns[0];
+    expect(c?.templateName).toBeNull();
+    expect(c?.workflowName).toBe('Relance promo');
     await app.close();
   });
 

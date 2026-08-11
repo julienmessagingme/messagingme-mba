@@ -1,6 +1,7 @@
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import { FLOW_ENTRY_SCREEN } from './flow-json';
+import type { OutboundCarouselCard } from './template-components';
 
 /**
  * Client des templates WhatsApp (niveau WABA, pas phone_number_id). Création + liste via
@@ -67,6 +68,8 @@ export interface TemplateSummary {
   example?: string[];
   /** true si le template est un CAROUSEL (édition non supportée : header_handle non récupérable). */
   isCarousel: boolean;
+  /** Cartes du CAROUSEL relues pour l'ENVOI (média, corps, boutons). undefined si le template n'en a pas. */
+  carousel?: { cards: OutboundCarouselCard[] };
   /** true si le template se limite à BODY (+BUTTONS) : seul cas éditable en place sans PERTE. Un HEADER,
    *  un FOOTER ou un CAROUSEL serait supprimé par l'édition (buildComponents ne les régénère pas + Meta
    *  REMPLACE tous les components). L'UI et la route PATCH bloquent l'édition si `editable` est false. */
@@ -143,9 +146,50 @@ function exampleOf(components: unknown): string[] | undefined {
   return undefined;
 }
 
-/** true si le template porte un composant CAROUSEL (édition non supportée en V1). */
-function isCarouselOf(components: unknown): boolean {
-  return Array.isArray(components) && components.some((c) => (c as { type?: string })?.type === 'CAROUSEL');
+/**
+ * URL de média d'un composant HEADER, lue dans `example.header_handle[0]`. Meta y renvoie une URL CDN
+ * exploitable telle quelle en `link` à l'envoi (vérifié live). Un handle de resumable upload
+ * (`4::aW1hZ2U...`, ce qu'on POSTe à la CRÉATION) n'en est PAS une : on ne garde que ce qui est une URL,
+ * sinon on enverrait une valeur que Meta refuse. undefined = pas de média exploitable.
+ */
+function headerMediaUrlOf(components: unknown): string | undefined {
+  if (!Array.isArray(components)) return undefined;
+  for (const c of components) {
+    const comp = c as { type?: string; example?: { header_handle?: unknown } };
+    if (comp?.type !== 'HEADER') continue;
+    const handles = comp.example?.header_handle;
+    const h = Array.isArray(handles) ? handles[0] : undefined;
+    if (typeof h === 'string' && /^https?:\/\//i.test(h)) return h;
+  }
+  return undefined;
+}
+
+/**
+ * Cartes du composant CAROUSEL, relues pour l'ENVOI. Les `cards[].components[]` ont exactement la forme des
+ * components top-level (HEADER/BODY/BUTTONS) : on réutilise les mêmes extracteurs. undefined = pas de carousel.
+ */
+function carouselOf(components: unknown): { cards: OutboundCarouselCard[] } | undefined {
+  if (!Array.isArray(components)) return undefined;
+  for (const c of components) {
+    const comp = c as { type?: string; cards?: unknown };
+    if (comp?.type !== 'CAROUSEL') continue;
+    const cards = Array.isArray(comp.cards) ? comp.cards : [];
+    return {
+      cards: cards.map((raw): OutboundCarouselCard => {
+        const inner = (raw as { components?: unknown })?.components;
+        const url = headerMediaUrlOf(inner);
+        const body = bodyOf(inner);
+        const buttons = buttonsOf(inner);
+        return {
+          ...(url !== undefined ? { mediaUrl: url } : {}),
+          ...(headerFormatOf(inner) === 'VIDEO' ? { mediaFormat: 'VIDEO' as const } : {}),
+          ...(body !== '' ? { body } : {}),
+          ...(buttons ? { buttons } : {}),
+        };
+      }),
+    };
+  }
+  return undefined;
 }
 
 /**
@@ -281,6 +325,7 @@ export class MetaTemplateClient {
         paging?: { next?: string };
       };
       for (const t of json.data ?? []) {
+        const carousel = carouselOf(t.components);
         out.push({
           id: t.id ?? '',
           name: t.name ?? '',
@@ -293,7 +338,8 @@ export class MetaTemplateClient {
           ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
           ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
           ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),
-          isCarousel: isCarouselOf(t.components),
+          isCarousel: carousel !== undefined,
+          ...(carousel ? { carousel } : {}),
           editable: isSimpleEditable(t.components),
         });
       }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sendingLimitLabel, tierLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge } from './format';
+import { sendingLimitLabel, tierLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, campaignSendLabel } from './format';
 
 /** Anti-tiret : règle projet, aucun libellé produit ne doit contenir de tiret cadratin/demi-cadratin. */
 const NO_EM_DASH = /[—–]/;
@@ -76,7 +76,32 @@ describe('anti-tiret cadratin sur tous les libellés produits', () => {
       sendingLimitLabel('TIER_1K', 'fr'), sendingLimitLabel('TIER_UNLIMITED', 'fr'),
       mmLiteBadge('ONBOARDED', 'fr').label, mmLiteBadge(null, 'fr').label, mmLiteBadge('IN_REVIEW', 'fr').label,
       accountReviewBadge('PENDING', 'fr').label, businessVerificationBadge('not_verified', 'fr').label,
+      campaignSendLabel({ templateName: 'promo', templateLanguage: 'fr', workflowName: null }, 'fr'),
+      campaignSendLabel({ templateName: null, templateLanguage: null, workflowName: 'Relance' }, 'fr'),
+      campaignSendLabel({ templateName: null, templateLanguage: null, workflowName: null }, 'fr'),
     ];
     for (const s of samples) expect(NO_EM_DASH.test(s), `libellé « ${s} » contient un tiret interdit`).toBe(false);
+  });
+});
+
+describe('campaignSendLabel (ce que la campagne envoie)', () => {
+  const tpl = { templateName: 'promo_ete', templateLanguage: 'fr', workflowName: null };
+  const scenario = { templateName: null, templateLanguage: null, workflowName: 'Relance promo' };
+
+  it('template, scénario, scénario supprimé', () => {
+    expect(campaignSendLabel(tpl, 'fr')).toBe('Template « promo_ete » (fr)');
+    expect(campaignSendLabel({ ...tpl, templateLanguage: null }, 'fr')).toBe('Template « promo_ete »');
+    expect(campaignSendLabel(scenario, 'fr')).toBe('Scénario « Relance promo »');
+    expect(campaignSendLabel(scenario, 'en')).toBe('Scenario “Relance promo”');
+    expect(campaignSendLabel({ templateName: null, templateLanguage: null, workflowName: null }, 'fr')).toBe('Scénario supprimé');
+  });
+
+  it('NON-RÉGRESSION : jamais « template () », jamais vide (le symptôme rapporté)', () => {
+    const cases = [tpl, scenario, { templateName: '', templateLanguage: '', workflowName: '' }, { templateName: ' ', templateLanguage: ' ', workflowName: null }];
+    for (const c of cases) for (const l of ['fr', 'en'] as const) {
+      const out = campaignSendLabel(c, l);
+      expect(out.trim()).not.toBe('');
+      expect(out).not.toMatch(/\(\s*\)/);
+    }
   });
 });

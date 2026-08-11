@@ -93,3 +93,25 @@ export function businessVerificationBadge(status: string | null | undefined, loc
   if (up === 'NOT_VERIFIED') return { label: locale === 'en' ? 'Not verified' : 'Non vérifiée', tone: 'warn' };
   return { label: status, tone: 'warn' };
 }
+
+/**
+ * Ce qu'une campagne envoie : un template nommé, ou un scénario. Fonction pure. Le libellé n'est JAMAIS vide
+ * et ne contient JAMAIS de parenthèses vides : c'est ce qui interdit le retour du « template () » qu'affichait
+ * une campagne scénario.
+ */
+export function campaignSendLabel(
+  c: { templateName: string | null; templateLanguage: string | null; workflowName: string | null },
+  locale: Locale,
+): string {
+  const q = (s: string): string => (locale === 'en' ? `“${s}”` : `« ${s} »`);
+  const name = c.templateName?.trim();
+  if (name) {
+    const lang = c.templateLanguage?.trim();
+    const head = `Template ${q(name)}`;
+    return lang ? `${head} (${lang})` : head;
+  }
+  const wf = c.workflowName?.trim();
+  if (wf) return `${locale === 'en' ? 'Scenario' : 'Scénario'} ${q(wf)}`;
+  // Ni template ni scénario : le scénario a été supprimé (on delete set null sur campaigns.workflow_id).
+  return locale === 'en' ? 'Deleted scenario' : 'Scénario supprimé';
+}

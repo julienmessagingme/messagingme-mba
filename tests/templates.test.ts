@@ -554,3 +554,55 @@ describe('routes templates — indices variable->champ (paramHints)', () => {
     await server.close();
   });
 });
+
+describe('MetaTemplateClient.list — relecture des cartes de CAROUSEL (pour l envoi)', () => {
+  const carouselTpl = (cards: unknown[]) => ({
+    ok: true, status: 200,
+    json: { data: [{ id: 'C1', name: 'promo', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Sélection' }, { type: 'CAROUSEL', cards }] }] },
+  });
+
+  it('projette média, corps et boutons de chaque carte', async () => {
+    const { fn } = makeFetch([carouselTpl([
+      { components: [
+        { type: 'HEADER', format: 'IMAGE', example: { header_handle: ['https://scontent.whatsapp.net/a.jpg?oe=1'] } },
+        { type: 'BODY', text: 'Carte une' },
+        { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }] },
+      ] },
+      { components: [{ type: 'HEADER', format: 'IMAGE', example: { header_handle: ['https://scontent.whatsapp.net/b.jpg'] } }] },
+    ])]);
+    const all = await new MetaTemplateClient('tok', 'v23.0', fn).list('waba1');
+    expect(all[0]!.isCarousel).toBe(true);
+    expect(all[0]!.carousel!.cards).toHaveLength(2);
+    expect(all[0]!.carousel!.cards[0]).toMatchObject({ mediaUrl: 'https://scontent.whatsapp.net/a.jpg?oe=1', body: 'Carte une' });
+    expect(all[0]!.carousel!.cards[0]!.buttons).toEqual([{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }]);
+    expect(all[0]!.carousel!.cards[1]).toEqual({ mediaUrl: 'https://scontent.whatsapp.net/b.jpg' });
+  });
+
+  it("un handle de création (4::...) n'est PAS une URL d'envoi -> carte sans média (l'envoi refusera)", async () => {
+    const { fn } = makeFetch([carouselTpl([
+      { components: [{ type: 'HEADER', format: 'IMAGE', example: { header_handle: ['4::aW1hZ2UvanBlZw=='] } }] },
+    ])]);
+    const all = await new MetaTemplateClient('tok', 'v23.0', fn).list('waba1');
+    expect(all[0]!.carousel!.cards[0]!.mediaUrl).toBeUndefined();
+  });
+
+  it('carte VIDEO -> mediaFormat VIDEO ; cards vide -> carousel vide, isCarousel reste true', async () => {
+    const { fn } = makeFetch([carouselTpl([
+      { components: [{ type: 'HEADER', format: 'VIDEO', example: { header_handle: ['https://cdn.fr/v.mp4'] } }] },
+    ])]);
+    const all = await new MetaTemplateClient('tok', 'v23.0', fn).list('waba1');
+    expect(all[0]!.carousel!.cards[0]!.mediaFormat).toBe('VIDEO');
+
+    const { fn: fn2 } = makeFetch([carouselTpl([])]);
+    const empty = await new MetaTemplateClient('tok', 'v23.0', fn2).list('waba1');
+    expect(empty[0]!.isCarousel).toBe(true);
+    expect(empty[0]!.carousel!.cards).toEqual([]);
+  });
+
+  it('template SANS carousel -> carousel undefined, isCarousel false (non-régression)', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { data: [{ id: 'S1', name: 'simple', status: 'APPROVED', category: 'MARKETING', language: 'fr', components: [{ type: 'BODY', text: 'Bonjour' }] }] } }]);
+    const all = await new MetaTemplateClient('tok', 'v23.0', fn).list('waba1');
+    expect(all[0]!.isCarousel).toBe(false);
+    expect(all[0]!.carousel).toBeUndefined();
+  });
+});

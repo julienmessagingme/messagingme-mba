@@ -39,13 +39,4 @@ export function qualityGate(
   return { pause: false };
 }
 
-export interface WhatsAppComponent {
-  type: 'body';
-  parameters: Array<{ type: 'text'; text: string }>;
-}
-
-/** Construit les composants d'un template WhatsApp depuis les params résolus. */
-export function buildComponents(params: string[]): WhatsAppComponent[] {
-  if (params.length === 0) return [];
-  return [{ type: 'body', parameters: params.map((text) => ({ type: 'text' as const, text })) }];
-}
+// Les composants d'envoi se construisent dans meta/template-components.ts (source unique).

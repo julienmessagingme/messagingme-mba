@@ -473,7 +473,9 @@ function TemplateSendPanel({
     (async () => {
       try {
         const res = await listTemplates(session.tenantId);
-        if (alive) setTemplates(res.templates.filter((x) => x.status === 'APPROVED'));
+        // Carousels écartés : leur envoi exige de relire les cartes chez Meta, ce que fait le moteur de
+        // campagne, pas ce chemin. Mieux vaut ne pas les proposer que de les laisser échouer à coup sûr.
+        if (alive) setTemplates(res.templates.filter((x) => x.status === 'APPROVED' && !x.isCarousel));
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : t('Templates indisponibles', 'Templates unavailable'));
       }
@@ -538,6 +540,7 @@ function TemplateSendPanel({
               ))}
             </select>
           )}
+          <p className="mt-1 text-xs text-ink-400">{t("Les templates carousel ne sont pas dans cette liste : ils s'envoient depuis une campagne.", 'Carousel templates are not listed here: send them from a campaign.')}</p>
         </div>
 
         {sel && (

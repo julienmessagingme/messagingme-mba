@@ -24,6 +24,43 @@ export interface CreateCampaignInput {
   ratePerMinute?: number | null;
 }
 
+/** Ligne SQL d'un résumé de campagne (liste + détail : même projection). */
+export interface CampaignSummaryRow {
+  id: string; name: string; category: CampaignCategory; status: CampaignStatus;
+  phone_number_id: string; template_name: string | null; template_language: string | null;
+  workflow_name?: string | null;
+  created_at: Date; scheduled_at?: Date | null; archived_at?: Date | null;
+  total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
+}
+
+/**
+ * Ligne SQL -> CampaignSummary. Fonction PURE (testable sans base). Ne COERCE PAS un null en chaîne vide :
+ * une campagne scénario n'a pas de template, et le dire est le seul moyen d'empêcher le retour du « template () ».
+ */
+export function rowToSummary(r: CampaignSummaryRow): CampaignSummary {
+  return {
+    id: r.id,
+    name: r.name,
+    category: r.category,
+    status: r.status,
+    phoneNumberId: r.phone_number_id,
+    templateName: r.template_name,
+    templateLanguage: r.template_language,
+    workflowName: r.workflow_name ?? null,
+    createdAt: r.created_at.toISOString(),
+    scheduledAt: r.scheduled_at ? r.scheduled_at.toISOString() : null,
+    archivedAt: r.archived_at ? r.archived_at.toISOString() : null,
+    counts: {
+      total: Number(r.total),
+      pending: Number(r.pending),
+      sending: Number(r.sending),
+      sent: Number(r.sent),
+      failed: Number(r.failed),
+      skipped: Number(r.skipped),
+    },
+  };
+}
+
 export interface RecipientCounts {
   total: number;
   pending: number;
@@ -38,8 +75,13 @@ export interface CampaignSummary {
   category: CampaignCategory;
   status: CampaignStatus;
   phoneNumberId: string;
-  templateName: string;
-  templateLanguage: string;
+  /** null pour une campagne SCÉNARIO (c'est le scénario qui envoie, la campagne ne porte pas de template).
+   *  Nullable À DESSEIN : le `?? ''` d'avant transformait cette absence en valeur vide, que l'écran rendait
+   *  en « template () ». Le type oblige désormais chaque appelant à traiter le cas. */
+  templateName: string | null;
+  templateLanguage: string | null;
+  /** Nom du scénario d'une campagne scénario. null = campagne template, ou scénario supprimé depuis. */
+  workflowName: string | null;
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
@@ -260,14 +302,13 @@ export class PgCampaignRepo {
     // utilisateur. Écrit en littéral (et non `(archived_at is not null) = $2`) pour que la branche par défaut
     // touche l'index partiel `campaigns_active_idx ... where archived_at is null` de la migration 0038.
     const archivedFilter = opts?.archived ? 'c.archived_at is not null' : 'c.archived_at is null';
-    const res = await this.pool.query<{
-      id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-      phone_number_id: string; template_name: string; template_language: string; created_at: Date; scheduled_at: Date | null;
-      archived_at: Date | null;
-      total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
-    }>(
+    const res = await this.pool.query<CampaignSummaryRow>(
+      // Nom du scénario en SOUS-REQUÊTE SCALAIRE, pas en jointure : la requête agrège avec `group by c.id`, et
+      // Postgres refuserait `w.name` d'une table jointe (« must appear in the GROUP BY clause »). Au pire une
+      // lecture par clé primaire et par campagne.
       `select c.id, c.name, c.category, c.status, c.phone_number_id,
               c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
+              (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -281,7 +322,7 @@ export class PgCampaignRepo {
        order by c.created_at desc`,
       [tenantId],
     );
-    return res.rows.map((r) => this.toSummary(r));
+    return res.rows.map((r) => rowToSummary(r));
   }
 
   /**
@@ -338,17 +379,13 @@ export class PgCampaignRepo {
 
   /** Détail d'une campagne (scopée tenant) + ses destinataires. null si absente/autre tenant. */
   async getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null> {
-    const head = await this.pool.query<{
-      id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-      phone_number_id: string; template_name: string; template_language: string; created_at: Date; scheduled_at: Date | null;
-      archived_at: Date | null;
-      total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
-    }>(
+    const head = await this.pool.query<CampaignSummaryRow>(
       // Le détail ne filtre PAS sur archived_at : une campagne archivée reste consultable (c'est tout l'intérêt
       // d'archiver plutôt que de supprimer). On sélectionne quand même la colonne, sinon `toSummary` rendrait
       // `archivedAt: null` sur une campagne archivée, c'est-à-dire une réponse fausse.
       `select c.id, c.name, c.category, c.status, c.phone_number_id,
               c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
+              (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -377,7 +414,7 @@ export class PgCampaignRepo {
       [campaignId, tenantId],
     );
     return {
-      ...this.toSummary(h),
+      ...rowToSummary(h),
       paramMapping: mapRes.rows[0]?.param_mapping ?? [],
       recipients: recs.rows.map((r) => ({
         id: r.id,
@@ -528,35 +565,6 @@ export class PgCampaignRepo {
       [tenantId],
     );
     return res.rows.map((r) => ({ id: r.id, displayPhoneNumber: r.display_phone_number, verifiedName: r.verified_name }));
-  }
-
-  private toSummary(r: {
-    id: string; name: string; category: CampaignCategory; status: CampaignStatus;
-    phone_number_id: string; template_name: string | null; template_language: string | null; created_at: Date; scheduled_at?: Date | null;
-    archived_at?: Date | null;
-    total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
-  }): CampaignSummary {
-    return {
-      id: r.id,
-      name: r.name,
-      category: r.category,
-      status: r.status,
-      phoneNumberId: r.phone_number_id,
-      // null (campagne workflow) -> '' : CampaignSummary.templateName promet un string.
-      templateName: r.template_name ?? '',
-      templateLanguage: r.template_language ?? '',
-      createdAt: r.created_at.toISOString(),
-      scheduledAt: r.scheduled_at ? r.scheduled_at.toISOString() : null,
-      archivedAt: r.archived_at ? r.archived_at.toISOString() : null,
-      counts: {
-        total: Number(r.total),
-        pending: Number(r.pending),
-        sending: Number(r.sending),
-        sent: Number(r.sent),
-        failed: Number(r.failed),
-        skipped: Number(r.skipped),
-      },
-    };
   }
 
   /** Comme listContactsForBuild mais BORNÉ à des ids précis (API /v1/sends : évite de charger tout le CRM). */

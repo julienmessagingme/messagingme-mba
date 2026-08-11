@@ -316,7 +316,16 @@ exige `docker compose up -d --force-recreate` (env_file rechargé seulement à l
 
 - **Design** : `template_param_hints` (mig 0025) mappe `{{position}} -> champ` (sparse). `PgTemplateHintStore`.
 - **Campagne template directe** : l'UI construit un `paramMapping` CONTIGU 1..N, `resolveTemplateParams` (exige
-  1..N, throw sinon) résout par destinataire -> `resolvedParams` persistés -> `buildComponents` à l'envoi.
+  1..N, throw sinon) résout par destinataire -> `resolvedParams` persistés -> `buildTemplateComponents` à l'envoi.
+  ⚠️ **`meta/template-components.ts` est le SEUL constructeur de composants d'envoi** (2026-08-11). Il en existait
+  un second dans `campaign/guardrails.ts` (`buildComponents`, supprimé) : ce doublon est la raison pour laquelle
+  le carousel n'avait aucun « bon endroit » unique où se brancher, et n'est jamais parti côté campagne.
+  L'envoi CAROUSEL vit ici : `MetaTemplateClient.list` relit les cartes (`carouselOf`, l'URL vient de
+  `example.header_handle[0]` et n'est retenue que si c'en est une, un handle `4::` étant écarté),
+  `carouselSendBlocker` refuse ce qui n'est pas envoyable (0 carte, carte sans image, variable de carte), et
+  `getTemplateCarousel` (dep optionnelle d'`EngineDeps`) est appelée **une fois par run**, jamais par destinataire.
+  ⚠️ Les URL de carte portent une expiration (`oe=`) : cache 5 min côté worker, mais le moteur de campagne prend
+  un instantané pour tout le run (à surveiller sur une campagne longue à faible débit).
 - **Campagne via WORKFLOW** (lot 7) : chemin distinct. La closure `sendTemplate` de `worker.ts` obtient N (corps
   live via `MetaTemplateClient.list`, caché 5 min par WABA|nom|langue), lit les hints, résout le contact
   (`getResolvableByPhone`, matching phone exact/chiffres nus/bsuid), et appelle `resolveHintParams(hints, N,

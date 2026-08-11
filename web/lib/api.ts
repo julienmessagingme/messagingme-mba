@@ -276,8 +276,11 @@ export interface CampaignSummary {
   category: CampaignCategory;
   status: string;
   phoneNumberId: string;
-  templateName: string;
-  templateLanguage: string;
+  /** null pour une campagne SCÉNARIO (c'est le scénario qui envoie). Afficher via campaignSendLabel. */
+  templateName: string | null;
+  templateLanguage: string | null;
+  /** Nom du scénario d'une campagne scénario. null = campagne template, ou scénario supprimé depuis. */
+  workflowName: string | null;
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
@@ -399,8 +402,9 @@ export interface TemplateSummary {
   buttons?: TemplateButtonInput[];
   /** Exemples de variables du BODY (pré-remplissage). */
   example?: string[];
-  /** true = carousel : édition non supportée (header_handle non récupérable). */
-  isCarousel?: boolean;
+  /** true = carousel : édition non supportée, et non proposé à l'envoi manuel depuis l'inbox.
+   *  NON optionnel : le serveur le rend toujours, et un filtre `!isCarousel` deviendrait muet sans erreur tsc. */
+  isCarousel: boolean;
   /** true = template limité à BODY(+BUTTONS) : seul cas éditable sans perte (header/footer/carousel bloqués). */
   editable?: boolean;
 }

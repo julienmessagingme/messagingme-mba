@@ -33,6 +33,8 @@ import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob, type AutomationEventJo
 import type { AutomationTriggerKind } from './automation/match';
 import { WorkflowExecutor } from './workflow/executor';
 import { buildWorkflowTemplateComponents } from './workflow/template-send';
+import { carouselSendBlocker } from './meta/template-components';
+import type { OutboundCarouselCard } from './meta/template-components';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
@@ -143,24 +145,37 @@ async function main(): Promise<void> {
 
   // Cache court du corps live d'un template (nb de variables N + exemples) par WABA|nom|langue : évite un appel
   // Meta list() par destinataire d'une campagne workflow. TTL court -> tolère un template édité en cours de route.
-  const tplVarCache = new Map<string, { at: number; count: number }>();
+  // Porte AUSSI les cartes du carousel : Meta exige l'image de chaque carte À CHAQUE ENVOI (elle n'est pas dans
+  // le template), et les URL renvoyées portent une expiration -> TTL court, relues régulièrement, jamais figées.
+  type TplInfo = { count: number; carousel?: { cards: OutboundCarouselCard[] } };
+  const tplVarCache = new Map<string, { at: number } & TplInfo>();
   const TPL_CACHE_MS = 5 * 60_000;
   // `count` = MAX des positions {{n}} (cf. countTemplateVariables) : « {{1}} ... {{3}} » attend 3 params pour Meta,
   // pas 2. null = indéterminable (WABA absent / template introuvable / réseau) -> l'appelant NE PAS envoyer.
-  const templateVarInfo = async (tenant: string, name: string, language: string): Promise<{ count: number } | null> => {
+  // WABA du tenant, mémoïsé au même TTL : `templateVarInfo` est appelé PAR DESTINATAIRE sur une campagne
+  // scénario, et sans ça chaque envoi payait un SELECT avant même de regarder le cache de templates.
+  const wabaCache = new Map<string, { at: number; waba: string | null }>();
+  const tenantWabaId = async (tenant: string): Promise<string | null> => {
+    const hit = wabaCache.get(tenant);
+    if (hit && Date.now() - hit.at < TPL_CACHE_MS) return hit.waba;
     const waba = await repo.getTenantWabaId(tenant);
+    wabaCache.set(tenant, { at: Date.now(), waba });
+    return waba;
+  };
+  const templateVarInfo = async (tenant: string, name: string, language: string): Promise<TplInfo | null> => {
+    const waba = await tenantWabaId(tenant);
     if (!waba) return null;
     const key = `${waba}|${name}|${language}`;
     const cached = tplVarCache.get(key);
-    if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count };
+    if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count, ...(cached.carousel ? { carousel: cached.carousel } : {}) };
     const tplClient = await metaFactory.templateClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
     const list = await tplClient.list(waba);
     // Exact (nom + langue), sinon repli sur le nom seul (langue par défaut d'un template mono-langue).
     const tpl = list.find((t) => t.name === name && t.language === language) ?? list.find((t) => t.name === name);
     if (!tpl) return null;
-    const count = countTemplateVariables(tpl.body);
-    tplVarCache.set(key, { at: Date.now(), count });
-    return { count };
+    const info: TplInfo = { count: countTemplateVariables(tpl.body), ...(tpl.carousel ? { carousel: tpl.carousel } : {}) };
+    tplVarCache.set(key, { at: Date.now(), ...info });
+    return info;
   };
 
   // Contexte d'évaluation du contact (état CRM + fuseau/horaires du tenant). Partagé par les blocs `condition`
@@ -232,7 +247,17 @@ async function main(): Promise<void> {
       // ce chemin ; `undefined` = envoi via `advance` (réponse webhook) -> chemin hints stockés ci-dessous.
       // Garde-fou : une valeur vide fait sauter l'envoi (jamais `text:''`).
       if (explicitParams !== undefined) {
-        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}` });
+        // Carousel : ses cartes doivent être jointes à l'envoi. Lecture best-effort (ce chemin n'appelait pas
+        // Meta jusqu'ici) : illisible -> on part comme avant, un template SANS carousel n'est pas affecté.
+        let carousel: { cards: OutboundCarouselCard[] } | undefined;
+        try { carousel = (await templateVarInfo(tenant, name, language))?.carousel; } catch { /* best-effort */ }
+        const blocked = carousel ? carouselSendBlocker(carousel.cards) : null;
+        if (blocked !== null) {
+          // eslint-disable-next-line no-console
+          console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blocked}`);
+          return;
+        }
+        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}`, ...(carousel ? { carousel } : {}) });
         if (missing.length > 0) {
           // eslint-disable-next-line no-console
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
@@ -246,7 +271,7 @@ async function main(): Promise<void> {
       // Variables du corps : on résout les {{n}} avec les attributs du contact (indices template_param_hints ->
       // champ, ex. {{1}}=prenom). On NE devine PAS : si les variables sont indéterminables (info null) ou si une
       // valeur manque, on NE PAS envoyer (évite 132000 « nb de variables » et 132012 « text:'' »).
-      let info: { count: number } | null = null;
+      let info: TplInfo | null = null;
       try {
         info = await templateVarInfo(tenant, name, language);
       } catch (err) {
@@ -268,7 +293,15 @@ async function main(): Promise<void> {
       }
       // Payload CONTRÔLÉ sur chaque bouton quick-reply -> au tap, le webhook renvoie `btn:<index>`, qui sélectionne
       // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
-      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date() });
+      // Carousel non envoyable (carte sans image récupérable, variable de carte) : on NE devine PAS, on ne
+      // laisse pas non plus partir un payload que Meta rejettera. Même doctrine que `missing`.
+      const blockedCarousel = info.carousel ? carouselSendBlocker(info.carousel.cards) : null;
+      if (blockedCarousel !== null) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blockedCarousel}`);
+        return;
+      }
+      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(), ...(info.carousel ? { carousel: info.carousel } : {}) });
       if (missing.length > 0) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
@@ -451,6 +484,10 @@ async function main(): Promise<void> {
         if (!wf) return false;
         return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId);
       },
+      // Cartes du carousel du template (image + boutons de chaque carte), relues UNE fois par run et servies
+      // par le même cache court que les variables. null = template sans carousel -> envoi inchangé.
+      // Absente en DRY_RUN : la dep est optionnelle et ce mode ne doit déclencher AUCUN appel Meta.
+      ...(dryRun ? {} : { getTemplateCarousel: async (tenant: string, name: string, language: string) => (await templateVarInfo(tenant, name, language))?.carousel ?? null }),
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
     });

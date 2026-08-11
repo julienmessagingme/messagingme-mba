@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
+import { ALL_QUEUES } from '../../src/queue/names';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
@@ -655,16 +656,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const daily = await ops.getGlobalDaily(14);
     expect(Array.isArray(daily)).toBe(true);
 
-    // Queue load : tolère l'absence de pg-boss, sinon renvoie les 10 files (5 bases + leurs DLQ, ALL_QUEUES)
-    // avec des compteurs >= 0. Ordre = ALL_QUEUES (chaque base immédiatement suivie de sa DLQ).
+    // Queue load : une ligne par file DÉCLARÉE, dans l'ordre d'ALL_QUEUES (chaque base immédiatement suivie
+    // de sa DLQ), compteurs >= 0. Liste DÉRIVÉE d'ALL_QUEUES, jamais recopiée : la version en dur avait raté
+    // l'ajout d'automation-event (Lot E.2) et faisait échouer ce test pour une dérive de fixture, pas un bug.
+    // Que ALL_QUEUES colle aux files réellement consommées par le worker est vérifié par tests/queue-names.
     const queues = await ops.getQueueLoad();
-    expect(queues.map((q) => q.queue)).toEqual([
-      'webhook', 'webhook-dlq',
-      'campaign-run', 'campaign-run-dlq',
-      'analyze-conversation', 'analyze-conversation-dlq',
-      'push-analysis', 'push-analysis-dlq',
-      'hubspot-catchup', 'hubspot-catchup-dlq',
-    ]);
+    expect(queues.map((q) => q.queue)).toEqual(ALL_QUEUES);
     for (const q of queues) {
       expect(q.backlog).toBeGreaterThanOrEqual(0);
       expect(q.active).toBeGreaterThanOrEqual(0);
@@ -725,6 +722,29 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // template_name est bien NULL en base (pas '').
     const row = (await pool.query<{ template_name: string | null }>(`select template_name from campaigns where id = $1`, [campId])).rows[0]!;
     expect(row.template_name).toBeNull();
+  });
+
+  it('PgCampaignRepo : résumé d une campagne SCÉNARIO -> templateName null + nom du scénario (SQL réel)', async () => {
+    // Seul endroit qui prouve que le SQL est valide : la sous-requête scalaire du nom de scénario cohabite avec
+    // le `group by c.id` des compteurs (une JOINTURE échouerait ici en « must appear in the GROUP BY clause »).
+    const repo = new PgCampaignRepo(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'Relance promo', { nodes: [], edges: [] });
+    const { campaignId } = await repo.createWithRecipients({
+      tenantId, phoneNumberId: 'pn-wf2', name: 'Camp libellé', category: 'marketing',
+      templateName: '', templateLanguage: '', paramMapping: [], workflowId: wfId,
+    }, []);
+
+    const listed = (await repo.listCampaignSummaries(tenantId)).find((c) => c.id === campaignId)!;
+    expect(listed).toMatchObject({ templateName: null, templateLanguage: null, workflowName: 'Relance promo' });
+    const detail = (await repo.getCampaignDetail(campaignId, tenantId))!;
+    expect(detail).toMatchObject({ templateName: null, workflowName: 'Relance promo' });
+
+    // Scénario supprimé (on delete set null sur campaigns.workflow_id) -> plus de nom, mais toujours pas de template.
+    await wfStore.remove(wfId, tenantId);
+    const after = (await repo.getCampaignDetail(campaignId, tenantId))!;
+    expect(after.workflowName).toBeNull();
+    expect(after.templateName).toBeNull();
   });
 
   it('WorkflowExecutor (E2E DB) : start pose le tag + persiste le run ; reply -> inbox', async () => {

@@ -1,6 +1,7 @@
 import { resolveHintParams, type ResolvableContact } from '../crm/template';
 import type { ParamHint } from '../crm/template-hints.pg';
 import { buildTemplateComponents } from '../meta/template-components';
+import type { OutboundCarouselCard } from '../meta/template-components';
 import type { WorkflowButton } from './engine';
 
 /**
@@ -33,11 +34,16 @@ export function buildWorkflowTemplateComponents(opts: {
    * dans le flow_json, PAS par ce jeton -> n'importe quelle valeur non vide convient (le worker en passe un unique).
    */
   flowToken?: string;
+  /**
+   * Cartes du CAROUSEL du template (relues chez Meta). Absent = template sans carousel, sortie inchangée.
+   * Le même constructeur sert au chemin campagne : un même template produit les mêmes composants des deux côtés.
+   */
+  carousel?: { cards: OutboundCarouselCard[] };
 }): { components: unknown[]; missing: number[] } {
   const resolved = opts.explicitParams !== undefined
     ? { values: opts.explicitParams, missing: opts.explicitParams.flatMap((v, i) => (v === '' ? [i + 1] : [])) }
     : opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact, { now: opts.now, tz: opts.tz }) : { values: [], missing: [] };
-  const bodyComponents = resolved.values.length > 0 ? buildTemplateComponents({ bodyParams: resolved.values }) : [];
+  const bodyComponents = buildTemplateComponents({ bodyParams: resolved.values, ...(opts.carousel ? { carousel: opts.carousel } : {}) });
   const flowToken = opts.flowToken && opts.flowToken !== '' ? opts.flowToken : 'mba-flow';
   // Un composant par bouton, à l'INDEX du template (préservé) : quick-reply -> payload contrôlé (`btn:<i>`) ;
   // FLOW -> action + flow_token (requis par Meta pour un template à bouton formulaire) ; URL statique -> rien.

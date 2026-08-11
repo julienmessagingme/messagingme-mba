@@ -8,8 +8,9 @@ import { HubspotListImport } from '@/components/HubspotListImport';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import type { Session } from '@/lib/session';
 import { explainMetaError } from '@/lib/meta-errors';
-import { fmtCost } from '@/lib/format';
-import { useT } from '@/lib/i18n';
+import { fmtCost, campaignSendLabel } from '@/lib/format';
+import { useT, useLocale } from '@/lib/i18n';
+import { formatDate, hourMin } from '@/lib/day';
 import {
   listCampaigns,
   getCampaign,
@@ -93,6 +94,7 @@ function Badge({ status }: { status: string }) {
 
 function CampaignsInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
@@ -290,7 +292,7 @@ function CampaignsInner({ session }: { session: Session }) {
                       </p>
                     )}
                     <p className="mt-0.5 text-xs text-ink-500">
-                      template {c.templateName} ({c.templateLanguage}) · {c.counts.total} {t('destinataires', 'recipients')}
+                      {campaignSendLabel(c, locale)} · {c.counts.total} {t('destinataires', 'recipients')}
                     </p>
                     <p className="mt-1 text-xs text-ink-500">
                       <b className="text-emerald-700">{c.counts.sent}</b> {t('envoyés', 'sent')}
@@ -374,6 +376,9 @@ const RETRYABLE_VAR_CODES = new Set([131009, 132012, 132000]);
 
 function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail: CampaignDetail; pricing: PricingSummary | null; tenantId: string; onClose: () => void; onRetried: () => void }) {
   const t = useT();
+  const { locale } = useLocale();
+  // Date d'envoi d'un destinataire, même format que l'historique de la fiche contact (fuseau imposé par day.ts).
+  const stamp = (iso: string) => `${formatDate(iso, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} ${hourMin(iso, locale)}`;
   const cost = estimateCampaignCost(detail.counts.sent, detail.category, pricing);
   // Champs (source:field) du template : ce que l'admin peut corriger sur le contact avant de renvoyer (F7).
   const fieldKeys = detail.paramMapping.filter((p) => p.source.type === 'field' && p.source.key).map((p) => p.source.key as string);
@@ -411,6 +416,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
+          <span className="text-xs text-ink-500">{campaignSendLabel(detail, locale)}</span>
           <span className="text-xs text-ink-400">{t('coût estimé', 'estimated cost')} {cost != null ? `≈ ${fmtCost(cost)} (${t('devise du compte', 'account currency')})` : t('indisponible', 'unavailable')}</span>
         </div>
         <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
@@ -419,11 +425,12 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
         <p className="px-4 py-4 text-sm text-ink-500">{t('Aucun destinataire.', 'No recipients.')}</p>
       ) : (
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px] text-sm">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
               <th className="px-4 py-2 font-medium">{t('Destinataire', 'Recipient')}</th>
               <th className="px-4 py-2 font-medium">{t('Envoi', 'Sending')}</th>
+              <th className="px-4 py-2 font-medium">{t('Envoyé le', 'Sent on')}</th>
               <th className="px-4 py-2 font-medium">{t('Livraison', 'Delivery')}</th>
               <th className="px-4 py-2 font-medium">{t('Détail', 'Detail')}</th>
             </tr>
@@ -435,6 +442,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
                 <tr key={r.id}>
                   <td className="px-4 py-2 font-mono text-xs">{r.toE164}</td>
                   <td className="px-4 py-2"><Badge status={r.status} /></td>
+                  <td className="px-4 py-2 whitespace-nowrap text-xs text-ink-500">{r.sentAt ? stamp(r.sentAt) : <span className="text-ink-400">{t('non envoyé', 'not sent')}</span>}</td>
                   <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-400">-</span>}</td>
                   <td className="px-4 py-2 text-xs text-ink-500" title={r.deliveryError ?? r.error ?? undefined}>
                     <div>{explainMetaError(r.deliveryError ?? r.error) ?? r.messageId ?? '-'}</div>
@@ -455,7 +463,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
                 </tr>,
                 retryFor === r.id ? (
                   <tr key={`${r.id}-form`} className="bg-ink-50/60">
-                    <td colSpan={4} className="px-4 py-3">
+                    <td colSpan={5} className="px-4 py-3">
                       <p className="mb-2 text-xs text-ink-600">
                         {t("Corrige la ou les variables de template, puis renvoie ce message. La valeur est enregistrée sur le contact.", 'Fix the template variable(s), then resend this message. The value is saved on the contact.')}
                       </p>

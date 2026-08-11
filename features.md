@@ -136,6 +136,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   pré-rempli** (modifiable). Le texte d'un **bouton** est limité à **25 caractères** (limite Meta).
 - ✅ **En-tête média** : l'image **ou la vidéo** uploadée s'affiche pour de vrai dans l'aperçu WhatsApp (plus
   juste une icône).
+- ✅ **Envoi d'un carousel** : un template carousel s'envoie **depuis une campagne**, les images de chaque carte
+  étant relues au lancement (l'opérateur n'a rien à ressaisir). Avant, tout envoi de carousel échouait pour
+  100 % des destinataires, avec un message qui parlait d'une variable alors que le template n'en avait aucune.
+  Deux cas sont désormais refusés d'avance, avec la raison exacte portée sur chaque destinataire : une carte
+  dont l'image n'est pas récupérable, et une carte dont le texte contient une variable (le lien variable de
+  carte vers champ client n'existe pas). Un carousel n'est **pas** proposé à l'envoi manuel depuis l'Inbox,
+  et le sélecteur explique où l'envoyer.
 - ✅ **Édition** (templates simples) : corps / boutons / catégorie. Avertissement « repasse en validation Meta ».
   **Bloquée** si le template a un **en-tête média** (image ou vidéo : Meta le supprimerait) ou s'il s'agit d'un
   **carousel**, ou s'il est utilisé par une **campagne active** (garde-fou anti envoi cassé). Un **pied de
@@ -286,6 +293,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Campagnes
 
+- ✅ **Ce que la campagne envoie, et quand** (2026-08-11). Chaque campagne annonce, dans la liste **et** dans son
+  détail, ce qu'elle envoie : `Template « promo_ete » (fr)` pour un envoi direct, `Scénario « Relance promo »`
+  pour une campagne qui déclenche un scénario, `Scénario supprimé` si le scénario a disparu depuis. Une campagne
+  scénario affichait avant `template ()`, parce qu'elle ne porte pas de template propre. Le détail gagne une
+  colonne **« Envoyé le »** : date et heure d'envoi de chaque destinataire, ou « non envoyé ». Pour une campagne
+  scénario, le template exact reçu par un contact donné se lit dans son fil de conversation, qui est la source
+  fiable ; la campagne, elle, dit ce qu'elle a réellement fait, à savoir démarrer un scénario.
 - ✅ **Archiver ou supprimer une campagne** (2026-07-20). Une campagne qui n'a **jamais rien envoyé** se
   **supprime** définitivement (confirmation). Toutes les autres s'**archivent** : elles disparaissent de la liste
   mais restent conservées, parce que leurs destinataires portent l'historique qui alimente les Analytics (le coût,
@@ -518,6 +532,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   envoyés, en échec, écartés) et **une ligne par destinataire** (statut, identifiant de message, erreur, état de
   livraison : envoyé, délivré, lu, en échec). Les **réponses** ne figurent pas dans ce suivi, elles se lisent dans
   Analytics.
+  ⚠️ **Changement de réponse (2026-08-11)** sur `GET /v1/sends/:id` : pour un envoi de **scénario**, le nom et la
+  langue du template valent désormais **null** (au lieu d'une chaîne vide) puisqu'un scénario n'a pas de template
+  propre, et un champ **nom du scénario** apparaît. Un client qui affichait la chaîne vide telle quelle voyait
+  jusqu'ici un libellé vide ; c'est ce que cette bascule corrige.
 - ✅ **Cibler un bloc précis d'un scénario** : `POST /v1/sends` accepte aussi le **code d'un bloc** (`nod_...`, visible
   dans Contenu > Blocs) pour envoyer ce bloc à une liste de contacts. Réservé à la **fenêtre de 24 h** : un contact
   qui n'a pas écrit récemment est écarté (`out_of_window`), jamais forcé, et un numéro inconnu est écarté

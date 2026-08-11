@@ -10,6 +10,7 @@ import type {
 import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute } from './pacing';
 import { TokenInvalidError } from '../meta/credentials';
+import type { OutboundCarouselCard } from '../meta/template-components';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
 
 export interface RunJobDeps {
@@ -43,6 +44,8 @@ export interface RunJobDeps {
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean>;
   /** Campagne NODE (/v1/sends) : démarre le workflow à un bloc précis (fenêtre 24 h déjà vérifiée en amont). */
   startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean>;
+  /** Cartes du CAROUSEL du template (relues chez Meta, UNE fois par run). null / absente -> envoi inchangé. */
+  getTemplateCarousel?: (tenantId: string, name: string, language: string) => Promise<{ cards: OutboundCarouselCard[] } | null>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). */
   recordOutbound?: (
     tenantId: string,
@@ -103,6 +106,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(rateLimiter ? { rateLimiter } : {}),
     ...(deps.startWorkflow ? { startWorkflow: deps.startWorkflow } : {}),
     ...(deps.startWorkflowFromNode ? { startWorkflowFromNode: deps.startWorkflowFromNode } : {}),
+    ...(deps.getTemplateCarousel ? { getTemplateCarousel: deps.getTemplateCarousel } : {}),
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
   });

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { optInAllows, frequencyAllows, qualityGate, buildComponents } from '../src/campaign/guardrails';
+import { optInAllows, frequencyAllows, qualityGate } from '../src/campaign/guardrails';
+// Le constructeur de composants du chemin campagne a été FUSIONNÉ dans meta/template-components (source
+// unique). Les deux cas plus bas sont inchangés : ils prouvent que la fusion est un no-op côté campagne.
+import { buildTemplateComponents } from '../src/meta/template-components';
 import type { GuardrailThresholds } from '../src/campaign/types';
+
+const buildComponents = (params: string[]): unknown[] => buildTemplateComponents({ bodyParams: params });
 
 const T: GuardrailThresholds = { frequencyWindowMs: 1000, maxFailureRate: 0.3, minSendsForFailureCheck: 5 };
 

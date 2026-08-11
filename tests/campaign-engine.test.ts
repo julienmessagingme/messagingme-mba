@@ -409,3 +409,92 @@ describe('runCampaign — journal du sortant (recordOutbound)', () => {
     expect(recipients.results.get('r1')).toMatchObject({ status: 'sent' });
   });
 });
+
+describe('runCampaign — template CAROUSEL', () => {
+  /** Sender qui capture le TemplateSpec réellement envoyé (marketing + template). */
+  class CapturingSender implements MessageSender {
+    readonly specs: TemplateSpec[] = [];
+    async sendMarketing(p: MarketingParams): Promise<SendResult> {
+      this.specs.push(p.template);
+      return { messageId: 'm1' };
+    }
+    async sendTemplate(_to: string, tpl: TemplateSpec): Promise<SendResult> {
+      this.specs.push(tpl);
+      return { messageId: 'm1' };
+    }
+  }
+  const cards = [{ mediaUrl: 'https://cdn.fr/a.jpg' }, { mediaUrl: 'https://cdn.fr/b.jpg' }];
+
+  it('joint le composant carousel à l envoi, et ne relit le template QU UNE FOIS par run', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    let reads = 0;
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateCarousel: async () => { reads += 1; return { cards }; },
+    }));
+    expect(report).toMatchObject({ sent: 2, failed: 0 });
+    expect(reads).toBe(1); // JAMAIS un appel Meta par destinataire (une campagne à 5 000 contacts le paierait)
+    expect(sender.specs).toHaveLength(2);
+    for (const spec of sender.specs) {
+      const carousel = (spec.components as Array<{ type: string; cards?: unknown[] }>).find((c) => c.type === 'carousel');
+      expect(carousel?.cards).toHaveLength(2);
+    }
+  });
+
+  it('carousel non envoyable -> chaque destinataire en ÉCHEC avec la vraie raison, AUCUN envoi', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateCarousel: async () => ({ cards: [{ body: 'carte sans image' }] }),
+    }));
+    expect(report).toMatchObject({ sent: 0, failed: 1 });
+    expect(sender.specs).toHaveLength(0); // rien n'est parti
+    const res = recipients.results.get('r1');
+    expect(res?.status).toBe('failed');
+    expect(res?.error).toContain('Carousel non envoyable');
+    expect(res?.error).toContain('carte 1');
+  });
+
+  it('carousel refusé sur 25 destinataires -> AUCUNE pause (le quality gate ne voit pas 100 % d échecs)', async () => {
+    // Piège : passer par la boucle d envoi ferait compter 20 échecs, puis le quality gate mettrait la campagne
+    // en pause avec « taux d échec 100 % » et laisserait les 5 derniers en attente. Diagnostic trompeur.
+    const sender = new CapturingSender();
+    const list = Array.from({ length: 25 }, (_, i) => rec(`r${i}`, `+3361100${i}`));
+    const recipients = new FakeRecipients(list);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({
+      recipients, sender, campaigns,
+      getTemplateCarousel: async () => ({ cards: [{ body: 'carte sans image' }] }),
+    }));
+    expect(report).toMatchObject({ sent: 0, failed: 25, paused: false });
+    expect(report.reason).toBeUndefined();
+    expect(sender.specs).toHaveLength(0);
+    expect(campaigns.statuses).toEqual(['running', 'completed']); // jamais 'paused'
+    for (const r of list) expect(recipients.results.get(r.id)?.status).toBe('failed');
+  });
+
+  it('lecture du template en erreur -> la campagne part quand même (template sans carousel non affecté)', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateCarousel: async () => { throw new Error('réseau'); },
+    }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(sender.specs[0]!.components).toEqual([{ type: 'body', parameters: [{ type: 'text', text: 'X' }] }]);
+  });
+
+  it('campagne SCÉNARIO : aucune lecture de template (c est le scénario qui envoie)', async () => {
+    let reads = 0;
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async () => true,
+      getTemplateCarousel: async () => { reads += 1; return null; },
+    }));
+    expect(reads).toBe(0);
+  });
+});

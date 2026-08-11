@@ -22,3 +22,17 @@ describe('explainMetaError (famille variables de template F5/F7)', () => {
     expect(metaCodeLabel(999999)).toBe('Erreur Meta (code non répertorié)');
   });
 });
+
+describe('honnêteté des libellés : ne pas affirmer une cause plus étroite que Meta', () => {
+  it('132012 ne désigne plus LA variable comme cause (le template qui a déclenché ce bug n en a aucune)', () => {
+    const out = explainMetaError('132012 Parameter format does not match format in the created template')!;
+    expect(out).not.toMatch(/format d'une variable/);
+    expect(out).toMatch(/carousel/i); // les autres causes réelles sont nommées
+    expect(out).toContain('code 132012');
+  });
+
+  it('131009 couvre tout paramètre refusé, pas seulement une variable de corps', () => {
+    const out = explainMetaError('131009 Parameter value is not valid')!;
+    expect(out).toMatch(/image|jeton|paramètre/i);
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildWorkflowTemplateComponents } from '../src/workflow/template-send';
+import { buildTemplateComponents } from '../src/meta/template-components';
 import { resolveHintParams } from '../src/crm/template';
 import type { WorkflowButton } from '../src/workflow/engine';
 
@@ -126,5 +127,28 @@ describe('buildWorkflowTemplateComponents (chemin envoi workflow)', () => {
     const { components } = buildWorkflowTemplateComponents({ hints: [], varCount: 0, contact, buttons: [{ type: 'FLOW', text: 'F' }] });
     const btn = components.find((x) => (x as { sub_type?: string }).sub_type === 'flow') as { parameters: Array<{ action: { flow_token: string } }> };
     expect(btn.parameters[0]!.action.flow_token).not.toBe('');
+  });
+});
+
+describe('carousel — parité campagne / scénario', () => {
+  const cards = [
+    { mediaUrl: 'https://cdn.fr/a.jpg', buttons: [{ type: 'QUICK_REPLY' as const }] },
+    { mediaUrl: 'https://cdn.fr/b.jpg', body: 'Texte fixe' },
+  ];
+
+  it('même template -> MÊMES composants des deux côtés (un seul constructeur)', () => {
+    // Chemin campagne (campaign/engine.ts) et chemin scénario (worker.ts) : la sortie doit être identique,
+    // sinon un carousel partirait d'un côté et pas de l'autre (c'était le bug : deux constructeurs).
+    const campagne = buildTemplateComponents({ bodyParams: ['Julie'], carousel: { cards } });
+    const scenario = buildWorkflowTemplateComponents({
+      hints: [], varCount: 1, contact: {}, buttons: [], explicitParams: ['Julie'], carousel: { cards },
+    });
+    expect(scenario.missing).toEqual([]);
+    expect(scenario.components).toEqual(campagne);
+  });
+
+  it('template SANS carousel -> sortie inchangée (non-régression du chemin scénario)', () => {
+    const r = buildWorkflowTemplateComponents({ hints: [], varCount: 0, contact: {}, buttons: [], explicitParams: [] });
+    expect(r.components).toEqual([]);
   });
 });

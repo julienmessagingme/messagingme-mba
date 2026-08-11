@@ -1,5 +1,7 @@
 import type { Campaign, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
-import { frequencyAllows, qualityGate, buildComponents } from './guardrails';
+import { frequencyAllows, qualityGate } from './guardrails';
+import { buildTemplateComponents, carouselSendBlocker } from '../meta/template-components';
+import type { OutboundCarouselCard } from '../meta/template-components';
 import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
@@ -65,6 +67,13 @@ export interface EngineDeps {
    * la fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi.
    */
   startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean>;
+  /**
+   * Cartes du CAROUSEL du template de la campagne, relues chez Meta. Appelée UNE SEULE FOIS par run (la
+   * structure est identique pour tous les destinataires : un appel par contact tuerait une campagne à
+   * 5 000 destinataires). null = template sans carousel -> envoi inchangé. Absente = câblage sans lecture
+   * de template (tests, e2e) -> envoi inchangé lui aussi.
+   */
+  getTemplateCarousel?: (tenantId: string, name: string, language: string) => Promise<{ cards: OutboundCarouselCard[] } | null>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -107,6 +116,39 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
 
   await deps.campaigns.setStatus(campaign.id, 'running');
   const pending = await deps.recipients.listPending(campaign.id);
+
+  // Carousel : les cartes (image, corps, boutons) sont IDENTIQUES pour tous les destinataires -> relues une
+  // seule fois par run. Une lecture qui échoue (réseau, WABA absent) ne casse pas la campagne : on part comme
+  // avant (un template sans carousel est inchangé ; un carousel échouera avec le message d'erreur de Meta).
+  let carousel: { cards: OutboundCarouselCard[] } | null = null;
+  let carouselBlocked: string | null = null;
+  if (!campaign.workflowId && deps.getTemplateCarousel) {
+    try {
+      const read = await deps.getTemplateCarousel(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
+      if (read) {
+        carouselBlocked = carouselSendBlocker(read.cards);
+        if (carouselBlocked === null) carousel = read;
+      }
+    } catch {
+      /* lecture best-effort : jamais bloquante pour un template sans carousel */
+    }
+  }
+
+  // Carousel non envoyable : AUCUN destinataire ne peut partir, et on le sait avant d'avoir commencé. Traité
+  // ICI et pas dans la boucle : y passer ferait compter 100 % d'échecs au quality gate, qui mettrait la
+  // campagne en pause avec « taux d'échec 100 % » au bout de 20 destinataires. Ce serait exactement le
+  // diagnostic trompeur que ce lot supprime, et ça laisserait le reste des destinataires en attente.
+  if (carouselBlocked !== null) {
+    const reason = `Carousel non envoyable : ${carouselBlocked}`;
+    for (const r of pending) {
+      if (r.status === 'sent') continue;
+      if (!(await deps.recipients.claim(r.id))) continue;
+      await deps.recipients.markResult(r.id, { status: 'failed', error: reason });
+      report.failed += 1;
+    }
+    await deps.campaigns.setStatus(campaign.id, 'completed');
+    return report;
+  }
 
   for (const r of pending) {
     if (r.status === 'sent') continue; // idempotence défensive
@@ -170,7 +212,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         const tpl: TemplateSpec = {
           name: campaign.templateName,
           language: campaign.templateLanguage,
-          components: buildComponents(params),
+          components: buildTemplateComponents({ bodyParams: params, ...(carousel ? { carousel } : {}) }),
         };
         // Numéro E.164 -> `to`, BSUID -> `recipient` (source unique messagingTarget). sendTemplate route
         // de la même façon en interne, donc l'utility passe l'identité brute.
