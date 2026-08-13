@@ -111,7 +111,10 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
   if (!nonEmpty(b.body)) return { error: 'body requis' };
   if (!validButtons(b.buttons)) return { error: 'buttons invalides' };
 
-  // Carousel : 2-10 cartes, chaque carte a une image (handle) + des boutons IDENTIQUES entre cartes.
+  // Carousel : 2-10 cartes, chaque carte a une image (handle) + au plus 2 boutons.
+  // Règle Meta VÉRIFIÉE EN LIVE (sonde 2026-08-11) : seule la DISPOSITION doit être identique d'une carte à
+  // l'autre (même nombre, mêmes types, même ordre) ; le libellé et l'URL peuvent différer par carte, et c'est
+  // tout l'intérêt du carousel. Au-delà de 2 boutons Meta refuse (« le nombre de boutons a dépassé la limite »).
   let carousel: { cards: CarouselCard[] } | undefined;
   const carRaw = b.carousel;
   if (carRaw !== undefined) {
@@ -122,8 +125,9 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
     for (const raw of cards) {
       const c = raw as { headerHandle?: unknown; buttons?: unknown };
       if (!nonEmpty(c.headerHandle)) return { error: 'chaque carte doit avoir une image' };
-      if (sig(c) !== firstSig) return { error: 'toutes les cartes doivent avoir les mêmes boutons' };
+      if (sig(c) !== firstSig) return { error: 'toutes les cartes doivent avoir les mêmes types de boutons, dans le même ordre (le texte et le lien, eux, peuvent différer)' };
       if (Array.isArray(c.buttons)) {
+        if (c.buttons.length > 2) return { error: 'une carte ne peut pas avoir plus de 2 boutons' };
         for (const bt of c.buttons) {
           const btn = bt as { type?: string; text?: unknown; url?: unknown };
           if (btn.type === 'QUICK_REPLY' && nonEmpty(btn.text)) continue;

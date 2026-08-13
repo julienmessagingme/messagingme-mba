@@ -125,6 +125,19 @@ describe('carouselSendBlocker', () => {
     expect(blocked).toContain('variable');
   });
 
+  it('bouton dont l URL porte une variable -> refus (sa valeur se fournit par carte, rien ne la stocke)', () => {
+    const blocked = carouselSendBlocker([card(), card({ buttons: [{ type: 'URL', url: 'https://x.fr/{{1}}' }] })]);
+    expect(blocked).toContain('carte 2');
+    expect(blocked).toContain('lien');
+  });
+
+  it('URL fixes DIFFÉRENTES par carte -> autorisé (c est le cas normal d un carousel)', () => {
+    expect(carouselSendBlocker([
+      card({ buttons: [{ type: 'QUICK_REPLY' }, { type: 'URL', url: 'https://x.fr/un' }] }),
+      card({ buttons: [{ type: 'QUICK_REPLY' }, { type: 'URL', url: 'https://x.fr/deux' }] }),
+    ])).toBeNull();
+  });
+
   it('le refus prime sur la construction : une carte sans image ne part jamais en silence', () => {
     const cards: OutboundCarouselCard[] = [{ body: 'sans image' }];
     expect(carouselSendBlocker(cards)).not.toBeNull();

@@ -48,6 +48,10 @@ export function carouselSendBlocker(cards: OutboundCarouselCard[]): string | nul
   if (noMedia >= 0) return `l'image de la carte ${noMedia + 1} n'est pas récupérable depuis Meta`;
   const withVar = cards.findIndex((c) => HAS_VAR.test(c.body ?? ''));
   if (withVar >= 0) return `la carte ${withVar + 1} contient une variable, non supporté à l'envoi`;
+  // Même raison pour un bouton dont l'URL porte une variable ({{1}}) : sa valeur se fournit à l'envoi, carte par
+  // carte, et rien ne la stocke. Les carousels créés ici ont des URL fixes ; celui-ci vient de Meta directement.
+  const withUrlVar = cards.findIndex((c) => (c.buttons ?? []).some((b) => HAS_VAR.test(b.url ?? '')));
+  if (withUrlVar >= 0) return `le lien de la carte ${withUrlVar + 1} contient une variable, non supporté à l'envoi`;
   return null;
 }
 

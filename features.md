@@ -143,6 +143,12 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   dont l'image n'est pas récupérable, et une carte dont le texte contient une variable (le lien variable de
   carte vers champ client n'existe pas). Un carousel n'est **pas** proposé à l'envoi manuel depuis l'Inbox,
   et le sélecteur explique où l'envoyer.
+- ✅ **Boutons d'un carousel : un texte et un lien PROPRES À CHAQUE CARTE**. On règle une fois la disposition
+  (jusqu'à 2 boutons, réponse rapide ou lien), puis chaque carte a son propre libellé et sa propre destination :
+  la carte « Masterclass » renvoie à la masterclass, la carte « Portes ouvertes » aux portes ouvertes. Avant, un
+  jeu de boutons unique s'appliquait à toutes les cartes, donc 10 cartes pointaient au même endroit. Contrainte
+  Meta respectée et affichée : la disposition (nombre, types, ordre) doit être la même sur toutes les cartes,
+  seuls le texte et le lien varient. Le champ du lien occupe désormais toute la largeur de la carte.
 - ✅ **Aperçu d'un carousel déjà créé** : cliquer sur le nom d'un template carousel montre ses vraies cartes
   (image, texte, boutons) façon WhatsApp, au lieu d'un simple encadré. Une carte sans image visible, une carte
   vidéo, ou une image devenue injoignable sont annoncées telles quelles, jamais une vignette cassée.

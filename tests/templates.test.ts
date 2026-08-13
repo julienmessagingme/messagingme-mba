@@ -250,6 +250,43 @@ describe('template CAROUSEL', () => {
     await a.close();
   });
 
+  it('route : MÊMES types de boutons mais texte ET url DIFFÉRENTS par carte -> 201 (le cas utile du carousel)', async () => {
+    // Vérifié en live chez Meta (sonde 2026-08-11) : seule la disposition doit être identique. Chaque carte
+    // pointe vers sa propre destination, sinon un carousel de 10 cartes renverrait 10 fois au même endroit.
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn);
+    const cards = [
+      { headerHandle: 'H1', body: 'Carte une', buttons: [{ type: 'QUICK_REPLY' as const, text: 'Je viens' }, { type: 'URL' as const, text: 'Voir l événement', url: 'https://exemple.fr/un' }] },
+      { headerHandle: 'H2', body: 'Carte deux', buttons: [{ type: 'QUICK_REPLY' as const, text: 'Ça m intéresse' }, { type: 'URL' as const, text: 'Détails', url: 'https://exemple.fr/deux' }] },
+    ];
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards } } });
+    expect(res.statusCode).toBe(201);
+    await a.close();
+  });
+
+  it('route : plus de 2 boutons sur une carte -> 400 (Meta refuse au-delà de 2)', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const trois = [{ type: 'QUICK_REPLY' as const, text: 'A' }, { type: 'QUICK_REPLY' as const, text: 'B' }, { type: 'URL' as const, text: 'C', url: 'https://x.fr' }];
+    const cards = [{ headerHandle: 'H1', buttons: trois }, { headerHandle: 'H2', buttons: trois }];
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards } } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toContain('2 boutons');
+    await a.close();
+  });
+
+  it('route : ORDRE des types différent entre cartes -> 400', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const cards = [
+      { headerHandle: 'H1', buttons: [{ type: 'QUICK_REPLY' as const, text: 'A' }, { type: 'URL' as const, text: 'B', url: 'https://x.fr' }] },
+      { headerHandle: 'H2', buttons: [{ type: 'URL' as const, text: 'B', url: 'https://x.fr' }, { type: 'QUICK_REPLY' as const, text: 'A' }] },
+    ];
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards } } });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
   it('route : 2 cartes cohérentes -> 201', async () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
     const a = app(fn);
