@@ -143,6 +143,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   dont l'image n'est pas récupérable, et une carte dont le texte contient une variable (le lien variable de
   carte vers champ client n'existe pas). Un carousel n'est **pas** proposé à l'envoi manuel depuis l'Inbox,
   et le sélecteur explique où l'envoyer.
+- ✅ **Aperçu d'un carousel déjà créé** : cliquer sur le nom d'un template carousel montre ses vraies cartes
+  (image, texte, boutons) façon WhatsApp, au lieu d'un simple encadré. Une carte sans image visible, une carte
+  vidéo, ou une image devenue injoignable sont annoncées telles quelles, jamais une vignette cassée.
 - ✅ **Édition** (templates simples) : corps / boutons / catégorie. Avertissement « repasse en validation Meta ».
   **Bloquée** si le template a un **en-tête média** (image ou vidéo : Meta le supprimerait) ou s'il s'agit d'un
   **carousel**, ou s'il est utilisé par une **campagne active** (garde-fou anti envoi cassé). Un **pied de

@@ -17,8 +17,9 @@ export interface OutboundCarouselCard {
   mediaFormat?: 'IMAGE' | 'VIDEO';
   /** Corps de la carte TEL QUE DÉFINI dans le template : sert à détecter une variable non résolvable. */
   body?: string;
-  /** Boutons de la carte, dans l'ordre du template. */
-  buttons?: Array<{ type: 'QUICK_REPLY' | 'URL' | 'FLOW' }>;
+  /** Boutons de la carte, dans l'ordre du template. Seul `type` sert à l'envoi ; `text`/`url` sont relus pour
+   *  que l'aperçu du template puisse les afficher (le libellé vient du template, jamais de l'opérateur). */
+  buttons?: Array<{ type: 'QUICK_REPLY' | 'URL' | 'FLOW'; text?: string; url?: string }>;
 }
 
 export interface OutboundTemplateParts {

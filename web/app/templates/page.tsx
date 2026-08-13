@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { CarouselPreview } from '@/components/CarouselPreview';
 import { CarouselForm } from '@/components/CarouselForm';
 import { TemplateForm } from '@/components/TemplateForm';
 import type { Session } from '@/lib/session';
@@ -155,7 +156,8 @@ function TemplatesInner({ session }: { session: Session }) {
   );
 }
 
-/** Aperçu WhatsApp d'un template au clic sur son nom (corps + boutons ; carousel/média = note). */
+/** Aperçu WhatsApp d'un template au clic sur son nom : corps + boutons ; un carousel rend ses cartes
+ *  (image, texte, boutons) ; un en-tête média simple reste une note (son média n'est pas relu). */
 function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary; onClose: () => void }) {
   const t = useT();
   return (
@@ -169,10 +171,16 @@ function TemplatePreviewModal({ template, onClose }: { template: TemplateSummary
           <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
         </div>
         {template.isCarousel ? (
-          <div className="rounded-lg bg-ink-50 px-3 py-4 text-sm text-ink-600">
-            <p className="font-medium">{t('Template carousel', 'Carousel template')}</p>
-            <p className="mt-1 text-ink-500">{template.body || t('Message d’introduction non chargé.', 'Introduction message not loaded.')}</p>
-          </div>
+          <CarouselPreview
+            body={template.body ?? ''}
+            cards={(template.carousel?.cards ?? []).map((c) => ({
+              ...(c.mediaUrl !== undefined ? { imageUrl: c.mediaUrl } : {}),
+              ...(c.mediaFormat !== undefined ? { mediaFormat: c.mediaFormat } : {}),
+              ...(c.body !== undefined ? { body: c.body } : {}),
+              ...(c.buttons !== undefined ? { buttons: c.buttons } : {}),
+            }))}
+            buttons={template.buttons ?? []}
+          />
         ) : (
           <WhatsAppPreview
             body={template.body ?? ''}

@@ -405,6 +405,9 @@ export interface TemplateSummary {
   /** true = carousel : édition non supportée, et non proposé à l'envoi manuel depuis l'inbox.
    *  NON optionnel : le serveur le rend toujours, et un filtre `!isCarousel` deviendrait muet sans erreur tsc. */
   isCarousel: boolean;
+  /** Cartes du carousel relues chez Meta (image, texte, boutons), pour l'aperçu. Absent hors carousel.
+   *  ⚠️ `mediaUrl` porte une expiration : à consommer à l'affichage, jamais à mettre en cache. */
+  carousel?: { cards: Array<{ mediaUrl?: string; mediaFormat?: 'IMAGE' | 'VIDEO'; body?: string; buttons?: TemplateButtonInput[] }> };
   /** true = template limité à BODY(+BUTTONS) : seul cas éditable sans perte (header/footer/carousel bloqués). */
   editable?: boolean;
 }
