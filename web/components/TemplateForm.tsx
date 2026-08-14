@@ -6,6 +6,7 @@ import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/
 import { FlowBuilder } from '@/components/FlowBuilder';
 import { listFlows, createTemplate, updateTemplate, uploadMedia, listUserFields, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
+import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
@@ -346,7 +347,10 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
   }
 
   // Chaque bouton doit être complet : texte + (URL pour un lien / formulaire choisi pour un FLOW).
-  const buttonsComplete = buttons.every((b) => b.text.trim() !== '' && (b.type !== 'URL' || (b.url ?? '').trim() !== '') && (b.type !== 'FLOW' || (b.flowId ?? '') !== ''));
+  // L'URL doit être une VRAIE adresse : sinon Meta refuse avec un message qui désigne un chemin de tableau
+  // JSON, illisible. Une URL dynamique (`https://x.fr/{{1}}`) reste valide, le repo pose déjà son exemple.
+  const buttonsComplete = buttons.every((b) => b.text.trim() !== '' && (b.type !== 'URL' || isSendableButtonUrl(b.url ?? '')) && (b.type !== 'FLOW' || (b.flowId ?? '') !== ''));
+  const urlKo = (b: { type: string; url?: string }): boolean => b.type === 'URL' && (b.url ?? '').trim() !== '' && !isSendableButtonUrl(b.url ?? '');
   const headerReady =
     headerType === 'none' ||
     (headerType === 'TEXT' && headerText.trim() !== '') ||
@@ -536,8 +540,9 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
                       <input
                         value={b.url ?? ''}
                         onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
-                        className={`${inputCls} w-28`}
-                        placeholder="https://..."
+                        className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+                        title={urlKo(b) ? t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://') : undefined}
+                        placeholder="https://exemple.fr/page"
                       />
                     )}
                     <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>

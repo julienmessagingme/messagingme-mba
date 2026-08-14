@@ -65,6 +65,15 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
     await expect(page.getByPlaceholder('https://exemple.fr/cette-carte')).toHaveCount(3);
   });
 
+  test('URL sans https:// -> signalée sous le champ, avant tout appel à Meta', async ({ page }) => {
+    await page.getByRole('button', { name: '+ lien' }).click();
+    const url = page.getByPlaceholder('https://exemple.fr/cette-carte').first();
+    await url.fill('exemple.fr/ma-page');
+    await expect(page.getByText(/Adresse incomplète/).first()).toBeVisible();
+    await url.fill('https://exemple.fr/ma-page');
+    await expect(page.getByText(/Adresse incomplète/)).toHaveCount(0);
+  });
+
   test('retirer un bouton le retire de toutes les cartes', async ({ page }) => {
     await page.getByRole('button', { name: '+ lien' }).click();
     await expect(page.getByPlaceholder('https://exemple.fr/cette-carte')).toHaveCount(2);

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { createTemplate, uploadMedia, type TemplateButtonInput } from '@/lib/api';
 import { resizeToDataUrl } from '@/lib/image';
 import { CarouselPreview } from '@/components/CarouselPreview';
+import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
 
 /** Type d'un bouton de carte. Meta n'accepte que ces deux-là dans un carousel. */
@@ -99,9 +100,15 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
   const buttonsComplete = cards.every((c) =>
     layout.every((type, j) => {
       const b = c.buttons[j];
-      return !!b && b.text.trim() !== '' && (type !== 'URL' || b.url.trim() !== '');
+      return !!b && b.text.trim() !== '' && (type !== 'URL' || isSendableButtonUrl(b.url));
     }),
   );
+  /** Une URL commencée mais pas valide : on le dit sous le champ plutôt que d'attendre le refus de Meta,
+   *  dont le message désigne un chemin de tableau JSON, illisible. Champ vide = pas encore saisi, pas d'alerte. */
+  const urlKo = (c: Card, j: number): boolean => {
+    const v = c.buttons[j]?.url ?? '';
+    return v.trim() !== '' && !isSendableButtonUrl(v);
+  };
   const canSubmit =
     name.trim() !== '' && body.trim() !== '' && cards.length >= 2 && cards.every((c) => c.headerHandle !== '' && !c.uploading) && buttonsComplete && !busy;
 
@@ -219,12 +226,17 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                     placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
                   />
                   {type === 'URL' && (
-                    <input
-                      value={c.buttons[j]?.url ?? ''}
-                      onChange={(e) => setCardButton(i, j, { url: e.target.value })}
-                      className={`${inputCls} w-full`}
-                      placeholder="https://exemple.fr/cette-carte"
-                    />
+                    <>
+                      <input
+                        value={c.buttons[j]?.url ?? ''}
+                        onChange={(e) => setCardButton(i, j, { url: e.target.value })}
+                        className={`${inputCls} w-full ${urlKo(c, j) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+                        placeholder="https://exemple.fr/cette-carte"
+                      />
+                      {urlKo(c, j) && (
+                        <p className="text-[11px] text-coral">{t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://')}</p>
+                      )}
+                    </>
                   )}
                 </div>
               ))}

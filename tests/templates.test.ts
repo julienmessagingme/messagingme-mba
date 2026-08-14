@@ -287,6 +287,37 @@ describe('template CAROUSEL', () => {
     await a.close();
   });
 
+  it('route : URL de bouton sans schéma -> 400 nommant la carte et le bouton (plus le chemin JSON de Meta)', async () => {
+    // Le vrai symptôme : Meta répondait « components[1]['cards'][1]['components'][2]['buttons'][1]['url']
+    // is not a valid URI », illisible. On refuse avant l'appel, en désignant ce que l'opérateur a saisi.
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const cards = [
+      { headerHandle: 'H1', buttons: [{ type: 'URL' as const, text: 'Voir', url: 'https://exemple.fr/un' }] },
+      { headerHandle: 'H2', buttons: [{ type: 'URL' as const, text: 'Voir', url: 'exemple.fr/deux' }] },
+    ];
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', carousel: { cards } } });
+    expect(res.statusCode).toBe(400);
+    const err = res.json<{ error: string }>().error;
+    expect(err).toContain('carte 2');
+    expect(err).toContain('https://');
+    await a.close();
+  });
+
+  it('route : URL de bouton TOP-LEVEL sans schéma -> 400 ; URL dynamique {{1}} -> acceptée', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: {} }]);
+    const a = app(fn);
+    const ko = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', buttons: [{ type: 'URL', text: 'Voir', url: 'www.exemple.fr' }] } });
+    expect(ko.statusCode).toBe(400);
+    await a.close();
+
+    const { fn: fn2 } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a2 = app(fn2);
+    const ok = await a2.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', buttons: [{ type: 'URL', text: 'Voir', url: 'https://exemple.fr/p/{{1}}' }] } });
+    expect(ok.statusCode).toBe(201); // l'URL dynamique reste une fonctionnalité supportée
+    await a2.close();
+  });
+
   it('route : 2 cartes cohérentes -> 201', async () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
     const a = app(fn);

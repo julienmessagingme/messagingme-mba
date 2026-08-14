@@ -6,6 +6,7 @@ import type { CampaignStatus } from '../campaign/types';
 import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../meta/languages';
+import { isSendableButtonUrl } from '../meta/button-url';
 
 export interface TemplateRouteDeps {
   /** Client templates Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
@@ -66,7 +67,8 @@ function validButtons(v: unknown): v is TemplateButton[] | undefined {
   const okEach = v.every((b) => {
     const btn = b as { type?: unknown; text?: unknown; url?: unknown; flowId?: unknown };
     if (btn.type === 'QUICK_REPLY') return nonEmpty(btn.text);
-    if (btn.type === 'URL') return nonEmpty(btn.text) && nonEmpty(btn.url);
+    // Même règle d'URL que les boutons de carte : refuser ici évite le message de chemin JSON de Meta.
+    if (btn.type === 'URL') return nonEmpty(btn.text) && nonEmpty(btn.url) && isSendableButtonUrl(String(btn.url));
     if (btn.type === 'FLOW') return nonEmpty(btn.text) && nonEmpty(btn.flowId);
     return false;
   });
@@ -128,11 +130,19 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
       if (sig(c) !== firstSig) return { error: 'toutes les cartes doivent avoir les mêmes types de boutons, dans le même ordre (le texte et le lien, eux, peuvent différer)' };
       if (Array.isArray(c.buttons)) {
         if (c.buttons.length > 2) return { error: 'une carte ne peut pas avoir plus de 2 boutons' };
-        for (const bt of c.buttons) {
+        const carte = cards.indexOf(raw) + 1;
+        for (const [j, bt] of c.buttons.entries()) {
           const btn = bt as { type?: string; text?: unknown; url?: unknown };
           if (btn.type === 'QUICK_REPLY' && nonEmpty(btn.text)) continue;
-          if (btn.type === 'URL' && nonEmpty(btn.text) && nonEmpty(btn.url)) continue;
-          return { error: 'bouton de carte invalide (quick_reply|url uniquement)' };
+          if (btn.type === 'URL' && nonEmpty(btn.text) && nonEmpty(btn.url)) {
+            // Meta refuse une URL qu'il ne sait pas parser avec un message qui désigne un chemin JSON
+            // (« ...['cards'][1]['components'][2]['buttons'][1]['url'] is not a valid URI »). On nomme la carte.
+            if (!isSendableButtonUrl(String(btn.url))) {
+              return { error: `carte ${carte}, bouton ${j + 1} : « ${String(btn.url)} » n'est pas une adresse valide (commence par https://)` };
+            }
+            continue;
+          }
+          return { error: `carte ${carte}, bouton ${j + 1} : invalide (réponse rapide ou lien uniquement, texte requis)` };
         }
       }
     }
