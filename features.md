@@ -149,6 +149,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   jeu de boutons unique s'appliquait à toutes les cartes, donc 10 cartes pointaient au même endroit. Contrainte
   Meta respectée et affichée : la disposition (nombre, types, ordre) doit être la même sur toutes les cartes,
   seuls le texte et le lien varient. Le champ du lien occupe désormais toute la largeur de la carte.
+- ✅ **Brancher un scénario sur les boutons d'un carousel** : un bloc « envoi de template » qui envoie un
+  carousel expose désormais **une sortie par bouton de carte** (10 cartes x 2 boutons = 20 destinations), chacune
+  étiquetée « C1 », « C2 »… pour savoir de quelle carte elle vient. Avant, le bloc n'affichait aucune sortie et
+  rien ne pouvait être branché après lui. Les boutons **lien** restent volontairement non reliables : ils ouvrent
+  le navigateur et ne renvoient rien à WhatsApp, il n'y a donc aucun événement à brancher.
 - ✅ **Aperçu d'un carousel déjà créé** : cliquer sur le nom d'un template carousel montre ses vraies cartes
   (image, texte, boutons) façon WhatsApp, au lieu d'un simple encadré. Une carte sans image visible, une carte
   vidéo, ou une image devenue injoignable sont annoncées telles quelles, jamais une vignette cassée.

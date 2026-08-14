@@ -35,6 +35,19 @@ export interface OutboundTemplateParts {
 const HAS_VAR = /\{\{\s*\d+\s*\}\}/;
 
 /**
+ * Identifiant d'un bouton de carte : c'est À LA FOIS le `payload` envoyé à Meta et le nom de la sortie du
+ * bloc dans le builder. Les deux DOIVENT être la même chaîne, sinon un tap ne retrouve pas sa branche.
+ * `buttonIndex` est la position dans TOUS les boutons de la carte (les boutons URL comptent), pas parmi les
+ * seules réponses rapides.
+ *
+ * ⚠️ Dupliqué dans `web/lib/carousel-handle.ts` (les deux builds ne partagent aucun module) et verrouillé par
+ * `tests/web-carousel-handle-parity.test.ts`.
+ */
+export function carouselButtonHandle(cardIndex: number, buttonIndex: number): string {
+  return `card:${cardIndex}:btn:${buttonIndex}`;
+}
+
+/**
  * Pourquoi ce carousel n'est PAS envoyable en l'état, ou null si tout est bon. À appeler AVANT l'envoi :
  * on refuse avec une raison lisible plutôt que de laisser Meta répondre 132012 à chaque destinataire.
  *
@@ -69,7 +82,7 @@ function cardComponents(card: OutboundCarouselCard, cardIndex: number): unknown[
     // Payload portant la carte ET le bouton. Un `btn:<i>` nu serait pire qu'ambigu : chaque carte a un bouton
     // d'index 0, donc 10 cartes suivraient TOUTES la branche `btn:0` d'un scénario, présentée comme juste.
     // Aucune branche ne matche `card:i:btn:j` : le run suit son arête par défaut (comme une réponse texte).
-    out.push({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `card:${cardIndex}:btn:${i}` }] });
+    out.push({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: carouselButtonHandle(cardIndex, i) }] });
   });
   return out;
 }

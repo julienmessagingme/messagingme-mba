@@ -16,6 +16,7 @@ import {
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
+import { carouselOutputs } from '@/lib/carousel-outputs';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { ConditionBuilder, type ConditionGroup } from './ConditionBuilder';
 
@@ -66,11 +67,19 @@ function WFNode({ id, data, selected }: NodeProps) {
   const t = useT();
   const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
   const meta = nodeMetaOf(wfType); // tolérant : un type pas encore connu du front (ex. condition) -> repli neutre
-  const buttons = wfType === 'template' && Array.isArray(data.templateButtons)
-    ? (data.templateButtons as Array<{ type?: string; text?: string }>)
-    : wfType === 'quick_message' && Array.isArray(data.quickReplies)
-      ? (data.quickReplies as unknown[]).map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
-      : [];
+  // Un template CAROUSEL n'a aucun bouton de premier niveau : ses boutons vivent dans les cartes, et chacun
+  // vaut une sortie (10 cartes x 2 boutons = 20 destinations). `templateCards` sert UNIQUEMENT à dessiner ces
+  // sorties : le moteur d'envoi ne lit que `templateButtons`, qui reste vide pour un carousel (sinon on
+  // émettrait des boutons de premier niveau que ce template n'a pas, et Meta refuserait l'envoi).
+  type NodeButton = { type?: string; text?: string; handle?: string; cardIndex?: number };
+  const cards: NodeButton[] = wfType === 'template' && Array.isArray(data.templateCards) ? (data.templateCards as NodeButton[]) : [];
+  const buttons: NodeButton[] = cards.length > 0
+    ? cards
+    : wfType === 'template' && Array.isArray(data.templateButtons)
+      ? (data.templateButtons as NodeButton[])
+      : wfType === 'quick_message' && Array.isArray(data.quickReplies)
+        ? (data.quickReplies as unknown[]).map((q): NodeButton => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
+        : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
   const isCondition = wfType === 'condition';
   return (
@@ -99,9 +108,12 @@ function WFNode({ id, data, selected }: NodeProps) {
             return (
               <div key={i} className={`relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] first:border-t-0 ${isQR ? 'text-ink-700' : 'text-ink-400'}`}>
                 <span className="shrink-0">{icon}</span>
+                {b.cardIndex !== undefined && <span className="shrink-0 rounded bg-ink-200 px-1 text-[9px] font-medium text-ink-600">C{b.cardIndex + 1}</span>}
                 <span className="truncate">{b.text || fallback}</span>
                 {isQR ? (
-                  <Handle type="source" id={`btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={`${t('Relier', 'Connect')} « ${b.text || fallback} »`} />
+                  // Le nom de la sortie DOIT être celui que l'envoi pose en payload, sinon le tap ne retrouve
+                  // pas sa branche : `handle` vient du template (carousel), sinon l'index du bouton.
+                  <Handle type="source" id={b.handle ?? `btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={`${t('Relier', 'Connect')} « ${b.text || fallback} »`} />
                 ) : (
                   <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title={t('Bouton URL / formulaire : sort de WhatsApp, non reliable', 'URL / form button: leaves WhatsApp, not connectable')} />
                 )}
@@ -547,13 +559,15 @@ function ConfigPanel({
       {wfType === 'template' && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Template à envoyer', 'Template to send')}</label>
-          <select value={(d.templateName as string) ?? ''} onChange={(e) => { const tpl = templates.find((x) => x.name === e.target.value); onPatch({ templateName: e.target.value, language: tpl?.language ?? 'fr', templateButtons: tpl?.buttons ?? [] }); }} className={`${cls} bg-white`}>
+          <select value={(d.templateName as string) ?? ''} onChange={(e) => { const tpl = templates.find((x) => x.name === e.target.value); onPatch({ templateName: e.target.value, language: tpl?.language ?? 'fr', templateButtons: tpl?.buttons ?? [], templateCards: carouselOutputs(tpl) }); }} className={`${cls} bg-white`}>
             <option value="">{t('Choisir…', 'Choose…')}</option>
             {templates.map((tpl) => <option key={tpl.id || tpl.name} value={tpl.name}>{tpl.name}</option>)}
           </select>
-          {Array.isArray(d.templateButtons) && (d.templateButtons as unknown[]).length > 0 && (
+          {Array.isArray(d.templateCards) && (d.templateCards as unknown[]).length > 0 ? (
+            <p className="mt-1 text-[11px] text-ink-400">{t('Carousel : chaque réponse rapide de chaque carte devient une ', 'Carousel: each quick reply on each card becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc, « C1 » = carte 1). Les boutons lien ne se relient pas : ils ouvrent le navigateur et ne renvoient rien.', ' to connect (dot on the right of the block, “C1” = card 1). Link buttons cannot be connected: they open the browser and send nothing back.')}</p>
+          ) : Array.isArray(d.templateButtons) && (d.templateButtons as unknown[]).length > 0 ? (
             <p className="mt-1 text-[11px] text-ink-400">{t('Chaque bouton de réponse rapide devient une ', 'Each quick-reply button becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.', ' to connect (dot on the right of the block). Link/form buttons cannot be connected.')}</p>
-          )}
+          ) : null}
         </div>
       )}
       {wfType === 'quick_message' && (() => {
