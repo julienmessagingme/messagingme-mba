@@ -1031,7 +1031,7 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 // --- Workflows (bot builder : graphe de blocs) ---
 
 // `mba_handoff`/`mba_disable` : pré-câblage inerte (envoi vers MBA / désactivation MBA), grisés tant que MBA n'est pas actif.
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'mba_handoff' | 'mba_disable';
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;

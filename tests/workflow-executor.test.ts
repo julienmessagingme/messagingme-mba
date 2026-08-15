@@ -427,3 +427,121 @@ describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’
     await expect(ex.startInWindow('t1', 'wf1', graphe, { waId: '33611', contactId: 'c1' }, { emitEvents: true })).resolves.toBe(true);
   });
 });
+
+describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
+  const n2 = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
+
+  /** tag -> attente -> <suite>. Le run dort sur 'w', la reprise doit repartir de la suite. */
+  const grapheAvecSuite = (suite: ReturnType<typeof n2>): WorkflowGraph => ({
+    nodes: [n2('t', 'tag', { tag: 'vip' }), n2('w', 'wait', { delay: 2, unit: 'hours' }), suite],
+    edges: [{ id: 'e1', source: 't', target: 'w' }, { id: 'e2', source: 'w', target: suite.id }],
+  });
+
+  function makeResume(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
+    const runs = new FakeRuns();
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', status: 'sleeping', lastMessageId: null };
+    const calls: string[] = [];
+    const escalations: string[] = [];
+    const emis: string[] = []; // événements d'automation publiés (tag ajouté)
+    const ex = new WorkflowExecutor({
+      runs,
+      getGraph: async () => graph,
+      applyTag: async (_t, _w, tag) => { calls.push(`tag:${tag}`); return true; },
+      setField: async () => {},
+      removeTag: async () => {},
+      clearField: async () => {},
+      sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
+      sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
+      sendFlow: async (_t, _w, id) => { calls.push(`flow:${id}`); },
+      escalateToHuman: async (_t, w) => { escalations.push(w); },
+      emitTagAdded: async (_t, _w, tag) => { emis.push(tag); },
+      ...over,
+    });
+    const run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w' };
+    return { ex, runs, calls, escalations, emis, run };
+  }
+
+  it('reprend au bloc SUIVANT l’attente, jamais sur l’attente elle-même (sinon le parcours se rendort en boucle)', async () => {
+    const { ex, runs, calls, run } = makeResume(grapheAvecSuite(n2('tpl', 'template', { templateName: 'relance' })));
+    expect(await ex.resume(run)).toBe(true);
+    expect(calls).toEqual(['tpl:relance']);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+  });
+
+  it('un TEMPLATE part même hors fenêtre 24 h : c’est tout son intérêt', async () => {
+    const { ex, calls, run } = makeResume(grapheAvecSuite(n2('tpl', 'template', { templateName: 'relance' })), {
+      isWindowOpen: async () => false,
+    });
+    expect(await ex.resume(run)).toBe(true);
+    expect(calls).toEqual(['tpl:relance']);
+  });
+
+  it('un MESSAGE RAPIDE hors fenêtre n’est PAS envoyé, et la conversation part en inbox', async () => {
+    const suite = n2('qm', 'quick_message', { body: 'Alors ?', quickReplies: ['Oui'] });
+    const { ex, runs, calls, escalations, run } = makeResume(grapheAvecSuite(suite), { isWindowOpen: async () => false });
+    expect(await ex.resume(run)).toBe(false);
+    expect(calls).toEqual([]); // rien n'est parti
+    expect(runs.run).toMatchObject({ status: 'inbox' });
+    expect(escalations).toEqual(['33600']);
+  });
+
+  it('même message rapide, mais fenêtre OUVERTE -> envoyé normalement', async () => {
+    const suite = n2('qm', 'quick_message', { body: 'Alors ?', quickReplies: ['Oui'] });
+    const { ex, calls, run } = makeResume(grapheAvecSuite(suite), { isWindowOpen: async () => true });
+    expect(await ex.resume(run)).toBe(true);
+    expect(calls).toEqual(['qm:Alors ?']);
+  });
+
+  it('SANS dep de fenêtre -> fenêtre considérée FERMÉE (on préfère ne rien envoyer qu’un envoi refusé par Meta)', async () => {
+    const suite = n2('qm', 'quick_message', { body: 'Alors ?', quickReplies: ['Oui'] });
+    const { ex, calls, run } = makeResume(grapheAvecSuite(suite));
+    expect(await ex.resume(run)).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('fil repris par un humain pendant l’attente -> aucune action, run clos', async () => {
+    const { ex, runs, calls, run } = makeResume(grapheAvecSuite(n2('tpl', 'template', { templateName: 'relance' })), {
+      mayAct: async () => false,
+    });
+    expect(await ex.resume(run)).toBe(false);
+    expect(calls).toEqual([]);
+    expect(runs.run).toMatchObject({ status: 'done' });
+  });
+
+  it('bloc supprimé du graphe pendant l’attente -> run clos, jamais laissé dormant', async () => {
+    const { ex, runs, run } = makeResume({ nodes: [n2('autre', 'tag', { tag: 'x' })], edges: [] });
+    expect(await ex.resume(run)).toBe(false);
+    expect(runs.run).toMatchObject({ status: 'done' });
+  });
+
+  it('attente en fin de chaîne (aucune suite) -> run clos', async () => {
+    const graph: WorkflowGraph = { nodes: [n2('w', 'wait', { delay: 1, unit: 'hours' })], edges: [] };
+    const { ex, runs, run } = makeResume(graph);
+    expect(await ex.resume(run)).toBe(false);
+    expect(runs.run).toMatchObject({ status: 'done' });
+  });
+
+  it('la reprise PUBLIE l’événement « tag ajouté », comme après une réponse du contact', async () => {
+    // Un réveil est unitaire par nature (un contact, ici et maintenant). Sans ça, « attendre 1 jour puis poser
+    // le tag relance » ne déclencherait pas l'automation branchée dessus, alors que le MÊME tag posé après une
+    // réponse la déclenche. Les campagnes, elles, n'émettent pas (5 000 destinataires = 5 000 événements).
+    const graph: WorkflowGraph = {
+      nodes: [n2('w', 'wait', { delay: 1, unit: 'hours' }), n2('tg', 'tag', { tag: 'relance_j1' })],
+      edges: [{ id: 'e1', source: 'w', target: 'tg' }],
+    };
+    const { ex, calls, emis, run } = makeResume(graph);
+    expect(await ex.resume(run)).toBe(true);
+    expect(calls).toEqual(['tag:relance_j1']);
+    expect(emis).toEqual(['relance_j1']);
+  });
+
+  it('DEUX attentes à la suite : la reprise redort, avec la nouvelle échéance', async () => {
+    const graph: WorkflowGraph = {
+      nodes: [n2('w', 'wait', { delay: 1, unit: 'hours' }), n2('w2', 'wait', { delay: 3, unit: 'minutes' }), n2('tpl', 'template', { templateName: 'p' })],
+      edges: [{ id: 'e1', source: 'w', target: 'w2' }, { id: 'e2', source: 'w2', target: 'tpl' }],
+    };
+    const { ex, runs, run } = makeResume(graph, { now: () => 1_000_000 });
+    expect(await ex.resume(run)).toBe(true);
+    expect(runs.run).toMatchObject({ status: 'sleeping', currentNode: 'w2' });
+  });
+});

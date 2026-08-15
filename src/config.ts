@@ -44,6 +44,8 @@ export const schema = z.object({
   CAMPAIGN_DEFAULT_RATE_PER_MINUTE: z.coerce.number().int().min(0).max(80).default(30),
   /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
+  /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */
+  WORKFLOW_WAKE_SWEEP_INTERVAL_MS: z.coerce.number().default(60 * 1000),
   /** URL du pooler Supabase mode SESSION (port 5432). Sert à pg-boss (API + worker) ET, par défaut, au pool
    *  applicatif si APP_DATABASE_URL est vide. Les scripts CLI (db/migrate.ts, db/seed.ts, db/backfill-codes.ts)
    *  lisent CETTE var en direct (jamais APP_DATABASE_URL) -> DDL/seed toujours en session mode, c'est voulu. */

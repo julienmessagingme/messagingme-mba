@@ -49,12 +49,14 @@ test.describe('Campagnes : sélecteur de scénarios filtré (Lot D)', () => {
     await page.getByRole('button', { name: 'Un scénario', exact: true }).click();
 
     const wfSelect = page.locator('select').filter({ has: page.locator('option', { hasText: 'Choisir un scénario' }) });
-    await expect(wfSelect).toBeVisible();
-    const options = await wfSelect.locator('option').allInnerTexts();
-
-    // Éligible : proposé. Non éligibles (formulaire en ouverture, template non configuré) : absents.
-    expect(options.some((o) => o.includes('Relance promo'))).toBe(true);
-    expect(options.some((o) => o.includes('Formulaire seul'))).toBe(false);
-    expect(options.some((o) => o.includes('Template pas encore choisi'))).toBe(false);
+    // Le sélecteur n'existe qu'une fois la liste des scénarios chargée : sous la charge de la suite complète
+    // (serveur de dev partagé entre workers), 5 s ne suffisent pas toujours. L'assertion est inchangée.
+    await expect(wfSelect).toBeVisible({ timeout: 15_000 });
+    // Assertions RE-TENTANTES sur les options : une lecture unique (`allInnerTexts`) ne réessaie pas, alors
+    // que la liste arrive d'un useEffect asynchrone. Pire, les deux assertions négatives étaient satisfaites
+    // À VIDE : le spec pouvait passer pour la mauvaise raison, et ne tombait que sur la positive.
+    await expect(wfSelect.locator('option', { hasText: 'Relance promo' })).toHaveCount(1);
+    await expect(wfSelect.locator('option', { hasText: 'Formulaire seul' })).toHaveCount(0);
+    await expect(wfSelect.locator('option', { hasText: 'Template pas encore choisi' })).toHaveCount(0);
   });
 });

@@ -55,7 +55,7 @@ import {
 } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample } from '@/lib/fields';
 import { filtersActive } from '@/lib/contact-filters';
-import { entryNodeOf, isCampaignEligible } from '@/lib/campaign-eligibility';
+import { firstTemplateOf, isCampaignEligible } from '@/lib/campaign-eligibility';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 
 /** Coût estimé d'une campagne = envois facturables (counts.sent) × tarif catégorie (Meta). null si tarif
@@ -561,7 +561,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // Nombre TOTAL de scénarios du tenant, avant le filtre d'éligibilité campagne : sans lui, « aucun scénario »
   // s'afficherait alors qu'il en existe (mais qu'aucun ne démarre par un template), message faux et déroutant.
   const [workflowsTotal, setWorkflowsTotal] = useState(0);
-  // Message bloquant si le 1er bloc du workflow choisi n'est pas un envoi de template (pas de cible au mapping).
+  // Message bloquant si le workflow choisi n'OUVRE pas par un envoi de template (pas de cible au mapping).
   const [wfError, setWfError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -635,7 +635,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
         if (!alive) return;
         setTemplates(tpl.templates.filter((x) => x.status === 'APPROVED'));
-        // Le sélecteur ne propose QUE les scénarios lançables en broadcast (entrée = template configuré). Depuis
+        // Le sélecteur ne propose QUE les scénarios lançables en broadcast (ce qui OUVRE = un template configuré). Depuis
         // le Lot D, un scénario peut légitimement démarrer autrement (formulaire, message rapide) : il reste
         // valide, mais réservé aux déclenchements en fenêtre garantie, donc hors campagne. Même filtre APPROVED
         // que les templates : ne jamais proposer ce qui ne partira pas.
@@ -735,7 +735,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     await loadTemplateVars(nm, tpl.language);
   }
 
-  // Choix d'un workflow : on VÉRIFIE que le 1er bloc est un envoi de template (sinon le mapping n'a pas de cible ->
+  // Choix d'un workflow : on VÉRIFIE qu'il OUVRE par un envoi de template (sinon le mapping n'a pas de cible ->
   // message bloquant, comme côté serveur), puis on remonte ce template + ses variables dans le MÊME sélecteur que
   // le mode direct. Le mapping collecté part avec la campagne (résolu par contact, contacts sans la valeur sautés).
   async function chooseWorkflow(id: string) {
@@ -746,10 +746,12 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     if (id === '') return;
     const wf = workflows.find((w) => w.id === id);
     if (!wf) return;
-    const entry = entryNodeOf(wf.graph);
-    const tplName = entry && entry.type === 'template' ? String(entry.data.templateName ?? '').trim() : '';
-    if (!entry || entry.type !== 'template' || tplName === '') {
-      setWfError(t('Le workflow doit commencer par un envoi de template.', 'The scenario must start by sending a template.'));
+    // Le template à paramétrer est celui qui OUVRE, pas forcément le bloc d'entrée : un tag ou une action
+    // peuvent le précéder sans rien envoyer. Chercher sur l'entrée rendrait '' et perdrait le mapping.
+    const entry = firstTemplateOf(wf.graph);
+    const tplName = entry ? String(entry.data.templateName ?? '').trim() : '';
+    if (!entry || tplName === '') {
+      setWfError(t("Ce scénario n'ouvre pas par un envoi de template : il ne peut pas partir en campagne.", 'This scenario does not open by sending a template: it cannot run as a campaign.'));
       return;
     }
     const language = String(entry.data.language ?? 'fr');
@@ -959,7 +961,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // Le sélecteur garantit une source valide (champ de base ou champ perso réel) : seul « Texte fixe » exige
   // une valeur saisie. On bloque l'envoi tant qu'un texte fixe est vide (sinon 400 côté backend).
   const varsComplete = vars.every((v) => (v.sel === 'literal' ? v.value.trim() !== '' : true));
-  // Workflow : prêt si un workflow valide est choisi (1er bloc = template, donc pas de wfError) ET le mapping de ses
+  // Workflow : prêt si un workflow valide est choisi (il OUVRE par un template, donc pas de wfError) ET le mapping de ses
   // variables est complet. Le 1er template sans variable a vars=[] -> varsComplete=true.
   const contentReady = mode === 'workflow'
     ? (workflowId !== '' && wfError === null && varsComplete)
@@ -1232,8 +1234,8 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
                 {workflowsTotal === 0
                   ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario. Create one from the "Scenario" menu on the left.')
                   : t(
-                      "Aucun scénario utilisable en campagne : une campagne part sur une audience froide, le scénario doit donc commencer par un envoi de template configuré. Tes autres scénarios restent utilisables quand le contact vient d'écrire.",
-                      'No scenario usable in a campaign: a campaign targets a cold audience, so the scenario must start with a configured template send. Your other scenarios remain usable when the contact has just written.',
+                      "Aucun scénario utilisable en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template configuré (un tag, une action ou une condition avant lui ne posent aucun problème). Tes autres scénarios restent utilisables quand le contact vient d'écrire.",
+                      'No scenario usable in a campaign: a campaign targets a cold audience, so the FIRST message sent must be a configured template (a tag, an action or a condition before it is fine). Your other scenarios remain usable when the contact has just written.',
                     )}
               </p>
             ) : (
@@ -1244,7 +1246,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
                 ))}
               </select>
             )}
-            {/* Le 1er bloc du workflow doit être un envoi de template : c'est lui qui porte les variables à associer. */}
+            {/* Le workflow doit OUVRIR par un envoi de template : c'est lui qui porte les variables à associer. */}
             {wfError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{wfError}</p>}
             {!wfError && selectedTemplate?.body && (
               <div className="mt-3">

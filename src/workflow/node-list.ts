@@ -36,6 +36,15 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
       out = key === '' ? '' : val === '' ? key : `${key} = ${val}`;
       break;
     }
+    case 'wait': {
+      // Aligné sur le résumé du builder : sans ce cas, « Contenu > Blocs » listait des blocs Attente au
+      // résumé VIDE (branche default), donc impossibles à distinguer les uns des autres.
+      const n = Number(data.delay ?? 0);
+      const u = String(data.unit ?? 'hours');
+      const lib = u === 'minutes' ? 'min' : u === 'days' ? 'j' : 'h';
+      out = !Number.isFinite(n) || n <= 0 ? '' : `attendre ${n} ${lib}`;
+      break;
+    }
     case 'condition': {
       const clauses = Array.isArray(data.clauses) ? data.clauses.length : 0;
       const combineur = data.match === 'any' ? 'au moins une' : 'toutes';

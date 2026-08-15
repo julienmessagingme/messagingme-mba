@@ -34,6 +34,15 @@ export interface WorkflowExecutorDeps {
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
   sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<void>;
+  /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
+  now?: () => number;
+  /**
+   * La fenêtre de service 24 h est-elle ouverte pour ce contact ? Utilisée à la REPRISE d'un parcours endormi :
+   * la fenêtre court depuis le dernier message DU CONTACT, pas depuis notre dernière action, donc même une
+   * attente courte peut la voir se fermer. Absente -> on considère la fenêtre fermée (fail-closed) : mieux
+   * vaut ne pas envoyer que se faire refuser par Meta et compter l'envoi comme parti.
+   */
+  isWindowOpen?: (tenantId: string, waId: string) => Promise<boolean>;
   /**
    * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent
    * de Meta (`mba`) le détient. OPTIONNEL : absent, tout est permis, ce qui préserve le comportement des
@@ -61,8 +70,11 @@ export interface WorkflowExecutorDeps {
   emitTagAdded?(tenantId: string, waId: string, tag: string): Promise<void>;
 }
 
-function restToState(rest: WalkRest): RunState {
+function restToState(rest: WalkRest, now: number): RunState {
   if (rest.status === 'waiting') return { currentNode: rest.nodeId, status: 'waiting' };
+  // Sommeil : on garde le bloc Attente comme position courante et on pose l'échéance. Le réveil repart de SON
+  // successeur (le bloc Attente lui-même a déjà « joué », le repasser rendormirait le parcours en boucle).
+  if (rest.status === 'sleeping') return { currentNode: rest.nodeId, status: 'sleeping', resumeAt: new Date(now + rest.resumeInMs) };
   if (rest.status === 'inbox') return { currentNode: null, status: 'inbox' };
   return { currentNode: null, status: 'done' };
 }
@@ -75,6 +87,11 @@ function restToState(rest: WalkRest): RunState {
  */
 export class WorkflowExecutor {
   constructor(private readonly deps: WorkflowExecutorDeps) {}
+
+  /** Horloge injectable (tests). Sert au calcul de l'échéance d'un bloc Attente. */
+  private now(): number {
+    return this.deps.now ? this.deps.now() : Date.now();
+  }
 
   /**
    * `firstTemplateParams` (optionnel) : variables du corps déjà résolues, transmises à l'envoi de template. Un
@@ -156,6 +173,64 @@ export class WorkflowExecutor {
    * campagne comptait le destinataire en `sent` alors que rien n'était parti (campagne « 500 envoyés, 0 échec »
    * pour 0 message réel). `true` = le parcours a bien été appliqué.
    */
+  /**
+   * Réveille un parcours endormi (bloc Attente arrivé à échéance) et reprend au bloc SUIVANT.
+   *
+   * Gardes, dans l'ordre du code :
+   *  1) `mayAct` : pendant le sommeil, un opérateur ou MBA a pu reprendre le fil. On ne lui écrit pas dessus.
+   *  2) le graphe et le bloc suivant existent encore (scénario ou bloc supprimé pendant le sommeil) : c'est
+   *     `nextNode` qui rend null, et on clôt le run plutôt que de le laisser dormant.
+   *  3) la FENÊTRE de service, seulement si la suite envoie un message de SESSION : elle court depuis le
+   *     dernier message DU CONTACT, donc on la RELIT (une attente courte peut la voir fermée, une longue peut
+   *     la voir rouverte si le contact a écrit entre-temps). Fermée -> on n'envoie pas et on remonte à un
+   *     humain, plutôt que de compter un envoi fantôme. Un TEMPLATE part hors fenêtre, il n'est pas concerné.
+   *
+   * Rendu : true si le parcours a repris, false s'il a été arrêté (le run est alors clos ou remonté en inbox,
+   * jamais laissé dormant, sinon il serait repris à chaque balayage).
+   */
+  async resume(run: { id: string; workflowId: string; tenantId: string; waId: string; contactId?: string | null; currentNode: string | null }): Promise<boolean> {
+    const { tenantId, waId } = run;
+    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
+      // eslint-disable-next-line no-console
+      console.log(`workflow ${run.workflowId}: fil repris par un humain ou par MBA pendant l'attente, reprise annulée pour ${waId}`);
+      await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
+      return false;
+    }
+    const graph = await this.deps.getGraph(run.workflowId, tenantId);
+    if (!graph || !run.currentNode) {
+      await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
+      return false;
+    }
+    // On repart du SUCCESSEUR du bloc Attente : repasser sur l'attente elle-même rendormirait le parcours.
+    const suite = nextNode(graph, run.currentNode);
+    if (!suite) {
+      await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
+      return false;
+    }
+    const ctx = await this.buildCtx(tenantId, waId, graph);
+    const { actions, rest } = walk(graph, suite, ctx);
+
+    const sessionMessage = actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage');
+    if (sessionMessage) {
+      const ouverte = this.deps.isWindowOpen ? await this.deps.isWindowOpen(tenantId, waId) : false;
+      if (!ouverte) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow ${run.workflowId}: fenêtre 24 h fermée à la reprise, message de session NON envoyé à ${waId} -> conversation remontée en inbox`);
+        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        return false;
+      }
+    }
+
+    // `emitEvents` VRAI : un réveil est unitaire par nature (un contact, ici et maintenant), comme `advance`.
+    // Sans ça, « attendre 1 jour puis poser le tag relance » ne déclencherait pas l'automation branchée sur ce
+    // tag, alors que le MÊME tag posé après une réponse la déclenche. Les campagnes, elles, n'émettent pas.
+    await this.apply(tenantId, waId, actions, undefined, true);
+    await this.deps.runs.setState(run.id, restToState(rest, this.now()));
+    if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+    return true;
+  }
+
   private async runFrom(
     tenantId: string,
     workflowId: string,
@@ -193,7 +268,7 @@ export class WorkflowExecutor {
       return false;
     }
     await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true);
-    const state = restToState(rest);
+    const state = restToState(rest, this.now());
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
@@ -276,7 +351,7 @@ export class WorkflowExecutor {
     const { actions, rest } = walk(graph, next, ctx);
     // Un contact qui répond est unitaire par nature : ses tags publient.
     await this.apply(tenantId, waId, actions, undefined, true);
-    await this.deps.runs.setState(run.id, { ...restToState(rest), lastMessageId: messageId });
+    await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), lastMessageId: messageId });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
   }
 }

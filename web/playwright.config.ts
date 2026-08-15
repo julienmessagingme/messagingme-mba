@@ -9,6 +9,10 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: true,
+  // Plafonné à 4 : le serveur Next est PARTAGÉ par tous les workers, et au-delà certains specs voyaient leur
+  // requête de liste arriver après le rendu (échecs intermittents sur des assertions pourtant justes, vérifié
+  // en repassant la suite à 1 worker : 54/54). On borne plutôt que de tolérer un gate qui ment.
+  workers: 4,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'line' : 'list',

@@ -210,6 +210,26 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Bloc « Attente »** (2026-08-15) : met le parcours en pause pendant un délai choisi en minutes, heures ou
+  jours (30 jours maximum), puis la suite repart toute seule. Le délai est tenu à la minute près environ. Un
+  bloc dont la durée n'est pas encore choisie laisse simplement passer, il ne bloque personne.
+  ⚠️ **Après une attente, seul un envoi de template peut encore partir.** WhatsApp n'accepte un message libre
+  que dans les 24 h qui suivent le dernier message du client. Le constructeur signale donc en clair un montage
+  « attendre 24 h ou plus, puis message rapide », en nommant les deux blocs concernés. Et si la fenêtre s'avère
+  fermée au moment de la reprise, le message n'est pas envoyé : la conversation remonte dans l'Inbox pour
+  qu'une personne la reprenne, plutôt que de compter un envoi qui n'a jamais eu lieu.
+- ✅ **La nature d'un bloc se choisit à sa création, plus après** : le panneau de droite ne sert qu'à configurer
+  le bloc (choix du template, de l'action, de la durée…). Quand on tire une flèche dans le vide, ou qu'on insère
+  un bloc sur une flèche existante, la liste des natures s'affiche et on choisit. Avant, le bloc était deviné
+  puis se changeait dans le panneau, ce qui laissait derrière lui la configuration d'un autre type.
+- ✅ **Éligibilité campagne élargie** (2026-08-15) : un scénario peut partir en campagne dès lors que le
+  **premier message envoyé** est un template. Un tag, une action ou une condition placés avant ne changent
+  rien : ils n'envoient rien. Seul un scénario qui ouvre par un message rapide ou un formulaire reste réservé
+  aux contacts qui viennent d'écrire. Le refus explique désormais laquelle de ces raisons s'applique, y compris
+  les deux cas moins évidents : une attente avant le premier envoi (rien ne partirait au lancement, il faut
+  plutôt programmer la campagne avec « Plus tard »), et un scénario dont la branche prise déciderait de deux
+  templates différents (impossible de savoir lequel paramétrer).
+
 - ✅ **Constructeur de workflow visuel** : graphe de blocs reliés par des flèches courbées (drag-and-drop),
   `+` / ✕ sur chaque flèche pour insérer un bloc ou couper le lien, une rangée « + Créer un bloc » (un bouton
   par type), panneau de config par bloc. Blocs proposés : **envoi de template**, **message rapide**,

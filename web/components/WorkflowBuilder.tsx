@@ -15,7 +15,7 @@ import {
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
-import { isCampaignEligible } from '@/lib/campaign-eligibility';
+import { isCampaignEligible, waitBeforeSessionMessage } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
@@ -26,6 +26,17 @@ type RFEdge = Edge;
 
 function uid(): string {
   return (globalThis.crypto?.randomUUID?.() ?? `id-${Math.random().toString(36).slice(2)}-${Date.now()}`);
+}
+
+/**
+ * Config de départ d'un bloc qu'on vient de créer. Partagée par les TROIS chemins de création (palette, lâcher
+ * dans le vide, insertion sur une flèche) : sans ça, un bloc « Action » né d'un chemin démarrait sans
+ * `actionKind` et restait un no-op silencieux tant qu'on ne l'ouvrait pas.
+ */
+function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
+  if (wfType === 'action') return { wfType, actionKind: 'add_tag' };
+  if (wfType === 'wait') return { wfType, delay: 1, unit: 'hours' };
+  return { wfType };
 }
 
 function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) => string): string {
@@ -48,6 +59,13 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     if (kind === 'set_field') return !label ? t('mettre à jour un champ…', 'update a field…') : data.valueKind === 'now' ? `${label} = ${t('maintenant', 'now')}` : `${label} = ${(data.value as string) || '…'}`;
     if (kind === 'clear_field') return label ? `${label} ${t('(vidé)', '(cleared)')}` : t('vider un champ…', 'clear a field…');
     return t('choisir une action…', 'choose an action…');
+  }
+  if (wfType === 'wait') {
+    const n = Number(data.delay ?? 0);
+    const u = String(data.unit ?? 'hours');
+    if (!Number.isFinite(n) || n <= 0) return t('durée à choisir…', 'set a duration…');
+    const lib = u === 'minutes' ? t('min', 'min') : u === 'days' ? t('j', 'd') : t('h', 'h');
+    return `${t('attendre', 'wait')} ${n} ${lib}`;
   }
   if (wfType === 'condition') {
     const n = Array.isArray(data.clauses) ? data.clauses.length : 0;
@@ -238,7 +256,7 @@ function WFEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, target
           className="nodrag nopan pointer-events-auto absolute flex gap-1"
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
         >
-          <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-insert', { detail: id }))} title={t('Insérer un bloc', 'Insert a block')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-xs text-brand-600 shadow hover:bg-brand-50">+</button>
+          <button onClick={(ev) => window.dispatchEvent(new CustomEvent('wf-edge-insert', { detail: { edgeId: id, screenX: ev.clientX, screenY: ev.clientY } }))} title={t('Insérer un bloc', 'Insert a block')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-xs text-brand-600 shadow hover:bg-brand-50">+</button>
           <button onClick={() => window.dispatchEvent(new CustomEvent('wf-edge-delete', { detail: id }))} title={t('Supprimer la flèche', 'Delete arrow')} className="flex h-5 w-5 items-center justify-center rounded-full border border-ink-300 bg-white text-[11px] text-coral shadow hover:bg-red-50">✕</button>
         </div>
       </EdgeLabelRenderer>
@@ -311,9 +329,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 
   const addNode = useCallback((wfType: WorkflowNodeType) => {
     const id = uid();
-    // Le bloc Action démarre sur « ajouter un tag » (sinon actionKind vide -> bloc no-op tant que non choisi).
-    const data = wfType === 'action' ? { wfType, actionKind: 'add_tag' } : { wfType };
-    setNodes((ns) => [...ns, { id, type: 'wf', position: { x: 60 + (ns.length % 4) * 60, y: 60 + ns.length * 30 }, data }]);
+    setNodes((ns) => [...ns, { id, type: 'wf', position: { x: 60 + (ns.length % 4) * 60, y: 60 + ns.length * 30 }, data: initialDataFor(wfType) }]);
     setSelectedId(id);
   }, [setNodes]);
 
@@ -321,11 +337,11 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   // sert à screenToFlowPosition pour placer le bloc créé au lâcher de flèche.
   const rfRef = useRef<ReactFlowInstance<RFNode, RFEdge> | null>(null);
 
-  // Crée un bloc connecté (à typer ensuite via le panneau de droite). Partagé par le drop de flèche.
+  // Crée un bloc connecté, du type DÉJÀ choisi par l'utilisateur (le panneau de droite ne type plus).
   // Réplique l'invariant « une seule arête par (source, sourceHandle) » de onConnect.
   const createConnectedNode = useCallback((wfType: WorkflowNodeType, position: { x: number; y: number }, sourceId: string, sourceHandle?: string) => {
     const nid = uid();
-    setNodes((ns) => [...ns, { id: nid, type: 'wf', position, data: { wfType } }]);
+    setNodes((ns) => [...ns, { id: nid, type: 'wf', position, data: initialDataFor(wfType) }]);
     setEdges((eds) => addEdge(
       { id: uid(), source: sourceId, target: nid, ...(sourceHandle ? { sourceHandle } : {}), ...EDGE_OPTS },
       eds.filter((e) => !(e.source === sourceId && (e.sourceHandle ?? null) === (sourceHandle ?? null))),
@@ -333,9 +349,47 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     setSelectedId(nid);
   }, [setNodes, setEdges]);
 
-  // Lâcher une flèche dans le VIDE crée un bloc à cet endroit, relié, et le sélectionne -> le panneau de droite
-  // s'ouvre sur « Type de bloc » (l'utilisateur choisit le type). Un lâcher sur un handle valide est déjà géré
-  // par onConnect (state.isValid) -> on ne double pas. On n'étend que depuis une SORTIE (fromHandle.type source).
+  /** Choix de la NATURE d'un bloc en cours de création (lâcher dans le vide, ou + sur une flèche). */
+  type Chooser =
+    | { kind: 'connect'; x: number; y: number; screenX: number; screenY: number; sourceId: string; sourceHandle?: string }
+    | { kind: 'insert'; edgeId: string; screenX: number; screenY: number };
+  const [chooser, setChooser] = useState<Chooser | null>(null);
+
+  /** Insère un bloc du type choisi AU MILIEU d'une flèche : source -> nouveau -> cible. */
+  const insertOnEdge = useCallback((edgeId: string, wfType: WorkflowNodeType) => {
+    setEdges((eds) => {
+      const edge = eds.find((e) => e.id === edgeId);
+      if (!edge) return eds;
+      const src = nodesRef.current.find((n) => n.id === edge.source);
+      const tgt = nodesRef.current.find((n) => n.id === edge.target);
+      const nid = uid();
+      const x = src && tgt ? (src.position.x + tgt.position.x) / 2 : 120;
+      const y = src && tgt ? (src.position.y + tgt.position.y) / 2 : 120;
+      setNodes((ns) => [...ns, { id: nid, type: 'wf', position: { x, y }, data: initialDataFor(wfType) }]);
+      setSelectedId(nid);
+      return [
+        ...eds.filter((e) => e.id !== edgeId),
+        // La moitié AMONT hérite du sourceHandle d'origine ('true'/'false' d'une condition, 'card:i:btn:j' d'un
+        // bouton) : sans ça, insérer un bloc sur la branche « Si réunie » la déconnecterait silencieusement.
+        { id: uid(), source: edge.source, target: nid, ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}), ...EDGE_OPTS },
+        { id: uid(), source: nid, target: edge.target, ...EDGE_OPTS },
+      ];
+    });
+  }, [setEdges, setNodes]);
+
+  /** Applique le type choisi au bloc en attente de création, puis referme la liste. */
+  const pickType = useCallback((wfType: WorkflowNodeType) => {
+    setChooser((c) => {
+      if (!c) return null;
+      if (c.kind === 'connect') createConnectedNode(wfType, { x: c.x, y: c.y }, c.sourceId, c.sourceHandle);
+      else insertOnEdge(c.edgeId, wfType);
+      return null;
+    });
+  }, [createConnectedNode, insertOnEdge]);
+
+  // Lâcher une flèche dans le VIDE ouvre la liste des natures de bloc à cet endroit ; le bloc n'est créé
+  // qu'une fois la nature choisie. Un lâcher sur un handle valide est déjà géré par onConnect (state.isValid)
+  // -> on ne double pas. On n'étend que depuis une SORTIE (fromHandle.type source).
   const onConnectEnd = useCallback<OnConnectEnd>((event, state) => {
     if (state.isValid) return;
     const from = state.fromNode;
@@ -346,8 +400,10 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     const pt = 'changedTouches' in event ? event.changedTouches[0] : event;
     if (!pt) return;
     const p = rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY });
-    createConnectedNode('template', { x: p.x - 88, y: p.y - 20 }, from.id, handle.id ?? undefined);
-  }, [createConnectedNode]);
+    // On NE DEVINE PLUS le type : on propose la liste. Le panneau de droite ne sert plus qu'à configurer,
+    // donc si on choisissait à la place de l'utilisateur, il n'aurait plus aucun moyen de corriger.
+    setChooser({ kind: 'connect', x: p.x - 88, y: p.y - 20, screenX: pt.clientX, screenY: pt.clientY, sourceId: from.id, ...(handle.id ? { sourceHandle: handle.id } : {}) });
+  }, []);
 
   // `nodes` lu via une ref pour enregistrer les listeners UNE seule fois (pas de ré-abonnement à chaque drag).
   const nodesRef = useRef(nodes);
@@ -355,26 +411,10 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 
   // Insertion d'un bloc SUR une flèche (+) : on remplace l'arête par source->nouveau->target.
   useEffect(() => {
+    // Insérer sur une flèche demande AUSSI la nature du bloc (même raison que le lâcher dans le vide).
     const onInsert = (ev: Event) => {
-      const edgeId = (ev as CustomEvent).detail as string;
-      setEdges((eds) => {
-        const edge = eds.find((e) => e.id === edgeId);
-        if (!edge) return eds;
-        const src = nodesRef.current.find((n) => n.id === edge.source);
-        const tgt = nodesRef.current.find((n) => n.id === edge.target);
-        const nid = uid();
-        const x = src && tgt ? (src.position.x + tgt.position.x) / 2 : 120;
-        const y = src && tgt ? (src.position.y + tgt.position.y) / 2 : 120;
-        setNodes((ns) => [...ns, { id: nid, type: 'wf', position: { x, y }, data: { wfType: 'action' as WorkflowNodeType, actionKind: 'add_tag' } }]);
-        setSelectedId(nid);
-        return [
-          ...eds.filter((e) => e.id !== edgeId),
-          // La moitié AMONT hérite du sourceHandle d'origine ('true'/'false' d'une condition, 'btn:<i>' d'un bouton) :
-          // sans ça, insérer un bloc sur la branche « Si réunie » la déconnecterait silencieusement au runtime.
-          { id: uid(), source: edge.source, target: nid, ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}), ...EDGE_OPTS },
-          { id: uid(), source: nid, target: edge.target, ...EDGE_OPTS },
-        ];
-      });
+      const detail = (ev as CustomEvent).detail as { edgeId: string; screenX: number; screenY: number };
+      setChooser({ kind: 'insert', edgeId: detail.edgeId, screenX: detail.screenX, screenY: detail.screenY });
     };
     const onDelete = (ev: Event) => {
       const edgeId = (ev as CustomEvent).detail as string;
@@ -466,15 +506,26 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
   // Bloc RACINE (sans arête entrante) + éligibilité CAMPAGNE, calculée avec le MÊME helper que le sélecteur de
-  // campagne (source unique : `isCampaignEligible`). L'avertissement se pose sur la RACINE, et non sur le 1er
-  // bloc « ouvrant » : la règle campagne porte sur la racine, donc « tag -> template » est inéligible alors que
-  // son bloc ouvrant est un template parfaitement valide (c'était le trou du 1er jet, relevé en revue).
+  // campagne (source unique : `isCampaignEligible`). Depuis le 2026-08-15, la règle porte sur ce qui OUVRE et
+  // non sur la racine : « tag -> template » est éligible. L'avertissement reste posé sur la racine, faute d'un
+  // bloc fautif unique (l'inéligibilité peut venir d'une branche, d'une attente ou d'une ambiguïté).
   const rootNodeId = (() => {
     if (nodes.length === 0) return null;
     const hasIncoming = new Set(edges.map((e) => e.target));
     return (nodes.find((n) => !hasIncoming.has(n.id)) ?? nodes[0]!).id;
   })();
-  const campaignEligible = nodes.length === 0 || isCampaignEligible(fromRF(nodes, edges));
+  // Mémoïsé : ces trois calculs ne dépendent QUE du graphe, alors que le composant re-rend aussi sur la
+  // sélection, l'ouverture du chooser, le statut de sauvegarde ou l'arrivée des templates.
+  const graphe = useMemo(() => fromRF(nodes, edges), [nodes, edges]);
+  const campaignEligible = nodes.length === 0 || isCampaignEligible(graphe);
+  // Montage qui ne partira JAMAIS : attente >= 24 h puis message hors template. Nommé au constructeur plutôt
+  // que découvert par le silence en production. N'empêche PAS l'enregistrement (le builder sauve en continu).
+  const montageImpossible = useMemo(() => waitBeforeSessionMessage(graphe), [graphe]);
+  const nomDuBloc = (id: string): string => {
+    const n = nodes.find((x) => x.id === id);
+    const propre = String(n?.data?.name ?? '').trim();
+    return propre || t(...nodeMetaOf(((n?.data?.wfType as WorkflowNodeType) ?? 'template')).label);
+  };
 
   // Auto-arranger : recalcule les positions (couches horizontales) et recadre. Le changement de position est
   // capté par l'auto-save existant (effet sur [nodes, edges]) -> persistance automatique, aucun appel API dédié.
@@ -535,6 +586,16 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
         </div>
       </div>
 
+      {montageImpossible && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <b>{t('Ce montage ne partira pas.', 'This setup will not be sent.')}</b>{' '}
+          {t(
+            `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » attend 24 h ou plus, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n'accepte plus qu'un template. Remplace ce bloc par un envoi de template, ou raccourcis l'attente.`,
+            `Block “${nomDuBloc(montageImpossible.waitNodeId)}” waits 24h or more, then “${nomDuBloc(montageImpossible.messageNodeId)}” sends a non-template message. After 24h without a new message from the contact, WhatsApp only accepts templates. Replace that block with a template, or shorten the wait.`,
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:flex-row">
         <div className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
           <TemplatesCtx.Provider value={templates}>
@@ -558,6 +619,36 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             <Controls showInteractive={false} />
           </ReactFlow>
           </TemplatesCtx.Provider>
+          {/* Choix de la NATURE du bloc qu'on vient de créer. Même liste que la palette (NODE_ORDER, source
+              unique) : c'est le SEUL endroit où l'on choisit un type, le panneau de droite ne fait que configurer. */}
+          {chooser && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setChooser(null)} />
+              <div
+                data-testid="node-type-chooser"
+                className="fixed z-50 w-52 rounded-xl border border-ink-200 bg-white p-1.5 shadow-lg"
+                // Bornée à la fenêtre : lâcher une flèche en bas ou à droite du canevas sortait la liste de
+                // l'écran, donc rendait le bloc impossible à choisir.
+                style={{
+                  left: Math.max(8, Math.min(chooser.screenX, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 220)),
+                  top: Math.max(8, Math.min(chooser.screenY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 300)),
+                }}
+              >
+                <p className="px-2 py-1 text-[11px] font-medium text-ink-500">{t('Quel bloc ?', 'Which block?')}</p>
+                {NODE_ORDER.map((nt) => (
+                  <button
+                    key={nt}
+                    data-testid={`node-type-${nt}`}
+                    onClick={() => pickType(nt)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-ink-700 transition hover:bg-brand-50"
+                  >
+                    <span>{NODE_META[nt].emoji}</span>
+                    <span>{t(...NODE_META[nt].label)}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
@@ -580,7 +671,7 @@ function ConfigPanel({
   node: RFNode;
   /** Ce bloc est-il la RACINE du scénario (sans arête entrante) ? C'est lui que la règle campagne regarde. */
   isRoot: boolean;
-  /** Le scénario est-il lançable en campagne broadcast (racine = template configuré) ? */
+  /** Le scénario est-il lançable en campagne broadcast (ce qui OUVRE doit être un template configuré) ? */
   campaignEligible: boolean;
   onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
@@ -605,8 +696,8 @@ function ConfigPanel({
           {wfType === 'template'
             ? t('Choisis le template de ce bloc : tant qu’il est vide, ce scénario ne pourra pas être lancé en campagne.',
                 'Pick this block’s template: while it is empty, this scenario cannot be launched as a campaign.')
-            : t('Ce scénario ne pourra pas être lancé en campagne (une campagne part sur une audience froide, il faut un envoi de template en PREMIER bloc). Il reste utilisable quand le contact vient d’écrire. Pour l’ouvrir aux campagnes, mets un bloc « Envoi template » en tête.',
-                'This scenario cannot be launched as a campaign (a campaign targets a cold audience, so the FIRST block must be a template send). It stays usable when the contact has just written. To open it to campaigns, put a “Send template” block first.')}
+            : t('Ce scénario ne pourra pas être lancé en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template. Un tag, une action ou une condition avant lui ne posent aucun problème. Il reste utilisable quand le contact vient d’écrire.',
+                'This scenario cannot be launched as a campaign: a campaign targets a cold audience, so the FIRST message sent must be a template. A tag, an action or a condition before it is fine. It stays usable when the contact has just written.')}
         </p>
       )}
 
@@ -615,17 +706,42 @@ function ConfigPanel({
         <input value={(d.name as string) ?? ''} maxLength={64} onChange={(e) => onPatch({ name: e.target.value })} className={cls} placeholder={t('optionnel (ex. « Relance J+3 »)', 'optional (e.g. “Follow-up D+3”)')} />
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-medium text-ink-600">{t('Type de bloc', 'Block type')}</label>
-        <select value={wfType} onChange={(e) => onPatch({ wfType: e.target.value })} className={`${cls} bg-white`}>
-          {/* Bloc legacy (tag/field hors palette) : on garde son type comme option pour ne pas afficher un select vide. */}
-          {!NODE_ORDER.includes(wfType) && <option value={wfType}>{t(...nodeMetaOf(wfType).label)}</option>}
-          {NODE_ORDER.map((nt) => <option key={nt} value={nt}>{t(...NODE_META[nt].label)}</option>)}
-        </select>
+      {/* La NATURE d'un bloc se choisit à sa CRÉATION (palette, ou liste proposée quand on tire une flèche) et
+          ne se change plus ici : ce panneau ne sert qu'à configurer. Changer le type d'un bloc déjà relié
+          laissait derrière lui de la config d'un autre type et des sorties devenues fausses. */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs">{nodeMetaOf(wfType).emoji}</span>
+        <span className="text-xs font-medium text-ink-600">{t(...nodeMetaOf(wfType).label)}</span>
         {typeof d.code === 'string' && d.code !== '' && (
-          <p className="mt-1 font-mono text-[10px] text-ink-300" title={t('Code public (API) du bloc, posé au 1er enregistrement', 'Public code (API) of the block, set on first save')}>{d.code}</p>
+          <span className="ml-auto font-mono text-[10px] text-ink-300" title={t('Code public (API) du bloc, posé au 1er enregistrement', 'Public code (API) of the block, set on first save')}>{d.code}</span>
         )}
       </div>
+
+      {wfType === 'wait' && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Attendre avant le bloc suivant', 'Wait before the next block')}</label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min={1}
+              value={Number(d.delay ?? 1)}
+              onChange={(e) => onPatch({ delay: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+              className={`${cls} w-24`}
+            />
+            <select value={String(d.unit ?? 'hours')} onChange={(e) => onPatch({ unit: e.target.value })} className={`${cls} bg-white`}>
+              <option value="minutes">{t('minutes', 'minutes')}</option>
+              <option value="hours">{t('heures', 'hours')}</option>
+              <option value="days">{t('jours', 'days')}</option>
+            </select>
+          </div>
+          <p className="mt-1 text-[11px] text-ink-400">
+            {t("Le délai est tenu à la minute près environ (le réveil des parcours se fait par balayage). Maximum 30 jours.", 'The delay is accurate to about a minute (parcours are woken by a sweep). Maximum 30 days.')}
+          </p>
+          <p className="mt-1 text-[11px] text-amber-700">
+            {t("Après une attente, seul un envoi de TEMPLATE peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a TEMPLATE can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')}
+          </p>
+        </div>
+      )}
 
       {wfType === 'template' && (
         <div>

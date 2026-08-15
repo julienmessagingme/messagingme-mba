@@ -6,7 +6,7 @@ import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberR
 import type { CampaignCategory } from '../campaign/types';
 import { validateParamMapping } from '../crm/template';
 import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
-import { entryNode } from '../workflow/engine';
+import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
@@ -134,12 +134,26 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (!graph) {
         return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
       }
-      // Le 1er bloc (entrée) DOIT être un envoi de template : c'est lui qui porte les variables mappées à la
-      // campagne. Sinon le mapping n'a pas de cible et l'envoi partirait sans être personnalisé -> on bloque.
-      const entryId = entryNode(graph);
-      const entry = entryId ? graph.nodes.find((n) => n.id === entryId) : undefined;
-      if (!entry || entry.type !== 'template') {
-        return reply.code(400).send({ error: 'Le workflow doit commencer par un envoi de template.' });
+      // Une campagne part sur une audience FROIDE : le 1er message doit être un template. Ce n'est PAS la même
+      // chose qu'« exiger un bloc template en entrée » : un tag, une action ou une condition avant le template
+      // n'envoient rien et ne changent donc rien. On juge sur ce qui OUVRE réellement, pas sur le type du 1er bloc.
+      const scan = scanOpening(graph);
+      if (scan.sessionOpen) {
+        return reply.code(400).send({ error: "Ce scénario ouvre par un message rapide ou un formulaire, qui exige que le contact ait écrit dans les 24 h. Une campagne part sur une audience froide : il lui faut un envoi de template en ouverture." });
+      }
+      if (scan.waitBeforeTemplate) {
+        return reply.code(400).send({ error: "Ce scénario attend avant son premier envoi : rien ne partirait au lancement. Pour différer une campagne, utilise « Plus tard » au moment de la lancer." });
+      }
+      if (!scan.firstTemplate) {
+        return reply.code(400).send({ error: 'Le scénario doit envoyer un template en ouverture.' });
+      }
+      if (scan.ambiguousTemplate) {
+        return reply.code(400).send({ error: "Ce scénario peut ouvrir sur plusieurs templates différents : impossible de savoir lequel paramétrer pour la campagne." });
+      }
+      // `unnamedOpeningTemplate` couvre AUSSI les branches : une condition dont une sortie mène à un template
+      // sans nom laisserait ces destinataires sans message, tout en les comptant « envoyés ».
+      if (scan.unnamedOpeningTemplate || String(scan.firstTemplate.data.templateName ?? '').trim() === '') {
+        return reply.code(400).send({ error: "Un template d'ouverture du scénario n'est pas encore choisi." });
       }
     } else {
       if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName ou workflowId requis' });

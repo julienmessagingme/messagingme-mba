@@ -193,16 +193,64 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     await app.close();
   });
 
-  it('workflow dont le 1er bloc n\'est PAS un template -> 400, rien inséré', async () => {
+  /** Lance une création de campagne sur un graphe de scénario donné. */
+  const postAvecGraphe = async (graph: WorkflowGraph) => {
     const repo = new FakeRepo(contacts);
-    const app = appWith(repo, {
-      workflowGraph: { nodes: [{ id: 'n1', type: 'tag', position: { x: 0, y: 0 }, data: { tag: 'vip' } }], edges: [] },
-    });
+    const app = appWith(repo, { workflowGraph: graph });
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wf1' } });
-    expect(res.statusCode).toBe(400);
-    expect(res.json<{ error: string }>().error).toMatch(/commencer par un envoi de template/);
-    expect(repo.created).toHaveLength(0);
     await app.close();
+    return { res, repo };
+  };
+  const nd = (id: string, type: string, data: Record<string, unknown> = {}) => ({ id, type: type as WorkflowGraph['nodes'][number]['type'], position: { x: 0, y: 0 }, data });
+  const ed = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
+
+  it('workflow SANS aucun envoi de template -> 400, rien inséré', async () => {
+    const { res, repo } = await postAvecGraphe({ nodes: [nd('n1', 'tag', { tag: 'vip' })], edges: [] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/template en ouverture/);
+    expect(repo.created).toHaveLength(0);
+  });
+
+  it('workflow « action PUIS template » -> ACCEPTÉ (règle élargie du 2026-08-15)', async () => {
+    // Un tag n'envoie rien : l'ouverture reste le template. Exiger un template EN ENTRÉE était trop strict.
+    const { res } = await postAvecGraphe({
+      nodes: [nd('a', 'tag', { tag: 'vip' }), nd('t', 'template', { templateName: 'promo', language: 'fr' })],
+      edges: [ed('a', 't')],
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('workflow qui OUVRE par un message rapide -> 400 en nommant la cause', async () => {
+    const { res } = await postAvecGraphe({
+      nodes: [nd('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] }), nd('t', 'template', { templateName: 'promo' })],
+      edges: [ed('q', 't')],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/message rapide ou un formulaire/);
+  });
+
+  it('workflow qui ATTEND avant son 1er envoi -> 400 (rien ne partirait au lancement)', async () => {
+    const { res } = await postAvecGraphe({
+      nodes: [nd('w', 'wait', { delay: 2, unit: 'hours' }), nd('t', 'template', { templateName: 'promo' })],
+      edges: [ed('w', 't')],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/Plus tard/);
+  });
+
+  it('workflow pouvant ouvrir sur DEUX templates différents -> 400 (mapping ambigu)', async () => {
+    const { res } = await postAvecGraphe({
+      nodes: [nd('c', 'condition', {}), nd('t1', 'template', { templateName: 'promo_a' }), nd('t2', 'template', { templateName: 'promo_b' })],
+      edges: [{ id: 'e1', source: 'c', target: 't1', sourceHandle: 'true' }, { id: 'e2', source: 'c', target: 't2', sourceHandle: 'false' }],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/plusieurs templates/);
+  });
+
+  it('workflow dont le template d’ouverture n’est pas choisi -> 400', async () => {
+    const { res } = await postAvecGraphe({ nodes: [nd('t', 'template', {})], edges: [] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/pas encore choisi/);
   });
 
   it('campagne WORKFLOW avec paramMapping : résout les variables du 1er template + saute les contacts sans la valeur', async () => {

@@ -13,6 +13,7 @@ import {
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
+import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runRetrySweep } from './campaign/retry-sweep';
 import { flagContactUnreachable } from './crm/hubspot-import';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
@@ -199,6 +200,10 @@ async function main(): Promise<void> {
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
     evalContext: buildEvalContext,
+    // Fenêtre de service 24 h, relue à la REPRISE d'un parcours endormi (bloc Attente). Elle court depuis le
+    // dernier message DU CONTACT : même une attente courte peut la voir se fermer, donc on la LIT, on ne la
+    // déduit pas de la durée d'attente. Même calcul que l'inbox (source unique).
+    isWindowOpen: async (tenant, waId) => (await inboxStore.getWindowOpenByWaIds(tenant, [waId])).get(waId) === true,
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
     // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime — y compris par
     // un ancien workflow non re-sauvegardé — atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.
@@ -654,6 +659,35 @@ async function main(): Promise<void> {
   void scheduleSweep();
   const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
   scheduleSweeper.unref();
+
+  // Sweeper de RÉVEIL : reprend les parcours endormis sur un bloc « Attente » arrivé à échéance. Même patron
+  // que le sweeper de planification. La granularité du délai vaut cet intervalle : une attente de 5 min repart
+  // entre 5 et 6 min, ce que l'UI annonce comme « environ ».
+  // Garde de RÉ-ENTRANCE : `setInterval` n'attend pas la passe précédente. Sans elle, une passe lente (lot de
+  // 50 reprises + relances Meta) verrait la suivante démarrer et re-claimer des runs dont le bail a expiré.
+  let wakeEnCours = false;
+  const wakeSweep = async (): Promise<void> => {
+    if (wakeEnCours) return;
+    wakeEnCours = true;
+    try {
+      const n = await runWorkflowWakeSweep({
+        claimDue: (limit) => runStore.claimDueSleeping(limit),
+        resume: (run) => workflowExecutor.resume(run),
+        closeStale: () => runStore.closeStaleSleeping(),
+      });
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`wake-sweep: ${n} parcours repris après attente`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('wake-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:wake', `wake-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    } finally {
+      wakeEnCours = false;
+    }
+  };
+  void wakeSweep();
+  const wakeSweeper = setInterval(() => void wakeSweep(), config.WORKFLOW_WAKE_SWEEP_INTERVAL_MS);
+  wakeSweeper.unref();
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
   // injoignable dans HubSpot au 2e échec). Gaté par le canal service (le flag injoignable en dépend) : monté seulement

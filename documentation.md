@@ -414,11 +414,33 @@ touchée, les uuid internes restent la source de vérité des relations.
   cta du flow) -> dep executor `sendFlow` -> worker -> `MetaClient.sendFlowMessage` (interactive/flow,
   `flow_message_version:'3'`, `flow_token` jetable jamais vide `${waId}-${Date.now()}` (corrélation par `_ref`,
   pas le token), `flow_action_payload.screen = FORM`, `mode:'draft'` dispo pour tester un brouillon).
-  **Garde fenêtre 24 h à 3 étages** : `opensOutsideServiceWindow` (engine, détecte flow/quick_message en
-  OUVERTURE y compris derrière une chaîne tag/field) -> 400 au save du graphe (POST+PATCH workflows) ; skip
-  défensif + console.error dans `executor.start()` (graphes antérieurs) ; badge rouge UI sur le node
-  d'ouverture RÉEL (traversée des blocs synchrones dans WorkflowBuilder). L'avance du run sur `nfm_reply`
-  est la mécanique existante (fallback 1re arête, dédup lastMessageId) : inchangée.
+  **Garde fenêtre 24 h** (mise à jour 2026-08-15) : `scanOpening` (engine, PUR) fait UNE traversée en largeur
+  depuis l'entrée et rend 5 faits sur l'OUVERTURE : message de session avant tout template, 1er template
+  atteignable, ambiguïté (deux templates différents selon la branche), attente avant le 1er template, template
+  d'ouverture sans nom. `opensOutsideServiceWindow` n'en est plus qu'un appelant.
+  L'enregistrement du graphe reste VOLONTAIREMENT permissif (le builder sauve en continu) ; les gardes sont
+  `POST /campaigns` (400 en nommant la cause) et le runtime (`executor.runFrom`). Côté front, le miroir vit
+  dans `web/lib/campaign-eligibility.ts` (frontière de build : aucun module partagé) et
+  `tests/web-campaign-eligibility.test.ts` compare les DEUX implémentations sur les mêmes graphes.
+
+  **Bloc « Attente » (2026-08-15, migration 0054)** : un parcours peut dormir jusqu'à une échéance.
+  - moteur PUR : `waitDurationMs` (minutes/heures/jours, plafond 30 j, durée absente = passe-plat) ; `walk`
+    rend `{ status: 'sleeping', nodeId, resumeInMs }`.
+  - base : `workflow_runs.resume_at` + statut `sleeping` (CHECK élargi) + index partiel `(resume_at)`.
+  - réveil : `wake-sweep.ts` (miroir de `campaign/schedule-sweep`) toutes les
+    `WORKFLOW_WAKE_SWEEP_INTERVAL_MS` (60 s = la précision réelle d'un délai).
+  - ⚠️ **le claim est un BAIL** : `resume_at = now() + 5 min`, statut INCHANGÉ à `sleeping`. Passer à `waiting`
+    exposerait le run à `advance` (un message du contact pendant la reprise rejouerait le même bloc = double
+    envoi) et un worker tué laisserait un run figé, ressuscitable par n'importe quel message. Avec le bail, un
+    worker tué rend simplement le parcours dû 5 minutes plus tard.
+  - un run endormi OCCUPE le contact (`hasRecentWaitingRun` compte `sleeping`), sinon une automation lancerait
+    un 2e parcours en parallèle et les deux écriraient au réveil.
+  - `executor.resume` : gardes `mayAct`, bloc suivant existant, puis fenêtre 24 h RELUE en base
+    (`getWindowOpenByWaIds`) si la suite envoie un message de session -> sinon on n'envoie pas et on remonte en
+    inbox. Un template, lui, part hors fenêtre.
+  - chaîne d'attentes cyclique : bornée par l'âge du run (90 j) dans le claim + `closeStaleSleeping`.
+  - `waitBeforeSessionMessage` (pur, + miroir front) détecte « attente >= 24 h puis message de session » pour
+    l'afficher dans le builder ; cumul plafonné à 24 h, ce qui garantit la terminaison sur graphe cyclique.
 
 ## Lot UX 6 clusters (2026-07-28, migration 0049)
 

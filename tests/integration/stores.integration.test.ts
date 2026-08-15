@@ -669,6 +669,94 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('claimDueSleeping : DEUX balayages simultanés ne réveillent le même parcours QU’UNE fois', async () => {
+    // C'est LA garantie anti-doublon du bloc Attente : sans claim atomique, deux workers reprendraient le même
+    // parcours et le client recevrait deux fois le message. Le test exerce le vrai SQL, en concurrence réelle.
+    const runStore = new PgWorkflowRunStore(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'WF attente', { nodes: [], edges: [] });
+
+    const echeance = new Date(Date.now() - 60_000); // due depuis une minute
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const { id } = await runStore.start(tenantId, wfId, `3360000000${i}`, null, { currentNode: 'w', status: 'sleeping', resumeAt: echeance });
+      ids.push(id);
+    }
+
+    // Deux balayages EN MÊME TEMPS.
+    const [a, b] = await Promise.all([runStore.claimDueSleeping(50), runStore.claimDueSleeping(50)]);
+    const pris = [...a, ...b].map((r) => r.id).filter((id) => ids.includes(id));
+    expect(new Set(pris).size).toBe(pris.length);        // aucun parcours pris deux fois
+    expect(new Set(pris)).toEqual(new Set(ids));         // et aucun oublié
+
+    // Un 3e balayage ne rend rien : le bail (échéance repoussée) les a sortis des dus.
+    const encore = (await runStore.claimDueSleeping(50)).map((r) => r.id).filter((id) => ids.includes(id));
+    expect(encore).toEqual([]);
+
+    // Le run reste `sleeping` PENDANT la reprise, il ne passe PAS à `waiting`. C'est ce qui l'empêche d'être
+    // vu par `findWaitingByWaId` : sinon un message du contact pendant la reprise rejouerait le même bloc et
+    // enverrait deux fois. L'échéance est repoussée dans le futur (bail), donc un worker tué le rendra dû à
+    // nouveau au lieu de le perdre.
+    const etats = await pool.query<{ status: string; resume_at: Date | null }>(
+      `select status, resume_at from workflow_runs where id = any($1::uuid[])`, [ids],
+    );
+    for (const row of etats.rows) {
+      expect(row.status).toBe('sleeping');
+      expect(row.resume_at).not.toBeNull();
+      expect(row.resume_at!.getTime()).toBeGreaterThan(Date.now());
+    }
+
+    // Et il est INVISIBLE de l'avance par message entrant tant qu'il dort.
+    for (let i = 0; i < 5; i += 1) {
+      expect(await runStore.findWaitingByWaId(tenantId, `3360000000${i}`)).toBeNull();
+    }
+    await wfStore.remove(wfId, tenantId);
+  });
+
+  it('un parcours ENDORMI occupe le contact (sinon une automation en lancerait un 2e en parallèle)', async () => {
+    const runStore = new PgWorkflowRunStore(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'WF occupe', { nodes: [], edges: [] });
+    const wa = '33688888888';
+    await runStore.start(tenantId, wfId, wa, null, { currentNode: 'w', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
+    // Sans cette prise en compte, les deux parcours écriraient au client à leur réveil.
+    expect(await runStore.hasRecentWaitingRun(tenantId, wa, 60_000)).toBe(true);
+    await wfStore.remove(wfId, tenantId);
+  });
+
+  it('closeStaleSleeping : clôt un parcours dormant trop vieux, épargne un récent (le SQL tourne pour de vrai)', async () => {
+    // Ce SQL n'était exercé par aucun test : s'il échouait, le sweeper aurait logué une erreur toutes les 60 s
+    // sans jamais nettoyer, en silence.
+    const runStore = new PgWorkflowRunStore(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'WF vieux', { nodes: [], edges: [] });
+    const echeance = new Date(Date.now() + 3_600_000);
+    const { id: vieux } = await runStore.start(tenantId, wfId, '33677777771', null, { currentNode: 'w', status: 'sleeping', resumeAt: echeance });
+    const { id: recent } = await runStore.start(tenantId, wfId, '33677777772', null, { currentNode: 'w', status: 'sleeping', resumeAt: echeance });
+    await pool.query(`update workflow_runs set created_at = now() - interval '100 days' where id = $1`, [vieux]);
+
+    expect(await runStore.closeStaleSleeping()).toBeGreaterThanOrEqual(1);
+    const etats = await pool.query<{ id: string; status: string; resume_at: Date | null }>(
+      `select id, status, resume_at from workflow_runs where id = any($1::uuid[])`, [[vieux, recent]],
+    );
+    const parId = new Map(etats.rows.map((r) => [r.id, r]));
+    expect(parId.get(vieux)).toMatchObject({ status: 'done' });
+    expect(parId.get(vieux)!.resume_at).toBeNull();
+    expect(parId.get(recent)).toMatchObject({ status: 'sleeping' }); // le récent n'est pas touché
+    await wfStore.remove(wfId, tenantId);
+  });
+
+  it('claimDueSleeping : un parcours PAS ENCORE dû n’est pas réveillé', async () => {
+    const runStore = new PgWorkflowRunStore(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'WF attente future', { nodes: [], edges: [] });
+    const { id } = await runStore.start(tenantId, wfId, '33699999999', null, {
+      currentNode: 'w', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000),
+    });
+    expect((await runStore.claimDueSleeping(50)).map((r) => r.id)).not.toContain(id);
+    await wfStore.remove(wfId, tenantId);
+  });
+
   it('PgWorkflowStore : insert/list/getById/update (graphe jsonb round-trip)/remove', async () => {
     const store = new PgWorkflowStore(pool);
     const graph = {
