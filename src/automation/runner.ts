@@ -67,6 +67,7 @@ export interface AutomationRunnerDeps {
 function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
   if (ev.kind === 'message') return ['keyword', 'new_contact'];
   if (ev.kind === 'tag_added') return ['tag_added'];
+  if (ev.kind === 'hubspot_deal_stage') return ['hubspot_deal_stage'];
   return ['conversation_analyzed'];
 }
 

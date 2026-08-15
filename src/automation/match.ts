@@ -20,9 +20,14 @@ import type { ConditionGroup } from '../workflow/conditions';
  * `conversation_analyzed` (E.2) vient du point de sortie de l'analyse (`OnConversationAnalyzed`). Il est donc
  * DIFFÉRÉ par construction : l'analyse tourne quand la conversation est inactive, pas à chaud sur un message.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed'] as const;
+/**
+ * `hubspot_deal_stage` : un deal du CRM vient d'atteindre une ÉTAPE précise. Réglé par IDENTIFIANT
+ * d'étape, jamais par libellé : un client qui renomme son étape dans HubSpot casserait sinon son
+ * automation sans que rien ne le dise. Le libellé n'est stocké que pour l'affichage.
+ */
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage'] as const;
 /** Ce que l'UI/API autorise à CRÉER aujourd'hui (sous-ensemble de ce que le moteur sait faire). */
-export const AUTOMATION_TRIGGER_KINDS_CREATABLE = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed'] as const;
+export const AUTOMATION_TRIGGER_KINDS_CREATABLE = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage'] as const;
 export function isCreatableTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS_CREATABLE as readonly string[]).includes(v);
 }
@@ -54,7 +59,13 @@ export type AutomationEvent =
   | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean }
   | { kind: 'tag_added'; waId: string; tag: string }
   /** Une conversation vient d'être analysée : `sentiment` catégoriel (pas de score numérique) + `resolved`. */
-  | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean };
+  | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean }
+  /**
+   * Un deal HubSpot a changé d'étape. `stageId` et `pipelineId` sont les identifiants INTERNES de HubSpot,
+   * stables au renommage. Le contact est déjà résolu en `waId` par le connecteur : sans numéro exploitable,
+   * l'événement n'atteint jamais mba (rien à joindre).
+   */
+  | { kind: 'hubspot_deal_stage'; waId: string; pipelineId: string; stageId: string };
 
 /** Minuscules, sans accents, espaces resserrés : même esprit que la recherche de blocs (web/lib/node-search). */
 export function normalizeText(v: string): string {
@@ -97,6 +108,18 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     if (ev.kind !== 'tag_added') return false;
     const wanted = normalizeText(String(a.triggerConfig.tag ?? ''));
     return wanted !== '' && normalizeText(ev.tag) === wanted;
+  }
+  if (a.triggerKind === 'hubspot_deal_stage') {
+    if (ev.kind !== 'hubspot_deal_stage') return false;
+    // Comparaison sur les IDENTIFIANTS, bruts : ce ne sont pas des libellés saisis par un humain, donc aucune
+    // normalisation à faire, et une égalité stricte est exactement ce qu'on veut. Étape non configurée ->
+    // n'attrape RIEN (même doctrine que le tag vide : une automation inerte plutôt qu'une automation folle).
+    const stage = String(a.triggerConfig.stageId ?? '').trim();
+    if (stage === '' || stage !== ev.stageId) return false;
+    // Pipeline facultatif : renseigné, il restreint ; absent, l'étape suffit (un id d'étape est déjà unique
+    // chez HubSpot, le pipeline ne sert qu'à lever une ambiguïté d'affichage).
+    const pipeline = String(a.triggerConfig.pipelineId ?? '').trim();
+    return pipeline === '' || pipeline === ev.pipelineId;
   }
   if (a.triggerKind === 'conversation_analyzed') {
     if (ev.kind !== 'analysis') return false;

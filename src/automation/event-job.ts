@@ -44,6 +44,14 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
       event: { kind: 'analysis', waId, sentiment: typeof e.sentiment === 'string' ? e.sentiment : '', resolved: e.resolved === true },
     };
   }
+  if (e.kind === 'hubspot_deal_stage') {
+    // Identifiants HubSpot bruts. Les deux sont EXIGÉS : un événement sans étape ne peut correspondre à
+    // aucune automation, autant l'écarter à l'entrée plutôt que de le promener jusqu'au matching.
+    const stageId = typeof e.stageId === 'string' ? e.stageId.trim() : '';
+    const pipelineId = typeof e.pipelineId === 'string' ? e.pipelineId.trim() : '';
+    if (stageId === '' || pipelineId === '') return null;
+    return { tenantId: j.tenantId, event: { kind: 'hubspot_deal_stage', waId, pipelineId, stageId } };
+  }
   // `message` n'a rien à faire dans la file : il est traité en direct dans le webhook, où le contexte
   // (isNewContact, consommation du message) n'existe que le temps du job. L'accepter ici ouvrirait un second
   // chemin de déclenchement au comportement subtilement différent.

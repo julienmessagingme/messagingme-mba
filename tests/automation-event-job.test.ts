@@ -52,3 +52,35 @@ describe('parseAutomationEventJob', () => {
     expect(AUTOMATION_EVENT_QUEUE).toBe('automation-event');
   });
 });
+
+/**
+ * Événement « étape de deal HubSpot » transporté par la file. Il vient d'un CRM extérieur, donc le payload
+ * est traité comme non fiable : les deux identifiants sont exigés, et un payload boiteux est écarté à
+ * l'entrée plutôt que promené jusqu'au matching.
+ */
+describe('parseAutomationEventJob : étape de deal HubSpot', () => {
+  const ok = { tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: 'p1', stageId: 's-devis' } };
+
+  it('payload complet -> job valide', () => {
+    expect(parseAutomationEventJob(ok)).toEqual(ok);
+  });
+
+  it('identifiants rognés (espaces autour) -> nettoyés', () => {
+    const brut = { tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: ' p1 ', stageId: ' s-devis ' } };
+    expect(parseAutomationEventJob(brut)).toEqual(ok);
+  });
+
+  it('étape ou pipeline manquant -> écarté (aucune automation ne pourrait correspondre)', () => {
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: 'p1' } })).toBeNull();
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', stageId: 's1' } })).toBeNull();
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: '  ', stageId: 's1' } })).toBeNull();
+  });
+
+  it('sans waId -> écarté : sans contact joignable il n’y a rien à déclencher', () => {
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', pipelineId: 'p1', stageId: 's1' } })).toBeNull();
+  });
+
+  it('identifiants NON textuels -> écartés, jamais coercés en chaîne', () => {
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: 1, stageId: 2 } })).toBeNull();
+  });
+});

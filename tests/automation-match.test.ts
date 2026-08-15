@@ -155,3 +155,53 @@ describe('anti-rebond', () => {
     expect(isInCooldown(ago(1000), 0, 3600, T)).toBe(false);
   });
 });
+
+/**
+ * Déclencheur « étape de deal HubSpot ».
+ *
+ * Le point qui compte et qui ne se voit pas à la lecture : la correspondance se fait sur l'IDENTIFIANT
+ * d'étape, jamais sur son libellé. Un client qui renomme « Devis envoyé » en « Proposition envoyée » dans
+ * HubSpot ne doit RIEN casser. Un déclencheur sur libellé aurait cessé de fonctionner en silence.
+ */
+describe('matchesTrigger : étape de deal HubSpot', () => {
+  const dealAuto = (cfg: Record<string, unknown>): AutomationRow =>
+    auto({ triggerKind: 'hubspot_deal_stage', triggerConfig: cfg });
+  const ev = (stageId: string, pipelineId = 'p1'): AutomationEvent =>
+    ({ kind: 'hubspot_deal_stage', waId: '33600', pipelineId, stageId });
+
+  it('même étape -> déclenche', () => {
+    expect(matchesTrigger(dealAuto({ pipelineId: 'p1', stageId: 's-devis' }), ev('s-devis'))).toBe(true);
+  });
+
+  it('autre étape du même pipeline -> ne déclenche pas', () => {
+    expect(matchesTrigger(dealAuto({ pipelineId: 'p1', stageId: 's-devis' }), ev('s-gagne'))).toBe(false);
+  });
+
+  it('même étape mais AUTRE pipeline -> ne déclenche pas', () => {
+    expect(matchesTrigger(dealAuto({ pipelineId: 'p1', stageId: 's-devis' }), ev('s-devis', 'p2'))).toBe(false);
+  });
+
+  it('pipeline non renseigné -> l’étape suffit (elle est déjà unique chez HubSpot)', () => {
+    expect(matchesTrigger(dealAuto({ stageId: 's-devis' }), ev('s-devis', 'peu-importe'))).toBe(true);
+  });
+
+  it('étape NON configurée -> ne déclenche JAMAIS (automation inerte, pas automation folle)', () => {
+    expect(matchesTrigger(dealAuto({ pipelineId: 'p1' }), ev('s-devis'))).toBe(false);
+    expect(matchesTrigger(dealAuto({ pipelineId: 'p1', stageId: '   ' }), ev('s-devis'))).toBe(false);
+  });
+
+  it('le LIBELLÉ n’entre pas dans la décision : un renommage côté HubSpot ne casse rien', () => {
+    const a = dealAuto({ pipelineId: 'p1', stageId: 's-devis', stageLabel: 'Devis envoyé' });
+    // L'événement ne transporte aucun libellé, et l'automation garde le sien, périmé : ça marche quand même.
+    expect(matchesTrigger(a, ev('s-devis'))).toBe(true);
+  });
+
+  it('un autre type d’événement ne l’active pas, et il n’attrape pas les autres déclencheurs', () => {
+    expect(matchesTrigger(dealAuto({ stageId: 's-devis' }), { kind: 'tag_added', waId: '33600', tag: 's-devis' })).toBe(false);
+    expect(matchesTrigger(auto({ triggerKind: 'tag_added', triggerConfig: { tag: 'vip' } }), ev('s-devis'))).toBe(false);
+  });
+
+  it('le type est créable depuis l’API/l’écran', () => {
+    expect(isCreatableTriggerKind('hubspot_deal_stage')).toBe(true);
+  });
+});

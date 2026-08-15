@@ -68,6 +68,17 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     if (cfg.unresolvedOnly !== undefined && typeof cfg.unresolvedOnly !== 'boolean') return 'unresolvedOnly (booléen)';
     return null;
   }
+  if (kind === 'hubspot_deal_stage') {
+    // Sans étape, l'automation partirait sur TOUT changement d'étape du portail : on refuse plutôt que de
+    // deviner. L'identifiant vient de HubSpot et est opaque : on vérifie qu'il est là, pas sa forme.
+    if (!nonEmpty(cfg.stageId)) return 'stageId requis pour un déclencheur « étape de deal »';
+    if (!nonEmpty(cfg.pipelineId)) return 'pipelineId requis pour un déclencheur « étape de deal »';
+    // `stageLabel` est FACULTATIF et purement décoratif : il réaffiche « Devis envoyé » dans la liste sans
+    // rappeler HubSpot. Il n'entre JAMAIS dans le matching, sinon un renommage côté HubSpot casserait
+    // l'automation en silence, ce qui est précisément ce qu'on cherche à éviter.
+    if (cfg.stageLabel !== undefined && typeof cfg.stageLabel !== 'string') return 'stageLabel (texte)';
+    return null;
+  }
   return null; // new_contact : aucune config
 }
 

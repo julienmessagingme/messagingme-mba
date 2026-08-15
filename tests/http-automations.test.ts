@@ -76,6 +76,9 @@ describe('routes automations', () => {
       { ...VALID, triggerConfig: { keywords: [] } },                 // aucun mot-clé -> ne partirait jamais
       { ...VALID, triggerConfig: { keywords: ['  '] } },             // que du vide
       { ...VALID, triggerConfig: { keywords: ['rdv'], mode: 'nawak' } },
+      { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1' } },            // étape manquante -> partirait sur TOUTES les étapes
+      { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { stageId: 's1' } },                // pipeline manquant
+      { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's1', stageLabel: 42 } },
       { ...VALID, workflowId: '' },
       { ...VALID, cooldownSeconds: -1 },
       { ...VALID, cooldownSeconds: 1.5 },
@@ -96,12 +99,15 @@ describe('routes automations', () => {
       { ...VALID, triggerKind: 'tag_added', triggerConfig: { tag: 'rappeler' } },
       { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { sentiment: 'negatif', unresolvedOnly: true } },
       { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: {} }, // sans filtre : choix explicite
+      // Étape de deal HubSpot : les deux identifiants, plus un libellé purement décoratif.
+      { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's-devis', stageLabel: 'Devis envoyé' } },
+      { ...VALID, triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's-devis' } },
     ];
     for (const payload of ok) {
       const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload });
       expect(res.statusCode, JSON.stringify(payload)).toBe(201);
     }
-    expect(cap.created).toHaveLength(3);
+    expect(cap.created).toHaveLength(ok.length); // dérivé de la liste : ajouter un cas ne fait plus mentir le compte
     expect(cap.created.every((c) => c.input.enabled === false)).toBe(true); // toujours créées désactivées
     await server.close();
   });
