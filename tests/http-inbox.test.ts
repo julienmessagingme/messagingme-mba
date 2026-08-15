@@ -470,3 +470,80 @@ describe('inbox : envoi d’un template carousel', () => {
     await a.close();
   });
 });
+
+/**
+ * Lancer un SCÉNARIO depuis l'Inbox. La règle est dictée par la fenêtre de service : ouverte, tous les
+ * scénarios ; fermée, uniquement ceux qui ouvrent par un template configuré (les autres seraient refusés
+ * par Meta, 131047). C'est le SERVEUR qui tranche, pas la liste filtrée du navigateur : un fil peut sortir
+ * de la fenêtre entre l'affichage de la liste et le clic.
+ */
+describe('inbox : lancer un scénario sur une conversation', () => {
+  it('démarre le scénario et rend 200', async () => {
+    const lances: Array<[string, string, string, boolean]> = [];
+    const a = app({ startWorkflow: async (t, w, wa, open) => { lances.push([t, w, wa, open]); return true; } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(200);
+    expect(lances).toEqual([['t1', 'wf1', '33611', true]]); // le wa_id vient de la CONVERSATION, pas du corps
+    await a.close();
+  });
+
+  it("passe l'état RÉEL de la fenêtre, pas ce que l'écran croyait", async () => {
+    let vu: boolean | null = null;
+    const a = app({
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z', returnBehavior: null }),
+      startWorkflow: async (_t, _w, _wa, open) => { vu = open; return true; },
+    });
+    await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
+    expect(vu).toBe(false);
+    await a.close();
+  });
+
+  it('refus -> 422 avec la RAISON exacte, jamais un 200 muet', async () => {
+    const a = app({ startWorkflow: async () => "le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h" });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toContain('fenêtre de 24 h');
+    await a.close();
+  });
+
+  it('scénario inconnu (ou d’un autre workspace) -> 404', async () => {
+    const a = app({ startWorkflow: async () => null });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'inconnu' } });
+    expect(res.statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('conversation inconnue -> 404, et AUCUN scénario démarré', async () => {
+    let lances = 0;
+    const a = app({ startWorkflow: async () => { lances += 1; return true; } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/nope/workflow', ...auth(), payload: { workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(404);
+    expect(lances).toBe(0);
+    await a.close();
+  });
+
+  it('workflowId manquant -> 400, et AUCUN scénario démarré', async () => {
+    let lances = 0;
+    const a = app({ startWorkflow: async () => { lances += 1; return true; } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(lances).toBe(0);
+    await a.close();
+  });
+
+  it('tenant de l’URL != tenant du jeton -> 403, et AUCUN scénario démarré', async () => {
+    let lances = 0;
+    const a = app({ startWorkflow: async () => { lances += 1; return true; } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/AUTRE/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(403);
+    expect(lances).toBe(0);
+    await a.close();
+  });
+
+  it('dep absente -> 503, jamais un 200 trompeur', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(503);
+    await a.close();
+  });
+});

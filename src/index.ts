@@ -45,7 +45,7 @@ import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { MetaClientFactory } from './meta/factory';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
-import { CarouselMediaPreparer } from './meta/carousel-media';
+import { buildWorkflowRuntime } from './workflow/wiring';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
@@ -102,15 +102,20 @@ async function main(): Promise<void> {
     marketingViaLite: config.META_MM_LITE === 'true',
   });
 
-  // Visuels de carousel prêts à l'envoi (re-téléversés en `media id`). MÊME implémentation que le worker :
-  // c'est un doublon de cette logique qui avait laissé le carousel non branché côté campagne. L'instance
-  // porte son cache d'ids, donc elle vit aussi longtemps que le process.
-  const carouselMedia = new CarouselMediaPreparer({
-    getPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
-    mediaClientFor: async (tenant) => {
-      const { token } = await metaCredentials.resolveForTenant(tenant);
-      return new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
-    },
+  /**
+   * DRY_RUN : aucun appel Meta. ⚠️ L'API ne lisait PAS ce drapeau jusqu'ici, alors que le worker le respecte
+   * dans chacune de ses dep d'envoi. Le câbler est indispensable avant de donner à l'API le droit d'exécuter
+   * un scénario : sans ça, un déploiement déclaré DRY_RUN enverrait pour de vrai depuis l'Inbox.
+   */
+  const dryRun = config.DRY_RUN === 'true';
+
+  /**
+   * Exécuteur de scénarios, câblage PARTAGÉ avec le worker (`workflow/wiring.ts`). Il apporte aussi la
+   * préparation des visuels de carousel et la lecture mémoïsée du corps d'un template : l'API en avait sa
+   * propre version, plus courte et sans cache, ce qui en faisait un troisième doublon de cette famille.
+   */
+  const workflowRuntime = buildWorkflowRuntime({
+    pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
   });
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
@@ -206,6 +211,27 @@ async function main(): Promise<void> {
         await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
         return 'app_workflow';
       },
+      /**
+       * Lancement d'un SCÉNARIO depuis l'Inbox. La fenêtre décide de la porte d'entrée :
+       *  - ouverte -> `startInWindow` : le scénario peut ouvrir par un message rapide ou un formulaire ;
+       *  - fermée  -> `start` : la garde de fenêtre s'applique et REND la raison si le scénario ouvre par un
+       *    message de session, ce que Meta refuserait (131047).
+       *
+       * `ignoreHumanControl` : c'est l'opérateur qui déclenche, et il détient presque toujours le fil (il l'a
+       * pris en répondant). Le refuser à ce titre serait absurde. Même règle qu'au lancement d'une campagne.
+       * `emitEvents` : un lancement à la main est unitaire (un contact, ici et maintenant), donc ses tags
+       * publient, comme après une réponse du contact.
+       */
+      startWorkflow: async (tenant, workflowId, waId, windowOpen) => {
+        const wf = await workflowStore.getById(workflowId, tenant);
+        if (!wf) return null;
+        const contactId = await contactStore.findIdByWaId(tenant, waId);
+        const contact = { waId, contactId };
+        const opts = { emitEvents: true, ignoreHumanControl: true };
+        return windowOpen
+          ? workflowRuntime.executor.startInWindow(tenant, workflowId, wf.graph, contact, opts)
+          : workflowRuntime.executor.start(tenant, workflowId, wf.graph, contact, undefined, opts);
+      },
       countUnread: (tenant) => inboxStore.countUnread(tenant),
       markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
@@ -229,15 +255,11 @@ async function main(): Promise<void> {
        * template n'est pas un carousel : l'envoi classique reste strictement inchangé.
        */
       prepareCarousel: async (tenant, name, language) => {
-        const wabaId = await repo.getTenantWabaId(tenant);
-        if (!wabaId) return null;
-        const tplClient = await metaFactory.templateClientForTenant(tenant); // token PAR TENANT (B1)
-        const liste = await tplClient.list(wabaId);
-        // Exact (nom + langue), sinon repli sur le nom seul : même résolution que le worker (un template
-        // mono-langue est souvent demandé avec la langue par défaut de l'écran).
-        const tpl = liste.find((x) => x.name === name && x.language === language) ?? liste.find((x) => x.name === name);
-        if (!tpl?.carousel) return null;
-        const cards = await carouselMedia.prepare(tenant, tpl.carousel.cards);
+        // MÊME lecture que le worker (résolution nom+langue, repli sur le nom seul, cache court) : c'est
+        // `templateVarInfo` de la fabrique partagée. L'API en avait sa propre copie, sans cache.
+        const lu = (await workflowRuntime.templateVarInfo(tenant, name, language))?.carousel;
+        if (!lu) return null;
+        const cards = await workflowRuntime.prepareCarouselMedia(tenant, lu.cards);
         const refus = carouselSendBlocker(cards);
         return refus === null ? { cards } : { refus: `Carousel non envoyable : ${refus}` };
       },

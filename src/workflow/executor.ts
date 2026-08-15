@@ -384,11 +384,16 @@ export class WorkflowExecutor {
    *
    * ⚠️ À n'appeler QUE sur un chemin où la fenêtre est prouvée par un inbound récent. Un déclencheur qui ne
    * prouve pas la fenêtre (ex. un tag posé depuis le CRM) doit passer par `start()`, qui garde la protection.
+   *
+   * `ignoreHumanControl` sert au lancement DEPUIS L'INBOX : l'opérateur y détient presque toujours le fil (il
+   * l'a pris en répondant), et c'est pourtant LUI qui demande le scénario. Le refuser au motif qu'il a la main
+   * serait absurde. Même règle que le lancement d'une campagne : « avoir la main » empêche le scénario
+   * d'avancer tout seul et MBA de répondre, jamais un opérateur d'envoyer.
    */
   async startInWindow(
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
-    opts: { emitEvents?: boolean } = {},
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
   ): Promise<StartOutcome> {
     const entry = entryNode(graph);
     if (!entry) return 'le scénario est vide';

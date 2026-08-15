@@ -53,15 +53,18 @@ test.describe('Campagnes : miniature réelle d’un carousel', () => {
     await expect(wfSelect).toBeVisible({ timeout: 15_000 });
     await wfSelect.selectOption('wf-car');
 
-    await expect(page.getByTestId('carousel-cards')).toBeVisible();
-    await expect(page.getByText('Séjour à Nice')).toBeVisible();
-    await expect(page.getByText('Séjour à Lyon')).toBeVisible();
+    // Attente allongée, comme le fait déjà campaign-workflow-filter.spec.ts pour la même raison : sous la
+    // charge de la suite complète, les workers partagent UN serveur de dev et 5 s ne suffisent pas toujours.
+    // Les assertions elles-mêmes sont inchangées, seule la patience l'est.
+    await expect(page.getByTestId('carousel-cards')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Séjour à Nice')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Séjour à Lyon')).toBeVisible({ timeout: 15_000 });
   });
 
   test('template carousel choisi DIRECTEMENT -> même aperçu (le choix suit le template, pas l’écran)', async ({ page }) => {
     const tplSelect = page.locator('select').filter({ has: page.locator('option', { hasText: 'Choisir un template' }) });
     await expect(tplSelect).toBeVisible({ timeout: 15_000 });
     await tplSelect.selectOption('promo_carousel');
-    await expect(page.getByTestId('carousel-cards')).toBeVisible();
+    await expect(page.getByTestId('carousel-cards')).toBeVisible({ timeout: 15_000 });
   });
 });

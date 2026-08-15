@@ -521,6 +521,14 @@ export function listConversations(tenantId: string): Promise<{ conversations: Co
 export function countUnreadConversations(tenantId: string): Promise<{ count: number }> {
   return request<{ count: number }>(`/tenants/${tenantId}/conversations/unread-count`);
 }
+/**
+ * Lance un SCÉNARIO sur cette conversation. Le serveur tranche sur l'état RÉEL de la fenêtre de 24 h et
+ * renvoie 422 avec la raison si le scénario ne peut pas partir (la liste affichée est filtrée, mais un fil
+ * peut sortir de la fenêtre entre l'affichage et le clic).
+ */
+export function startWorkflowInConversation(tenantId: string, conversationId: string, workflowId: string): Promise<{ ok: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/workflow`, { method: 'POST', body: JSON.stringify({ workflowId }) });
+}
 /** Un opérateur vient d'ouvrir le fil : il est lu. Seul événement qui éteint la pastille. */
 export function markConversationRead(tenantId: string, conversationId: string): Promise<{ ok: boolean }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/read`, { method: 'POST' });

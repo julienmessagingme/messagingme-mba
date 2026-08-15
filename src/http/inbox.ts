@@ -77,6 +77,17 @@ export interface InboxRouteDeps {
     name: string,
     language: string,
   ): Promise<{ cards: OutboundCarouselCard[] } | { refus: string } | null>;
+  /**
+   * Démarre un SCÉNARIO sur cette conversation (l'opérateur le déclenche depuis l'Inbox).
+   *
+   * `windowOpen` décide de ce qui est permis, et c'est toute la règle métier : fenêtre OUVERTE, le scénario
+   * peut ouvrir par un message rapide ou un formulaire ; fenêtre FERMÉE, seul un scénario qui ouvre par un
+   * template configuré peut partir, les autres seraient refusés par Meta (131047).
+   *
+   * Rendu : `true` = parti. Une CHAÎNE = pas parti, avec la raison exacte à montrer à l'opérateur.
+   * `null` = scénario inconnu pour ce workspace. Absente -> la fonctionnalité est indisponible (503).
+   */
+  startWorkflow?(tenantId: string, workflowId: string, waId: string, windowOpen: boolean): Promise<true | string | null>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -227,6 +238,33 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
+  });
+
+  /**
+   * Lance un SCÉNARIO sur cette conversation. L'opérateur clique, donc il doit savoir TOUT DE SUITE si c'est
+   * parti et sinon pourquoi : la raison est rendue telle quelle en 422, jamais un 200 muet.
+   *
+   * C'est l'état RÉEL de la fenêtre au moment du clic qui décide, pas ce que l'écran croyait afficher : la
+   * liste proposée est filtrée côté navigateur, mais un fil peut sortir de la fenêtre entre l'affichage et
+   * le clic. Le serveur reste le juge.
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/workflow', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const workflowId = (req.body as { workflowId?: unknown } | null)?.workflowId;
+    if (!nonEmpty(workflowId)) return reply.code(400).send({ error: 'workflowId requis' });
+    if (!deps.startWorkflow) return reply.code(503).send({ error: 'lancement de scénario indisponible sur cette instance' });
+
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+
+    const issue = await deps.startWorkflow(tenant, workflowId, ctx.waId, ctx.windowOpen);
+    if (issue === null) return reply.code(404).send({ error: 'scénario inconnu' });
+    // Une CHAÎNE porte la raison exacte du refus (ouverture par un message de session hors fenêtre, scénario
+    // vide, bloc de départ supprimé, template introuvable chez Meta...). On l'affiche telle quelle.
+    if (typeof issue === 'string') return reply.code(422).send({ error: issue });
+    return reply.code(200).send({ ok: true });
   });
 
   /**
