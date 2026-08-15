@@ -423,7 +423,7 @@ describe('runCampaign — template CAROUSEL', () => {
       return { messageId: 'm1' };
     }
   }
-  const cards = [{ mediaUrl: 'https://cdn.fr/a.jpg' }, { mediaUrl: 'https://cdn.fr/b.jpg' }];
+  const cards = [{ mediaId: 'mid-a' }, { mediaId: 'mid-b' }];
 
   it('joint le composant carousel à l envoi, et ne relit le template QU UNE FOIS par run', async () => {
     const sender = new CapturingSender();

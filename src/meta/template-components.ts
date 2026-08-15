@@ -11,7 +11,13 @@
  * pour l'envoi. Les cartes ne sont jamais saisies : elles viennent du template approuvé.
  */
 export interface OutboundCarouselCard {
-  /** URL publique du média de la carte. Absente = carte non envoyable (cf. carouselSendBlocker). */
+  /**
+   * `media id` Meta du visuel de la carte, obtenu en RE-TÉLÉVERSANT l'image sur le numéro d'envoi.
+   * C'est LUI qu'on envoie, pas l'URL : Meta refuse de télécharger ses propres URL de CDN au moment de livrer
+   * (403 sur `example.header_handle[0]`, échec asynchrone 131053). Absent = carte non envoyable.
+   */
+  mediaId?: string;
+  /** URL du visuel telle que lue chez Meta. Sert à OBTENIR le `mediaId`, jamais à l'envoi. */
   mediaUrl?: string;
   /** Format du média de la carte (défaut IMAGE). */
   mediaFormat?: 'IMAGE' | 'VIDEO';
@@ -57,8 +63,10 @@ export function carouselButtonHandle(cardIndex: number, buttonIndex: number): st
  */
 export function carouselSendBlocker(cards: OutboundCarouselCard[]): string | null {
   if (cards.length === 0) return 'ce carousel ne contient aucune carte';
-  const noMedia = cards.findIndex((c) => !c.mediaUrl);
-  if (noMedia >= 0) return `l'image de la carte ${noMedia + 1} n'est pas récupérable depuis Meta`;
+  // On teste le `mediaId`, pas l'URL : c'est le seul des deux qui se livre. Une carte dont l'image n'a pas pu
+  // être re-téléversée n'est pas envoyable, même si son URL existe.
+  const noMedia = cards.findIndex((c) => !c.mediaId);
+  if (noMedia >= 0) return `l'image de la carte ${noMedia + 1} n'a pas pu être préparée pour l'envoi`;
   const withVar = cards.findIndex((c) => HAS_VAR.test(c.body ?? ''));
   if (withVar >= 0) return `la carte ${withVar + 1} contient une variable, non supporté à l'envoi`;
   // Même raison pour un bouton dont l'URL porte une variable ({{1}}) : sa valeur se fournit à l'envoi, carte par
@@ -76,7 +84,8 @@ export function carouselSendBlocker(cards: OutboundCarouselCard[]): string | nul
  */
 function cardComponents(card: OutboundCarouselCard, cardIndex: number): unknown[] {
   const key = card.mediaFormat === 'VIDEO' ? 'video' : 'image';
-  const out: unknown[] = [{ type: 'header', parameters: [{ type: key, [key]: { link: card.mediaUrl } }] }];
+  // `id` et NON `link` : cf. OutboundCarouselCard.mediaId.
+  const out: unknown[] = [{ type: 'header', parameters: [{ type: key, [key]: { id: card.mediaId } }] }];
   (card.buttons ?? []).forEach((b, i) => {
     if (b.type !== 'QUICK_REPLY') return;
     // Payload portant la carte ET le bouton. Un `btn:<i>` nu serait pire qu'ambigu : chaque carte a un bouton

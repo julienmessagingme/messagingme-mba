@@ -40,27 +40,29 @@ describe('buildTemplateComponents', () => {
   });
 });
 
-const card = (over: Partial<OutboundCarouselCard> = {}): OutboundCarouselCard => ({ mediaUrl: 'https://cdn.fr/1.jpg', ...over });
+// `mediaId` et non `mediaUrl` : c'est le media id re-téléversé qui part chez Meta (une URL de CDN est
+// acceptée puis échoue en livraison, 131053, mesuré en live le 2026-08-15).
+const card = (over: Partial<OutboundCarouselCard> = {}): OutboundCarouselCard => ({ mediaId: 'mid-1', ...over });
 
 describe('buildTemplateComponents — carousel', () => {
   it('2 cartes -> un composant carousel, card_index 0 puis 1, une image par carte', () => {
     const c = buildTemplateComponents({
       bodyParams: [],
-      carousel: { cards: [card({ mediaUrl: 'https://cdn.fr/a.jpg' }), card({ mediaUrl: 'https://cdn.fr/b.jpg' })] },
+      carousel: { cards: [card({ mediaId: 'mid-a' }), card({ mediaId: 'mid-b' })] },
     });
     expect(c).toEqual([
       {
         type: 'carousel',
         cards: [
-          { card_index: 0, components: [{ type: 'header', parameters: [{ type: 'image', image: { link: 'https://cdn.fr/a.jpg' } }] }] },
-          { card_index: 1, components: [{ type: 'header', parameters: [{ type: 'image', image: { link: 'https://cdn.fr/b.jpg' } }] }] },
+          { card_index: 0, components: [{ type: 'header', parameters: [{ type: 'image', image: { id: 'mid-a' } }] }] },
+          { card_index: 1, components: [{ type: 'header', parameters: [{ type: 'image', image: { id: 'mid-b' } }] }] },
         ],
       },
     ]);
   });
 
   it('carte VIDEO -> paramètre type=video (pas image)', () => {
-    const c = buildTemplateComponents({ bodyParams: [], carousel: { cards: [card({ mediaUrl: 'https://cdn.fr/v.mp4', mediaFormat: 'VIDEO' })] } });
+    const c = buildTemplateComponents({ bodyParams: [], carousel: { cards: [card({ mediaFormat: 'VIDEO' })] } });
     const cards = (c[0] as { cards: Array<{ components: Array<{ parameters: Array<{ type: string }> }> }> }).cards;
     expect(cards[0]!.components[0]!.parameters[0]!.type).toBe('video');
   });
@@ -115,8 +117,10 @@ describe('carouselSendBlocker', () => {
     expect(carouselSendBlocker([])).toBe('ce carousel ne contient aucune carte');
   });
 
-  it("carte sans image -> refus nommant la carte (numérotée à partir de 1)", () => {
-    expect(carouselSendBlocker([card(), { body: 'x' }])).toContain('carte 2');
+  it("carte dont l'image n'a pas pu être préparée -> refus nommant la carte (numérotée à partir de 1)", () => {
+    // Une carte qui a bien une URL mais PAS de media id n'est pas envoyable : c'est le cas réel quand le
+    // re-téléversement échoue. L'URL seule ne se livre pas.
+    expect(carouselSendBlocker([card(), { mediaUrl: 'https://cdn.fr/x.jpg', body: 'x' }])).toContain('carte 2');
   });
 
   it('carte avec une variable -> refus explicite (aucun mapping carte -> champ CRM en base)', () => {

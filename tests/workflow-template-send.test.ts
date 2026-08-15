@@ -132,8 +132,8 @@ describe('buildWorkflowTemplateComponents (chemin envoi workflow)', () => {
 
 describe('carousel — parité campagne / scénario', () => {
   const cards = [
-    { mediaUrl: 'https://cdn.fr/a.jpg', buttons: [{ type: 'QUICK_REPLY' as const }] },
-    { mediaUrl: 'https://cdn.fr/b.jpg', body: 'Texte fixe' },
+    { mediaId: 'mid-a', buttons: [{ type: 'QUICK_REPLY' as const }] },
+    { mediaId: 'mid-b', body: 'Texte fixe' },
   ];
 
   it('même template -> MÊMES composants des deux côtés (un seul constructeur)', () => {

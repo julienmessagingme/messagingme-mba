@@ -28,6 +28,7 @@ import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { countTemplateVariables } from './crm/template';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { PgWorkflowRunStore } from './workflow/run-store.pg';
+import { MetaMediaClient } from './meta/media';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
 import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
@@ -163,6 +164,46 @@ async function main(): Promise<void> {
     wabaCache.set(tenant, { at: Date.now(), waba });
     return waba;
   };
+  /**
+   * Prépare les visuels d'un carousel POUR L'ENVOI : chaque image est re-téléversée sur le numéro et remplacée
+   * par son `media id`.
+   *
+   * Pourquoi ce détour, mesuré en live le 2026-08-15 : envoyer l'URL du CDN de Meta (`link`) est ACCEPTÉ par
+   * l'API (200 + id de message) puis échoue 2 s plus tard en `131053`, parce que le téléchargeur de Meta se
+   * prend un 403 sur son propre CDN. L'URL est pourtant publiquement lisible depuis n'importe où ailleurs :
+   * c'est ce qui rendait le bug invisible à une sonde qui se contente de lire l'URL.
+   *
+   * Cache par CHEMIN d'image (l'URL porte une signature qui change) : un media id vit 30 jours côté Meta, on
+   * le garde 7. Sans lui, une campagne de 5 000 destinataires re-téléverserait 5 000 fois les mêmes visuels.
+   */
+  const mediaIdCache = new Map<string, { at: number; id: string }>();
+  const MEDIA_CACHE_MS = 7 * 86_400_000;
+  const prepareCarouselMedia = async (tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> => {
+    const pn = await repo.getTenantPhoneNumberId(tenant);
+    if (!pn) return cards; // pas de numéro -> aucun media id -> le blocker refusera, avec sa raison
+    const { token } = await metaCredentials.resolveForTenant(tenant);
+    const media = new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
+    return Promise.all(cards.map(async (card) => {
+      if (!card.mediaUrl) return card;
+      const cle = card.mediaUrl.split('?')[0]!;
+      const hit = mediaIdCache.get(cle);
+      if (hit && Date.now() - hit.at < MEDIA_CACHE_MS) return { ...card, mediaId: hit.id };
+      try {
+        const res = await fetch(card.mediaUrl);
+        if (!res.ok) throw new Error(`téléchargement du visuel: HTTP ${res.status}`);
+        const mime = res.headers.get('content-type') ?? 'image/jpeg';
+        const bytes = Buffer.from(await res.arrayBuffer());
+        const id = await media.uploadForSend(pn, bytes, mime);
+        mediaIdCache.set(cle, { at: Date.now(), id });
+        return { ...card, mediaId: id };
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("carousel: visuel non préparé pour l'envoi", err instanceof Error ? err.message : err);
+        return card; // sans mediaId -> carouselSendBlocker refusera en nommant la carte
+      }
+    }));
+  };
+
   const templateVarInfo = async (tenant: string, name: string, language: string): Promise<TplInfo | null> => {
     const waba = await tenantWabaId(tenant);
     if (!waba) return null;
@@ -492,7 +533,13 @@ async function main(): Promise<void> {
       // Cartes du carousel du template (image + boutons de chaque carte), relues UNE fois par run et servies
       // par le même cache court que les variables. null = template sans carousel -> envoi inchangé.
       // Absente en DRY_RUN : la dep est optionnelle et ce mode ne doit déclencher AUCUN appel Meta.
-      ...(dryRun ? {} : { getTemplateCarousel: async (tenant: string, name: string, language: string) => (await templateVarInfo(tenant, name, language))?.carousel ?? null }),
+      ...(dryRun ? {} : {
+        getTemplateCarousel: async (tenant: string, name: string, language: string) => {
+          const lu = (await templateVarInfo(tenant, name, language))?.carousel;
+          // Visuels préparés UNE fois par run : ils sont identiques pour tous les destinataires.
+          return lu ? { cards: await prepareCarouselMedia(tenant, lu.cards) } : null;
+        },
+      }),
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
     });
