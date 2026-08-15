@@ -23,6 +23,10 @@ const icons = {
   content: 'M4 4h16v4H4zM4 12h10v8H4zM18 12h2v8h-2z',
   analytics: 'M3 3v18h18M8 17V9M13 17V5M18 17v-6',
   flow: 'M5 4h4v4H5zM15 16h4v4h-4zM7 8v4a2 2 0 002 2h6',
+  // Automation : un éclair, le DÉCLENCHEUR. Elle partageait l'icône de « Scénario » (deux blocs reliés), donc
+  // les deux entrées du menu étaient indiscernables alors qu'elles ne font pas la même chose : le scénario est
+  // le parcours, l'automation est ce qui le déclenche.
+  automation: 'M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z',
   support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
   developers: 'M8 6l-5 6 5 6M16 6l5 6-5 6M13 4l-2 16',
   mba: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM6 19l.7 1.9L8.6 21l-1.9.7L6 23.6l-.7-1.9L3.4 21l1.9-.1L6 19z',
@@ -71,7 +75,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
-    { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.flow },
+    { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
     { key: 'mba', label: t('MBA', 'MBA'), d: icons.mba, children: [
       { key: 'mba-guide', href: '/mba', label: t('Guide', 'Guide') },
       { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
