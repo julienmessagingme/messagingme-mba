@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ReturnBehavior } from '../inbox/store.pg';
+import type { OutboundCarouselCard } from '../meta/template-components';
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
 export interface OutboundTemplate {
@@ -12,10 +13,16 @@ export interface OutboundTemplate {
   headerMediaUrl?: string;
   /** Format du header média, pour construire le bon type de paramètre côté Meta. */
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  /** Cartes d'un template CAROUSEL, visuels DÉJÀ re-téléversés (`mediaId`). Absent = template classique. */
+  carousel?: { cards: OutboundCarouselCard[] };
 }
 
 export interface InboxRouteDeps {
   listConversations(tenantId: string): Promise<ConversationSummary[]>;
+  /** Nombre de conversations non lues (pastille du menu). Optionnel : absent -> 0, la pastille ne s'affiche pas. */
+  countUnread?(tenantId: string): Promise<number>;
+  /** Marque un fil comme lu (un opérateur vient de l'ouvrir). Optionnel (deps de test minimales). */
+  markConversationRead?(tenantId: string, conversationId: string): Promise<void>;
   /** wa_id + état de la fenêtre de service 24 h + surcharge de reprise du fil (C.4). null si conversation absente/autre tenant. */
   getConversationContext(
     conversationId: string,
@@ -56,6 +63,20 @@ export interface InboxRouteDeps {
   sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
   /** Envoie un template (autorisé hors fenêtre). `tenantId` -> token Meta PAR TENANT. Retourne le message_id. */
   sendTemplateMessage(tenantId: string, phoneNumberId: string, to: string, tpl: OutboundTemplate): Promise<string>;
+  /**
+   * Template CAROUSEL : relit ses cartes chez Meta et prépare leurs visuels pour l'envoi (re-téléversement).
+   * `null` = ce template n'est pas un carousel (envoi inchangé). `{ refus }` = il en est un mais n'est pas
+   * envoyable, et la raison est destinée à l'opérateur.
+   *
+   * Pourquoi la route en dépend au lieu de laisser l'envoi échouer : sans re-téléversement, Meta ACCEPTE
+   * l'envoi (200 + id) puis ne le livre jamais (131053). Un « envoyé » à l'écran sans message sur le
+   * téléphone est exactement ce qu'on ne veut plus. Absente -> aucun carousel n'est envoyable depuis l'inbox.
+   */
+  prepareCarousel?(
+    tenantId: string,
+    name: string,
+    language: string,
+  ): Promise<{ cards: OutboundCarouselCard[] } | { refus: string } | null>;
 }
 
 function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
@@ -80,6 +101,29 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ conversations: await deps.listConversations(tenant) });
+  });
+
+  /**
+   * Compteur de non-lus, pour la pastille du menu. Route DÉDIÉE et non un champ de la liste : le menu est
+   * monté sur toutes les pages et la rafraîchit régulièrement, il ne doit pas rapatrier 100 conversations.
+   * Déclarée AVANT `/conversations/:conversationId/...` : `unread-count` n'est pas un identifiant.
+   */
+  app.get('/tenants/:tenantId/conversations/unread-count', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    return reply.code(200).send({ count: deps.countUnread ? await deps.countUnread(tenant) : 0 });
+  });
+
+  /** Un opérateur vient d'OUVRIR le fil : il est lu. C'est le seul événement qui éteint la pastille. */
+  app.post('/tenants/:tenantId/conversations/:conversationId/read', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    if (!deps.markConversationRead) return reply.code(503).send({ error: 'suivi des non-lus indisponible sur cette instance' });
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    await deps.markConversationRead(tenant, conversationId);
+    return reply.code(200).send({ ok: true });
   });
 
   app.get('/tenants/:tenantId/conversations/:conversationId/messages', guard, async (req, reply) => {
@@ -161,12 +205,23 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
+    // Carousel : ses cartes ne sont pas dans la requête, elles se relisent chez Meta, et leurs visuels doivent
+    // être re-téléversés. Un refus (carte sans visuel exploitable, variable de carte) sort en 422 AVANT
+    // l'envoi : mieux vaut le dire que laisser Meta accepter un message qu'il ne livrera pas.
+    let carousel: { cards: OutboundCarouselCard[] } | undefined;
+    if (deps.prepareCarousel) {
+      const prep = await deps.prepareCarousel(tenant, b.templateName, b.language);
+      if (prep && 'refus' in prep) return reply.code(422).send({ error: prep.refus });
+      if (prep) carousel = prep;
+    }
+
     const messageId = await deps.sendTemplateMessage(tenant, phoneNumberId, ctx.waId, {
       name: b.templateName,
       language: b.language,
       bodyParams,
       ...(headerMediaUrl ? { headerMediaUrl } : {}),
       ...(headerFormat ? { headerFormat } : {}),
+      ...(carousel ? { carousel } : {}),
     });
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});

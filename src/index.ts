@@ -44,7 +44,8 @@ import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { MetaClientFactory } from './meta/factory';
-import { buildTemplateComponents } from './meta/template-components';
+import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
+import { CarouselMediaPreparer } from './meta/carousel-media';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
@@ -99,6 +100,17 @@ async function main(): Promise<void> {
     transport,
     version: config.META_GRAPH_VERSION,
     marketingViaLite: config.META_MM_LITE === 'true',
+  });
+
+  // Visuels de carousel prêts à l'envoi (re-téléversés en `media id`). MÊME implémentation que le worker :
+  // c'est un doublon de cette logique qui avait laissé le carousel non branché côté campagne. L'instance
+  // porte son cache d'ids, donc elle vit aussi longtemps que le process.
+  const carouselMedia = new CarouselMediaPreparer({
+    getPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+    mediaClientFor: async (tenant) => {
+      const { token } = await metaCredentials.resolveForTenant(tenant);
+      return new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
+    },
   });
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
@@ -194,6 +206,8 @@ async function main(): Promise<void> {
         await inboxStore.setControlOwner(tenant, waId, 'app_workflow');
         return 'app_workflow';
       },
+      countUnread: (tenant) => inboxStore.countUnread(tenant),
+      markConversationRead: (tenant, conversationId) => inboxStore.markConversationRead(tenant, conversationId),
       getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
       sendReply: async (tenant, phoneNumberId, to, text) => {
         const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1), repli global en sommeil
@@ -205,9 +219,27 @@ async function main(): Promise<void> {
           bodyParams: tpl.bodyParams,
           ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
           ...(tpl.headerFormat ? { headerFormat: tpl.headerFormat } : {}),
+          ...(tpl.carousel ? { carousel: tpl.carousel } : {}),
         });
         const spec = { name: tpl.name, language: tpl.language, ...(components.length > 0 ? { components } : {}) };
         return (await client.sendTemplate(to, spec)).messageId;
+      },
+      /**
+       * Cartes d'un template CAROUSEL, relues chez Meta et visuels re-téléversés pour l'envoi. `null` si le
+       * template n'est pas un carousel : l'envoi classique reste strictement inchangé.
+       */
+      prepareCarousel: async (tenant, name, language) => {
+        const wabaId = await repo.getTenantWabaId(tenant);
+        if (!wabaId) return null;
+        const tplClient = await metaFactory.templateClientForTenant(tenant); // token PAR TENANT (B1)
+        const liste = await tplClient.list(wabaId);
+        // Exact (nom + langue), sinon repli sur le nom seul : même résolution que le worker (un template
+        // mono-langue est souvent demandé avec la langue par défaut de l'écran).
+        const tpl = liste.find((x) => x.name === name && x.language === language) ?? liste.find((x) => x.name === name);
+        if (!tpl?.carousel) return null;
+        const cards = await carouselMedia.prepare(tenant, tpl.carousel.cards);
+        const refus = carouselSendBlocker(cards);
+        return refus === null ? { cards } : { refus: `Carousel non envoyable : ${refus}` };
       },
     },
     stats: {

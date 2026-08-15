@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
-import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { TemplatePreview } from '@/components/TemplatePreview';
 import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
@@ -1170,7 +1170,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
             )}
             {selectedTemplate?.body && (
               <div className="mt-3">
-                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={selectedTemplate?.buttons ?? []} hideNote />
+                <TemplatePreview template={selectedTemplate} examples={previewExamples} />
               </div>
             )}
 
@@ -1251,7 +1251,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
             {!wfError && selectedTemplate?.body && (
               <div className="mt-3">
                 <p className="mb-1 text-xs text-ink-500">{t('1er template envoyé par le scénario :', 'First template sent by the scenario:')} <b>{templateName}</b></p>
-                <WhatsAppPreview body={selectedTemplate.body} examples={previewExamples} buttons={selectedTemplate?.buttons ?? []} hideNote />
+                {/* Le 1er bloc du scénario peut être un CAROUSEL : on montre alors ses vraies cartes, pas un
+                    encadré de texte qui ne dit rien de ce que le contact recevra. */}
+                <TemplatePreview template={selectedTemplate} examples={previewExamples} />
               </div>
             )}
           </Field>

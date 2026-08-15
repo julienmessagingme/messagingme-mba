@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { createTemplate, uploadMedia, type TemplateButtonInput } from '@/lib/api';
 import { resizeToDataUrl } from '@/lib/image';
 import { CarouselPreview } from '@/components/CarouselPreview';
+import { useTemplateBody, TemplateBodyField, TemplateVariableExamples, unmappedVariablesMessage } from '@/components/TemplateBodyField';
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
 
@@ -44,7 +45,12 @@ const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-non
 export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCreated: () => void }) {
   const t = useT();
   const [name, setName] = useState('');
-  const [body, setBody] = useState('');
+  // Message d'introduction : c'est le composant BODY du template, donc il porte les variables EXACTEMENT
+  // comme un template classique (mêmes chips, mêmes exemples Meta, mêmes indices variable -> champ, même
+  // résolution à l'envoi). Une carte, elle, reste littérale : rien ne stocke un mapping « variable de la
+  // carte N -> champ », et `carouselSendBlocker` refuse à l'envoi une carte qui en contiendrait.
+  const bodyState = useTemplateBody(tenantId);
+  const { body } = bodyState;
   const [layout, setLayout] = useState<CardButtonType[]>([]);
   const [cards, setCards] = useState<Card[]>([emptyCard(0), emptyCard(0)]);
   const [busy, setBusy] = useState(false);
@@ -116,11 +122,21 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
     setBusy(true);
     setMsg(null);
     try {
+      // Même canonicalisation que pour un template classique : positions renumérotées 1..N sans trou (exigé
+      // par Meta), exemples et indices réalignés dessus.
+      const canon = bodyState.canonicalize();
+      if (canon.unmapped.length > 0) {
+        setMsg({ kind: 'err', text: unmappedVariablesMessage(canon.unmapped, t) });
+        setBusy(false);
+        return;
+      }
       const res = await createTemplate(tenantId, {
         name: name.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
         category: 'MARKETING',
         language: 'fr',
-        body: body.trim(),
+        body: canon.body.trim(),
+        ...(canon.example ? { example: canon.example } : {}),
+        ...(canon.paramHints.length > 0 ? { paramHints: canon.paramHints } : {}),
         carousel: {
           cards: cards.map((c) => ({
             headerHandle: c.headerHandle,
@@ -131,7 +147,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
       });
       setMsg({ kind: 'ok', text: `${t('Carousel soumis (statut :', 'Carousel submitted (status:')} ${res.status}). ${t('Il passe en revue Meta.', 'Now under Meta review.')}` });
       setName('');
-      setBody('');
+      bodyState.reset();
       setCards([emptyCard(layout.length), emptyCard(layout.length)]);
       onCreated();
     } catch (err) {
@@ -147,10 +163,16 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom du carousel', 'Carousel name')}</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} w-full max-w-sm`} placeholder="promo_selection" />
       </div>
-      <div>
-        <label className="mb-1 block text-xs font-medium text-ink-600">{t("Message d'introduction (commun)", 'Introduction message (shared)')}</label>
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} className={`${inputCls} w-full`} placeholder={t('Découvrez notre sélection du moment.', 'Discover our current selection.')} />
-      </div>
+      <TemplateBodyField
+        state={bodyState}
+        label={t("Message d'introduction (commun)", 'Introduction message (shared)')}
+        placeholder={t('Bonjour [Prénom], découvrez notre sélection 🎉', 'Hello [First name], discover our selection 🎉')}
+        hint={t(
+          "« + Variable » insère un champ du contact dans l'introduction, exactement comme sur un template classique. Le texte des CARTES, lui, est le même pour tout le monde.",
+          '« + Variable » inserts a contact field into the introduction, exactly like on a regular template. Card text, however, is the same for everyone.',
+        )}
+      />
+      <TemplateVariableExamples state={bodyState} />
 
       {/* Boutons communs à toutes les cartes */}
       <div>
@@ -181,7 +203,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
 
       {/* Cartes */}
       <div className="space-y-3">
-        <div className="text-xs font-medium text-ink-600">{t('Cartes', 'Cards')} ({cards.length}/10) — {t('2 minimum', 'min. 2')}</div>
+        <div className="text-xs font-medium text-ink-600">{t('Cartes', 'Cards')} ({cards.length}/10, {t('2 minimum', 'min. 2')})</div>
         <div className="grid gap-3 sm:grid-cols-2">
           {cards.map((c, i) => (
             <div key={i} className="space-y-2 rounded-xl border border-ink-200 p-3">
@@ -246,7 +268,13 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         <button type="button" onClick={addCard} disabled={cards.length >= 10} className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-40">{t('+ Ajouter une carte', '+ Add a card')}</button>
       </div>
 
-      <CarouselPreview body={body} cards={cards.map((c) => ({ imageUrl: c.preview, body: c.body, buttons: cardButtonsFor(c) }))} buttons={[]} />
+      <CarouselPreview
+        body={body}
+        cards={cards.map((c) => ({ imageUrl: c.preview, body: c.body, buttons: cardButtonsFor(c) }))}
+        buttons={[]}
+        examples={bodyState.examples}
+        varLabels={bodyState.varLabels}
+      />
 
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
       <button onClick={submit} disabled={!canSubmit} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">

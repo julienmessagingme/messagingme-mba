@@ -64,6 +64,15 @@ function renderBody(body: string, examples: string[], varLabels?: Array<string |
   return nodes;
 }
 
+/**
+ * Corps de message rendu comme WhatsApp l'affiche : formatage inline + variables `{{n}}` remplacées par leur
+ * exemple (ou montrées en chip si un libellé est fourni). Exporté pour l'aperçu CAROUSEL, dont la bulle
+ * d'introduction porte exactement les mêmes variables que n'importe quel corps de template.
+ */
+export function TemplateBodyText({ body, examples, varLabels }: { body: string; examples: string[]; varLabels?: Array<string | undefined> }): React.ReactNode {
+  return <>{renderBody(body, examples, varLabels)}</>;
+}
+
 export interface WhatsAppPreviewProps {
   body: string;
   /** Valeurs des variables {{n}} ; si absent/vide, la variable reste affichée `{{n}}`. */

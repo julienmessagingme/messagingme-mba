@@ -198,6 +198,15 @@ describe('runAutomations', () => {
       expect(trace.cleared).toEqual(['a1']);
     });
 
+    it('scénario NON démarré avec une RAISON (chaîne) -> même traitement que `false`', async () => {
+      // Une chaîne est truthy : testée comme une simple vérité, elle passait pour un succès. Le tir restait
+      // alors marqué, et l'anti-rebond avalait en silence la prochaine vraie demande du client.
+      const { deps, trace } = make([auto()], { startWorkflow: async () => 'la conversation est tenue par un opérateur' });
+      expect(await runAutomations('t1', MSG, deps)).toBe(0);
+      expect(trace.fired).toEqual(['a1']);
+      expect(trace.cleared).toEqual(['a1']);
+    });
+
     it('scénario qui LÈVE une exception -> le tir est CONSERVÉ (un envoi a pu partir)', async () => {
       const { deps, trace } = make([auto()], { startWorkflow: async () => { throw new Error('coupure réseau'); } });
       expect(await runAutomations('t1', MSG, deps)).toBe(0);

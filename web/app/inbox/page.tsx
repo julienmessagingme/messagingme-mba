@@ -2,8 +2,8 @@
 
 import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AppShell } from '@/components/AppShell';
-import { WhatsAppPreview } from '@/components/WhatsAppPreview';
+import { AppShell, UNREAD_CHANGED_EVENT } from '@/components/AppShell';
+import { TemplatePreview } from '@/components/TemplatePreview';
 import { dayKey, dayLabel, hourMin } from '@/lib/day';
 import type { ControlOwner, ReturnBehavior } from '@/lib/api';
 import type { Session } from '@/lib/session';
@@ -16,6 +16,7 @@ import {
   replyConversation,
   listTemplates,
   sendTemplateToConversation,
+  markConversationRead,
   type Conversation,
   type InboxMessage,
   type TemplateSummary,
@@ -177,7 +178,12 @@ function InboxInner({ session }: { session: Session }) {
                   }`}
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm font-medium">{c.profileName ?? `+${c.waId}`}</span>
+                    <span className={`truncate text-sm ${c.unread ? 'font-semibold text-ink-900' : 'font-medium'}`}>
+                      {/* Point de non-lu : le compteur du menu doit pouvoir se traduire en action, sinon il dit
+                          « 3 » sans dire lesquelles. */}
+                      {c.unread && <span data-testid="unread-dot" className="mr-1.5 inline-block h-2 w-2 rounded-full bg-coral align-middle" aria-label={t('non lu', 'unread')} />}
+                      {c.profileName ?? `+${c.waId}`}
+                    </span>
                     <span className="shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
                   <p className="truncate text-xs text-ink-500">{c.lastPreview ?? ''}</p>
@@ -227,9 +233,22 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   const [showTemplate, setShowTemplate] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Dernier message DÉJÀ vu dans ce fil : sert à ne marquer « lu » qu'au vrai changement, et pas à chacun
+  // des rafraîchissements de 4 s. Remis à zéro par le remontage du composant à chaque conversation.
+  const dernierVuRef = useRef<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await getConversationMessages(session.tenantId, conversation.id);
+      // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
+      // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
+      const dernier = res.messages[res.messages.length - 1]?.id ?? null;
+      if (dernier !== dernierVuRef.current) {
+        dernierVuRef.current = dernier;
+        markConversationRead(session.tenantId, conversation.id)
+          .then(() => window.dispatchEvent(new Event(UNREAD_CHANGED_EVENT)))
+          .catch(() => { /* pastille d'appoint */ });
+      }
       // GARDE anti-saut de scroll : on ne remplace `messages` (nouvelle référence) QUE si le fil a réellement
       // changé (nombre de messages ou dernier id). Sinon l'effet scrollIntoView ci-dessous ramènerait le scroll
       // en bas à chaque tick de poll pendant que l'agent lit l'historique.
@@ -473,9 +492,9 @@ function TemplateSendPanel({
     (async () => {
       try {
         const res = await listTemplates(session.tenantId);
-        // Carousels écartés : leur envoi exige de relire les cartes chez Meta, ce que fait le moteur de
-        // campagne, pas ce chemin. Mieux vaut ne pas les proposer que de les laisser échouer à coup sûr.
-        if (alive) setTemplates(res.templates.filter((x) => x.status === 'APPROVED' && !x.isCarousel));
+        // Carousels INCLUS : l'API relit leurs cartes chez Meta et re-téléverse les visuels avant d'envoyer
+        // (même chemin que la campagne). Un carousel non envoyable ressort en 422 avec sa raison.
+        if (alive) setTemplates(res.templates.filter((x) => x.status === 'APPROVED'));
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : t('Templates indisponibles', 'Templates unavailable'));
       }
@@ -536,11 +555,12 @@ function TemplateSendPanel({
             <select value={sel ? `${sel.name}::${sel.language}` : ''} onChange={(e) => pick(e.target.value)} className={inputCls}>
               <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
               {templates.map((tpl) => (
-                <option key={`${tpl.name}::${tpl.language}`} value={`${tpl.name}::${tpl.language}`}>{tpl.name} ({tpl.language})</option>
+                <option key={`${tpl.name}::${tpl.language}`} value={`${tpl.name}::${tpl.language}`}>
+                  {tpl.name} ({tpl.language}){tpl.isCarousel ? ` · ${t('carousel', 'carousel')}` : ''}
+                </option>
               ))}
             </select>
           )}
-          <p className="mt-1 text-xs text-ink-400">{t("Les templates carousel ne sont pas dans cette liste : ils s'envoient depuis une campagne.", 'Carousel templates are not listed here: send them from a campaign.')}</p>
         </div>
 
         {sel && (
@@ -578,7 +598,8 @@ function TemplateSendPanel({
             )}
 
             <div className="mt-3">
-              <WhatsAppPreview body={sel.body ?? ''} examples={previewExamples} buttons={[]} hideNote />
+              {/* Un carousel se montre comme un carousel : le corps seul ne dit rien de ce que le contact reçoit. */}
+              <TemplatePreview template={{ body: sel.body, buttons: [], ...(sel.carousel ? { carousel: sel.carousel } : {}) }} examples={previewExamples} />
             </div>
           </>
         )}

@@ -16,7 +16,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
     listConversations: async () => [
-      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow' },
+      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true },
     ],
     getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z', returnBehavior: null } : null),
     getMessages: async () => [
@@ -345,6 +345,128 @@ describe('surcharge de reprise par conversation (C.4)', () => {
     const a = app({ setConversationReturnBehavior: async () => {} });
     const res = await a.inject({ method: 'PATCH', url: '/tenants/AUTRE/conversations/c1/return-behavior', ...auth(), payload: { behavior: 'inbox' } });
     expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+});
+
+/**
+ * Compteur de non-lus (pastille du menu) + marquage « lu » à l'ouverture d'un fil. La notion n'existait
+ * nulle part avant : le seul événement qui éteint la pastille est un opérateur qui OUVRE la conversation.
+ */
+describe('inbox : conversations non lues', () => {
+  it('GET unread-count -> le nombre rendu par le store', async () => {
+    const a = app({ countUnread: async () => 7 });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ count: number }>().count).toBe(7);
+    await a.close();
+  });
+
+  it("« unread-count » n'est PAS pris pour un identifiant de conversation", async () => {
+    // La route est déclarée avant `/conversations/:conversationId/...` : sans ça, un jour où une route
+    // `/conversations/:id` existerait, le compteur partirait chercher une conversation nommée « unread-count ».
+    const vus: string[] = [];
+    const a = app({ countUnread: async () => 3, getConversationContext: async (id) => { vus.push(id); return null; } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(vus).toEqual([]);
+    await a.close();
+  });
+
+  it('dep absente -> 0 (la pastille ne s’affiche pas), jamais une erreur', async () => {
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() });
+    expect(res.json<{ count: number }>().count).toBe(0);
+    await a.close();
+  });
+
+  it('POST read -> marque le fil lu, scopé au tenant du jeton', async () => {
+    const lus: Array<[string, string]> = [];
+    const a = app({ markConversationRead: async (t, c) => { lus.push([t, c]); } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/read', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(lus).toEqual([['t1', 'c1']]);
+    await a.close();
+  });
+
+  it('POST read sur une conversation inconnue -> 404 sans rien marquer', async () => {
+    const lus: string[] = [];
+    const a = app({ markConversationRead: async (_t, c) => { lus.push(c); } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/nope/read', ...auth() });
+    expect(res.statusCode).toBe(404);
+    expect(lus).toEqual([]);
+    await a.close();
+  });
+
+  it('POST read : tenant de l’URL != tenant du jeton -> 403', async () => {
+    const lus: string[] = [];
+    const a = app({ markConversationRead: async (_t, c) => { lus.push(c); } });
+    const res = await a.inject({ method: 'POST', url: '/tenants/AUTRE/conversations/c1/read', ...auth() });
+    expect(res.statusCode).toBe(403);
+    expect(lus).toEqual([]);
+    await a.close();
+  });
+
+  it('GET unread-count : tenant de l’URL != tenant du jeton -> 403', async () => {
+    const a = app({ countUnread: async () => 7 });
+    const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/conversations/unread-count', ...auth() });
+    expect(res.statusCode).toBe(403);
+    await a.close();
+  });
+});
+
+/**
+ * Envoi d'un CAROUSEL depuis l'inbox. Ses cartes ne sont pas dans la requête : elles se relisent chez Meta
+ * et leurs visuels doivent être re-téléversés, sinon Meta ACCEPTE l'envoi (200 + id) puis ne le livre jamais
+ * (131053, mesuré en live le 2026-08-15). Un carousel non envoyable doit le DIRE avant de partir.
+ */
+describe('inbox : envoi d’un template carousel', () => {
+  const carte = { mediaId: 'mid-1', body: 'Carte 1' };
+
+  it('les cartes préparées sont transmises à l’envoi', async () => {
+    let recu: unknown = null;
+    const a = app({
+      prepareCarousel: async () => ({ cards: [carte, { mediaId: 'mid-2' }] }),
+      sendTemplateMessage: async (_t, _p, _to, tpl) => { recu = tpl; return 'wamid.CAR'; },
+    });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(),
+      payload: { templateName: 'promo_carousel', language: 'fr' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(recu).toMatchObject({ carousel: { cards: [carte, { mediaId: 'mid-2' }] } });
+    await a.close();
+  });
+
+  it('carousel non envoyable -> 422 avec la raison, et AUCUN envoi', async () => {
+    let envois = 0;
+    const a = app({
+      prepareCarousel: async () => ({ refus: "Carousel non envoyable : l'image de la carte 2 n'a pas pu être préparée" }),
+      sendTemplateMessage: async () => { envois += 1; return 'wamid.NON'; },
+    });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(),
+      payload: { templateName: 'promo_carousel', language: 'fr' },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: string }>().error).toContain('carte 2');
+    expect(envois).toBe(0);
+    await a.close();
+  });
+
+  it('template SANS carousel -> envoi strictement inchangé (aucun champ carousel)', async () => {
+    let recu: Record<string, unknown> | null = null;
+    const a = app({
+      prepareCarousel: async () => null,
+      sendTemplateMessage: async (_t, _p, _to, tpl) => { recu = tpl as unknown as Record<string, unknown>; return 'wamid.OK'; },
+    });
+    const res = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(),
+      payload: { templateName: 'promo', language: 'fr', bodyParams: ['Julie'] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(recu).not.toBeNull();
+    expect(Object.hasOwn(recu!, 'carousel')).toBe(false);
     await a.close();
   });
 });

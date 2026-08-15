@@ -1,127 +1,27 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
-import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/VariableBodyEditor';
 import { FlowBuilder } from '@/components/FlowBuilder';
-import { listFlows, createTemplate, updateTemplate, uploadMedia, listUserFields, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
+import {
+  useTemplateBody, TemplateBodyField, TemplateVariableExamples, labelForSource, unmappedVariablesMessage,
+} from '@/components/TemplateBodyField';
+import { listFlows, createTemplate, updateTemplate, uploadMedia, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
-import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
 
 /**
  * Formulaire de creation (et d'edition) d'un template Meta.
  *
  * Extrait tel quel de `web/app/templates/page.tsx`, sans retouche de logique, pour etre reutilise depuis
- * l'ecran Campagne : on y cree un template sans quitter la campagne en cours. Les helpers qui l'accompagnent
- * (EmojiPicker, FieldPicker, exemples deterministes...) ne servaient qu'a lui et l'ont suivi.
+ * l'ecran Campagne : on y cree un template sans quitter la campagne en cours. Le corps et ses variables
+ * vivent dans `TemplateBodyField` : le formulaire CAROUSEL s'en sert aussi, à l'identique.
  */
-
-// Emojis courants pour messages business (insérés au curseur dans le corps).
-const EMOJIS = [
-  '😀','😊','😉','😍','🥳','🤩','😎','🙌','👋','👍','🙏','🤝','💪','👏','🔥','✨',
-  '⭐','🌟','💯','✅','✔️','☑️','❌','⚡','🎉','🎊','🎁','🎈','🥂','🍾','❤️','🧡',
-  '💛','💚','💙','💜','💖','💥','💡','📣','📢','🔔','📅','⏰','🕐','⌛','📍','📌',
-  '🏷️','🛍️','🛒','💳','💰','🤑','📦','🚚','🚀','🎯','📈','📊','💬','💭','📞','📲',
-  '✉️','📧','📝','🔗','➡️','👉','👀','🤗',
-];
-
-/** Une variable {{n}} rattachée à un champ (via le sélecteur) : source (pour l'indice) + libellé (chip). */
-interface VarSource { source: ParamSource; label: string }
-
-/** Exemple déterministe (jamais vide) exigé par Meta, selon le champ choisi. Zéro IA : valeur plausible par
- *  clé connue, sinon par type de champ. */
-function deterministicExample(source: ParamSource, fieldType?: string): string {
-  if (source.type === 'now') return '31/12/2026'; // date du jour (JJ/MM/AAAA), exemple Meta déterministe
-  // Champ de base (attribut) : exemple propre par clé (Nom, Téléphone, BSUID, WhatsApp ID) via la source commune.
-  if (source.type === 'attribute') return systemFieldExample(source.key ?? '');
-  if (source.type === 'literal') return source.value?.trim() || 'exemple';
-  const key = (source.key ?? '').toLowerCase();
-  const byKey: Record<string, string> = {
-    prenom: 'Marie', firstname: 'Marie', nom: 'Martin', lastname: 'Martin',
-    email: 'marie@exemple.fr', mail: 'marie@exemple.fr', ville: 'Lyon', city: 'Lyon',
-    societe: 'Dupont SARL', entreprise: 'Dupont SARL', company: 'Dupont SARL',
-    telephone: '+33 6 12 34 56 78', tel: '+33 6 12 34 56 78',
-  };
-  if (byKey[key]) return byKey[key]!;
-  switch (fieldType) {
-    case 'number': return '42';
-    case 'date': return '2026-01-15';
-    case 'url': return 'https://exemple.fr';
-    case 'boolean': return 'oui';
-    default: return 'Marie';
-  }
-}
-
-/** Libellé lisible d'une source (pour le chip d'aperçu + restauration à l'édition). Aligné sur la source commune
- *  SYSTEM_FIELDS (mêmes libellés que la campagne) : un attribut bsuid/wa_id n'est plus mal étiqueté « Nom ». */
-function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (fr: string, en?: string) => string): string {
-  if (source.type === 'now') return t('Date du jour (auto)', "Today's date (auto)");
-  if (source.type === 'literal') return t('Texte fixe', 'Fixed text');
-  const sys = SYSTEM_FIELDS.find((f) => f.source.type === source.type && f.source.key === source.key);
-  if (sys) return sys.label;
-  return fields.find((f) => f.key === source.key)?.label ?? source.key ?? t('Champ', 'Field');
-}
 
 const inputCls =
   'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-
-/** Sélecteur d'emojis : insère au curseur, se ferme au clic extérieur. */
-function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {
-  const t = useT();
-  return (
-    <>
-      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
-      <div className="absolute bottom-11 right-0 z-50 w-64 rounded-xl border border-ink-200 bg-white p-2 shadow-lg">
-        <div className="grid grid-cols-8 gap-0.5">
-          {EMOJIS.map((e) => (
-            <button type="button" key={e} onClick={() => onPick(e)} className="rounded p-1 text-lg leading-none hover:bg-ink-100" aria-label={e}>
-              {e}
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
-
-/** Une option du sélecteur de variable : champ de BASE (group 'base') ou champ perso (group 'custom'). */
-interface FieldOption { source: ParamSource; label: string; fieldType?: string; group: 'base' | 'custom' }
-
-/** Sélecteur de champ : insère une variable rattachée au champ choisi. Deux groupes (Champs de base / Mes champs)
- *  pour rester COHÉRENT avec le sélecteur de la campagne (VarsEditor). */
-function FieldPicker({ options, onPick, onClose }: {
-  options: FieldOption[];
-  onPick: (o: FieldOption) => void;
-  onClose: () => void;
-}) {
-  const t = useT();
-  const groups: Array<{ id: 'base' | 'custom'; label: string }> = [
-    { id: 'base', label: t('Champs de base', 'Base fields') },
-    { id: 'custom', label: t('Mes champs', 'My fields') },
-  ];
-  return (
-    <>
-      <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
-      <div className="absolute bottom-11 right-0 z-50 max-h-56 w-56 overflow-y-auto rounded-xl border border-ink-200 bg-white p-1 shadow-lg">
-        {groups.map((g) => {
-          const items = options.filter((o) => o.group === g.id);
-          if (items.length === 0) return null;
-          return (
-            <div key={g.id}>
-              <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-400">{g.label}</div>
-              {items.map((o, i) => (
-                <button type="button" key={`${g.id}-${i}`} onClick={() => onPick(o)} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-ink-700 hover:bg-brand-50">{o.label}</button>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
-}
 
 /** Ce qu'un template neuf renvoie a l'appelant. `status` vaut PENDING chez Meta : il n'est PAS envoyable. */
 export interface CreatedTemplate { name: string; language: string; status: string }
@@ -136,8 +36,9 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
   const [name, setName] = useState(initial?.name ?? '');
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>((initial?.category?.toUpperCase() as 'MARKETING' | 'UTILITY') ?? 'MARKETING');
   const [language, setLanguage] = useState(initial?.language ?? 'fr');
-  const [body, setBody] = useState(initial?.body ?? '');
-  const [examples, setExamples] = useState<string[]>(initial?.example ?? []);
+  // Corps + variables (chips, sélecteur de champ, exemples, indices) : logique PARTAGÉE avec le carousel.
+  const bodyState = useTemplateBody(tenantId, { ...(initial?.body ? { body: initial.body } : {}), ...(initial?.example ? { example: initial.example } : {}) });
+  const { body } = bodyState;
   const [buttons, setButtons] = useState<TemplateButtonInput[]>(initial?.buttons ?? []);
   // En-tête : en édition seuls les templates à en-tête TEXTE (ou sans) sont éditables (média non re-téléchargeable).
   const [headerType, setHeaderType] = useState<'none' | 'TEXT' | 'IMAGE' | 'VIDEO'>(initial?.headerFormat === 'TEXT' ? 'TEXT' : 'none');
@@ -154,15 +55,9 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
-  const bodyEditorRef = useRef<VariableBodyEditorHandle>(null);
   const [pubFlows, setPubFlows] = useState<FlowSummary[]>([]);
   const [creatingFlow, setCreatingFlow] = useState(false);
   const hasFlow = buttons.some((b) => b.type === 'FLOW');
-  // Champs dispo dans le sélecteur de variable + source par variable ({{n}} -> varSources[n-1]).
-  const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
-  const [varSources, setVarSources] = useState<Array<VarSource | undefined>>([]);
 
   useEffect(() => {
     listFlows(tenantId)
@@ -170,59 +65,24 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
       .catch(() => setPubFlows([]));
   }, [tenantId]);
 
-  // Champs perso (pour le sélecteur) + restauration des indices variable->champ à l'édition (chips + re-save).
+  // Restauration des indices variable->champ à l'ÉDITION (chips + re-save). Les champs du sélecteur, eux,
+  // sont chargés par `useTemplateBody`.
   useEffect(() => {
+    if (!initial) return;
     let alive = true;
-    (async () => {
-      const [uf, hints] = await Promise.all([
-        listUserFields(tenantId).then((r) => r.fields).catch(() => [] as UserFieldDef[]),
-        initial ? getTemplateHints(tenantId, initial.name, initial.language).then((r) => r.hints).catch(() => [] as TemplateParamHint[]) : Promise.resolve([] as TemplateParamHint[]),
-      ]);
-      if (!alive) return;
-      setUserFields(uf);
-      if (hints.length > 0) {
-        setVarSources((prev) => {
+    getTemplateHints(tenantId, initial.name, initial.language)
+      .then(({ hints }) => {
+        if (!alive || hints.length === 0) return;
+        bodyState.setVarSources((prev) => {
           const next = [...prev];
-          for (const h of hints) next[h.position - 1] = { source: h.source, label: labelForSource(h.source, uf, t) };
+          for (const h of hints) next[h.position - 1] = { source: h.source, label: labelForSource(h.source, bodyState.userFields, t) };
           return next;
         });
-      }
-    })();
+      })
+      .catch(() => { /* indices indisponibles : les chips restent en {{n}}, le formulaire marche */ });
     return () => { alive = false; };
-  }, [tenantId, initial, t]);
-
-  // Source de vérité COMMUNE (web/lib/fields.ts) : les 6 champs de base (Nom, Prénom, Téléphone, BSUID, WhatsApp ID,
-  // Email) + les champs perso (hors clés système). Exactement la même liste que le sélecteur de la campagne (VarsEditor)
-  // -> cohérence de bout en bout, et on peut enfin rattacher une variable à BSUID / WhatsApp ID à la création.
-  const fieldOptions: FieldOption[] = [
-    { source: { type: 'now' } as ParamSource, label: t('Date du jour (auto)', "Today's date (auto)"), group: 'base' as const },
-    ...SYSTEM_FIELDS.map((f) => ({ source: f.source, label: f.label, group: 'base' as const })),
-    ...customFieldsOnly(userFields).map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type, group: 'custom' as const })),
-  ];
-
-  // Positions de variables réellement présentes dans le corps (distinctes, triées). Après suppression d'une
-  // variable du milieu le corps n'est plus forcément 1..N contigu -> on pilote la numérotation, les exemples et
-  // les indices là-dessus (pas sur un simple compte, qui provoquerait des collisions de {{n}}).
-  const bodyPositions = useMemo(
-    () => [...new Set([...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1])))].sort((a, b) => a - b),
-    [body],
-  );
-
-  function insertEmoji(emoji: string) {
-    // Insertion au curseur dans l'éditeur riche (chips) -> onChange met à jour `body`.
-    bodyEditorRef.current?.insertToken(emoji);
-  }
-
-  // Insère une NOUVELLE variable au curseur (chip lisible), rattachée au champ choisi, exemple pré-rempli. Numéro =
-  // MAX des positions présentes + 1 (jamais le simple compte : après suppression d'un {{1}}, réutiliser 2 créerait
-  // une collision {{2}}/{{2}}). La canonicalisation au submit compacte ensuite les trous.
-  function insertVariable(opt: { source: ParamSource; label: string; fieldType?: string }) {
-    const next = (bodyPositions.length ? Math.max(...bodyPositions) : 0) + 1;
-    bodyEditorRef.current?.insertToken(`{{${next}}}`, opt.label);
-    setVarSources((vs) => { const c = [...vs]; c[next - 1] = { source: opt.source, label: opt.label }; return c; });
-    setExamples((ex) => { const c = [...ex]; c[next - 1] = deterministicExample(opt.source, opt.fieldType); return c; });
-    setFieldPickerOpen(false);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, initial, t, bodyState.userFields]);
 
   function buildHeader(): TemplateHeaderInput | undefined {
     if (headerType === 'TEXT') return headerText.trim() ? { format: 'TEXT', text: headerText.trim() } : undefined;
@@ -269,33 +129,19 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
     setError(null);
     setOk(null);
     try {
-      // Canonicalise les variables du corps : renumérote en 1..N contigu par ordre d'apparition (au cas où une
-      // variable du milieu a été supprimée -> Meta EXIGE une suite sans trou) et réaligne sources + exemples.
-      const order: number[] = [];
-      const seen = new Set<number>();
-      for (const mm of body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
-        const p = Number(mm[1]);
-        if (!seen.has(p)) { seen.add(p); order.push(p); }
-      }
-      const remap = new Map(order.map((old, i) => [old, i + 1]));
-      const canonBody = body.replace(/\{\{\s*(\d+)\s*\}\}/g, (_s, d) => `{{${remap.get(Number(d))}}}`);
-      const canonSources = order.map((old) => varSources[old - 1]);
-      const canonExamples = order.map((old) => examples[old - 1] ?? '');
-
-      // Décision « forcer le sélecteur » : toute variable {{n}} doit être rattachée à un champ via « + Variable ».
-      // Une variable tapée à la main (sans source) partirait vide à l'envoi et se ferait rejeter par Meta -> on bloque ici.
-      const unmapped = canonSources.map((v, i) => (v ? null : i + 1)).filter((p): p is number => p !== null);
-      if (unmapped.length > 0) {
-        setError(`${t('Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) :', 'Each variable must be linked to a field via « + Variable ». Not linked:')} ${unmapped.map((p) => `{{${p}}}`).join(', ')}. ${t('Supprime-les puis réinsère-les avec le sélecteur.', 'Delete them then reinsert them with the picker.')}`);
+      // Canonicalisation des variables (renumérotation 1..N contiguë, exemples et indices réalignés) : même
+      // fonction que le carousel, donc mêmes règles chez Meta.
+      const canon = bodyState.canonicalize();
+      // Toute variable {{n}} doit être rattachée à un champ via « + Variable » : tapée à la main, elle
+      // partirait vide à l'envoi et se ferait rejeter par Meta.
+      if (canon.unmapped.length > 0) {
+        setError(unmappedVariablesMessage(canon.unmapped, t));
         setBusy(false);
         return;
       }
-
-      const example = order.length > 0 ? canonExamples.map((e) => e || 'exemple') : undefined;
-      // Indices variable->champ (seulement les variables rattachées à un champ via le sélecteur), positions canoniques.
-      const paramHints: TemplateParamHint[] = canonSources
-        .map((v, i): TemplateParamHint | null => (v ? { position: i + 1, source: v.source } : null))
-        .filter((h): h is TemplateParamHint => h !== null);
+      const canonBody = canon.body;
+      const example = canon.example;
+      const paramHints: TemplateParamHint[] = canon.paramHints;
       const header = buildHeader();
       const foot = footer.trim() || undefined;
       if (isEdit && initial) {
@@ -330,9 +176,7 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
       });
       setOk(`${t('Template soumis (statut', 'Template submitted (status')} : ${res.status}). ${t('Il passe en revue Meta.', 'It goes through Meta review.')}`);
       setName('');
-      setBody('');
-      setExamples([]);
-      setVarSources([]);
+      bodyState.reset();
       setButtons([]);
       setHeaderType('none');
       setHeaderText('');
@@ -421,38 +265,11 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Corps du message', 'Message body')}</label>
-            <div className="relative">
-              <VariableBodyEditor
-                ref={bodyEditorRef}
-                value={body}
-                varLabels={varSources.map((v) => v?.label)}
-                onChange={setBody}
-                placeholder={t('Bonjour [Prénom], voici notre offre 🎉', 'Hello [First name], here is our offer 🎉')}
-                className={`${inputCls} pr-28`}
-              />
-              <div className="absolute bottom-2 right-2 flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => { setFieldPickerOpen((o) => !o); setEmojiOpen(false); }}
-                  className="rounded-md border border-ink-200 bg-white px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50"
-                  title={t('Insérer une variable (champ du contact)', 'Insert a variable (contact field)')}
-                >
-                  + Variable
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setEmojiOpen((o) => !o); setFieldPickerOpen(false); }}
-                  className="rounded-md p-1 text-lg leading-none hover:bg-ink-100"
-                  aria-label={t('Insérer un emoji', 'Insert an emoji')}
-                >
-                  😊
-                </button>
-              </div>
-              {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
-              {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
-            </div>
-            <p className="mt-1 text-xs text-ink-400">{t("Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l'exemple exigé par Meta se remplit tout seul.", 'Click « + Variable » to insert a contact field (name, first name, email…): the example required by Meta fills in automatically.')}</p>
+            <TemplateBodyField
+              state={bodyState}
+              label={t('Corps du message', 'Message body')}
+              placeholder={t('Bonjour [Prénom], voici notre offre 🎉', 'Hello [First name], here is our offer 🎉')}
+            />
           </div>
 
           <div className="mt-3">
@@ -460,29 +277,9 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
             <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder={t('Petit texte en bas (60 car. max, sans variable)', 'Small text at the bottom (60 char. max, no variable)')} className={inputCls} />
           </div>
 
-          {bodyPositions.length > 0 && (
-            <div className="mt-2">
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Exemples de variables (requis par Meta)', 'Variable examples (required by Meta)')}</label>
-              <div className="space-y-2">
-                {/* Piloté par les positions RÉELLES du corps (index pos-1), pas un compte séquentiel : après
-                    suppression d'une variable du milieu, chaque ligne reste alignée avec sa source/exemple. */}
-                {bodyPositions.map((pos) => (
-                  <div key={pos} className="flex items-center gap-2">
-                    <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-400">
-                      {`{{${pos}}}`}
-                      {varSources[pos - 1] && <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{varSources[pos - 1]!.label}</span>}
-                    </span>
-                    <input
-                      value={examples[pos - 1] ?? ''}
-                      onChange={(e) => setExamples((x) => { const c = [...x]; c[pos - 1] = e.target.value; return c; })}
-                      className={`${inputCls} flex-1`}
-                      placeholder={t('ex. Julie', 'e.g. Julie')}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="mt-2">
+            <TemplateVariableExamples state={bodyState} />
+          </div>
 
           <div className="mt-3">
             <div className="mb-1 flex items-center justify-between">
@@ -597,8 +394,8 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
         <div className="lg:sticky lg:top-4 lg:h-fit">
           <WhatsAppPreview
             body={body}
-            examples={examples}
-            varLabels={varSources.map((v) => v?.label)}
+            examples={bodyState.examples}
+            varLabels={bodyState.varLabels}
             buttons={buttons}
             header={
               headerType === 'none'

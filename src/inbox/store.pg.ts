@@ -24,6 +24,8 @@ export interface ConversationSummary {
   lastPreview: string | null;
   lastMessageAt: string;
   controlOwner: ControlOwner;
+  /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. */
+  unread: boolean;
 }
 export interface ConversationMessage {
   id: string;
@@ -36,6 +38,20 @@ export interface ConversationMessage {
    *  Optionnel : les mocks de test qui omettent le champ restent valides. */
   senderName?: string | null;
 }
+
+/**
+ * « Non lu » = il existe un message ENTRANT plus récent que la dernière ouverture du fil (`last_read_at`
+ * null = jamais ouvert). Seul l'ENTRANT compte : nos propres envois (campagne, scénario) ne doivent pas
+ * rallumer le compteur, sinon il s'allumerait tout seul à chaque campagne.
+ *
+ * Fragment SQL partagé par la liste et le compteur : deux écritures divergeraient au premier ajustement,
+ * et la pastille afficherait un nombre que la liste ne montre pas. `c` = alias de `conversations`.
+ */
+const UNREAD_SQL = `exists (
+  select 1 from conversation_messages m
+  where m.conversation_id = c.id and m.direction = 'in'
+    and m.created_at > coalesce(c.last_read_at, to_timestamp(0))
+)`;
 
 /** Store Postgres de la boîte de réception (conversations + messages). */
 export class PgInboxStore implements InboxStore {
@@ -220,9 +236,10 @@ export class PgInboxStore implements InboxStore {
   async listConversations(tenantId: string): Promise<ConversationSummary[]> {
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date;
-      control_owner: ControlOwner;
+      control_owner: ControlOwner; unread: boolean;
     }>(
-      `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner
+      `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
+              ${UNREAD_SQL} as unread
        from conversations c
        left join contacts ct on ct.id = c.contact_id
        where c.tenant_id = $1
@@ -237,7 +254,29 @@ export class PgInboxStore implements InboxStore {
       lastPreview: r.last_preview,
       lastMessageAt: r.last_message_at.toISOString(),
       controlOwner: r.control_owner,
+      unread: r.unread,
     }));
+  }
+
+  /** Nombre de conversations NON LUES du tenant (pastille du menu). Requête dédiée : le menu est monté sur
+   *  toutes les pages, il ne doit pas rapatrier 100 conversations pour afficher un nombre. */
+  async countUnread(tenantId: string): Promise<number> {
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n from conversations c where c.tenant_id = $1 and ${UNREAD_SQL}`,
+      [tenantId],
+    );
+    return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Marque un fil comme LU (un opérateur vient de l'ouvrir). Scopé au tenant : un id de conversation d'un
+   * autre workspace ne marque rien. Idempotent.
+   */
+  async markConversationRead(tenantId: string, conversationId: string): Promise<void> {
+    await this.pool.query(
+      `update conversations set last_read_at = now() where id = $1 and tenant_id = $2`,
+      [conversationId, tenantId],
+    );
   }
 
   /**

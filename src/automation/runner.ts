@@ -131,12 +131,22 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
       // Anti-boucle : on marque AVANT de démarrer, pour qu'un scénario qui repose lui-même le déclencheur ne
       // reboucle pas même si le démarrage lève une exception à mi-chemin (un envoi a pu partir).
       await deps.markFired(a.id, ev.waId);
-      if (await deps.startWorkflow(tenantId, a.workflowId, ev.waId, a.startNodeId, windowOpen)) {
+      const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, a.startNodeId, windowOpen);
+      // `false` OU une chaîne (la raison du refus) = PAS parti. Tester la simple vérité JS comptait une
+      // chaîne comme un succès : le tir restait marqué et l'anti-rebond avalait en silence la prochaine
+      // vraie demande du client. Tout le reste (`true`, câblage muet) = parti, comme le moteur de campagne.
+      const parti = issue !== false && typeof issue !== 'string';
+      if (parti) {
         started += 1;
       } else {
-        // `false` = les gardes de l'exécuteur ont refusé AVANT tout envoi (fil tenu par un humain/MBA, bloc
-        // absent, scénario supprimé) : rien n'est parti, donc rien à protéger. Garder le tir ferait taire la
+        // Les gardes de l'exécuteur ont refusé AVANT tout envoi (fil tenu par un humain/MBA, bloc absent,
+        // scénario supprimé) : rien n'est parti, donc rien à protéger. Garder le tir ferait taire la
         // prochaine vraie demande du client pendant toute la durée de l'anti-rebond.
+        if (typeof issue === 'string') {
+          // Une automation n'a aucun écran où afficher la raison : le log est le seul endroit où elle vit.
+          // eslint-disable-next-line no-console
+          console.log(`automation ${a.id} : scénario non démarré pour ${ev.waId} : ${issue}`);
+        }
         await deps.clearFired(a.id, ev.waId);
       }
     } catch (err) {

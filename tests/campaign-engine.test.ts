@@ -164,6 +164,22 @@ describe('runCampaign', () => {
     expect(recipients.results.get('r2')).toMatchObject({ status: 'sent' });
   });
 
+  /**
+   * Refus décidé À L'INTÉRIEUR du scénario (visuel de carte non préparable, variable sans valeur, template
+   * introuvable chez Meta). La raison doit atterrir SUR le destinataire : sinon elle n'existe que dans les
+   * logs du worker et l'écran affiche « envoyé » alors que rien n'est parti (vécu 3 fois le 2026-08-15).
+   */
+  it('campagne WORKFLOW : la RAISON du refus atterrit sur le destinataire, pas seulement dans les logs', async () => {
+    const wf: Campaign = { ...campaign, workflowId: 'wf1' };
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(wf, deps({
+      recipients,
+      startWorkflow: async () => 'template « promo » : l’image de la carte 2 n’a pas pu être préparée pour l’envoi',
+    }));
+    expect(report).toMatchObject({ sent: 0, failed: 1 });
+    expect(recipients.results.get('r1')?.error).toContain('carte 2');
+  });
+
   it('campagne NODE : un run NON démarré (false) -> `failed`, jamais `sent`', async () => {
     const node: Campaign = { ...campaign, workflowId: 'wf1', startNodeId: 'n5', templateName: '' };
     const recipients = new FakeRecipients([rec('r1', '+33611')]);

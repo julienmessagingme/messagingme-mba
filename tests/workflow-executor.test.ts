@@ -23,7 +23,7 @@ class FakeRuns {
   }
 }
 
-function make(graph: WorkflowGraph) {
+function make(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
   const runs = new FakeRuns();
   const calls: string[] = [];
   const escalations: string[] = []; // capture séparée : les assertions `calls` existantes restent inchangées
@@ -38,6 +38,7 @@ function make(graph: WorkflowGraph) {
     sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
     sendFlow: async (_t, _w, flowId, body, cta) => { calls.push(`flow:${flowId}:${body}:${cta}`); },
     escalateToHuman: async (_t, w) => { escalations.push(w); },
+    ...over,
   });
   return { ex, runs, calls, escalations };
 }
@@ -538,6 +539,18 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
     expect(emis).toEqual(['relance_j1']);
   });
 
+  it('envoi REFUSÉ au réveil -> run clos et conversation remontée à un humain', async () => {
+    // Laisser le run en attente le ferait repartir au bloc SUIVANT dès que le contact écrirait, en réponse à
+    // un message qu'il n'a jamais reçu.
+    const { ex, runs, escalations, run } = makeResume(
+      grapheAvecSuite(n2('tpl', 'template', { templateName: 'relance' })),
+      { sendTemplate: async () => 'template « relance » introuvable chez Meta' },
+    );
+    expect(await ex.resume(run)).toBe(false);
+    expect(runs.run).toMatchObject({ status: 'inbox' });
+    expect(escalations).toEqual(['33600']);
+  });
+
   it('DEUX attentes à la suite : la reprise redort, avec la nouvelle échéance', async () => {
     const graph: WorkflowGraph = {
       nodes: [n2('w', 'wait', { delay: 1, unit: 'hours' }), n2('w2', 'wait', { delay: 3, unit: 'minutes' }), n2('tpl', 'template', { templateName: 'p' })],
@@ -546,5 +559,65 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
     const { ex, runs, run } = makeResume(graph, { now: () => 1_000_000 });
     expect(await ex.resume(run)).toBe(true);
     expect(runs.run).toMatchObject({ status: 'sleeping', currentNode: 'w2' });
+  });
+});
+
+/**
+ * Un envoi REFUSÉ à l'intérieur d'un scénario ne doit jamais être compté comme parti.
+ *
+ * Le refus est décidé dans le worker (visuel de carte non re-téléversable, variable sans valeur, template
+ * absent chez Meta). Il n'existait que dans les logs : la campagne affichait « envoyé » avec l'identifiant
+ * synthétique `wf-<id>` et rien n'arrivait sur le téléphone. Vécu trois fois en production le 2026-08-15.
+ */
+describe('WorkflowExecutor : remontée d’un envoi refusé', () => {
+  const linear: WorkflowGraph = {
+    nodes: [n('t', 'tag', { tag: 'vip' }), n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('ib', 'inbox')],
+    edges: [e('e1', 't', 'tpl'), e('e2', 'tpl', 'ib')],
+  };
+  const RAISON = 'template « promo » : l’image de la carte 2 n’a pas pu être préparée pour l’envoi';
+
+  it('start : la raison EXACTE remonte à l’appelant (c’est elle que la campagne affiche)', async () => {
+    const { ex } = make(linear, { sendTemplate: async () => RAISON });
+    expect(await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(RAISON);
+  });
+
+  it('start refusé : AUCUN run en attente n’est laissé derrière', async () => {
+    // Sinon il attendrait une réponse à un message jamais reçu, et le premier message du contact le ferait
+    // repartir au bloc SUIVANT, sorti de nulle part.
+    const { ex, runs } = make(linear, { sendTemplate: async () => RAISON });
+    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    expect(runs.run).toBeNull();
+  });
+
+  it('start refusé : les actions synchrones déjà appliquées le restent (on ne les rejoue pas)', async () => {
+    const { ex, calls } = make(linear, { sendTemplate: async () => RAISON });
+    await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['tag:vip']);
+  });
+
+  it('start qui PASSE : toujours `true`, run en attente au template (non-régression)', async () => {
+    const { ex, runs } = make(linear);
+    expect(await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(true);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+  });
+
+  it('une chaîne VIDE rendue par un câblage n’est pas un refus', async () => {
+    const { ex, runs } = make(linear, { sendTemplate: async () => '' });
+    expect(await ex.start('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' })).toBe(true);
+    expect(runs.run).toMatchObject({ status: 'waiting' });
+  });
+
+  it('advance : envoi refusé -> run clos et conversation remontée à un humain', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl1', 'template', { templateName: 'a', language: 'fr' }), n('tpl2', 'template', { templateName: 'b', language: 'fr' })],
+      edges: [e('e1', 'tpl1', 'tpl2')],
+    };
+    let refuse = false;
+    const { ex, runs, escalations } = make(g, { sendTemplate: async () => (refuse ? 'variable sans valeur pour ce contact' : undefined) });
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    refuse = true;
+    await ex.advance('t1', '33600', 'm1');
+    expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
+    expect(escalations).toEqual(['33600']);
   });
 });

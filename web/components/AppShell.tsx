@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
+import { countUnreadConversations } from '@/lib/api';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
@@ -29,7 +30,17 @@ const icons = {
 };
 
 interface NavChild { key: string; href: string; label: string }
-interface NavItem { key: string; href?: string; label: string; d: string; children?: NavChild[] }
+interface NavItem { key: string; href?: string; label: string; d: string; children?: NavChild[]; badge?: number }
+
+/** Intervalle de rafraîchissement de la pastille de non-lus. Assez court pour qu'un message vu sur le
+ *  téléphone apparaisse vite, assez long pour ne pas marteler l'API depuis toutes les pages. */
+const UNREAD_POLL_MS = 30_000;
+
+/**
+ * Événement « le nombre de non-lus a bougé », émis par l'inbox quand elle marque un fil lu. Sans lui, la
+ * pastille resterait allumée jusqu'à 30 s après que l'opérateur a ouvert la conversation.
+ */
+export const UNREAD_CHANGED_EVENT = 'mba:unread-changed';
 
 /**
  * Coquille commune : garde d'auth + RBAC, SIDEBAR gauche (nav rôle-aware) + header (menu Compte à droite)
@@ -41,6 +52,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   // Groupes de nav repliables. Ouvert au départ seulement si la page active est un de ses enfants
   // (`active` est une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
   // Chaque groupe DOIT figurer ici : un groupe absent de cet initialiseur reste replié même quand on arrive
@@ -54,7 +66,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
   const NAV_ADMIN: NavItem[] = [
-    { key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox },
+    { key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread },
     // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
@@ -86,7 +98,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
     ] },
   ];
-  const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox }];
+  const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];
 
   // Fail-safe : tout ce qui n'est pas l'inbox est réservé aux admins.
   const adminOnly = active !== 'inbox';
@@ -103,6 +115,22 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     }
     setSession(s);
   }, [router, adminOnly]);
+
+  // Pastille de non-lus : relevée à l'arrivée puis toutes les 30 s. Échec silencieux (0) : une pastille est
+  // une information d'appoint, elle ne doit jamais faire apparaître une erreur en travers du menu.
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    const lire = () => {
+      countUnreadConversations(session.tenantId)
+        .then(({ count }) => { if (alive) setUnread(count); })
+        .catch(() => { /* pastille muette */ });
+    };
+    lire();
+    const id = setInterval(lire, UNREAD_POLL_MS);
+    window.addEventListener(UNREAD_CHANGED_EVENT, lire);
+    return () => { alive = false; clearInterval(id); window.removeEventListener(UNREAD_CHANGED_EVENT, lire); };
+  }, [session]);
 
   if (!session) return null;
   if (adminOnly && session.role !== 'admin') return null;
@@ -157,6 +185,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           <Link key={item.key} href={item.href!} onClick={() => setDrawerOpen(false)} className={itemCls(group === item.key)}>
             <Ico d={item.d} />
             {item.label}
+            {item.badge !== undefined && item.badge > 0 && (
+              <span
+                data-testid={`nav-badge-${item.key}`}
+                // `ml-auto` : la pastille se colle à droite de l'entrée, elle ne pousse jamais le libellé.
+                className="ml-auto min-w-[20px] rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white"
+                aria-label={t(`${item.badge} conversation(s) non lue(s)`, `${item.badge} unread conversation(s)`)}
+              >
+                {item.badge > 99 ? '99+' : item.badge}
+              </span>
+            )}
           </Link>
         ),
       )}

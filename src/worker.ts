@@ -37,6 +37,7 @@ import { WorkflowExecutor } from './workflow/executor';
 import { buildWorkflowTemplateComponents } from './workflow/template-send';
 import { carouselSendBlocker } from './meta/template-components';
 import type { OutboundCarouselCard } from './meta/template-components';
+import { CarouselMediaPreparer } from './meta/carousel-media';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
@@ -165,52 +166,19 @@ async function main(): Promise<void> {
     return waba;
   };
   /**
-   * Prépare les visuels d'un carousel POUR L'ENVOI : chaque image est re-téléversée sur le numéro et remplacée
-   * par son `media id`.
-   *
-   * Pourquoi ce détour, mesuré en live le 2026-08-15 : envoyer l'URL du CDN de Meta (`link`) est ACCEPTÉ par
-   * l'API (200 + id de message) puis échoue 2 s plus tard en `131053`, parce que le téléchargeur de Meta se
-   * prend un 403 sur son propre CDN. L'URL est pourtant publiquement lisible depuis n'importe où ailleurs :
-   * c'est ce qui rendait le bug invisible à une sonde qui se contente de lire l'URL.
-   *
-   * Cache par CHEMIN d'image (l'URL porte une signature qui change) : un media id vit 30 jours côté Meta, on
-   * le garde 7. Sans lui, une campagne de 5 000 destinataires re-téléverserait 5 000 fois les mêmes visuels.
+   * Préparation des visuels de carousel (re-téléversement -> `media id`). UNE seule implémentation dans le
+   * projet (`meta/carousel-media.ts`), partagée avec l'API qui en a besoin pour l'envoi depuis l'inbox.
+   * L'instance porte son cache, donc elle est créée UNE fois pour tout le worker.
    */
-  const mediaIdCache = new Map<string, { at: number; id: string }>();
-  const MEDIA_CACHE_MS = 7 * 86_400_000;
-  const prepareCarouselMedia = async (tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> => {
-    const pn = await repo.getTenantPhoneNumberId(tenant);
-    if (!pn) {
-      // eslint-disable-next-line no-console
-      console.error('carousel: aucun numéro d’envoi pour le tenant, visuels non préparés');
-      return cards;
-    }
-    const { token } = await metaCredentials.resolveForTenant(tenant);
-    const media = new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
-    return Promise.all(cards.map(async (card) => {
-      if (!card.mediaUrl) {
-        // eslint-disable-next-line no-console
-        console.error('carousel: carte sans URL de visuel lisible chez Meta (handle non exploitable)');
-        return card;
-      }
-      const cle = card.mediaUrl.split('?')[0]!;
-      const hit = mediaIdCache.get(cle);
-      if (hit && Date.now() - hit.at < MEDIA_CACHE_MS) return { ...card, mediaId: hit.id };
-      try {
-        const res = await fetch(card.mediaUrl);
-        if (!res.ok) throw new Error(`téléchargement du visuel: HTTP ${res.status}`);
-        const mime = res.headers.get('content-type') ?? 'image/jpeg';
-        const bytes = Buffer.from(await res.arrayBuffer());
-        const id = await media.uploadForSend(pn, bytes, mime);
-        mediaIdCache.set(cle, { at: Date.now(), id });
-        return { ...card, mediaId: id };
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("carousel: visuel non préparé pour l'envoi:", err instanceof Error ? err.message : String(err));
-        return card; // sans mediaId -> carouselSendBlocker refusera en nommant la carte
-      }
-    }));
-  };
+  const carouselMedia = new CarouselMediaPreparer({
+    getPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+    mediaClientFor: async (tenant) => {
+      const { token } = await metaCredentials.resolveForTenant(tenant);
+      return new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
+    },
+  });
+  const prepareCarouselMedia = (tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> =>
+    carouselMedia.prepare(tenant, cards);
 
   const templateVarInfo = async (tenant: string, name: string, language: string): Promise<TplInfo | null> => {
     const waba = await tenantWabaId(tenant);
@@ -294,7 +262,7 @@ async function main(): Promise<void> {
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: aucun numéro pour le tenant ${tenant}, template « ${name} » non envoyé`);
-        return;
+        return 'aucun numéro WhatsApp rattaché à ce workspace';
       }
       const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
 
@@ -315,13 +283,13 @@ async function main(): Promise<void> {
         if (blocked !== null) {
           // eslint-disable-next-line no-console
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blocked}`);
-          return;
+          return `template « ${name} » : ${blocked}`;
         }
         const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}`, ...(carousel ? { carousel } : {}) });
         if (missing.length > 0) {
           // eslint-disable-next-line no-console
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
-          return;
+          return `template « ${name} » : valeur manquante pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
         }
         const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
         await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
@@ -341,7 +309,7 @@ async function main(): Promise<void> {
       if (info === null) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: variables de « ${name} » indéterminables (WABA/template/réseau) -> non envoyé à ${waId}`);
-        return;
+        return `template « ${name} » introuvable chez Meta (nom, langue, ou WhatsApp momentanément injoignable)`;
       }
       let hints: Awaited<ReturnType<typeof hintStore.get>> = [];
       let contact = null as Awaited<ReturnType<typeof contactStore.getResolvableByPhone>>;
@@ -360,13 +328,13 @@ async function main(): Promise<void> {
       if (blockedCarousel !== null) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blockedCarousel}`);
-        return;
+        return `template « ${name} » : ${blockedCarousel}`;
       }
       const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(), ...(carouselPret ? { carousel: carouselPret } : {}) });
       if (missing.length > 0) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
-        return;
+        return `template « ${name} » : ce contact n'a pas de valeur pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
       }
       const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
       // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
@@ -377,12 +345,12 @@ async function main(): Promise<void> {
     // /v1/sends, qui a écarté les hors-fenêtre en amont). Texte littéral en V1 (pas de variables).
     sendQuickMessage: async (tenant, waId, body, buttons) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
-      if (body.trim() === '') return; // rien à envoyer
+      if (body.trim() === '') return 'le bloc « message rapide » n\'a pas de texte';
       const pn = await repo.getTenantPhoneNumberId(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendQuickMessage: aucun numéro pour le tenant ${tenant}, message rapide non envoyé à ${waId}`);
-        return;
+        return 'aucun numéro WhatsApp rattaché à ce workspace';
       }
       const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
       // Aucune réponse rapide utilisable -> message TEXTE simple. Meta refuse un interactif sans bouton, et
@@ -398,12 +366,12 @@ async function main(): Promise<void> {
     // des champs par _ref, indépendant du canal d'envoi.
     sendFlow: async (tenant, waId, flowId, body, cta) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
-      if (flowId.trim() === '') return; // rien à envoyer (défense, actionOf filtre déjà)
+      if (flowId.trim() === '') return 'le bloc « formulaire » ne désigne aucun formulaire'; // défense, actionOf filtre déjà
       const pn = await repo.getTenantPhoneNumberId(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendFlow: aucun numéro pour le tenant ${tenant}, formulaire non envoyé à ${waId}`);
-        return;
+        return 'aucun numéro WhatsApp rattaché à ce workspace';
       }
       const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
       // flow_token jamais vide (exigence Meta #131009) mais jetable : la corrélation passe par le _ref du flow_json.

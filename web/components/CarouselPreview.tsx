@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { TemplateButtonInput } from '@/lib/api';
+import { TemplateBodyText } from '@/components/WhatsAppPreview';
 import { useT } from '@/lib/i18n';
 
 /**
@@ -51,12 +52,18 @@ export function CarouselPreview({
   body,
   cards,
   buttons,
+  examples = [],
+  varLabels,
   senderName = 'Messaging Me Tech',
 }: {
   body: string;
   cards: CarouselPreviewCard[];
   /** Boutons communs (contrainte Meta à la création). Une carte qui porte les siens les affiche à la place. */
   buttons: TemplateButtonInput[];
+  /** Valeurs des variables `{{n}}` du message d'introduction. Même contrat que WhatsAppPreview. */
+  examples?: string[];
+  /** Libellés de champ par position : affiche un chip `[Prénom]` au lieu de l'exemple (mode création). */
+  varLabels?: Array<string | undefined>;
   senderName?: string;
 }) {
   const t = useT();
@@ -73,7 +80,9 @@ export function CarouselPreview({
         </div>
         <div className="space-y-2 px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
           <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-800 shadow-sm">
-            {body.trim() ? <span className="whitespace-pre-wrap break-words">{body}</span> : <span className="text-ink-400">{t("Message d'introduction…", 'Introduction message…')}</span>}
+            {body.trim()
+              ? <span className="whitespace-pre-wrap break-words"><TemplateBodyText body={body} examples={examples} {...(varLabels ? { varLabels } : {})} /></span>
+              : <span className="text-ink-400">{t("Message d'introduction…", 'Introduction message…')}</span>}
           </div>
           {cards.length === 0 ? (
             <p className="text-[12px] text-ink-500">{t('Aucune carte à afficher.', 'No card to display.')}</p>

@@ -500,6 +500,9 @@ export interface Conversation {
   lastPreview: string | null;
   lastMessageAt: string;
   controlOwner: ControlOwner;
+  /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. Optionnel : une
+   *  instance antérieure à la migration 0055 ne le rend pas, et l'inbox se comporte alors comme avant. */
+  unread?: boolean;
 }
 export interface InboxMessage {
   id: string;
@@ -513,6 +516,14 @@ export interface InboxMessage {
 }
 export function listConversations(tenantId: string): Promise<{ conversations: Conversation[] }> {
   return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations`);
+}
+/** Nombre de conversations non lues (pastille du menu). Route dédiée : le menu ne rapatrie pas la liste. */
+export function countUnreadConversations(tenantId: string): Promise<{ count: number }> {
+  return request<{ count: number }>(`/tenants/${tenantId}/conversations/unread-count`);
+}
+/** Un opérateur vient d'ouvrir le fil : il est lu. Seul événement qui éteint la pastille. */
+export function markConversationRead(tenantId: string, conversationId: string): Promise<{ ok: boolean }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/read`, { method: 'POST' });
 }
 export interface ConversationThread {
   waId: string;
