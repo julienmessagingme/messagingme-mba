@@ -266,9 +266,12 @@ describe('WorkflowExecutor', () => {
 
     it('bloc SUPPRIMÉ entre-temps (nodeId inconnu) -> aucune action, aucun run, aucun throw, et le NON-démarrage est signalé', async () => {
       const { ex, runs, calls } = make(linear);
-      // `false` = rien n'est parti : c'est ce que la campagne doit voir pour marquer le destinataire en échec
-      // au lieu de le compter comme envoyé (revue Lot D).
-      await expect(ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'disparu')).resolves.toBe(false);
+      // Pas `true` = rien n'est parti : c'est ce que la campagne doit voir pour marquer le destinataire en échec
+      // au lieu de le compter comme envoyé (revue Lot D). Depuis le 2026-08-15 le refus porte SA RAISON (une
+      // chaîne) au lieu d'un simple `false`, pour que la campagne l'affiche telle quelle.
+      const refus = await ex.startFromNode('t1', 'wf1', linear, { waId: '33600', contactId: 'c1' }, 'disparu');
+      expect(refus).not.toBe(true);
+      expect(typeof refus).toBe('string');
       expect(calls).toEqual([]);
       expect(runs.run).toBeNull();
     });

@@ -31,7 +31,8 @@ export interface TestTokenDeps {
    */
   endWaitingRun(tenantId: string, waId: string): Promise<void>;
   /** Démarre le scénario depuis son entrée. Le contact vient d'écrire, la fenêtre 24 h est donc ouverte. */
-  startTestRun(tenantId: string, workflowId: string, waId: string): Promise<boolean>;
+  /** true = parti ; `false` ou une chaîne (la raison) = pas parti. L'appelant ne consomme que le fait. */
+  startTestRun(tenantId: string, workflowId: string, waId: string): Promise<boolean | string>;
 }
 
 /**

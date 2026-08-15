@@ -4,6 +4,13 @@ import type { WorkflowGraph } from './graph';
 import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow } from './run-store.pg';
 
+/**
+ * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
+ * obligeait la campagne à afficher les trois causes possibles côte à côte, en laissant l'opérateur deviner
+ * laquelle s'appliquait (vu en prod le 2026-08-15).
+ */
+export type StartOutcome = true | string;
+
 export interface WorkflowExecutorDeps {
   runs: {
     start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState): Promise<{ id: string }>;
@@ -43,6 +50,12 @@ export interface WorkflowExecutorDeps {
    * vaut ne pas envoyer que se faire refuser par Meta et compter l'envoi comme parti.
    */
   isWindowOpen?: (tenantId: string, waId: string) => Promise<boolean>;
+  /**
+   * REND la main à l'app sur un fil (inverse d'`escalateToHuman`). Appelé au lancement d'une campagne : c'est
+   * un envoi VOULU par un opérateur, donc le scénario reprend la conduite du fil. Sans ça, le scénario
+   * partirait et se bloquerait à la première réponse du contact.
+   */
+  reclaimControl?: (tenantId: string, waId: string) => Promise<void>;
   /**
    * Le scénario a-t-il le droit d'écrire dans ce fil ? false dès qu'un opérateur (`app_human`) ou l'agent
    * de Meta (`mba`) le détient. OPTIONNEL : absent, tout est permis, ce qui préserve le comportement des
@@ -237,15 +250,21 @@ export class WorkflowExecutor {
     graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     startNodeId: string,
-    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean } = {},
-  ): Promise<boolean> {
+    opts: { allowSessionOpen?: boolean; firstTemplateParams?: string[]; emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+  ): Promise<StartOutcome> {
     // Un scénario n'écrit JAMAIS dans un fil détenu par un opérateur ou par MBA. Ce garde est ici, et pas
     // seulement dans `advance`, parce que `start` et `startFromNode` passent par `runFrom` : sans lui, une
     // campagne démarrerait un parcours en plein échange humain, et les deux écriraient au client.
-    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {
+    // « Avoir la main » empêche le scénario de CONTINUER tout seul et MBA de répondre. Ça n'empêche PAS un
+    // opérateur d'envoyer une campagne : c'est LUI qui la déclenche, donc c'est lui qui a la main. Le lancement
+    // depuis une campagne passe donc `ignoreHumanControl` et REPREND la main pour l'app, sans quoi le scénario
+    // partirait puis se bloquerait à la première réponse.
+    if (opts.ignoreHumanControl) {
+      if (this.deps.reclaimControl) await this.deps.reclaimControl(tenantId, contact.waId);
+    } else if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, contact.waId))) {
       // eslint-disable-next-line no-console
       console.log(`workflow ${workflowId}: fil détenu par un humain ou par MBA, run non démarré pour ${contact.waId}`);
-      return false;
+      return "la conversation est tenue par un opérateur (ou par MBA) : ce déclenchement automatique n'écrit pas dedans. Rends la main depuis l'Inbox pour la rouvrir.";
     }
     // Bloc de départ absent du graphe (supprimé entre la création de l'envoi et son exécution) : `walk` renverrait
     // un `done` vide, indiscernable d'un parcours réussi sans action. On le signale explicitement, sinon la
@@ -253,7 +272,7 @@ export class WorkflowExecutor {
     if (!graph.nodes.some((n) => n.id === startNodeId)) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: bloc de départ ${startNodeId} introuvable, run non démarré pour ${contact.waId}`);
-      return false;
+      return 'le bloc de départ du scénario a été supprimé depuis la création de la campagne';
     }
     const ctx = await this.buildCtx(tenantId, contact.waId, graph);
     const { actions, rest } = walk(graph, startNodeId, ctx);
@@ -265,7 +284,7 @@ export class WorkflowExecutor {
     if (!opts.allowSessionOpen && actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
-      return false;
+      return "le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h";
     }
     await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true);
     const state = restToState(rest, this.now());
@@ -287,10 +306,10 @@ export class WorkflowExecutor {
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     firstTemplateParams?: string[],
-    opts: { emitEvents?: boolean } = {},
-  ): Promise<boolean> {
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+  ): Promise<StartOutcome> {
     const entry = entryNode(graph);
-    if (!entry) return false;
+    if (!entry) return 'le scénario est vide';
     return this.runFrom(tenantId, workflowId, graph, contact, entry, { ...(firstTemplateParams ? { firstTemplateParams } : {}), ...opts });
   }
 
@@ -307,9 +326,9 @@ export class WorkflowExecutor {
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null },
     opts: { emitEvents?: boolean } = {},
-  ): Promise<boolean> {
+  ): Promise<StartOutcome> {
     const entry = entryNode(graph);
-    if (!entry) return false;
+    if (!entry) return 'le scénario est vide';
     return this.runFrom(tenantId, workflowId, graph, contact, entry, { allowSessionOpen: true, ...opts });
   }
 
@@ -321,8 +340,8 @@ export class WorkflowExecutor {
   async startFromNode(
     tenantId: string, workflowId: string, graph: WorkflowGraph,
     contact: { waId: string; contactId: string | null }, startNodeId: string,
-    opts: { emitEvents?: boolean } = {},
-  ): Promise<boolean> {
+    opts: { emitEvents?: boolean; ignoreHumanControl?: boolean } = {},
+  ): Promise<StartOutcome> {
     return this.runFrom(tenantId, workflowId, graph, contact, startNodeId, { allowSessionOpen: true, ...opts });
   }
 

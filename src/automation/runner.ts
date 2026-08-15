@@ -43,7 +43,9 @@ export interface AutomationRunnerDeps {
    * `windowOpen` = la fenêtre de service 24 h est PROUVÉE ouverte (le contact vient d'écrire). Le scénario peut
    * alors ouvrir par un message rapide / formulaire ; sinon la garde de l'exécuteur s'applique.
    */
-  startWorkflow(tenantId: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean): Promise<boolean>;
+  /** true = parti. `false` OU une chaîne (la raison du refus) = pas parti : l'automation ne consomme
+   *  que le fait, pas la raison. */
+  startWorkflow(tenantId: string, workflowId: string, waId: string, startNodeId: string | null, windowOpen: boolean): Promise<boolean | string>;
   /** Anti-rebond appliqué aux automations qui n'ont rien réglé (`cooldownSeconds` null). */
   defaultCooldownSeconds: number;
   /**

@@ -60,13 +60,13 @@ export interface EngineDeps {
    * hors fenêtre) : le destinataire est alors marqué en ÉCHEC, jamais compté comme envoyé. `void` toléré pour
    * les câblages qui ne savent pas le dire (traité comme un démarrage réussi, comportement historique).
    */
-  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean>;
+  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
   /**
    * Campagne NODE (/v1/sends, D-1) : démarre le workflow à un bloc PRÉCIS. Pas de `firstTemplateParams` (la
    * cible node n'est pas une ouverture de template paramétrée) et pas de garde fenêtre 24 h dans l'executor :
    * la fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi.
    */
-  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean>;
+  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean | string>;
   /**
    * Cartes du CAROUSEL du template de la campagne, relues chez Meta. Appelée UNE SEULE FOIS par run (la
    * structure est identique pour tous les destinataires : un appel par contact tuerait une campagne à
@@ -195,7 +195,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
         const waId = waIdOf(r.toE164);
         const started = await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
-        if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible, ou fil repris par un opérateur / MBA)';
+        // Une CHAÎNE porte la raison exacte du refus : on l'affiche telle quelle plutôt que d'énumérer les
+        // causes possibles et de laisser l'opérateur deviner laquelle s'applique.
+        if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
+        else if (started === false) notStarted = 'scénario non démarré (bloc de départ indisponible, ou fil repris par un opérateur / MBA)';
         res = { messageId: `wf-${campaign.workflowId}` };
       } else if (campaign.workflowId) {
         // Campagne WORKFLOW : on DÉMARRE le workflow pour ce destinataire (il applique les blocs sync +
@@ -206,7 +209,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
         // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
         const started = await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, params);
-        if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, scénario supprimé, ou fil repris par un opérateur / MBA)';
+        if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
+        else if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, scénario supprimé, ou fil repris par un opérateur / MBA)';
         res = { messageId: `wf-${campaign.workflowId}` };
       } else {
         const tpl: TemplateSpec = {

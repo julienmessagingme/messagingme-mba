@@ -180,11 +180,19 @@ async function main(): Promise<void> {
   const MEDIA_CACHE_MS = 7 * 86_400_000;
   const prepareCarouselMedia = async (tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> => {
     const pn = await repo.getTenantPhoneNumberId(tenant);
-    if (!pn) return cards; // pas de numéro -> aucun media id -> le blocker refusera, avec sa raison
+    if (!pn) {
+      // eslint-disable-next-line no-console
+      console.error('carousel: aucun numéro d’envoi pour le tenant, visuels non préparés');
+      return cards;
+    }
     const { token } = await metaCredentials.resolveForTenant(tenant);
     const media = new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
     return Promise.all(cards.map(async (card) => {
-      if (!card.mediaUrl) return card;
+      if (!card.mediaUrl) {
+        // eslint-disable-next-line no-console
+        console.error('carousel: carte sans URL de visuel lisible chez Meta (handle non exploitable)');
+        return card;
+      }
       const cle = card.mediaUrl.split('?')[0]!;
       const hit = mediaIdCache.get(cle);
       if (hit && Date.now() - hit.at < MEDIA_CACHE_MS) return { ...card, mediaId: hit.id };
@@ -198,7 +206,7 @@ async function main(): Promise<void> {
         return { ...card, mediaId: id };
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error("carousel: visuel non préparé pour l'envoi", err instanceof Error ? err.message : err);
+        console.error("carousel: visuel non préparé pour l'envoi:", err instanceof Error ? err.message : String(err));
         return card; // sans mediaId -> carouselSendBlocker refusera en nommant la carte
       }
     }));
@@ -238,6 +246,9 @@ async function main(): Promise<void> {
     // mais SEULEMENT si le fil était encore à nous (`only: ['app_workflow']`) pour ne pas écraser une prise de
     // main concurrente. Rend le badge honnête (fin du trou où le scénario semblait « répondre » sans plus avancer).
     escalateToHuman: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }); },
+    // Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
+    // humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
+    reclaimControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_workflow'); },
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
     evalContext: buildEvalContext,
@@ -521,14 +532,16 @@ async function main(): Promise<void> {
       startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) => {
         const wf = await workflowStore.getById(workflowId, tenant);
         if (!wf) return false;
-        return workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams);
+        // Campagne : c'est un envoi VOULU par un opérateur, donc « fil repris par un humain » ne le bloque pas
+        // (l'opérateur EST celui qui a la main), et le scénario reprend la conduite du fil pour pouvoir avancer.
+        return workflowExecutor.start(tenant, workflowId, wf.graph, { waId, contactId }, firstTemplateParams, { ignoreHumanControl: true });
       },
       // Campagne NODE (/v1/sends) : démarre le workflow au bloc ciblé. Fenêtre 24 h déjà vérifiée à la création
       // de l'envoi -> l'executor n'applique pas la garde (startFromNode).
       startWorkflowFromNode: async (tenant, workflowId, startNodeId, waId, contactId) => {
         const wf = await workflowStore.getById(workflowId, tenant);
         if (!wf) return false;
-        return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId);
+        return workflowExecutor.startFromNode(tenant, workflowId, wf.graph, { waId, contactId }, startNodeId, { ignoreHumanControl: true });
       },
       // Cartes du carousel du template (image + boutons de chaque carte), relues UNE fois par run et servies
       // par le même cache court que les variables. null = template sans carousel -> envoi inchangé.
