@@ -45,11 +45,8 @@ const cibleParSortie = (g: GraphLike, id: string, handle: string): string | null
 /** Un bloc « message rapide » / « formulaire » est-il CONFIGURÉ (donc réellement envoyé) ? Miroir de `actionOf`. */
 function envoieVraiment(node: GraphNodeLike): boolean {
   if (node.type === 'flow') return String(node.data.flowId ?? '').trim() !== '';
-  if (node.type === 'quick_message') {
-    const body = String(node.data.body ?? '').trim();
-    const reps = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
-    return body !== '' && reps.some((q) => String(q ?? '').trim() !== '');
-  }
+  // Un corps suffit : sans réponse rapide, le bloc envoie un message texte simple (il n'est plus muet).
+  if (node.type === 'quick_message') return String(node.data.body ?? '').trim() !== '';
   return false;
 }
 

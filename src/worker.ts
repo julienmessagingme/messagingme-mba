@@ -377,7 +377,7 @@ async function main(): Promise<void> {
     // /v1/sends, qui a écarté les hors-fenêtre en amont). Texte littéral en V1 (pas de variables).
     sendQuickMessage: async (tenant, waId, body, buttons) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
-      if (body.trim() === '' || !buttons.some((b) => b.text.trim() !== '')) return; // rien à envoyer
+      if (body.trim() === '') return; // rien à envoyer
       const pn = await repo.getTenantPhoneNumberId(tenant);
       if (!pn) {
         // eslint-disable-next-line no-console
@@ -385,7 +385,10 @@ async function main(): Promise<void> {
         return;
       }
       const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
-      const res = await client.sendInteractive(waId, body, buttons);
+      // Aucune réponse rapide utilisable -> message TEXTE simple. Meta refuse un interactif sans bouton, et
+      // c'est ce que l'opérateur attend quand il n'a rempli que le texte.
+      const utiles = buttons.filter((b) => b.text.trim() !== '');
+      const res = utiles.length > 0 ? await client.sendInteractive(waId, body, utiles) : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
     },

@@ -281,7 +281,10 @@ function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null 
     // non vide) -> null (no-op), comme un template sans templateName.
     const raw = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
     const buttons: WorkflowButton[] = raw.map((q) => ({ type: 'QUICK_REPLY', text: String(q ?? '') }));
-    if (!body || !buttons.some((b) => b.text.trim() !== '')) return null;
+    // Un bloc SANS aucune réponse rapide envoie quand même son TEXTE (la couche d'envoi bascule alors sur un
+    // message simple). Avant, il ne faisait rien du tout, en silence : on croyait avoir programmé un message,
+    // le contact ne recevait jamais rien et aucune erreur n'apparaissait nulle part.
+    if (!body) return null;
     return { kind: 'sendQuickMessage', body, buttons };
   }
   // MBA (envoi vers MBA / désactivation) : PRÉ-CÂBLAGE INERTE. Aucune action tant que MBA n'est pas actif

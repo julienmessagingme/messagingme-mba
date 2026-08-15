@@ -105,8 +105,17 @@ describe('walk : quick_message', () => {
     expect(r.actions).toEqual([]);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'qm' });
   });
-  it('aucune réponse non vide -> pas d\'action', () => {
+  it('aucune réponse non vide -> le TEXTE part quand même (message simple)', () => {
+    // RÈGLE CHANGÉE le 2026-08-15, après un cas réel : un bloc dont on n'avait rempli QUE le texte ne faisait
+    // rien du tout, en silence. L'opérateur croyait avoir programmé un message, le contact ne recevait rien, et
+    // aucune erreur n'apparaissait. La couche d'envoi bascule sur un message texte quand aucun bouton n'est
+    // utilisable. Un corps VIDE reste, lui, un no-op (cas juste en dessous).
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['', ''] })], edges: [] };
+    expect(walk(g, 'qm').actions).toEqual([{ kind: 'sendQuickMessage', body: 'Salut', buttons: [{ type: 'QUICK_REPLY', text: '' }, { type: 'QUICK_REPLY', text: '' }] }]);
+  });
+
+  it('bloc SANS corps -> toujours aucune action (rien à envoyer)', () => {
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { quickReplies: ['Oui'] })], edges: [] };
     expect(walk(g, 'qm').actions).toEqual([]);
   });
 });
