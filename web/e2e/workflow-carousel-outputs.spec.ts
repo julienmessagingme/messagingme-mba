@@ -17,10 +17,11 @@ const CAROUSEL = {
   id: 'C1', name: 'exempleju2', status: 'APPROVED', category: 'MARKETING', language: 'fr',
   body: 'Notre sélection', headerFormat: null, isCarousel: true, editable: false,
   carousel: {
-    cards: [
-      { mediaUrl: 'https://cdn.example/a.jpg', body: 'Masterclass', buttons: [{ type: 'QUICK_REPLY', text: 'Je viens' }, { type: 'URL', text: 'Le site', url: 'https://a.fr' }] },
-      { mediaUrl: 'https://cdn.example/b.jpg', body: 'Portes ouvertes', buttons: [{ type: 'QUICK_REPLY', text: 'Ça m’intéresse' }, { type: 'URL', text: 'Le site', url: 'https://b.fr' }] },
-    ],
+    cards: Array.from({ length: 5 }, (_, i) => ({
+      mediaUrl: `https://cdn.example/c${i}.jpg`,
+      body: `Carte numero ${i + 1}`,
+      buttons: [{ type: 'QUICK_REPLY', text: `Reponse ${i + 1}` }, { type: 'URL', text: 'Le site', url: 'https://a.fr' }],
+    })),
   },
 };
 
@@ -54,12 +55,9 @@ const CABLE: Graph = {
       id: 'n1', type: 'template', position: { x: 0, y: 0 },
       data: {
         wfType: 'template', templateName: 'exempleju2', language: 'fr', templateButtons: [],
-        templateCards: [
-          { type: 'QUICK_REPLY', text: 'Je viens', handle: 'card:0:btn:0', cardIndex: 0 },
-          { type: 'URL', text: 'Le site', handle: 'card:0:btn:1', cardIndex: 0 },
-          { type: 'QUICK_REPLY', text: 'Ça m’intéresse', handle: 'card:1:btn:0', cardIndex: 1 },
-          { type: 'URL', text: 'Le site', handle: 'card:1:btn:1', cardIndex: 1 },
-        ],
+        // Vide À DESSEIN : les sorties sont alors déduites du template vivant, ce qui évite d'avoir à
+        // re-sélectionner son template dans chaque scénario déjà construit.
+        templateCards: [],
       },
     },
     { id: 'n2', type: 'tag', position: { x: 300, y: -60 }, data: { wfType: 'tag', tag: 'venu' } },
@@ -67,33 +65,69 @@ const CABLE: Graph = {
   ],
   edges: [
     { id: 'e1', source: 'n1', target: 'n2', sourceHandle: 'card:0:btn:0' },
-    { id: 'e2', source: 'n1', target: 'n3', sourceHandle: 'card:1:btn:0' },
+    { id: 'e2', source: 'n1', target: 'n3', sourceHandle: 'card:4:btn:0' },
   ],
 };
 
-test.describe('Builder : sorties d’un bloc carousel', () => {
-  test('une sortie par bouton de carte, étiquetée par carte, les liens non reliables', async ({ page }) => {
+test.describe('Builder : aperçu et sorties d’un bloc carousel', () => {
+  test('le bloc montre l’aperçu du message : bulle d’intro, vignette et boutons des cartes', async ({ page }) => {
     await mockBuilder(page, CABLE, []);
     await page.goto('/workflows?open=wf1');
 
-    // Les 4 boutons des 2 cartes sont listés sur le bloc, chacun rattaché à SA carte.
-    await expect(page.getByText('Je viens').first()).toBeVisible();
-    await expect(page.getByText('Ça m’intéresse').first()).toBeVisible();
-    await expect(page.getByText('C1', { exact: true })).toHaveCount(2);
-    await expect(page.getByText('C2', { exact: true })).toHaveCount(2);
+    const bloc = page.locator('.react-flow__node').first();
+    await expect(bloc.getByText('Notre sélection')).toBeVisible();  // bulle d'introduction
+    await expect(bloc.locator('img')).toHaveCount(5);               // une vignette par carte
+    await expect(bloc.getByText('Carte numero 1')).toBeVisible();
+  });
 
-    // Seules les réponses rapides sont reliables : un lien ouvre le navigateur et ne renvoie rien.
-    await expect(page.locator('[data-handleid^="card:"]')).toHaveCount(2);
-    await expect(page.locator('[data-handleid="card:0:btn:0"]')).toHaveCount(1);
-    await expect(page.locator('[data-handleid="card:1:btn:0"]')).toHaveCount(1);
-    await expect(page.locator('[data-handleid="card:0:btn:1"]')).toHaveCount(0); // le lien n'a pas de poignée
+  test('les cartes DÉFILENT : le bloc reste compact au lieu de s’étaler', async ({ page }) => {
+    await mockBuilder(page, CABLE, []);
+    await page.goto('/workflows?open=wf1');
+    const zone = page.locator('.react-flow__node .nowheel').first();
+    await expect(zone).toBeVisible();
+
+    // Le contenu dépasse la hauteur visible : c'est ce qui garde le bloc petit même avec 10 cartes.
+    const { scroll, client } = await zone.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+    expect(scroll).toBeGreaterThan(client);
+
+    // Hauteur RÉELLE du bloc (offsetHeight : la boundingBox est multipliée par le zoom du canevas).
+    const h = await page.locator('.react-flow__node').first().evaluate((el) => (el as HTMLElement).offsetHeight);
+    expect(h).toBeLessThan(380);
+  });
+
+  test('les points de liaison sont HORS de la zone qui défile (sinon les flèches partent dans le vide)', async ({ page }) => {
+    // Invariant mesuré : une poignée sortie du cadre défilant est mesurée à sa position de mise en page, soit
+    // des centaines de pixels sous le bloc, et React Flow y fait démarrer la flèche. Les sorties vivent donc
+    // sous l'aperçu, toujours visibles. Ce test casse si on les remet à l'intérieur.
+    await mockBuilder(page, CABLE, []);
+    await page.goto('/workflows?open=wf1');
+    await expect(page.locator('[data-handleid^="card:"]')).toHaveCount(5); // 1 par réponse rapide
+    await expect(page.locator('.nowheel [data-handleid^="card:"]')).toHaveCount(0);
+    await expect(page.locator('[data-handleid="card:0:btn:1"]')).toHaveCount(0); // un lien ne se relie pas
+  });
+
+  test('chaque sortie nomme sa carte, et une flèche part bien de la poignée', async ({ page }) => {
+    await mockBuilder(page, CABLE, []);
+    await page.goto('/workflows?open=wf1');
+    for (let i = 1; i <= 5; i += 1) await expect(page.getByText(`C${i}`, { exact: true })).toHaveCount(1);
+
+    // La flèche de la carte 5 démarre à la hauteur de SA poignée (à quelques pixels près), pas ailleurs.
+    const dep = await page.evaluate(() => {
+      const p = document.querySelector('.react-flow__edge[data-id="e2"] path.react-flow__edge-path') as SVGPathElement;
+      const m = /^M([\d.]+),([\d.]+)/.exec(p.getAttribute('d') ?? '');
+      const pt = p.ownerSVGElement!.createSVGPoint(); pt.x = Number(m![1]); pt.y = Number(m![2]);
+      const ecran = pt.matrixTransform((p.parentNode as SVGGElement).getScreenCTM()!);
+      const h = document.querySelector('[data-handleid="card:4:btn:0"]')!.getBoundingClientRect();
+      return Math.abs(ecran.y - (h.top + h.height / 2));
+    });
+    expect(dep).toBeLessThan(12);
   });
 
   test('les fils reliés à des boutons de cartes DIFFÉRENTES survivent à une sauvegarde', async ({ page }) => {
     const saved: Graph[] = [];
     await mockBuilder(page, CABLE, saved);
     await page.goto('/workflows?open=wf1');
-    await expect(page.getByText('Je viens').first()).toBeVisible();
+    await expect(page.getByText('Reponse 1').first()).toBeVisible();
 
     await page.getByTestId('workflow-autoarrange').click();
 
@@ -101,6 +135,6 @@ test.describe('Builder : sorties d’un bloc carousel', () => {
       const g = saved[saved.length - 1];
       if (!g) return null;
       return g.edges.filter((e) => e.source === 'n1').map((e) => e.sourceHandle).sort();
-    }, { timeout: 10_000 }).toEqual(['card:0:btn:0', 'card:1:btn:0']);
+    }, { timeout: 10_000 }).toEqual(['card:0:btn:0', 'card:4:btn:0']);
   });
 });

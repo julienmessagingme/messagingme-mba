@@ -149,6 +149,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   jeu de boutons unique s'appliquait à toutes les cartes, donc 10 cartes pointaient au même endroit. Contrainte
   Meta respectée et affichée : la disposition (nombre, types, ordre) doit être la même sur toutes les cartes,
   seuls le texte et le lien varient. Le champ du lien occupe désormais toute la largeur de la carte.
+- ✅ **Le bloc d'envoi montre l'aperçu du message** : un bloc « envoi de template » configuré sur un carousel
+  affiche le message tel qu'il partira (bulle d'introduction, vignette de chaque carte, son texte, ses boutons).
+  Les cartes sont **empilées et défilantes** : le bloc garde sa taille même avec 10 cartes. Les points de
+  liaison, eux, restent listés juste sous l'aperçu, toujours visibles, chacun étiqueté par sa carte.
 - ✅ **Brancher un scénario sur les boutons d'un carousel** : un bloc « envoi de template » qui envoie un
   carousel expose désormais **une sortie par bouton de carte** (10 cartes x 2 boutons = 20 destinations), chacune
   étiquetée « C1 », « C2 »… pour savoir de quelle carte elle vient. Avant, le bloc n'affichait aucune sortie et

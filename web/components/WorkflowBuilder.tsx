@@ -1,11 +1,11 @@
 'use client';
 
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow, Background, Controls, Handle, Position, MarkerType,
   BaseEdge, EdgeLabelRenderer, getBezierPath,
-  useNodesState, useEdgesState, addEdge,
+  useNodesState, useEdgesState, addEdge, useUpdateNodeInternals,
   type Node, type Edge, type Connection, type NodeProps, type EdgeProps, type NodeTypes, type EdgeTypes,
   type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
@@ -17,6 +17,7 @@ import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
+import { carouselButtonHandle } from '@/lib/carousel-handle';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { ConditionBuilder, type ConditionGroup } from './ConditionBuilder';
 
@@ -60,11 +61,23 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
 
-/** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` expose UNE SORTIE PAR BOUTON
- *  quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire sont montrés grisés, non
- *  reliables (ils sortent de WhatsApp). Les autres types de bloc ont une seule sortie (bas). */
+/**
+ * Templates À JOUR, servis aux blocs pour dessiner l'aperçu du message.
+ *
+ * Pourquoi un contexte et pas les données du bloc : l'aperçu a besoin des IMAGES des cartes, et leurs URL
+ * Meta EXPIRENT. Les écrire dans le graphe (que `fromRF` sérialise tel quel) donnerait des vignettes mortes
+ * au bout de quelques heures. Le graphe ne garde donc que ce qui est stable (nom des sorties, libellés), et
+ * le visuel est relu à chaque affichage.
+ */
+const TemplatesCtx = createContext<TemplateSummary[]>([]);
+
+/** Bloc du workflow : carré gris clair, handle cible (haut). Un bloc `template` montre l'APERÇU du message et
+ *  expose UNE SORTIE PAR BOUTON quick-reply (handle à droite de la ligne, reliable) ; les boutons URL/formulaire
+ *  sont montrés grisés, non reliables (ils sortent de WhatsApp). Les autres blocs ont une seule sortie (bas). */
 function WFNode({ id, data, selected }: NodeProps) {
   const t = useT();
+  const templates = useContext(TemplatesCtx);
+  const updateNodeInternals = useUpdateNodeInternals();
   const wfType = (data.wfType as WorkflowNodeType) ?? 'template';
   const meta = nodeMetaOf(wfType); // tolérant : un type pas encore connu du front (ex. condition) -> repli neutre
   // Un template CAROUSEL n'a aucun bouton de premier niveau : ses boutons vivent dans les cartes, et chacun
@@ -72,7 +85,14 @@ function WFNode({ id, data, selected }: NodeProps) {
   // sorties : le moteur d'envoi ne lit que `templateButtons`, qui reste vide pour un carousel (sinon on
   // émettrait des boutons de premier niveau que ce template n'a pas, et Meta refuserait l'envoi).
   type NodeButton = { type?: string; text?: string; handle?: string; cardIndex?: number };
-  const cards: NodeButton[] = wfType === 'template' && Array.isArray(data.templateCards) ? (data.templateCards as NodeButton[]) : [];
+  // Aperçu du message : lu sur le template VIVANT (les URL d'image expirent, cf. TemplatesCtx).
+  const live = wfType === 'template' && data.templateName ? templates.find((x) => x.name === data.templateName) : undefined;
+  const liveCards = live?.carousel?.cards ?? [];
+  const showCarousel = liveCards.length > 0;
+  // Sorties : celles enregistrées dans le bloc, sinon DÉDUITES du template vivant. Ce repli évite d'avoir à
+  // re-sélectionner son template dans chaque scénario déjà construit pour voir apparaître les sorties.
+  const stored: NodeButton[] = wfType === 'template' && Array.isArray(data.templateCards) ? (data.templateCards as NodeButton[]) : [];
+  const cards: NodeButton[] = stored.length > 0 ? stored : showCarousel ? carouselOutputs(live) : [];
   const buttons: NodeButton[] = cards.length > 0
     ? cards
     : wfType === 'template' && Array.isArray(data.templateButtons)
@@ -82,8 +102,19 @@ function WFNode({ id, data, selected }: NodeProps) {
         : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
   const isCondition = wfType === 'condition';
+  // Sous un aperçu de carousel, on ne liste QUE ce qui se relie : les boutons lien sont déjà visibles dans
+  // l'aperçu, les répéter ici doublerait la hauteur du bloc pour des lignes sur lesquelles on ne peut rien
+  // tirer. Hors carousel il n'y a pas d'aperçu, donc on les garde pour le contexte.
+  const outputRows = showCarousel ? buttons.filter((b) => b.type === 'QUICK_REPLY') : buttons;
+
+  // Faire défiler l'aperçu ne bouge AUCUNE poignée (elles sont hors de la zone), mais le nombre de sorties
+  // change quand on choisit un autre template : React Flow doit alors re-mesurer, sinon les flèches gardent
+  // les anciennes positions.
+  const handleSig = buttons.map((b, i) => b.handle ?? `btn:${i}`).join(',');
+  useEffect(() => { updateNodeInternals(id); }, [handleSig, id, updateNodeInternals]);
+
   return (
-    <div className={`relative w-44 rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
+    <div className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
       {/* Suppression directe du bloc (sans passer par le menu de droite). nodrag + stopPropagation : ne déclenche ni
           le drag ni la sélection du bloc. Même pattern que le ✕ des arêtes (CustomEvent -> listener parent). */}
@@ -98,10 +129,48 @@ function WFNode({ id, data, selected }: NodeProps) {
         <span className="truncate text-[11px] font-semibold text-ink-800">{String(data.name ?? '').trim() || t(...meta.label)}</span>
       </div>
       <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data, t)}</div>
+      {showCarousel ? (
+        // Aperçu CAROUSEL : bulle d'introduction puis les cartes, EMPILÉES et défilables. Les afficher côte à
+        // côte rendrait le bloc large comme 10 cartes ; ici il garde sa taille et on fait défiler.
+        <div className="border-t border-ink-200 p-1.5" style={{ backgroundColor: '#efeae2' }}>
+          {String(live?.body ?? '').trim() && (
+            <div className="mb-1 rounded rounded-tl-none bg-white px-1.5 py-1 text-[9px] leading-snug text-ink-700 shadow-sm">
+              <span className="line-clamp-2">{live?.body}</span>
+            </div>
+          )}
+          {/* `nowheel` : la molette fait défiler les cartes au lieu de zoomer le canevas (classe React Flow). */}
+          <div className="nowheel max-h-32 space-y-1.5 overflow-y-auto pr-0.5">
+            {liveCards.map((card, ci) => (
+              <div key={ci} className="overflow-hidden rounded bg-white shadow-sm">
+                <div className="flex h-14 w-full items-center justify-center bg-ink-100 text-[9px] text-ink-400">
+                  {card.mediaUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={card.mediaUrl} alt={`${t('Carte', 'Card')} ${ci + 1}`} referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+                  ) : (
+                    t('image', 'image')
+                  )}
+                </div>
+                {String(card.body ?? '').trim() && (
+                  <div className="px-1.5 py-1 text-[9px] leading-snug text-ink-700"><span className="line-clamp-2">{card.body}</span></div>
+                )}
+                {/* Les boutons sont montrés ICI pour l'aperçu, mais les POINTS DE LIAISON sont plus bas, hors
+                    de la zone qui défile : une poignée sortie du cadre est mesurée à sa position de mise en
+                    page (jusqu'à ~600 px sous le bloc, mesuré), et la flèche partirait dans le vide. */}
+                {(card.buttons ?? []).map((b, bi) => (
+                  <div key={bi} className={`flex items-center gap-1 border-t border-ink-100 px-1.5 py-1 text-[9px] ${b.type === 'QUICK_REPLY' ? 'font-medium text-[#00a5f4]' : 'text-ink-400'}`}>
+                    <span className="shrink-0">{b.type === 'QUICK_REPLY' ? '↩︎' : '🔗'}</span>
+                    <span className="truncate">{b.text?.trim() || (b.type === 'QUICK_REPLY' ? t('Réponse', 'Reply') : t('Lien', 'Link'))}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {hasQR ? (
         // Au moins un bouton quick-reply -> une SORTIE par bouton (QR = handle reliable à droite ; URL/flow grisé).
         <div className="border-t border-ink-200">
-          {buttons.map((b, i) => {
+          {outputRows.map((b, i) => {
             const isQR = b.type === 'QUICK_REPLY';
             const icon = b.type === 'URL' ? '🔗' : b.type === 'FLOW' ? '📋' : '↩︎';
             const fallback = b.type === 'URL' ? t('Lien', 'Link') : b.type === 'FLOW' ? t('Formulaire', 'Form') : t('Réponse', 'Reply');
@@ -468,6 +537,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 
       <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:flex-row">
         <div className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
+          <TemplatesCtx.Provider value={templates}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -487,6 +557,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             <Background color="#cbd5e1" gap={18} />
             <Controls showInteractive={false} />
           </ReactFlow>
+          </TemplatesCtx.Provider>
         </div>
 
         <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
