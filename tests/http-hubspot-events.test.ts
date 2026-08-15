@@ -4,6 +4,8 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signRequest } from '../src/lib/signature';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
+import { parseAutomationEventJob } from '../src/automation/event-job';
+import { matchesTrigger, type AutomationRow } from '../src/automation/match';
 
 /**
  * Canal ENTRANT depuis le connecteur HubSpot. C'est le SEUL endroit où un système extérieur peut provoquer un
@@ -117,6 +119,33 @@ describe('POST /hubspot/deal-stage', () => {
     const res = await server.inject({ method: 'POST', url: '/hubspot/deal-stage', ...envoi(sansPipeline) });
     expect(res.statusCode).toBe(200);
     expect(publies[0]?.ev).toMatchObject({ pipelineId: '' });
+    await server.close();
+  });
+
+  /**
+   * CHAÎNE COMPLÈTE, et c'est le test qui manquait. Chaque maillon était couvert isolément, et la chaîne était
+   * pourtant MORTE : la route publiait un pipeline vide (le webhook HubSpot ne le porte pas) et l'analyseur de
+   * file l'écartait. 200 partout, aucune erreur, aucune automation. Tester les maillons ne teste pas la chaîne.
+   */
+  it('bout en bout : ce que la route publie est ACCEPTÉ par la file ET déclenche l’automation', async () => {
+    const { server, publies } = app();
+    const { pipelineId: _sansPipeline, ...sansPipeline } = VALIDE;
+    await server.inject({ method: 'POST', url: '/hubspot/deal-stage', ...envoi(sansPipeline) });
+    expect(publies).toHaveLength(1);
+
+    // 1) le job publié survit à l'analyseur de la file (c'est ici que tout mourait)
+    const job = parseAutomationEventJob({ tenantId: publies[0]!.tenantId, event: publies[0]!.ev });
+    expect(job).not.toBeNull();
+
+    // 2) et il déclenche bien une automation réglée sur cette étape
+    const automation: AutomationRow = {
+      id: 'a1', tenantId: 't1', name: 'Relance devis', enabled: true,
+      triggerKind: 'hubspot_deal_stage', triggerConfig: { pipelineId: 'p1', stageId: 's-devis' },
+      conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: null,
+    };
+    // Pipeline configuré côté automation MAIS absent de l'événement : ça doit passer, sinon la règle
+    // « le pipeline ne restreint rien » ne vaudrait que dans un sens.
+    expect(matchesTrigger(automation, job!.event)).toBe(true);
     await server.close();
   });
 

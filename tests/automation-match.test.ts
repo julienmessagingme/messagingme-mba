@@ -181,8 +181,14 @@ describe('matchesTrigger : étape de deal HubSpot', () => {
     expect(matchesTrigger(dealAuto({ pipelineId: 'p1', stageId: 's-devis' }), ev('s-devis', 'p2'))).toBe(false);
   });
 
-  it('pipeline non renseigné -> l’étape suffit (elle est déjà unique chez HubSpot)', () => {
+  it('pipeline non renseigné dans l’AUTOMATION -> l’étape suffit (elle est déjà unique chez HubSpot)', () => {
     expect(matchesTrigger(dealAuto({ stageId: 's-devis' }), ev('s-devis', 'peu-importe'))).toBe(true);
+  });
+
+  it('pipeline absent de l’ÉVÉNEMENT -> déclenche quand même (le webhook HubSpot ne le porte pas)', () => {
+    // Sans ça, une automation réglée sur un pipeline précis ne partirait JAMAIS en production : le payload
+    // de HubSpot n'a pas le pipeline, et le connecteur publie donc une chaîne vide.
+    expect(matchesTrigger(dealAuto({ pipelineId: 'p1', stageId: 's-devis' }), ev('s-devis', ''))).toBe(true);
   });
 
   it('étape NON configurée -> ne déclenche JAMAIS (automation inerte, pas automation folle)', () => {

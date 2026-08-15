@@ -70,10 +70,18 @@ describe('parseAutomationEventJob : étape de deal HubSpot', () => {
     expect(parseAutomationEventJob(brut)).toEqual(ok);
   });
 
-  it('étape ou pipeline manquant -> écarté (aucune automation ne pourrait correspondre)', () => {
+  it('ÉTAPE manquante -> écarté (aucune automation ne pourrait correspondre)', () => {
     expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: 'p1' } })).toBeNull();
-    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', stageId: 's1' } })).toBeNull();
-    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: '  ', stageId: 's1' } })).toBeNull();
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: 'p1', stageId: '  ' } })).toBeNull();
+  });
+
+  it('PIPELINE absent -> ACCEPTÉ : le webhook HubSpot ne le porte pas, et il ne restreint rien', () => {
+    // Régression vécue : exiger le pipeline ici rendait toute la chaîne muette. Le connecteur publie une
+    // chaîne vide (le payload de HubSpot n'a pas le pipeline), donc tout était écarté, avec des 200 partout.
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', stageId: 's-devis' } }))
+      .toEqual({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: '', stageId: 's-devis' } });
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'hubspot_deal_stage', waId: '33600', pipelineId: '  ', stageId: 's-devis' } }))
+      .toMatchObject({ event: { pipelineId: '', stageId: 's-devis' } });
   });
 
   it('sans waId -> écarté : sans contact joignable il n’y a rien à déclencher', () => {

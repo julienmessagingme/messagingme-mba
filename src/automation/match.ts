@@ -116,10 +116,15 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     // n'attrape RIEN (même doctrine que le tag vide : une automation inerte plutôt qu'une automation folle).
     const stage = String(a.triggerConfig.stageId ?? '').trim();
     if (stage === '' || stage !== ev.stageId) return false;
-    // Pipeline facultatif : renseigné, il restreint ; absent, l'étape suffit (un id d'étape est déjà unique
-    // chez HubSpot, le pipeline ne sert qu'à lever une ambiguïté d'affichage).
+    // Le pipeline ne restreint QUE si les DEUX côtés le portent. Un identifiant d'étape appartient déjà à un
+    // seul pipeline chez HubSpot : une étape qui correspond implique donc le bon pipeline, et ce test n'est
+    // qu'une ceinture de sécurité.
+    //
+    // ⚠️ Il comparait sans traiter le cas de l'événement SANS pipeline. Or le webhook HubSpot ne porte pas le
+    // pipeline : une automation réglée sur un pipeline précis ne se serait donc JAMAIS déclenchée. Trouvé par
+    // le test de bout en bout, après le même oubli un cran plus haut (analyseur de file).
     const pipeline = String(a.triggerConfig.pipelineId ?? '').trim();
-    return pipeline === '' || pipeline === ev.pipelineId;
+    return pipeline === '' || ev.pipelineId === '' || pipeline === ev.pipelineId;
   }
   if (a.triggerKind === 'conversation_analyzed') {
     if (ev.kind !== 'analysis') return false;

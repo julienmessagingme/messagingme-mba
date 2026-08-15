@@ -45,11 +45,15 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     };
   }
   if (e.kind === 'hubspot_deal_stage') {
-    // Identifiants HubSpot bruts. Les deux sont EXIGÉS : un événement sans étape ne peut correspondre à
-    // aucune automation, autant l'écarter à l'entrée plutôt que de le promener jusqu'au matching.
+    // SEULE l'étape est exigée : sans elle, aucune automation ne peut correspondre. Le pipeline est
+    // FACULTATIF, exactement comme dans `matchesTrigger` où un pipeline non configuré ne restreint rien.
+    //
+    // ⚠️ Il était exigé ici, et ça rendait la chaîne MORTE : le webhook HubSpot ne porte PAS le pipeline, donc
+    // le connecteur publiait une chaîne vide, donc cet analyseur écartait tout. En silence, avec des 200
+    // partout. Producteur écrit sans relire son propre consommateur (trouvé en revue le 2026-08-16).
     const stageId = typeof e.stageId === 'string' ? e.stageId.trim() : '';
     const pipelineId = typeof e.pipelineId === 'string' ? e.pipelineId.trim() : '';
-    if (stageId === '' || pipelineId === '') return null;
+    if (stageId === '') return null;
     return { tenantId: j.tenantId, event: { kind: 'hubspot_deal_stage', waId, pipelineId, stageId } };
   }
   // `message` n'a rien à faire dans la file : il est traité en direct dans le webhook, où le contexte
