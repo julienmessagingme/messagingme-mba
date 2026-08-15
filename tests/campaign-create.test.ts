@@ -33,7 +33,12 @@ describe('createCampaignWithRecipients', () => {
       { id: 'c2', phone_e164: '+33622', profile_name: 'Marc', fields: {}, optInStatus: 'unknown' },
     ]);
     const out = await createCampaignWithRecipients(input, repo);
-    expect(out).toEqual({ campaignId: 'camp-x', recipientCount: 1, skipped: [] });
+    // c2 (`unknown`) est écarté ET RAPPORTÉ : il l'était en silence avant, ce qui rendait une campagne
+    // marketing sur liste HubSpot vide sans jamais dire pourquoi.
+    expect(out).toEqual({
+      campaignId: 'camp-x', recipientCount: 1,
+      skipped: [{ contactId: 'c2', toE164: '+33622', reason: 'not_opted_in' }],
+    });
     expect(repo.lastRecipients).toHaveLength(1);
     expect(repo.lastRecipients[0]).toMatchObject({ contactId: 'c1', toE164: '+33611', resolvedParams: ['Julie'] });
   });

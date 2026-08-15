@@ -82,9 +82,18 @@ export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, q
 
 /**
  * Importe les contacts d'une liste HubSpot comme contacts du tenant, taggés « HubSpot: <nom> ».
- * CONFORMITÉ NON NÉGOCIABLE : l'opt-in marketing n'est JAMAIS posé à 'opted_in' (importContacts optIn=false).
- * La fonction n'EXPOSE PAS de paramètre optIn : impossible de le passer à true par erreur (garantie de type).
- * Renvoie le rapport d'import (forme CSV) + `truncated`/`skippedNoPhone` (info liste géante / contacts sans numéro).
+ *
+ * OPT-IN : les contacts arrivent `opted_in`, source `hubspot_list`. Le consentement est géré DANS HubSpot,
+ * c'est lui qui en porte la preuve, et une liste qu'un opérateur choisit pour une campagne est par
+ * construction une liste de gens à qui il a le droit d'écrire.
+ *
+ * Ce n'est pas un assouplissement, c'est la correction d'un contresens : la fonction posait `unknown`, or
+ * `optInAllows` exige un opt-in EXPLICITE pour le marketing. Une campagne marketing montée sur une liste
+ * HubSpot rendait donc ZÉRO destinataire, sans que rien ne le dise (l'écart n'était même pas compté).
+ * mba re-décidait du consentement à partir d'une donnée qu'il n'a pas.
+ *
+ * La fonction n'expose toujours pas de paramètre : la source du consentement est la liste, point.
+ * Renvoie le rapport d'import (forme CSV) + `truncated`/`skippedNoPhone` (liste géante / contacts sans numéro).
  */
 export async function importHubspotList(
   connector: ConnectorDeps,
@@ -104,6 +113,6 @@ export async function importHubspotList(
   // EXACTEMENT ce qui est stocké, y compris toute normalisation). On le renvoie plutôt que de laisser le front
   // reconstruire « HubSpot: <nom> » de son côté (risque de divergence sur un nom long/espacé).
   const tags = [`HubSpot: ${listName}`];
-  const report = await importContacts({ rows, mapping, tenantId, optIn: false, tags }, importDeps);
+  const report = await importContacts({ rows, mapping, tenantId, optIn: true, optInSource: 'hubspot_list', tags }, importDeps);
   return { report, truncated: data.truncated, skippedNoPhone: data.skippedNoPhone, tags };
 }

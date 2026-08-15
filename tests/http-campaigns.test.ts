@@ -110,7 +110,11 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
     expect(res.statusCode).toBe(201);
     const body = res.json<{ campaignId: string; recipientCount: number; skipped: unknown[] }>();
-    expect(body).toEqual({ campaignId: 'camp-1', recipientCount: 1, skipped: [] }); // c2 non opt-in exclu
+    // c2 non opt-in : exclu ET rapporté avec son motif (avant : écarté en silence, écran trompeur).
+    expect(body).toEqual({
+      campaignId: 'camp-1', recipientCount: 1,
+      skipped: [{ contactId: 'c2', toE164: '+33622', reason: 'not_opted_in' }],
+    });
     expect(repo.created[0]?.tenantId).toBe('t1');
     await app.close();
   });

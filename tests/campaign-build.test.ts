@@ -55,3 +55,43 @@ describe('buildRecipients', () => {
     expect(skipped).toEqual([{ contactId: 'ko', toE164: '+33622222222', reason: 'missing_variable', missing: [1] }]);
   });
 });
+
+/**
+ * Un contact écarté faute d'opt-in doit être RAPPORTÉ, pas jeté en silence.
+ *
+ * Vécu : une campagne marketing montée sur une liste HubSpot rendait 0 destinataire et l'écran accusait la
+ * variable de template, seul motif qu'il connaissait. Le motif existait déjà sur la voie API
+ * (`buildApiRecipients`), il manquait sur la voie écran, celle que l'opérateur utilise.
+ */
+describe('buildRecipients : motif de l’écart pour opt-in', () => {
+  it('marketing : le contact sans opt-in part dans `skipped` avec le motif, pas dans le vide', () => {
+    const { recipients, skipped } = buildRecipients('marketing', mapping, contacts);
+    expect(recipients.map((x) => x.contactId)).toEqual(['c1']);
+    expect(skipped).toEqual([{ contactId: 'c2', toE164: '+33622222222', reason: 'not_opted_in' }]);
+  });
+
+  it('un opt-OUT est écarté avec le même motif, y compris en utility', () => {
+    const optOut: BuildContact[] = [{ id: 'x', phone_e164: '+33699999999', profile_name: 'Non', optInStatus: 'opted_out' }];
+    const { recipients, skipped } = buildRecipients('utility', mapping, optOut);
+    expect(recipients).toEqual([]);
+    expect(skipped[0]).toMatchObject({ contactId: 'x', reason: 'not_opted_in' });
+  });
+
+  it('utility : un contact `unknown` PASSE (non-régression, la fenêtre de service le couvre)', () => {
+    const { recipients, skipped } = buildRecipients('utility', mapping, contacts);
+    expect(recipients.map((x) => x.contactId)).toEqual(['c1', 'c2']);
+    expect(skipped).toEqual([]);
+  });
+
+  it('les deux motifs coexistent sans se mélanger', () => {
+    const melange: BuildContact[] = [
+      { id: 'sansOptIn', phone_e164: '+33611111111', profile_name: 'Marc', optInStatus: 'unknown' },
+      { id: 'sansValeur', phone_e164: '+33622222222', profile_name: null, optInStatus: 'opted_in' },
+    ];
+    const { skipped } = buildRecipients('marketing', mapping, melange);
+    expect(skipped.map((s) => s.reason).sort()).toEqual(['missing_variable', 'not_opted_in']);
+    // Seul `missing_variable` porte les positions concernées.
+    expect(skipped.find((s) => s.reason === 'not_opted_in')?.missing).toBeUndefined();
+    expect(skipped.find((s) => s.reason === 'missing_variable')?.missing).toEqual([1]);
+  });
+});

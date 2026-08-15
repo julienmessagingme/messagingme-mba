@@ -91,13 +91,23 @@ describe('flagContactUnreachable', () => {
 });
 
 describe('importHubspotList', () => {
-  it('CONFORMITÉ : opt-in TOUJOURS unknown (jamais opted_in), même si la réponse tente un champ opt-in', async () => {
-    // La réponse « piège » inclut un champ opt-in : importHubspotList ne le lit même pas.
-    const t = new FakeTransport(() => ({ status: 200, json: { contacts: [{ phone: '+33612345678', name: 'Jean', optIn: true, opt_in_status: 'opted_in' }], truncated: false, skippedNoPhone: 0 } }));
+  /**
+   * ⚠️ CONTRAT INVERSÉ le 2026-08-15, sur décision explicite de Julien. Ce test exigeait l'inverse
+   * (`unknown`, « JAMAIS opted_in »).
+   *
+   * Pourquoi : le consentement est géré DANS HubSpot, c'est lui qui en porte la preuve, et une liste qu'un
+   * opérateur choisit pour une campagne est par construction une liste de gens à qui il a le droit d'écrire.
+   * L'ancienne règle faisait re-décider mba à partir d'une donnée qu'il n'a pas, et `optInAllows` exigeant un
+   * opt-in EXPLICITE pour le marketing, une campagne marketing sur liste HubSpot rendait ZÉRO destinataire,
+   * en silence. La source est tracée (`hubspot_list`) pour pouvoir remonter à l'origine du consentement.
+   */
+  it('opt-in accordé, avec la LISTE HubSpot comme source tracée', async () => {
+    const t = new FakeTransport(() => ({ status: 200, json: { contacts: [{ phone: '+33612345678', name: 'Jean' }], truncated: false, skippedNoPhone: 0 } }));
     const contacts = new FakeContactStore();
     const out = await importHubspotList(connector(t), { contacts, userFields: new FakeFieldStore() }, 't1', 'L1', 'Ma liste');
     expect(contacts.upserts).toHaveLength(1);
-    expect(contacts.upserts[0]!.optInStatus).toBe('unknown'); // JAMAIS opted_in
+    expect(contacts.upserts[0]!.optInStatus).toBe('opted_in');
+    expect(contacts.upserts[0]!.optInSource).toBe('hubspot_list'); // traçabilité : d'où vient le consentement
     expect(contacts.upserts[0]!.tags).toEqual(['HubSpot: Ma liste']); // tag de traçabilité
     expect(contacts.upserts[0]!.phoneE164).toBe('+33612345678');
     expect(out.report).toMatchObject({ created: 1, skipped: 0 });

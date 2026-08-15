@@ -854,20 +854,26 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       // 0 destinataire = TOUS sautés (la variable du template n'a aucune valeur sur les fiches choisies) : la campagne
       // serait vide et « Lancer » n'enverrait à personne. Avertissement ROUGE + on RESTE sur le formulaire (pas de
       // navigation, pas de reset) pour corriger la source de la variable ou les fiches. Cf. bug « ça n'envoie à personne ».
+      // Les écarts ont DEUX motifs, qui n'appellent pas la même correction : une variable de template sans
+      // valeur sur la fiche, ou un contact sans opt-in sur une campagne marketing. Les confondre envoyait
+      // l'opérateur corriger des fiches alors que le problème était le consentement.
+      const sansOptIn = res.skipped.filter((x) => x.reason === 'not_opted_in').length;
+      const sansVariable = res.skipped.length - sansOptIn;
+      const detail = [
+        sansVariable > 0 ? t(`${sansVariable} sans valeur pour une variable du template`, `${sansVariable} missing a template variable value`) : '',
+        sansOptIn > 0 ? t(`${sansOptIn} sans opt-in (une campagne marketing l'exige)`, `${sansOptIn} without opt-in (a marketing campaign requires it)`) : '',
+      ].filter(Boolean).join(t(', ', ', '));
+
       if (res.recipientCount === 0) {
         setError(t(
-          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`,
-          `No recipients: the ${res.skipped.length} selected contact(s) were skipped because the template variable has no value on their record. Choose another source for the variable (e.g. "Name") or complete the records.`,
+          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été écartés (${detail}). Corrige la source de la variable ou les fiches, ou passe la campagne en « Utility » si elle relève du service.`,
+          `No recipients: all ${res.skipped.length} selected contact(s) were skipped (${detail}). Fix the variable source or the records, or switch the campaign to "Utility" if it is a service message.`,
         ));
         return; // le finally remet busy à false
       }
-      // Avertissement : contacts sautés faute d'une variable de template (ex. prénom absent de la fiche). L'envoi part
-      // quand même aux valides ; ces contacts-là auraient fait échouer Meta -> on les écarte et on le dit.
+      // L'envoi part quand même aux valides ; les écartés sont NOMMÉS avec leur motif.
       const skippedMsg = res.skipped.length > 0
-        ? t(
-            ` ${res.skipped.length} contact(s) sautés (variable de template manquante, ex. prénom absent de la fiche).`,
-            ` ${res.skipped.length} contact(s) skipped (missing template variable, e.g. first name absent from the record).`,
-          )
+        ? t(` ${res.skipped.length} contact(s) écartés (${detail}).`, ` ${res.skipped.length} contact(s) skipped (${detail}).`)
         : '';
       setOk(t(
         `Campagne créée : ${res.recipientCount} destinataire(s).${skippedMsg} Clique « Lancer » pour envoyer.`,

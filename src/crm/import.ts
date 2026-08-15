@@ -31,6 +31,9 @@ export interface ImportInput {
   tenantId: string;
   /** Ces contacts sont-ils opt-in (la preuve est gérée en amont) ? */
   optIn: boolean;
+  /** D'où vient la preuve du consentement. Défaut `csv_import`. Une liste HubSpot pose `hubspot_list` :
+   *  le consentement y est géré par HubSpot, c'est lui la source, et il faut pouvoir le retracer. */
+  optInSource?: string;
   /** Tags appliqués à TOUS les contacts de cet import (union avec l'existant). */
   tags?: string[];
 }
@@ -121,7 +124,7 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
       profileName,
       fields,
       optInStatus: input.optIn ? 'opted_in' : 'unknown',
-      ...(input.optIn ? { optInSource: 'csv_import' } : {}),
+      ...(input.optIn ? { optInSource: input.optInSource ?? 'csv_import' } : {}),
       ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
     });
     if (res === 'created') report.created += 1;

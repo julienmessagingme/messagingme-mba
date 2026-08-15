@@ -16,12 +16,17 @@ export interface BuiltRecipient {
   resolvedParams: string[];
 }
 
-/** Destinataire écarté à la construction, avec le motif (variable(s) de template manquante(s) -> positions). */
+/** Destinataire écarté à la construction, avec son MOTIF. */
 export interface SkippedRecipient {
   contactId: string;
   toE164: string;
-  reason: 'missing_variable';
-  missing: number[];
+  /**
+   * `missing_variable` : une variable du template n'a pas de valeur sur la fiche.
+   * `not_opted_in` : campagne MARKETING sur un contact sans opt-in explicite (ou en opt-out).
+   */
+  reason: 'missing_variable' | 'not_opted_in';
+  /** Positions des variables sans valeur. Renseigné pour `missing_variable` seulement. */
+  missing?: number[];
 }
 
 export interface BuildResult {
@@ -47,7 +52,10 @@ export function buildRecipients(
   for (const c of contacts) {
     const to = c.phone_e164 ?? c.bsuid ?? null; // destinataire = numéro sinon BSUID
     if (!to) continue; // campagne outbound -> identité requise
-    if (!optInAllows(category, c)) continue;
+    // Écart RAPPORTÉ, et non silencieux : une campagne marketing sur une liste sans opt-in explicite rendait
+    // 0 destinataire sans que rien ne dise pourquoi. Le motif était déjà nommé sur la voie API
+    // (`buildApiRecipients`), il manquait sur la voie écran, qui est justement celle qu'un opérateur utilise.
+    if (!optInAllows(category, c)) { skipped.push({ contactId: c.id, toE164: to, reason: 'not_opted_in' }); continue; }
     if (seen.has(to)) continue;
     seen.add(to);
     const { values, missing } = resolveTemplateParams(paramMapping, c, opts);

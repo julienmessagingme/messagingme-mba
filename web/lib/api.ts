@@ -350,7 +350,8 @@ export interface CampaignCreated {
   campaignId: string;
   recipientCount: number;
   /** Destinataires écartés à la création (variable de template manquante, ex. prénom absent) -> avertissement UI. */
-  skipped: Array<{ contactId: string; toE164: string; reason: string; missing: number[] }>;
+  /** Écarts à la construction, avec leur motif. `missing` n'existe que pour `missing_variable`. */
+  skipped: Array<{ contactId: string; toE164: string; reason: 'missing_variable' | 'not_opted_in'; missing?: number[] }>;
 }
 export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<CampaignCreated> {
   return request(`/tenants/${tenantId}/campaigns`, { method: 'POST', body: JSON.stringify(input) });
