@@ -307,7 +307,10 @@ async function main(): Promise<void> {
         // Carousel : ses cartes doivent être jointes à l'envoi. Lecture best-effort (ce chemin n'appelait pas
         // Meta jusqu'ici) : illisible -> on part comme avant, un template SANS carousel n'est pas affecté.
         let carousel: { cards: OutboundCarouselCard[] } | undefined;
-        try { carousel = (await templateVarInfo(tenant, name, language))?.carousel; } catch { /* best-effort */ }
+        try {
+          const lu = (await templateVarInfo(tenant, name, language))?.carousel;
+          if (lu) carousel = { cards: await prepareCarouselMedia(tenant, lu.cards) };
+        } catch { /* best-effort */ }
         const blocked = carousel ? carouselSendBlocker(carousel.cards) : null;
         if (blocked !== null) {
           // eslint-disable-next-line no-console
@@ -352,13 +355,14 @@ async function main(): Promise<void> {
       // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
       // Carousel non envoyable (carte sans image récupérable, variable de carte) : on NE devine PAS, on ne
       // laisse pas non plus partir un payload que Meta rejettera. Même doctrine que `missing`.
-      const blockedCarousel = info.carousel ? carouselSendBlocker(info.carousel.cards) : null;
+      const carouselPret = info.carousel ? { cards: await prepareCarouselMedia(tenant, info.carousel.cards) } : undefined;
+      const blockedCarousel = carouselPret ? carouselSendBlocker(carouselPret.cards) : null;
       if (blockedCarousel !== null) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blockedCarousel}`);
         return;
       }
-      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(), ...(info.carousel ? { carousel: info.carousel } : {}) });
+      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(), ...(carouselPret ? { carousel: carouselPret } : {}) });
       if (missing.length > 0) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
