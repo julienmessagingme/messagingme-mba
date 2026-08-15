@@ -355,8 +355,13 @@ async function main(): Promise<void> {
       const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
       // Aucune réponse rapide utilisable -> message TEXTE simple. Meta refuse un interactif sans bouton, et
       // c'est ce que l'opérateur attend quand il n'a rempli que le texte.
-      const utiles = buttons.filter((b) => b.text.trim() !== '');
-      const res = utiles.length > 0 ? await client.sendInteractive(waId, body, utiles) : await client.sendText(waId, body);
+      //
+      // ⚠️ On passe `buttons` ENTIER à l'envoi, jamais la liste filtrée : c'est `sendInteractive` qui écarte
+      // les titres vides EN PRÉSERVANT l'index d'origine dans `btn:<i>`. Filtrer ici renumérotait les boutons
+      // restants à partir de 0, donc une réponse rapide placée après une case vide renvoyait un payload qui
+      // ne correspondait à aucune branche du scénario, et le contact partait sur la sortie par défaut.
+      const utilisables = buttons.some((b) => b.text.trim() !== '');
+      const res = utilisables ? await client.sendInteractive(waId, body, buttons) : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
     },

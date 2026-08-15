@@ -551,6 +551,27 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
     expect(escalations).toEqual(['33600']);
   });
 
+  it('fenêtre fermée : le message de session est sauté, mais le TEMPLATE et le tag partent quand même', async () => {
+    // Régression introduite en rendant les messages sans bouton non bloquants : un réveil peut désormais
+    // produire « message rapide + tag + template » d'un coup. La garde fenêtre jetait le LOT ENTIER, donc un
+    // template, qui n'a pourtant pas besoin de la fenêtre, ne partait plus. On n'écarte que ce qui est refusé.
+    const graph: WorkflowGraph = {
+      nodes: [
+        n2('w', 'wait', { delay: 1, unit: 'hours' }),
+        n2('qm', 'quick_message', { body: 'un mot' }),
+        n2('tg', 'tag', { tag: 'relance' }),
+        n2('tpl', 'template', { templateName: 'promo' }),
+      ],
+      edges: [{ id: 'e1', source: 'w', target: 'qm' }, { id: 'e2', source: 'qm', target: 'tg' }, { id: 'e3', source: 'tg', target: 'tpl' }],
+    };
+    // Pas d'`isWindowOpen` dans les deps -> fenêtre considérée FERMÉE (fail-closed), le cas qui nous intéresse.
+    const { ex, runs, calls, escalations, run } = makeResume(graph);
+    expect(await ex.resume(run)).toBe(false);
+    expect(calls).toEqual(['tag:relance', 'tpl:promo']); // le message rapide, lui, n'est pas parti
+    expect(runs.run).toMatchObject({ status: 'inbox' });
+    expect(escalations).toEqual(['33600']);
+  });
+
   it('DEUX attentes à la suite : la reprise redort, avec la nouvelle échéance', async () => {
     const graph: WorkflowGraph = {
       nodes: [n2('w', 'wait', { delay: 1, unit: 'hours' }), n2('w2', 'wait', { delay: 3, unit: 'minutes' }), n2('tpl', 'template', { templateName: 'p' })],
@@ -619,5 +640,67 @@ describe('WorkflowExecutor : remontée d’un envoi refusé', () => {
     await ex.advance('t1', '33600', 'm1');
     expect(runs.run).toMatchObject({ status: 'inbox', currentNode: null });
     expect(escalations).toEqual(['33600']);
+  });
+});
+
+/**
+ * Reproduction du cas de production du 2026-08-15 (scénario « julien test2 ») : après une réponse rapide, un
+ * bloc « message rapide » SANS bouton suivi d'un bloc « Action : poser le tag ». Le tag n'était jamais posé.
+ */
+describe('WorkflowExecutor : un message rapide sans bouton ne bloque plus le parcours', () => {
+  it('message sans bouton puis tag : les deux partent, le run se termine', async () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('qm', 'quick_message', { body: 're ganial' }),
+        n('tg', 'action', { actionKind: 'add_tag', tag: 'genial' }),
+      ],
+      edges: [e('e1', 'qm', 'tg')],
+    };
+    const { ex, runs, calls } = make(g);
+    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['qm:re ganial', 'tag:genial']);
+    expect(runs.run).toBeNull(); // parcours 100 % synchrone -> aucun run en attente à laisser derrière
+  });
+
+  it('après une réponse rapide (advance), le tag qui suit le message est bien posé', async () => {
+    // Le vrai enchaînement de Julien : un message à boutons, la branche du bouton, puis message + tag.
+    const g: WorkflowGraph = {
+      nodes: [
+        n('q1', 'quick_message', { body: 'Ça te va ?', quickReplies: ['toussa'] }),
+        n('q2', 'quick_message', { body: 're ganial' }),
+        n('tg', 'action', { actionKind: 'add_tag', tag: 'genial' }),
+      ],
+      edges: [eh('e1', 'q1', 'q2', 'btn:0'), e('e2', 'q2', 'tg')],
+    };
+    const { ex, calls } = make(g);
+    await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['qm:Ça te va ?']); // on attend le choix
+    await ex.advance('t1', '33600', 'm1', 'btn:0');
+    expect(calls).toEqual(['qm:Ça te va ?', 'qm:re ganial', 'tag:genial']);
+  });
+
+  it('un envoi refusé APRÈS un envoi réussi ne fait pas passer le parcours pour mort', async () => {
+    // Un walk peut désormais produire plusieurs envois. Si le premier part et le second est refusé, le contact
+    // a bien reçu quelque chose : on ne remonte pas d'échec à la campagne et on ne clôt pas le run.
+    const g: WorkflowGraph = {
+      nodes: [
+        n('q1', 'quick_message', { body: 'parti' }),
+        n('tpl', 'template', { templateName: 'promo', language: 'fr' }),
+      ],
+      edges: [e('e1', 'q1', 'tpl')],
+    };
+    const { ex, runs } = make(g, { sendTemplate: async () => 'template introuvable chez Meta' });
+    expect(await ex.startInWindow('t1', 'wf1', g, { waId: '33600', contactId: 'c1' })).toBe(true);
+    expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
+  });
+
+  it('mais si RIEN ne part, la raison remonte toujours et aucun run n’est laissé', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' })],
+      edges: [],
+    };
+    const { ex, runs } = make(g, { sendTemplate: async () => 'template introuvable chez Meta' });
+    expect(await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' })).toBe('template introuvable chez Meta');
+    expect(runs.run).toBeNull();
   });
 });

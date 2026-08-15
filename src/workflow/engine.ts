@@ -91,6 +91,18 @@ export function scanOpening(graph: WorkflowGraph): OpeningScan {
   return out;
 }
 
+/**
+ * Ce bloc « message rapide » laisse-t-il le parcours CONTINUER ? Oui quand il n'a aucune réponse rapide au
+ * libellé non vide : c'est alors un simple texte, il ne pose pas de question, donc rien ne viendra en retour.
+ * Bloquer là faisait qu'un tag placé juste après n'était jamais posé, en silence (prod, 2026-08-15).
+ *
+ * Source UNIQUE de la règle : `walk` (exécution) et `waitBeforeSessionMessage` (analyse du graphe) doivent
+ * répondre pareil, sinon l'éditeur signalerait des montages que le moteur ne rencontre pas, ou l'inverse.
+ */
+function quickMessageNonBloquant(a: WorkflowAction | null): boolean {
+  return a?.kind === 'sendQuickMessage' && a.buttons.every((b) => b.text.trim() === '');
+}
+
 /** Un montage impossible : une attente qui ferme forcément la fenêtre, suivie d'un message de session. */
 export interface WaitThenSession {
   /** Le dernier bloc Attente TRAVERSÉ sur ce chemin (celui qu'on montre à l'utilisateur). */
@@ -139,7 +151,13 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage') && cumul >= FENETRE_MS && dernierWait) {
         return { waitNodeId: dernierWait, messageNodeId: id };
       }
-      continue; // bloc bloquant : on n'explore pas au-delà
+      // Un message rapide SANS bouton ne bloque pas le parcours (cf. `walk`) : on doit donc explorer AU-DELÀ,
+      // sinon un montage « attente, message sans bouton, attente, message rapide » ne serait jamais signalé
+      // alors que son dernier message ne partira jamais. Un bloc réellement bloquant, lui, arrête l'analyse.
+      if (!quickMessageNonBloquant(a)) continue;
+      const nx = nextNode(graph, id);
+      if (nx) pile.push({ id: nx, cumul, dernierWait });
+      continue;
     }
     // Un TEMPLATE remet le compteur à zéro. Attention à la raison : un template n'OUVRE PAS la fenêtre de
     // service (seul un message DU CONTACT l'ouvre). Le parcours s'ARRÊTE au template jusqu'à la réponse, et
@@ -350,6 +368,10 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node, work);
       if (a) actions.push(a);
+      if (quickMessageNonBloquant(a)) {
+        current = nextNode(graph, current);
+        continue;
+      }
       return { actions, rest: { status: 'waiting', nodeId: current } };
     }
     if (node.type === 'wait') {

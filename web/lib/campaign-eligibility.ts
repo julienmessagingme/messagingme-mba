@@ -50,6 +50,19 @@ function envoieVraiment(node: GraphNodeLike): boolean {
   return false;
 }
 
+/**
+ * Ce bloc « message rapide » laisse-t-il le parcours CONTINUER ? Oui quand il n'a aucune réponse rapide au
+ * libellé non vide : c'est un simple texte, il ne pose pas de question, donc rien ne viendra en retour.
+ *
+ * ⚠️ Miroir de `quickMessageNonBloquant` (src/workflow/engine.ts). L'éditeur doit signaler exactement les
+ * montages que le moteur rencontre : une divergence ferait apparaître, ou disparaître, des alertes à tort.
+ */
+function messageNonBloquant(node: GraphNodeLike): boolean {
+  if (node.type !== 'quick_message' || !envoieVraiment(node)) return false;
+  const raw = Array.isArray(node.data.quickReplies) ? node.data.quickReplies : [];
+  return raw.every((q) => String(q ?? '').trim() === '');
+}
+
 export interface OpeningScan {
   /** Un message de SESSION part-il avant tout template ? */
   sessionOpen: boolean;
@@ -170,6 +183,11 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
     if (node.type === 'inbox') continue;
     if (node.type === 'flow' || node.type === 'quick_message') {
       if (envoieVraiment(node) && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      // Un message sans bouton ne bloque pas le parcours : on explore AU-DELÀ, sinon « attente, message sans
+      // bouton, attente, message rapide » ne serait jamais signalé alors que son dernier message est mort-né.
+      if (!messageNonBloquant(node)) continue;
+      const nx = cible(graph, id);
+      if (nx) pile.push({ id: nx, cumul, dernierWait });
       continue;
     }
     const suivant = node.type === 'template'

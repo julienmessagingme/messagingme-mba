@@ -66,19 +66,23 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
   // Changement de champ -> reconstruit une clause adaptée au TYPE du nouveau champ.
   const changeField = (i: number, key: string) => patch(i, defaultFieldClause(key, typeOfKey(key)));
 
-  const sel = 'rounded-lg border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 bg-white';
-  const inp = 'rounded-lg border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  // `w-full min-w-0` : le panneau de configuration fait 280 px. Deux menus côte à côte n'y tiennent pas, et
+  // les libellés (« Consentement (opt-in) », « est un jour de semaine (Lun-Ven) ») débordaient, l'un large,
+  // l'autre écrasé. Chaque contrôle prend donc toute la largeur, empilé.
+  const sel = 'w-full min-w-0 rounded-lg border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 bg-white';
+  const inp = 'w-full min-w-0 rounded-lg border border-ink-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
   return (
     <div className="space-y-2">
       {clauses.length > 1 && (
-        <div className="flex items-center gap-2 text-xs text-ink-600">
-          <span>{t('Le contact passe par « Si réunie » quand', 'The contact takes “If met” when')}</span>
+        // Empilé et non en ligne : la phrase et son menu ne tiennent pas côte à côte dans 280 px, et sans
+        // `flex-wrap` la ligne débordait du panneau au lieu de passer à la ligne.
+        <div className="space-y-1 text-xs text-ink-600">
+          <span>{t('Le contact passe par « Si réunie » quand :', 'The contact takes “If met” when:')}</span>
           <select value={match} onChange={(e) => onChange({ match: e.target.value === 'any' ? 'any' : 'all', clauses })} className={`${sel} py-1`}>
-            <option value="all">{t('toutes les conditions', 'all conditions')}</option>
-            <option value="any">{t('au moins une condition', 'at least one condition')}</option>
+            <option value="all">{t('toutes les conditions sont vraies', 'all conditions are true')}</option>
+            <option value="any">{t('au moins une condition est vraie', 'at least one condition is true')}</option>
           </select>
-          <span>{t('sont vraies', 'are true')}</span>
         </div>
       )}
 
@@ -87,19 +91,21 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
       {clauses.map((c, i) => (
         <div key={i} className="rounded-xl border border-ink-100 bg-ink-50/40 p-2">
           <div className="flex items-start gap-1.5">
-            <select value={kindOf(c)} onChange={(e) => changeKind(i, e.target.value as Kind)} className={`${sel} shrink-0`}>
-              <option value="field">{t('Champ', 'Field')}</option>
-              <option value="tag">{t('Tag', 'Tag')}</option>
-              <option value="weekday">{t('Jour de la semaine', 'Day of week')}</option>
-              <option value="business_hours">{t('Heures d’ouverture', 'Business hours')}</option>
-              <option value="time_of_day">{t('Heure de la journée', 'Time of day')}</option>
-              <option value="identity">{t('Coordonnées', 'Contact info')}</option>
-              <option value="optin">{t('Consentement (opt-in)', 'Consent (opt-in)')}</option>
-            </select>
-            <div className="flex flex-1 flex-wrap items-center gap-1.5">
+            {/* Colonne : chaque contrôle sur sa propre ligne, pleine largeur. `min-w-0` est indispensable,
+                sinon un select à long libellé impose sa largeur naturelle et pousse la ligne hors du panneau. */}
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <select value={kindOf(c)} onChange={(e) => changeKind(i, e.target.value as Kind)} className={sel}>
+                <option value="field">{t('Champ', 'Field')}</option>
+                <option value="tag">{t('Tag', 'Tag')}</option>
+                <option value="weekday">{t('Jour de la semaine', 'Day of week')}</option>
+                <option value="business_hours">{t('Heures d’ouverture', 'Business hours')}</option>
+                <option value="time_of_day">{t('Heure de la journée', 'Time of day')}</option>
+                <option value="identity">{t('Coordonnées', 'Contact info')}</option>
+                <option value="optin">{t('Consentement (opt-in)', 'Consent (opt-in)')}</option>
+              </select>
               <ClauseOperands c={c} i={i} patch={patch} allFields={allFields} changeField={changeField} tags={tags} sel={sel} inp={inp} />
             </div>
-            <button type="button" onClick={() => remove(i)} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+            <button type="button" onClick={() => remove(i)} className="shrink-0 pt-1.5 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
           </div>
         </div>
       ))}
@@ -131,7 +137,8 @@ function ClauseOperands({ c, i, patch, allFields, changeField, tags, sel, inp }:
           <option value="has">{t('possède le tag', 'has the tag')}</option>
           <option value="not_has">{t('n’a pas le tag', 'does not have the tag')}</option>
         </select>
-        <input list="wf-tags" value={c.tag} onChange={(e) => patch(i, { ...c, tag: e.target.value })} className={`${inp} flex-1`} placeholder="vip…" />
+        {/* Pas de `flex-1` : le conteneur est une COLONNE, il étirerait le champ en HAUTEUR. */}
+        <input list="wf-tags" value={c.tag} onChange={(e) => patch(i, { ...c, tag: e.target.value })} className={inp} placeholder="vip…" />
         <datalist id="wf-tags">{tags.map((tg) => <option key={tg} value={tg} />)}</datalist>
       </>
     );
@@ -219,14 +226,21 @@ function ClauseOperands({ c, i, patch, allFields, changeField, tags, sel, inp }:
           </>
         )}
         {needsRel && (
-          <>
-            <input type="number" min={0} value={c.amount ?? ''} onChange={(e) => patch(i, { ...c, amount: e.target.value === '' ? undefined : Number(e.target.value) })} className={`${inp} w-20`} placeholder="7" />
-            <select value={c.unit ?? 'days'} onChange={(e) => patch(i, { ...c, unit: e.target.value as TimeUnit })} className={sel}>
-              <option value="minutes">{t('minutes', 'minutes')}</option>
-              <option value="hours">{t('heures', 'hours')}</option>
-              <option value="days">{t('jours', 'days')}</option>
-            </select>
-          </>
+          // « 7 » + « jours » se lisent ensemble : c'est la seule paire qui reste sur une ligne. La largeur est
+          // portée par les conteneurs, pas par une classe ajoutée à `inp` (deux utilitaires de largeur sur le
+          // même élément se départagent par l'ordre de la feuille de style, pas par l'ordre des classes).
+          <div className="flex gap-1.5">
+            <div className="w-20 shrink-0">
+              <input type="number" min={0} value={c.amount ?? ''} onChange={(e) => patch(i, { ...c, amount: e.target.value === '' ? undefined : Number(e.target.value) })} className={inp} placeholder="7" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <select value={c.unit ?? 'days'} onChange={(e) => patch(i, { ...c, unit: e.target.value as TimeUnit })} className={sel}>
+                <option value="minutes">{t('minutes', 'minutes')}</option>
+                <option value="hours">{t('heures', 'hours')}</option>
+                <option value="days">{t('jours', 'days')}</option>
+              </select>
+            </div>
+          </div>
         )}
       </>
     );
@@ -280,7 +294,7 @@ function ClauseOperands({ c, i, patch, allFields, changeField, tags, sel, inp }:
           type={isNumber ? 'number' : 'text'}
           value={(c as { value?: string }).value ?? ''}
           onChange={(e) => patch(i, { kind: 'field', key: c.key, op: c.op, ...(isNumber ? { valueType: 'number' as const } : {}), value: e.target.value })}
-          className={`${inp} flex-1`}
+          className={inp}
           placeholder={t('valeur', 'value')}
         />
       )}
@@ -296,7 +310,7 @@ function WeekdayPicker({ days, onChange }: { days: number[]; onChange: (d: numbe
   ];
   const toggle = (d: number) => onChange(days.includes(d) ? days.filter((x) => x !== d) : [...days, d]);
   return (
-    <div className="flex gap-1">
+    <div className="flex flex-wrap gap-1">
       {DAYS.map(([d, lbl]) => (
         <button key={d} type="button" onClick={() => toggle(d)} className={`h-7 w-7 rounded-md text-xs font-semibold transition ${days.includes(d) ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-500 hover:bg-ink-200'}`}>
           {t(...lbl)}

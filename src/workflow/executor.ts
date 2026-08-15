@@ -161,11 +161,13 @@ export class WorkflowExecutor {
     actions: WorkflowAction[],
     firstTemplateParams?: string[],
     emitEvents = false,
-  ): Promise<string | null> {
+  ): Promise<{ refus: string | null; partis: number }> {
     const posedTags: string[] = [];
-    // Raison du NON-envoi, s'il y en a eu un. Un `walk` s'arrête au 1er bloc bloquant, donc il produit AU PLUS
-    // une action d'envoi : cette variable porte donc LE refus, pas « le premier d'une série ».
+    // Un walk peut produire PLUSIEURS envois depuis qu'un message rapide sans bouton ne bloque plus (« message,
+    // message, template »). On retient donc la PREMIÈRE raison de refus, et on compte ce qui est réellement
+    // parti : un refus n'est décisif pour l'appelant que si RIEN n'est parti.
     let refus: string | null = null;
+    let partis = 0;
     for (const a of actions) {
       if (a.kind === 'tag') {
         const nouveau = await this.deps.applyTag(tenantId, waId, a.tag);
@@ -183,7 +185,11 @@ export class WorkflowExecutor {
           : a.kind === 'sendFlow'
             ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
             : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
-        if (typeof dit === 'string' && dit !== '' && refus === null) refus = dit;
+        if (typeof dit === 'string' && dit !== '') {
+          if (refus === null) refus = dit;
+        } else {
+          partis += 1;
+        }
       }
     }
     // Publication APRÈS toutes les actions, et seulement sur un chemin unitaire. Best-effort : la pose du tag
@@ -193,7 +199,7 @@ export class WorkflowExecutor {
         try { await this.deps.emitTagAdded(tenantId, waId, tag); } catch { /* best-effort */ }
       }
     }
-    return refus;
+    return { refus, partis };
   }
 
   /**
@@ -247,30 +253,44 @@ export class WorkflowExecutor {
     const ctx = await this.buildCtx(tenantId, waId, graph);
     const { actions, rest } = walk(graph, suite, ctx);
 
-    const sessionMessage = actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage');
-    if (sessionMessage) {
+    // Fenêtre de service fermée : on écarte les SEULS messages de session (Meta les refuserait, 131047) et on
+    // applique le reste. Un walk peut désormais mêler un message rapide sans bouton, des actions et un
+    // TEMPLATE : jeter le lot entier ferait sauter le template, qui n'a justement pas besoin de la fenêtre.
+    const aBesoinFenetre = (a: WorkflowAction): boolean => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage';
+    let aExecuter = actions;
+    let fenetreFermee = false;
+    if (actions.some(aBesoinFenetre)) {
       const ouverte = this.deps.isWindowOpen ? await this.deps.isWindowOpen(tenantId, waId) : false;
       if (!ouverte) {
+        fenetreFermee = true;
+        aExecuter = actions.filter((a) => !aBesoinFenetre(a));
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: fenêtre 24 h fermée à la reprise, message de session NON envoyé à ${waId} -> conversation remontée en inbox`);
-        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
-        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
-        return false;
       }
     }
 
     // `emitEvents` VRAI : un réveil est unitaire par nature (un contact, ici et maintenant), comme `advance`.
     // Sans ça, « attendre 1 jour puis poser le tag relance » ne déclencherait pas l'automation branchée sur ce
     // tag, alors que le MÊME tag posé après une réponse la déclenche. Les campagnes, elles, n'émettent pas.
-    const refus = await this.apply(tenantId, waId, actions, undefined, true);
-    // Envoi refusé au réveil : le contact n'a rien reçu. Laisser le run en attente le ferait repartir au bloc
-    // SUIVANT dès qu'il écrirait, sur un message qu'il n'a jamais vu. On clôt, et on le remonte à un humain.
-    if (refus !== null) {
-      // eslint-disable-next-line no-console
-      console.error(`workflow ${run.workflowId}: envoi refusé à la reprise pour ${waId} : ${refus}`);
+    const { refus, partis } = await this.apply(tenantId, waId, aExecuter, undefined, true);
+    // Un message du parcours n'a pas pu atteindre le contact : on ne fait pas semblant de continuer, on clôt
+    // et on remonte à un humain. Ce qui POUVAIT partir (template, tags) est déjà parti juste au-dessus.
+    if (fenetreFermee) {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
       if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
       return false;
+    }
+    // Refus au réveil sans qu'aucun message ne parte : le contact n'a rien reçu. Laisser le run en attente le
+    // ferait repartir au bloc SUIVANT dès qu'il écrirait, sur un message qu'il n'a jamais vu. On clôt, et on
+    // le remonte à un humain. Si un message EST parti, le parcours continue normalement.
+    if (refus !== null) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow ${run.workflowId}: envoi refusé à la reprise pour ${waId} : ${refus}`);
+      if (partis === 0) {
+        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        return false;
+      }
     }
     await this.deps.runs.setState(run.id, restToState(rest, this.now()));
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
@@ -319,15 +339,16 @@ export class WorkflowExecutor {
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
       return "le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h";
     }
-    const refus = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true);
-    // L'envoi d'OUVERTURE a été refusé : rien n'est arrivé au contact. On ne persiste PAS de run en attente,
-    // pour deux raisons. D'abord il attendrait une réponse à un message jamais reçu. Ensuite il serait
-    // ressuscité par n'importe quel message ultérieur du contact, qui recevrait alors le bloc SUIVANT, sorti
-    // de nulle part. On remonte la raison telle quelle : c'est elle que la campagne affiche sur le destinataire.
+    const { refus, partis } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true);
+    // Refus alors que RIEN n'est parti : le contact n'a rien reçu. On ne persiste PAS de run en attente, pour
+    // deux raisons. D'abord il attendrait une réponse à un message jamais reçu. Ensuite il serait ressuscité
+    // par n'importe quel message ultérieur du contact, qui recevrait alors le bloc SUIVANT, sorti de nulle
+    // part. On remonte la raison telle quelle : c'est elle que la campagne affiche sur le destinataire.
+    // Si un message EST parti, le destinataire a bien été touché : le parcours vit, et le refus reste au log.
     if (refus !== null) {
       // eslint-disable-next-line no-console
-      console.error(`workflow ${workflowId}: envoi d'ouverture refusé pour ${contact.waId} : ${refus}`);
-      return refus;
+      console.error(`workflow ${workflowId}: envoi refusé pour ${contact.waId} : ${refus}`);
+      if (partis === 0) return refus;
     }
     const state = restToState(rest, this.now());
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
@@ -411,15 +432,17 @@ export class WorkflowExecutor {
     const ctx = await this.buildCtx(tenantId, waId, graph);
     const { actions, rest } = walk(graph, next, ctx);
     // Un contact qui répond est unitaire par nature : ses tags publient.
-    const refus = await this.apply(tenantId, waId, actions, undefined, true);
+    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, true);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant
     // `lastMessageId`, sinon le même message serait re-traité) et on remonte la conversation à un humain.
     if (refus !== null) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${run.workflowId}: envoi refusé pour ${waId} : ${refus}`);
-      await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox', lastMessageId: messageId });
-      if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
-      return;
+      if (partis === 0) {
+        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox', lastMessageId: messageId });
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        return;
+      }
     }
     await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), lastMessageId: messageId });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);

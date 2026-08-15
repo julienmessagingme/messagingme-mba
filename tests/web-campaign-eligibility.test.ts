@@ -167,6 +167,13 @@ describe('parité de la détection « attente >= 24 h puis message de session »
     ['attente 2 j puis formulaire', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('f', 'flow', { flowId: 'fl1' })], [e('w', 'f')])],
     ['cycle d attentes sans message', g([n('w1', 'wait', { delay: 1, unit: 'hours' }), n('w2', 'wait', { delay: 1, unit: 'hours' })], [e('w1', 'w2'), e('w2', 'w1')])],
     ['aucune attente', g([QM('q')])],
+    // Depuis qu'un message rapide SANS bouton ne bloque plus le parcours, il doit être TRAVERSÉ par l'analyse :
+    // sinon le message final, lui bien mort-né, ne serait jamais signalé. Cas construit exprès.
+    ['attente, message sans bouton, attente, message rapide', g(
+      [n('w1', 'wait', { delay: 12, unit: 'hours' }), n('qm', 'quick_message', { body: 'un mot' }),
+       n('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
+      [e('w1', 'qm'), e('qm', 'w2'), e('w2', 'q')],
+    )],
   ];
 
   it('front et serveur désignent le MÊME montage fautif (ou aucun)', () => {

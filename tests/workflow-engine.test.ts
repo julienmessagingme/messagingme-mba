@@ -118,6 +118,57 @@ describe('walk : quick_message', () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { quickReplies: ['Oui'] })], edges: [] };
     expect(walk(g, 'qm').actions).toEqual([]);
   });
+
+  /**
+   * Cas réel du 2026-08-15 (scénario « julien test2 ») : « message rapide sans bouton » puis « poser le tag »
+   * ne posait JAMAIS le tag. Le parcours restait en attente d'une réponse que rien n'avait demandée, et aucun
+   * écran ni aucun log ne le disait. Un message qui ne pose pas de question n'attend pas de réponse.
+   */
+  it('SANS aucune réponse rapide -> le parcours CONTINUE (le bloc suivant s’exécute)', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('qm', 'quick_message', { body: 're ganial' }), n('tg', 'tag', { tag: 'genial' })],
+      edges: [e('e1', 'qm', 'tg')],
+    };
+    const r = walk(g, 'qm');
+    expect(r.actions).toEqual([
+      { kind: 'sendQuickMessage', body: 're ganial', buttons: [] },
+      { kind: 'tag', tag: 'genial' },
+    ]);
+    expect(r.rest).toEqual({ status: 'done' });
+  });
+
+  it('réponses rapides TOUTES vides -> même chose : rien ne peut être tapé, donc rien à attendre', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['', ''] }), n('tg', 'tag', { tag: 'vu' })],
+      edges: [e('e1', 'qm', 'tg')],
+    };
+    const r = walk(g, 'qm');
+    expect(r.actions.map((a) => a.kind)).toEqual(['sendQuickMessage', 'tag']);
+    expect(r.rest).toEqual({ status: 'done' });
+  });
+
+  it('AVEC une réponse rapide -> attend toujours le choix du contact (non-régression)', () => {
+    const g: WorkflowGraph = {
+      nodes: [n('qm', 'quick_message', { body: 'Ça te va ?', quickReplies: ['Oui'] }), n('tg', 'tag', { tag: 'genial' })],
+      edges: [e('e1', 'qm', 'tg')],
+    };
+    const r = walk(g, 'qm');
+    expect(r.actions).toHaveLength(1); // le tag n'est PAS posé avant la réponse
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'qm' });
+  });
+
+  it('deux messages sans bouton à la suite puis un template : tout part, on attend AU template', () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('q1', 'quick_message', { body: 'un' }), n('q2', 'quick_message', { body: 'deux' }),
+        n('tpl', 'template', { templateName: 'promo', language: 'fr' }),
+      ],
+      edges: [e('e1', 'q1', 'q2'), e('e2', 'q2', 'tpl')],
+    };
+    const r = walk(g, 'q1');
+    expect(r.actions.map((a) => a.kind)).toEqual(['sendQuickMessage', 'sendQuickMessage', 'sendTemplate']);
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'tpl' });
+  });
 });
 
 describe('walk : node flow (Lot 7 : envoi du formulaire, fini le no-op)', () => {

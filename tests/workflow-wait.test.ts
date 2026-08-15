@@ -130,6 +130,28 @@ describe('waitBeforeSessionMessage (montage impossible, détecté pour l’UI)',
     expect(waitBeforeSessionMessage(graph)?.messageNodeId).toBe('q');
   });
 
+  it('un message SANS bouton est TRAVERSÉ : le montage fautif d’après est quand même signalé', () => {
+    // Un message rapide sans bouton ne bloque plus le parcours (cf. `walk`). L'analyse doit donc aller
+    // au-delà, sinon « 12 h, message sans bouton, 13 h, message rapide » passerait pour sain alors que son
+    // dernier message ne partira jamais : la fenêtre est fermée à coup sûr après 25 h cumulées.
+    const graph = g(
+      [nd('w1', 'wait', { delay: 12, unit: 'hours' }), nd('qm', 'quick_message', { body: 'un mot' }),
+       nd('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
+      [ed('w1', 'qm'), ed('qm', 'w2'), ed('w2', 'q')],
+    );
+    expect(waitBeforeSessionMessage(graph)).toEqual({ waitNodeId: 'w2', messageNodeId: 'q' });
+  });
+
+  it('un message rapide AVEC bouton arrête l’analyse (il attend vraiment une réponse, qui rouvrira la fenêtre)', () => {
+    const graph = g(
+      [nd('w1', 'wait', { delay: 12, unit: 'hours' }), QM('bloquant'),
+       nd('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
+      [ed('w1', 'bloquant'), ed('bloquant', 'w2'), ed('w2', 'q')],
+    );
+    // Seul le 1er message compte, et 12 h ne suffisent pas : rien à signaler.
+    expect(waitBeforeSessionMessage(graph)).toBeNull();
+  });
+
   it('attente COURTE puis message rapide -> RIEN (la fenêtre peut être encore ouverte, c’est au runtime de voir)', () => {
     const graph = g([nd('w', 'wait', { delay: 2, unit: 'hours' }), QM('q')], [ed('w', 'q')]);
     expect(waitBeforeSessionMessage(graph)).toBeNull();
