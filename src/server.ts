@@ -6,6 +6,7 @@ import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
+import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
 import { registerStats } from './http/stats';
 import { registerSettings } from './http/settings';
 import { registerUsers } from './http/users';
@@ -79,6 +80,9 @@ export interface ServerDeps {
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
   inbox?: InboxRouteDeps;
+  /** Canal ENTRANT depuis le connecteur HubSpot (changement d'étape d'un deal). Fourni si le secret partagé
+   *  est configuré. Signé, PAS authentifié par jeton utilisateur : l'appelant est un service, pas un humain. */
+  hubspotEvents?: HubspotEventRouteDeps;
   /** Stats du dashboard (séries 1 pt/jour). */
   stats?: StatsRouteDeps;
   /** Réglages tenant (toggle MBA). */
@@ -209,6 +213,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.
   if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
   if (deps.inbox) registerInbox(app, deps.inbox, requireAuth);
+  if (deps.hubspotEvents) registerHubspotEvents(app, deps.hubspotEvents);
   if (deps.stats) registerStats(app, deps.stats, requireAdmin);
   if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
   if (deps.admin) registerUsers(app, deps.admin, requireAdmin);

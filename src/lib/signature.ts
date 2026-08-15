@@ -40,6 +40,43 @@ export function signRequest(secret: string, input: RequestSignatureInput): strin
 }
 
 /**
+ * Valide une signature `v1=` ENTRANTE, au format canonique ci-dessus. Miroir exact de `verifyRequest` du
+ * connecteur (mm-hubspot/src/lib/signature.ts) : mba signait sans savoir vérifier, parce que le canal n'allait
+ * que dans un sens. Le webhook HubSpot fait remonter des événements, donc mba doit vérifier à son tour.
+ *
+ * ⚠️ La préimage DOIT rester byte-identique à celle de `signRequest`. `method` et `path` viennent de LA
+ * REQUÊTE (jamais d'un header), donc aucune ambiguïté de délimiteur même si un chemin contenait un point.
+ *
+ * La fenêtre borne le rejeu à sa durée, elle ne l'empêche pas dedans. C'est acceptable ici pour la même raison
+ * que sur le canal inverse : le traitement en aval est idempotent (dédup par eventId côté connecteur, et une
+ * automation a son propre anti-rebond par contact).
+ */
+export function verifyRequest(
+  raw: Buffer,
+  header: string | undefined,
+  secret: string,
+  opts: { method: string; path: string; now: number; windowMs: number },
+): boolean {
+  if (!secret || !header) return false;
+
+  const match = /^v1=(\d{1,15})\.([0-9a-f]{16})\.([0-9a-f]{64})$/i.exec(header.trim());
+  if (!match) return false;
+  const [, tsStr, nonce, hex] = match;
+  if (tsStr === undefined || nonce === undefined || hex === undefined) return false;
+
+  const prefix = Buffer.from(`${tsStr}.${nonce}.${opts.method}.${opts.path}.`, 'utf8');
+  const expected = createHmac('sha256', secret).update(Buffer.concat([prefix, raw])).digest();
+  const provided = Buffer.from(hex, 'hex');
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return false;
+
+  // Fenêtre vérifiée APRÈS la signature : pas de canal de timing sur la fraîcheur avant l'authentification.
+  const ts = Number(tsStr);
+  if (!Number.isFinite(ts)) return false;
+  const age = opts.now - ts;
+  return age <= opts.windowMs && age >= -opts.windowMs;
+}
+
+/**
  * Valide la signature Meta d'un webhook (X-Hub-Signature-256).
  * HMAC-SHA256 du corps brut avec l'app secret, comparaison timing-safe.
  * Retourne false si secret vide, header absent/malformé, ou signature invalide.

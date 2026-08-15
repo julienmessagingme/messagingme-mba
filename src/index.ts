@@ -273,6 +273,17 @@ async function main(): Promise<void> {
         return refus === null ? { cards } : { refus: `Carousel non envoyable : ${refus}` };
       },
     },
+    // Canal ENTRANT depuis le connecteur HubSpot. Même secret partagé que le canal sortant (le connecteur
+    // l'appelle SERVICE_SECRET), et même format de signature : on ne crée pas un troisième schéma.
+    ...(config.HUBSPOT_SERVICE_SECRET ? {
+      hubspotEvents: {
+        secret: config.HUBSPOT_SERVICE_SECRET,
+        findWaId: async (tenant: string, waId: string) => ((await contactStore.findIdByWaId(tenant, waId)) ? waId : null),
+        publish: async (tenantId: string, event: { kind: 'hubspot_deal_stage'; waId: string; pipelineId: string; stageId: string }) => {
+          await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId, event } satisfies AutomationEventJob);
+        },
+      },
+    } : {}),
     stats: {
       getDashboard: (tenant, range) => statsStore.getDashboard(tenant, range),
       getTemplateBreakdown: (tenant, range) => statsStore.getTemplateBreakdown(tenant, range),
