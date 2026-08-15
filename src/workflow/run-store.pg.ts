@@ -74,6 +74,25 @@ export class PgWorkflowRunStore {
     return r ? { id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id } : null;
   }
 
+  /**
+   * Clôt TOUS les parcours encore actifs d'un contact (en attente d'une réponse, ou endormis sur un bloc
+   * Attente) et rend combien ont été clos.
+   *
+   * Sert au lancement MANUEL d'un scénario depuis l'Inbox. Sans ça, un opérateur qui en lance un second crée
+   * deux runs concurrents : `findWaitingByWaId` ne rend que le plus récent (`limit 1`), donc le premier
+   * devient orphelin POUR TOUJOURS (aucun balayage ne nettoie un run `waiting`), invisible, pendant que le
+   * contact reçoit les messages des deux. On tranche dans le sens de l'opérateur : c'est lui qui décide, son
+   * nouveau scénario remplace l'ancien. Même parti pris que le lien de test d'un scénario.
+   */
+  async closeActiveByWaId(tenantId: string, waId: string): Promise<number> {
+    const res = await this.pool.query(
+      `update workflow_runs set status = 'done', current_node = null, resume_at = null, updated_at = now()
+       where tenant_id = $1 and wa_id = $2 and status in ('waiting', 'sleeping')`,
+      [tenantId, waId],
+    );
+    return res.rowCount ?? 0;
+  }
+
   async setState(id: string, state: RunState): Promise<void> {
     // `resume_at` est écrit SANS coalesce : quitter le sommeil doit effacer l'échéance, sinon un run réveillé
     // resterait éligible au balayage suivant.

@@ -37,7 +37,7 @@ export interface WorkflowRuntimeDeps {
   pool: Pool;
   /** File pg-boss : sert UNIQUEMENT à publier « tag ajouté » pour les automations. Aucun `work` ici. */
   queue: { enqueue(name: string, data: unknown): Promise<void> };
-  /** DRY_RUN : aucun appel Meta. ⚠️ À passer explicitement — l'oublier ferait envoyer pour de vrai. */
+  /** DRY_RUN : aucun appel Meta. ⚠️ À passer explicitement : l'oublier ferait envoyer pour de vrai. */
   dryRun: boolean;
   repo: PgCampaignRepo;
   contactStore: PgContactStore;
@@ -135,8 +135,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // déduit pas de la durée d'attente. Même calcul que l'inbox (source unique).
     isWindowOpen: async (tenant, waId) => (await inboxStore.getWindowOpenByWaIds(tenant, [waId])).get(waId) === true,
     getGraph: async (id, tenant) => (await workflowStore.getById(id, tenant))?.graph ?? null,
-    // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime — y compris par
-    // un ancien workflow non re-sauvegardé — atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.
+    // Applique le tag au contact ET le déclare dans le référentiel (défense : un tag posé au runtime, y compris par
+    // un ancien workflow non re-sauvegardé, atterrit dans Contenus > Tags). Best-effort, n'échoue jamais l'action.
     applyTag: async (tenant, waId, tag) => {
       // Même valeur normalisée (trim + slice 64) posée SUR le contact ET déclarée dans le référentiel -> pas de
       // doublon 'vip ' vs 'vip' ni tag>64 tronqué d'un côté seulement (Contenus > Tags = union des deux sources).

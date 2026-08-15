@@ -227,6 +227,15 @@ async function main(): Promise<void> {
         if (!wf) return null;
         const contactId = await contactStore.findIdByWaId(tenant, waId);
         const contact = { waId, contactId };
+        // Un parcours déjà actif sur ce contact est CLOS avant d'en lancer un nouveau. Sans ça, les deux
+        // vivraient en parallèle : le contact recevrait les messages des deux, et le plus ancien deviendrait
+        // orphelin pour toujours (l'avance ne retrouve qu'un run à la fois, et rien ne nettoie les `waiting`).
+        // On tranche dans le sens de l'opérateur : c'est lui qui décide, son scénario remplace l'ancien.
+        const clos = await workflowRuntime.runStore.closeActiveByWaId(tenant, waId);
+        if (clos > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`inbox: ${clos} parcours en cours clos avant le lancement manuel de ${workflowId} pour ${waId}`);
+        }
         const opts = { emitEvents: true, ignoreHumanControl: true };
         return windowOpen
           ? workflowRuntime.executor.startInWindow(tenant, workflowId, wf.graph, contact, opts)

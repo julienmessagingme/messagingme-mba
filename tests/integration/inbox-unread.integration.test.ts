@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgInboxStore } from '../../src/inbox/store.pg';
+import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -100,5 +101,70 @@ describe.skipIf(!url)('PgInboxStore : conversations non lues (Supabase)', () => 
     } finally {
       await pool.query('delete from tenants where id = $1', [autre]);
     }
+  });
+});
+
+/**
+ * Lancement MANUEL d'un scénario depuis l'Inbox : le parcours déjà en cours sur le contact doit être clos,
+ * sinon les deux vivent en parallèle (le contact reçoit les messages des deux) et le plus ancien devient
+ * orphelin pour toujours, `findWaitingByWaId` ne rendant que le plus récent.
+ */
+describe.skipIf(!url)('PgWorkflowRunStore.closeActiveByWaId (Supabase)', () => {
+  let pool: Pool;
+  let tenantId: string;
+  let autreTenant: string;
+  let workflowId: string;
+  let store: PgWorkflowRunStore;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-close-runs') returning id`)).rows[0]!.id;
+    autreTenant = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-close-runs-voisin') returning id`)).rows[0]!.id;
+    workflowId = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name, graph) values ($1, 'itest', '{"nodes":[],"edges":[]}'::jsonb) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    store = new PgWorkflowRunStore(pool);
+  });
+  afterAll(async () => {
+    for (const t of [tenantId, autreTenant]) if (t) await pool.query('delete from tenants where id = $1', [t]);
+    await pool.end();
+  });
+
+  const statuts = async (tenant: string, waId: string): Promise<string[]> =>
+    (await pool.query<{ status: string }>(
+      `select status from workflow_runs where tenant_id = $1 and wa_id = $2 order by created_at`, [tenant, waId],
+    )).rows.map((r) => r.status);
+
+  it('clôt les parcours en attente ET endormis, et rend leur nombre', async () => {
+    await store.start(tenantId, workflowId, '33600000010', null, { currentNode: 'n1', status: 'waiting' });
+    await store.start(tenantId, workflowId, '33600000010', null, { currentNode: 'n2', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
+    expect(await store.closeActiveByWaId(tenantId, '33600000010')).toBe(2);
+    expect(await statuts(tenantId, '33600000010')).toEqual(['done', 'done']);
+  });
+
+  it('efface aussi l’échéance de réveil (sinon le balayage reprendrait un run clos)', async () => {
+    await store.start(tenantId, workflowId, '33600000011', null, { currentNode: 'n1', status: 'sleeping', resumeAt: new Date(Date.now() + 3_600_000) });
+    await store.closeActiveByWaId(tenantId, '33600000011');
+    const { rows } = await pool.query<{ resume_at: Date | null }>(
+      `select resume_at from workflow_runs where tenant_id = $1 and wa_id = $2`, [tenantId, '33600000011'],
+    );
+    expect(rows[0]?.resume_at).toBeNull();
+  });
+
+  it('ne touche PAS les parcours d’un autre tenant, ni ceux déjà clos', async () => {
+    await store.start(tenantId, workflowId, '33600000012', null, { currentNode: null, status: 'done' });
+    const wfVoisin = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name, graph) values ($1, 'itest-voisin', '{"nodes":[],"edges":[]}'::jsonb) returning id`,
+      [autreTenant],
+    )).rows[0]!.id;
+    await store.start(autreTenant, wfVoisin, '33600000012', null, { currentNode: 'n1', status: 'waiting' });
+
+    expect(await store.closeActiveByWaId(tenantId, '33600000012')).toBe(0); // le sien était déjà clos
+    expect(await statuts(autreTenant, '33600000012')).toEqual(['waiting']); // le voisin est intact
+  });
+
+  it('aucun parcours actif -> 0, sans erreur', async () => {
+    expect(await store.closeActiveByWaId(tenantId, '33699999998')).toBe(0);
   });
 });
