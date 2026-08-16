@@ -1,7 +1,13 @@
 node_modules/
 dist/
+# TOUT ce qui commence par .env est ignoré, SAUF les gabarits. `.env` et `.env.local` seuls laissaient
+# `.env.prod` (et ses sauvegardes `.env.prod.bak.*`) en « non suivi » sur le VPS : un `git add -A` passé
+# là-bas aurait committé les secrets de production, et le hook gitleaks n'existe que sur le poste de Julien.
+# Le connecteur mm-hubspot avait déjà cette règle, celle-ci s'aligne dessus.
 .env
-.env.local
+.env.*
+!.env.example
+!.env.prod.example
 *.log
 coverage/
 .DS_Store
