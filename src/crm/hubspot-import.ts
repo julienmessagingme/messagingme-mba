@@ -74,6 +74,22 @@ export async function flagContactUnreachable(deps: ConnectorDeps, tenantId: stri
   }
 }
 
+export interface HubspotDealStage { id: string; label: string; closed: boolean }
+export interface HubspotDealPipeline { id: string; label: string; stages: HubspotDealStage[] }
+
+/**
+ * Pipelines de deals du portail, avec les libellés de leurs étapes : de quoi peupler le menu « étape de deal »
+ * de l'écran Automation, au lieu de faire recopier un identifiant opaque depuis HubSpot.
+ *
+ * Ne lève PAS ReconsentRequiredError : les deals sont dans les scopes obligatoires de l'app, contrairement aux
+ * listes. Un tenant sans portail lié remonte en HubspotServiceError 404 (`tenant_not_connected`), que la route
+ * HTTP traduit en « pas connecté » plutôt qu'en erreur.
+ */
+export async function fetchHubspotDealStages(deps: ConnectorDeps, tenantId: string): Promise<HubspotDealPipeline[]> {
+  const res = await callService<{ pipelines?: HubspotDealPipeline[] }>(deps, '/service/deal-stages', { tenantId });
+  return res.pipelines ?? [];
+}
+
 /** Liste les listes HubSpot du portail du tenant. Lève ReconsentRequiredError si crm.lists.read pas accordé. */
 export async function fetchHubspotLists(deps: ConnectorDeps, tenantId: string, query?: string): Promise<HubspotList[]> {
   const res = await callService<{ lists: HubspotList[] }>(deps, '/service/lists', { tenantId, ...(query ? { query } : {}) });

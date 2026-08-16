@@ -27,7 +27,7 @@ import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { resolveRatePerMinute } from './campaign/pacing';
-import { fetchHubspotLists, importHubspotList, disconnectHubspot } from './crm/hubspot-import';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-import';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
 import { PgPhoneStatusStore } from './account/store.pg';
@@ -336,6 +336,11 @@ async function main(): Promise<void> {
             fetchLists: (tenant: string, query?: string) => fetchHubspotLists({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant, query),
             importList: (tenant: string, listId: string, listName: string) =>
               importHubspotList({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, { contacts: contactStore, userFields: fieldStore }, tenant, listId, listName),
+          },
+          // Étapes de deal : même canal service, mais AUCUN rapport avec le réglage « listes » (cf. la route).
+          hubspotPipelines: {
+            fetchDealStages: (tenant: string) =>
+              fetchHubspotDealStages({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenant),
           },
         }
       : {}),
