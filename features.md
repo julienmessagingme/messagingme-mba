@@ -304,13 +304,18 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   formulaire ; une automation neuve est **toujours créée désactivée**, on la relit puis on l'allume d'un clic
   sur son badge. Une ligne se supprime ; pour changer son déclencheur ou son scénario, on la supprime et on la
   recrée. Un scénario supprimé entre-temps s'affiche comme tel sur la ligne. Réservé à l'admin.
-- ✅ **Quatre déclencheurs** :
+- ✅ **Quatre déclencheurs proposés à l'écran** :
   - **le client envoie un mot-clé** : une liste de mots séparés par des virgules, au choix « le message contient »
     ou « le message est exactement » le mot-clé. Casse et accents ignorés.
   - **un nouveau contact écrit pour la 1re fois** (aucun réglage).
   - **un tag est posé sur un contact** : on saisit le tag qui déclenche.
   - **une conversation vient d'être analysée** : filtre par ressenti du client (négatif par défaut, neutre,
     positif, ou peu importe) et, en option, « seulement si la demande n'a pas été résolue ».
+- 🚧 **Un cinquième déclencheur, « un deal HubSpot atteint une étape »** (2026-08-16) : le serveur sait le
+  recevoir et le traiter, mais il **n'est pas encore proposé dans l'écran** (le menu des étapes du portail
+  manque) et il reste **inerte tant que la souscription HubSpot n'a pas été envoyée** depuis le compte
+  développeur. L'étape est repérée par son IDENTIFIANT, jamais par son libellé : un client qui renomme son
+  étape dans HubSpot casserait sinon son automation sans que rien ne le signale.
 - ✅ **Ce qui ne déclenche RIEN** (annoncé à l'écran, pas seulement en coulisse) : un tag posé **en masse**, par
   **import de fichier** ou par un scénario lancé en **campagne** (poser un tag sur 5 000 contacts enverrait
   sinon 5 000 messages : pour toucher une liste, l'outil reste la campagne) ; une conversation quand

@@ -501,6 +501,52 @@ automations, et signale les messages qu'il a consommés pour qu'un seul message 
 parcours actif par contact, et l'émission gouvernée par le chemin (les campagnes n'émettent pas). Voir
 `CLAUDE.md` pour les règles à ne pas casser.
 
+**Déclencheur `hubspot_deal_stage` (2026-08-16, déployé).** Le connecteur mm-hubspot reçoit le webhook
+`deal.propertyChange` de HubSpot, remonte deal -> contact -> téléphone, et pousse vers mba sur
+`POST /hubspot/deal-stage` (signature v1 partagée). mba fait correspondre l'étape à une automation. La
+correspondance porte sur l'IDENTIFIANT d'étape, jamais sur le libellé (un renommage côté HubSpot casserait
+sinon l'automation en silence) ; le libellé n'est stocké que pour l'affichage. Le pipeline ne restreint que si
+les DEUX côtés le portent : le webhook ne transporte pas le pipeline, et une étape appartient déjà à un seul
+pipeline chez HubSpot.
+
+`GET /tenants/:t/hubspot/deal-stages` (admin) rend les pipelines du portail avec les libellés de leurs étapes,
+via le canal service signé (`POST /service/deal-stages` côté connecteur). Volontairement NON gardée par le
+réglage « Campagnes via données HubSpot », qui gouverne l'import de contacts, un tout autre pouvoir. Portail
+non lié -> `200 {connected:false}` ; une panne reste un 500. ⚠️ Le menu déroulant côté React n'existe pas
+encore : le déclencheur n'est donc pas créable depuis l'écran.
+
+## Capture automatique de l'OTP d'embarquement (Zadarma, 2026-08-16, précâblage)
+
+**Le problème.** Pour embarquer son numéro WhatsApp, le client doit fournir un numéro puis saisir un code que
+Meta lui dicte. On veut fournir le numéro ET capter le code. La popup d'Embedded Signup est un iframe d'un
+autre domaine : la remplir automatiquement est IMPOSSIBLE. On ne la pilote donc pas, on la contourne, en
+ajoutant et vérifiant le numéro par API (`MetaPhoneRegisterClient` : `phone_numbers` -> `request_code` en
+VOICE et en français -> `verify_code`). L'activation Cloud API (`/register` + PIN) n'est PAS dupliquée ici,
+elle vit dans `MetaEmbeddedSignupClient.register`.
+
+**Les modules** (`src/zadarma/`, inertes tant que `ZADARMA_API_KEY`/`SECRET` sont vides ; la config refuse au
+démarrage qu'une seule des deux moitiés soit posée) : `client.ts` (signature + transport), `api.ts` (numéros,
+appels entrants, transcription), `otp-extract.ts` (le code depuis la transcription), `otp-capture.ts`
+(orchestration). Tous testables sans réseau : l'IO est injectée.
+
+**Partis pris à ne pas défaire.** `otp-extract` comprend le français PARLÉ (« douze trente-quatre
+cinquante-six » = 123456), parce qu'un moteur français regroupe spontanément les chiffres par deux ; le
+réduire aux chiffres écrits n'attraperait qu'un cas sur trois. Il applique l'unanimité ou rien : deux codes
+différents dans la transcription rendent `null`, car Meta plafonne à 10 tentatives par numéro sur 72 h et un
+code deviné en brûle une. `otp-capture` identifie l'appel par DIFFÉRENCE avec un instantané pris avant de
+déclencher, jamais par l'heure (le fuseau du compte Zadarma n'est pas garanti), absorbe les erreurs passagères
+(la tentative Meta est déjà consommée, la boucle EST le rejeu) et rend une cause distincte par maillon.
+
+**Verdict d'architecture (sondage du 2026-08-16).** Le ROUTAGE est pilotable par API :
+`PUT /v1/direct_numbers/set_sip_id/` accepte une adresse SIP EXTERNE, donc un client se provisionne en un
+appel, sans clic. Le DÉCROCHÉ, non : Zadarma n'expose aucune commande « décroche », la machine qui répond doit
+donc être à nous (ou son répondeur, dont on n'a pas confirmé qu'il produise un enregistrement exploitable).
+⚠️ L'appel de Meta arrive quasi immédiatement après `request_code` : le routage doit être armé AVANT.
+
+**Gotchas Zadarma mesurés en direct** (détail et suite dans `wip.md`) : signature = base64 du HMAC-SHA1
+HEXADÉCIMAL (56 caractères) ; en écriture les paramètres vont dans le CORPS, URL nue. Les deux erreurs
+produisent le même « 401 Not authorized » qui fait accuser des clés pourtant bonnes.
+
 ## Gotchas et décisions (journal, déplacé de CLAUDE.md)
 
 Vue chronologique par lot. La vue thématique correspondante est dans les sections ci-dessus.

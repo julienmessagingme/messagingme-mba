@@ -386,9 +386,32 @@ otp-capture}.ts` et `src/meta/phone-register.ts`.
   déclenché par « appels vers le numéro », qui DÉCROCHE et garde la ligne, avec l'enregistrement d'appel
   activé). C'est le préalable au pilote, et ça ne se fait pas par l'API.
 
-Reste ensuite : le pilote sur UN numéro (Meta accepte-t-il un répondeur ? risque assumé depuis juillet), la
-réserve de numéros en base (migration 0056), la route + l'écran qui affiche le code en direct (qui est aussi
-le repli assisté si le full-auto meurt), et l'instanciation du client dans `index.ts`.
+**Déployé le 2026-08-16** (mba `f20962c`), mais sans effet : les modules ne sont importés par aucun fichier
+exécuté. Le parcours d'embarquement actuel (popup Meta, numéro cherché à la main, code recopié à la main) est
+strictement inchangé.
+
+**Verdict du sondage d'architecture (2026-08-16).** Le ROUTAGE d'un numéro est pilotable par API :
+`PUT /v1/direct_numbers/set_sip_id/` accepte une adresse SIP EXTERNE (exemple explicite dans la doc). Donc un
+client se provisionne en un appel d'API, zéro clic, ce qui sauve la thèse « on fournit le numéro » à l'échelle.
+Le DÉCROCHÉ, lui, n'a aucune commande d'API : la machine qui répond doit être à nous, ou être le répondeur de
+Zadarma, dont personne n'a pu confirmer qu'il dépose un enregistrement porteur d'un identifiant d'appel
+exploitable.
+
+**Prochain pas, et ce n'est PAS de construire.** Le risque qui tue l'angle n'est ni le routage ni le décroché,
+c'est de savoir si **Meta accepte de dicter son code à une machine** ou raccroche en détectant un répondeur.
+Aucun retour d'expérience publié nulle part. Ça se teste sans rien bâtir : répondeur Zadarma sur un numéro
+DÉDIÉ (jamais un numéro qui sert Odalys, EDHEC ou Gan Prévoyance), un OTP déclenché, et on regarde. Si Meta
+dicte, l'infra SIP maison devient inutile ; s'il raccroche, l'angle full-auto meurt et on bascule sur le repli
+assisté en ayant économisé la construction.
+
+Contrainte de conception relevée : l'appel de Meta arrive quasi immédiatement après `request_code`, donc le
+routage doit être **armé avant**, jamais réglé à la volée.
+
+Reste ensuite : le pilote, la réserve de numéros en base (migration 0056), la route + l'écran qui affiche le
+code en direct (qui est aussi le repli assisté si le full-auto meurt), et l'instanciation du client dans
+`index.ts`. Question NON technique à trancher tôt : le dossier d'identité exigé pour un numéro français. S'il
+en faut un par client final, le geste manuel revient par la porte juridique et c'est le modèle qui est touché,
+pas le code.
 
 ## En attente (dépendances externes)
 

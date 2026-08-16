@@ -153,6 +153,27 @@ Chacun est un compromis assumé, pas un oubli.
   « nouveau contact » ne partira pas pour lui. Le rendre infaillible imposerait une requête de comptage sur
   chaque message entrant, prix jugé trop élevé pour un cas qui suppose déjà un incident.
 
+## Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16)
+
+Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **0056**.
+
+- 🔴 **Le pilote OTP, avant toute construction.** Répondeur Zadarma sur un numéro DÉDIÉ, un OTP déclenché, et
+  on regarde si Meta dicte son code à une machine ou raccroche. Aucun retour d'expérience publié : c'est la
+  seule question qui décide si le full-auto vit. Ne jamais utiliser un numéro qui sert Odalys, EDHEC ou Gan
+  Prévoyance : une écriture de routage les couperait.
+- **Le dossier d'identité (KYC) par numéro français** : un seul dossier au nom de la société, réutilisable, ou
+  un par client final ? La deuxième réponse ramène le geste manuel par la porte juridique et touche le modèle,
+  pas le code. À trancher AVANT d'industrialiser.
+- **Réserve de numéros en base** (migration 0056) : quel numéro est alloué à quel embarquement, et son état.
+- **Route + écran qui affiche le code en direct.** Sert dans les DEUX scénarios : c'est l'affichage du repli
+  assisté si le full-auto meurt, et le suivi de la capture s'il vit. Avec un bouton « renvoyer le code ».
+- **Instancier `ZadarmaClient` dans `index.ts`** à partir de la config (rien ne le fait aujourd'hui).
+- **Menu déroulant des étapes de deal dans l'écran Automation.** Le serveur est prêt et déployé
+  (`GET /tenants/:t/hubspot/deal-stages`), il ne manque que le sélecteur React. Tant qu'il n'existe pas, le
+  déclencheur « étape de deal » n'est pas créable depuis l'écran.
+- **Envoyer la souscription webhook HubSpot** (`cd hubspot-app && hs.cmd project upload`, compte dev) : sans
+  elle, toute la chaîne d'étapes de deal reste inerte, des deux côtés.
+
 ## Post-live — prochaines actions
 
 - ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent
