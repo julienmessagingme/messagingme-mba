@@ -168,11 +168,10 @@ Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **
 - **Route + écran qui affiche le code en direct.** Sert dans les DEUX scénarios : c'est l'affichage du repli
   assisté si le full-auto meurt, et le suivi de la capture s'il vit. Avec un bouton « renvoyer le code ».
 - **Instancier `ZadarmaClient` dans `index.ts`** à partir de la config (rien ne le fait aujourd'hui).
-- **Menu déroulant des étapes de deal dans l'écran Automation.** Le serveur est prêt et déployé
-  (`GET /tenants/:t/hubspot/deal-stages`), il ne manque que le sélecteur React. Tant qu'il n'existe pas, le
-  déclencheur « étape de deal » n'est pas créable depuis l'écran.
-- **Envoyer la souscription webhook HubSpot** (`cd hubspot-app && hs.cmd project upload`, compte dev) : sans
-  elle, toute la chaîne d'étapes de deal reste inerte, des deux côtés.
+- ✅ **Menu des étapes de deal dans l'écran Automation** (fait et déployé le 2026-08-16).
+- ✅ **Souscription webhook HubSpot envoyée** (2026-08-16, build #8 sur le compte dev 148896252). La chaîne
+  est donc vivante de bout en bout ; reste à l'éprouver sur le portail cobaye avec un deal dont le contact
+  porte un numéro, et un scénario qui ouvre par un template.
 
 ## Post-live — prochaines actions
 

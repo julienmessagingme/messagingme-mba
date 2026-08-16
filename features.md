@@ -311,11 +311,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   - **un tag est posé sur un contact** : on saisit le tag qui déclenche.
   - **une conversation vient d'être analysée** : filtre par ressenti du client (négatif par défaut, neutre,
     positif, ou peu importe) et, en option, « seulement si la demande n'a pas été résolue ».
-- 🚧 **Un cinquième déclencheur, « un deal HubSpot atteint une étape »** (2026-08-16) : le serveur sait le
-  recevoir et le traiter, mais il **n'est pas encore proposé dans l'écran** (le menu des étapes du portail
-  manque) et il reste **inerte tant que la souscription HubSpot n'a pas été envoyée** depuis le compte
-  développeur. L'étape est repérée par son IDENTIFIANT, jamais par son libellé : un client qui renomme son
-  étape dans HubSpot casserait sinon son automation sans que rien ne le signale.
+- ✅ **Un cinquième déclencheur, « un deal HubSpot atteint une étape »** (2026-08-16) : on choisit l'étape dans
+  un menu qui liste celles du portail par leur NOM, groupées par pipeline (deux pipelines ont souvent une
+  étape qui porte le même nom) et signalant les étapes de fin. Le scénario part quand un deal ARRIVE sur cette
+  étape, pour le contact rattaché au deal, à condition qu'il ait un numéro. Le client n'écrivant pas à ce
+  moment-là, le scénario doit commencer par un envoi de template. L'étape est retenue par son IDENTIFIANT,
+  jamais par son libellé : la renommer dans HubSpot ne casse rien. Si aucun portail n'est relié à l'espace,
+  l'écran le dit et invite à connecter HubSpot dans Paramètres.
 - ✅ **Ce qui ne déclenche RIEN** (annoncé à l'écran, pas seulement en coulisse) : un tag posé **en masse**, par
   **import de fichier** ou par un scénario lancé en **campagne** (poser un tag sur 5 000 contacts enverrait
   sinon 5 000 messages : pour toucher une liste, l'outil reste la campagne) ; une conversation quand

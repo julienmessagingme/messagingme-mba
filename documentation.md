@@ -512,8 +512,11 @@ pipeline chez HubSpot.
 `GET /tenants/:t/hubspot/deal-stages` (admin) rend les pipelines du portail avec les libellés de leurs étapes,
 via le canal service signé (`POST /service/deal-stages` côté connecteur). Volontairement NON gardée par le
 réglage « Campagnes via données HubSpot », qui gouverne l'import de contacts, un tout autre pouvoir. Portail
-non lié -> `200 {connected:false}` ; une panne reste un 500. ⚠️ Le menu déroulant côté React n'existe pas
-encore : le déclencheur n'est donc pas créable depuis l'écran.
+non lié -> `200 {connected:false}` ; une panne reste un 500. L'écran Automation la consomme dans un menu groupé
+par pipeline, chargé PARESSEUSEMENT (à la sélection du déclencheur, une seule fois). ⚠️ Le garde-fou « déjà
+demandé » y est une `useRef` et NON l'état de chargement : mettre ce dernier dans les dépendances de l'effet
+le relançait, son nettoyage annulait la requête en vol, et l'écran restait figé sur « Lecture des étapes… ».
+Trouvé par le test de bout en bout, invisible à la lecture.
 
 ## Capture automatique de l'OTP d'embarquement (Zadarma, 2026-08-16, précâblage)
 
