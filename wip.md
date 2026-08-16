@@ -360,6 +360,36 @@ surfacé dans Analytics. Détail usage : `features.md §Analytics`. Détail tech
    (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
    **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
 
+## OTP automatique de l'Embedded Signup (Zadarma) — précâblage FAIT, pilote à mener (2026-08-16)
+
+But : ne plus demander au client de trouver un numéro. On lui en fournit un (Zadarma), Meta l'appelle et
+dicte le code, on transcrit l'enregistrement et on poste le code par API (`verify_code`), donc **hors de la
+popup Meta**, qui est un iframe d'un autre domaine et ne se remplit pas automatiquement.
+
+Codé et testé, inerte tant que `ZADARMA_API_KEY/SECRET` sont vides : `src/zadarma/{client,api,otp-extract,
+otp-capture}.ts` et `src/meta/phone-register.ts`.
+
+**Gotchas Zadarma mesurés en direct le 2026-08-16 (ne pas les redécouvrir) :**
+
+- 🔴 **Lecture vs écriture.** En GET les paramètres vont dans l'URL ; en **POST/PUT ils vont dans le CORPS**
+  (`x-www-form-urlencoded`), URL nue. Un PUT qui laisse ses paramètres dans l'URL arrive SANS paramètres,
+  la signature est recalculée sur une chaîne vide, et Zadarma répond **401 « Not authorized »** : on accuse
+  alors les clés, qui sont bonnes. Mesuré : à paramètres identiques, GET -> 404, PUT -> 401 ; paramètres
+  déplacés dans le corps, PUT -> 404.
+- 🔴 **Signature** = base64 du HMAC-SHA1 **hexadécimal** (56 caractères). Signer les octets bruts donne
+  28 caractères et un 401 tout aussi muet.
+- `receive_sms` arrive en **chaîne** « false ». Les numéros français sont **voix seule** : pas d'OTP par SMS.
+- La **reconnaissance vocale est autorisée** sur le compte (vérifié sur un identifiant bidon : 404
+  « fichier introuvable », pas un refus de droits).
+- 🔴 **Rien ne décroche aujourd'hui** : le PBX n'a aucune extension, donc aucun enregistrement, donc rien à
+  transcrire. À régler dans le panneau Zadarma (« Mon PBX » > « Appels entrants et SVI » : un scénario
+  déclenché par « appels vers le numéro », qui DÉCROCHE et garde la ligne, avec l'enregistrement d'appel
+  activé). C'est le préalable au pilote, et ça ne se fait pas par l'API.
+
+Reste ensuite : le pilote sur UN numéro (Meta accepte-t-il un répondeur ? risque assumé depuis juillet), la
+réserve de numéros en base (migration 0056), la route + l'écran qui affiche le code en direct (qui est aussi
+le repli assisté si le full-auto meurt), et l'instanciation du client dans `index.ts`.
+
 ## En attente (dépendances externes)
 
 - **MBA (agent auto-réponse)** : bloqué par les ToS (403 « Meta Business AI Terms »), gating

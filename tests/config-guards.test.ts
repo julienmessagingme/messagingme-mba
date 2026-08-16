@@ -56,6 +56,16 @@ describe('gardes de config en production', () => {
     expect(schema.safeParse({ ...prodEnv, AUTH_SECRET: 'dev-insecure-change-me' }).success).toBe(false);
     expect(schema.safeParse({ ...prodEnv, AUTH_SECRET: 'court' }).success).toBe(false);
   });
+
+  it('Zadarma : une seule moitié des identifiants -> refusé ; les deux ou aucune -> accepté', () => {
+    // Une clé sans son secret signerait avec une chaîne vide, et Zadarma répondrait « 401 Not authorized »
+    // qu'on mettrait sur le dos d'identifiants pourtant valides. Autant refuser au démarrage.
+    asProd();
+    expect(errPaths(schema.safeParse({ ...prodEnv, ZADARMA_API_KEY: 'k' }))).toContain('ZADARMA_API_SECRET');
+    expect(errPaths(schema.safeParse({ ...prodEnv, ZADARMA_API_SECRET: 's' }))).toContain('ZADARMA_API_SECRET');
+    expect(schema.safeParse({ ...prodEnv, ZADARMA_API_KEY: 'k', ZADARMA_API_SECRET: 's' }).success).toBe(true);
+    expect(schema.safeParse(prodEnv).success).toBe(true); // aucune des deux : la capture est simplement inerte
+  });
 });
 
 describe('budget de connexions Postgres', () => {
