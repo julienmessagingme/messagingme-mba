@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import {
-  listAutomations, createAutomation, updateAutomation, deleteAutomation, listWorkflows,
-  type Automation, type AutomationTriggerKind, type WorkflowSummary,
+  listAutomations, createAutomation, updateAutomation, deleteAutomation, listWorkflows, listHubspotDealStages,
+  type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline,
 } from '@/lib/api';
 
 export default function AutomationsPage() {
@@ -33,6 +33,13 @@ function AutomationsInner({ session }: { session: Session }) {
   const [sentiment, setSentiment] = useState<'' | 'positif' | 'neutre' | 'negatif'>('negatif');
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [workflowId, setWorkflowId] = useState('');
+  // Étapes de deal : chargées SEULEMENT quand on choisit ce déclencheur (elles coûtent un aller-retour
+  // jusqu'à HubSpot, inutile de le payer sur chaque ouverture de l'écran). `etatEtapes` distingue « aucun
+  // portail lié » d'une vraie panne : dire « connecte HubSpot » alors que le serveur a échoué serait un
+  // mensonge qui enverrait chercher le problème au mauvais endroit.
+  const [dealPipelines, setDealPipelines] = useState<HubspotDealPipeline[]>([]);
+  const [etatEtapes, setEtatEtapes] = useState<'idle' | 'chargement' | 'ok' | 'non_connecte' | 'erreur'>('idle');
+  const [dealStageKey, setDealStageKey] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
@@ -49,7 +56,50 @@ function AutomationsInner({ session }: { session: Session }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  /**
+   * Chargement PARESSEUX des étapes, une seule fois : on ne rappelle pas HubSpot chaque fois que l'admin
+   * rebascule entre deux déclencheurs.
+   *
+   * ⚠️ Le garde-fou « déjà demandé » est une RÉFÉRENCE, pas l'état lui-même. Mettre `etatEtapes` dans les
+   * dépendances créait un blocage : `setEtatEtapes('chargement')` relançait l'effet, dont le nettoyage
+   * annulait la requête en vol, et l'écran restait figé sur « Lecture des étapes… » pour toujours. Trouvé par
+   * le test de bout en bout, pas à la lecture.
+   */
+  const etapesDemandees = useRef(false);
+  useEffect(() => {
+    if (triggerKind !== 'hubspot_deal_stage' || etapesDemandees.current) return;
+    etapesDemandees.current = true;
+    setEtatEtapes('chargement');
+    void listHubspotDealStages(session.tenantId)
+      .then((r) => {
+        setDealPipelines(r.pipelines);
+        setEtatEtapes(r.connected ? 'ok' : 'non_connecte');
+      })
+      .catch(() => setEtatEtapes('erreur'));
+  }, [triggerKind, session.tenantId]);
+
+  // Étapes aplaties, chacune avec sa clé « pipeline::étape » : le sélecteur ne peut pas porter deux valeurs,
+  // et il faut les DEUX (le serveur exige le pipeline, l'identifiant d'étape seul ne suffit pas).
+  const etapes = dealPipelines.flatMap((p) => p.stages.map((s) => ({ ...s, cle: `${p.id}::${s.id}`, pipeline: p.label })));
+  const etapeChoisie = etapes.find((s) => s.cle === dealStageKey);
+
   const wfName = (id: string): string => workflows.find((w) => w.id === id)?.name ?? t('scénario supprimé', 'deleted scenario');
+
+  /**
+   * Config du déclencheur, selon son type. L'étape de deal emporte son LIBELLÉ en plus des identifiants :
+   * purement décoratif (la correspondance se fait sur l'identifiant, insensible à un renommage côté HubSpot),
+   * mais il évite de rappeler HubSpot juste pour réafficher « Devis envoyé » dans la liste.
+   */
+  function configDuDeclencheur(): Record<string, unknown> {
+    if (triggerKind === 'keyword') return { keywords: keywords.split(',').map((k) => k.trim()).filter((k) => k !== ''), mode };
+    if (triggerKind === 'tag_added') return { tag: tag.trim() };
+    if (triggerKind === 'conversation_analyzed') return { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) };
+    if (triggerKind === 'hubspot_deal_stage') {
+      const [pipelineId = '', stageId = ''] = dealStageKey.split('::');
+      return { pipelineId, stageId, ...(etapeChoisie ? { stageLabel: etapeChoisie.label } : {}) };
+    }
+    return {};
+  }
 
   async function submit() {
     setBusy(true);
@@ -58,19 +108,13 @@ function AutomationsInner({ session }: { session: Session }) {
       await createAutomation(session.tenantId, {
         name: name.trim(),
         triggerKind,
-        triggerConfig: triggerKind === 'keyword'
-          ? { keywords: keywords.split(',').map((k) => k.trim()).filter((k) => k !== ''), mode }
-          : triggerKind === 'tag_added'
-            ? { tag: tag.trim() }
-            : triggerKind === 'conversation_analyzed'
-              ? { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) }
-              : {},
+        triggerConfig: configDuDeclencheur(),
         workflowId,
         enabled: false, // jamais active à la création : on l'allume explicitement après relecture
       });
-      // Remise à zéro COMPLÈTE : un filtre resté collé (ressenti, « non résolue ») produirait une
+      // Remise à zéro COMPLÈTE : un filtre resté collé (ressenti, « non résolue », étape) produirait une
       // automation plus restrictive que voulu, sans que rien ne le signale à l'écran.
-      setCreating(false); setName(''); setKeywords(''); setTag(''); setWorkflowId('');
+      setCreating(false); setName(''); setKeywords(''); setTag(''); setWorkflowId(''); setDealStageKey('');
       setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword');
       await load();
     } catch (err) {
@@ -121,12 +165,21 @@ function AutomationsInner({ session }: { session: Session }) {
       ].filter((x) => x !== '');
       return parts.join(', ');
     }
+    if (a.triggerKind === 'hubspot_deal_stage') {
+      // Le libellé n'est qu'un souvenir de ce qui a été choisi : s'il manque (automation créée par API), on
+      // le dit plutôt que d'afficher un identifiant opaque qui ne parlerait à personne.
+      const etape = String(a.triggerConfig.stageLabel ?? '').trim();
+      return etape !== ''
+        ? `${t('un deal HubSpot atteint « ', 'a HubSpot deal reaches "')}${etape}${t(' »', '"')}`
+        : t('un deal HubSpot atteint l’étape configurée', 'a HubSpot deal reaches the configured stage');
+    }
     return a.triggerKind;
   };
 
   const canSubmit = name.trim() !== '' && workflowId !== ''
     && (triggerKind !== 'keyword' || keywords.trim() !== '')
-    && (triggerKind !== 'tag_added' || tag.trim() !== '');
+    && (triggerKind !== 'tag_added' || tag.trim() !== '')
+    && (triggerKind !== 'hubspot_deal_stage' || dealStageKey !== '');
 
   return (
     <div className="space-y-5 p-4">
@@ -143,8 +196,8 @@ function AutomationsInner({ session }: { session: Session }) {
             tant que seuls le mot-clé et le nouveau contact existaient. */}
         <p className="mt-2 max-w-3xl text-xs text-ink-400">
           {t(
-            'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé et conversation analysée arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
-            'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added and conversation analyzed happen cold: the scenario must start with a template send, otherwise nothing goes out.',
+            'Mot-clé et nouveau contact partent d’un message reçu : la fenêtre de 24 h est ouverte, le scénario peut donc commencer par un message rapide ou un formulaire. Tag posé, conversation analysée et étape de deal arrivent à froid : le scénario doit commencer par un envoi de template, sinon rien ne part.',
+            'Keyword and new contact come from an incoming message: the 24 h window is open, so the scenario may start with a quick message or a form. Tag added, conversation analyzed and deal stage happen cold: the scenario must start with a template send, otherwise nothing goes out.',
           )}
         </p>
       </div>
@@ -168,8 +221,51 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
               <option value="tag_added">{t('un tag est posé sur un contact', 'a tag is added to a contact')}</option>
               <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
+              <option value="hubspot_deal_stage">{t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}</option>
             </select>
           </div>
+          {triggerKind === 'hubspot_deal_stage' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étape du deal', 'Deal stage')}</label>
+              {etatEtapes === 'chargement' ? (
+                <p className="text-xs text-ink-400">{t('Lecture des étapes du portail…', 'Reading portal stages…')}</p>
+              ) : etatEtapes === 'non_connecte' ? (
+                <p className="text-xs text-amber-700">
+                  {t(
+                    'Aucun portail HubSpot n’est relié à cet espace. Connecte HubSpot dans Paramètres, puis reviens ici.',
+                    'No HubSpot portal is linked to this workspace. Connect HubSpot in Settings, then come back here.',
+                  )}
+                </p>
+              ) : etatEtapes === 'erreur' ? (
+                <p className="text-xs text-red-700">
+                  {t('Les étapes n’ont pas pu être lues. Réessaie dans un instant.', 'Stages could not be read. Try again shortly.')}
+                </p>
+              ) : etapes.length === 0 ? (
+                <p className="text-xs text-amber-700">{t('Ce portail n’a aucune étape de deal.', 'This portal has no deal stage.')}</p>
+              ) : (
+                <select value={dealStageKey} onChange={(e) => setDealStageKey(e.target.value)} data-testid="automation-deal-stage" className={inputCls}>
+                  <option value="">{t('Choisir une étape…', 'Choose a stage…')}</option>
+                  {/* Groupé par pipeline : deux pipelines ont souvent une étape du même nom, et sans le
+                      groupe on ne saurait pas laquelle on choisit. */}
+                  {dealPipelines.map((p) => (
+                    <optgroup key={p.id} label={p.label}>
+                      {p.stages.map((s) => (
+                        <option key={s.id} value={`${p.id}::${s.id}`}>
+                          {s.label}{s.closed ? t(' (étape de fin)', ' (closing stage)') : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              )}
+              <p className="mt-1 text-xs text-ink-400">
+                {t(
+                  'Le scénario part quand un deal ARRIVE sur cette étape, pour le contact rattaché au deal, à condition qu’il ait un numéro. L’étape est retenue par son identifiant : la renommer dans HubSpot ne cassera rien. Le client n’écrivant pas à ce moment-là, le scénario doit commencer par un envoi de template.',
+                  'The scenario runs when a deal REACHES this stage, for the contact linked to the deal, provided they have a phone number. The stage is kept by its id: renaming it in HubSpot breaks nothing. As the customer is not writing at that moment, the scenario must start with a template send.',
+                )}
+              </p>
+            </div>
+          )}
           {triggerKind === 'tag_added' && (
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tag déclencheur', 'Triggering tag')}</label>

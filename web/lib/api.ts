@@ -853,6 +853,17 @@ export function listHubspotLists(tenantId: string, query?: string): Promise<Hubs
   const qs = query ? `?query=${encodeURIComponent(query)}` : '';
   return request<HubspotListsResult>(`/tenants/${tenantId}/hubspot/lists${qs}`);
 }
+/** Une étape de deal du portail. `closed` = étape de fin (gagné/perdu), signalée à l'écran. */
+export interface HubspotDealStage { id: string; label: string; closed: boolean }
+export interface HubspotDealPipeline { id: string; label: string; stages: HubspotDealStage[] }
+/**
+ * Pipelines du portail avec les libellés de leurs étapes, pour régler une automation « étape de deal » sans
+ * aller recopier un identifiant opaque dans HubSpot. `connected:false` = aucun portail lié (pas une erreur).
+ */
+export function listHubspotDealStages(tenantId: string): Promise<{ connected: boolean; pipelines: HubspotDealPipeline[] }> {
+  return request(`/tenants/${tenantId}/hubspot/deal-stages`);
+}
+
 /** Importe une liste HubSpot comme contacts (opt-in jamais activé, tag « HubSpot: <nom> »). `tags` = tag(s)
  *  réellement posé(s) par le serveur (source de vérité pour filtrer les contacts importés). */
 export function importHubspotList(tenantId: string, listId: string, listName: string): Promise<ImportReport & { truncated: boolean; skippedNoPhone: number; tags: string[] }> {
@@ -1221,7 +1232,7 @@ export function completeEmbeddedSignup(
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---
 
 /** Types de déclencheur proposés à la création. Miroir de `AUTOMATION_TRIGGER_KINDS_CREATABLE` serveur. */
-export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed';
+export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed' | 'hubspot_deal_stage';
 
 export interface Automation {
   id: string;
