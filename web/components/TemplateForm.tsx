@@ -26,14 +26,20 @@ const inputCls =
 /** Ce qu'un template neuf renvoie a l'appelant. `status` vaut PENDING chez Meta : il n'est PAS envoyable. */
 export interface CreatedTemplate { name: string; language: string; status: string }
 
-export function TemplateForm({ tenantId, onCreated, initial }: {
+export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
   tenantId: string;
   onCreated: (created?: CreatedTemplate) => void;
   initial?: TemplateSummary;
+  /**
+   * DUPLICATION : le formulaire part PRÉ-REMPLI d'un template existant, mais il CRÉE. C'est un troisième mode,
+   * distinct de l'édition : nom et langue redeviennent modifiables (Meta ne permet pas deux templates de même
+   * nom et langue), et l'envoi passe par la création. Sans cette distinction, `initial` valait « je modifie ».
+   */
+  duplique?: boolean;
 }) {
   const t = useT();
-  const isEdit = !!initial;
-  const [name, setName] = useState(initial?.name ?? '');
+  const isEdit = !!initial && !duplique;
+  const [name, setName] = useState(duplique && initial ? `${initial.name}_copie` : initial?.name ?? '');
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>((initial?.category?.toUpperCase() as 'MARKETING' | 'UTILITY') ?? 'MARKETING');
   const [language, setLanguage] = useState(initial?.language ?? 'fr');
   // Corps + variables (chips, sélecteur de champ, exemples, indices) : logique PARTAGÉE avec le carousel.
@@ -203,6 +209,21 @@ export function TemplateForm({ tenantId, onCreated, initial }: {
 
   return (
     <div className={isEdit ? '' : 'rounded-2xl border border-ink-200 bg-white p-6 shadow-sm'}>
+      {/* Duplication HONNÊTE : on dit ce qui n'a pas pu être recopié, au lieu de laisser croire à une copie
+          conforme. Meta ne rend pas le fichier d'origine d'un visuel, seulement une URL de validation qu'il
+          refuse de retélécharger à l'envoi : le visuel doit donc être redéposé à la main. */}
+      {duplique && initial && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="template-duplication-bandeau">
+          <p>
+            {t('Copie de « ', 'Copy of "')}{initial.name}{t(' ». Rien n’est envoyé à Meta tant que tu n’as pas cliqué sur « Créer le template ».', '". Nothing is sent to Meta until you click "Create template".')}
+          </p>
+          {(initial.headerFormat === 'IMAGE' || initial.headerFormat === 'VIDEO' || initial.headerFormat === 'DOCUMENT') && (
+            <p className="mt-1 font-medium">
+              {t('Le visuel d’en-tête n’a PAS pu être recopié : Meta ne rend pas le fichier d’origine. Redépose-le ci-dessous.', 'The header media could NOT be copied: Meta does not return the original file. Upload it again below.')}
+            </p>
+          )}
+        </div>
+      )}
       {!isEdit && (
         <>
           <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Nouveau template', 'New template')}</h2>

@@ -29,6 +29,9 @@ function TemplatesInner({ session }: { session: Session }) {
   const [mode, setMode] = useState<'simple' | 'carousel'>('simple');
   const [editing, setEditing] = useState<TemplateSummary | null>(null);
   const [creating, setCreating] = useState(false);
+  // Duplication : le formulaire s'ouvre PRÉ-REMPLI mais en mode création (nom et langue redeviennent
+  // modifiables, rien n'est envoyé à Meta avant le clic). Distinct de `editing`, qui modifie l'existant.
+  const [dupliquer, setDupliquer] = useState<TemplateSummary | null>(null);
   const [preview, setPreview] = useState<TemplateSummary | null>(null);
 
   const reload = useCallback(async () => {
@@ -59,7 +62,21 @@ function TemplatesInner({ session }: { session: Session }) {
 
   return (
     <div className="space-y-6">
-      {editing ? (
+      {dupliquer ? (
+        <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Dupliquer', 'Duplicate')} « {dupliquer.name} »</h2>
+            <button onClick={() => setDupliquer(null)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
+          </div>
+          <TemplateForm
+            key={`dup-${dupliquer.name}`}
+            tenantId={session.tenantId}
+            onCreated={() => { void reload(); setDupliquer(null); }}
+            initial={dupliquer}
+            duplique
+          />
+        </section>
+      ) : editing ? (
         <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Modifier', 'Edit')} « {editing.name} »</h2>
@@ -140,6 +157,11 @@ function TemplatesInner({ session }: { session: Session }) {
                           <span className="text-ink-300" title={tpl.isCarousel ? t("Édition d'un carousel non supportée", 'Editing a carousel is not supported') : t("Édition non supportée : en-tête ou pied de page (il serait supprimé)", 'Editing not supported: header or footer (it would be removed)')}>{t('Éditer', 'Edit')}</span>
                         ) : (
                           <button onClick={() => setEditing(tpl)} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
+                        )}
+                        {tpl.isCarousel ? (
+                          <span className="text-ink-300" title={t('Duplication d’un carousel non supportée', 'Duplicating a carousel is not supported')}>{t('Dupliquer', 'Duplicate')}</span>
+                        ) : (
+                          <button onClick={() => { setDupliquer(tpl); setEditing(null); setCreating(false); }} data-testid={`template-dupliquer-${tpl.name}`} className="font-medium text-brand-600 hover:text-brand-700">{t('Dupliquer', 'Duplicate')}</button>
                         )}
                         <button onClick={() => remove(tpl)} className="font-medium text-coral hover:text-red-700">{t('Supprimer', 'Delete')}</button>
                       </div>
