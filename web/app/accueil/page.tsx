@@ -808,7 +808,23 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
     // (endsWith('facebook.com') l'aurait laissé passer -> injection d'ids forgés via postMessage).
     const FB_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*facebook\.com$/;
     const asStr = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : typeof v === 'number' ? String(v) : undefined);
+    /** Contenu d'un message, en texte, pour la trace de diagnostic. Ne throw jamais (données arbitraires). */
+    const brut = (v: unknown): string => {
+      if (typeof v === 'string') return v;
+      try { return JSON.stringify(v) ?? String(v); } catch { return '[non sérialisable]'; }
+    };
     function onMsg(e: MessageEvent) {
+      // ⚠️ Trace AVANT les trois filtres ci-dessous. Ils retournent en SILENCE (origine, JSON illisible,
+      // étiquette inattendue), ce qui rendait impossible de distinguer « Meta n'a rien envoyé » de « Meta a
+      // envoyé quelque chose qu'on a jeté ». Cette confusion a coûté un aller-retour de diagnostic sur un
+      // embarquement bloqué (2026-08-17) : sans cette trace, on cherche du côté de Meta un défaut qui est chez
+      // nous, ou l'inverse. On ne journalise QUE ce qui vient de Facebook ou parle d'Embedded Signup, pour ne
+      // pas noyer la console dans les messages des extensions du navigateur.
+      const texte = brut(e.data);
+      if (FB_ORIGIN.test(e.origin) || texte.includes('WA_EMBEDDED')) {
+        // eslint-disable-next-line no-console
+        console.info('[ES] message reçu | origine =', e.origin, '| contenu =', texte.slice(0, 400));
+      }
       if (typeof e.origin !== 'string' || !FB_ORIGIN.test(e.origin)) return;
       // `e.data` peut être une CHAÎNE JSON (SDK) OU déjà un objet selon le canal -> on gère les deux.
       let d: { type?: string; event?: string; data?: Record<string, unknown> } & Record<string, unknown>;
