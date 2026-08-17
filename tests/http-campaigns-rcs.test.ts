@@ -32,7 +32,10 @@ const TEMPLATE_ENTRY_GRAPH: WorkflowGraph = {
   edges: [],
 };
 
-function appWith(repo: FakeRepo, opts: { ownsAgent?: boolean } = {}) {
+function appWith(
+  repo: FakeRepo,
+  opts: { ownsAgent?: boolean; agents?: Array<{ agentId: string; brandName: string; status: string }>; sansListe?: boolean } = {},
+) {
   return buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -41,6 +44,8 @@ function appWith(repo: FakeRepo, opts: { ownsAgent?: boolean } = {}) {
       queue: new FakeQueue(),
       phoneNumberBelongsToTenant: async () => true,
       rcsAgentBelongsToTenant: async () => opts.ownsAgent ?? true,
+      // `sansListe` simule un câblage sans canal RCS : la route doit rendre une liste vide, pas une erreur.
+      ...(opts.sansListe ? {} : { listRcsAgents: async () => opts.agents ?? [] }),
       getWorkflowGraph: async () => TEMPLATE_ENTRY_GRAPH,
       campaignBelongsTo: async () => true,
       getRunSizing: async () => ({ ratePerMinute: null, pendingCount: 0 }),
@@ -69,6 +74,28 @@ const rcsBody = {
 async function post(app: ReturnType<typeof appWith>, payload: unknown) {
   return app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: payload as object });
 }
+
+describe('GET /tenants/:tenantId/rcs-agents', () => {
+  it('rend les agents du tenant', async () => {
+    const app = appWith(new FakeRepo(), { agents: [{ agentId: 'agent-1', brandName: 'MessagingMe', status: 'launched' }] });
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/rcs-agents', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().agents).toEqual([{ agentId: 'agent-1', brandName: 'MessagingMe', status: 'launched' }]);
+  });
+
+  it('rend une liste VIDE quand le canal RCS n est pas cable, jamais une erreur', async () => {
+    const app = appWith(new FakeRepo(), { sansListe: true });
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/rcs-agents', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().agents).toEqual([]);
+  });
+
+  it('refuse le tenant d un AUTRE workspace', async () => {
+    const app = appWith(new FakeRepo());
+    const res = await app.inject({ method: 'GET', url: '/tenants/t-autre/rcs-agents', ...auth() });
+    expect(res.statusCode).toBe(403);
+  });
+});
 
 describe('POST /tenants/:tenantId/campaigns sur le canal RCS', () => {
   it('accepte une campagne RCS complete SANS phoneNumberId', async () => {
