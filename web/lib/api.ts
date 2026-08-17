@@ -320,7 +320,14 @@ export interface TemplateParam {
   position: number;
   source: ParamSource;
 }
+export interface RcsAgent {
+  agentId: string;
+  brandName: string;
+  status: string;
+}
+
 export interface CreateCampaignInput {
+  /** Vide sur une campagne RCS : elle part d'un agent de marque, pas d'un numéro Meta. */
   phoneNumberId: string;
   name: string;
   category: CampaignCategory;
@@ -334,11 +341,22 @@ export interface CreateCampaignInput {
   workflowId?: string;
   /** Débit max en messages/minute (1..80). Absent/null = aucun throttle (le run part au max). */
   ratePerMinute?: number | null;
+  /** Canal d'envoi. Absent = 'whatsapp' (comportement historique). */
+  channel?: 'whatsapp' | 'rcs';
+  /** Campagne RCS : agent de marque qui envoie. */
+  rcsAgentId?: string;
+  /** Campagne RCS : message envoyé tel quel (pas de template à faire approuver). */
+  rcsMessage?: { kind: 'text'; text: string };
 }
 
 /** Campagnes actives par défaut ; `archived: true` renvoie la corbeille (les deux ensembles sont disjoints). */
 export function listCampaigns(tenantId: string, opts?: { archived?: boolean }): Promise<{ campaigns: CampaignSummary[] }> {
   return request<{ campaigns: CampaignSummary[] }>(`/tenants/${tenantId}/campaigns${opts?.archived ? '?archived=1' : ''}`);
+}
+
+/** Agents RCS du tenant (sélecteur de l'assistant de campagne). Liste vide = canal RCS non configuré. */
+export function listRcsAgents(tenantId: string): Promise<{ agents: RcsAgent[] }> {
+  return request<{ agents: RcsAgent[] }>(`/tenants/${tenantId}/rcs-agents`);
 }
 export function getCampaign(tenantId: string, campaignId: string): Promise<CampaignDetail> {
   return request<CampaignDetail>(`/tenants/${tenantId}/campaigns/${campaignId}`);

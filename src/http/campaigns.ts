@@ -41,6 +41,8 @@ export interface CampaignRouteDeps {
   /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
    *  sous la marque d'un autre. Absente du câblage -> aucune campagne RCS ne peut être créée. */
   rcsAgentBelongsToTenant?(agentId: string, tenantId: string): Promise<boolean>;
+  /** Agents RCS du tenant (sélecteur de l'assistant). Absent -> liste vide. */
+  listRcsAgents?(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
   /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
@@ -118,6 +120,16 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ phoneNumbers: await deps.listPhoneNumbers(tenant) });
+  });
+
+  // Agents RCS du tenant, pour le sélecteur de l'assistant de campagne. Monté ICI, à côté du listage des
+  // numéros Meta : c'est le même besoin (« depuis quoi j'envoie ? »), vu du même écran, avec la même garde
+  // de scope tenant. Absent du câblage -> liste vide, pas d'erreur (le canal RCS est alors simplement
+  // inutilisable, ce que l'UI affiche).
+  app.get('/tenants/:tenantId/rcs-agents', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    return reply.code(200).send({ agents: deps.listRcsAgents ? await deps.listRcsAgents(tenant) : [] });
   });
 
   app.post('/tenants/:tenantId/campaigns', guard, async (req, reply) => {

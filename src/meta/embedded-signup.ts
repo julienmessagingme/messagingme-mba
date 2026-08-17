@@ -58,10 +58,12 @@ export class MetaEmbeddedSignupClient {
    * notre propre business, mesuré le 2026-08-17) rend `target_ids: null`. L'appelant décide quoi en dire.
    */
   async wabasForToken(businessToken: string): Promise<string[]> {
-    const qs = new URLSearchParams({ input_token: businessToken });
-    const body = await this.call(`${this.baseUrl}/${this.version}/debug_token?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${businessToken}` },
-    });
+    // ⚠️ DEUX tokens, et ils ne jouent pas le même rôle. `input_token` est le token INSPECTÉ (celui du client) ;
+    // l'autorisation, elle, doit être un TOKEN D'APPLICATION (`{app_id}|{app_secret}`). S'authentifier avec le
+    // token du client rend « (#100) You must provide an app access token, or a user access token that is an
+    // owner or developer of the app » (mesuré le 2026-08-17). Le token d'app ne quitte jamais le serveur.
+    const qs = new URLSearchParams({ input_token: businessToken, access_token: `${this.appId}|${this.appSecret}` });
+    const body = await this.call(`${this.baseUrl}/${this.version}/debug_token?${qs.toString()}`);
     const data = (body['data'] ?? {}) as { granular_scopes?: unknown };
     const scopes = Array.isArray(data.granular_scopes) ? data.granular_scopes : [];
     const out: string[] = [];

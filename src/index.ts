@@ -165,6 +165,7 @@ async function main(): Promise<void> {
       // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
       rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),
+      listRcsAgents: (tenant) => workflowRuntime.rcsStack.agents.listForTenant(tenant),
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
       getRunSizing: (id) => repo.getRunSizing(id),
       scheduleCampaign: (id, tenant, when) => repo.scheduleCampaign(id, tenant, when),

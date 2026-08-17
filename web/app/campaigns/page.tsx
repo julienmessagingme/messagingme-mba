@@ -27,6 +27,7 @@ import {
   listWorkflows,
   listUserFields,
   listTags,
+  listRcsAgents,
   getSettings,
   queryContacts,
   countContacts,
@@ -42,6 +43,7 @@ import {
   type CreateCampaignInput,
   type RecipientCounts,
   type PhoneNumber,
+  type RcsAgent,
   type PricingSummary,
   type TemplateParam,
   type TemplateSummary,
@@ -558,8 +560,14 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const [templateName, setTemplateName] = useState('');
   const [templateLanguage, setTemplateLanguage] = useState('fr');
   const [vars, setVars] = useState<VarRow[]>([]);
-  // Quoi envoyer : un template direct OU un workflow (bot builder).
-  const [mode, setMode] = useState<'template' | 'workflow'>('template');
+  // Quoi envoyer : un template direct, un workflow (bot builder), OU un message RCS.
+  // Le RCS est un CANAL, pas une forme de contenu WhatsApp : il n'a ni numéro Meta, ni template à faire
+  // approuver, ni variables à mapper. Il vit ici parce que c'est la même question posée à l'opérateur
+  // (« que veux-tu leur envoyer ? ») et que dupliquer l'assistant pour un seul champ de plus serait pire.
+  const [mode, setMode] = useState<'template' | 'workflow' | 'rcs'>('template');
+  const [rcsAgentId, setRcsAgentId] = useState('');
+  const [rcsText, setRcsText] = useState('');
+  const [rcsAgents, setRcsAgents] = useState<RcsAgent[]>([]);
   const [workflowId, setWorkflowId] = useState('');
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   // Nombre TOTAL de scénarios du tenant, avant le filtre d'éligibilité campagne : sans lui, « aucun scénario »
@@ -635,6 +643,9 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       // getSettings lancé EN PARALLÈLE mais DÉCOUPLÉ du Promise.all (all-or-nothing) : un hoquet sur les réglages
       // ne doit pas vider templates/scénarios ; le toggle HubSpot reste false par défaut. `.catch(->null)` isole l'échec.
       const settingsPromise = getSettings(tenantId).catch(() => null);
+      // Agents RCS : même traitement découplé que les réglages. Le canal RCS est optionnel, une erreur de
+      // chargement ne doit pas vider templates et scénarios ; la liste reste vide et l'UI le dit.
+      const rcsPromise = listRcsAgents(tenantId).catch(() => null);
       try {
         const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
         if (!alive) return;
@@ -654,6 +665,8 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       }
       const cfg = await settingsPromise;
       if (alive && cfg) { setHubspotListsEnabled(cfg.hubspotListsEnabled); setHubspotPaused(cfg.campaignsPaused); }
+      const rcs = await rcsPromise;
+      if (alive && rcs) setRcsAgents(rcs.agents);
     })();
     return () => { alive = false; };
   }, [tenantId]);
@@ -766,7 +779,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
   // Bascule template <-> workflow : on repart d'un état propre (variables/erreurs/choix précédents) pour ne pas
   // mélanger le mapping d'un template direct avec celui du 1er template d'un workflow.
-  function chooseMode(m: 'template' | 'workflow') {
+  function chooseMode(m: 'template' | 'workflow' | 'rcs') {
     setMode(m);
     setWfError(null);
     setVars([]);
@@ -829,6 +842,14 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   // Payload de création partagé par le brouillon (submit) et le lancement direct (createAndLaunch).
   function buildCreateInput(): CreateCampaignInput {
     // Débit TOUJOURS choisi (jauge, défaut 60) : on envoie systématiquement le plafond 1..80.
+    // Campagne RCS : ni numéro Meta, ni template, ni variables. Le message part tel qu'il est écrit.
+    if (mode === 'rcs') {
+      return {
+        phoneNumberId: '', name, category, channel: 'rcs',
+        rcsAgentId, rcsMessage: { kind: 'text', text: rcsText.trim() },
+        contactIds: [...selected], ratePerMinute,
+      };
+    }
     return mode === 'workflow'
       ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected], ratePerMinute }
       : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected], ratePerMinute };
@@ -973,13 +994,16 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
   const varsComplete = vars.every((v) => (v.sel === 'literal' ? v.value.trim() !== '' : true));
   // Workflow : prêt si un workflow valide est choisi (il OUVRE par un template, donc pas de wfError) ET le mapping de ses
   // variables est complet. Le 1er template sans variable a vars=[] -> varsComplete=true.
-  const contentReady = mode === 'workflow'
-    ? (workflowId !== '' && wfError === null && varsComplete)
-    : (templateName !== '' && varsComplete);
+  const contentReady = mode === 'rcs'
+    ? (rcsAgentId !== '' && rcsText.trim() !== '')
+    : mode === 'workflow'
+      ? (workflowId !== '' && wfError === null && varsComplete)
+      : (templateName !== '' && varsComplete);
   // Nommer la campagne est un PRÉALABLE (étape 0) : tant que c'est vide, les zones Destinataires/Message sont grisées.
   const nameSet = name.trim() !== '';
   // Étape 1 prête = ce qui active l'étape 2 (indépendant du busy/launch en cours).
-  const step1Ready = phoneNumberId !== '' && nameSet && contentReady && selected.size > 0;
+  // Le numéro Meta n'est exigé que sur WhatsApp : une campagne RCS part d'un agent de marque.
+  const step1Ready = (mode === 'rcs' || phoneNumberId !== '') && nameSet && contentReady && selected.size > 0;
   const canSubmit = step1Ready && !busy;
   // Lancement en cours (création + polling) : verrouille les boutons des deux étapes. Couvre aussi la phase
   // 'creating' de la programmation (créer + programmer), donc le retour liste est gelé pendant l'opération.
@@ -1014,10 +1038,27 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         {!nameSet && <p className="mt-1 text-xs text-brand-600">{t('Donne un nom à ta campagne pour continuer.', 'Name your campaign to continue.')}</p>}
       </div>
 
-      {/* Expéditeur : bandeau PLEINE LARGEUR au-dessus des 2 zones (le numéro est en général unique). */}
+      {/* Expéditeur : bandeau PLEINE LARGEUR au-dessus des 2 zones (le numéro est en général unique).
+          En RCS l'expéditeur n'est pas un numéro mais un AGENT DE MARQUE : le sélecteur change de nature,
+          il ne se contente pas d'être masqué. */}
       <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-ink-200 bg-ink-50/30 px-4 py-3">
         <h3 className="text-sm font-semibold text-ink-800">{t('Expéditeur', 'Sender')}</h3>
-        {numbers.length === 0 ? (
+        {mode === 'rcs' ? (
+          rcsAgents.length === 0 ? (
+            <p className="text-xs text-amber-700" data-testid="rcs-no-agent">
+              {t("Aucun agent RCS pour ce workspace. Le canal RCS n'est pas encore configuré.", 'No RCS agent for this workspace. The RCS channel is not configured yet.')}
+            </p>
+          ) : (
+            <select value={rcsAgentId} onChange={(e) => setRcsAgentId(e.target.value)} data-testid="rcs-agent-select" className={`${inputCls} max-w-xs`}>
+              <option value="">{t('Choisir un agent…', 'Choose an agent…')}</option>
+              {rcsAgents.map((a) => (
+                <option key={a.agentId} value={a.agentId}>
+                  {a.brandName}{a.status !== 'launched' ? ` (${t('non lancé', 'not launched')})` : ''}
+                </option>
+              ))}
+            </select>
+          )
+        ) : numbers.length === 0 ? (
           <p className="text-xs text-amber-700">{t('Aucun numéro provisionné pour ce tenant.', 'No number provisioned for this tenant.')}</p>
         ) : numbers.length === 1 ? (
           <span className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-800">
@@ -1152,6 +1193,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
           {([
             { m: 'template', label: t('Un template', 'A template'), tip: t('Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL. Si le client répond, le Meta Business Agent prend le relais.', 'Best for sending a simple message with one or more buttons (CTA) that point to URLs. If the customer replies, the Meta Business Agent takes over.') },
             { m: 'workflow', label: t('Un scénario', 'A scenario'), tip: t('Privilégiez cette méthode pour enchaîner plusieurs étapes : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un formulaire, ...).', 'Best for chaining several steps: sending a template THEN other elements (adding a tag, a field, sending a form, ...).') },
+            { m: 'rcs', label: t('Un message RCS', 'An RCS message'), tip: t('Autre CANAL : le message part sous votre agent de marque, sans template à faire approuver et sans fenêtre de 24 h. Seuls les contacts joignables en RCS sont servis, les autres sont comptés « ignorés ».', 'A different CHANNEL: the message goes out under your brand agent, with no template to get approved and no 24h window. Only contacts reachable on RCS are served, the others are counted as skipped.') },
           ] as const).map(({ m, label, tip }) => (
             <span key={m} className="group relative">
               <button type="button" onClick={() => chooseMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
@@ -1161,7 +1203,25 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
         </div>
       </div>
 
-      {mode === 'template' ? (
+      {mode === 'rcs' ? (
+        <Field label={t('Message RCS', 'RCS message')}>
+          <textarea
+            value={rcsText}
+            onChange={(e) => setRcsText(e.target.value)}
+            rows={5}
+            maxLength={3072}
+            data-testid="rcs-message"
+            placeholder={t('Votre message…', 'Your message…')}
+            className={inputCls}
+          />
+          <p className="mt-1 text-[11px] text-ink-400">
+            {t('Pas de template ni de variables : le message part tel quel, sous votre agent de marque.', 'No template and no variables: the message goes out as written, under your brand agent.')}
+          </p>
+          <p className="mt-1 text-[11px] text-amber-700">
+            {t('Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport. Pour les rattraper, passez par un scénario avec un bloc RCS et sa sortie « Non joignable ».', 'Contacts not reachable on RCS receive NOTHING and are counted as skipped in the report. To catch them, use a scenario with an RCS block and its “Not reachable” output.')}
+          </p>
+        </Field>
+      ) : mode === 'template' ? (
         <>
           <Field label={t('Template', 'Template')}>
             {loadingRefs ? (
