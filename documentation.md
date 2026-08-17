@@ -518,6 +518,41 @@ demandé » y est une `useRef` et NON l'état de chargement : mettre ce dernier 
 le relançait, son nettoyage annulait la requête en vol, et l'écran restait figé sur « Lecture des étapes… ».
 Trouvé par le test de bout en bout, invisible à la lecture.
 
+## Visuels d'un template à l'envoi (en-tête média et cartes de carousel, 2026-08-17)
+
+**La règle Meta.** Un template approuvé avec un en-tête IMAGE / VIDEO / DOCUMENT, ou avec un carousel, EXIGE son
+média à CHAQUE envoi. Le visuel déposé à la création ne sert qu'à la validation. Sans lui : refus `132012` sur
+TOUS les destinataires.
+
+**D'où vient le visuel.** Du template lui-même (`example.header_handle[0]`, relu chez Meta), pas d'un champ
+saisi. Donc aucune migration, aucun écran, aucune donnée par campagne, et ça marche sur les templates existants.
+
+🔴 **Pourquoi un `media id` et jamais un `link`.** Mesuré le 2026-08-15 : envoyer l'URL du CDN de Meta est
+ACCEPTÉ (200 + id de message) puis échoue 2 s plus tard en `131053`, son téléchargeur se prenant un 403 sur son
+propre CDN. L'URL est pourtant lisible depuis n'importe où ailleurs, ce qui rend le piège invisible à une sonde
+qui se contente de la lire. On re-téléverse donc le visuel sur le numéro d'envoi et on envoie son identifiant.
+Vérifié en réel le 2026-08-17 : les deux destinataires de la campagne « Test Napo » sont passés en `delivered`,
+sans erreur de livraison différée.
+
+**Les briques, et il n'y en a qu'une de chaque.** `meta/template-media.ts` (`TemplateMediaPreparer`) prépare les
+visuels, pour les cartes comme pour l'en-tête : `prepareOne` pour une URL, `prepare` pour un lot de cartes.
+⚠️ La clé de son cache porte le NUMÉRO d'envoi, pas seulement l'URL : un `media id` est scopé au numéro qui l'a
+téléversé, et un numéro reconnecté dans les 7 jours réutiliserait sinon l'identifiant de l'ancien. Le numéro est
+résolu une fois par lot, pas une fois par carte. `meta/template-components.ts` reste le SEUL constructeur de
+composants (`headerMediaId` prioritaire sur `headerMediaUrl`, `headerMediaSendBlocker` pour le refus lisible).
+
+🔴 **Le piège de câblage, vécu DEUX fois.** `sendTemplate` (`workflow/wiring.ts`) a deux branches : variables
+déjà résolues (campagne scénario) et résolution par hints (réponse webhook). Le carousel n'avait été branché que
+sur l'une (incident du 2026-08-15), puis l'en-tête média a répété l'erreur sur l'autre (rattrapé en revue le
+2026-08-17, avant déploiement). Les deux branches partagent désormais UN helper unique, `visuelsPourEnvoi` : la
+divergence n'est plus possible. Ne pas la réintroduire en « optimisant » une branche.
+
+**Le refus est AVANT la boucle** (`campaign/engine.ts`) : visuel impossible à préparer -> aucun destinataire ne
+part, tous en `failed` avec la raison, campagne `completed`. Y passer dans la boucle ferait voir 100 % d'échecs
+au quality gate, qui mettrait la campagne en pause avec un diagnostic trompeur.
+
+**L'inbox reste en `link`** : le visuel y est une URL saisie par l'opérateur, elle se télécharge normalement.
+
 ## Capture automatique de l'OTP d'embarquement (Zadarma, 2026-08-16, précâblage)
 
 **Le problème.** Pour embarquer son numéro WhatsApp, le client doit fournir un numéro puis saisir un code que

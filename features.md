@@ -428,6 +428,18 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   terminée / en échec n'a pas de bouton.
 - ✅ **Coût estimé par campagne** : « ≈ X (devise du compte) » par campagne + total, dérivé du tarif Meta
   (pricing_analytics) × nb envoyés facturables. « indisponible » si le prix Meta ne remonte pas (jamais 0).
+- ✅ **Les templates avec un VISUEL d'en-tête partent correctement** (2026-08-17). WhatsApp exige que l'image
+  (ou la vidéo, ou le document) d'en-tête soit fournie à chaque envoi : celle déposée à la création du template
+  ne sert qu'à sa validation par Meta. **Rien à faire côté utilisateur** : l'image est reprise du template
+  lui-même, il n'y a aucun champ à remplir à la création de la campagne. Vaut pour un envoi de template direct
+  comme pour une campagne qui démarre un scénario.
+  Avant ce correctif, une telle campagne échouait sur **tous** ses destinataires avec un message d'erreur de
+  Meta (code 132012) et zéro envoi. Désormais, si le visuel ne peut vraiment pas être préparé, la campagne
+  **refuse de démarrer** et l'annonce en clair, au lieu d'accumuler les échecs un par un.
+- ✅ **Reprendre un destinataire en échec** : sur le détail de la campagne, un destinataire en échec de
+  variable de template propose « Corriger + renvoyer » (on corrige la valeur sur sa fiche, elle est enregistrée,
+  et ce seul message repart). Quand il n'y a aucune variable à corriger, le bouton s'intitule simplement
+  « Renvoyer » : le message repart tel quel, ce qui suffit quand la cause était un défaut d'envoi corrigé depuis.
 
 ## Inbox
 

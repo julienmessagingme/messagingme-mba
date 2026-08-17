@@ -168,6 +168,9 @@ Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **
 - **Route + écran qui affiche le code en direct.** Sert dans les DEUX scénarios : c'est l'affichage du repli
   assisté si le full-auto meurt, et le suivi de la capture s'il vit. Avec un bouton « renvoyer le code ».
 - **Instancier `ZadarmaClient` dans `index.ts`** à partir de la config (rien ne le fait aujourd'hui).
+- 🟡 **L'aperçu de template n'affiche pas le visuel d'en-tête.** `web/components/TemplatePreview.tsx` ne
+  transmet pas la prop `header` que `WhatsAppPreview` accepte pourtant déjà. Purement cosmétique (l'envoi, lui,
+  joint bien le visuel depuis le 2026-08-17), mais ça donne un aperçu qui ne ressemble pas au message reçu.
 - ✅ **Menu des étapes de deal dans l'écran Automation** (fait et déployé le 2026-08-16).
 - ✅ **Souscription webhook HubSpot envoyée** (2026-08-16, build #8 sur le compte dev 148896252). La chaîne
   est donc vivante de bout en bout ; reste à l'éprouver sur le portail cobaye avec un deal dont le contact
