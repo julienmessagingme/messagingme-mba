@@ -60,13 +60,22 @@ courant. Cette identité porte le RCS sans changement.
 
 ### 0056 — canal
 
-- `channel text not null default 'whatsapp'` sur `conversations`, `conversation_messages`
-  et `campaigns`. Le `default` rend la migration rétrocompatible : l'existant reste
-  WhatsApp sans réécriture.
-- Unique de `conversations` : `(tenant_id, wa_id)` devient `(tenant_id, channel, wa_id)`.
-  Un même numéro a deux fils distincts, un par canal. C'est voulu.
-- `workflow_runs` **ne change pas**. Un run est attaché à un contact, pas à un canal.
-  C'est ce qui rend possible le scénario mixte (§5.3).
+**Le canal est porté par le MESSAGE, pas par le fil.** Un contact = une conversation, quels
+que soient les tuyaux empruntés, et chaque bulle dit par où elle est passée (décision de
+Julien, 2026-08-17).
+
+- `channel text not null default 'whatsapp'` sur `conversation_messages` et `campaigns`. Le
+  `default` rend la migration rétrocompatible : l'existant reste WhatsApp sans réécriture.
+- `conversations` **n'est pas touchée** : son unique `(tenant_id, wa_id)` de 0009 reste.
+- `workflow_runs` **ne change pas** non plus. Un run est attaché à un contact, pas à un
+  canal. C'est ce qui rend possible le scénario mixte (§5.3).
+
+Pourquoi pas un fil par canal, qui était la première intention : la reprise de main par un
+opérateur (`control_owner`), le comportement de retour et le marquage de test sont attachés
+à une **personne**, pas à un tuyau. Un opérateur qui prend la main sur un client la prend sur
+le client. Scinder les fils rendait ambiguës quatre requêtes de `inbox/store.pg.ts` qui
+lisent ou écrivent par `(tenant_id, wa_id)` : le SELECT aurait pris une ligne au hasard,
+l'UPDATE aurait touché les deux. Un fil unique supprime les quatre d'un coup.
 
 ### 0057 — agents et opt-out
 
@@ -200,8 +209,8 @@ périodiquement, plutôt qu'un aller-retour Postgres par événement.
 - **Événements utilisateur** : DELIVERED, READ, IS_TYPING. Les deux premiers alimentent
   `campaign_recipients.delivery_status` avec l'écriture monotone par `message_id` déjà en
   place (migration 0007).
-- Réconciliation du contact par E.164 via `src/crm/recognize.ts`, fil créé avec
-  `channel = 'rcs'`.
+- Réconciliation du contact par E.164 via `src/crm/recognize.ts`. Le fil est celui du contact
+  (il n'y en a qu'un) ; c'est le MESSAGE qui est écrit avec `channel = 'rcs'`.
 
 ## 7. Flux STOP
 

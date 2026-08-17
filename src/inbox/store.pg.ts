@@ -74,15 +74,15 @@ export class PgInboxStore implements InboxStore {
    */
   private async upsertConversationByWaId(tenantId: string, waId: string, preview: string): Promise<string> {
     const conv = await this.pool.query<{ id: string }>(
-      // `channel` EXPLICITE, et dans le ON CONFLICT : depuis la migration 0056, l'unique de `conversations`
-      // porte sur (tenant_id, channel, wa_id). Un `on conflict (tenant_id, wa_id)` n'aurait plus d'index
-      // arbitre, et Postgres lèverait 42P10 dès la 2e écriture sur un même wa_id. Ça casserait TOUT le chemin
-      // WhatsApp (webhook entrant comme envois sortants), pas seulement le RCS.
-      `insert into conversations (tenant_id, channel, wa_id, contact_id, last_message_at, last_preview)
-       values ($1, 'whatsapp', $2, (select id from contacts where tenant_id = $1
+      // UN contact = UNE conversation, quel que soit le canal : c'est le MESSAGE qui porte son canal
+      // (`conversation_messages.channel`, migration 0056), pas le fil. L'unique (tenant_id, wa_id) de 0009
+      // reste donc l'arbitre de ce ON CONFLICT, et la reprise de main par un opérateur continue de valoir
+      // pour le contact entier, pas pour un tuyau.
+      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview)
+       values ($1, $2, (select id from contacts where tenant_id = $1
            and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
          order by (phone_e164 = '+' || $2) desc limit 1), now(), $3)
-       on conflict (tenant_id, channel, wa_id) do update set
+       on conflict (tenant_id, wa_id) do update set
          last_message_at = now(),
          last_preview = excluded.last_preview,
          contact_id = coalesce(conversations.contact_id, excluded.contact_id),
