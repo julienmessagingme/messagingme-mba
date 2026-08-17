@@ -12,6 +12,7 @@ import { resolveRatePerMinute } from './pacing';
 import { TokenInvalidError } from '../meta/credentials';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
+import type { CampaignSender } from './sender';
 
 export interface RunJobDeps {
   getCampaign(id: string): Promise<Campaign | null>;
@@ -39,6 +40,13 @@ export interface RunJobDeps {
    * pas). Le worker l'injecte en prod.
    */
   phoneNumberBelongsToTenant?: (phoneNumberId: string, tenantId: string) => Promise<boolean>;
+  /**
+   * Sender du canal RCS pour CETTE campagne. `null` = aucun agent RCS exploitable (agent absent du tenant,
+   * message manquant) -> campagne mise en PAUSE avec la raison, jamais un envoi à vide. ABSENT des deps =
+   * canal RCS non câblé sur ce serveur : une campagne RCS est mise en pause au lieu de repartir en silence
+   * sur le chemin WhatsApp, qui l'enverrait depuis un `phone_number_id` vide.
+   */
+  rcsSenderFor?: (campaign: Campaign) => Promise<CampaignSender | null>;
   /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'un envoi template).
    *  `firstTemplateParams` = variables du 1er template déjà résolues par contact (transmises à l'envoi). */
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
@@ -76,7 +84,10 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   // Garde d'appartenance du numéro (optionnelle, injectée en prod par le worker). Si le numéro a été réaffecté à un
   // autre tenant depuis la création de la campagne, on n'envoie RIEN et on remonte la raison dans le rapport (pas de
   // colonne dédiée) plutôt que d'envoyer depuis un numéro qui n'est plus le nôtre.
-  if (deps.phoneNumberBelongsToTenant && !(await deps.phoneNumberBelongsToTenant(campaign.phoneNumberId, campaign.tenantId))) {
+  // Canal RCS : il n'y a pas de numéro Meta à revalider (`phone_number_id` est vide), et l'interroger
+  // répondrait toujours « non » -> campagne mise en pause avec une raison fausse.
+  const isRcs = campaign.channel === 'rcs';
+  if (!isRcs && deps.phoneNumberBelongsToTenant && !(await deps.phoneNumberBelongsToTenant(campaign.phoneNumberId, campaign.tenantId))) {
     return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'numéro non rattaché à ce workspace (réaffecté ?)' };
   }
 
@@ -93,18 +104,43 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   // Résolution du sender (token PAR TENANT). Un token révoqué/expiré -> TokenInvalidError : on met la campagne en
   // PAUSE proprement (rapport paused + raison) au lieu de laisser le throw remonter, ce qui ferait rejouer le job
   // en boucle par pg-boss. Miroir de la garde d'appartenance du numéro ci-dessus.
-  let sender: MessageSender;
-  try {
-    sender = await deps.senderFor(campaign);
-  } catch (err) {
-    if (err instanceof TokenInvalidError) {
-      return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'token WhatsApp révoqué/expiré, reconnectez le numéro' };
+  // Canal RCS : on ne résout AUCUN token Meta (il n'y en a pas), on construit le sender de canal. Absent ou
+  // sans agent exploitable -> PAUSE avec la raison, jamais un run qui repart sur le chemin WhatsApp.
+  let channelSender: CampaignSender | undefined;
+  if (isRcs) {
+    if (!deps.rcsSenderFor) {
+      return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'canal RCS non câblé sur ce serveur' };
     }
-    throw err;
+    const cs = await deps.rcsSenderFor(campaign);
+    if (!cs) {
+      return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'aucun agent RCS exploitable pour cette campagne' };
+    }
+    channelSender = cs;
+  }
+
+  let sender: MessageSender;
+  if (isRcs) {
+    // `EngineDeps.sender` est requis par le type, mais le moteur branche sur `channelSender` AVANT de
+    // l'utiliser. Ce garde rend l'invariant explicite : s'il est un jour appelé, c'est un bug de branchement,
+    // et on veut le voir immédiatement plutôt qu'un envoi Meta parti d'une campagne RCS.
+    const interdit = async (): Promise<never> => {
+      throw new Error('campagne RCS : le sender Meta ne doit jamais être appelé');
+    };
+    sender = { sendMarketing: interdit, sendTemplate: interdit };
+  } else {
+    try {
+      sender = await deps.senderFor(campaign);
+    } catch (err) {
+      if (err instanceof TokenInvalidError) {
+        return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'token WhatsApp révoqué/expiré, reconnectez le numéro' };
+      }
+      throw err;
+    }
   }
 
   return runCampaign(campaign, {
     sender,
+    ...(channelSender ? { channelSender } : {}),
     recipients: deps.recipients,
     campaigns: deps.campaigns,
     frequency: deps.frequency,

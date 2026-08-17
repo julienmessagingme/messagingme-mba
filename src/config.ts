@@ -49,6 +49,13 @@ export const schema = z.object({
    * pacing résout le MÊME défaut via resolveRatePerMinute, donc l'estimation reste alignée sur le débit réel.
    */
   CAMPAIGN_DEFAULT_RATE_PER_MINUTE: z.coerce.number().int().min(0).max(80).default(30),
+  /**
+   * Provider du canal RCS. `fake` = provider factice : le canal est complet de bout en bout (campagne, bloc de
+   * scénario, joignabilité, opt-out) mais rien ne part vers un opérateur. `google` (API RBM) arrive au lot 2 et
+   * LÈVE au démarrage tant qu'il n'est pas implémenté : un serveur qui croit envoyer du vrai RCS et envoie dans
+   * le vide est pire qu'un crash au boot.
+   */
+  RCS_PROVIDER: z.enum(['fake', 'google']).default('fake'),
   /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */

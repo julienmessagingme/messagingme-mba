@@ -138,9 +138,10 @@ async function main(): Promise<void> {
   // serait le troisième doublon de cette famille, après le constructeur de composants Meta et la préparation
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
-    executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext,
+    executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
+    rcsProvider: config.RCS_PROVIDER,
   });
 
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
@@ -262,6 +263,9 @@ async function main(): Promise<void> {
       // Revalide l'appartenance du numéro juste avant d'envoyer (défense contre une réaffectation). Injecté ICI
       // seulement : absent en test/e2e, la garde est sautée (pas de rupture des fixtures sans ligne phone_numbers).
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+      // Canal RCS : sender construit à partir de l'agent et du message FIGÉS sur la campagne. null -> la
+      // campagne est mise en pause avec sa raison, elle ne repart jamais sur le chemin WhatsApp.
+      rcsSenderFor: (campaign) => rcsStack.senderForCampaign(campaign),
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
       // firstTemplateParams = variables du 1er template déjà résolues par contact (paramMapping de la campagne).
       // Renvoie false si le run n'a pas démarré (scénario supprimé entre-temps, fil détenu par un humain/MBA,

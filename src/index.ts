@@ -116,6 +116,7 @@ async function main(): Promise<void> {
    */
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
+    rcsProvider: config.RCS_PROVIDER,
   });
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
@@ -161,6 +162,9 @@ async function main(): Promise<void> {
       repo,
       queue,
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+      // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
+      // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
+      rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
       getRunSizing: (id) => repo.getRunSizing(id),
       scheduleCampaign: (id, tenant, when) => repo.scheduleCampaign(id, tenant, when),

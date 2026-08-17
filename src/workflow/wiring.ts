@@ -18,6 +18,7 @@ import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-co
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
+import { buildRcsStack } from '../rcs/factory';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
 
 /**
@@ -47,12 +48,18 @@ export interface WorkflowRuntimeDeps {
   /** Résolveur de token PAR TENANT. On le REÇOIT (au lieu de le reconstruire) pour ne pas dupliquer son cache. */
   metaCredentials: MetaCredentialsResolver;
   metaFactory: MetaClientFactory;
+  /** Provider du canal RCS (`config.RCS_PROVIDER`). Passé explicitement, comme `dryRun` : ce module ne lit pas
+   *  la config, ses appelants la lui donnent. */
+  rcsProvider: 'fake' | 'google';
 }
 
 /** Construit l'exécuteur et ce qui l'accompagne. Une seule fois par process (les caches vivent dedans). */
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
-  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory } = deps;
+  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider } = deps;
   const runStore = new PgWorkflowRunStore(pool);
+  // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
+  // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
+  const rcsStack = buildRcsStack(pool, rcsProvider);
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
 
@@ -161,6 +168,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
 
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
+    // Canal RCS du bloc `rcs_message`. `agentIdFor` est scopé tenant : c'est lui qui empêche un scénario
+    // d'envoyer sous la marque d'un autre client. Aucun agent -> le bloc part sur sa sortie « non joignable ».
+    rcs: { sender: rcsStack.sender, agentIdFor: (tenant) => rcsStack.agents.agentIdForTenant(tenant) },
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
     mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',
@@ -342,5 +352,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack };
 }
