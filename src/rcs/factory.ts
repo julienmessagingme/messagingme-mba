@@ -21,15 +21,18 @@ export interface RcsStack {
  * Choisit le provider. `fake` seul est implémenté au lot 1 : `google` est déclaré dans la config pour que le
  * jour du lot 2 soit un changement de variable, mais tant qu'il n'existe pas il LÈVE au démarrage. Retomber
  * en silence sur le factice ferait tourner un serveur qui croit envoyer du vrai RCS et envoie dans le vide,
- * ce qui est pire qu'un crash au boot.
+ * ce qui est pire qu'un crash au boot. Seul DRY_RUN autorise ce repli, et il le fait explicitement.
  */
-function providerFor(nom: 'fake' | 'google'): RcsProvider {
-  if (nom === 'fake') return new FakeRcsProvider();
+function providerFor(nom: 'fake' | 'google', dryRun: boolean): RcsProvider {
+  // DRY_RUN prime sur le provider demandé, comme le `DryRunSender` du worker prime sur le client Meta. Sans
+  // cette règle, un déploiement DRY_RUN=true enverrait du vrai RCS le jour où `google` existera : le mode de
+  // test ne doit pas dépendre de l'ordre dans lequel on pense à le brancher.
+  if (dryRun || nom === 'fake') return new FakeRcsProvider();
   throw new Error(`RCS_PROVIDER=${nom} n'est pas encore implémenté (lot 2). Seul 'fake' est disponible.`);
 }
 
-export function buildRcsStack(pool: Pool, providerName: 'fake' | 'google'): RcsStack {
-  const provider = providerFor(providerName);
+export function buildRcsStack(pool: Pool, providerName: 'fake' | 'google', dryRun: boolean): RcsStack {
+  const provider = providerFor(providerName, dryRun);
   const agents = new PgRcsAgentStore(pool);
   const sender = new RcsSender(
     provider,

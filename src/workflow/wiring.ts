@@ -59,7 +59,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
-  const rcsStack = buildRcsStack(pool, rcsProvider);
+  const rcsStack = buildRcsStack(pool, rcsProvider, dryRun);
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
 
