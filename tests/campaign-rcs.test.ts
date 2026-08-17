@@ -52,6 +52,8 @@ const campagne: Campaign = {
   startNodeId: null,
   ratePerMinute: null,
   channel: 'rcs',
+  rcsAgentId: 'agent-1',
+  rcsMessage: { kind: 'text', text: 'Offre du jour' },
 };
 
 function rec(id: string, toE164: string): Recipient {
@@ -149,6 +151,22 @@ describe('runCampaign sur le canal RCS', () => {
     const quality = new QualityInterdite();
     await runCampaign(campagne, deps({ recipients: new FakeRecipients([rec('r1', '+33600000002')]), channelSender, quality }));
     expect(quality.appels).toBe(0);
+  });
+
+  it('journalise l envoi dans le fil du contact, avec le canal rcs et le texte du message', async () => {
+    const { channelSender } = campaignSender();
+    const logs: Array<{ waId: string; body: string; type?: string; channel?: string }> = [];
+    await runCampaign(
+      campagne,
+      deps({
+        recipients: new FakeRecipients([rec('r1', '+33600000002')]),
+        channelSender,
+        recordOutbound: async (_t, waId, msg) => {
+          logs.push({ waId, body: msg.body, ...(msg.type ? { type: msg.type } : {}), ...(msg.channel ? { channel: msg.channel } : {}) });
+        },
+      }),
+    );
+    expect(logs).toEqual([{ waId: '33600000002', body: 'Offre du jour', type: 'rcs', channel: 'rcs' }]);
   });
 
   it('ne lit JAMAIS le carousel ni l en-tete media du template sur une campagne RCS', async () => {

@@ -9,6 +9,19 @@ import { MetaApiError } from '../meta/errors';
 import type { CampaignSender } from './sender';
 
 /** Satisfait par MetaClient (Loop 2). */
+/**
+ * Texte journalisé dans le fil pour un envoi de campagne RCS. Le message est relu de la base (jsonb validé à
+ * la création) : on ne suppose pas sa forme, une forme inattendue donne un libellé neutre plutôt qu'un crash
+ * ou un « undefined » affiché à l'opérateur.
+ */
+function rcsCampaignBody(message: unknown): string {
+  if (message && typeof message === 'object' && (message as { kind?: unknown }).kind === 'text') {
+    const texte = (message as { text?: unknown }).text;
+    if (typeof texte === 'string' && texte.trim() !== '') return texte;
+  }
+  return 'Message RCS';
+}
+
 export interface MessageSender {
   sendMarketing(params: MarketingParams): Promise<SendResult>;
   sendTemplate(to: string, tpl: TemplateSpec): Promise<SendResult>;
@@ -98,7 +111,7 @@ export interface EngineDeps {
   recordOutbound?: (
     tenantId: string,
     waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs' },
   ) => Promise<void>;
   now?: () => number;
   thresholds?: GuardrailThresholds;
@@ -313,21 +326,26 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Journalise le template envoyé dans le fil de conversation (fil d'inbox complet + transcript d'analyse).
     // UNIQUEMENT pour un envoi template DIRECT : la branche workflow a un messageId synthétique `wf-...`, le vrai
     // template est loggé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise pas l'envoi.
-    // `!deps.channelSender` : le libellé ci-dessous parle de template, il n'a aucun sens sur un canal qui n'en
-    // a pas. Le fil RCS est alimenté par le webhook entrant (lot 2), pas par ce log d'envoi WhatsApp.
-    if (deps.recordOutbound && !campaign.workflowId && !deps.channelSender) {
+    // Le fil est UNIQUE par contact : un envoi RCS s'y journalise comme un template WhatsApp, avec son canal.
+    // Sans ça, l'opérateur ouvre le fil d'un client et ne voit AUCUNE trace de ce qui vient de lui être
+    // envoyé. Le libellé diffère parce que le RCS n'a pas de template : on journalise le message lui-même.
+    if (deps.recordOutbound && !campaign.workflowId) {
       const waId = waIdOf(r.toE164);
-      const body = `Template « ${campaign.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
+      const rcs = deps.channelSender !== undefined;
+      const body = rcs
+        ? rcsCampaignBody(campaign.rcsMessage)
+        : `Template « ${campaign.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
       try {
         await deps.recordOutbound(campaign.tenantId, waId, {
           body,
           messageId: res.messageId,
-          type: 'template',
-          templateCategory: campaign.category,
-          templateName: campaign.templateName,
+          type: rcs ? 'rcs' : 'template',
+          ...(rcs
+            ? { channel: 'rcs' as const }
+            : { templateCategory: campaign.category, templateName: campaign.templateName }),
         });
       } catch {
-        /* log best-effort : ne casse jamais l'envoi Meta réussi */
+        /* log best-effort : ne casse jamais l'envoi réussi */
       }
     }
   }

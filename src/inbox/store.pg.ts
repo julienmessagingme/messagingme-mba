@@ -229,14 +229,16 @@ export class PgInboxStore implements InboxStore {
   async recordOutboundByWaId(
     tenantId: string,
     waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs' },
   ): Promise<void> {
     const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body);
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id)
-       values ($1, 'out', $2, $3, $4, $5, $6, null)
+      // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,
+      // donc tous les appelants historiques écrivent exactement ce qu'ils écrivaient.
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel)
+       values ($1, 'out', $2, $3, $4, $5, $6, null, $7)
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
-      [conversationId, msg.type ?? 'template', msg.body, msg.messageId, msg.templateCategory ?? null, msg.templateName ?? null],
+      [conversationId, msg.type ?? 'template', msg.body, msg.messageId, msg.templateCategory ?? null, msg.templateName ?? null, msg.channel ?? 'whatsapp'],
     );
   }
 
