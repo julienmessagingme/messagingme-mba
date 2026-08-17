@@ -124,23 +124,27 @@ function FlowsInner({ session }: { session: Session }) {
         </div>
       ) : null}
 
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-semibold text-ink-900">{t('Formulaires', 'Forms')} ({flows.length})</span>
-          {!creating && !editing && (
+      {/* La liste des formuaires existants n'a rien à faire SOUS le formulaire de création : elle répète ce que
+          l'écran d'entrée montre déjà, et elle noie le travail en cours. On la masque donc pendant la création
+          comme pendant l'édition, exactement comme le bouton « + Créer un formulaire » juste en dessous. Le
+          compteur disparaît avec elle : il n'a de sens qu'en face de la liste. */}
+      {!creating && !editing && (
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-semibold text-ink-900">{t('Formulaires', 'Forms')} ({flows.length})</span>
             <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">{t('+ Créer un formulaire', '+ Create a form')}</button>
+          </div>
+          {loading ? (
+            <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+          ) : flows.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l'instant.", 'No forms yet.')}</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => setEditing(f)} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
+            </div>
           )}
         </div>
-        {loading ? (
-          <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
-        ) : flows.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l'instant.", 'No forms yet.')}</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => setEditing(f)} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
-          </div>
-        )}
-      </div>
+      )}
       {preview && <FlowPreviewModal flow={preview} onClose={() => setPreview(null)} />}
     </div>
   );

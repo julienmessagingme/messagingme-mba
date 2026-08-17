@@ -438,3 +438,77 @@ describe('champ socle absent de la base : materialise a la premiere ecriture', (
     await server.close();
   });
 });
+
+/**
+ * Création d'UN contact à la main (le mini-CRM ne savait créer que par import CSV : fabriquer un fichier pour
+ * un seul numéro). La route délègue au MÊME upsert que l'import et l'API publique, pour ne pas créer un second
+ * chemin qui divergerait sur la normalisation du numéro, l'opt-in ou les champs.
+ */
+describe('POST /tenants/:t/contacts (ajout a la main)', () => {
+  function avecCreation(over: Partial<ContactsRouteDeps> = {}) {
+    const recus: Array<Record<string, unknown>> = [];
+    const { server } = app({
+      createOneContact: async (_t, input) => { recus.push(input as Record<string, unknown>); return { status: 'created', contactId: 'c-neuf' }; },
+      ...over,
+    });
+    return { server, recus };
+  }
+
+  it('numero seul -> 201, et l’entree part telle quelle a l’upsert partage', async () => {
+    const { server, recus } = avecCreation();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '06 12 34 56 78' }) });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ status: 'created', contactId: 'c-neuf' });
+    expect(recus[0]).toMatchObject({ phone: '06 12 34 56 78', optIn: false });
+    await server.close();
+  });
+
+  it('numero DEJA connu -> 200 `updated` : l’ecran ne doit pas annoncer une creation', async () => {
+    const { server } = avecCreation({ createOneContact: async () => ({ status: 'updated', contactId: 'c1' }) });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678' }) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('updated');
+    await server.close();
+  });
+
+  it('telephone manquant -> 400 ; numero refuse par l’upsert -> 400 avec SA raison', async () => {
+    const { server } = avecCreation();
+    expect((await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ name: 'Sans numero' }) })).statusCode).toBe(400);
+    await server.close();
+
+    const { server: s2 } = avecCreation({ createOneContact: async () => ({ status: 'error', reason: 'téléphone invalide' }) });
+    const res = await s2.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: 'pas-un-numero' }) });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('téléphone invalide');
+    await s2.close();
+  });
+
+  it('🔴 un champ INCONNU est refuse : une saisie a la main ne doit pas inventer un champ pour tout l’espace', async () => {
+    // L'upsert partagé auto-crée toute clé inconnue (c'est voulu pour l'API et l'import). Ici on valide AVANT,
+    // sinon une faute de frappe dans l'écran créerait un champ fantôme visible par tous.
+    const { server, recus } = avecCreation();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678', fields: { prnom: 'faute' } }) });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('champ inconnu');
+    expect(recus).toHaveLength(0); // rien n'atteint l'upsert
+    await server.close();
+  });
+
+  it('valeur invalide pour le TYPE du champ -> 400 (meme regle que la fiche)', async () => {
+    const { server } = avecCreation();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678', fields: { age: 'douze' } }) });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('agent -> 403 ; tenant d’autrui -> 403 ; dep absente -> 503', async () => {
+    const { server } = avecCreation();
+    expect((await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(agentTok), payload: JSON.stringify({ phone: '+33612345678' }) })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'POST', url: '/tenants/t2/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678' }) })).statusCode).toBe(403);
+    await server.close();
+
+    const { server: sans } = app();
+    expect((await sans.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678' }) })).statusCode).toBe(503);
+    await sans.close();
+  });
+});

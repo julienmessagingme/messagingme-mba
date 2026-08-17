@@ -26,6 +26,15 @@ export interface ContactsRouteDeps {
    * comportement historique est conservé (refus « champ inconnu »), donc les câblages de test ne changent pas.
    */
   ensureSocleField?(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
+  /**
+   * Crée (ou met à jour) UN contact saisi à la main. Délègue au MÊME upsert que l'API publique et l'import :
+   * un second chemin de création divergerait sur la normalisation du numéro, l'opt-in ou les champs.
+   * Optionnelle : sans elle la route n'est pas montée (503), donc les câblages de test restent inchangés.
+   */
+  createOneContact?(
+    tenantId: string,
+    input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean },
+  ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string }>;
   /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
@@ -226,6 +235,47 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
    * définitions user_fields du tenant (clé inconnue -> 400 ; valeur invalide pour le type -> 400, comme la
    * fiche). La cible est toujours re-scopée `tenant_id` + `deleted_at is null` côté store. Renvoie `{ affected }`.
    */
+  /**
+   * Crée UN contact à la main (le mini-CRM ne savait le faire que par import CSV : fabriquer un fichier pour un
+   * seul numéro). Admin-only, tenant du JWT. Délègue à l'upsert partagé, donc le numéro est normalisé comme
+   * ailleurs et un numéro DÉJÀ connu met le contact à jour au lieu d'échouer : la réponse dit lequel des deux
+   * s'est produit (`status`), pour que l'écran ne prétende pas avoir créé ce qui existait déjà.
+   */
+  app.post('/tenants/:tenantId/contacts', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.createOneContact) return reply.code(503).send({ error: 'création de contact non configurée' });
+    const b = (req.body ?? {}) as { phone?: unknown; name?: unknown; fields?: unknown; tags?: unknown; optIn?: unknown };
+    const phone = typeof b.phone === 'string' ? b.phone.trim() : '';
+    if (phone === '') return reply.code(400).send({ error: 'téléphone requis' });
+    const rawFields = b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields) ? (b.fields as Record<string, unknown>) : {};
+
+    // Les champs sont validés ICI contre les définitions du tenant, alors que l'upsert partagé auto-créerait
+    // toute clé inconnue. C'est voulu : une saisie à la main ne doit pas pouvoir inventer un champ, sinon une
+    // faute de frappe crée un champ fantôme pour tout l'espace. Un champ SOCLE absent est matérialisé.
+    const fields: Record<string, string> = {};
+    for (const [key, raw] of Object.entries(rawFields)) {
+      const val = String(raw ?? '').trim();
+      if (val === '') continue;
+      const def = await defPourEcriture(deps, tenant, key);
+      if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
+      if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
+      fields[key] = canonicalizeFieldValue(def.type, val);
+    }
+
+    const name = typeof b.name === 'string' && b.name.trim() !== '' ? b.name.trim().slice(0, 120) : undefined;
+    const res = await deps.createOneContact(tenant, {
+      phone,
+      ...(name ? { name } : {}),
+      ...(Object.keys(fields).length > 0 ? { fields } : {}),
+      tags: asStringArray(b.tags),
+      optIn: b.optIn === true,
+    });
+    if (res.status === 'error') return reply.code(400).send({ error: res.reason ?? 'contact invalide' });
+    return reply.code(res.status === 'created' ? 201 : 200).send({ status: res.status, contactId: res.contactId });
+  });
+
   app.post('/tenants/:tenantId/contacts/bulk', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });

@@ -895,6 +895,18 @@ export function listHubspotDealStages(tenantId: string): Promise<{ connected: bo
   return request(`/tenants/${tenantId}/hubspot/deal-stages`);
 }
 
+/**
+ * Crée UN contact à la main (le mini-CRM ne savait le faire que par import CSV). `status` dit si le contact a
+ * été créé ou si un contact portant ce numéro EXISTAIT déjà et a été mis à jour : l'écran ne doit pas annoncer
+ * une création dans le second cas.
+ */
+export function createContact(
+  tenantId: string,
+  input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean },
+): Promise<{ status: 'created' | 'updated'; contactId?: string }> {
+  return request(`/tenants/${tenantId}/contacts`, { method: 'POST', body: JSON.stringify(input) });
+}
+
 /** Importe une liste HubSpot comme contacts (opt-in jamais activé, tag « HubSpot: <nom> »). `tags` = tag(s)
  *  réellement posé(s) par le serveur (source de vérité pour filtrer les contacts importés). */
 export function importHubspotList(tenantId: string, listId: string, listName: string): Promise<ImportReport & { truncated: boolean; skippedNoPhone: number; tags: string[] }> {

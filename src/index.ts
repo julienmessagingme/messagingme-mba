@@ -415,6 +415,11 @@ async function main(): Promise<void> {
       // Champ socle absent -> on le crée au premier usage (idempotent). Aucun chemin d'inscription ne les
       // créait, donc un espace neuf refusait « Prénom » alors que l'écran le propose.
       ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
+      // Création à la main : MÊME upsert que l'API publique et l'import, avec le pays par défaut du tenant.
+      createOneContact: async (tenant, input) => {
+        const [r] = await upsertContactsFromApi(tenant, [input], { contacts: contactStore, fields: fieldStore, defaultCountry: config.DEFAULT_COUNTRY as CountryCode });
+        return r ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}) } : { status: 'error', reason: 'aucun résultat' };
+      },
       getContactHistory: (tenant, id) => contactHistoryStore.getContactHistory(tenant, id),
       listSendsForExport: (tenant, id) => contactHistoryStore.listSendsForExport(tenant, id),
       // Automations « tag ajouté » (E.2) : l'API ne sait pas démarrer un scénario (c'est le worker qui tient

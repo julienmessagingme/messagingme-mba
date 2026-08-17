@@ -177,7 +177,10 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
       {/* Boutons communs à toutes les cartes */}
       <div>
         <div className="mb-1 flex items-center justify-between">
-          <label className="text-xs font-medium text-ink-600">{t('Boutons de chaque carte', 'Buttons on every card')}</label>
+          {/* Libellé explicite : ces boutons sont COMMUNS aux cartes, et c'est ce que « Boutons de chaque
+              carte » ne disait pas clairement. Le bloc reste EN HAUT à la demande de Julien : le descendre
+              sous les cartes ferait apparaître les champs ajoutés hors du champ de vision. */}
+          <label className="text-xs font-medium text-ink-600">{t('Boutons, identiques sur toutes les cartes', 'Buttons, the same on every card')}</label>
           <div className="flex gap-2 text-xs">
             <button type="button" onClick={() => addButton('QUICK_REPLY')} disabled={layout.length >= 2} className="text-brand-600 hover:underline disabled:opacity-40 disabled:no-underline">{t('+ réponse rapide', '+ quick reply')}</button>
             <button type="button" onClick={() => addButton('URL')} disabled={layout.length >= 2} className="text-brand-600 hover:underline disabled:opacity-40 disabled:no-underline">{t('+ lien', '+ link')}</button>
@@ -204,7 +207,8 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
       {/* Cartes */}
       <div className="space-y-3">
         <div className="text-xs font-medium text-ink-600">{t('Cartes', 'Cards')} ({cards.length}/10, {t('2 minimum', 'min. 2')})</div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="grid flex-1 gap-3 sm:grid-cols-2">
           {cards.map((c, i) => (
             <div key={i} className="space-y-2 rounded-xl border border-ink-200 p-3">
               <div className="flex items-center justify-between">
@@ -265,7 +269,18 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
             </div>
           ))}
         </div>
-        <button type="button" onClick={addCard} disabled={cards.length >= 10} className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-40">{t('+ Ajouter une carte', '+ Add a card')}</button>
+        {/* Tuile d'ajout à DROITE des cartes, pleine hauteur : le lien discret en bas de bloc se voyait mal.
+            Convention « ajouter » du dépôt (pointillé brand), pas un second bouton plein qui se disputerait
+            l'action principale avec « Créer le carousel ». Le libellé reste EXACTEMENT « + Ajouter une carte » :
+            un test E2E le cible par son texte. */}
+        <button
+          type="button" onClick={addCard} disabled={cards.length >= 10} data-testid="carousel-ajouter-carte"
+          className="flex w-full shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-brand-200 px-4 py-6 text-brand-600 transition hover:border-brand-400 hover:bg-brand-50 disabled:opacity-40 sm:w-40"
+        >
+          <span className="text-2xl leading-none">+</span>
+          <span className="text-sm font-medium">{t('+ Ajouter une carte', '+ Add a card')}</span>
+        </button>
+        </div>
       </div>
 
       <CarouselPreview

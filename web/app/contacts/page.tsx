@@ -14,6 +14,7 @@ import {
   contactIdentity,
   bulkContactAction,
   bulkDeleteContacts,
+  createContact,
   type Contact,
   type UserFieldDef,
   type UserFieldKind,
@@ -51,6 +52,9 @@ function ContactsInner({ session }: { session: Session }) {
 
   // Filtres (mini-CRM). Objet ContactFilters édité par le panneau. La sérialisation vit dans web/lib/contact-filters.
   const [filters, setFilters] = useState<ContactFilters>({});
+  const [ajoutOuvert, setAjoutOuvert] = useState(false);
+  // Retour d'action positif (ajout d'un contact) : distinct de `error`, qui est rouge.
+  const [info, setInfo] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const active = useMemo(() => filtersActive(filters), [filters]);
 
@@ -175,6 +179,14 @@ function ContactsInner({ session }: { session: Session }) {
             {t('Filtres', 'Filters')}{active ? ' •' : ''}
           </button>
           <button onClick={() => void load()} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
+          {/* Ajout à l'unité : jusqu'ici il fallait fabriquer un fichier CSV pour un seul numéro. */}
+          <button
+            onClick={() => setAjoutOuvert(true)}
+            data-testid="contact-ajouter"
+            className="rounded-lg border border-brand-200 px-3 py-1.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-50"
+          >
+            + {t('Ajouter un contact', 'Add a contact')}
+          </button>
           <button
             onClick={() => setMode('import')}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
@@ -183,6 +195,27 @@ function ContactsInner({ session }: { session: Session }) {
           </button>
         </div>
       </div>
+
+      {info && (
+        <p className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-mint-50 px-3 py-2 text-sm text-mint-700" data-testid="contact-info">
+          <span>{info}</span>
+          <button onClick={() => setInfo(null)} className="text-xs text-mint-700 hover:underline">{t('Fermer', 'Close')}</button>
+        </p>
+      )}
+
+      {ajoutOuvert && (
+        <AjoutContactModal
+          tenantId={session.tenantId}
+          tagSuggestions={tagSuggestions}
+          onClose={() => setAjoutOuvert(false)}
+          onDone={(message) => {
+            setAjoutOuvert(false);
+            setInfo(message);
+            void load();
+            listTags(session.tenantId).then(({ tags }) => setTagSuggestions(tags.map((tg) => tg.tag))).catch(() => {});
+          }}
+        />
+      )}
 
       {showFilters && (
         <ContactFilterPanel
@@ -271,6 +304,107 @@ function ContactsInner({ session }: { session: Session }) {
 
 /** Modale d'une action en masse : formulaire adapté (tag / champ / suppression), appelle l'API bulk avec la
  *  cible calculée, puis onDone(affected). La suppression est douce (réversible en base) mais on confirme fort. */
+/**
+ * Ajout d'UN contact à la main. Le mini-CRM ne savait créer que par import CSV : il fallait fabriquer un
+ * fichier pour un seul numéro. Réutilise la coquille de `BulkActionModal` (overlay, `inputCls`, pied
+ * Annuler/Valider) plutôt qu'une seconde mise en page de modale.
+ *
+ * Le serveur délègue au MÊME upsert que l'import et l'API publique : le numéro est donc normalisé pareil, et un
+ * numéro DÉJÀ connu met le contact à jour. On le DIT, au lieu d'annoncer une création qui n'a pas eu lieu.
+ */
+function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
+  tenantId: string;
+  tagSuggestions: string[];
+  onDone: (message: string) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [phone, setPhone] = useState('');
+  const [nom, setNom] = useState('');
+  const [prenom, setPrenom] = useState('');
+  const [tag, setTag] = useState('');
+  const [optIn, setOptIn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  const canSubmit = phone.trim() !== '' && !busy;
+
+  async function submit(): Promise<void> {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await createContact(tenantId, {
+        phone: phone.trim(),
+        ...(nom.trim() !== '' ? { name: nom.trim() } : {}),
+        ...(prenom.trim() !== '' ? { fields: { prenom: prenom.trim() } } : {}),
+        ...(tag.trim() !== '' ? { tags: [tag.trim()] } : {}),
+        optIn,
+      });
+      onDone(res.status === 'created'
+        ? t('Contact ajouté.', 'Contact added.')
+        : t('Ce numéro était déjà dans la liste : le contact a été mis à jour.', 'This number was already in the list: the contact was updated.'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Ajout impossible', 'Could not add'));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold tracking-tight text-ink-900">{t('Ajouter un contact', 'Add a contact')}</h3>
+        <p className="mt-1 text-sm text-ink-500">{t('Le numéro suffit. Le reste peut se compléter ensuite sur la fiche.', 'The number is enough. The rest can be filled in later on the record.')}</p>
+
+        <div className="mt-4 space-y-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">
+              {t('Téléphone', 'Phone')} <span className="text-red-500">*</span>
+            </label>
+            <input
+              autoFocus value={phone} onChange={(e) => setPhone(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }}
+              placeholder="+33 6 12 34 56 78" data-testid="ajout-telephone" className={inputCls}
+            />
+            <p className="mt-1 text-xs text-ink-400">{t('Format libre : le numéro est normalisé comme à l’import.', 'Free format: the number is normalized as on import.')}</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Prénom', 'First name')}</label>
+              <input value={prenom} onChange={(e) => setPrenom(e.target.value)} data-testid="ajout-prenom" className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom', 'Name')}</label>
+              <input value={nom} onChange={(e) => setNom(e.target.value)} data-testid="ajout-nom" className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tag (optionnel)', 'Tag (optional)')}</label>
+            <input list="ajout-tag-suggestions" value={tag} onChange={(e) => setTag(e.target.value)} data-testid="ajout-tag" className={inputCls} />
+            <datalist id="ajout-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
+          </div>
+          {/* Case NON pré-cochée : le consentement marketing ne se présume pas. */}
+          <label className="flex items-start gap-2 text-sm text-ink-700">
+            <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} data-testid="ajout-optin" className="mt-0.5 h-4 w-4" />
+            <span>{t('Ce contact a donné son accord pour recevoir des messages marketing', 'This contact agreed to receive marketing messages')}</span>
+          </label>
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800 disabled:opacity-50">{t('Annuler', 'Cancel')}</button>
+          <button
+            onClick={() => void submit()} disabled={!canSubmit} data-testid="ajout-valider"
+            className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+          >
+            {busy ? t('Ajout…', 'Adding…') : t('Ajouter', 'Add')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BulkActionModal({ action, tenantId, target, count, userFields, tagSuggestions, onDone, onClose }: {
   action: BulkAction['type'] | 'delete';
   tenantId: string;

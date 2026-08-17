@@ -325,6 +325,9 @@ export function FlowBuilder({
     if (src.type === 'optin') return typeof v === 'boolean';
     return typeof v === 'string' && v !== '' && !hasForbiddenChar(v) && cleanOptions(src.options).includes(v);
   };
+  // Champ obligatoire quitté vide : on ne peint en rouge qu'après le passage de l'utilisateur.
+  const [nomTouche, setNomTouche] = useState(false);
+
   const canSubmit =
     name.trim() !== '' &&
     screens.length >= 1 && screens.length <= 10 &&
@@ -400,8 +403,21 @@ export function FlowBuilder({
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3">
           <div className="min-w-[200px] flex-1">
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom du formulaire', 'Form name')}</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} w-full`} placeholder={t('Demande de rendez-vous', 'Appointment request')} />
+            {/* Astérisque rouge : rien ne disait quels champs bloquent la création. Convention du dépôt
+                (`campaigns/page.tsx`). Le contour rouge n'apparaît qu'APRÈS avoir quitté le champ vide : le
+                peindre en rouge dès l'ouverture accuserait l'utilisateur de ne pas avoir encore saisi. */}
+            <label className="mb-1 block text-xs font-medium text-ink-600">
+              {t('Nom du formulaire', 'Form name')} <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setNomTouche(true)}
+              data-testid="flow-nom"
+              className={`${inputCls} w-full ${nomTouche && name.trim() === '' ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+              placeholder={t('Demande de rendez-vous', 'Appointment request')}
+            />
+            {nomTouche && name.trim() === '' && (
+              <p className="mt-1 text-[11px] text-coral">{t('Le nom est obligatoire.', 'The name is required.')}</p>
+            )}
           </div>
           <div className="min-w-[160px]">
             <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton final (dernier écran)', 'Final button (last screen)')}</label>
@@ -656,9 +672,23 @@ export function FlowBuilder({
         {!labelsUnique && <p className="text-xs text-gold">{t('Deux champs portent le même libellé : chaque libellé doit être unique, tous écrans confondus.', 'Two fields share the same label: each label must be unique across all screens.')}</p>}
         {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
 
-        <button onClick={submit} disabled={!canSubmit} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
+        <button onClick={submit} disabled={!canSubmit} data-testid="flow-creer" className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-60">
           {busy ? t('Enregistrement…', 'Saving…') : isEdit ? t('Enregistrer les modifications', 'Save changes') : autoPublish ? t('Créer et publier', 'Create and publish') : t('Créer le formulaire', 'Create form')}
         </button>
+        {/* Bouton grisé SANS explication à portée de regard : les avertissements existent mais sont au-dessus,
+            et le nom manquant n'en avait aucun. On énumère ici ce qui bloque, sous le bouton qu'on cherche à
+            cliquer. Les champs marqués d'une astérisque rouge sont ceux qui comptent. */}
+        {!canSubmit && !busy && (
+          <p className="text-xs text-coral" data-testid="flow-manquants">
+            {t('Il manque : ', 'Missing: ')}
+            {[
+              name.trim() === '' ? t('le nom du formulaire', 'the form name') : '',
+              !everyScreenFilled ? t('au moins un élément par écran', 'at least one element per screen') : '',
+              fieldCount === 0 ? t('au moins un champ à remplir', 'at least one field to fill in') : '',
+              !labelsUnique ? t('des libellés de champs tous différents', 'field labels that are all different') : '',
+            ].filter((x) => x !== '').join(t(', ', ', '))}
+          </p>
+        )}
       </div>
 
       {/* Colonne aperçu (collante) : écran actif + pagination quand il y a plusieurs écrans. */}
