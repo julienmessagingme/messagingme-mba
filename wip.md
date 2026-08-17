@@ -360,6 +360,35 @@ surfacé dans Analytics. Détail usage : `features.md §Analytics`. Détail tech
    (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
    **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
 
+## Lot UX du 2026-08-17 (soir) : LIVRÉ et déployé, reste la vérification de Julien
+
+Neuf retouches demandées d'un bloc, plus deux bugs trouvés en chemin. Tout est en ligne (`ee2229f`), gates
+verts : racine 1700 tests, web 78 E2E, build et types propres.
+
+| Demande | État |
+|---|---|
+| Ajouter un contact à la main (mini-CRM) | fait, route `POST /tenants/:t/contacts` + modale |
+| Dupliquer un template | fait, pré-remplissage + bandeau d'honnêteté sur le visuel |
+| « + Ajouter une carte » du carousel | fait, tuile à droite des cartes |
+| Boutons du carousel déplacés sous les cartes | ABANDONNÉ par Julien après explication, libellé clarifié |
+| Astérisques rouges des formulaires | PARTIEL : nom + liste des manquants sous le bouton grisé |
+| Tableau redondant sous la création de formulaire | fait (c'était la galerie, pas un tableau) |
+| Rassurer sur l'auto-save des scénarios | fait, indicateur remonté et encadré |
+| Bouton « Reconnecter » à l'expiration de session | fait, bannière dans la coquille |
+| « modifier / supprimer » sur les champs de la fiche | fait, ils existaient mais étaient invisibles |
+
+**Deux bugs corrigés au passage, non signalés par Julien** : l'auto-save d'un scénario se relançait après un
+ÉCHEC et bouclait à l'infini sur une session expirée (E2E qui compte les appels) ; et un espace NEUF refusait
+le champ Prénom que son propre écran propose (cf. §champs socles).
+
+**Reste à faire, petit et mécanique** : les astérisques sur les onze champs de l'éditeur de formulaire. La
+liste des manquants sous le bouton couvre déjà tous les cas de blocage, d'où l'arrêt volontaire.
+
+**Reste à VÉRIFIER par Julien** (rien ne bloque, tout est en ligne) : le champ Prénom sur son nouveau compte,
+l'ajout d'un contact à la main, la duplication d'un template, le carousel, l'écran formulaire, et la bannière
+de session. Plus les deux pilotes en attente de sa main : l'OTP Zadarma (numéro dédié qui décroche) et une
+automation « étape de deal » avec un deal déplacé dans HubSpot.
+
 ## Migrations : 0056 et 0057 APPLIQUÉES le 2026-08-17, prochaine libre = 0058
 
 Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
