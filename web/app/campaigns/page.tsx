@@ -792,6 +792,37 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     if (res && Array.isArray(res.agents)) setRcsAgents(res.agents);
   }
 
+  /**
+   * Motifs des contacts ÉCARTÉS, ventilés. Les écarts ont deux causes qui n'appellent pas la même correction :
+   * une variable de template sans valeur sur la fiche, ou un contact sans opt-in sur une campagne marketing.
+   * Les confondre envoie l'opérateur corriger des fiches alors que le problème est le consentement.
+   *
+   * UNE SEULE implémentation, partagée par le brouillon, le lancement direct et la programmation. Les deux
+   * derniers portaient un texte FIGÉ sur « la variable du template » : faux pour un skip d'opt-in, et
+   * structurellement toujours faux en RCS, qui n'a aucune variable (mapping vide -> `missing_variable`
+   * impossible). L'opérateur était renvoyé vers une action qui n'existe pas.
+   */
+  function detailEcartes(skipped: Array<{ reason: string }>): string {
+    const sansOptIn = skipped.filter((x) => x.reason === 'not_opted_in').length;
+    const sansVariable = skipped.length - sansOptIn;
+    return [
+      sansVariable > 0 ? t(`${sansVariable} sans valeur pour une variable du template`, `${sansVariable} missing a template variable value`) : '',
+      sansOptIn > 0 ? t(`${sansOptIn} sans opt-in (une campagne marketing l'exige)`, `${sansOptIn} without opt-in (a marketing campaign requires it)`) : '',
+    ].filter(Boolean).join(t(', ', ', '));
+  }
+
+  /** Message d'échec « personne à qui envoyer », avec la correction qui correspond VRAIMENT au motif. */
+  function messageAucunDestinataire(skipped: Array<{ reason: string }>): string {
+    const detail = detailEcartes(skipped);
+    const correction = skipped.every((x) => x.reason === 'not_opted_in')
+      ? t('Ces contacts n\'ont pas donné leur consentement : passe la campagne en « Utility » si elle relève du service, ou choisis d\'autres contacts.', 'These contacts have not consented: switch the campaign to "Utility" if it is a service message, or choose other contacts.')
+      : t('Corrige la source de la variable ou les fiches, ou passe la campagne en « Utility » si elle relève du service.', 'Fix the variable source or the records, or switch the campaign to "Utility" if it is a service message.');
+    return t(
+      `Aucun destinataire : les ${skipped.length} contact(s) sélectionné(s) ont été écartés (${detail}). ${correction}`,
+      `No recipients: all ${skipped.length} selected contact(s) were skipped (${detail}). ${correction}`,
+    );
+  }
+
   function chooseMode(m: 'template' | 'workflow' | 'rcs') {
     if (m === 'rcs') void chargerAgentsRcs();
     setMode(m);
@@ -875,6 +906,10 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
     setTemplateName('');
     setVars([]);
     setWorkflowId('');
+    // Le message RCS se vide comme le contenu WhatsApp. L'agent NON, par symétrie avec `phoneNumberId` :
+    // c'est l'expéditeur, il ne change pas d'une campagne à l'autre. Sans ce vidage, un opérateur qui
+    // enchaîne deux campagnes RCS retrouve le texte de la précédente pré-rempli et peut le renvoyer sans le voir.
+    setRcsText('');
     setWfError(null);
     setError(null);
     setOk(null);
@@ -896,18 +931,10 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       // Les écarts ont DEUX motifs, qui n'appellent pas la même correction : une variable de template sans
       // valeur sur la fiche, ou un contact sans opt-in sur une campagne marketing. Les confondre envoyait
       // l'opérateur corriger des fiches alors que le problème était le consentement.
-      const sansOptIn = res.skipped.filter((x) => x.reason === 'not_opted_in').length;
-      const sansVariable = res.skipped.length - sansOptIn;
-      const detail = [
-        sansVariable > 0 ? t(`${sansVariable} sans valeur pour une variable du template`, `${sansVariable} missing a template variable value`) : '',
-        sansOptIn > 0 ? t(`${sansOptIn} sans opt-in (une campagne marketing l'exige)`, `${sansOptIn} without opt-in (a marketing campaign requires it)`) : '',
-      ].filter(Boolean).join(t(', ', ', '));
+      const detail = detailEcartes(res.skipped);
 
       if (res.recipientCount === 0) {
-        setError(t(
-          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été écartés (${detail}). Corrige la source de la variable ou les fiches, ou passe la campagne en « Utility » si elle relève du service.`,
-          `No recipients: all ${res.skipped.length} selected contact(s) were skipped (${detail}). Fix the variable source or the records, or switch the campaign to "Utility" if it is a service message.`,
-        ));
+        setError(messageAucunDestinataire(res.skipped));
         return; // le finally remet busy à false
       }
       // L'envoi part quand même aux valides ; les écartés sont NOMMÉS avec leur motif.
@@ -941,10 +968,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       const res = await createCampaign(tenantId, buildCreateInput());
       // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE lance PAS et on reste.
       if (res.recipientCount === 0) {
-        setError(t(
-          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`,
-          `No recipients: the ${res.skipped.length} selected contact(s) were skipped because the template variable has no value on their record. Choose another source for the variable (e.g. "Name") or complete the records.`,
-        ));
+        setError(messageAucunDestinataire(res.skipped));
         setLaunch({ phase: 'idle' });
         return;
       }
@@ -983,10 +1007,7 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       const res = await createCampaign(tenantId, buildCreateInput());
       // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE programme PAS et on reste.
       if (res.recipientCount === 0) {
-        setError(t(
-          `Aucun destinataire : les ${res.skipped.length} contact(s) sélectionné(s) ont été sautés car la variable du template n'a pas de valeur sur leur fiche. Choisis une autre source pour la variable (ex. « Nom ») ou complète les fiches.`,
-          `No recipients: the ${res.skipped.length} selected contact(s) were skipped because the template variable has no value on their record. Choose another source for the variable (e.g. "Name") or complete the records.`,
-        ));
+        setError(messageAucunDestinataire(res.skipped));
         setLaunch({ phase: 'idle' });
         return;
       }
