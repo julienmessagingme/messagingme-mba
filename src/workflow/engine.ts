@@ -193,6 +193,10 @@ export function opensOutsideServiceWindow(graph: WorkflowGraph): boolean {
 export type WalkRest =
   | { status: 'waiting'; nodeId: string } // en attente d'une RÉPONSE du contact (après un template ou un formulaire)
   | { status: 'sleeping'; nodeId: string; resumeInMs: number } // en attente du TEMPS qui passe (bloc Attente)
+  // Bloc RCS : ce n'est PAS un état de repos, c'est une MAIN RENDUE. Le walk est pur et ne peut pas savoir si
+  // le numéro est joignable (appel réseau). L'executor fait l'IO puis reprend par 'sent' ou 'unreachable'.
+  // Ce statut ne doit JAMAIS atteindre `restToState` : il n'y a pas d'état de run qui lui corresponde.
+  | { status: 'rcs_send'; nodeId: string }
   | { status: 'inbox' } // conversation remontée à l'humain (terminal)
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
 
@@ -364,6 +368,12 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       const hasTypedEdge = graph.edges.some((e) => e.source === here && (e.sourceHandle === 'true' || e.sourceHandle === 'false'));
       current = nextNodeByHandle(graph, here, passed ? 'true' : 'false') ?? (hasTypedEdge ? null : nextNode(graph, here));
       continue;
+    }
+    if (node.type === 'rcs_message') {
+      // `walk` est PUR : il ne peut pas savoir si le numéro est joignable en RCS, c'est un appel réseau. Il rend
+      // donc la main à l'executor, qui fera l'IO et reprendra par le handle 'sent' ou 'unreachable'. Les actions
+      // déjà accumulées partent maintenant, comme pour un bloc Attente.
+      return { actions, rest: { status: 'rcs_send', nodeId: current } };
     }
     if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node, work);

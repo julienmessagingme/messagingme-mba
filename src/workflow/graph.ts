@@ -11,7 +11,9 @@
 // jamais de `control_owner='mba'` local, cette pose reste réservée au webhook messaging_handovers). Grisés dans
 // la palette tant que le tenant n'a pas MBA actif (agent_eligibility 403 / ToS non signées). Le vrai câblage
 // thread_control viendra le jour de l'activation MBA (tâche séparée).
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable'] as const;
+// `rcs_message` = envoi sur le canal RCS. Deux sorties TYPÉES ('sent' / 'unreachable') : sa branche dépend de la
+// joignabilité du numéro, donc d'un appel réseau. Le walk (PUR) rend la main à l'executor, qui fait cette IO.
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);
