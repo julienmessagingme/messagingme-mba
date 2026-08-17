@@ -173,7 +173,8 @@ export class PgCampaignRepo {
     const res = await this.pool.query<{
       id: string;
       tenant_id: string;
-      phone_number_id: string;
+      /** null depuis 0056 : une campagne RCS n'a pas de numéro Meta. */
+      phone_number_id: string | null;
       category: CampaignCategory;
       template_name: string | null;
       template_language: string | null;
@@ -182,9 +183,16 @@ export class PgCampaignRepo {
       workflow_id: string | null;
       rate_per_minute: number | null;
       start_node_id: string | null;
+      channel: 'whatsapp' | 'rcs' | null;
+      rcs_agent_id: string | null;
+      rcs_message: unknown;
     }>(
+      // `channel`, `rcs_agent_id` et `rcs_message` sont RELUS ici : c'est cette lecture qui alimente le job de
+      // run, donc c'est elle qui décide du canal d'envoi. Les omettre ferait repartir une campagne RCS bien
+      // enregistrée sur le chemin WhatsApp historique, avec un phone_number_id nul.
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
-              param_mapping, status, workflow_id, rate_per_minute, start_node_id
+              param_mapping, status, workflow_id, rate_per_minute, start_node_id,
+              channel, rcs_agent_id, rcs_message
        from campaigns where id = $1`,
       [id],
     );
@@ -193,7 +201,7 @@ export class PgCampaignRepo {
     return {
       id: r.id,
       tenantId: r.tenant_id,
-      phoneNumberId: r.phone_number_id,
+      phoneNumberId: r.phone_number_id ?? '',
       category: r.category,
       templateName: r.template_name ?? '',
       templateLanguage: r.template_language ?? '',
@@ -202,6 +210,10 @@ export class PgCampaignRepo {
       workflowId: r.workflow_id,
       ratePerMinute: r.rate_per_minute,
       startNodeId: r.start_node_id,
+      // Campagne d'avant la migration 0056 : `channel` est null en base -> WhatsApp, comportement historique.
+      channel: r.channel ?? 'whatsapp',
+      rcsAgentId: r.rcs_agent_id,
+      rcsMessage: r.rcs_message,
     };
   }
 
