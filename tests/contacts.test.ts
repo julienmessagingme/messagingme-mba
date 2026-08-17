@@ -370,3 +370,71 @@ describe('routes contacts — émission « tag ajouté » (automations)', () => 
     await server.close();
   });
 });
+
+/**
+ * 🔴 Espace NEUF : les champs socles (`prenom`/`email`) n'existent en base par AUCUN chemin d'inscription. Ils
+ * n'apparaissaient que par effet de bord d'un import CSV. Saisir un prénom sur un compte neuf rendait donc
+ * « champ inconnu : prenom » alors que l'écran le propose, sans aucun moyen de s'en sortir. Vécu sur un vrai
+ * compte client le 2026-08-17.
+ */
+describe('champ socle absent de la base : materialise a la premiere ecriture', () => {
+  /** Espace neuf : aucun user field, et on observe ce qui se fait creer. */
+  function neuf(over: Partial<ContactsRouteDeps> = {}) {
+    const crees: Array<{ key: string; label: string; type: string }> = [];
+    let champs: UserFieldDef[] = [];
+    const { server, cap } = app({
+      listUserFields: async () => champs,
+      ensureSocleField: async (_t, key, label, type) => {
+        crees.push({ key, label, type });
+        champs = [...champs, { key, label, type } as UserFieldDef];
+      },
+      ...over,
+    });
+    return { server, cap, crees };
+  }
+
+  it('PATCH fiche avec `prenom` -> 200, champ cree une fois, valeur ecrite', async () => {
+    const { server, cap, crees } = neuf();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: JSON.stringify({ fields: { prenom: 'Julien' } }) });
+    expect(res.statusCode).toBe(200);
+    expect(crees).toEqual([{ key: 'prenom', label: 'Prénom', type: 'text' }]);
+    expect(cap.merged).toEqual([{ prenom: 'Julien' }]);
+    await server.close();
+  });
+
+  it('`email` aussi (l’autre champ socle)', async () => {
+    const { server, crees } = neuf();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: JSON.stringify({ fields: { email: 'a@b.fr' } }) });
+    expect(res.statusCode).toBe(200);
+    expect(crees.map((c) => c.key)).toEqual(['email']);
+    await server.close();
+  });
+
+  it('🔴 un champ inconnu qui n’est PAS socle reste REFUSE (la garde anti-faute de frappe tient)', async () => {
+    const { server, crees } = neuf();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: JSON.stringify({ fields: { prnom: 'faute' } }) });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('champ inconnu');
+    expect(crees).toEqual([]); // rien ne se cree sur une faute de frappe
+    await server.close();
+  });
+
+  it('sans la dep de materialisation -> comportement historique (refus)', async () => {
+    const { server } = app({ listUserFields: async () => [] });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/contacts/c1', ...h(adminTok), payload: JSON.stringify({ fields: { prenom: 'Julien' } }) });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('action en MASSE `set_field` sur un champ socle absent -> materialise aussi', async () => {
+    // Le second site de validation : il refusait pareil, et il fallait le corriger avec le MÊME helper.
+    const { server, crees } = neuf();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/contacts/bulk', ...h(adminTok),
+      payload: JSON.stringify({ target: { ids: ['c1'] }, action: { type: 'set_field', key: 'prenom', value: 'Ju' } }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(crees.map((c) => c.key)).toEqual(['prenom']);
+    await server.close();
+  });
+});

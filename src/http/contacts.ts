@@ -5,7 +5,7 @@ import type { ContactRow, ContactFilters, ContactFieldFilter, BulkTarget, BulkEd
 import { isContactFieldOp } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
-import { validateFieldValue, canonicalizeFieldValue } from '../crm/fields';
+import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 
 export interface ContactsRouteDeps {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
@@ -21,6 +21,11 @@ export interface ContactsRouteDeps {
   softDeleteMany(tenantId: string, target: BulkTarget): Promise<number>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
+  /**
+   * Matérialise un champ SOCLE (`prenom`/`email`) absent de la base. Idempotent. Optionnelle : sans elle, le
+   * comportement historique est conservé (refus « champ inconnu »), donc les câblages de test ne changent pas.
+   */
+  ensureSocleField?(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
   /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
   /** Envois du contact pour l'export CSV (non capé). null si le contact n'est pas dans le tenant. */
@@ -108,6 +113,22 @@ const asStringArray = (v: unknown): string[] =>
  * des tags, depuis la fiche. Le tenant vient du JWT. MERGE (n'écrase jamais les autres clés). Renvoie le
  * contact à jour. Valide chaque valeur selon le type déclaré du user field (clé inconnue / valeur invalide -> 400).
  */
+/**
+ * Définition d'un champ pour valider une valeur saisie. Un champ SOCLE (`prenom`/`email`) absent est MATÉRIALISÉ
+ * à la volée : l'écran le propose dès l'ouverture d'un espace, alors qu'aucun chemin d'inscription ne le créait
+ * en base (bug vécu le 2026-08-17, « champ inconnu : prenom » sur un compte neuf). Tout autre champ inconnu
+ * reste REFUSÉ : c'est la garde qui empêche une faute de frappe de créer un champ fantôme.
+ */
+async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
+  const lu = async (): Promise<UserFieldDef | undefined> => (await deps.listUserFields(tenantId)).find((d) => d.key === key);
+  const def = await lu();
+  if (def) return def;
+  const socle = socleField(key);
+  if (!socle || !deps.ensureSocleField) return undefined;
+  await deps.ensureSocleField(tenantId, socle.key, socle.label, socle.type);
+  return lu();
+}
+
 export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
 
@@ -123,10 +144,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const removeTags = asStringArray(b.removeTags);
 
     // Valide les champs contre les définitions user_fields du tenant.
-    const defs = new Map((await deps.listUserFields(tenant)).map((d) => [d.key, d]));
     const values: Record<string, string> = {};
     for (const [key, raw] of Object.entries(rawFields)) {
-      const def = defs.get(key);
+      const def = await defPourEcriture(deps, tenant, key);
       if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
       const val = String(raw);
       if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
@@ -227,7 +247,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (action.type === 'set_field') {
       const key = typeof action.key === 'string' ? action.key.trim() : '';
       if (key === '') return reply.code(400).send({ error: 'champ requis (key)' });
-      const def = new Map((await deps.listUserFields(tenant)).map((d) => [d.key, d])).get(key);
+      const def = await defPourEcriture(deps, tenant, key);
       if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
       const val = String(action.value ?? '');
       if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });

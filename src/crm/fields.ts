@@ -72,6 +72,26 @@ export function isSystemFieldKey(key: string): boolean {
   return (SYSTEM_FIELD_KEYS as readonly string[]).includes(key);
 }
 
+/**
+ * Champs SOCLES : les deux seuls champs système STOCKÉS dans `contacts.fields`. Les autres clés systèmes sont
+ * des ATTRIBUTS (name/phone/bsuid/wa_id), résolus hors de ce jsonb. La fiche contact les propose dès l'ouverture
+ * d'un espace.
+ *
+ * 🔴 Ils n'étaient créés en base par AUCUN chemin d'inscription : ils n'apparaissaient que par effet de bord d'un
+ * import CSV (qui crée un champ par colonne). Sur un espace NEUF, saisir un prénom rendait donc « champ inconnu :
+ * prenom » alors que l'écran le proposait, sans aucun moyen de s'en sortir. Constaté sur un vrai compte client le
+ * 2026-08-17. Ils sont désormais matérialisés à la première écriture (cf. `http/contacts.ts`), ce qui répare du
+ * même coup les espaces déjà créés, sans script de reprise.
+ */
+export const SOCLE_FIELDS: ReadonlyArray<{ key: string; label: string; type: UserFieldType }> = [
+  { key: 'prenom', label: 'Prénom', type: 'text' },
+  { key: 'email', label: 'Email', type: 'text' },
+];
+/** Le champ socle correspondant à cette clé, ou undefined si ce n'en est pas un. */
+export function socleField(key: string): { key: string; label: string; type: UserFieldType } | undefined {
+  return SOCLE_FIELDS.find((f) => f.key === key);
+}
+
 export interface UserFieldStore {
   list(tenantId: string): Promise<UserFieldDef[]>;
   upsert(tenantId: string, def: UserFieldDef): Promise<void>;
