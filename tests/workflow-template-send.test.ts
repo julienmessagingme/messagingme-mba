@@ -152,3 +152,38 @@ describe('carousel — parité campagne / scénario', () => {
     expect(r.components).toEqual([]);
   });
 });
+
+/**
+ * Campagne SCÉNARIO : les variables du 1er template sont déjà résolues (`explicitParams`), et c'est la branche
+ * qui avait été oubliée lors du branchement de l'en-tête média. Relevé en revue le 2026-08-17 : elle aurait
+ * reproduit le 132012 de la campagne « Test Napo » alors que la campagne DIRECTE, elle, était corrigée.
+ */
+describe('variables déjà résolues + en-tête média : la combinaison de la campagne scénario', () => {
+  it('🔴 en-tête média joint MÊME avec explicitParams (et même quand le corps n’a aucune variable)', () => {
+    const r = buildWorkflowTemplateComponents({
+      hints: [], varCount: 0, contact: {}, buttons: [], explicitParams: [],
+      headerMediaId: 'MID-1', headerFormat: 'IMAGE',
+    });
+    expect(r.components).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { id: 'MID-1' } }] }]);
+    expect(r.missing).toEqual([]);
+  });
+
+  it('en-tête AVANT le corps, et le corps conserve ses valeurs explicites', () => {
+    const r = buildWorkflowTemplateComponents({
+      hints: [], varCount: 1, contact: {}, buttons: [], explicitParams: ['Jean'],
+      headerMediaId: 'MID-1', headerFormat: 'IMAGE',
+    });
+    expect(r.components).toEqual([
+      { type: 'header', parameters: [{ type: 'image', image: { id: 'MID-1' } }] },
+      { type: 'body', parameters: [{ type: 'text', text: 'Jean' }] },
+    ]);
+  });
+
+  it('une valeur explicite vide reste `missing` : l’en-tête ne masque pas le refus', () => {
+    const r = buildWorkflowTemplateComponents({
+      hints: [], varCount: 1, contact: {}, buttons: [], explicitParams: [''],
+      headerMediaId: 'MID-1', headerFormat: 'IMAGE',
+    });
+    expect(r.missing).toEqual([1]);
+  });
+});

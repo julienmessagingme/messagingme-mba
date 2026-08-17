@@ -30,6 +30,12 @@ export interface OutboundCarouselCard {
 
 export interface OutboundTemplateParts {
   bodyParams: string[];
+  /**
+   * `media id` du visuel d'en-tête, obtenu en le RE-TÉLÉVERSANT sur le numéro d'envoi. Prioritaire sur
+   * `headerMediaUrl` : c'est le seul des deux que Meta livre vraiment quand l'URL vient de son propre CDN
+   * (cf. `OutboundCarouselCard.mediaId`, même mesure, même piège 131053).
+   */
+  headerMediaId?: string;
   /** URL publique du média de header, si le template a un header média. */
   headerMediaUrl?: string;
   /** Format du header média (défaut IMAGE si absent mais URL fournie). */
@@ -77,6 +83,23 @@ export function carouselSendBlocker(cards: OutboundCarouselCard[]): string | nul
 }
 
 /**
+ * Pourquoi l'EN-TÊTE MÉDIA de ce template n'est PAS envoyable, ou null si tout est bon. Même doctrine que
+ * `carouselSendBlocker`, et volontairement une fonction SÉPARÉE : y greffer l'en-tête rendrait ses messages
+ * faux dans les deux sens (un carousel n'a pas d'en-tête top-level, et un template à en-tête n'a pas de carte).
+ *
+ * Un template dont Meta a approuvé un en-tête média EXIGE ce média à chaque envoi ; l'image déposée à la
+ * création ne sert qu'à la validation. Sans elle, Meta refuse TOUS les destinataires en 132012. On refuse donc
+ * avant d'envoyer, avec une raison lisible, plutôt que de collectionner les échecs un par un.
+ */
+export function headerMediaSendBlocker(headerFormat: string | undefined, mediaId: string | undefined): string | null {
+  const media = headerFormat === 'IMAGE' || headerFormat === 'VIDEO' || headerFormat === 'DOCUMENT';
+  if (!media) return null; // en-tête texte, ou pas d'en-tête : rien à préparer
+  if (mediaId) return null;
+  const quoi = headerFormat === 'VIDEO' ? 'la vidéo' : headerFormat === 'DOCUMENT' ? 'le document' : 'l’image';
+  return `${quoi} d’en-tête du template n’a pas pu être préparée pour l’envoi`;
+}
+
+/**
  * Composants d'UNE carte : le média (que Meta exige à chaque envoi, il n'est jamais dans le template) puis
  * un composant par bouton quick-reply. Pas de composant `body` : la carte n'a pas de variable (garanti par
  * carouselSendBlocker) et un `parameters: []` vide est précisément ce qui déclenche 132012.
@@ -100,9 +123,11 @@ export function buildTemplateComponents(tpl: OutboundTemplateParts): unknown[] {
   const components: unknown[] = [];
   // Un carousel porte ses médias PAR CARTE : le header top-level ne s'applique pas (même règle qu'à la
   // création, cf. meta/templates.ts buildComponents).
-  if (tpl.headerMediaUrl && !tpl.carousel) {
+  if ((tpl.headerMediaId || tpl.headerMediaUrl) && !tpl.carousel) {
     const key = tpl.headerFormat === 'VIDEO' ? 'video' : tpl.headerFormat === 'DOCUMENT' ? 'document' : 'image';
-    components.push({ type: 'header', parameters: [{ type: key, [key]: { link: tpl.headerMediaUrl } }] });
+    // `id` dès qu'on l'a, `link` en repli (une URL fournie à la main par un opérateur, elle, se télécharge).
+    const media = tpl.headerMediaId ? { id: tpl.headerMediaId } : { link: tpl.headerMediaUrl };
+    components.push({ type: 'header', parameters: [{ type: key, [key]: media }] });
   }
   if (tpl.bodyParams.length > 0) {
     components.push({ type: 'body', parameters: tpl.bodyParams.map((v) => ({ type: 'text', text: v })) });

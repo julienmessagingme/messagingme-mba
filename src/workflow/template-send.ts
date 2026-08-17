@@ -39,11 +39,23 @@ export function buildWorkflowTemplateComponents(opts: {
    * Le même constructeur sert au chemin campagne : un même template produit les mêmes composants des deux côtés.
    */
   carousel?: { cards: OutboundCarouselCard[] };
+  /**
+   * `media id` de l'en-tête média, déjà préparé par l'appelant (re-téléversé sur le numéro d'envoi). Meta EXIGE
+   * ce média à CHAQUE envoi d'un template à en-tête IMAGE/VIDEO/DOCUMENT : sans lui, 132012 pour tous les
+   * destinataires. L'appelant refuse en amont via `headerMediaSendBlocker` plutôt que de laisser partir.
+   */
+  headerMediaId?: string;
+  headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 }): { components: unknown[]; missing: number[] } {
   const resolved = opts.explicitParams !== undefined
     ? { values: opts.explicitParams, missing: opts.explicitParams.flatMap((v, i) => (v === '' ? [i + 1] : [])) }
     : opts.varCount > 0 ? resolveHintParams(opts.hints, opts.varCount, opts.contact, { now: opts.now, tz: opts.tz }) : { values: [], missing: [] };
-  const bodyComponents = buildTemplateComponents({ bodyParams: resolved.values, ...(opts.carousel ? { carousel: opts.carousel } : {}) });
+  const bodyComponents = buildTemplateComponents({
+    bodyParams: resolved.values,
+    ...(opts.carousel ? { carousel: opts.carousel } : {}),
+    ...(opts.headerMediaId ? { headerMediaId: opts.headerMediaId } : {}),
+    ...(opts.headerFormat ? { headerFormat: opts.headerFormat } : {}),
+  });
   const flowToken = opts.flowToken && opts.flowToken !== '' ? opts.flowToken : 'mba-flow';
   // Un composant par bouton, à l'INDEX du template (préservé) : quick-reply -> payload contrôlé (`btn:<i>`) ;
   // FLOW -> action + flow_token (requis par Meta pour un template à bouton formulaire) ; URL statique -> rien.

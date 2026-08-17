@@ -86,6 +86,19 @@ const campaign: Campaign = {
 function rec(id: string, to: string, status: Recipient['status'] = 'pending'): Recipient {
   return { id, contactId: `ct-${id}`, toE164: to, resolvedParams: ['X'], status };
 }
+/** Sender qui capture le TemplateSpec réellement envoyé (marketing + template). Partagé par les blocs qui
+ *  vérifient le PAYLOAD (carousel, en-tête média) : un second exemplaire divergerait au premier changement. */
+class CapturingSender implements MessageSender {
+  readonly specs: TemplateSpec[] = [];
+  async sendMarketing(p: MarketingParams): Promise<SendResult> {
+    this.specs.push(p.template);
+    return { messageId: 'm1' };
+  }
+  async sendTemplate(_to: string, tpl: TemplateSpec): Promise<SendResult> {
+    this.specs.push(tpl);
+    return { messageId: 'm1' };
+  }
+}
 function deps(over: Partial<EngineDeps> & { recipients: RecipientStore }): EngineDeps {
   return {
     sender: new FakeSender(),
@@ -427,18 +440,6 @@ describe('runCampaign — journal du sortant (recordOutbound)', () => {
 });
 
 describe('runCampaign — template CAROUSEL', () => {
-  /** Sender qui capture le TemplateSpec réellement envoyé (marketing + template). */
-  class CapturingSender implements MessageSender {
-    readonly specs: TemplateSpec[] = [];
-    async sendMarketing(p: MarketingParams): Promise<SendResult> {
-      this.specs.push(p.template);
-      return { messageId: 'm1' };
-    }
-    async sendTemplate(_to: string, tpl: TemplateSpec): Promise<SendResult> {
-      this.specs.push(tpl);
-      return { messageId: 'm1' };
-    }
-  }
   const cards = [{ mediaId: 'mid-a' }, { mediaId: 'mid-b' }];
 
   it('joint le composant carousel à l envoi, et ne relit le template QU UNE FOIS par run', async () => {
@@ -510,6 +511,93 @@ describe('runCampaign — template CAROUSEL', () => {
       recipients,
       startWorkflow: async () => true,
       getTemplateCarousel: async () => { reads += 1; return null; },
+    }));
+    expect(reads).toBe(0);
+  });
+});
+
+/**
+ * En-tête média : un template dont Meta a approuvé un en-tête IMAGE/VIDEO/DOCUMENT exige ce média à CHAQUE
+ * envoi. Le 2026-08-17, la campagne « Test Napo » est partie sans, et Meta a refusé 2 destinataires sur 2
+ * en 132012. Ces cas verrouillent le refus AVANT la boucle, et le média réellement joint quand il est prêt.
+ */
+describe('runCampaign : en-tête média du template', () => {
+  it('media id prêt -> un composant header avec l’ID, lu UNE seule fois pour tous les destinataires', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    let reads = 0;
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateHeaderMedia: async () => { reads += 1; return { headerFormat: 'IMAGE' as const, mediaId: 'MID-1' }; },
+    }));
+    expect(report).toMatchObject({ sent: 2, failed: 0 });
+    expect(reads).toBe(1); // le visuel est identique pour tous : jamais un re-téléversement par destinataire
+    for (const spec of sender.specs) {
+      expect(spec.components).toContainEqual({ type: 'header', parameters: [{ type: 'image', image: { id: 'MID-1' } }] });
+    }
+  });
+
+  it('🔴 média non préparé -> AUCUN envoi, chaque destinataire en échec avec la raison lisible', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateHeaderMedia: async () => ({ headerFormat: 'IMAGE' as const, mediaId: null }),
+    }));
+    expect(report).toMatchObject({ sent: 0, failed: 2 });
+    expect(sender.specs).toHaveLength(0); // rien n'est parti : plus de 132012 collectionnés un par un
+    const res = recipients.results.get('r1');
+    expect(res?.status).toBe('failed');
+    expect(res?.error).toContain('Template non envoyable');
+    expect(res?.error).toContain('image');
+  });
+
+  it('refus sur 25 destinataires -> AUCUNE pause (le quality gate ne voit pas 100 % d’échecs)', async () => {
+    const sender = new CapturingSender();
+    const list = Array.from({ length: 25 }, (_, i) => rec(`r${i}`, `+3361100${i}`));
+    const recipients = new FakeRecipients(list);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({
+      recipients, sender, campaigns,
+      getTemplateHeaderMedia: async () => ({ headerFormat: 'IMAGE' as const, mediaId: null }),
+    }));
+    expect(report).toMatchObject({ sent: 0, failed: 25, paused: false });
+    expect(campaigns.statuses).toEqual(['running', 'completed']); // jamais 'paused'
+  });
+
+  it('template SANS en-tête média -> envoi inchangé, aucun composant header ajouté', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({ recipients, sender, getTemplateHeaderMedia: async () => null }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(sender.specs[0]!.components).toEqual([{ type: 'body', parameters: [{ type: 'text', text: 'X' }] }]);
+  });
+
+  it('lecture en erreur -> la campagne part quand même (un template sans visuel ne doit pas être bloqué)', async () => {
+    const sender = new CapturingSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await runCampaign(campaign, deps({
+      recipients, sender,
+      getTemplateHeaderMedia: async () => { throw new Error('réseau'); },
+    }));
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+  });
+
+  it('campagne SCÉNARIO ou template à carousel -> aucune lecture d’en-tête (elle n’a pas de sens)', async () => {
+    let reads = 0;
+    const lecture = async () => { reads += 1; return { headerFormat: 'IMAGE' as const, mediaId: 'M' }; };
+    await runCampaign({ ...campaign, workflowId: 'wf1' }, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611')]),
+      startWorkflow: async () => true,
+      getTemplateHeaderMedia: lecture,
+    }));
+    expect(reads).toBe(0);
+    // Un carousel porte ses visuels PAR CARTE : lire un en-tête top-level en plus enverrait un composant de trop.
+    await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r2', '+33622')]),
+      sender: new CapturingSender(),
+      getTemplateCarousel: async () => ({ cards: [{ mediaId: 'C1' }] }),
+      getTemplateHeaderMedia: lecture,
     }));
     expect(reads).toBe(0);
   });

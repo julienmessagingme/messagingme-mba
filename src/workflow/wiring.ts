@@ -13,8 +13,8 @@ import { logTemplateSent } from '../inbox/outbound-log';
 import { MetaMediaClient } from '../meta/media';
 import { MetaClientFactory } from '../meta/factory';
 import { MetaCredentialsResolver } from '../meta/credentials';
-import { CarouselMediaPreparer } from '../meta/carousel-media';
-import { carouselSendBlocker } from '../meta/template-components';
+import { TemplateMediaPreparer } from '../meta/template-media';
+import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
@@ -60,7 +60,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // Meta list() par destinataire d'une campagne workflow. TTL court -> tolère un template édité en cours de route.
   // Porte AUSSI les cartes du carousel : Meta exige l'image de chaque carte À CHAQUE ENVOI (elle n'est pas dans
   // le template), et les URL renvoyées portent une expiration -> TTL court, relues régulièrement, jamais figées.
-  type TplInfo = { count: number; carousel?: { cards: OutboundCarouselCard[] } };
+  // Porte AUSSI l'en-tête média, pour la même raison que les cartes : Meta l'exige à chaque envoi et l'URL expire.
+  type TplInfo = {
+    count: number;
+    carousel?: { cards: OutboundCarouselCard[] };
+    headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+    headerMediaUrl?: string;
+  };
   const tplVarCache = new Map<string, { at: number } & TplInfo>();
   const TPL_CACHE_MS = 5 * 60_000;
   // `count` = MAX des positions {{n}} (cf. countTemplateVariables) : « {{1}} ... {{3}} » attend 3 params pour Meta,
@@ -76,11 +82,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     return waba;
   };
   /**
-   * Préparation des visuels de carousel (re-téléversement -> `media id`). UNE seule implémentation dans le
-   * projet (`meta/carousel-media.ts`), partagée avec l'API qui en a besoin pour l'envoi depuis l'inbox.
-   * L'instance porte son cache, donc elle est créée UNE fois pour tout le worker.
+   * Préparation des visuels d'un template (re-téléversement -> `media id`), pour les cartes d'un carousel comme
+   * pour l'en-tête média. UNE seule implémentation dans le projet (`meta/template-media.ts`), partagée avec
+   * l'API qui en a besoin pour l'envoi depuis l'inbox. L'instance porte son cache : créée UNE fois, et un même
+   * visuel servant aux deux usages ne se téléverse qu'une fois.
    */
-  const carouselMedia = new CarouselMediaPreparer({
+  const templateMedia = new TemplateMediaPreparer({
     getPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
     mediaClientFor: async (tenant) => {
       const { token } = await metaCredentials.resolveForTenant(tenant);
@@ -88,20 +95,57 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
   const prepareCarouselMedia = (tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> =>
-    carouselMedia.prepare(tenant, cards);
+    templateMedia.prepare(tenant, cards);
+  const prepareHeaderMedia = (tenant: string, mediaUrl: string): Promise<string | null> =>
+    templateMedia.prepareOne(tenant, mediaUrl);
+
+  /**
+   * Visuels d'un template PRÊTS pour l'envoi (cartes de carousel ET en-tête média), ou la RAISON du refus.
+   *
+   * Factorisé, et ça n'est pas cosmétique : les deux branches de `sendTemplate` (variables déjà résolues d'une
+   * campagne, ou résolution par hints après une réponse) doivent se comporter à l'identique. C'est leur
+   * divergence qui a laissé le carousel non branché côté campagne (2026-08-15), puis l'en-tête média non
+   * branché côté campagne scénario (relevé en revue le 2026-08-17). Une seule source, plus d'écart possible.
+   *
+   * `info` null (lecture du template en échec) -> aucun visuel et aucun refus : on part comme avant, un
+   * template sans visuel n'est jamais bloqué par une panne de lecture.
+   */
+  type VisuelsEnvoi = { carousel?: { cards: OutboundCarouselCard[] }; headerMediaId?: string; headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT' };
+  const visuelsPourEnvoi = async (tenant: string, info: TplInfo | null): Promise<{ refus: string } | VisuelsEnvoi> => {
+    const carousel = info?.carousel ? { cards: await prepareCarouselMedia(tenant, info.carousel.cards) } : undefined;
+    const refusCarousel = carousel ? carouselSendBlocker(carousel.cards) : null;
+    if (refusCarousel !== null) return { refus: refusCarousel };
+    // Un carousel porte ses visuels PAR CARTE : pas d'en-tête top-level à préparer ni à exiger.
+    if (carousel) return { carousel };
+    const headerMediaId = info?.headerMediaUrl ? await prepareHeaderMedia(tenant, info.headerMediaUrl) : null;
+    const refusHeader = headerMediaSendBlocker(info?.headerFormat, headerMediaId ?? undefined);
+    if (refusHeader !== null) return { refus: refusHeader };
+    return headerMediaId ? { headerMediaId, ...(info?.headerFormat ? { headerFormat: info.headerFormat } : {}) } : {};
+  };
 
   const templateVarInfo = async (tenant: string, name: string, language: string): Promise<TplInfo | null> => {
     const waba = await tenantWabaId(tenant);
     if (!waba) return null;
     const key = `${waba}|${name}|${language}`;
     const cached = tplVarCache.get(key);
-    if (cached && Date.now() - cached.at < TPL_CACHE_MS) return { count: cached.count, ...(cached.carousel ? { carousel: cached.carousel } : {}) };
+    if (cached && Date.now() - cached.at < TPL_CACHE_MS) {
+      const { at: _at, ...info } = cached;
+      return info;
+    }
     const tplClient = await metaFactory.templateClientForTenant(tenant); // token PAR TENANT (B1), repli global en sommeil
     const list = await tplClient.list(waba);
     // Exact (nom + langue), sinon repli sur le nom seul (langue par défaut d'un template mono-langue).
     const tpl = list.find((t) => t.name === name && t.language === language) ?? list.find((t) => t.name === name);
     if (!tpl) return null;
-    const info: TplInfo = { count: countTemplateVariables(tpl.body), ...(tpl.carousel ? { carousel: tpl.carousel } : {}) };
+    const media = tpl.headerFormat === 'IMAGE' || tpl.headerFormat === 'VIDEO' || tpl.headerFormat === 'DOCUMENT'
+      ? tpl.headerFormat
+      : undefined;
+    const info: TplInfo = {
+      count: countTemplateVariables(tpl.body),
+      ...(tpl.carousel ? { carousel: tpl.carousel } : {}),
+      ...(media ? { headerFormat: media } : {}),
+      ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
+    };
     tplVarCache.set(key, { at: Date.now(), ...info });
     return info;
   };
@@ -182,20 +226,20 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // ce chemin ; `undefined` = envoi via `advance` (réponse webhook) -> chemin hints stockés ci-dessous.
       // Garde-fou : une valeur vide fait sauter l'envoi (jamais `text:''`).
       if (explicitParams !== undefined) {
-        // Carousel : ses cartes doivent être jointes à l'envoi. Lecture best-effort (ce chemin n'appelait pas
-        // Meta jusqu'ici) : illisible -> on part comme avant, un template SANS carousel n'est pas affecté.
-        let carousel: { cards: OutboundCarouselCard[] } | undefined;
+        // Visuels (cartes de carousel ET en-tête média) : Meta les exige à CHAQUE envoi. Lecture best-effort
+        // (ce chemin n'appelait pas Meta jusqu'ici) : illisible -> on part comme avant, un template SANS visuel
+        // n'est pas affecté. MÊME traitement que la branche hints ci-dessous, par construction.
+        let luCampagne: TplInfo | null = null;
         try {
-          const lu = (await templateVarInfo(tenant, name, language))?.carousel;
-          if (lu) carousel = { cards: await prepareCarouselMedia(tenant, lu.cards) };
+          luCampagne = await templateVarInfo(tenant, name, language);
         } catch { /* best-effort */ }
-        const blocked = carousel ? carouselSendBlocker(carousel.cards) : null;
-        if (blocked !== null) {
+        const visuels = await visuelsPourEnvoi(tenant, luCampagne);
+        if ('refus' in visuels) {
           // eslint-disable-next-line no-console
-          console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blocked}`);
-          return `template « ${name} » : ${blocked}`;
+          console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${visuels.refus}`);
+          return `template « ${name} » : ${visuels.refus}`;
         }
-        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}`, ...(carousel ? { carousel } : {}) });
+        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}`, ...visuels });
         if (missing.length > 0) {
           // eslint-disable-next-line no-console
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
@@ -233,14 +277,16 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // la branche (sourceHandle) de façon déterministe. Body avant boutons (ordre attendu par l'API Cloud).
       // Carousel non envoyable (carte sans image récupérable, variable de carte) : on NE devine PAS, on ne
       // laisse pas non plus partir un payload que Meta rejettera. Même doctrine que `missing`.
-      const carouselPret = info.carousel ? { cards: await prepareCarouselMedia(tenant, info.carousel.cards) } : undefined;
-      const blockedCarousel = carouselPret ? carouselSendBlocker(carouselPret.cards) : null;
-      if (blockedCarousel !== null) {
+      const visuels = await visuelsPourEnvoi(tenant, info);
+      if ('refus' in visuels) {
         // eslint-disable-next-line no-console
-        console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${blockedCarousel}`);
-        return `template « ${name} » : ${blockedCarousel}`;
+        console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${visuels.refus}`);
+        return `template « ${name} » : ${visuels.refus}`;
       }
-      const { components, missing } = buildWorkflowTemplateComponents({ hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(), ...(carouselPret ? { carousel: carouselPret } : {}) });
+      const { components, missing } = buildWorkflowTemplateComponents({
+        hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(),
+        ...visuels,
+      });
       if (missing.length > 0) {
         // eslint-disable-next-line no-console
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
@@ -296,5 +342,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, buildEvalContext };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext };
 }

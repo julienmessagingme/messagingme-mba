@@ -60,6 +60,9 @@ export interface TemplateSummary {
   headerFormat: string | null;
   /** Texte du header TEXT (pour pré-remplir l'édition). undefined si header média/absent. */
   headerText?: string;
+  /** URL du média d'en-tête lue chez Meta quand `headerFormat` vaut IMAGE/VIDEO/DOCUMENT. Sert à obtenir le
+   *  `media id` de l'envoi, jamais envoyée telle quelle (cf. `headerMediaUrlOf`). undefined si pas de média. */
+  headerMediaUrl?: string;
   /** Pied de page (composant FOOTER), pour pré-remplir l'édition. undefined si absent. */
   footer?: string;
   /** Boutons top-level (pour pré-remplir l'édition). undefined si aucun. */
@@ -147,10 +150,14 @@ function exampleOf(components: unknown): string[] | undefined {
 }
 
 /**
- * URL de média d'un composant HEADER, lue dans `example.header_handle[0]`. Meta y renvoie une URL CDN
- * exploitable telle quelle en `link` à l'envoi (vérifié live). Un handle de resumable upload
+ * URL de média d'un composant HEADER, lue dans `example.header_handle[0]`. Un handle de resumable upload
  * (`4::aW1hZ2U...`, ce qu'on POSTe à la CRÉATION) n'en est PAS une : on ne garde que ce qui est une URL,
  * sinon on enverrait une valeur que Meta refuse. undefined = pas de média exploitable.
+ *
+ * ⚠️ Cette URL sert à OBTENIR un `media id` (re-téléversement), JAMAIS à l'envoi direct en `link`. Le
+ * commentaire précédent affirmait le contraire (« exploitable telle quelle, vérifié live ») sans trace de
+ * mesure, et la mesure du 2026-08-15 le contredit : Meta accepte le `link` (200) puis échoue 2 s plus tard en
+ * 131053, son téléchargeur se prenant un 403 sur son propre CDN. Cf. `meta/template-media.ts`.
  */
 function headerMediaUrlOf(components: unknown): string | undefined {
   if (!Array.isArray(components)) return undefined;
@@ -335,6 +342,9 @@ export class MetaTemplateClient {
           body: bodyOf(t.components),
           headerFormat: headerFormatOf(t.components),
           ...(headerTextOf(t.components) !== undefined ? { headerText: headerTextOf(t.components) } : {}),
+          // Uniquement pour un en-tête MÉDIA : sur un carousel, les visuels sont par carte (cf. `carouselOf`),
+          // et un en-tête top-level n'existe pas, donc en exposer un ici induirait l'envoi en erreur.
+          ...(!carousel && headerMediaUrlOf(t.components) !== undefined ? { headerMediaUrl: headerMediaUrlOf(t.components) } : {}),
           ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
           ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
           ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),

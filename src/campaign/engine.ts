@@ -1,6 +1,6 @@
 import type { Campaign, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
 import { frequencyAllows, qualityGate } from './guardrails';
-import { buildTemplateComponents, carouselSendBlocker } from '../meta/template-components';
+import { buildTemplateComponents, carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
@@ -74,6 +74,18 @@ export interface EngineDeps {
    * de template (tests, e2e) -> envoi inchangé lui aussi.
    */
   getTemplateCarousel?: (tenantId: string, name: string, language: string) => Promise<{ cards: OutboundCarouselCard[] } | null>;
+  /**
+   * En-tête média du template, PRÉPARÉ pour l'envoi (`mediaId` obtenu en re-téléversant le visuel lu chez Meta).
+   * Appelée UNE SEULE FOIS par run, même raison que le carousel. Meta exige ce média à CHAQUE envoi d'un
+   * template à en-tête IMAGE/VIDEO/DOCUMENT : sans lui il refuse TOUS les destinataires en 132012, ce qui est
+   * arrivé en production le 2026-08-17. null = template sans en-tête média -> envoi inchangé. Absente = câblage
+   * sans lecture de template (tests, e2e, DRY_RUN) -> envoi inchangé lui aussi.
+   */
+  getTemplateHeaderMedia?: (
+    tenantId: string,
+    name: string,
+    language: string,
+  ) => Promise<{ headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). Absent -> pas de log (rétro-compatible). */
   recordOutbound?: (
     tenantId: string,
@@ -134,12 +146,25 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
 
-  // Carousel non envoyable : AUCUN destinataire ne peut partir, et on le sait avant d'avoir commencé. Traité
+  // En-tête média : même doctrine que le carousel, et même lecture UNE fois par run. Le visuel est identique
+  // pour tous les destinataires, donc son `media id` aussi.
+  let headerMedia: { headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null = null;
+  let headerBlocked: string | null = null;
+  if (!campaign.workflowId && !carousel && deps.getTemplateHeaderMedia) {
+    try {
+      headerMedia = await deps.getTemplateHeaderMedia(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
+      if (headerMedia) headerBlocked = headerMediaSendBlocker(headerMedia.headerFormat, headerMedia.mediaId ?? undefined);
+    } catch {
+      /* lecture best-effort : un template sans en-tête média ne doit jamais être bloqué par elle */
+    }
+  }
+
+  // Rien d'envoyable : AUCUN destinataire ne peut partir, et on le sait avant d'avoir commencé. Traité
   // ICI et pas dans la boucle : y passer ferait compter 100 % d'échecs au quality gate, qui mettrait la
   // campagne en pause avec « taux d'échec 100 % » au bout de 20 destinataires. Ce serait exactement le
   // diagnostic trompeur que ce lot supprime, et ça laisserait le reste des destinataires en attente.
-  if (carouselBlocked !== null) {
-    const reason = `Carousel non envoyable : ${carouselBlocked}`;
+  if (carouselBlocked !== null || headerBlocked !== null) {
+    const reason = carouselBlocked !== null ? `Carousel non envoyable : ${carouselBlocked}` : `Template non envoyable : ${headerBlocked}`;
     for (const r of pending) {
       if (r.status === 'sent') continue;
       if (!(await deps.recipients.claim(r.id))) continue;
@@ -216,7 +241,12 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         const tpl: TemplateSpec = {
           name: campaign.templateName,
           language: campaign.templateLanguage,
-          components: buildTemplateComponents({ bodyParams: params, ...(carousel ? { carousel } : {}) }),
+          components: buildTemplateComponents({
+            bodyParams: params,
+            ...(carousel ? { carousel } : {}),
+            // `mediaId` non nul garanti par le refus pré-boucle : `headerMediaSendBlocker` a déjà arrêté le run.
+            ...(headerMedia?.mediaId ? { headerMediaId: headerMedia.mediaId, headerFormat: headerMedia.headerFormat } : {}),
+          }),
         };
         // Numéro E.164 -> `to`, BSUID -> `recipient` (source unique messagingTarget). sendTemplate route
         // de la même façon en interne, donc l'utility passe l'identité brute.

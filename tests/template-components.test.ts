@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTemplateComponents, carouselSendBlocker } from '../src/meta/template-components';
+import { buildTemplateComponents, carouselSendBlocker, headerMediaSendBlocker } from '../src/meta/template-components';
 import type { OutboundCarouselCard } from '../src/meta/template-components';
 
 describe('buildTemplateComponents', () => {
@@ -145,5 +145,50 @@ describe('carouselSendBlocker', () => {
   it('le refus prime sur la construction : une carte sans image ne part jamais en silence', () => {
     const cards: OutboundCarouselCard[] = [{ body: 'sans image' }];
     expect(carouselSendBlocker(cards)).not.toBeNull();
+  });
+});
+
+describe('en-tête média : media id prioritaire sur le lien', () => {
+  it('🔴 `id` quand il est là, jamais `link` : une URL du CDN de Meta est acceptée puis NON livrée (131053)', () => {
+    const c = buildTemplateComponents({ bodyParams: [], headerMediaId: 'MID-1', headerMediaUrl: 'https://cdn.meta/a.jpg', headerFormat: 'IMAGE' });
+    expect(c).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { id: 'MID-1' } }] }]);
+  });
+
+  it('`link` reste le repli : une URL fournie à la main par un opérateur se télécharge, elle', () => {
+    const c = buildTemplateComponents({ bodyParams: [], headerMediaUrl: 'https://exemple.fr/a.jpg', headerFormat: 'IMAGE' });
+    expect(c).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { link: 'https://exemple.fr/a.jpg' } }] }]);
+  });
+
+  it('un carousel n’émet PAS d’en-tête top-level, même avec un media id (ses visuels sont par carte)', () => {
+    const c = buildTemplateComponents({
+      bodyParams: [], headerMediaId: 'MID-1', headerFormat: 'IMAGE',
+      carousel: { cards: [{ mediaId: 'CARD-1' }] },
+    });
+    expect(c.some((x) => (x as { type?: string }).type === 'header')).toBe(false);
+  });
+
+  it('formats VIDEO et DOCUMENT portent la bonne clé avec un id', () => {
+    expect(buildTemplateComponents({ bodyParams: [], headerMediaId: 'M', headerFormat: 'VIDEO' }))
+      .toEqual([{ type: 'header', parameters: [{ type: 'video', video: { id: 'M' } }] }]);
+    expect(buildTemplateComponents({ bodyParams: [], headerMediaId: 'M', headerFormat: 'DOCUMENT' }))
+      .toEqual([{ type: 'header', parameters: [{ type: 'document', document: { id: 'M' } }] }]);
+  });
+});
+
+describe('headerMediaSendBlocker', () => {
+  it('🔴 en-tête média SANS media id -> refus nommé (c’est le 132012 vécu le 2026-08-17)', () => {
+    expect(headerMediaSendBlocker('IMAGE', undefined)).toContain('image');
+    expect(headerMediaSendBlocker('VIDEO', undefined)).toContain('vidéo');
+    expect(headerMediaSendBlocker('DOCUMENT', undefined)).toContain('document');
+  });
+
+  it('en-tête média AVEC media id -> autorisé', () => {
+    expect(headerMediaSendBlocker('IMAGE', 'MID-1')).toBeNull();
+  });
+
+  it('en-tête TEXT, ou pas d’en-tête -> rien à préparer, jamais de refus', () => {
+    // Sans ce cas, tout template sans visuel deviendrait non envoyable : le garde-fou serait pire que le bug.
+    expect(headerMediaSendBlocker('TEXT', undefined)).toBeNull();
+    expect(headerMediaSendBlocker(undefined, undefined)).toBeNull();
   });
 });

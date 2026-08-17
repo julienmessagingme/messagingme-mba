@@ -453,7 +453,11 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
                         data-testid={`retry-${r.id}`}
                         className="mt-1 rounded-md border border-brand-200 px-2 py-0.5 text-xs font-medium text-brand-700 transition hover:bg-brand-50"
                       >
-                        {t('Corriger + renvoyer', 'Fix + resend')}
+                        {/* Sans variable de champ à corriger, il n'y a RIEN à corriger : promettre l'inverse
+                            envoie chercher une faute de saisie qui n'existe pas (cas d'un template dont
+                            l'en-tête média manquait à l'envoi). Le renvoi, lui, reste utile : il repart avec
+                            l'envoi corrigé, ou avec un contact mis à jour ailleurs. */}
+                        {fieldKeys.length === 0 ? t('Renvoyer', 'Resend') : t('Corriger + renvoyer', 'Fix + resend')}
                       </button>
                     )}
                     {msg?.rid === r.id && (

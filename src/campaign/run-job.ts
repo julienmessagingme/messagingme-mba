@@ -46,6 +46,12 @@ export interface RunJobDeps {
   startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean | string>;
   /** Cartes du CAROUSEL du template (relues chez Meta, UNE fois par run). null / absente -> envoi inchangé. */
   getTemplateCarousel?: (tenantId: string, name: string, language: string) => Promise<{ cards: OutboundCarouselCard[] } | null>;
+  /** En-tête média du template, PRÉPARÉ pour l'envoi (UNE fois par run). null / absente -> envoi inchangé. */
+  getTemplateHeaderMedia?: (
+    tenantId: string,
+    name: string,
+    language: string,
+  ) => Promise<{ headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null>;
   /** Journalise l'envoi sortant dans le fil de conversation (best-effort). */
   recordOutbound?: (
     tenantId: string,
@@ -107,6 +113,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(deps.startWorkflow ? { startWorkflow: deps.startWorkflow } : {}),
     ...(deps.startWorkflowFromNode ? { startWorkflowFromNode: deps.startWorkflowFromNode } : {}),
     ...(deps.getTemplateCarousel ? { getTemplateCarousel: deps.getTemplateCarousel } : {}),
+    ...(deps.getTemplateHeaderMedia ? { getTemplateHeaderMedia: deps.getTemplateHeaderMedia } : {}),
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
   });

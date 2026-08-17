@@ -138,7 +138,7 @@ async function main(): Promise<void> {
   // serait le troisième doublon de cette famille, après le constructeur de composants Meta et la préparation
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
-    executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, buildEvalContext,
+    executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
   });
@@ -288,6 +288,15 @@ async function main(): Promise<void> {
           const lu = (await templateVarInfo(tenant, name, language))?.carousel;
           // Visuels préparés UNE fois par run : ils sont identiques pour tous les destinataires.
           return lu ? { cards: await prepareCarouselMedia(tenant, lu.cards) } : null;
+        },
+        // En-tête média : Meta l'exige à CHAQUE envoi, l'image du template ne servant qu'à sa validation. Même
+        // cache, même préparation UNE fois par run. `mediaId: null` = préparation échouée -> le moteur refuse
+        // la campagne entière avec une raison lisible, au lieu de collectionner les 132012 un par un.
+        getTemplateHeaderMedia: async (tenant: string, name: string, language: string) => {
+          const info = await templateVarInfo(tenant, name, language);
+          if (!info?.headerFormat) return null;
+          const mediaId = info.headerMediaUrl ? await prepareHeaderMedia(tenant, info.headerMediaUrl) : null;
+          return { headerFormat: info.headerFormat, mediaId };
         },
       }),
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
