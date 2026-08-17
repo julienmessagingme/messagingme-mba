@@ -485,18 +485,24 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     dirtyRef.current = false;
     setSaving(true);
     setSaveError(null);
+    let echoue = false;
     try {
       await updateWorkflow(tenantId, workflowId, { graph: fromRF(graphRef.current.nodes, graphRef.current.edges) }, keepalive ? { keepalive: true } : undefined);
       setSavedAt(new Date());
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
-      dirtyRef.current = true; // laisse une chance au re-save / au retry
+      dirtyRef.current = true; // laisse une chance au prochain debounce / au bouton « réessayer »
+      echoue = true;
     } finally {
       setSaving(false);
       savingRef.current = false;
     }
-    // Des modifs sont arrivées PENDANT le save (ou échec) -> re-sauver UNE fois avec le graphe le plus récent.
-    if (dirtyRef.current) void doSave(keepalive);
+    // Des modifs arrivées PENDANT le save -> re-sauver UNE fois avec le graphe le plus récent.
+    //
+    // ⚠️ JAMAIS après un ÉCHEC. Le drapeau « sale » est alors posé par l'échec lui-même, donc relancer ici
+    // bouclait à l'infini, sans aucun délai, sur toute erreur persistante (session expirée en tête), et même
+    // après démontage du composant. C'est le bouton « réessayer » et le prochain debounce qui reprennent.
+    if (dirtyRef.current && !echoue) void doSave(keepalive);
   }, [tenantId, workflowId, t]);
 
   // doSave via une ref : la planification du debounce ne dépend QUE de [nodes, edges] (pas de doSave), pour ne pas
@@ -588,18 +594,23 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
         >
           ⇥ {t('Auto-arranger', 'Auto-arrange')}
         </button>
-        <div className="ml-auto flex items-center gap-2 text-xs">
+        {/* Indicateur d'enregistrement. Il existait déjà, mais placé en FIN de cette rangée, après une douzaine
+            de boutons : sur un écran étroit il passait à la ligne et sortait du champ de vision, d'où le doute
+            « est-ce que mon scénario est enregistré ». Il est désormais toujours VISIBLE (fond, bordure) et son
+            état au repos DIT qu'il n'y a rien à cliquer, au lieu d'un simple « Enregistrement automatique »
+            qu'on pouvait lire comme une option à activer. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs" data-testid="workflow-autosave">
           {saveError ? (
             <>
-              <span className="text-coral">⚠ {t('Échec de l’enregistrement', 'Save failed')}</span>
+              <span className="font-medium text-coral">⚠ {t('Échec de l’enregistrement', 'Save failed')}</span>
               <button onClick={() => void doSave()} className="font-medium text-brand-600 hover:underline">{t('réessayer', 'retry')}</button>
             </>
           ) : saving ? (
-            <span className="text-ink-400">{t('Enregistrement…', 'Saving…')}</span>
+            <span className="text-ink-500">{t('Enregistrement…', 'Saving…')}</span>
           ) : savedAt ? (
-            <span className="text-ink-400">{t('Enregistré', 'Saved')} {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="text-mint-700">✓ {t('Enregistré à', 'Saved at')} {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           ) : (
-            <span className="text-ink-400">{t('Enregistrement automatique', 'Auto-save on')}</span>
+            <span className="text-ink-500">✓ {t('Enregistrement automatique, aucun bouton à cliquer', 'Saved automatically, no button to click')}</span>
           )}
         </div>
       </div>

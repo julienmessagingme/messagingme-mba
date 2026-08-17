@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSession, clearSession, type Session } from '@/lib/session';
-import { countUnreadConversations } from '@/lib/api';
+import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
@@ -57,6 +57,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const [session, setSession] = useState<Session | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  // Session tombée : on l'apprend par l'événement émis au premier 401 (cf. `lib/api.ts`).
+  const [sessionExpiree, setSessionExpiree] = useState(false);
   // Groupes de nav repliables. Ouvert au départ seulement si la page active est un de ses enfants
   // (`active` est une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
   // Chaque groupe DOIT figurer ici : un groupe absent de cet initialiseur reste replié même quand on arrive
@@ -134,6 +136,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     const id = setInterval(lire, UNREAD_POLL_MS);
     window.addEventListener(UNREAD_CHANGED_EVENT, lire);
     return () => { alive = false; clearInterval(id); window.removeEventListener(UNREAD_CHANGED_EVENT, lire); };
+  }, [session]);
+
+  useEffect(() => {
+    const tombee = (): void => setSessionExpiree(true);
+    window.addEventListener(SESSION_EXPIRED_EVENT, tombee);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, tombee);
   }, [session]);
 
   if (!session) return null;
@@ -248,6 +256,25 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             <AccountMenu session={session} onLogout={logout} />
           </div>
         </header>
+        {/* Session tombée : un message rouge dans un coin d'écran ne suffisait pas, le reste de l'interface
+            restait actif et rien ne disait comment revenir. La bannière vit ICI, sous le header et hors du
+            `<main>` : le mode pleine largeur y applique `lg:overflow-hidden`, donc une bannière posée dedans
+            aurait pu être coupée. `shrink-0` pour qu'elle ne se fasse pas écraser par le contenu. */}
+        {sessionExpiree && (
+          <div className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 sm:px-6" data-testid="session-expiree">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-red-700">
+              <span>{t('Ta session a expiré. Reconnecte-toi pour continuer : rien n’est perdu, mais tes actions ne sont plus enregistrées.', 'Your session has expired. Sign in again to continue: nothing is lost, but your actions are no longer being saved.')}</span>
+              <button
+                type="button"
+                onClick={logout}
+                data-testid="session-expiree-reconnecter"
+                className="ml-auto rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700"
+              >
+                {t('Reconnecter', 'Sign in again')}
+              </button>
+            </div>
+          </div>
+        )}
         <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
       </div>
     </div>

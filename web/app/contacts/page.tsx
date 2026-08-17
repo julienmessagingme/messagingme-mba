@@ -525,10 +525,10 @@ function EditableField({ value, type, mono, busy, editable = true, onSave, onDel
     <span className="group flex items-center gap-2">
       <span className={`${mono ? 'font-mono ' : ''}break-words text-ink-900`}>{value !== '' ? value : '-'}</span>
       {editable && (
-        <button onClick={begin} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-brand-600 group-hover:opacity-100" aria-label={t('Modifier', 'Edit')}>{t('modifier', 'edit')}</button>
+        <button onClick={begin} data-testid="champ-modifier" className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700" aria-label={t('Modifier', 'Edit')}>{t('modifier', 'edit')}</button>
       )}
       {onDelete && value !== '' && (
-        <button onClick={() => void onDelete()} disabled={busy} className="shrink-0 text-xs text-ink-400 opacity-0 transition hover:text-coral group-hover:opacity-100 disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
+        <button onClick={() => void onDelete()} disabled={busy} data-testid="champ-supprimer" className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50" aria-label={t('Supprimer', 'Delete')}>{t('supprimer', 'delete')}</button>
       )}
     </span>
   );
@@ -595,17 +595,17 @@ function ContactDetail({
     }
   }
 
-  // Enregistre une valeur de champ en s'assurant que le user field existe (sinon la route répond « champ
-  // inconnu »). Sert au Prénom d'un contact créé par inbound (pas d'import -> pas encore de champ prenom).
-  // Valeur vide -> on supprime la valeur (pas de champ vide côté serveur).
-  async function saveFieldEnsuringDef(key: string, label: string, value: string): Promise<boolean> {
+  /**
+   * Enregistre la valeur d'un champ SOCLE (Prénom). Valeur vide -> on retire la valeur (pas de champ vide).
+   *
+   * Il y avait ici un contournement : créer le user field avant d'écrire, parce que la route répondait « champ
+   * inconnu : prenom » sur un espace neuf. Il ne pouvait PAS marcher, et masquait pourquoi : la création d'un
+   * champ dont la clé est celle d'un champ de base est refusée en 409, et le `catch` l'avalait en silence. Le
+   * serveur matérialise désormais le champ socle à la première écriture (cf. `src/crm/fields.ts` SOCLE_FIELDS).
+   */
+  async function saveSocleField(key: string, value: string): Promise<boolean> {
     const v = value.trim();
-    if (v === '') return apply({ removeFields: [key] });
-    if (!defByKey.has(key)) {
-      try { const def = await createUserField(tenantId, { label, type: 'text' }); onFieldCreated(def); }
-      catch { /* course : le champ peut déjà exister -> on tente l'apply quand même */ }
-    }
-    return apply({ fields: { [key]: v } });
+    return v === '' ? apply({ removeFields: [key] }) : apply({ fields: { [key]: v } });
   }
 
   async function addField() {
@@ -672,7 +672,7 @@ function ContactDetail({
           <span className="text-ink-400">{t('Nom', 'Name')}</span>
           <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
           <span className="text-ink-400">{t('Prénom', 'First name')}</span>
-          <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveFieldEnsuringDef('prenom', 'Prénom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
+          <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('prenom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
           <span className="text-ink-400">{t('Téléphone', 'Phone')}</span>
           <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n'est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
           {contact.bsuid && (
