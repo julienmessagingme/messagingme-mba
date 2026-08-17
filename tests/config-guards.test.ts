@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { schema } from '../src/config';
-import { poolOptions } from '../src/queue/pgboss';
+import { poolOptions, maintenanceOptions } from '../src/queue/pgboss';
 
 /**
  * Gardes de démarrage (bloc 0 du PLAN.md). Ces règles BLOQUENT le boot : une erreur ici couche la production
@@ -111,5 +111,34 @@ describe('poolOptions (options de pool passées à pg-boss)', () => {
 
   it('connectionTimeoutMillis: 0 est transmis tel quel (même piège que max)', () => {
     expect(poolOptions({ connectionTimeoutMillis: 0 })).toEqual({ connectionTimeoutMillis: 0 });
+  });
+});
+
+/**
+ * `maintenanceOptions` est le câblage qui a fermé la fuite d'egress du 2026-08-17 (deux instances pg-boss par
+ * service, toutes deux en supervision, maintenance « flow » toutes les 5 s). Sans ces cas, retirer `supervise:
+ * false` de l'API ou rebrancher le cron ne casserait rien et la facture repartirait en silence.
+ */
+describe('maintenanceOptions (bruit de l’instance pg-boss sur la base)', () => {
+  it('coupe le cron pg-boss INCONDITIONNELLEMENT (aucun boss.schedule dans ce repo)', () => {
+    expect(maintenanceOptions({})).toEqual({ schedule: false });
+  });
+
+  it('supervise: false est TRANSMIS (valeur explicite, même piège que max: 0)', () => {
+    // `opts.supervise ? ...` rendrait `{schedule:false}` ici, et l'API se remettrait à superviser sans bruit.
+    expect(maintenanceOptions({ supervise: false })).toEqual({ schedule: false, supervise: false });
+  });
+
+  it('une absence reste une absence (pg-boss garde son défaut : le worker supervise)', () => {
+    expect(maintenanceOptions({})).not.toHaveProperty('supervise');
+    expect(maintenanceOptions({ flowIntervalSeconds: 60 })).toEqual({ schedule: false, flowIntervalSeconds: 60 });
+  });
+
+  it('transmet les deux réglages ensemble', () => {
+    expect(maintenanceOptions({ supervise: false, flowIntervalSeconds: 60 })).toEqual({
+      schedule: false,
+      supervise: false,
+      flowIntervalSeconds: 60,
+    });
   });
 });

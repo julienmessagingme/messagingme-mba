@@ -51,7 +51,15 @@ import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
 async function main(): Promise<void> {
-  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, { max: config.PGBOSS_MAX, connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS });
+  // `supervise: false` : l'API ne fait qu'EMPILER des jobs, elle n'en dépile aucun. Superviser (récupération des
+  // jobs expirés, monitoring, flow) est le travail du worker. Laisser l'API superviser doublait la maintenance
+  // sur la base pour zéro bénéfice : mesuré le 2026-08-17, c'était la moitié des ~55 000 requêtes/jour de
+  // maintenance du projet, sur un quota d'egress Supabase déjà dépassé.
+  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, {
+    max: config.PGBOSS_MAX,
+    connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
+    supervise: false,
+  });
   // Un event `error` de pg-boss non capté est une exception non gérée qui tue l'API. On le journalise
   // et on laisse tourner : une saturation ponctuelle du pooler ne doit pas coûter un redémarrage.
   // eslint-disable-next-line no-console

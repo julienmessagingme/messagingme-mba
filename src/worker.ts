@@ -53,7 +53,15 @@ import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 
 async function main(): Promise<void> {
-  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, { max: config.PGBOSS_MAX, connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS });
+  // Le worker est la SEULE instance qui supervise (défaut pg-boss conservé) : c'est lui qui dépile, donc lui qui
+  // doit récupérer les jobs expirés. `flowIntervalSeconds: 60` espace la maintenance « flow » (défaut 5 s), qui ne
+  // sert ici aucun chemin sensible : ce projet n'utilise pas de jobs bloquants/parents. Gain mesuré : ~16 000
+  // requêtes/jour de moins sur une base Supabase facturée à l'egress.
+  const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, {
+    max: config.PGBOSS_MAX,
+    connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
+    flowIntervalSeconds: 60,
+  });
 
   // Alerte Telegram throttlée (mémoire process) sur les signaux d'erreur d'un worker VIVANT. Le cas « worker
   // MORT » (crash-loop au boot) n'est VOLONTAIREMENT pas auto-alerté ici : un process qui meurt ne peut pas

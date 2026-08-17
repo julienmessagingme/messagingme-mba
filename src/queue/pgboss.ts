@@ -1,6 +1,6 @@
 import { PgBoss } from 'pg-boss';
 import type { Queue } from './queue';
-import { dlqName } from './names';
+import { dlqName, pollingSecondsFor } from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -8,6 +8,43 @@ export interface PgBossPoolOpts {
   max?: number;
   /** Timeout d'ACQUISITION d'une connexion (ms). Sans lui, le polling pg-boss attend indéfiniment. */
   connectionTimeoutMillis?: number;
+}
+
+/**
+ * Options de MAINTENANCE de l'instance pg-boss. Elles ne changent rien au fonctionnel, seulement le BRUIT que
+ * l'instance produit sur la base. Deux instances tournent par service (l'API empile, le worker dépile) et
+ * chacune supervise par défaut : c'est la moitié de l'egress de maintenance mesuré, pour rien côté API.
+ */
+export interface PgBossMaintenanceOpts {
+  /**
+   * `false` = cette instance ne fait AUCUNE maintenance (récupération des jobs expirés, monitoring, flow).
+   * À poser sur une instance qui ne fait qu'EMPILER : l'API n'a rien à superviser, le worker s'en charge.
+   * Défaut pg-boss : `true`.
+   */
+  supervise?: boolean;
+  /**
+   * Cadence (s) de la maintenance « flow » (jobs bloquants / parents). Défaut pg-boss : 5 s, soit ~17 000
+   * requêtes/jour par instance pour une fonctionnalité que ce projet n'utilise pas dans un chemin sensible.
+   */
+  flowIntervalSeconds?: number;
+}
+
+/**
+ * Options de MAINTENANCE passées à pg-boss. Fonction PURE et exportée pour être testée, même raison que
+ * `poolOptions` : une option ABSENTE doit rester absente pour que pg-boss applique son défaut, et `supervise:
+ * false` est une valeur explicite qu'un test de véracité avalerait en silence (d'où `!== undefined`).
+ *
+ * `schedule: false` est posé INCONDITIONNELLEMENT : le cron de pg-boss n'est utilisé nulle part dans ce repo
+ * (les balayages sont des `setInterval` du worker, cf. `src/worker.ts`), et il coûte deux boucles de polling
+ * permanentes par instance (`clockMonitor` + `cronWorker`). Si un jour on veut `boss.schedule()`, il faudra
+ * repasser ce drapeau à true EN CONSCIENCE, et le test le rappelle.
+ */
+export function maintenanceOptions(opts: PgBossMaintenanceOpts): Record<string, unknown> {
+  return {
+    schedule: false,
+    ...(opts.supervise !== undefined ? { supervise: opts.supervise } : {}),
+    ...(opts.flowIntervalSeconds !== undefined ? { flowIntervalSeconds: opts.flowIntervalSeconds } : {}),
+  };
 }
 
 /**
@@ -34,13 +71,14 @@ export class PgBossQueue implements Queue {
   private readonly ensured = new Set<string>();
   private readonly retryLimit: number;
 
-  constructor(connectionString: string, schema = 'pgboss', opts: PgBossPoolOpts & { retryLimit?: number } = {}) {
+  constructor(connectionString: string, schema = 'pgboss', opts: PgBossPoolOpts & PgBossMaintenanceOpts & { retryLimit?: number } = {}) {
     this.retryLimit = opts.retryLimit ?? 5;
     this.boss = new PgBoss({
       connectionString,
       schema,
       ssl: pgSsl(),
       ...poolOptions(opts),
+      ...maintenanceOptions(opts),
     });
   }
 
@@ -100,7 +138,10 @@ export class PgBossQueue implements Queue {
     await this.ensure(name);
     // batchSize:1 verrouille l'invariant per-job de l'abstraction (un throw ne fait
     // pas échouer un lot entier / ne rejoue pas des jobs déjà réussis).
-    await this.boss.work<unknown>(name, { batchSize: 1 }, async (jobs) => {
+    // pollingIntervalSeconds : cadence PAR FILE (défaut pg-boss 2 s, trop bavard pour une base facturée à
+    // l'egress). La valeur vient de `names.ts`, source unique, et non du call site : ajouter une file sans
+    // penser à sa cadence retombe alors sur un défaut sûr au lieu de rouvrir la fuite.
+    await this.boss.work<unknown>(name, { batchSize: 1, pollingIntervalSeconds: pollingSecondsFor(name) }, async (jobs) => {
       for (const job of jobs) {
         await handler(job.data);
       }
