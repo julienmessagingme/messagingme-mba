@@ -7,6 +7,7 @@ import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
   tenantId: string;
+  /** '' pour une campagne RCS : il n'y a pas de numéro Meta (colonne nullable depuis la migration 0056). */
   phoneNumberId: string;
   name: string;
   category: CampaignCategory;
@@ -22,6 +23,12 @@ export interface CreateCampaignInput {
   startNodeId?: string;
   /** Débit max en messages/minute (1..80). Absent/null = aucun throttle. */
   ratePerMinute?: number | null;
+  /** Canal d'envoi. Absent = 'whatsapp' (comportement historique). */
+  channel?: 'whatsapp' | 'rcs';
+  /** Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'`. */
+  rcsAgentId?: string;
+  /** Message RCS, validé par zod à la création. Requis si `channel = 'rcs'`. */
+  rcsMessage?: unknown;
 }
 
 /** Ligne SQL d'un résumé de campagne (liste + détail : même projection). */
@@ -136,12 +143,13 @@ export class PgCampaignRepo {
     const isWorkflow = !!input.workflowId;
     const res = await this.pool.query<{ id: string }>(
       `insert into campaigns
-         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
+         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
        returning id`,
       [
         input.tenantId,
-        input.phoneNumberId,
+        // Campagne RCS : aucun numéro Meta. La colonne est nullable depuis 0056, on y met null plutôt que ''.
+        input.phoneNumberId === '' ? null : input.phoneNumberId,
         input.name,
         input.category,
         isWorkflow ? null : input.templateName,
@@ -151,6 +159,9 @@ export class PgCampaignRepo {
         input.ratePerMinute ?? null,
         // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null (pas de campagne bâtarde).
         isWorkflow ? input.startNodeId ?? null : null,
+        input.channel ?? 'whatsapp',
+        input.rcsAgentId ?? null,
+        input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
       ],
     );
     const id = res.rows[0]?.id;
@@ -622,15 +633,18 @@ export class PgCampaignRepo {
       const isWorkflow = !!input.workflowId;
       const cRes = await client.query<{ id: string }>(
         `insert into campaigns
-           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
+           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message)
+         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
          returning id`,
         [
-          input.tenantId, input.phoneNumberId, input.name, input.category,
+          // Campagne RCS : aucun numéro Meta (colonne nullable depuis 0056).
+          input.tenantId, input.phoneNumberId === '' ? null : input.phoneNumberId, input.name, input.category,
           isWorkflow ? null : input.templateName, isWorkflow ? null : input.templateLanguage,
           JSON.stringify(input.paramMapping), input.workflowId ?? null, input.ratePerMinute ?? null,
           // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null.
           isWorkflow ? input.startNodeId ?? null : null,
+          input.channel ?? 'whatsapp', input.rcsAgentId ?? null,
+          input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
         ],
       );
       const campaignId = cRes.rows[0]?.id;

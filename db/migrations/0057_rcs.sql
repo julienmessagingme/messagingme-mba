@@ -22,6 +22,12 @@ create table if not exists rcs_agents (
 -- Opt-out PAR CANAL : un contact qui répond STOP en RCS reste joignable en WhatsApp s'il y a consenti.
 alter table contacts add column if not exists rcs_optout_at timestamptz;
 
+-- Campagne RCS : l'agent qui envoie, et le message tel que validé à la création. `rcs_message` est du jsonb
+-- (le modèle a trois formes : texte, carte, carrousel) validé par zod côté route AVANT écriture.
+-- Pas de FK vers rcs_agents : on stocke l'`agent_id` Google (celui qu'attend l'API), pas la clé technique.
+alter table campaigns add column if not exists rcs_agent_id text;
+alter table campaigns add column if not exists rcs_message jsonb;
+
 -- Cache de joignabilité. TTL applicatif de 7 jours : une entrée plus vieille est RÉINTERROGÉE, pas supprimée
 -- (si le provider tombe, une réponse un peu vieille vaut mieux qu'une campagne qui s'arrête).
 -- Sans ce cache, une campagne de 5 000 numéros ferait 5 000 appels de capacité.

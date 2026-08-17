@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { Queue } from '../queue/queue';
 import { createCampaignWithRecipients } from '../campaign/create';
 import type { CampaignRepoLike } from '../campaign/create';
@@ -11,11 +12,35 @@ import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 
+/**
+ * Message RCS accepté à la création d'une campagne. Union FERMÉE : un `kind` inconnu est refusé en 400, il ne
+ * traverse jamais jusqu'au provider. Validé en `safeParse` (jamais `parse`), comme toute entrée non fiable.
+ */
+const rcsSuggestionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('reply'), text: z.string().min(1).max(25), postbackData: z.string().min(1) }),
+  z.object({ kind: z.literal('openUrl'), text: z.string().min(1).max(25), url: z.string().url(), postbackData: z.string().min(1) }),
+  z.object({ kind: z.literal('dial'), text: z.string().min(1).max(25), phoneNumber: z.string().min(1), postbackData: z.string().min(1) }),
+]);
+const rcsCardSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  mediaUrl: z.string().url().optional(),
+  suggestions: z.array(rcsSuggestionSchema).max(4).optional(),
+});
+const rcsOutboundSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text'), text: z.string().min(1).max(3072), suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
+  z.object({ kind: z.literal('card'), card: rcsCardSchema }),
+  z.object({ kind: z.literal('carousel'), cards: z.array(rcsCardSchema).min(2).max(10) }),
+]);
+
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
   queue: Queue;
   /** Le numéro appartient-il au tenant ? (empêche d'envoyer depuis le numéro d'autrui.) */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
+   *  sous la marque d'un autre. Absente du câblage -> aucune campagne RCS ne peut être créée. */
+  rcsAgentBelongsToTenant?(agentId: string, tenantId: string): Promise<boolean>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
   /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
@@ -112,9 +137,34 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       contactIds: unknown;
       workflowId: string;
       ratePerMinute: unknown;
+      channel: string;
+      rcsAgentId: string;
+      rcsMessage: unknown;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
+
+    // Canal. Absent = 'whatsapp' : un client qui ignore le canal garde le comportement historique. Un canal
+    // INCONNU est refusé, jamais silencieusement ramené à WhatsApp (une campagne partie sur le mauvais canal
+    // est irrattrapable).
+    const channel = b.channel ?? 'whatsapp';
+    if (channel !== 'whatsapp' && channel !== 'rcs') {
+      return reply.code(400).send({ error: 'channel invalide (whatsapp|rcs)' });
+    }
+    const isRcs = channel === 'rcs';
+    let rcsMessage: unknown;
+    if (isRcs) {
+      if (!nonEmpty(b.rcsAgentId)) return reply.code(400).send({ error: 'rcsAgentId requis pour une campagne RCS' });
+      if (!deps.rcsAgentBelongsToTenant || !(await deps.rcsAgentBelongsToTenant(b.rcsAgentId as string, effectiveTenant))) {
+        return reply.code(400).send({ error: 'rcsAgentId inconnu pour ce tenant' });
+      }
+      const parsed = rcsOutboundSchema.safeParse(b.rcsMessage);
+      if (!parsed.success) return reply.code(400).send({ error: 'rcsMessage invalide' });
+      rcsMessage = parsed.data;
+      if (nonEmpty(b.workflowId)) {
+        return reply.code(400).send({ error: "Une campagne RCS envoie un message direct. Le declenchement d'un scenario par campagne n'est pas disponible sur ce canal." });
+      }
+    }
     // Débit optionnel : entier 1..80 messages/min (le client ne peut que BAISSER sous le plafond métier).
     // Absent/null = aucun throttle. Rejette 0, 81, décimal, négatif -> 400 déterministe.
     let ratePerMinute: number | null | undefined;
@@ -125,9 +175,11 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       }
       ratePerMinute = r;
     }
-    if (!nonEmpty(b.phoneNumberId)) return reply.code(400).send({ error: 'phoneNumberId requis' });
+    // Numéro Meta : exigé sur WhatsApp uniquement. Une campagne RCS part d'un agent, pas d'un numéro.
+    if (!isRcs && !nonEmpty(b.phoneNumberId)) return reply.code(400).send({ error: 'phoneNumberId requis' });
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    // Une campagne envoie SOIT un template SOIT un workflow (exactement un des deux).
+    // Une campagne envoie SOIT un template SOIT un workflow (exactement un des deux). Sur RCS, ni l'un ni
+    // l'autre : le message est porté par la campagne elle-même.
     const isWorkflow = nonEmpty(b.workflowId);
     if (isWorkflow) {
       const graph = await deps.getWorkflowGraph(b.workflowId as string, effectiveTenant);
@@ -155,7 +207,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (scan.unnamedOpeningTemplate || String(scan.firstTemplate.data.templateName ?? '').trim() === '') {
         return reply.code(400).send({ error: "Un template d'ouverture du scénario n'est pas encore choisi." });
       }
-    } else {
+    } else if (!isRcs) {
       if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName ou workflowId requis' });
       if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
     }
@@ -169,8 +221,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       contactIds = b.contactIds as string[];
     }
 
-    // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client).
-    if (!(await deps.phoneNumberBelongsToTenant(b.phoneNumberId, effectiveTenant))) {
+    // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client). Sur RCS, c'est
+    // l'agent qui a été contrôlé plus haut, il n'y a pas de numéro à vérifier.
+    if (!isRcs && !(await deps.phoneNumberBelongsToTenant(b.phoneNumberId as string, effectiveTenant))) {
       return reply.code(400).send({ error: 'phoneNumberId inconnu pour ce tenant' });
     }
 
@@ -184,15 +237,17 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
 
     const input: CreateCampaignInput = {
       tenantId: effectiveTenant,
-      phoneNumberId: b.phoneNumberId,
+      phoneNumberId: isRcs ? '' : (b.phoneNumberId as string),
       name: b.name,
       category: b.category,
-      templateName: isWorkflow ? '' : (b.templateName as string),
-      templateLanguage: isWorkflow ? '' : (b.templateLanguage as string),
+      templateName: isWorkflow || isRcs ? '' : (b.templateName as string),
+      templateLanguage: isWorkflow || isRcs ? '' : (b.templateLanguage as string),
       paramMapping,
+      channel,
       ...(contactIds ? { contactIds } : {}),
       ...(isWorkflow ? { workflowId: b.workflowId as string } : {}),
       ...(ratePerMinute !== undefined ? { ratePerMinute } : {}),
+      ...(isRcs ? { rcsAgentId: b.rcsAgentId as string, rcsMessage } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     return reply.code(201).send(result);
