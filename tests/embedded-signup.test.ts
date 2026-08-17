@@ -168,3 +168,82 @@ describe('POST /embedded-signup/complete', () => {
     await off.close();
   });
 });
+
+/**
+ * Popup MUETTE sur les identifiants. Meta ne les annonce que lorsqu'il exécute vraiment les étapes de
+ * configuration : un client qui rouvre un parcours DÉJÀ abouti n'obtient qu'un code. Mesuré le 2026-08-17,
+ * toute trace de filtrage retirée : le seul message reçu de facebook.com était le canal interne du SDK
+ * portant le code. Tant qu'on exigeait les identifiants, ce client restait bloqué SANS RECOURS.
+ */
+describe('POST /embedded-signup/complete sans identifiants (parcours déjà abouti chez Meta)', () => {
+  const repechage = {
+    wabasForToken: async () => ['waba-decouvert'],
+    listPhones: async () => [{ id: 'pn-decouvert' }],
+  };
+
+  it('🔴 code SEUL -> identifiants retrouvés depuis le token, rattachement complet', async () => {
+    const { server, cap } = app(repechage);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'code-abc' }) });
+    expect(res.statusCode).toBe(200);
+    expect(cap.linked).toEqual([{ tenantId: 't1', wabaId: 'waba-decouvert', phoneNumberId: 'pn-decouvert', displayPhoneNumber: '+33525680250' }]);
+    // La preuve d'appartenance reste JOUÉE sur l'identifiant retrouvé : le repêchage ne l'a pas court-circuitée.
+    expect(cap.verifiedWaba).toEqual(['waba-decouvert']);
+    expect(cap.subscribed).toEqual(['waba-decouvert']);
+    await server.close();
+  });
+
+  it('les identifiants ANNONCÉS par la popup restent prioritaires (aucun appel de repêchage)', async () => {
+    let repeches = 0;
+    const { server, cap } = app({ wabasForToken: async () => { repeches += 1; return ['autre']; }, listPhones: async () => [{ id: 'autre-pn' }] });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify(BODY) });
+    expect(res.statusCode).toBe(200);
+    expect(repeches).toBe(0);
+    expect(cap.linked[0]).toMatchObject({ wabaId: 'waba-1', phoneNumberId: 'pn-1' });
+    await server.close();
+  });
+
+  it('token n’exposant AUCUN compte -> 502 qui dit quoi faire, et RIEN n’est rattaché', async () => {
+    const { server, cap } = app({ ...repechage, wabasForToken: async () => [] });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'code-abc' }) });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toContain('aucun compte WhatsApp');
+    expect(cap.linked).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 AMBIGUÏTÉ (plusieurs comptes, ou plusieurs numéros) -> 409, jamais un choix au hasard', async () => {
+    // Rattacher le mauvais numéro serait bien pire qu'un message d'erreur.
+    const deuxWabas = app({ ...repechage, wabasForToken: async () => ['w1', 'w2'] });
+    const r1 = await deuxWabas.server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'c' }) });
+    expect(r1.statusCode).toBe(409);
+    expect(deuxWabas.cap.linked).toHaveLength(0);
+    await deuxWabas.server.close();
+
+    const deuxNums = app({ ...repechage, listPhones: async () => [{ id: 'a' }, { id: 'b' }] });
+    const r2 = await deuxNums.server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'c' }) });
+    expect(r2.statusCode).toBe(409);
+    expect(deuxNums.cap.linked).toHaveLength(0);
+    await deuxNums.server.close();
+  });
+
+  it('sans dep de repêchage câblée -> ancien contrat conservé (400)', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'code-abc' }) });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('code absent -> 400 (le code, lui, reste indispensable)', async () => {
+    const { server } = app(repechage);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ wabaId: 'w', phoneNumberId: 'p' }) });
+    expect(res.statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('agent -> 403 : le repêchage n’ouvre aucune porte (l’embarquement reste admin)', async () => {
+    const { server } = app(repechage);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(agentTok), payload: JSON.stringify({ code: 'code-abc' }) });
+    expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+});

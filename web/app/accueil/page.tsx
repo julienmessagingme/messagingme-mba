@@ -867,12 +867,13 @@ function ConnectNumberZone({ tenantId, isAdmin, onConnected }: { tenantId: strin
                 return;
               }
               // La session info (waba/numéro) peut arriver juste après le callback : on lui laisse 6 s.
+              //
+              // Son ABSENCE n'est plus une erreur. Meta ne l'émet que lorsque la popup exécute vraiment les
+              // étapes de configuration : un client qui rouvre un parcours DÉJÀ abouti n'obtient qu'un code, et
+              // se retrouvait alors bloqué définitivement, sans aucun recours (mesuré le 2026-08-17). On envoie
+              // donc le code seul, et le serveur retrouve le compte et le numéro à partir du token.
               const ids = await waitFor(() => idsRef.current, 6000);
-              if (!ids) {
-                setError(t('La popup n’a pas renvoyé le compte WhatsApp sélectionné. Réessaie.', 'The popup did not return the selected WhatsApp account. Please try again.'));
-                return;
-              }
-              const res = await completeEmbeddedSignup(tenantId, { code, ...ids });
+              const res = await completeEmbeddedSignup(tenantId, { code, ...(ids ?? {}) });
               setWarnings(res.warnings ?? []);
               onConnected();
             } catch (err) {

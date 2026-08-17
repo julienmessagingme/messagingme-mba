@@ -12,6 +12,13 @@ export interface EmbeddedSignupRouteDeps {
   exchangeCode(code: string): Promise<string>;
   /** Preuve d'appartenance du WABA (GET /{waba_id} avec le business token) : throw si le token ne le possède pas. */
   verifyWaba(wabaId: string, businessToken: string): Promise<void>;
+  /**
+   * Comptes WhatsApp auxquels le business token donne accès. Sert quand la popup n'a PAS annoncé les
+   * identifiants (client qui rouvre un parcours déjà abouti : Meta n'a plus rien à configurer, donc plus rien à
+   * annoncer). Optionnelles : sans elles, la route garde son ancien contrat (les deux identifiants exigés).
+   */
+  wabasForToken?(businessToken: string): Promise<string[]>;
+  listPhones?(wabaId: string, businessToken: string): Promise<Array<{ id: string }>>;
   getPhone(phoneNumberId: string, businessToken: string): Promise<{ displayPhoneNumber: string | null; verifiedName: string | null; status: string | null }>;
   subscribeApp(wabaId: string, businessToken: string): Promise<void>;
   register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
@@ -51,12 +58,11 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (deps.configId === '') return reply.code(503).send({ error: 'Embedded Signup non configuré (META_ES_CONFIG_ID)' });
     const b = (req.body ?? {}) as { code?: unknown; wabaId?: unknown; phoneNumberId?: unknown };
-    if (!nonEmpty(b.code) || !nonEmpty(b.wabaId) || !nonEmpty(b.phoneNumberId)) {
-      return reply.code(400).send({ error: 'code, wabaId et phoneNumberId requis' });
-    }
+    // `wabaId` / `phoneNumberId` sont FACULTATIFS : la popup ne les annonce que lorsqu'elle exécute vraiment les
+    // étapes de configuration. Un client qui rouvre le parcours après un premier passage abouti n'obtient qu'un
+    // code, et restait donc bloqué DÉFINITIVEMENT (mesuré le 2026-08-17). Absents -> on les retrouve (1 bis).
+    if (!nonEmpty(b.code)) return reply.code(400).send({ error: 'code requis' });
     const code = b.code.trim();
-    const wabaId = b.wabaId.trim();
-    const phoneNumberId = b.phoneNumberId.trim();
 
     // 1. Code -> business token. Échec = rien n'est rattaché (le code a un TTL de 30 s : re-cliquer suffit).
     let businessToken: string;
@@ -65,6 +71,46 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return reply.code(502).send({ error: `échange du code Meta échoué : ${msg}` });
+    }
+
+    // 1 bis. Identifiants non annoncés -> on les lit dans le TOKEN (les comptes auxquels il donne accès), puis
+    //        dans le compte (ses numéros). Aucune perte de sûreté : ils viennent du token du client lui-même,
+    //        ils ne peuvent donc pas désigner les biens d'un autre, et l'étape 2 les vérifie quand même. On
+    //        REFUSE l'ambiguïté (plusieurs comptes ou plusieurs numéros) au lieu d'en choisir un au hasard :
+    //        rattacher le mauvais numéro serait bien pire qu'un message d'erreur.
+    let wabaId = nonEmpty(b.wabaId) ? b.wabaId.trim() : '';
+    let phoneNumberId = nonEmpty(b.phoneNumberId) ? b.phoneNumberId.trim() : '';
+    if (wabaId === '' || phoneNumberId === '') {
+      if (!deps.wabasForToken || !deps.listPhones) {
+        return reply.code(400).send({ error: 'code, wabaId et phoneNumberId requis' });
+      }
+      try {
+        if (wabaId === '') {
+          const wabas = await deps.wabasForToken(businessToken);
+          if (wabas.length === 0) {
+            return reply.code(502).send({ error: 'le compte Meta connecté n’expose aucun compte WhatsApp. Termine le parcours Meta jusqu’au bout, en partageant bien ton compte WhatsApp avec l’application.' });
+          }
+          if (wabas.length > 1) {
+            return reply.code(409).send({ error: `ce compte Meta donne accès à ${wabas.length} comptes WhatsApp : impossible de deviner lequel rattacher.` });
+          }
+          wabaId = wabas[0]!;
+        }
+        if (phoneNumberId === '') {
+          const phones = await deps.listPhones(wabaId, businessToken);
+          if (phones.length === 0) {
+            return reply.code(502).send({ error: 'ce compte WhatsApp ne contient aucun numéro. Ajoute-le dans le parcours Meta.' });
+          }
+          if (phones.length > 1) {
+            return reply.code(409).send({ error: `ce compte WhatsApp contient ${phones.length} numéros : impossible de deviner lequel rattacher.` });
+          }
+          phoneNumberId = phones[0]!.id;
+        }
+        // eslint-disable-next-line no-console
+        console.info(`embedded-signup: identifiants retrouvés depuis le token (waba=${wabaId}, numéro=${phoneNumberId}) faute d'annonce par la popup`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return reply.code(502).send({ error: `lecture du compte WhatsApp impossible : ${msg}` });
+      }
     }
 
     // 2. PREUVE D'APPARTENANCE (garde anti-hijack cross-tenant) : le business token est scopé au client qui a

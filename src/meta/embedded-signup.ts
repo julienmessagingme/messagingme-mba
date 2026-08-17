@@ -44,6 +44,55 @@ export class MetaEmbeddedSignupClient {
   }
 
   /**
+   * Comptes WhatsApp auxquels ce business token donne accès, lus DANS LE TOKEN (`GET /debug_token` ->
+   * `granular_scopes[...].target_ids`).
+   *
+   * 🔴 POURQUOI ce détour existe. La popup n'émet ses informations de compte (`WA_EMBEDDED_SIGNUP`) que
+   * lorsqu'elle exécute VRAIMENT les étapes de configuration. Un client qui rouvre le parcours après un premier
+   * passage déjà abouti obtient un code d'autorisation... et RIEN d'autre : Meta n'a plus rien à configurer,
+   * donc plus rien à annoncer. Mesuré le 2026-08-17 avec toute trace de filtrage retirée : le seul message reçu
+   * de facebook.com était le canal interne du SDK portant le code. Tant qu'on dépendait de ce message, un client
+   * ayant cliqué deux fois restait bloqué DÉFINITIVEMENT, sans aucun recours.
+   *
+   * Rend [] si le token n'expose aucune cible, et ce n'est pas une erreur : un token NON scopé (System User de
+   * notre propre business, mesuré le 2026-08-17) rend `target_ids: null`. L'appelant décide quoi en dire.
+   */
+  async wabasForToken(businessToken: string): Promise<string[]> {
+    const qs = new URLSearchParams({ input_token: businessToken });
+    const body = await this.call(`${this.baseUrl}/${this.version}/debug_token?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${businessToken}` },
+    });
+    const data = (body['data'] ?? {}) as { granular_scopes?: unknown };
+    const scopes = Array.isArray(data.granular_scopes) ? data.granular_scopes : [];
+    const out: string[] = [];
+    for (const s of scopes as Array<{ scope?: unknown; target_ids?: unknown }>) {
+      // Les DEUX scopes WhatsApp sont acceptés : selon la configuration, la cible n'est portée que par l'un.
+      if (s?.scope !== 'whatsapp_business_management' && s?.scope !== 'whatsapp_business_messaging') continue;
+      for (const id of Array.isArray(s.target_ids) ? s.target_ids : []) {
+        if (typeof id === 'string' && id !== '' && !out.includes(id)) out.push(id);
+      }
+    }
+    return out;
+  }
+
+  /** Numéros d'un WABA, lus avec le business token. Sert à retrouver le numéro quand la popup ne l'a pas dit. */
+  async listPhones(wabaId: string, businessToken: string): Promise<EsPhoneInfo[]> {
+    const qs = new URLSearchParams({ fields: 'id,display_phone_number,verified_name,status', limit: '50' });
+    const body = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}/phone_numbers?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${businessToken}` },
+    });
+    const rows = Array.isArray(body['data']) ? (body['data'] as Array<Record<string, unknown>>) : [];
+    return rows
+      .map((r) => ({
+        id: typeof r['id'] === 'string' ? r['id'] : '',
+        displayPhoneNumber: typeof r['display_phone_number'] === 'string' ? r['display_phone_number'] : null,
+        verifiedName: typeof r['verified_name'] === 'string' ? r['verified_name'] : null,
+        status: typeof r['status'] === 'string' ? r['status'] : null,
+      }))
+      .filter((p) => p.id !== '');
+  }
+
+  /**
    * PREUVE D'APPARTENANCE du WABA : GET /{waba_id} avec le business token. Le token est scopé au client qui a
    * complété l'Embedded Signup -> l'appel ne réussit QUE si ce WABA lui appartient. Throw sinon. C'est le garde-fou
    * anti-hijack cross-tenant : sans ça, un tenant pourrait rattacher le WABA d'un autre en forgeant l'id.

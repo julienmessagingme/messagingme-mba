@@ -424,6 +424,9 @@ async function main(): Promise<void> {
         subscribeApp: (waba: string, tok: string) => esClient.subscribeApp(waba, tok),
         register: (pn: string, tok: string, pin: string) => esClient.register(pn, tok, pin),
         verifyWaba: (waba: string, tok: string) => esClient.verifyWaba(waba, tok),
+        // Repêchage quand la popup n'annonce pas les identifiants (parcours déjà abouti chez Meta).
+        wabasForToken: (tok: string) => esClient.wabasForToken(tok),
+        listPhones: (waba: string, tok: string) => esClient.listPhones(waba, tok),
         link: (input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }) => esStore.linkTenant(input),
         // Chiffrement au repos ICI (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY. Token ET pin
         // (PIN 2FA du numéro = secret Meta) chiffrés.

@@ -1222,9 +1222,11 @@ export interface EsCompleteResult {
   displayPhoneNumber: string | null;
   warnings?: string[];
 }
+/** `wabaId`/`phoneNumberId` FACULTATIFS : la popup ne les annonce pas sur un parcours déjà abouti chez Meta,
+ *  le serveur les retrouve alors depuis le token (sinon le client resterait bloqué sans recours). */
 export function completeEmbeddedSignup(
   tenantId: string,
-  input: { code: string; wabaId: string; phoneNumberId: string },
+  input: { code: string; wabaId?: string; phoneNumberId?: string },
 ): Promise<EsCompleteResult> {
   return request<EsCompleteResult>(`/tenants/${tenantId}/embedded-signup/complete`, { method: 'POST', body: JSON.stringify(input) });
 }
