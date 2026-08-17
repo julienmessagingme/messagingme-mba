@@ -23,8 +23,10 @@ export interface SkippedRecipient {
   /**
    * `missing_variable` : une variable du template n'a pas de valeur sur la fiche.
    * `not_opted_in` : campagne MARKETING sur un contact sans opt-in explicite (ou en opt-out).
+   * `no_phone_number` : campagne RCS sur un contact identifié seulement par BSUID. Le RCS s'adresse à un
+   * NUMÉRO ; envoyer un BSUID à un opérateur est un 400 garanti, et le compter « envoyé » est un mensonge.
    */
-  reason: 'missing_variable' | 'not_opted_in';
+  reason: 'missing_variable' | 'not_opted_in' | 'no_phone_number';
   /** Positions des variables sans valeur. Renseigné pour `missing_variable` seulement. */
   missing?: number[];
 }
@@ -45,6 +47,8 @@ export function buildRecipients(
   paramMapping: TemplateParam[],
   contacts: BuildContact[],
   opts?: ResolveOpts,
+  /** Canal de la campagne. Absent = 'whatsapp' : tous les appelants historiques gardent leur comportement. */
+  channel: 'whatsapp' | 'rcs' = 'whatsapp',
 ): BuildResult {
   const seen = new Set<string>();
   const recipients: BuiltRecipient[] = [];
@@ -52,6 +56,13 @@ export function buildRecipients(
   for (const c of contacts) {
     const to = c.phone_e164 ?? c.bsuid ?? null; // destinataire = numéro sinon BSUID
     if (!to) continue; // campagne outbound -> identité requise
+    // Le RCS s'adresse à un NUMÉRO. Un contact identifié seulement par BSUID (WhatsApp sans numéro) passerait
+    // ici avec `toE164 = <bsuid>` : le provider le rejetterait en 400, et d'ici là il serait compté « envoyé ».
+    // On l'écarte avec son motif, comme les autres écarts, plutôt que de le laisser mentir dans le rapport.
+    if (channel === 'rcs' && !c.phone_e164) {
+      skipped.push({ contactId: c.id, toE164: to, reason: 'no_phone_number' });
+      continue;
+    }
     // Écart RAPPORTÉ, et non silencieux : une campagne marketing sur une liste sans opt-in explicite rendait
     // 0 destinataire sans que rien ne dise pourquoi. Le motif était déjà nommé sur la voie API
     // (`buildApiRecipients`), il manquait sur la voie écran, qui est justement celle qu'un opérateur utilise.

@@ -52,13 +52,16 @@ export class PgRcsOptoutStore implements RcsOptoutStore {
   constructor(private readonly pool: Pool) {}
 
   async isOptedOut(tenantId: string, e164: string): Promise<boolean> {
+    // Comparaisons EXACTES sur la colonne, jamais une fonction dessus : `regexp_replace(phone_e164, …)`
+    // rendait inutilisable l'index unique (tenant_id, phone_e164) de 0001, donc un balayage complet des
+    // contacts du tenant PAR DESTINATAIRE. Sur une campagne de 5 000 numéros, 5 000 balayages.
+    // Les deux formes de stockage sont couvertes par une liste de valeurs, ce qui garde l'index.
     const nu = e164.replace(/[^0-9]/g, '');
     const res = await this.pool.query(
       `select 1 from contacts
-       where tenant_id = $1 and rcs_optout_at is not null
-         and regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2
+       where tenant_id = $1 and rcs_optout_at is not null and phone_e164 in ($2, $3)
        limit 1`,
-      [tenantId, nu],
+      [tenantId, `+${nu}`, nu],
     );
     return (res.rowCount ?? 0) > 0;
   }
