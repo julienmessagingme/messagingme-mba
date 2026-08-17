@@ -70,4 +70,19 @@ describe('cadence de polling par file', () => {
   it('une DLQ poll lentement (dépôt inspecté par /ops, personne ne la travaille)', () => {
     for (const q of BASE_QUEUES) expect(pollingSecondsFor(dlqName(q))).toBe(60);
   });
+
+  /**
+   * Tester les fonctions pures ne prouve PAS qu'elles sont branchées : `maintenanceOptions` pourrait rendre le bon
+   * objet sans que personne ne l'appelle, et `pollingSecondsFor` pourrait ne jamais atteindre pg-boss. Ces trois
+   * assertions lisent le câblage réel, faute de pouvoir instancier pg-boss sans base dans un test unitaire.
+   */
+  it('le câblage réel est en place : API sans supervision, worker avec, cadence passée à pg-boss', () => {
+    const api = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const wrapper = readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8');
+    expect(api, 'l’API doit démarrer pg-boss sans supervision (elle empile, elle ne dépile pas)').toMatch(/supervise:\s*false/);
+    expect(worker, 'le worker doit rester le SEUL à superviser : pas de supervise: false ici').not.toMatch(/supervise:\s*false/);
+    expect(worker, 'le worker doit espacer la maintenance flow').toMatch(/flowIntervalSeconds:\s*60/);
+    expect(wrapper, 'la cadence par file doit réellement atteindre boss.work').toMatch(/pollingIntervalSeconds:\s*pollingSecondsFor\(name\)/);
+  });
 });

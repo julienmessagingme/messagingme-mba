@@ -1,4 +1,5 @@
 import { PgBoss } from 'pg-boss';
+import type { MaintenanceOptions, SchedulingOptions } from 'pg-boss';
 import type { Queue } from './queue';
 import { dlqName, pollingSecondsFor } from './names';
 import { pgSsl } from '../db/ssl';
@@ -38,8 +39,13 @@ export interface PgBossMaintenanceOpts {
  * (les balayages sont des `setInterval` du worker, cf. `src/worker.ts`), et il coûte deux boucles de polling
  * permanentes par instance (`clockMonitor` + `cronWorker`). Si un jour on veut `boss.schedule()`, il faudra
  * repasser ce drapeau à true EN CONSCIENCE, et le test le rappelle.
+ *
+ * ⚠️ Le type de retour vient de pg-boss, il n'est PAS un `Record<string, unknown>` : un spread d'objet non typé
+ * dans `new PgBoss({...})` échappe au contrôle des propriétés excédentaires, donc une option mal orthographiée
+ * (`superviseX`) compilerait et ne ferait RIEN. C'est exactement le mode de panne qui a causé l'incident d'egress
+ * (un réglage qu'on croit actif et qui n'existe pas). Typé ainsi, un nom d'option faux casse le typecheck.
  */
-export function maintenanceOptions(opts: PgBossMaintenanceOpts): Record<string, unknown> {
+export function maintenanceOptions(opts: PgBossMaintenanceOpts): SchedulingOptions & MaintenanceOptions {
   return {
     schedule: false,
     ...(opts.supervise !== undefined ? { supervise: opts.supervise } : {}),
