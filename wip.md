@@ -360,6 +360,20 @@ surfacé dans Analytics. Détail usage : `features.md §Analytics`. Détail tech
    (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
    **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
 
+## Migrations : 0056 et 0057 APPLIQUÉES le 2026-08-17, prochaine libre = 0058
+
+Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
+`conversations`/`conversation_messages`/`campaigns` (défaut `whatsapp`, tout l'existant intact), unique de
+`conversations` passé à `(tenant_id, channel, wa_id)`, `campaigns.phone_number_id` devenu nullable, et les tables
+`rcs_agents`/`rcs_capabilities_cache` créées. Vérifié après coup : aucune perte, toutes les lignes en `whatsapp`.
+
+🔴 **Incident à ne pas refaire.** Ces migrations ont été appliquées en RETARD : du code qui les attendait avait
+déjà été déployé, et pendant 1 h 30 aucun message entrant n'a été enregistré (le contact se créait, la
+conversation non, le job partait en file d'échec `webhook-dlq`). Cause : quatre déploiements sans exécuter les
+migrations, alors que `DEPLOY.md` décrit l'étape et annonce même le symptôme. Voir `~/CLAUDE.md` (règle ferme) et
+`brain/LEARNINGS.md` 2026-08-17. ⚠️ Un message reste dans `webhook-dlq` (rien ne consomme cette file) : sans
+outil de rejeu, la reprise se fait en renvoyant le message.
+
 ## OTP automatique de l'Embedded Signup (Zadarma) — précâblage FAIT, pilote à mener (2026-08-16)
 
 But : ne plus demander au client de trouver un numéro. On lui en fournit un (Zadarma), Meta l'appelle et

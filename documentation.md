@@ -357,6 +357,31 @@ bouton placeholder). Flux :
   via `src/crypto/secretbox.ts`, mig **0029** `waba_credentials`). Config Meta = template « WhatsApp Embedded Signup
   60-day » (cf `brain/LEARNINGS.md` 2026-07-16 pour la chaîne de prérequis Meta).
 
+### 🔴 Le second passage : la popup ne dit RIEN (mesuré et corrigé le 2026-08-17)
+
+Meta n'émet `WA_EMBEDDED_SIGNUP` que lorsque la popup exécute VRAIMENT les étapes de configuration. Un client
+qui rouvre le parcours après un premier passage abouti obtient un code... et rien d'autre. Mesuré toutes traces
+ouvertes : le seul message reçu de `facebook.com` était le canal interne du SDK portant le code. La doc de Meta
+est muette sur ce cas. Tant qu'on exigeait les identifiants, ce client était bloqué DÉFINITIVEMENT.
+
+`wabaId`/`phoneNumberId` sont donc désormais **facultatifs**. Absents, le serveur les retrouve : `wabasForToken`
+(`GET /debug_token` -> `granular_scopes[].target_ids`) puis `listPhones`. ⚠️ `debug_token` prend DEUX tokens de
+rôles DIFFÉRENTS : `input_token` est le token inspecté (celui du client), et l'autorisation doit être un token
+d'APPLICATION (`{appId}|{appSecret}`). S'authentifier avec celui du client rend « #100 You must provide an app
+access token ». Un token non scopé (notre System User) rend `target_ids: null`, ce n'est pas une erreur.
+
+Sûreté inchangée : les identifiants viennent du token du CLIENT, ils ne peuvent donc pas désigner les biens d'un
+autre, et `verifyWaba`/`getPhone` restent joués sur l'identifiant retrouvé (test dédié). L'ambiguïté (plusieurs
+comptes ou plusieurs numéros) est REFUSÉE en 409, jamais tranchée au hasard.
+
+### 🔴 Statuts HTTP : aucun message utilisateur dans un 5xx (Cloudflare le détruit)
+
+Mesuré le 2026-08-17 : par l'URL publique, un `502 {"error":"..."}` revient en `text/html` de 6 429 octets,
+page « 502: Bad gateway » de Cloudflare, notre corps disparu. L'utilisateur lisait « Erreur 502 » sans jamais
+connaître le motif de Meta. Les refus lisibles sortent donc en **422** (409 pour une ambiguïté), et chaque refus
+est **journalisé côté serveur** : le corps peut être détruit en route, le log reste. Un test verrouille la règle.
+Astuce de diagnostic : comparer l'appel INTERNE et l'appel PUBLIC isole la couche coupable en une mesure.
+
 ## i18n FR/EN (2026-07-16)
 
 `web/lib/i18n.tsx` : `LocaleProvider` (langue dans un contexte, persistée localStorage, défaut FR, appliquée après

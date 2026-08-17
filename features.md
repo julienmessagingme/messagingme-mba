@@ -568,9 +568,17 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   conversation par conversation depuis le fil.
 - ✅ **Onboarding « Connecter mon compte WhatsApp » (Embedded Signup)** : un espace **sans numéro rattaché** voit un
   bouton qui ouvre la **popup Meta** (Facebook Login for Business + config_id) ; le business choisit son compte + son
-  numéro et le backend rattache tout (échange de code, webhooks, register). 🚧 **Construit et déployé, mais ACTIF
-  seulement quand Meta a validé Access Verification (Tech Provider) + App Review** (soumises le 2026-07-16). Tant que
-  la configuration Meta n'est pas posée, le bouton reste un placeholder « bientôt disponible ».
+  numéro et le backend rattache tout (échange de code, webhooks, register). ✅ **LIVE et éprouvé de bout en bout
+  le 2026-08-17** : un vrai numéro d'un vrai business tiers est passé connecté et vérifié, avec l'enregistrement
+  Cloud API fait automatiquement (l'étape qui, ailleurs, oblige à cliquer un bouton pour sortir du « pending »).
+  Prérequis Meta remplis : Tech Provider vérifié ET **inscrit** (l'inscription est une étape à part de la
+  vérification, c'est elle qui débloquait), app publiée.
+- ✅ **Recommencer l'embarquement fonctionne** (2026-08-17) : si un client relance la connexion après un premier
+  essai déjà abouti côté Meta, ça marche quand même. Avant, il était bloqué sans recours, avec un message qui
+  l'invitait à réessayer alors que réessayer ne pouvait rien changer. Il n'a rien à ressaisir et pas de nouvel
+  OTP à donner : il choisit le compte et le numéro existants.
+- ✅ **Les messages d'erreur de l'embarquement sont enfin lisibles** : quand Meta refuse, on affiche SON motif
+  (code expiré, compte non partagé, plusieurs numéros à départager) au lieu d'un « Erreur 502 » opaque.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
 ## API publique `/v1` (intégrateurs externes)

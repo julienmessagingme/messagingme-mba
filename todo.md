@@ -155,7 +155,7 @@ Chacun est un compromis assumé, pas un oubli.
 
 ## Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16)
 
-Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **0056**.
+Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **0058** (0056 et 0057 appliquées le 2026-08-17).
 
 - 🔴 **Le pilote OTP, avant toute construction.** Répondeur Zadarma sur un numéro DÉDIÉ, un OTP déclenché, et
   on regarde si Meta dicte son code à une machine ou raccroche. Aucun retour d'expérience publié : c'est la
@@ -177,6 +177,14 @@ Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **
   porte un numéro, et un scénario qui ouvre par un template.
 
 ## Post-live — prochaines actions
+
+- 🟡 **Aucun outil de rejeu de la file d échecs (DLQ).** Un job en échec part dans `<file>-dlq`, que RIEN ne
+  consomme : il y reste indéfiniment. Un message entrant y dort depuis le 2026-08-17. Une commande `/ops` qui
+  liste et rejoue une entrée éviterait de perdre de la donnée à chaque incident de schéma.
+- 🟡 **Une file sans consommateur devrait CRIER.** Le worker annonce `[inerte]` au démarrage quand une
+  fonctionnalité n est pas configurée, mais personne ne lit cette ligne. Une alerte (Telegram, comme
+  l error-tracking) au démarrage d une file inerte aurait économisé une journée sur le déclencheur HubSpot.
+
 
 - ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent
   (`expires_at:0`, scopes messaging+management), dans `.env.prod` du VPS. Templates create+list
