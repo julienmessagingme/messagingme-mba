@@ -43,6 +43,7 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
   const wfType = data.wfType as WorkflowNodeType;
   if (wfType === 'template') return (data.templateName as string) || t('choisir un template…', 'choose a template…');
   if (wfType === 'quick_message') return (data.body as string)?.trim() || t('message + réponses rapides…', 'message + quick replies…');
+  if (wfType === 'rcs_message') return (data.text as string)?.trim() || t('écrire le message RCS…', 'write the RCS message…');
   if (wfType === 'flow') return (data.flowName as string) || t('choisir un formulaire…', 'choose a form…');
   if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir un tag…', 'choose a tag…');
   if (wfType === 'field') {
@@ -120,6 +121,7 @@ function WFNode({ id, data, selected }: NodeProps) {
         : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
   const isCondition = wfType === 'condition';
+  const isRcs = wfType === 'rcs_message';
   // Sous un aperçu de carousel, on ne liste QUE ce qui se relie : les boutons lien sont déjà visibles dans
   // l'aperçu, les répéter ici doublerait la hauteur du bloc pour des lignes sur lesquelles on ne peut rien
   // tirer. Hors carousel il n'y a pas d'aperçu, donc on les garde pour le contexte.
@@ -207,6 +209,22 @@ function WFNode({ id, data, selected }: NodeProps) {
               </div>
             );
           })}
+        </div>
+      ) : isRcs ? (
+        // Bloc RCS : DEUX sorties fixes, à droite. Les id 'sent'/'unreachable' sont ceux que l'exécuteur
+        // route (walkResolved). « Non joignable » est la sortie qui permet de brancher un repli WhatsApp :
+        // c'est elle qui fait la cascade RCS -> WhatsApp, visible dans le graphe au lieu d'être cachée.
+        <div className="border-t border-ink-200">
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-emerald-700 first:border-t-0">
+            <span className="shrink-0">✓</span>
+            <span className="truncate">{t('Envoyé', 'Sent')}</span>
+            <Handle type="source" id="sent" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-emerald-500" title={t('Le message RCS est parti', 'The RCS message was sent')} />
+          </div>
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-coral first:border-t-0">
+            <span className="shrink-0">✕</span>
+            <span className="truncate">{t('Non joignable en RCS', 'Not reachable on RCS')}</span>
+            <Handle type="source" id="unreachable" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-coral" title={t('Le contact n’est pas joignable en RCS : brancher un repli', 'Contact not reachable on RCS: connect a fallback')} />
+          </div>
         </div>
       ) : isCondition ? (
         // Node condition : DEUX sorties fixes, à droite. Les id 'true'/'false' sont ceux que le moteur route
@@ -739,6 +757,26 @@ function ConfigPanel({
           </p>
           <p className="mt-1 text-[11px] text-amber-700">
             {t("Après une attente, seul un envoi de TEMPLATE peut encore partir : la fenêtre de 24 h aura le plus souvent expiré. Un message rapide ou un formulaire placé après ne partira pas.", 'After a wait, only a TEMPLATE can still be sent: the 24h window will usually have expired. A quick message or a form placed after will not be sent.')}
+          </p>
+        </div>
+      )}
+
+      {wfType === 'rcs_message' && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message RCS', 'RCS message')}</label>
+          <textarea
+            value={(d.text as string) ?? ''}
+            onChange={(e) => onPatch({ text: e.target.value })}
+            rows={4}
+            maxLength={3072}
+            placeholder={t('Votre message…', 'Your message…')}
+            className={`${cls} bg-white`}
+          />
+          <p className="mt-1 text-[11px] text-ink-400">
+            {t("Le RCS n'a pas de fenêtre de 24 h ni de template à faire approuver : le message part tel quel, sous votre agent de marque.", 'RCS has no 24h window and no template to get approved: the message goes out as written, under your brand agent.')}
+          </p>
+          <p className="mt-1 text-[11px] text-amber-700">
+            {t("Ce bloc a deux sorties. Reliez « Non joignable en RCS » à un envoi de template WhatsApp pour rattraper les contacts que le RCS n'atteint pas : sans ce branchement, leur parcours s'arrête là.", 'This block has two outputs. Connect “Not reachable on RCS” to a WhatsApp template to catch contacts RCS cannot reach: without it, their journey stops there.')}
           </p>
         </div>
       )}

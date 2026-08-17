@@ -15,10 +15,11 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   action: { emoji: '⚙️', label: ['Action', 'Action'] },
   mba_handoff: { emoji: '🤖', label: ['Envoi vers MBA', 'Send to MBA'] },
   mba_disable: { emoji: '🚫', label: ['Désactivation MBA', 'Disable MBA'] },
+  rcs_message: { emoji: '📱', label: ['Message RCS', 'RCS message'] },
 };
 
 // La palette ne propose plus `tag`/`field` séparés : le bloc « Action » les regroupe (ajouter/retirer tag, màj/vider champ).
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'action', 'condition', 'wait', 'inbox'];
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'rcs_message', 'flow', 'action', 'condition', 'wait', 'inbox'];
 
 // Blocs MBA : pré-câblage INERTE, présentés à part et GRISÉS tant que le tenant n'a pas MBA actif (ToS Meta non
 // signées, agent_eligibility 403). Hors NODE_ORDER pour ne pas polluer le sélecteur de type ni la palette normale.
