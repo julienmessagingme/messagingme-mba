@@ -37,6 +37,9 @@ export interface ConversationMessage {
   /** Auteur d'un message sortant (name sinon partie locale de l'email). null = pas d'auteur (legacy/auto).
    *  Optionnel : les mocks de test qui omettent le champ restent valides. */
   senderName?: string | null;
+  /** Canal de CETTE bulle. Le fil est unique par contact, c'est le message qui porte le tuyau emprunté.
+   *  Optionnel : les mocks de test qui omettent le champ restent valides (traités en WhatsApp). */
+  channel?: 'whatsapp' | 'rcs';
 }
 
 /**
@@ -334,10 +337,11 @@ export class PgInboxStore implements InboxStore {
 
   async getMessages(conversationId: string): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; sender_name: string | null;
+      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; sender_name: string | null; channel: string | null;
     }>(
       // sender_name : name du user, sinon la partie locale de son email ; null si pas d'auteur (legacy/auto).
-      `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at,
+      // channel : le fil est UNIQUE par contact, c'est chaque bulle qui dit par quel tuyau elle est passée.
+      `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
        from conversation_messages m
        left join users u on u.id = m.sender_user_id
@@ -352,6 +356,8 @@ export class PgInboxStore implements InboxStore {
       buttonPayload: r.button_payload,
       createdAt: r.created_at.toISOString(),
       senderName: r.sender_name,
+      // Message d'avant la migration 0056 : `channel` est null en base -> WhatsApp.
+      channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',
     }));
   }
 

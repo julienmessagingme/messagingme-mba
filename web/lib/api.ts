@@ -532,6 +532,9 @@ export interface InboxMessage {
   createdAt: string;
   /** Auteur d'un message sortant (pastille inbox) ; null/absent = pas d'auteur (legacy / réponse auto). */
   senderName?: string | null;
+  /** Canal de CETTE bulle : le fil est unique par contact, c'est le message qui porte le tuyau emprunté.
+   *  Absent (message d'avant la migration 0056) = WhatsApp. */
+  channel?: 'whatsapp' | 'rcs';
 }
 export function listConversations(tenantId: string): Promise<{ conversations: Conversation[] }> {
   return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations`);

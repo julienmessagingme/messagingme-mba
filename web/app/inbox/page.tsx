@@ -503,10 +503,17 @@ function ScenarioSendPanel({
                 </div>
               )}
               <div className={`flex items-end gap-1.5 ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                {/* Couleur PAR CANAL : le fil est unique par contact, c'est la bulle qui dit par quel tuyau
+                    elle est passée. WhatsApp garde ses couleurs historiques (aucune bulle existante ne
+                    change), le RCS prend le mint. Canal absent ou inconnu (message d'avant la migration
+                    0056) -> WhatsApp, jamais une couleur muette. */}
                 <div
                   className={`max-w-[75%] rounded-2xl px-3 py-1.5 text-sm ${
-                    m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-800'
+                    m.channel === 'rcs'
+                      ? (m.direction === 'out' ? 'bg-mint-500 text-white' : 'bg-mint-100 text-ink-800')
+                      : (m.direction === 'out' ? 'bg-brand-500 text-white' : 'bg-ink-100 text-ink-800')
                   }`}
+                  title={m.channel === 'rcs' ? 'RCS' : undefined}
                 >
                   {m.type === 'template' ? (
                     <span className="italic opacity-90">📋 {m.body}</span>
