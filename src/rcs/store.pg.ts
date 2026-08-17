@@ -21,6 +21,15 @@ export class PgRcsAgentStore {
     return res.rows[0]?.agent_id ?? null;
   }
 
+  /** Agents du tenant, pour le sélecteur de l'assistant de campagne. Scopé tenant, comme tout le reste ici. */
+  async listForTenant(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>> {
+    const res = await this.pool.query<{ agent_id: string; brand_name: string; status: string }>(
+      'select agent_id, brand_name, status from rcs_agents where tenant_id = $1 order by created_at asc',
+      [tenantId],
+    );
+    return res.rows.map((r) => ({ agentId: r.agent_id, brandName: r.brand_name, status: r.status }));
+  }
+
   /** L'agent appartient-il au tenant ? Garde d'isolation de la création de campagne, symétrique de
    *  `phoneNumberBelongsToTenant`. */
   async belongsToTenant(agentId: string, tenantId: string): Promise<boolean> {

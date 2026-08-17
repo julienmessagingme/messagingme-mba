@@ -70,7 +70,9 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       businessToken = await deps.exchangeCode(code);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return reply.code(502).send({ error: `échange du code Meta échoué : ${msg}` });
+      // eslint-disable-next-line no-console
+      console.error(`embedded-signup: échange du code impossible (tenant ${tenant}) : ${msg}`);
+      return reply.code(422).send({ error: `échange du code Meta échoué : ${msg}` });
     }
 
     // 1 bis. Identifiants non annoncés -> on les lit dans le TOKEN (les comptes auxquels il donne accès), puis
@@ -88,7 +90,9 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         if (wabaId === '') {
           const wabas = await deps.wabasForToken(businessToken);
           if (wabas.length === 0) {
-            return reply.code(502).send({ error: 'le compte Meta connecté n’expose aucun compte WhatsApp. Termine le parcours Meta jusqu’au bout, en partageant bien ton compte WhatsApp avec l’application.' });
+            // eslint-disable-next-line no-console
+            console.error(`embedded-signup: le token du tenant ${tenant} n'expose aucun compte WhatsApp (granular_scopes sans cible)`);
+            return reply.code(422).send({ error: 'le compte Meta connecté n’expose aucun compte WhatsApp. Termine le parcours Meta jusqu’au bout, en partageant bien ton compte WhatsApp avec l’application.' });
           }
           if (wabas.length > 1) {
             return reply.code(409).send({ error: `ce compte Meta donne accès à ${wabas.length} comptes WhatsApp : impossible de deviner lequel rattacher.` });
@@ -98,7 +102,7 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         if (phoneNumberId === '') {
           const phones = await deps.listPhones(wabaId, businessToken);
           if (phones.length === 0) {
-            return reply.code(502).send({ error: 'ce compte WhatsApp ne contient aucun numéro. Ajoute-le dans le parcours Meta.' });
+            return reply.code(422).send({ error: 'ce compte WhatsApp ne contient aucun numéro. Ajoute-le dans le parcours Meta.' });
           }
           if (phones.length > 1) {
             return reply.code(409).send({ error: `ce compte WhatsApp contient ${phones.length} numéros : impossible de deviner lequel rattacher.` });
@@ -109,7 +113,9 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
         console.info(`embedded-signup: identifiants retrouvés depuis le token (waba=${wabaId}, numéro=${phoneNumberId}) faute d'annonce par la popup`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        return reply.code(502).send({ error: `lecture du compte WhatsApp impossible : ${msg}` });
+        // eslint-disable-next-line no-console
+        console.error(`embedded-signup: repêchage des identifiants impossible (tenant ${tenant}) : ${msg}`);
+        return reply.code(422).send({ error: `lecture du compte WhatsApp impossible : ${msg}` });
       }
     }
 
@@ -124,7 +130,9 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
       phone = await deps.getPhone(phoneNumberId, businessToken);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return reply.code(502).send({ error: `le compte Meta connecté ne donne pas accès à ce numéro/WABA : ${msg}` });
+      // eslint-disable-next-line no-console
+      console.error(`embedded-signup: preuve d'appartenance refusée (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId}) : ${msg}`);
+      return reply.code(422).send({ error: `le compte Meta connecté ne donne pas accès à ce numéro/WABA : ${msg}` });
     }
 
     const warnings: string[] = [];

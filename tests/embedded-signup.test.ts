@@ -96,7 +96,7 @@ describe('POST /embedded-signup/complete', () => {
   it('échange du code échoue -> 502, RIEN n\'est rattaché', async () => {
     const { server, cap } = app({ exchangeCode: async () => { throw new Error('Graph 400 (#100) : code expiré'); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(422);
     expect(cap.linked).toHaveLength(0);
     expect(cap.saved).toHaveLength(0);
     await server.close();
@@ -118,7 +118,7 @@ describe('POST /embedded-signup/complete', () => {
   it('anti-hijack : le token ne possède PAS le WABA (verifyWaba throw) -> 502, RIEN persisté', async () => {
     const { server, cap } = app({ verifyWaba: async () => { throw new Error('Graph 403 (#200) : accès refusé au WABA'); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(422);
     expect(cap.linked).toHaveLength(0);
     expect(cap.subscribed).toHaveLength(0);
     expect(cap.saved).toHaveLength(0);
@@ -128,7 +128,7 @@ describe('POST /embedded-signup/complete', () => {
   it('anti-hijack : le token ne possède PAS le numéro (getPhone throw) -> 502, RIEN persisté', async () => {
     const { server, cap } = app({ getPhone: async () => { throw new Error('Graph 403 (#200) : accès refusé au numéro'); } });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(422);
     expect(cap.linked).toHaveLength(0);
     expect(cap.saved).toHaveLength(0);
     await server.close();
@@ -202,10 +202,10 @@ describe('POST /embedded-signup/complete sans identifiants (parcours déjà abou
     await server.close();
   });
 
-  it('token n’exposant AUCUN compte -> 502 qui dit quoi faire, et RIEN n’est rattaché', async () => {
+  it('token n’exposant AUCUN compte -> 422 qui dit quoi faire, et RIEN n’est rattaché', async () => {
     const { server, cap } = app({ ...repechage, wabasForToken: async () => [] });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'code-abc' }) });
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(422);
     expect(res.json().error).toContain('aucun compte WhatsApp');
     expect(cap.linked).toHaveLength(0);
     await server.close();
@@ -244,6 +244,32 @@ describe('POST /embedded-signup/complete sans identifiants (parcours déjà abou
     const { server } = app(repechage);
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(agentTok), payload: JSON.stringify({ code: 'code-abc' }) });
     expect(res.statusCode).toBe(403);
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 POURQUOI 422 ET NON 502 sur un refus que l'utilisateur doit LIRE.
+ *
+ * Mesuré le 2026-08-17 : le domaine passe par Cloudflare, qui traite tout 5xx comme une panne d'origine et
+ * REMPLACE le corps de la réponse par sa propre page HTML (« 502: Bad gateway », 6,4 ko). Notre message
+ * n'atteignait donc JAMAIS l'utilisateur : il voyait « Erreur 502 » et nous cherchions une panne inexistante.
+ * Un 4xx, lui, traverse intact. Cette garde interdit le retour en arrière.
+ */
+describe('aucun refus destiné à l’utilisateur ne part en 5xx (Cloudflare détruirait le message)', () => {
+  it('échange du code refusé par Meta -> 422 avec le message de Meta, pas un 5xx', async () => {
+    const { server } = app({ exchangeCode: async () => { throw new Error('Graph 400 (#100) : Invalid verification code format.'); } });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify(BODY) });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toContain('Invalid verification code format');
+    await server.close();
+  });
+
+  it('preuve d’appartenance refusée -> 422, et rien n’est rattaché', async () => {
+    const { server, cap } = app({ verifyWaba: async () => { throw new Error('Graph 403 : no access'); } });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify(BODY) });
+    expect(res.statusCode).toBe(422);
+    expect(cap.linked).toHaveLength(0);
     await server.close();
   });
 });
