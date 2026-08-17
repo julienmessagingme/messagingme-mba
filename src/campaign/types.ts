@@ -24,6 +24,12 @@ export interface Campaign {
   startNodeId: string | null;
   /** Débit max en messages/minute (1..80). null = aucun throttle (le run part au rythme boucle + latence Meta). */
   ratePerMinute: number | null;
+  /** Canal d'envoi. Absent = 'whatsapp' (campagnes créées avant la migration 0056). */
+  channel?: 'whatsapp' | 'rcs';
+  /** Agent RCS (`rcs_agents.agent_id`). Requis si `channel = 'rcs'`. */
+  rcsAgentId?: string | null;
+  /** Message RCS de la campagne, tel que validé à la création. Requis si `channel = 'rcs'`. */
+  rcsMessage?: unknown;
 }
 
 export interface Recipient {

@@ -6,6 +6,7 @@ import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError } from '../meta/errors';
+import type { CampaignSender } from './sender';
 
 /** Satisfait par MetaClient (Loop 2). */
 export interface MessageSender {
@@ -51,6 +52,13 @@ export interface EngineDeps {
   frequency: FrequencyStore;
   quality: QualityProvider;
   rateLimiter?: RateGate;
+  /**
+   * Sender de CANAL (RCS). Présent : le moteur envoie par LUI, et les gardes propres à WhatsApp sont
+   * neutralisées (quality rating Meta, lecture du carousel et de l'en-tête média du template) parce
+   * qu'elles n'ont pas d'équivalent sur ce canal et qu'aucun numéro Meta n'existe pour l'interroger.
+   * Absent : comportement historique INCHANGÉ, ce qui garantit la non-régression des campagnes WhatsApp.
+   */
+  channelSender?: CampaignSender;
   /**
    * Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'envoyer un template).
    * `firstTemplateParams` = variables du 1er template DÉJÀ résolues par contact (buildRecipients à partir du
@@ -134,7 +142,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // avant (un template sans carousel est inchangé ; un carousel échouera avec le message d'erreur de Meta).
   let carousel: { cards: OutboundCarouselCard[] } | null = null;
   let carouselBlocked: string | null = null;
-  if (!campaign.workflowId && deps.getTemplateCarousel) {
+  if (!campaign.workflowId && !deps.channelSender && deps.getTemplateCarousel) {
     try {
       const read = await deps.getTemplateCarousel(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
       if (read) {
@@ -150,7 +158,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // pour tous les destinataires, donc son `media id` aussi.
   let headerMedia: { headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null = null;
   let headerBlocked: string | null = null;
-  if (!campaign.workflowId && !carousel && deps.getTemplateHeaderMedia) {
+  if (!campaign.workflowId && !deps.channelSender && !carousel && deps.getTemplateHeaderMedia) {
     try {
       headerMedia = await deps.getTemplateHeaderMedia(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
       if (headerMedia) headerBlocked = headerMediaSendBlocker(headerMedia.headerFormat, headerMedia.mediaId ?? undefined);
@@ -178,13 +186,17 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   for (const r of pending) {
     if (r.status === 'sent') continue; // idempotence défensive
 
-    const rating = await deps.quality.getRating(campaign.phoneNumberId);
-    const gate = qualityGate({ rating, sent: report.sent, failed: report.failed }, t);
-    if (gate.pause) {
-      report.paused = true;
-      if (gate.reason !== undefined) report.reason = gate.reason;
-      await deps.campaigns.setStatus(campaign.id, 'paused');
-      return report;
+    // Quality gate : notion META (rating du numéro WABA). Sur un canal sans numéro Meta, il n'y a rien à
+    // interroger, et l'interroger quand même appellerait Graph avec un phoneNumberId vide.
+    if (!deps.channelSender) {
+      const rating = await deps.quality.getRating(campaign.phoneNumberId);
+      const gate = qualityGate({ rating, sent: report.sent, failed: report.failed }, t);
+      if (gate.pause) {
+        report.paused = true;
+        if (gate.reason !== undefined) report.reason = gate.reason;
+        await deps.campaigns.setStatus(campaign.id, 'paused');
+        return report;
+      }
     }
 
     // Fréquence : garde-fou MARKETING uniquement, et seulement si une fenêtre > 0 est configurée (désactivé par
@@ -213,8 +225,19 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // dont aucun message n'est parti (scénario supprimé, fil repris par un opérateur, ouverture hors fenêtre).
     let res: SendResult;
     let notStarted: string | null = null;
+    // Destinataire écarté par le canal lui-même (non joignable en RCS, opt-out). Ce n'est PAS un échec :
+    // rien n'est parti et rien n'a raté. Symétrique de `notStarted`, traité après le try comme lui.
+    let skipped: string | null = null;
     try {
-      if (campaign.workflowId && campaign.startNodeId) {
+      if (deps.channelSender) {
+        const out = await deps.channelSender.sendTo(r);
+        if ('skipped' in out) {
+          skipped = out.skipped;
+          res = { messageId: '' };
+        } else {
+          res = out;
+        }
+      } else if (campaign.workflowId && campaign.startNodeId) {
         // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
         // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
@@ -266,6 +289,12 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Le workflow n'a pas démarré : AUCUN message n'est parti pour ce destinataire. On le marque en échec (avec
     // la raison) au lieu de le compter en `sent` : une campagne « 500 envoyés, 0 échec » alors que rien n'est
     // parti est un mensonge affiché, et il masque la vraie cause (fil repris, scénario devenu non lançable).
+    if (skipped !== null) {
+      await deps.recipients.markResult(r.id, { status: 'skipped', error: skipped });
+      report.skipped += 1;
+      continue;
+    }
+
     if (notStarted !== null) {
       await deps.recipients.markResult(r.id, { status: 'failed', error: notStarted });
       report.failed += 1;
@@ -284,7 +313,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Journalise le template envoyé dans le fil de conversation (fil d'inbox complet + transcript d'analyse).
     // UNIQUEMENT pour un envoi template DIRECT : la branche workflow a un messageId synthétique `wf-...`, le vrai
     // template est loggé par le worker à l'envoi réel. Best-effort : un échec de log ne relabellise pas l'envoi.
-    if (deps.recordOutbound && !campaign.workflowId) {
+    // `!deps.channelSender` : le libellé ci-dessous parle de template, il n'a aucun sens sur un canal qui n'en
+    // a pas. Le fil RCS est alimenté par le webhook entrant (lot 2), pas par ce log d'envoi WhatsApp.
+    if (deps.recordOutbound && !campaign.workflowId && !deps.channelSender) {
       const waId = waIdOf(r.toE164);
       const body = `Template « ${campaign.templateName} »${params.length > 0 ? ` (${params.join(', ')})` : ''}`;
       try {
