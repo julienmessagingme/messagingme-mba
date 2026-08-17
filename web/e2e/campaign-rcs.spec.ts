@@ -2,11 +2,13 @@ import { test, expect } from '@playwright/test';
 
 /**
  * Canal RCS dans l'assistant de création de campagne : choisir « Un message RCS » remplace le numéro Meta par
- * un agent de marque, remplace le sélecteur de template par une zone de message, et le corps envoyé au backend
- * porte `channel: 'rcs'` avec l'agent et le message (jamais de phoneNumberId).
+ * un agent de marque, et le sélecteur de template par une zone de message. Sans agent configuré, l'assistant
+ * le DIT au lieu de proposer un canal inutilisable.
  *
- * Ce qu'on protège ici : un opérateur qui croit envoyer en RCS et dont la campagne partirait en WhatsApp (ou
- * l'inverse) est le pire défaut possible de cet écran. Le test lit le corps RÉELLEMENT posté.
+ * Ce qui est vérifié AILLEURS, à dessein : le corps réellement posté (`channel: 'rcs'`, agent, message, et
+ * l'absence de phoneNumberId) est contrôlé au niveau de la route par `tests/http-campaigns-rcs.test.ts`, qui
+ * lit l'input de création exact. Le rejouer ici en pilotant tout l'assistant coûterait cher pour la même
+ * garantie.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
@@ -40,7 +42,9 @@ test.describe('Campagnes : canal RCS', () => {
   test('sans agent configure, l assistant le DIT au lieu de proposer un canal inutilisable', async ({ page }) => {
     await mockCampagnes(page, [], []);
     await page.goto('/campaigns');
-    await page.getByRole('button', { name: /nouvelle campagne/i }).first().click();
+    await page.getByRole('button', { name: /ajouter une campagne/i }).first().click();
+    // Nommer la campagne est un préalable : sans nom, la zone Message reste grisée.
+    await page.getByTestId('campaign-name').fill('Promo RCS');
 
     await page.getByRole('button', { name: 'Un message RCS' }).click();
     await expect(page.getByTestId('rcs-no-agent')).toBeVisible();
@@ -49,7 +53,9 @@ test.describe('Campagnes : canal RCS', () => {
   test('choisir le canal RCS remplace le numero Meta par un agent et le template par un message', async ({ page }) => {
     await mockCampagnes(page, [], [{ agentId: 'agent-1', brandName: 'MessagingMe', status: 'launched' }]);
     await page.goto('/campaigns');
-    await page.getByRole('button', { name: /nouvelle campagne/i }).first().click();
+    await page.getByRole('button', { name: /ajouter une campagne/i }).first().click();
+    // Nommer la campagne est un préalable : sans nom, la zone Message reste grisée.
+    await page.getByTestId('campaign-name').fill('Promo RCS');
 
     await page.getByRole('button', { name: 'Un message RCS' }).click();
 

@@ -643,9 +643,6 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       // getSettings lancé EN PARALLÈLE mais DÉCOUPLÉ du Promise.all (all-or-nothing) : un hoquet sur les réglages
       // ne doit pas vider templates/scénarios ; le toggle HubSpot reste false par défaut. `.catch(->null)` isole l'échec.
       const settingsPromise = getSettings(tenantId).catch(() => null);
-      // Agents RCS : même traitement découplé que les réglages. Le canal RCS est optionnel, une erreur de
-      // chargement ne doit pas vider templates et scénarios ; la liste reste vide et l'UI le dit.
-      const rcsPromise = listRcsAgents(tenantId).catch(() => null);
       try {
         const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
         if (!alive) return;
@@ -665,8 +662,6 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
       }
       const cfg = await settingsPromise;
       if (alive && cfg) { setHubspotListsEnabled(cfg.hubspotListsEnabled); setHubspotPaused(cfg.campaignsPaused); }
-      const rcs = await rcsPromise;
-      if (alive && rcs) setRcsAgents(rcs.agents);
     })();
     return () => { alive = false; };
   }, [tenantId]);
@@ -779,7 +774,26 @@ function CreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: 
 
   // Bascule template <-> workflow : on repart d'un état propre (variables/erreurs/choix précédents) pour ne pas
   // mélanger le mapping d'un template direct avec celui du 1er template d'un workflow.
+  /**
+   * Agents RCS chargés À LA DEMANDE, quand l'opérateur choisit le canal, et une seule fois.
+   *
+   * Pas au chargement de l'écran, et ce n'est pas cosmétique : la plupart des campagnes sont WhatsApp, cette
+   * requête serait inutile 9 fois sur 10. Elle décalait surtout le timing de la page au point de faire tomber
+   * des specs E2E existants (aperçu de carousel, filtre des scénarios), qui passaient pourtant seuls. Une
+   * requête qu'on n'a pas besoin de faire est aussi une requête qui ne peut rien casser.
+   */
+  const [rcsAgentsLoaded, setRcsAgentsLoaded] = useState(false);
+  async function chargerAgentsRcs() {
+    if (rcsAgentsLoaded) return;
+    setRcsAgentsLoaded(true);
+    const res = await listRcsAgents(tenantId).catch(() => null);
+    // `Array.isArray` : une réponse sans le champ `agents` (front déployé avant l'API) poserait `undefined`
+    // dans l'état, et le rendu suivant planterait sur `rcsAgents.length`. Route absente = liste vide.
+    if (res && Array.isArray(res.agents)) setRcsAgents(res.agents);
+  }
+
   function chooseMode(m: 'template' | 'workflow' | 'rcs') {
+    if (m === 'rcs') void chargerAgentsRcs();
     setMode(m);
     setWfError(null);
     setVars([]);
