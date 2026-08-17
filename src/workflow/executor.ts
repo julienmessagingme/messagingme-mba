@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { walk, entryNode, nextNode, nextNodeByHandle } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton } from './engine';
-import type { WorkflowGraph } from './graph';
+import type { WorkflowGraph, WorkflowNode } from './graph';
 import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow } from './run-store.pg';
+import type { RcsSender } from '../rcs/sender';
+import type { RcsOutbound } from '../rcs/types';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
@@ -54,6 +57,15 @@ export interface WorkflowExecutorDeps {
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
   sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<SendRefusal>;
+  /**
+   * Canal RCS. ABSENT = un bloc `rcs_message` n'envoie rien et part TOUJOURS sur sa sortie « non joignable ».
+   * Jamais d'envoi muet, jamais de parcours bloqué sur un canal non câblé.
+   */
+  rcs?: {
+    sender: RcsSender;
+    /** Agent RCS du tenant (`rcs_agents.agent_id`). null = tenant sans agent configuré. */
+    agentIdFor(tenantId: string): Promise<string | null>;
+  };
   /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
   now?: () => number;
   /**
@@ -95,6 +107,17 @@ export interface WorkflowExecutorDeps {
    */
   emitTagAdded?(tenantId: string, waId: string, tag: string): Promise<void>;
 }
+
+/** Message RCS porté par un bloc. null = bloc NON configuré : on ne devine pas un contenu, on part en repli. */
+function rcsOutboundOf(node: WorkflowNode | undefined): RcsOutbound | null {
+  if (!node) return null;
+  const text = String(node.data.text ?? '').trim();
+  return text ? { kind: 'text', text } : null;
+}
+
+/** Anti-boucle de `walkResolved` : une chaîne de blocs RCS tous non joignables finit par s'arrêter. Le walk
+ *  a déjà son propre `visited` par appel, ce plafond borne l'ENCHAÎNEMENT de walks. */
+const MAX_RCS_ENCHAINES = 20;
 
 function restToState(rest: WalkRest, now: number): RunState {
   if (rest.status === 'waiting') return { currentNode: rest.nodeId, status: 'waiting' };
@@ -251,7 +274,7 @@ export class WorkflowExecutor {
       return false;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest } = walk(graph, suite, ctx);
+    const { actions, rest } = await this.walkResolved(tenantId, waId, graph, suite, ctx, run.id);
 
     // Fenêtre de service fermée : on écarte les SEULS messages de session (Meta les refuserait, 131047) et on
     // applique le reste. Un walk peut désormais mêler un message rapide sans bouton, des actions et un
@@ -297,6 +320,50 @@ export class WorkflowExecutor {
     return true;
   }
 
+  /**
+   * `walk` + résolution des blocs RCS. Le walk est PUR : sur un bloc `rcs_message` il rend la main avec
+   * `rest.status === 'rcs_send'` parce que la branche à suivre dépend d'un appel réseau (le numéro est-il
+   * joignable en RCS ?). C'est ICI, et NULLE PART ailleurs, que cette IO est faite.
+   *
+   * Envoi réussi -> le run attend une réponse SUR ce bloc, exactement comme après un template.
+   * Non joignable, opt-out, agent absent, canal non câblé, bloc sans texte -> aucun envoi, et on repart
+   * immédiatement par la sortie « non joignable ». Sortie non câblée -> parcours terminé, et surtout JAMAIS
+   * la sortie « envoyé » : promettre la suite à un contact qui n'a rien reçu est le pire des deux mondes.
+   *
+   * Les actions des walks successifs sont ACCUMULÉES : l'appelant les applique en un lot, comme avant.
+   */
+  private async walkResolved(
+    tenantId: string,
+    waId: string,
+    graph: WorkflowGraph,
+    startNodeId: string,
+    ctx: EvalContext | undefined,
+    sendKey: string,
+  ): Promise<{ actions: WorkflowAction[]; rest: WalkRest }> {
+    const actions: WorkflowAction[] = [];
+    let depart = startNodeId;
+    for (let i = 0; i < MAX_RCS_ENCHAINES; i++) {
+      const r = walk(graph, depart, ctx);
+      actions.push(...r.actions);
+      if (r.rest.status !== 'rcs_send') return { actions, rest: r.rest };
+
+      const nodeId = r.rest.nodeId;
+      const msg = rcsOutboundOf(graph.nodes.find((n) => n.id === nodeId));
+      const agentId = this.deps.rcs ? await this.deps.rcs.agentIdFor(tenantId) : null;
+      let envoye = false;
+      if (this.deps.rcs && agentId && msg) {
+        const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`);
+        envoye = !('skipped' in out);
+      }
+      if (envoye) return { actions, rest: { status: 'waiting', nodeId } };
+
+      const repli = nextNodeByHandle(graph, nodeId, 'unreachable');
+      if (!repli) return { actions, rest: { status: 'done' } };
+      depart = repli;
+    }
+    return { actions, rest: { status: 'done' } };
+  }
+
   private async runFrom(
     tenantId: string,
     workflowId: string,
@@ -328,7 +395,10 @@ export class WorkflowExecutor {
       return 'le bloc de départ du scénario a été supprimé depuis la création de la campagne';
     }
     const ctx = await this.buildCtx(tenantId, contact.waId, graph);
-    const { actions, rest } = walk(graph, startNodeId, ctx);
+    // `sendKey` aléatoire : à ce stade le run n'existe pas encore en base (runs.start vient plus bas), donc
+    // aucun identifiant stable n'est disponible. Ce qui protège d'un double envoi ici, c'est le claim atomique
+    // du destinataire côté campagne, pas l'idempotence RBM.
+    const { actions, rest } = await this.walkResolved(tenantId, contact.waId, graph, startNodeId, ctx, randomUUID());
     // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
     // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Depuis le Lot D, le SAVE
     // n'interdit plus cette forme (un scénario peut ouvrir sur un message de session, il est alors réservé aux
@@ -427,15 +497,23 @@ export class WorkflowExecutor {
     // d'inactivité). On ne le clôt PAS, sinon un aller-retour avec un opérateur tuerait le parcours.
     if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) return;
     const graph = run.currentNode ? await this.deps.getGraph(run.workflowId, tenantId) : null;
+    // Bloc RCS en attente : la réponse du contact reprend par la sortie « envoyé », pas par un payload de
+    // bouton. Et le repli conditionnel suit la règle du bloc Condition : tant qu'une sortie TYPÉE existe, on
+    // ne prend JAMAIS la 1re arête venue, sinon « non joignable » volerait la suite d'un envoi réussi.
+    const courant = graph && run.currentNode ? graph.nodes.find((n) => n.id === run.currentNode) : undefined;
+    const handle = courant?.type === 'rcs_message' ? 'sent' : buttonPayload;
+    const sortieTypee = graph && run.currentNode
+      ? graph.edges.some((e) => e.source === run.currentNode && (e.sourceHandle === 'sent' || e.sourceHandle === 'unreachable'))
+      : false;
     const next = graph && run.currentNode
-      ? ((buttonPayload ? nextNodeByHandle(graph, run.currentNode, buttonPayload) : null) ?? nextNode(graph, run.currentNode))
+      ? ((handle ? nextNodeByHandle(graph, run.currentNode, handle) : null) ?? (sortieTypee ? null : nextNode(graph, run.currentNode)))
       : null;
     if (!graph || !next) {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
       return;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest } = walk(graph, next, ctx);
+    const { actions, rest } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id);
     // Un contact qui répond est unitaire par nature : ses tags publient.
     const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, true);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant
