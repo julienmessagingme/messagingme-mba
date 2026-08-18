@@ -1,69 +1,19 @@
 'use client';
 
-import { getSession, clearSession } from './session';
+/**
+ * Appels API de la console. Le socle HTTP (auth, retry, 401) vit dans `./http` : il est partagé avec les
+ * modules d'API par domaine (`api-mba.ts`), qui ne peuvent pas dupliquer l'authentification sans risquer
+ * qu'une des deux copies dérive.
+ *
+ * `ApiError` et `SESSION_EXPIRED_EVENT` sont RÉEXPORTÉS : le reste de la console les importe depuis `@/lib/api`
+ * depuis toujours, et les déplacer sans réexport casserait des imports pour zéro gain.
+ */
+
+import { request, ApiError, BASE } from './http';
 import type { UserFieldKind } from './field-kinds';
 
-const BASE = '/api/backend';
+export { ApiError, SESSION_EXPIRED_EVENT } from './http';
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-/**
- * Événement « la session vient d'expirer », émis dès qu'une réponse 401 a vidé la session locale. Écouté par
- * `AppShell`, qui affiche alors une bannière avec un bouton de reconnexion.
- */
-export const SESSION_EXPIRED_EVENT = 'mba:session-expired';
-
-/**
- * Un 5xx sur une LECTURE est très majoritairement transitoire (pool Postgres saturé une fraction de seconde,
- * conteneur qui vient de redémarrer). Une seule reprise, après une courte pause, évite d'infliger un écran
- * d'erreur pour un hoquet. On ne rejoue QUE les requêtes idempotentes : rejouer un POST enverrait des messages
- * WhatsApp en double, ce qu'aucun gain d'ergonomie ne justifie.
- */
-const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
-const RETRY_DELAY_MS = 400;
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? 'GET').toUpperCase();
-  const canRetry = RETRYABLE_METHODS.has(method);
-  try {
-    return await attempt<T>(path, init);
-  } catch (err) {
-    const transient = err instanceof ApiError ? err.status >= 500 : true; // panne réseau -> pas d'ApiError
-    if (!canRetry || !transient) throw err;
-    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    return attempt<T>(path, init);
-  }
-}
-
-async function attempt<T>(path: string, init: RequestInit): Promise<T> {
-  const session = getSession();
-  const headers = new Headers(init.headers);
-  headers.set('content-type', 'application/json');
-  if (session) headers.set('authorization', `Bearer ${session.token}`);
-
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  if (res.status === 401) {
-    clearSession();
-    // Prévient la coquille (AppShell) pour qu'elle propose un bouton « Reconnecter ». Sans ça, l'écran affichait
-    // un message rouge dans un coin, le reste de l'interface restait actif, et l'utilisateur n'avait AUCUN
-    // chemin visible vers la reconnexion. Même canal d'événement que la pastille de non-lus.
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-    throw new ApiError(401, 'Session expirée, reconnecte-toi.');
-  }
-  const body = (await res.json().catch(() => null)) as unknown;
-  if (!res.ok) {
-    const msg = (body as { error?: string } | null)?.error ?? `Erreur ${res.status}`;
-    throw new ApiError(res.status, msg);
-  }
-  return body as T;
-}
 
 export interface LoginResult {
   token: string;

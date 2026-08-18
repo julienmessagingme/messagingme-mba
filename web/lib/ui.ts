@@ -15,3 +15,12 @@ export const inputCls =
  */
 export const inputClsAuto =
   'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+
+/**
+ * Carte de contenu : le fond blanc arrondi qui porte une section de réglages. Recopié à l'identique dans une
+ * dizaine d'écrans avant d'atterrir ici, pour la même raison que `inputCls`.
+ */
+export const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
+
+/** Le sur-titre coloré d'un en-tête de page (« MBA », « CAMPAGNES »). */
+export const kickerCls = 'text-xs font-semibold uppercase tracking-wide text-brand-600';

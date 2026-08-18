@@ -1,0 +1,247 @@
+'use client';
+
+import { useState } from 'react';
+import { useT, useLocale } from '@/lib/i18n';
+import { cardCls, inputCls } from '@/lib/ui';
+import { MbaNotice } from './MbaNotice';
+import { resumeApercu, resumeImport } from '@/lib/mba-faq';
+import { importMbaFaq, previewMbaFaqImport, type MbaFaqPreview, type MbaFaqSource } from '@/lib/api-mba';
+
+/**
+ * Chargement en lot d'un jeu de questions/réponses, en deux temps : on analyse, on montre, puis seulement on
+ * écrit.
+ *
+ * L'aperçu n'est pas un confort. Chez Meta, la FAQ n'a NI suppression en lot NI corbeille : un import raté se
+ * rattrape entrée par entrée à la main. On montre donc ce qui va être créé et modifié avant d'y toucher.
+ *
+ * ⚠️ INVARIANT : ce qui est envoyé à l'import est EXACTEMENT la charge qui a été prévisualisée (`source`), pas
+ * une relecture des champs au moment du clic. Sinon, modifier le texte après l'aperçu ferait écrire quelque
+ * chose que personne n'a jamais vu. Toute modification d'un champ invalide donc l'aperçu.
+ */
+
+type Mode = 'texte' | 'fichier' | 'url';
+const APERCU_LIGNES = 15;
+
+export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
+  tenantId: string;
+  phoneNumberId: string;
+  onImported: () => void;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [mode, setMode] = useState<Mode>('texte');
+  const [csv, setCsv] = useState('');
+  const [url, setUrl] = useState('');
+  const [nomFichier, setNomFichier] = useState('');
+  /** La charge EXACTE qui a été analysée. Null tant qu'aucun aperçu valide n'existe. */
+  const [source, setSource] = useState<MbaFaqSource | null>(null);
+  const [apercu, setApercu] = useState<MbaFaqPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [resultat, setResultat] = useState<{ kind: 'success' | 'warning'; texte: string } | null>(null);
+
+  /** Toute modification d'une source périme l'aperçu : on ne peut plus écrire sans réanalyser. */
+  function invalider(): void {
+    setSource(null);
+    setApercu(null);
+    setResultat(null);
+  }
+
+  function chargePrevue(): MbaFaqSource | null {
+    if (mode === 'url') return url.trim() === '' ? null : { url: url.trim() };
+    return csv.trim() === '' ? null : { csv };
+  }
+
+  async function analyser(): Promise<void> {
+    const charge = chargePrevue();
+    if (charge === null) return;
+    setBusy(true);
+    setErr('');
+    setResultat(null);
+    try {
+      const plan = await previewMbaFaqImport(tenantId, phoneNumberId, charge);
+      setSource(charge);
+      setApercu(plan);
+    } catch (e) {
+      setSource(null);
+      setApercu(null);
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmer(): Promise<void> {
+    if (source === null) return;
+    setBusy(true);
+    setErr('');
+    try {
+      // ⚠️ `source`, pas les champs : c'est l'invariant de ce panneau.
+      const res = await importMbaFaq(tenantId, phoneNumberId, source);
+      setResultat(resumeImport(res, locale));
+      setApercu(null);
+      setSource(null);
+      onImported();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const onglet = (m: Mode, label: string) => (
+    <button
+      key={m}
+      data-testid={`mba-import-mode-${m}`}
+      onClick={() => { setMode(m); invalider(); }}
+      className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+        mode === m ? 'border-brand-500 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-600 hover:text-ink-900'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <section className={`${cardCls} space-y-4`} data-testid="mba-faq-import">
+      <div>
+        <h3 className="text-sm font-semibold text-ink-900">{t('Charger des questions en lot', 'Bulk load questions')}</h3>
+        <p className="mt-1 text-xs leading-relaxed text-ink-600">
+          {t(
+            'Vos questions existent déjà quelque part : un tableur, une page de site. Chargez-les ici. Rien n’est écrit avant que vous ayez vu ce qui va l’être, et relancer la même source ne crée pas de doublon.',
+            'Your questions already exist somewhere: a spreadsheet, a page on your site. Load them here. Nothing is written before you have seen what will be, and re-running the same source creates no duplicates.',
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {onglet('texte', t('Coller du texte', 'Paste text'))}
+        {onglet('fichier', t('Déposer un fichier CSV', 'Drop a CSV file'))}
+        {onglet('url', t('Depuis une adresse web', 'From a web address'))}
+      </div>
+
+      {mode === 'texte' && (
+        <label className="block">
+          <span className="text-xs text-ink-500">
+            {t('Deux colonnes : la question, puis la réponse.', 'Two columns: the question, then the answer.')}
+          </span>
+          <textarea
+            className={`${inputCls} mt-1.5 font-mono text-xs`}
+            rows={8}
+            data-testid="mba-import-csv"
+            placeholder={'question,réponse\nLes chiens sont-ils admis ?,Oui, tenus en laisse.'}
+            value={csv}
+            onChange={(e) => { setCsv(e.target.value); invalider(); }}
+          />
+        </label>
+      )}
+
+      {mode === 'fichier' && (
+        <div>
+          <label className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-ink-300 px-4 py-6 text-sm text-ink-600 hover:border-brand-400">
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              hidden
+              data-testid="mba-import-file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                invalider();
+                setNomFichier(f?.name ?? '');
+                if (!f) { setCsv(''); return; }
+                void f.text().then((texte) => { setCsv(texte); });
+              }}
+            />
+            {nomFichier === '' ? t('Choisir un fichier .csv', 'Choose a .csv file') : nomFichier}
+          </label>
+          <p className="mt-1 text-xs text-ink-500">
+            {t(
+              'Un export de tableur enregistré au format CSV convient. Excel n’est pas lu directement.',
+              'A spreadsheet exported as CSV works. Excel files are not read directly.',
+            )}
+          </p>
+        </div>
+      )}
+
+      {mode === 'url' && (
+        <label className="block">
+          <span className="text-xs text-ink-500">
+            {t('Une page publique qui porte vos questions et réponses.', 'A public page carrying your questions and answers.')}
+          </span>
+          <input
+            className={`${inputCls} mt-1.5`}
+            data-testid="mba-import-url"
+            placeholder="https://www.exemple.fr/faq"
+            value={url}
+            onChange={(e) => { setUrl(e.target.value); invalider(); }}
+          />
+        </label>
+      )}
+
+      {err !== '' && <MbaNotice kind="error" testid="mba-import-error">{err}</MbaNotice>}
+      {resultat !== null && <MbaNotice kind={resultat.kind} testid="mba-import-result">{resultat.texte}</MbaNotice>}
+
+      <div className="flex items-center gap-3">
+        <button
+          className="rounded-lg border border-ink-300 px-4 py-2 text-sm font-medium text-ink-800 disabled:opacity-50"
+          data-testid="mba-import-analyse"
+          disabled={busy || chargePrevue() === null}
+          onClick={() => void analyser()}
+        >
+          {busy && apercu === null ? t('Analyse…', 'Analysing…') : t('Analyser', 'Analyse')}
+        </button>
+        <button
+          className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          data-testid="mba-import-confirm"
+          disabled={busy || source === null || apercu === null}
+          onClick={() => void confirmer()}
+        >
+          {t('Confirmer l’import', 'Confirm import')}
+        </button>
+        {source === null && apercu === null && resultat === null && (
+          <span className="text-xs text-ink-500">{t('Analysez d’abord pour voir ce qui sera écrit.', 'Analyse first to see what will be written.')}</span>
+        )}
+      </div>
+
+      {apercu !== null && (
+        <div className="rounded-xl border border-ink-200 p-4" data-testid="mba-import-preview">
+          <p className="text-sm font-medium text-ink-900" data-testid="mba-import-summary">{resumeApercu(apercu, locale)}</p>
+          <p className="mt-1 text-xs text-ink-500">
+            {t(`Source détectée : ${apercu.source}. ${apercu.total} question(s) lue(s).`, `Detected source: ${apercu.source}. ${apercu.total} question(s) read.`)}
+          </p>
+
+          {apercu.aCreer.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{t('À créer', 'To create')}</p>
+              <ul className="mt-1 space-y-1" data-testid="mba-import-tocreate">
+                {apercu.aCreer.slice(0, APERCU_LIGNES).map((f) => (
+                  <li key={f.question} className="truncate text-xs text-ink-700">
+                    <span className="font-medium">{f.question}</span> <span className="text-ink-500">{f.answer}</span>
+                  </li>
+                ))}
+              </ul>
+              {apercu.aCreer.length > APERCU_LIGNES && (
+                <p className="mt-1 text-xs text-ink-500">
+                  {t(`et ${apercu.aCreer.length - APERCU_LIGNES} autre(s).`, `and ${apercu.aCreer.length - APERCU_LIGNES} more.`)}
+                </p>
+              )}
+            </div>
+          )}
+
+          {apercu.aMettreAJour.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{t('À mettre à jour', 'To update')}</p>
+              <ul className="mt-1 space-y-1" data-testid="mba-import-toupdate">
+                {apercu.aMettreAJour.slice(0, APERCU_LIGNES).map((f) => (
+                  <li key={f.id} className="truncate text-xs text-ink-700">
+                    <span className="font-medium">{f.question}</span> <span className="text-ink-500">{f.answer}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

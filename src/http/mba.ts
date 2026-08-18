@@ -35,8 +35,12 @@ const MAX_IMPORT = 500;
 /** Plafond de lecture d'une page distante. Au-delà on refuse plutôt que de charger le tas en mémoire. */
 const MAX_PAGE_OCTETS = 2_000_000;
 
-/** Extensions acceptées par Meta (liste du schéma, pas de la prose : `.txt` et `.md` en sont ABSENTS). */
-const EXTENSIONS_FICHIER: Record<string, string> = {
+/**
+ * Extensions acceptées par Meta (liste du schéma, pas de la prose : `.txt` et `.md` en sont ABSENTS).
+ * ⚠️ Recopiée côté navigateur dans `web/lib/mba-files.ts` (les deux builds ne partagent aucun module).
+ * `tests/web-mba-parity.test.ts` casse dès que les deux listes divergent.
+ */
+export const EXTENSIONS_FICHIER: Record<string, string> = {
   'application/pdf': 'pdf',
   'application/msword': 'doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
@@ -48,11 +52,40 @@ const EXTENSIONS_FICHIER: Record<string, string> = {
 /** `.jpeg` est la même chose que `.jpg` côté Meta ; on accepte les deux à l'écriture du nom. */
 const EXTENSIONS_EQUIVALENTES: Record<string, string[]> = { jpg: ['jpg', 'jpeg'] };
 /** Meta accepte 100 Mo. Le corps transite en base64 (+33 %) : on plafonne plus bas, avec un message explicite. */
-const MAX_FICHIER = 20 * 1024 * 1024;
+export const MAX_FICHIER = 20 * 1024 * 1024;
 
 const DATA_URL_RE = /^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=]+)$/i;
 /** Titre de skill : minuscules, chiffres et tirets, sans tiret aux extrémités. Règle Meta, refusée en 400 sinon. */
-const TITRE_SKILL_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const TITRE_SKILL_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const TITRE_SKILL_MAX = 64;
+export const DESCRIPTION_SKILL_MAX = 1024;
+export const CORPS_SKILL_MAX = 20000;
+
+/**
+ * Les quatre règles ci-dessous sont RECOPIÉES côté navigateur (`web/lib/mba-files.ts`, `web/lib/mba-skills.ts`) :
+ * les deux builds ne partagent aucun module, et la copie sert à refuser tout de suite ce que Meta refusera,
+ * plutôt que de faire monter 27 Mo de base64 pour rien.
+ *
+ * Elles sont sorties en FONCTIONS PURES, et pas seulement en constantes, pour que `tests/web-mba-parity.test.ts`
+ * puisse poser la même table de cas aux deux implémentations, comme `web-button-url-parity.test.ts`. Comparer
+ * des constantes laisserait diverger la façon de s'en servir.
+ */
+
+/** Le nom du fichier porte-t-il l'extension qui correspond à son type déclaré ? */
+export function extensionCoherente(fileName: string, mime: string): boolean {
+  const attendue = EXTENSIONS_FICHIER[mime.toLowerCase()];
+  if (attendue === undefined) return false;
+  const ext = (fileName.split('.').pop() ?? '').toLowerCase();
+  return (EXTENSIONS_EQUIVALENTES[attendue] ?? [attendue]).includes(ext);
+}
+
+export function tailleFichierOk(octets: number): boolean {
+  return octets > 0 && octets <= MAX_FICHIER;
+}
+
+export function titreSkillValide(titre: string): boolean {
+  return titre.length > 0 && titre.length <= TITRE_SKILL_MAX && TITRE_SKILL_RE.test(titre);
+}
 
 /** Contexte commun à toutes les routes : tenant vérifié, numéro vérifié, client prêt. null = déjà répondu. */
 async function contexte(
@@ -406,12 +439,12 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Gu
     const b = (body ?? {}) as Record<string, unknown>;
     if (!nonEmpty(b.title)) return { error: 'title requis' };
     const title = b.title.trim().toLowerCase();
-    if (title.length > 64) return { error: 'title trop long (max 64 caractères)' };
-    if (!TITRE_SKILL_RE.test(title)) return { error: 'title invalide (minuscules, chiffres et tirets, ex. « politique-de-retour »)' };
+    if (title.length > TITRE_SKILL_MAX) return { error: `title trop long (max ${TITRE_SKILL_MAX} caractères)` };
+    if (!titreSkillValide(title)) return { error: 'title invalide (minuscules, chiffres et tirets, ex. « politique-de-retour »)' };
     if (!nonEmpty(b.description)) return { error: 'description requise (elle dit QUAND appliquer la compétence)' };
-    if (b.description.length > 1024) return { error: 'description trop longue (max 1024 caractères)' };
+    if (b.description.length > DESCRIPTION_SKILL_MAX) return { error: `description trop longue (max ${DESCRIPTION_SKILL_MAX} caractères)` };
     if (!nonEmpty(b.skill)) return { error: 'skill requis (les instructions elles-mêmes)' };
-    if (b.skill.length > 20000) return { error: 'skill trop long (max 20000 caractères)' };
+    if (b.skill.length > CORPS_SKILL_MAX) return { error: `skill trop long (max ${CORPS_SKILL_MAX} caractères)` };
     return { skill: { title, description: b.description.trim(), skill: b.skill.trim() } };
   }
 
@@ -500,15 +533,13 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Gu
       return reply.code(400).send({ error: 'format non accepté par Meta (pdf, doc, docx, png, jpg, csv, xlsx)' });
     }
     const nom = b.fileName.trim();
-    const ext = (nom.split('.').pop() ?? '').toLowerCase();
-    const acceptees = EXTENSIONS_EQUIVALENTES[attendue] ?? [attendue];
-    if (!acceptees.includes(ext)) {
+    if (!extensionCoherente(nom, mime)) {
       return reply.code(400).send({ error: `le nom du fichier doit finir par .${attendue} pour correspondre à son contenu` });
     }
 
     const octets = Buffer.from(m[2] ?? '', 'base64');
     if (octets.length === 0) return reply.code(400).send({ error: 'fichier vide' });
-    if (octets.length > MAX_FICHIER) {
+    if (!tailleFichierOk(octets.length)) {
       return reply.code(400).send({ error: `fichier trop lourd (max ${Math.round(MAX_FICHIER / 1024 / 1024)} Mo)` });
     }
     const cree = await ctx.client.uploadFile(ctx.pn, nom, new Blob([octets], { type: mime }));
