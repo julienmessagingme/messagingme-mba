@@ -1,80 +1,83 @@
 # WIP
 
-## 🚧 POINT DE REPRISE (2026-08-18, fin de session)
+## 🚧 POINT DE REPRISE (2026-08-19, nuit)
 
-**Reprendre ici : l'écran de la purge RGPD, et le journal branché sur l'opt-in / opt-out.**
+**Tout le chantier RGPD est EN LIGNE.** Prod sur `f3df192`, migrations appliquées jusqu'à **0061**.
 
-### Ce qui tourne en production
+### Ce qui a été livré cette nuit
 
-Prod sur **`e756025`**, migrations appliquées **jusqu'à 0059**. Vérifié sur le serveur, pas déduit.
+- Le **journal d'audit est branché** sur ce qu'il observait pas : entrée d'un contact (création à la main,
+  import CSV), sortie (suppression douce, effacement définitif), et bascules de consentement. Consultable
+  dans Paramètres.
+- **`opted_out` est enfin écrivable.** C'était une valeur que les filtres et le garde-fou de campagne savaient
+  LIRE, mais qu'aucun chemin ne posait jamais : un client demandant à ne plus rien recevoir n'était
+  enregistrable nulle part. Action en masse « Passer en opt-out » dans le mini-CRM.
+- L'**opt-in capté par un WhatsApp Flow** est journalisé (preuve de consentement la plus forte, la personne a
+  coché elle-même). `markOptedIn` rend l'identifiant du contact au lieu d'un compteur.
+- **Un contact créé À LA MAIN est opt-in par défaut** (case pré-cochée). L'import CSV et l'API publique
+  gardent l'exigence inverse. Décision de Julien.
+- Écran **« Effacer définitivement »**, distinct de « Supprimer », avec saisie du mot `PURGER`.
 
-Sont EN LIGNE : les écrans MBA > Paramètres (7 onglets, branchés sur les vraies routes), le chantier complet du
-contrôle du fil, et la suppression du réglage « À la reprise, le fil… ».
+### 🔴 Trois bugs de la purge, trouvés EN PRODUCTION en purgeant un vrai contact
 
-### Ce qui N'EST PAS déployé
+La purge écrite la veille était couverte par des tests à FAUX store. Ils prouvaient que la route appelle
+`purgeMany`, jamais que `purgeMany` efface quoi que ce soit. En base, elle ne marchait pas du tout :
 
-Le commit **`8bcbb90`** (purge RGPD + journal d'audit) et sa **migration 0060**.
+1. **Les fils n'étaient jamais trouvés** : `conversations.wa_id = contacts.phone_e164` ne peut pas être vraie
+   (`33612345678` contre `+33612345678`). Le contact était anonymisé, la conversation restait, avec le vrai
+   numéro et tous ses messages. Le dépôt a pourtant une règle partagée pour ce rapprochement, écrite parce que
+   ses copies avaient divergé ; la purge ne l'utilisait pas. Prédicat désormais extrait et réutilisé.
+2. **Le cache RCS** est indexé en E.164 et recevait des `wa_id` nus : il n'effaçait rien non plus.
+3. **`automation_fires` n'a pas de `tenant_id`** (clé `(automation_id, wa_id)`). Le filtre portait sur une
+   colonne inexistante : Postgres LÈVE, donc toute la transaction de purge roulait en arrière. Invisible tant
+   que le bug 1 empêchait d'atteindre cette branche.
 
-⚠️ **RÈGLE APPRISE AUJOURD'HUI, à appliquer au prochain déploiement.** La consigne « migrations AVANT le
-déploiement » vaut pour les migrations ADDITIVES. Pour une migration **destructive**, c'est l'inverse : déployer
-le code neuf D'ABORD (il ne lit plus les colonnes), puis supprimer. La 0059 supprimait deux colonnes que le code
-en place lisait encore ; l'ordre inverse aurait cassé la prod jusqu'au redémarrage. La 0060 est ADDITIVE (une
-table et une colonne), donc pour elle l'ordre habituel s'applique : migrer, puis déployer.
+`tests/integration/purge-rgpd.integration.test.ts` écrit un contact, son fil, ses messages, son analyse, un
+parcours et un déclenchement d'automation, purge, et relit ce qui reste. Vérifié dans les deux sens : rouge
+sur l'ancien code, vert sur le nouveau, dans une vraie base.
 
-### Ce qui reste sur le chantier RGPD
+### ⚠️ RESTE À TRAITER : un contact déjà supprimé n'est plus effaçable à l'écran
 
-Le backend est complet et testé (10 tests), il manque :
+Une fois « Supprimer » cliqué, le contact quitte la liste du CRM, donc plus moyen de le cocher pour
+l'effacer définitivement. C'est le chemin exact qu'a pris Julien. Le backend, lui, sait le faire (la purge par
+identifiants ne filtre pas `deleted_at`). **Décision produit à prendre avec Julien**, deux options :
+- un filtre « afficher les contacts supprimés » dans le mini-CRM (demande d'ouvrir `buildContactWhere`, qui
+  pose `deleted_at is null` en dur) ;
+- ou faire que « Supprimer » efface aussi la conversation, et n'avoir qu'une seule destruction.
 
-1. **L'écran** : un bouton « Effacer définitivement » dans le mini-CRM, distinct de « Supprimer », avec la
-   confirmation `PURGER` que la route exige déjà. Et une page qui affiche l'historique d'audit (`PgAuditStore.list`
-   existe, aucune route ne l'expose encore).
-2. **Le journal sur l'opt-in et l'opt-out**, que Julien a explicitement demandés. Les actions `contact.optin` et
-   `contact.optout` sont déjà déclarées dans le type `AuditAction`, mais **je n'ai pas trouvé où l'opt-in bascule
-   dans le code** : à chercher à froid (probablement l'import CSV et l'API publique `/v1/contacts`).
-3. **La création de contact** (`contact.created`, `contact.imported`) : même chose, l'action est déclarée mais
-   pas encore appelée.
+Le contact de Geoffrey a été purgé à la main côté serveur (fil, 28 messages, analyse, 2 parcours), trace au
+journal. Vérifié : 0 fil, 0 fiche, 0 ligne d'envoi nominative.
+
+### ⚠️ Piège de déploiement découvert, à ne plus repayer
+
+`sudo docker compose run --rm mba-api npm run migrate` a répondu **« à jour, rien à appliquer »** alors que les
+migrations n'étaient même pas dans l'image : `run` part de l'IMAGE, pas du dépôt fraîchement pull. Un vert qui
+ne prouve rien, même famille que l'incident du 2026-08-17. **Ordre correct : `build` -> `run migrate` ->
+`up -d`.** Le build ne touche pas les conteneurs en place, donc l'ordre reste sûr.
+
+Autre piège : deux sessions parallèles avaient écrit **deux migrations 0060**. Le runner indexe par nom de
+fichier, donc rien n'était sauté en silence, mais l'ambiguïté a été levée (la mienne est passée en 0061)
+pendant qu'aucune n'était appliquée. Une migration déjà appliquée, elle, ne se renomme plus.
 
 ### Décisions prises avec Julien, à ne pas rouvrir
 
-- **On anonymise pour garder le quanti.** Les lignes de campagne restent (statut, livraison, horodatage), leur
-  `to_e164` et leurs `resolved_params` partent. Les compteurs restent justes.
-- **L'identifiant de remplacement est ALÉATOIRE, pas une empreinte du numéro.** Une empreinte est réversible en
-  pratique : un numéro français tient dans quelques milliards de possibilités.
-- **Le journal ne porte JAMAIS le numéro**, seulement l'identifiant interne. L'y écrire annulerait la purge.
-- **Un seul réglage de contrôle du fil**, le délai sur l'accueil, 10 minutes par défaut, pour toutes les
-  conversations. Le choix « défaut du compte / repart du scénario / reste à traiter » est supprimé (migration 0059).
-- **Le bloc « Assigner à un agent » n'est pas neuf** : c'est l'ancien bloc `inbox`, renommé. Son nom disait une
-  destination au lieu d'une action, ce qui le rendait invisible.
+- **On anonymise pour garder le quanti.** Les lignes de campagne restent (statut, livraison, horodatage),
+  leur `to_e164` et leurs `resolved_params` partent. Les compteurs restent justes.
+- **L'identifiant de remplacement est ALÉATOIRE, pas une empreinte du numéro.**
+- **Le journal ne porte JAMAIS le numéro**, seulement l'identifiant interne.
+- **Un seul réglage de contrôle du fil**, le délai sur l'accueil, 10 minutes par défaut.
+- **Le bloc « Assigner à un agent »** est l'ancien bloc `inbox`, renommé.
 
-### Pièges rencontrés aujourd'hui, à ne pas repayer
+### Pièges d'outillage, à ne pas repayer
 
-- **`git add <répertoire>` a le même défaut que `git add -A`** : il prend ce qu'il trouve. Deux fois aujourd'hui
-  il a ramassé le travail d'une session concurrente, dont une fois une MUTATION de test laissée par un agent de
-  revue, partie sur `origin/main`. **Chemins de FICHIERS explicites, sans exception.**
-- **`agent()` d'un workflow ne LÈVE PAS sur erreur d'API, il rend `null`.** Toute transformation appliquée avant
-  le test efface le signal : `{ ...null }` donne un objet parfaitement vrai. Deux revues ont ainsi rendu « PASS »
-  avec zéro juge ayant tourné. Tester le retour BRUT.
-- **Un test qui passe ne prouve rien tant qu'on n'a pas vu la mutation le faire tomber**, et il faut muter le BON
-  site : une mutation posée sur une occurrence non exercée m'a fait croire à une couverture inexistante.
+- **`git add <répertoire>` a le même défaut que `git add -A`.** Chemins de FICHIERS explicites, sans exception.
+- **`agent()` d'un workflow ne LÈVE PAS sur erreur d'API, il rend `null`.** Tester le retour BRUT.
+- **Un test qui passe ne prouve rien tant qu'on n'a pas vu la mutation le faire tomber**, et il faut muter le
+  BON site.
 
-### Deux instables E2E, mesurés, hors de mes lots
-
-- `campaign-carousel-preview` : **1 échec sur 3 EN ISOLATION**. Chantier d'une session concurrente.
-- `inbox-envoi-scenario` : **15 sur 15 en isolation**, ne tombe qu'en pleine charge à 4 workers.
-
-La config Playwright documente déjà cette classe (« 54/54 à 1 worker »). La suite est passée à 130 tests, ce
-plafond commence à mentir. Sujet en soi, Julien n'a pas encore tranché.
-
-### Autre session en cours dans le même dépôt
-
-Une session concurrente travaille sur un **node « Envoi de mail » (SMTP)** : `docs/superpowers/` (commité),
-`src/email/` et `tests/email-account-store.test.ts` (non suivis chez moi). **Ne pas les committer.**
-
-### Les plans détaillés
-
-`.loop/mba-ecrans-parametres.md` et `.loop/mba-controle-du-fil.md` portent le détail de chaque tour, les
-critères d'acceptation et les hypothèses assumées. ⚠️ `.loop/` est **gitignoré** : ces fichiers vivent seulement
-en local, ils ne sont pas dans le dépôt distant.
+### Session concurrente — NE PAS COMMITTER
+`src/email/`, `tests/email-account-store.test.ts`, `web/e2e/zzprobe-*.spec.ts` appartiennent au chantier du
+node « Envoi de mail (SMTP) » d'une autre session. Sa migration `0060_email.sql` est appliquée en prod.
 
 # wip.md — travail en cours
 
