@@ -4,6 +4,7 @@ import type { Guard } from '../auth/middleware';
 import { isCreatableTriggerKind, keywordsOf } from '../automation/match';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface AutomationRouteDeps {
   list(tenantId: string): Promise<AutomationRow[]>;
@@ -15,14 +16,6 @@ export interface AutomationRouteDeps {
   /** UNE automation par id (scopée tenant). Lecture ciblée : `list` est capée, donc aveugle au-delà du plafond. */
   getById(id: string, tenantId: string): Promise<AutomationRow | null>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /** Borne haute de l'anti-rebond : 7 jours, comme le gel de contrôle. Au-delà ce n'est plus un anti-rebond. */
 const MAX_COOLDOWN = 7 * 24 * 3600;

@@ -245,10 +245,11 @@ manuel en production.
 stricte), **`src/http/v1-sends.ts`** (oublié par la v1 : l'API publique crée aussi des campagnes, un
 intégrateur doit pouvoir déclarer l'intention), `web/app/campaigns/page.tsx`.
 
-⚠️ **Deux inserts de `campaigns`, pas un** : `store.pg.ts:77` (`insertCampaign`, sans appelant applicatif)
-et `store.pg.ts:480` (`createWithRecipients`, le seul chemin réel). Ne modifier que le premier perdrait le
-champ en silence. **C'est déjà arrivé sur `workflow_id`**, d'où le test de non-régression
-`stores.integration.test.ts:630`.
+✅ **Un seul insert de `campaigns` depuis le 2026-08-18** : `insertCampaignRow(q, input)` (fonction module de
+`store.pg.ts`) porte les colonnes, `insertCampaign` et `createWithRecipients` l'appellent tous les deux. Une
+nouvelle colonne se pose donc à UN endroit. Avant, l'INSERT était écrit deux fois et n'en modifier qu'un
+perdait le champ en silence : **c'est arrivé sur `workflow_id`**, d'où le test de non-régression
+`stores.integration.test.ts:630`, qui reste utile (il vérifie le chemin réel bout en bout).
 
 ⚠️ **Migration 0041 obligatoire** (`campaigns.target_control_owner`), livrée avec A.5. Sans elle, le premier
 POST de création de campagne tombe en 500 `column does not exist`, le mode de panne décrit dans

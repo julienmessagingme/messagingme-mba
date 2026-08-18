@@ -3,6 +3,7 @@ import { DuplicateEmailError } from '../user/store.pg';
 import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
 import { renderInvitationEmail } from '../support/email-templates';
+import { scopeTenant } from './scope';
 
 export interface UsersRouteDeps {
   listUsers(tenantId: string): Promise<UserRow[]>;
@@ -29,13 +30,6 @@ export interface UsersRouteDeps {
 const ROLES = new Set(['admin', 'agent']);
 // Validation d'email minimale (un @, pas d'espace) : le vrai contrôle d'unicité est en base.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
 
 /**
  * Gestion des comptes (onglet Admin). Le GROUPE est réservé aux admins via `guard`

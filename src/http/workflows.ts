@@ -7,6 +7,7 @@ import type { WorkflowRow } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
 import { collectNodes } from '../workflow/node-list';
 import { newTestToken, waMeTestLink } from '../workflow/test-token';
+import { scopeTenant, nonEmpty } from './scope';
 
 /**
  * NOTE (Lot D) : le SAVE n'exige PLUS qu'un scénario commence par un template. Un scénario peut désormais
@@ -52,14 +53,6 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
   }
   return [...out];
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /**
  * Routes du bot builder (workflows). Admin-only via `guard`. Tenant dérivé du JWT. Le graphe est TOUJOURS

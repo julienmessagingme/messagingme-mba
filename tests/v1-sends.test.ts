@@ -259,9 +259,23 @@ describe('POST /v1/sends', () => {
 
   it('cible node : des params de template -> 400 (ils ne seraient jamais envoyés)', async () => {
     const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-params'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671'], params: [{ type: 'field', key: 'prenom' }] } });
+    // Mapping BIEN FORMÉ : sinon le refus viendrait de la validation de forme, et ce test ne prouverait
+    // plus la règle « params inutile sur une cible node ».
+    const params = [{ position: 1, source: { type: 'field', key: 'prenom' } }];
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-params'), payload: { target: { node: 'nod_ok' }, category: 'utility', recipients: ['+33612345671'], params } });
     expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('cible node');
     expect(cap.sends).toHaveLength(0); // refusé AVANT toute création
+    await server.close();
+  });
+
+  it('🔴 params malformé -> 400 déterministe, jamais un 500 (endpoint public)', async () => {
+    const { server, cap } = app();
+    // Une source sans `type` : avant, le cast `as TemplateParam[]` la laissait passer et resolveTemplateParams
+    // jetait au moment de construire les destinataires, soit un 500 (que Cloudflare remplace par sa page).
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-params-ko'), payload: { target: { template: { name: 'promo', language: 'fr' } }, category: 'marketing', recipients: ['+33612345671'], params: [{ position: 1, source: { key: 'prenom' } }] } });
+    expect(res.statusCode).toBe(400);
+    expect(cap.sends).toHaveLength(0);
     await server.close();
   });
 

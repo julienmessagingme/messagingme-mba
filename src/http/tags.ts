@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TagCount } from '../crm/tag-store.pg';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface TagsRouteDeps {
   listTags(tenantId: string): Promise<TagCount[]>;
@@ -8,14 +9,6 @@ export interface TagsRouteDeps {
   renameTag(tenantId: string, from: string, to: string): Promise<number>;
   removeTag(tenantId: string, tag: string): Promise<number>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /** Gestion des tags (menu Contenu), admin-only. Modèle mixte : table `tags` (tags déclarés, créés à vide)
  *  + tags portés par les contacts (`contacts.tags`). listTags = union des deux (cf. PgTagStore). */

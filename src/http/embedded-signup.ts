@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { TenantConflictError } from '../account/es-store.pg';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface EmbeddedSignupRouteDeps {
   /** config_id de la configuration ES (dashboard Meta, Facebook Login for Business). Vide -> feature OFF. */
@@ -26,14 +27,6 @@ export interface EmbeddedSignupRouteDeps {
   /** Persiste le token business (le câblage chiffre AVANT, la route ne voit jamais le stockage en clair). */
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /**
  * Embedded Signup (Tech Provider), admin-only. Deux routes :

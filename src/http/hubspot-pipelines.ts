@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { HubspotServiceError } from '../crm/hubspot-import';
 import type { HubspotDealPipeline } from '../crm/hubspot-import';
+import { scopeTenant } from './scope';
 
 export interface HubspotPipelinesRouteDeps {
   /**
@@ -9,13 +10,6 @@ export interface HubspotPipelinesRouteDeps {
    * de portail lié (`tenant_not_connected`), ce que la route traduit en `connected:false`.
    */
   fetchDealStages(tenantId: string): Promise<HubspotDealPipeline[]>;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 /** Le connecteur répond 404 `tenant_not_connected` quand aucun portail n'est lié : ce n'est pas une panne. */

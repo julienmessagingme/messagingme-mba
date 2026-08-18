@@ -11,6 +11,7 @@ import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
+import { scopeTenant, nonEmpty } from './scope';
 
 /**
  * Message RCS accepté à la création d'une campagne. Union FERMÉE : un `kind` inconnu est refusé en 400, il ne
@@ -80,17 +81,6 @@ const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
 
 function isCategory(v: unknown): v is CampaignCategory {
   return typeof v === 'string' && CATEGORIES.has(v as CampaignCategory);
-}
-function nonEmpty(v: unknown): v is string {
-  return typeof v === 'string' && v.trim() !== '';
-}
-
-/** Tenant effectif = celui du JWT ; l'URL doit correspondre. null si interdit. */
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */

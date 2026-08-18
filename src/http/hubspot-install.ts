@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { buildInstallUrl } from '../hubspot/install-link';
+import { scopeTenant } from './scope';
 
 export interface HubspotInstallRouteDeps {
   /** Origine publique du connecteur (HUBSPOT_CONNECTOR_PUBLIC_URL). Vide -> 503. */
@@ -9,13 +10,6 @@ export interface HubspotInstallRouteDeps {
   serviceSecret: string;
   /** now() injectable pour les tests. */
   now?: () => number;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 /** Grants optionnels autorisés (whitelist stricte : jamais un grant arbitraire venu du corps de la requête). */

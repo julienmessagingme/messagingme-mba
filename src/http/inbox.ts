@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ReturnBehavior } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
+import { scopeTenant, nonEmpty } from './scope';
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
 export interface OutboundTemplate {
@@ -88,17 +89,6 @@ export interface InboxRouteDeps {
    * `null` = scénario inconnu pour ce workspace. Absente -> la fonctionnalité est indisponible (503).
    */
   startWorkflow?(tenantId: string, workflowId: string, waId: string, windowOpen: boolean): Promise<true | string | null>;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-
-function nonEmpty(v: unknown): v is string {
-  return typeof v === 'string' && v.trim() !== '';
 }
 
 /**

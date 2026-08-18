@@ -6,6 +6,7 @@ import { isContactFieldOp } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
+import { scopeTenant } from './scope';
 
 export interface ContactsRouteDeps {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
@@ -105,13 +106,6 @@ function parseBulkTarget(raw: unknown): BulkTarget | null {
     return { filters: normalizeContactFilters(t.filters), excludeIds: asIdArray(t.excludeIds) };
   }
   return null;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 const asStringArray = (v: unknown): string[] =>

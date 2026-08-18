@@ -4,6 +4,7 @@ import type { Guard } from '../auth/middleware';
 import type { TenantSettings } from '../settings/store.pg';
 import type { ReturnBehavior } from '../inbox/store.pg';
 import type { BusinessHours, DayHours } from '../workflow/conditions';
+import { scopeTenant } from './scope';
 
 export interface SettingsRouteDeps {
   getSettings(tenantId: string): Promise<TenantSettings>;
@@ -47,13 +48,6 @@ function normalizeBusinessHours(raw: unknown): BusinessHours | null {
     out[String(d)] = { closed: false, open, close } satisfies DayHours;
   }
   return out;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 /** Réglages tenant : GET ouvert (lecture), PUT admin-only (toggle MBA). */

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { isUserFieldType, isSystemFieldKey, slugify } from '../crm/fields';
 import type { UserFieldDef, UserFieldType } from '../crm/types';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface FieldsRouteDeps {
   listFields(tenantId: string): Promise<UserFieldDef[]>;
@@ -12,14 +13,6 @@ export interface FieldsRouteDeps {
   updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
   deleteField(tenantId: string, key: string): Promise<boolean>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /**
  * Gestion des user fields (menu Contenu), admin-only. On édite libellé + type ; la CLÉ est immuable

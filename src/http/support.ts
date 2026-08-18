@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { RateLimiter } from '../auth/rate-limit';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface SupportRouteDeps {
   /** false si le support n'est pas configuré (clé Resend ou destinataire manquant) -> 503. */
@@ -14,14 +15,6 @@ export interface SupportRouteDeps {
    */
   getUserEmail?(userId: string): Promise<string | null>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 const SUBJECT_MAX = 200;
 const MESSAGE_MAX = 5000;

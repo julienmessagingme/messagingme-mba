@@ -8,6 +8,7 @@ import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/cont
 import { isContactFieldOp } from '../crm/contact-store.pg';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
+import { scopeTenant } from './scope';
 
 export interface ImportRouteDeps extends ImportDeps {
   listContacts(tenantId: string, limit?: number, offset?: number, tag?: string): Promise<ContactRow[]>;
@@ -80,14 +81,6 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
  */
 export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
-
-  /** Tenant effectif = celui du JWT ; l'URL doit correspondre. Renvoie null si interdit. */
-  function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-    const { tenantId } = req.params as { tenantId: string };
-    const authTenant = req.auth?.tenantId;
-    if (authTenant !== undefined && authTenant !== tenantId) return null;
-    return authTenant ?? tenantId;
-  }
 
   app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import type { ApiKeyRow } from '../auth/api-key-store.pg';
+import { scopeTenant, nonEmpty } from './scope';
 
 /** Scopes d'API reconnus en V1. Une clé demande un sous-ensemble non vide. */
 export const VALID_API_SCOPES = ['contacts:write', 'sends:create'] as const;
@@ -11,14 +12,6 @@ export interface ApiKeysRouteDeps {
   listKeys(tenantId: string): Promise<ApiKeyRow[]>;
   revokeKey(tenantId: string, id: string): Promise<boolean>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /**
  * CRUD des clés d'API (console admin, JWT). Admin-only via `guard` + forbidNonAdmin. Le tenant vient du JWT.

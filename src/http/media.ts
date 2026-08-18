@@ -1,16 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
+import { scopeTenant } from './scope';
 
 export interface MediaRouteDeps {
   /** Upload une image et renvoie le handle média Meta (header_handle de carte carousel). */
   uploadImage(bytes: Buffer, mime: string): Promise<string>;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 // Média accepté pour un en-tête (carousel = image ; en-tête simple = image ou vidéo). Data URL base64.

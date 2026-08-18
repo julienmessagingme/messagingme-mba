@@ -139,34 +139,7 @@ export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
 
   async insertCampaign(input: CreateCampaignInput): Promise<string> {
-    // Campagne workflow : pas de template propre -> template_name/language null.
-    const isWorkflow = !!input.workflowId;
-    const res = await this.pool.query<{ id: string }>(
-      `insert into campaigns
-         (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
-       returning id`,
-      [
-        input.tenantId,
-        // Campagne RCS : aucun numéro Meta. La colonne est nullable depuis 0056, on y met null plutôt que ''.
-        input.phoneNumberId === '' ? null : input.phoneNumberId,
-        input.name,
-        input.category,
-        isWorkflow ? null : input.templateName,
-        isWorkflow ? null : input.templateLanguage,
-        JSON.stringify(input.paramMapping),
-        input.workflowId ?? null,
-        input.ratePerMinute ?? null,
-        // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null (pas de campagne bâtarde).
-        isWorkflow ? input.startNodeId ?? null : null,
-        input.channel ?? 'whatsapp',
-        input.rcsAgentId ?? null,
-        input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
-      ],
-    );
-    const id = res.rows[0]?.id;
-    if (!id) throw new Error('insertCampaign : aucun id retourné');
-    return id;
+    return insertCampaignRow(this.pool, input);
   }
 
   async getCampaign(id: string): Promise<Campaign | null> {
@@ -641,26 +614,7 @@ export class PgCampaignRepo {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      // Campagne workflow : pas de template propre -> template_name/language null + workflow_id posé.
-      const isWorkflow = !!input.workflowId;
-      const cRes = await client.query<{ id: string }>(
-        `insert into campaigns
-           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message)
-         values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
-         returning id`,
-        [
-          // Campagne RCS : aucun numéro Meta (colonne nullable depuis 0056).
-          input.tenantId, input.phoneNumberId === '' ? null : input.phoneNumberId, input.name, input.category,
-          isWorkflow ? null : input.templateName, isWorkflow ? null : input.templateLanguage,
-          JSON.stringify(input.paramMapping), input.workflowId ?? null, input.ratePerMinute ?? null,
-          // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null.
-          isWorkflow ? input.startNodeId ?? null : null,
-          input.channel ?? 'whatsapp', input.rcsAgentId ?? null,
-          input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
-        ],
-      );
-      const campaignId = cRes.rows[0]?.id;
-      if (!campaignId) throw new Error('createWithRecipients : aucun id retourné');
+      const campaignId = await insertCampaignRow(client, input);
       const inserted = await bulkInsertRecipients(client, campaignId, recipients);
       await client.query('commit');
       return { campaignId, recipientCount: inserted };
@@ -676,6 +630,46 @@ export class PgCampaignRepo {
   async insertRecipients(campaignId: string, recipients: BuiltRecipient[]): Promise<number> {
     return bulkInsertRecipients(this.pool, campaignId, recipients);
   }
+}
+
+/**
+ * Insert d'UNE campagne, seule définition des colonnes écrites. Fonctionne avec un client transactionnel
+ * (createWithRecipients, le chemin réel) comme avec le pool (insertCampaign, utilisée par les tests
+ * d'intégration), exactement comme `bulkInsertRecipients`.
+ *
+ * ⚠️ Cet INSERT était écrit DEUX fois. Ajouter une colonne à une seule copie la perdait en silence sur
+ * l'autre chemin, et c'est déjà arrivé (`workflow_id` : le test visait la copie non branchée, d'où un faux
+ * vert). Une nouvelle colonne se pose ici, et les deux chemins la portent.
+ */
+async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInput): Promise<string> {
+  // Campagne workflow : pas de template propre -> template_name/language null + workflow_id posé.
+  const isWorkflow = !!input.workflowId;
+  const res = await q.query<{ id: string }>(
+    `insert into campaigns
+       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
+     returning id`,
+    [
+      input.tenantId,
+      // Campagne RCS : aucun numéro Meta. La colonne est nullable depuis 0056, on y met null plutôt que ''.
+      input.phoneNumberId === '' ? null : input.phoneNumberId,
+      input.name,
+      input.category,
+      isWorkflow ? null : input.templateName,
+      isWorkflow ? null : input.templateLanguage,
+      JSON.stringify(input.paramMapping),
+      input.workflowId ?? null,
+      input.ratePerMinute ?? null,
+      // start_node_id n'a de sens qu'avec un workflow : sans lui, on force null (pas de campagne bâtarde).
+      isWorkflow ? input.startNodeId ?? null : null,
+      input.channel ?? 'whatsapp',
+      input.rcsAgentId ?? null,
+      input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
+    ],
+  );
+  const id = res.rows[0]?.id;
+  if (!id) throw new Error('insertCampaignRow : aucun id retourné');
+  return id;
 }
 
 /**

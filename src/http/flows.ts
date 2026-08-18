@@ -7,6 +7,7 @@ import type { FlowRow } from '../flow/store.pg';
 import type { UserFieldType, UserFieldDef } from '../crm/types';
 import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
 import type { Guard } from '../auth/middleware';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface FlowRouteDeps {
   /** Client flows Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
@@ -29,14 +30,6 @@ export interface FlowRouteDeps {
   /** Retire le flow du store local (après suppression/dépréciation Meta). true si supprimé. */
   removeFlowRow(flowId: string, tenantId: string): Promise<boolean>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 const IMG_MAX = 400 * 1024; // base64 borné (~300KB binaire) — l'image Flow s'embarque dans le flow_json
 const stripDataUrl = (s: string): string => s.replace(/^data:image\/[a-z]+;base64,/i, '');

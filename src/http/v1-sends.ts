@@ -8,6 +8,7 @@ import type { ApiSkip } from '../api/sends-build';
 import type { BuildContact, BuiltRecipient } from '../campaign/build';
 import type { CampaignCategory } from '../campaign/types';
 import type { TemplateParam } from '../crm/template';
+import { validateParamMapping } from '../crm/template';
 import type { ResolveResult } from '../ids/resolve';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
 
@@ -76,7 +77,12 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     if (!isObj(b.target)) return reply.code(400).send({ error: 'target requis' });
     if (!Array.isArray(b.recipients) || b.recipients.length === 0) return reply.code(400).send({ error: 'recipients (tableau non vide) requis' });
     if (b.recipients.length > MAX_RECIPIENTS) return reply.code(400).send({ error: `maximum ${MAX_RECIPIENTS} destinataires par envoi` });
-    const params: TemplateParam[] = Array.isArray(b.params) ? (b.params as TemplateParam[]) : [];
+    // Même validation que la route console (campaigns.ts) : sans elle, une source malformée ne casse qu'au
+    // moment de résoudre les variables, en 500 sur un endpoint public au lieu d'un 400 déterministe.
+    const params = validateParamMapping(b.params ?? []);
+    if (params === null) {
+      return reply.code(400).send({ error: 'params invalide (positions 1..N contiguës, sources valides)' });
+    }
     const ratePerMinute = typeof b.ratePerMinute === 'number' && b.ratePerMinute > 0 ? Math.min(80, Math.floor(b.ratePerMinute)) : null;
 
     // Résolution de la cible : scénario (code/nom), template (name+language), node (code nod_).

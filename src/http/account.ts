@@ -3,6 +3,7 @@ import type { Guard } from '../auth/middleware';
 import { forbidNonAdmin } from '../auth/middleware';
 import { computeAccountStatus, normalizeQuality, type AccountSignals, type QualityRating } from '../account/service';
 import type { PullResult } from '../account/pull';
+import { scopeTenant } from './scope';
 
 /** Numéro principal du tenant, avec le statut PERSISTÉ (dernier pull connu). */
 export interface PhoneNumberRecord {
@@ -66,13 +67,6 @@ export interface AccountRouteDeps {
   disconnectHubspot?(tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }>;
   /** Reflet LOCAL de la déconnexion : coupe hubspot_connected de TOUS les numéros du tenant (après succès connecteur). */
   disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }>;
-}
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
 }
 
 export interface AccountStatusResponse {

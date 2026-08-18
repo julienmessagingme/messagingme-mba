@@ -4,6 +4,7 @@ import { ReconsentRequiredError } from '../crm/hubspot-import';
 import type { HubspotList } from '../crm/hubspot-import';
 import { listsGateOpen } from '../crm/lists-gate';
 import type { ImportReport } from '../crm/types';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface HubspotImportRouteDeps {
   /**
@@ -18,14 +19,6 @@ export interface HubspotImportRouteDeps {
   /** Importe une liste (opt-in TOUJOURS false, tag HubSpot). `tags` = tag(s) réellement posé(s). Peut lever ReconsentRequiredError. */
   importList(tenantId: string, listId: string, listName: string): Promise<{ report: ImportReport; truncated: boolean; skippedNoPhone: number; tags: string[] }>;
 }
-
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /**
  * Import de listes HubSpot comme destinataires (3e source de campagne). Admin-only via `guard`. Tenant du JWT.

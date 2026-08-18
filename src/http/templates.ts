@@ -7,6 +7,7 @@ import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../meta/languages';
 import { isSendableButtonUrl } from '../meta/button-url';
+import { scopeTenant, nonEmpty } from './scope';
 
 export interface TemplateRouteDeps {
   /** Client templates Meta résolu PAR TENANT (B1 : token du tenant, repli global en sommeil). */
@@ -47,20 +48,10 @@ async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: stri
   }
 }
 
-function scopeTenant(req: { params: unknown; auth?: { tenantId: string } }): string | null {
-  const { tenantId } = req.params as { tenantId: string };
-  const authTenant = req.auth?.tenantId;
-  if (authTenant !== undefined && authTenant !== tenantId) return null;
-  return authTenant ?? tenantId;
-}
-
 const CATEGORIES = new Set(['MARKETING', 'UTILITY']);
 /** Statuts qu'un template Meta autorise à éditer (POST /{id}). PENDING/IN_APPEAL non éditables. */
 const EDITABLE_STATUSES = new Set(['APPROVED', 'REJECTED', 'PAUSED']);
 
-function nonEmpty(v: unknown): v is string {
-  return typeof v === 'string' && v.trim() !== '';
-}
 function validButtons(v: unknown): v is TemplateButton[] | undefined {
   if (v === undefined) return true;
   if (!Array.isArray(v)) return false;
