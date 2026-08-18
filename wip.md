@@ -14,8 +14,13 @@
   enregistrable nulle part. Action en masse « Passer en opt-out » dans le mini-CRM.
 - L'**opt-in capté par un WhatsApp Flow** est journalisé (preuve de consentement la plus forte, la personne a
   coché elle-même). `markOptedIn` rend l'identifiant du contact au lieu d'un compteur.
-- **Un contact créé À LA MAIN est opt-in par défaut** (case pré-cochée). L'import CSV et l'API publique
-  gardent l'exigence inverse. Décision de Julien.
+- **Opt-in par défaut sur les DEUX créations manuelles** : saisie à la main et import CSV (cases pré-cochées,
+  défauts de route alignés). L'API publique et l'import HubSpot gardent l'exigence inverse. Décision de Julien.
+- **Le consentement se modifie sur la FICHE** (`PATCH ... { optInStatus }`), deux valeurs seulement, jamais de
+  retour à « inconnu ». Sans ça, un contact `unknown` restait injoignable en marketing sans recours : le
+  garde-fou `optInAllows` exige un opt-in EXPLICITE et écarte les autres EN SILENCE.
+- ⚠️ **Les contacts importés depuis HubSpot arrivent `unknown`**, donc hors marketing tant qu'on ne les bascule
+  pas. Volontaire (leur consentement vient d'ailleurs), mais à savoir avant de lancer une campagne dessus.
 - Écran **« Effacer définitivement »**, distinct de « Supprimer », avec saisie du mot `PURGER`.
 
 ### 🔴 Trois bugs de la purge, trouvés EN PRODUCTION en purgeant un vrai contact
