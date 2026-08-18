@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fetchHubspotLists, importHubspotList, disconnectHubspot, flagContactUnreachable, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-import';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot, flagContactUnreachable, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-service';
 import { signRequest } from '../src/lib/signature';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { ContactStore, ContactUpsert } from '../src/crm/import';

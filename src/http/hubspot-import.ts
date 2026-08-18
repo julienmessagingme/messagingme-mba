@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { ReconsentRequiredError } from '../crm/hubspot-import';
-import type { HubspotList } from '../crm/hubspot-import';
+import { ReconsentRequiredError } from '../crm/hubspot-service';
+import type { HubspotList } from '../crm/hubspot-service';
 import { listsGateOpen } from '../crm/lists-gate';
 import type { ImportReport } from '../crm/types';
 import { scopeTenant, nonEmpty } from './scope';

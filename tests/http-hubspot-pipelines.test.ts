@@ -2,9 +2,9 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import { HubspotServiceError } from '../src/crm/hubspot-import';
+import { HubspotServiceError } from '../src/crm/hubspot-service';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
-import type { HubspotDealPipeline } from '../src/crm/hubspot-import';
+import type { HubspotDealPipeline } from '../src/crm/hubspot-service';
 
 const SECRET = 'test-secret';
 let adminTok = '';

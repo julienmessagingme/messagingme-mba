@@ -1,3 +1,10 @@
+/**
+ * Client du canal service vers le connecteur mm-hubspot : appel signé (`callService`), import de listes,
+ * déconnexion d'un portail, signalement d'un contact injoignable, lecture des étapes de deal.
+ *
+ * Nommé `hubspot-import` jusqu'au 2026-08-18, alors qu'il ne portait plus qu'en partie l'import, et que les
+ * ROUTES de l'import s'appellent déjà `src/http/hubspot-import.ts` : deux fichiers de même nom pour deux rôles.
+ */
 import { randomBytes } from 'node:crypto';
 import { signRequest } from '../lib/signature';
 import { withRetry } from '../meta/http';

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { HubspotServiceError } from '../crm/hubspot-import';
-import type { HubspotDealPipeline } from '../crm/hubspot-import';
+import { HubspotServiceError } from '../crm/hubspot-service';
+import type { HubspotDealPipeline } from '../crm/hubspot-service';
 import { scopeTenant } from './scope';
 
 export interface HubspotPipelinesRouteDeps {

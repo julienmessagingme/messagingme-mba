@@ -692,6 +692,82 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 
 const cls = 'w-full rounded-lg border border-ink-300 px-2.5 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
+/**
+ * Choix d'un tag, avec suggestions. Partagé par le bloc Action et par le bloc `tag` LEGACY (retiré de la
+ * palette mais rendu à vie pour les anciens graphes) : les deux en portaient une copie, et elles avaient déjà
+ * commencé à diverger.
+ *
+ * `onCommit` n'est fourni que pour un AJOUT : quitter le champ crée alors le tag dans Contenu > Tags. Sur un
+ * retrait, il n'y a rien à créer.
+ */
+function TagPicker({ label, value, tags, onChange, onCommit }: {
+  label: string;
+  value: string;
+  tags: TagCount[];
+  onChange: (v: string) => void;
+  onCommit?: (v: string) => void;
+}) {
+  const t = useT();
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-ink-600">{label}</label>
+      <input
+        list="wf-tags"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onCommit?.(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onCommit?.((e.target as HTMLInputElement).value); } }}
+        className={cls}
+        placeholder={t('vip, prospect…', 'vip, prospect…')}
+      />
+      <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
+      {onCommit && <p className="mt-1 text-[11px] text-ink-400">{t('Le tag est ajouté à Contenus > Tags dès que tu quittes le champ.', 'The tag is added to Content > Tags as soon as you leave the field.')}</p>}
+    </div>
+  );
+}
+
+/**
+ * Choix d'un champ de contact, et (si `avecValeur`) de la valeur à y poser : fixe, ou l'instant du passage.
+ * Partagé par le bloc Action (`set_field` / `clear_field`) et par le bloc `field` LEGACY.
+ */
+function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
+  d: Record<string, unknown>;
+  fields: UserFieldDef[];
+  onPatch: (p: Record<string, unknown>) => void;
+  avecValeur: boolean;
+}) {
+  const t = useT();
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-ink-600">{t('Champ', 'Field')}</label>
+        <select
+          value={(d.fieldKey as string) ?? ''}
+          onChange={(e) => { const f = fields.find((x) => x.key === e.target.value); onPatch({ fieldKey: e.target.value, fieldLabel: f?.label ?? '' }); }}
+          className={`${cls} bg-white`}
+        >
+          <option value="">{t('Choisir…', 'Choose…')}</option>
+          {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+        </select>
+      </div>
+      {avecValeur && (
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
+          <select value={d.valueKind === 'now' ? 'now' : 'fixed'} onChange={(e) => onPatch({ valueKind: e.target.value === 'now' ? 'now' : 'fixed' })} className={`${cls} bg-white`}>
+            <option value="fixed">{t('valeur fixe', 'fixed value')}</option>
+            <option value="now">{t('maintenant (date + heure)', 'now (date + time)')}</option>
+          </select>
+          {d.valueKind === 'now' ? (
+            <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc — utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block — useful for a “before / after” condition.')}</p>
+          ) : (
+            <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConfigPanel({
   node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
 }: {
@@ -851,45 +927,19 @@ function ConfigPanel({
           </div>
         </div>
       )}
+      {/* Blocs `tag` et `field` : LEGACY (hors palette depuis le bloc Action), mais rendus à vie pour les
+          graphes déjà enregistrés. Ils réutilisent les sous-formulaires du bloc Action, sans quoi toute
+          correction devrait être faite deux fois. */}
       {wfType === 'tag' && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Tag à ajouter', 'Tag to add')}</label>
-          <input
-            list="wf-tags"
-            value={(d.tag as string) ?? ''}
-            onChange={(e) => onPatch({ tag: e.target.value })}
-            onBlur={(e) => onCommitTag(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onCommitTag((e.target as HTMLInputElement).value); } }}
-            className={cls}
-            placeholder={t('vip, prospect…', 'vip, prospect…')}
-          />
-          <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
-          <p className="mt-1 text-[11px] text-ink-400">{t('Le tag est ajouté à Contenus > Tags dès que tu quittes le champ.', 'The tag is added to Content > Tags as soon as you leave the field.')}</p>
-        </div>
+        <TagPicker
+          label={t('Tag à ajouter', 'Tag to add')}
+          value={(d.tag as string) ?? ''}
+          tags={tags}
+          onChange={(v) => onPatch({ tag: v })}
+          onCommit={onCommitTag}
+        />
       )}
-      {wfType === 'field' && (
-        <div className="space-y-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Champ', 'Field')}</label>
-            <select value={(d.fieldKey as string) ?? ''} onChange={(e) => { const f = fields.find((x) => x.key === e.target.value); onPatch({ fieldKey: e.target.value, fieldLabel: f?.label ?? '' }); }} className={`${cls} bg-white`}>
-              <option value="">{t('Choisir…', 'Choose…')}</option>
-              {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
-            <select value={d.valueKind === 'now' ? 'now' : 'fixed'} onChange={(e) => onPatch({ valueKind: e.target.value === 'now' ? 'now' : 'fixed' })} className={`${cls} bg-white`}>
-              <option value="fixed">{t('valeur fixe', 'fixed value')}</option>
-              <option value="now">{t('maintenant (date + heure)', 'now (date + time)')}</option>
-            </select>
-            {d.valueKind === 'now' ? (
-              <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc — utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block — useful for a “before / after” condition.')}</p>
-            ) : (
-              <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
-            )}
-          </div>
-        </div>
-      )}
+      {wfType === 'field' && <FieldValueEditor d={d} fields={fields} onPatch={onPatch} avecValeur />}
       {wfType === 'action' && (() => {
         const kind = (d.actionKind as string) ?? 'add_tag';
         const isTag = kind === 'add_tag' || kind === 'remove_tag';
@@ -905,44 +955,15 @@ function ConfigPanel({
               </select>
             </div>
             {isTag ? (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-ink-600">{kind === 'add_tag' ? t('Tag à ajouter', 'Tag to add') : t('Tag à retirer', 'Tag to remove')}</label>
-                <input
-                  list="wf-tags"
-                  value={(d.tag as string) ?? ''}
-                  onChange={(e) => onPatch({ tag: e.target.value })}
-                  onBlur={(e) => { if (kind === 'add_tag') onCommitTag(e.target.value); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (kind === 'add_tag') onCommitTag((e.target as HTMLInputElement).value); } }}
-                  className={cls}
-                  placeholder={t('vip, prospect…', 'vip, prospect…')}
-                />
-                <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
-                {kind === 'add_tag' && <p className="mt-1 text-[11px] text-ink-400">{t('Le tag est ajouté à Contenus > Tags dès que tu quittes le champ.', 'The tag is added to Content > Tags as soon as you leave the field.')}</p>}
-              </div>
+              <TagPicker
+                label={kind === 'add_tag' ? t('Tag à ajouter', 'Tag to add') : t('Tag à retirer', 'Tag to remove')}
+                value={(d.tag as string) ?? ''}
+                tags={tags}
+                onChange={(v) => onPatch({ tag: v })}
+                {...(kind === 'add_tag' ? { onCommit: onCommitTag } : {})}
+              />
             ) : (
-              <div className="space-y-2">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-ink-600">{t('Champ', 'Field')}</label>
-                  <select value={(d.fieldKey as string) ?? ''} onChange={(e) => { const f = fields.find((x) => x.key === e.target.value); onPatch({ fieldKey: e.target.value, fieldLabel: f?.label ?? '' }); }} className={`${cls} bg-white`}>
-                    <option value="">{t('Choisir…', 'Choose…')}</option>
-                    {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                  </select>
-                </div>
-                {kind === 'set_field' && (
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
-                    <select value={d.valueKind === 'now' ? 'now' : 'fixed'} onChange={(e) => onPatch({ valueKind: e.target.value === 'now' ? 'now' : 'fixed' })} className={`${cls} bg-white`}>
-                      <option value="fixed">{t('valeur fixe', 'fixed value')}</option>
-                      <option value="now">{t('maintenant (date + heure)', 'now (date + time)')}</option>
-                    </select>
-                    {d.valueKind === 'now' ? (
-                      <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc.', 'Sets the date and time when the contact reaches this block.')}</p>
-                    ) : (
-                      <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
-                    )}
-                  </div>
-                )}
-              </div>
+              <FieldValueEditor d={d} fields={fields} onPatch={onPatch} avecValeur={kind === 'set_field'} />
             )}
           </div>
         );

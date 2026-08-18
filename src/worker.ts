@@ -15,7 +15,7 @@ import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runRetrySweep } from './campaign/retry-sweep';
-import { flagContactUnreachable } from './crm/hubspot-import';
+import { flagContactUnreachable } from './crm/hubspot-service';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgTenantSettingsStore } from './settings/store.pg';

@@ -2,10 +2,10 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import { ReconsentRequiredError } from '../src/crm/hubspot-import';
+import { ReconsentRequiredError } from '../src/crm/hubspot-service';
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { HubspotImportRouteDeps } from '../src/http/hubspot-import';
-import type { HubspotList } from '../src/crm/hubspot-import';
+import type { HubspotList } from '../src/crm/hubspot-service';
 
 const SECRET = 'test-secret';
 let adminTok = '';
