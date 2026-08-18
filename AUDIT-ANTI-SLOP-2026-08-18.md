@@ -1,5 +1,17 @@
 # Audit anti-slop 2026-08-18 : code simple, structure maintenable
 
+> **État au 2026-08-18 (soir) : CORRIGÉ.** Les 6 rouges et 50 des 51 jaunes sont traités et poussés
+> (commits `b1f3758` → `e0eb079`). Le rapport ci-dessous garde l'état d'origine, il sert de trace.
+> **Reste UN item, volontairement non fait** : le découpage de `web/lib/api.ts` (1325 lignes, 203 exports)
+> par domaine derrière un barrel. Mécanique mais il brasse tous les imports du front : à cadrer avec Julien.
+>
+> Deux changements sont **visibles à l'écran** : l'aperçu WhatsApp n'affiche plus « Messaging Me Tech » en dur
+> (faux chez tout autre client) mais un libellé générique, et l'interrupteur MBA grise pendant sa sauvegarde
+> comme les trois autres.
+>
+> Un **flake E2E préexistant** a été corrigé au passage : 3 échecs sur 5 suites complètes avant, 0 sur 5 après.
+
+
 Audit demandé par Julien : « code simple et structure du code maintenable sans verbiage et sans slop ».
 
 **Méthode** : 7 zones auditées en parallèle (~40 000 LOC lues), chaque zone par un auditeur puis un
