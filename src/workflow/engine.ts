@@ -100,7 +100,25 @@ export function scanOpening(graph: WorkflowGraph): OpeningScan {
  * répondre pareil, sinon l'éditeur signalerait des montages que le moteur ne rencontre pas, ou l'inverse.
  */
 function quickMessageNonBloquant(a: WorkflowAction | null): boolean {
-  return a?.kind === 'sendQuickMessage' && a.buttons.every((b) => b.text.trim() === '');
+  return a?.kind === 'sendQuickMessage' && !etapeOffreUnChoix(a);
+}
+
+/**
+ * L'étape présente-t-elle un CHOIX au client, c'est-à-dire un bouton ou une réponse rapide réellement libellé ?
+ *
+ * C'est LE prédicat du contrôle du fil, et il pilote deux choses à la fois, ce qui est toute la raison de son
+ * existence : « le scénario attend-il une réponse ? » et « gardons-nous la main face à l'agent de Meta ? » sont
+ * la même question. Une étape qui offre un choix garde la main (la réponse du client doit nous revenir pour
+ * être appariée au bouton). Une étape qui n'offre rien la relâche : l'agent de Meta reprend la parole, et les
+ * actions du scénario continuent de leur côté.
+ *
+ * Un formulaire attend forcément une saisie : il offre donc un choix, sans bouton.
+ */
+export function etapeOffreUnChoix(a: WorkflowAction | null): boolean {
+  if (a === null) return false;
+  if (a.kind === 'sendFlow') return true;
+  if (a.kind === 'sendTemplate' || a.kind === 'sendQuickMessage') return a.buttons.some((b) => b.text.trim() !== '');
+  return false;
 }
 
 /** Un montage impossible : une attente qui ferme forcément la fenêtre, suivie d'un message de session. */
@@ -334,7 +352,19 @@ function applyToWork(work: EvalContext, a: WorkflowAction): void {
   }
 }
 
-export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContext): WalkResult {
+export interface WalkOptions {
+  /**
+   * L'agent de Meta est-il allumé sur le numéro de ce tenant ?
+   *
+   * Il ne change qu'UNE chose : une étape qui n'offre aucun choix au client cesse de bloquer le parcours, parce
+   * que l'agent reprend la parole et que les actions du scénario doivent continuer sans l'attendre. Sans MBA,
+   * le comportement historique est conservé au caractère près (un template attend la réponse), pour ne rien
+   * changer aux scénarios déjà en service chez les clients.
+   */
+  mbaActif?: boolean;
+}
+
+export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContext, opts?: WalkOptions): WalkResult {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const actions: WorkflowAction[] = [];
   const visited = new Set<string>();
@@ -372,7 +402,10 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node, work);
       if (a) actions.push(a);
-      if (quickMessageNonBloquant(a)) {
+      // Sans MBA : seul un message rapide sans bouton continue (règle historique). Avec MBA : TOUTE étape qui
+      // n'offre pas de choix continue, l'agent de Meta répondant à sa place.
+      const continuer = !etapeOffreUnChoix(a) && (opts?.mbaActif === true || a?.kind === 'sendQuickMessage');
+      if (continuer) {
         current = nextNode(graph, current);
         continue;
       }

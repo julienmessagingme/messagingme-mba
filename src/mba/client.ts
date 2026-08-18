@@ -15,7 +15,14 @@ import type { FetchLike } from '../meta/templates';
  * is required to enable Meta Business Agent... ») serait perdu au profit d'un « erreur inconnue ».
  */
 const BASE = 'https://api.facebook.com';
-const API_VERSION = '2.0.0';
+/** Version de toute la surface `agent_config/*` et compagnie. */
+const VERSION_AGENT_CONFIG = '2.0.0';
+/**
+ * ⚠️ `thread_control` est le SEUL endpoint du corpus MBA versionné en **1.0.0**. Une constante de client
+ * globale enverrait `2.0.0`, valeur HORS ENUM sur cet endpoint. La version est donc un paramètre PAR APPEL,
+ * pas une propriété du client.
+ */
+const VERSION_THREAD_CONTROL = '1.0.0';
 
 /** Informations générales sur l'entreprise. Ressource SINGLETON : le PUT est un remplacement complet. */
 export interface BusinessInfo {
@@ -91,12 +98,12 @@ export class MbaClient {
     private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
-  private async appel<T>(methode: string, chemin: string, corps?: unknown): Promise<T> {
+  private async appel<T>(methode: string, chemin: string, corps?: unknown, version = VERSION_AGENT_CONFIG): Promise<T> {
     const res = await this.fetchImpl(`${BASE}/${chemin}`, {
       method: methode,
       headers: {
         Authorization: `Bearer ${this.token}`,
-        'X-API-Version': API_VERSION,
+        'X-API-Version': version,
         ...(corps === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(corps === undefined ? {} : { body: JSON.stringify(corps) }),
@@ -195,7 +202,7 @@ export class MbaClient {
     form.append('file', contenu, fileName);
     const res = await this.fetchImpl(`${BASE}/${phoneNumberId}/agent_config/files`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.token}`, 'X-API-Version': API_VERSION },
+      headers: { Authorization: `Bearer ${this.token}`, 'X-API-Version': VERSION_AGENT_CONFIG },
       body: form,
     });
     const txt = await res.text();
@@ -250,6 +257,33 @@ export class MbaClient {
 
   async removeFromAllowlist(phoneNumberId: string, entryId: string): Promise<void> {
     await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/allowlist/${entryId}`);
+  }
+
+  // ---------- Contrôle du fil ----------
+
+  /**
+   * Rend le fil à MBA, qui redevient le répondeur automatique. C'est le SEUL acte de contrôle que nous ayons :
+   * on ne prend pas la main par appel, on la prend en ENVOYANT un message (« your app takes control simply by
+   * sending a message », Get Started). L'action `take` existe depuis le 2026-08-13 mais Meta la réserve au
+   * « configured escalation partner », notion qu'il ne définit nulle part.
+   *
+   * ⚠️ PRÉCONDITION MÉTIER, en toutes lettres dans la doc : « You must currently hold thread control for the
+   * conversation. » Un release en aveugle est hors contrat, et Meta ne dit pas s'il répond une erreur, un no-op
+   * ou un 200 trompeur. L'appelant DOIT donc consulter son état de contrôle avant d'appeler.
+   *
+   * ⚠️ La réponse ne porte AUCUNE information (`{"messaging_product":"whatsapp"}`), et il n'existe aucun
+   * endpoint pour lire qui détient un fil. La confirmation arrive de façon asynchrone par le webhook
+   * `messaging_handovers`, jamais ici.
+   *
+   * @param to Identifiant du consommateur. Convention Cloud API : E.164 SANS `+` ni séparateur.
+   */
+  async releaseThread(phoneNumberId: string, to: string): Promise<void> {
+    await this.appel<unknown>(
+      'POST',
+      `business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
+      { messaging_product: 'whatsapp', action: 'release', to },
+      VERSION_THREAD_CONTROL,
+    );
   }
 
   /** Bac à sable : joue un message sans destinataire réel. Meta ne facture PAS les jetons consommés ici. */

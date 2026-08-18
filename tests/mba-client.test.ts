@@ -68,6 +68,29 @@ describe('MbaClient : la surface MBA n’est pas Graph', () => {
   });
 });
 
+describe('releaseThread : le seul acte de contrôle que nous ayons', () => {
+  it('🔴 part sur son PROPRE chemin et sa PROPRE version, 1.0.0 et non 2.0.0', () => {
+    // `thread_control` est le seul endpoint du corpus versionné en 1.0.0. Une constante de client globale
+    // enverrait 2.0.0, valeur hors enum, et l'appel serait rejeté sans qu'on comprenne pourquoi.
+    const { impl, appels } = faux([{ body: { messaging_product: 'whatsapp' } }]);
+    return new MbaClient('tok', impl).releaseThread('PN1', '33612345678').then(() => {
+      expect(appels[0]!.url).toBe('https://api.facebook.com/business/whatsapp/phone_numbers/PN1/thread_control');
+      expect(appels[0]!.method).toBe('POST');
+      expect(appels[0]!.headers['X-API-Version']).toBe('1.0.0');
+      expect(appels[0]!.body).toEqual({ messaging_product: 'whatsapp', action: 'release', to: '33612345678' });
+    });
+  });
+
+  it('🔴 les autres appels MBA restent en 2.0.0 (la version est par APPEL, pas par client)', async () => {
+    const { impl, appels } = faux([{ body: { messaging_product: 'whatsapp' } }, { body: { is_eligible: true } }]);
+    const c = new MbaClient('tok', impl);
+    await c.releaseThread('PN1', '33612345678');
+    await c.isEligible('PN1');
+    expect(appels[0]!.headers['X-API-Version']).toBe('1.0.0');
+    expect(appels[1]!.headers['X-API-Version']).toBe('2.0.0');
+  });
+});
+
 describe('fusionnerBusinessInfo : le PUT est un remplacement complet', () => {
   it('🔴 préserve les champs absents du patch', async () => {
     const existant = { business_description: 'Réseau de bus', purchase_info: 'En agence', contact_info: { email: 'a@b.c' } };
