@@ -96,7 +96,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
     setErr('');
     try {
       // ⚠️ `source`, pas les champs : c'est l'invariant de ce panneau.
-      const res = await importMbaFaq(tenantId, phoneNumberId, chargePrevue()!);
+      const res = await importMbaFaq(tenantId, phoneNumberId, source);
       setResultat(resumeImport(res, locale));
       setApercu(null);
       setSource(null);
