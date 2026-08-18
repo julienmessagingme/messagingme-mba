@@ -28,6 +28,19 @@ export function isContactFieldOp(v: unknown): v is ContactFieldOp {
 /** Un filtre sur la valeur d'un champ perso. `value` ignorée pour `empty`/`not_empty`. */
 export interface ContactFieldFilter { key: string; op: ContactFieldOp; value: string }
 
+/**
+ * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon
+ * BSUID ; un seul contact, préférence à la correspondance exacte. Attend `$1` = tenant, `$2` = wa_id, et se
+ * pose derrière un `where tenant_id = $1` (auquel l'appelant ajoute ses propres clauses avant, ex.
+ * `deleted_at is null`).
+ *
+ * Fragment partagé parce que c'est la règle de routage des messages entrants : elle était recopiée dans
+ * neuf requêtes de ce fichier, et les copies avaient commencé à diverger. Une seule écriture, sinon un
+ * ajustement s'applique à huit sites sur neuf sans que rien ne le signale.
+ */
+export const MATCH_BY_WAID_SQL = `and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+       order by (phone_e164 = '+' || $2) desc limit 1`;
+
 /** Critères de requête composables de la « Liste de contacts » (source de campagne) et du mini-CRM. Tous
  *  optionnels ; vides -> aucun filtre (tous les contacts ACTIFS du tenant, `deleted_at is null` toujours posé). */
 export interface ContactFilters {
@@ -118,8 +131,7 @@ export class PgContactStore implements ContactStore {
 
   /**
    * MERGE jsonb des valeurs saisies dans un WhatsApp Flow sur le contact correspondant (par tenant + wa_id).
-   * Même matching téléphone que l'inbox (E.164 exact `'+' || wa_id` PUIS chiffres nus, préférence à l'exact,
-   * un seul contact). V1 : NE crée PAS un contact inconnu (merge-only) — un flow rempli par un numéro hors
+   * Matching `MATCH_BY_WAID_SQL`. V1 : NE crée PAS un contact inconnu (merge-only) — un flow rempli par un numéro hors
    * base n'invente pas de fiche. Renvoie le nombre de contacts touchés (0 = inconnu). `fields || values` :
    * les clés fournies écrasent, les autres sont préservées.
    */
@@ -129,8 +141,7 @@ export class PgContactStore implements ContactStore {
       `update contacts set fields = fields || $3::jsonb, updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1
+         ${MATCH_BY_WAID_SQL}
        )`,
       [tenantId, waId, JSON.stringify(values)],
     );
@@ -141,16 +152,14 @@ export class PgContactStore implements ContactStore {
    * Consentement marketing EXPLICITE capté par un WhatsApp Flow (composant OptIn coché) : passe le contact à
    * opt_in_status='opted_in'. GAGNE toujours, même sur un opted_out antérieur (décision produit Julien : une
    * action fraîche du contact lui-même dans WhatsApp est une preuve forte, cohérent avec l'opt-in de l'import
-   * CSV). Même matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus PUIS bsuid, 1 contact). Merge-only :
-   * ne crée pas de fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
+   * CSV). Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
    */
   async markOptedIn(tenantId: string, waId: string, source: string): Promise<number> {
     const res = await this.pool.query(
       `update contacts set opt_in_status = 'opted_in', opt_in_source = $3, updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1
+         ${MATCH_BY_WAID_SQL}
        )`,
       [tenantId, waId, source],
     );
@@ -159,9 +168,8 @@ export class PgContactStore implements ContactStore {
 
   /**
    * Écrit le NOM (profile_name) du contact d'un numéro : sert au champ de BASE « Nom » d'un WhatsApp Flow, qui
-   * est un attribut (pas une clé de `contacts.fields`) et ne peut donc pas passer par mergeFieldsByPhone. Même
-   * matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus PUIS bsuid, 1 contact). Merge-only : ne crée
-   * pas de fiche pour un numéro inconnu. Nom vide -> no-op (on n'écrase pas par du vide). Renvoie le nb touché.
+   * est un attribut (pas une clé de `contacts.fields`) et ne peut donc pas passer par mergeFieldsByPhone.
+   * Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu. Nom vide -> no-op (on n'écrase pas par du vide). Renvoie le nb touché.
    */
   async setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<number> {
     const n = name.trim();
@@ -170,8 +178,7 @@ export class PgContactStore implements ContactStore {
       `update contacts set profile_name = $3, updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1
+         ${MATCH_BY_WAID_SQL}
        )`,
       [tenantId, waId, n],
     );
@@ -179,9 +186,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Ajoute des tags (union dédupliquée) au contact d'un numéro (bloc « ajout de tag » d'un workflow). Même
-   * matching que mergeFieldsByPhone (E.164 exact PUIS chiffres nus, 1 contact). Merge-only : ne crée pas de
-   * fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
+   * Ajoute des tags (union dédupliquée) au contact d'un numéro (bloc « ajout de tag » d'un workflow).
+   * Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
    */
   async addTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
     return (await this.addTagsByPhoneReturningNew(tenantId, waId, tags)).touched;
@@ -202,8 +208,7 @@ export class PgContactStore implements ContactStore {
       `update contacts c set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(c.tags || $3::text[]) t), updated_at = now()
        from (
          select id, tags from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1
+         ${MATCH_BY_WAID_SQL}
        ) src
        where c.id = src.id
        returning src.tags as avant`,
@@ -214,8 +219,8 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Retire des tags du contact d'un numéro (bloc Action « retirer un tag »). Même matching que addTagsByPhone
-   * (E.164 exact PUIS chiffres nus PUIS bsuid, 1 contact). Merge-only : ne crée pas de fiche. Renvoie le nb touché.
+   * Retire des tags du contact d'un numéro (bloc Action « retirer un tag »). Matching `MATCH_BY_WAID_SQL`.
+   * Merge-only : ne crée pas de fiche. Renvoie le nb touché.
    */
   async removeTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
     const clean = [...new Set(tags.map((t) => t.trim()).filter((t) => t !== ''))];
@@ -224,8 +229,7 @@ export class PgContactStore implements ContactStore {
       `update contacts set tags = (select coalesce(array_agg(t), '{}') from unnest(tags) t where t <> all($3::text[])), updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1
+         ${MATCH_BY_WAID_SQL}
        )`,
       [tenantId, waId, clean],
     );
@@ -234,7 +238,7 @@ export class PgContactStore implements ContactStore {
 
   /**
    * Vide des champs (retire les clés de `contacts.fields`) du contact d'un numéro (bloc Action « vider un champ »).
-   * Même matching que mergeFieldsByPhone. Merge-only : ne crée pas de fiche. Renvoie le nb de contacts touchés.
+   * Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche. Renvoie le nb de contacts touchés.
    */
   async clearFieldsByPhone(tenantId: string, waId: string, keys: string[]): Promise<number> {
     const clean = [...new Set(keys.map((k) => k.trim()).filter((k) => k !== ''))];
@@ -243,8 +247,7 @@ export class PgContactStore implements ContactStore {
       `update contacts set fields = fields - $3::text[], updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1
+         ${MATCH_BY_WAID_SQL}
        )`,
       [tenantId, waId, clean],
     );
@@ -278,8 +281,7 @@ export class PgContactStore implements ContactStore {
 
   /**
    * Résout un contact par wa_id pour COLLER ses attributs dans les variables d'un template (envoi via workflow).
-   * Même matching que mergeFieldsByPhone/addTagsByPhone (E.164 exact `'+' || wa_id` PUIS chiffres nus PUIS bsuid,
-   * 1 contact, préférence à l'exact). Renvoie {phone_e164, bsuid, profile_name, fields} (forme ResolvableContact),
+   * Matching `MATCH_BY_WAID_SQL`. Renvoie {phone_e164, bsuid, profile_name, fields} (forme ResolvableContact),
    * ou null si le numéro est hors base -> l'appelant retombe sur les exemples du template (jamais de throw).
    * `bsuid` est inclus : les sources de variable système `bsuid`/`wa_id` doivent se résoudre AUSSI sur la voie workflow.
    */
@@ -289,8 +291,7 @@ export class PgContactStore implements ContactStore {
   ): Promise<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; fields: Record<string, unknown> } | null> {
     const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; fields: Record<string, unknown> | null }>(
       `select phone_e164, bsuid, profile_name, fields from contacts where tenant_id = $1
-         and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-       order by (phone_e164 = '+' || $2) desc limit 1`,
+         ${MATCH_BY_WAID_SQL}`,
       [tenantId, waId],
     );
     const r = res.rows[0];
@@ -299,8 +300,7 @@ export class PgContactStore implements ContactStore {
 
   /**
    * État d'un contact par wa_id pour ÉVALUER une condition de scénario (node « Si ») : fields + tags + opt-in +
-   * attributs name/phone/bsuid. Même matching que `getResolvableByPhone` (E.164 exact `'+' || wa_id` PUIS chiffres
-   * nus PUIS bsuid, 1 contact, préférence à l'exact). `null` si hors base -> l'appelant retombe sur la branche
+   * attributs name/phone/bsuid. Matching `MATCH_BY_WAID_SQL`. `null` si hors base -> l'appelant retombe sur la branche
    * 'false' (déterministe). Étend `getResolvableByPhone` (qui n'a ni tags ni opt-in), forme alignée sur `EvalContext`.
    */
   async getContactStateByWaId(
@@ -309,8 +309,7 @@ export class PgContactStore implements ContactStore {
   ): Promise<{ fields: Record<string, unknown>; tags: string[]; optIn: string; name: string | null; phone: string | null; bsuid: string | null } | null> {
     const res = await this.pool.query<{ phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string; fields: Record<string, unknown> | null; tags: string[] | null }>(
       `select phone_e164, bsuid, profile_name, opt_in_status, fields, tags from contacts where tenant_id = $1
-         and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-       order by (phone_e164 = '+' || $2) desc limit 1`,
+         ${MATCH_BY_WAID_SQL}`,
       [tenantId, waId],
     );
     const r = res.rows[0];
@@ -320,16 +319,15 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Id du contact par wa_id, avec le MÊME matching que `getContactStateByWaId` (E.164 exact `'+' || wa_id`, puis
-   * chiffres nus, puis bsuid ; un seul contact, préférence à l'exact). Sert à RELIER un run de scénario déclenché
-   * par une automation à la fiche du contact : sans lui, le run partirait avec `contactId: null` alors que la
-   * fiche existe (l'upsert d'inbound vient de tourner). null = aucune fiche (rien à relier, pas une erreur).
+   * Id du contact par wa_id : matching `MATCH_BY_WAID_SQL`, restreint aux contacts NON supprimés. Sert à
+   * RELIER un run de scénario déclenché par une automation à la fiche du contact : sans lui, le run partirait
+   * avec `contactId: null` alors que la fiche existe (l'upsert d'inbound vient de tourner). null = aucune
+   * fiche (rien à relier, pas une erreur).
    */
   async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `select id from contacts where tenant_id = $1 and deleted_at is null
-         and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-       order by (phone_e164 = '+' || $2) desc limit 1`,
+         ${MATCH_BY_WAID_SQL}`,
       [tenantId, waId],
     );
     return res.rows[0]?.id ?? null;

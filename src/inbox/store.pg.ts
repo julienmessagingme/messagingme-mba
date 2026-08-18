@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { InboxStore, InboundMessage } from '../webhooks/inbound';
+import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 
 /**
  * Qui détient la conversation, et donc qui répond au client.
@@ -83,8 +84,7 @@ export class PgInboxStore implements InboxStore {
       // pour le contact entier, pas pour un tuyau.
       `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_preview)
        values ($1, $2, (select id from contacts where tenant_id = $1
-           and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
-         order by (phone_e164 = '+' || $2) desc limit 1), now(), $3)
+         ${MATCH_BY_WAID_SQL}), now(), $3)
        on conflict (tenant_id, wa_id) do update set
          last_message_at = now(),
          last_preview = excluded.last_preview,

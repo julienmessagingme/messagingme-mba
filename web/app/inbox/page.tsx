@@ -318,119 +318,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
     }
   }
 
-  /**
- * Lancer un SCÉNARIO sur la conversation ouverte. Calqué sur TemplateSendPanel.
- *
- * La liste dépend de la fenêtre de service, et c'est toute la règle : fenêtre OUVERTE, tous les scénarios,
- * puisque le contact vient d'écrire et qu'un message rapide ou un formulaire passera. Fenêtre FERMÉE, seuls
- * ceux qui OUVRENT par un template configuré, les seuls que Meta laisse passer. Un tag, une action ou une
- * condition avant ce template ne gênent pas : c'est ce qui OUVRE qui compte, pas le premier bloc.
- *
- * `isCampaignEligible` répond exactement à cette question et sert déjà au sélecteur de campagne : même règle,
- * même code, aucune seconde version à maintenir. Le serveur re-tranche de toute façon sur l'état réel.
- */
-function ScenarioSendPanel({
-  session,
-  conversationId,
-  windowOpen,
-  onClose,
-  onSent,
-}: {
-  session: Session;
-  conversationId: string;
-  windowOpen: boolean;
-  onClose: () => void;
-  onSent: () => void | Promise<void>;
-}) {
-  const t = useT();
-  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
-  const [total, setTotal] = useState(0);
-  const [selId, setSelId] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await listWorkflows(session.tenantId);
-        if (!alive) return;
-        setTotal(res.workflows.length);
-        setWorkflows(windowOpen ? res.workflows : res.workflows.filter((w) => isCampaignEligible(w.graph)));
-      } catch (err) {
-        if (alive) setError(err instanceof Error ? err.message : t('Scénarios indisponibles', 'Scenarios unavailable'));
-      }
-    })();
-    return () => { alive = false; };
-  }, [session.tenantId, windowOpen, t]);
-
-  const sel = workflows.find((w) => w.id === selId) ?? null;
-
-  async function lancer() {
-    if (!sel) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await startWorkflowInConversation(session.tenantId, conversationId, sel.id);
-      await onSent();
-    } catch (err) {
-      // Le serveur rend la RAISON exacte du refus (422) : on l'affiche telle quelle, elle est déjà lisible.
-      setError(err instanceof Error ? err.message : t('Lancement impossible', 'Failed to start'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Lancer un scénario', 'Start a scenario')}</h3>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-700">×</button>
-        </div>
-        <p className="mt-1 text-xs text-ink-500">
-          {windowOpen
-            ? t('Le contact a écrit il y a moins de 24 h : tous tes scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
-            : t('Fenêtre de 24 h fermée : seuls les scénarios qui commencent par un template peuvent partir.', '24-hour window closed: only scenarios starting with a template can run.')}
-        </p>
-
-        <div className="mt-3">
-          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Scénario', 'Scenario')}</label>
-          {workflows.length === 0 ? (
-            <p className="text-xs text-amber-700" data-testid="scenario-none">
-              {total === 0
-                ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario yet. Create one from the "Scenario" menu on the left.')
-                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il commence par l'envoi d'un template (un tag, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to start by sending a template (a tag, an action or a condition before it is fine).')}
-            </p>
-          ) : (
-            <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
-              <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
-              {workflows.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="scenario-error">{error}</p>}
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Annuler', 'Cancel')}</button>
-          <button
-            onClick={lancer}
-            disabled={!sel || busy}
-            data-testid="scenario-send"
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-          >
-            {busy ? t('Lancement…', 'Starting…') : t('Lancer', 'Start')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Surcharge de reprise de CE fil (C.4). '' = suit le défaut du tenant. Sauvegarde optimiste au changement. */
+  /** Surcharge de reprise de CE fil (C.4). '' = suit le défaut du tenant. Sauvegarde optimiste au changement. */
   async function saveReturn(next: ReturnBehavior | '') {
     setReturnBehaviorState(next);
     savingReturnRef.current = true;
@@ -615,6 +503,122 @@ const inputCls =
 
 function varCountOf(body: string | undefined): number {
   return body ? new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size : 0;
+}
+
+/**
+ * Lancer un SCÉNARIO sur la conversation ouverte. Calqué sur TemplateSendPanel.
+ *
+ * La liste dépend de la fenêtre de service, et c'est toute la règle : fenêtre OUVERTE, tous les scénarios,
+ * puisque le contact vient d'écrire et qu'un message rapide ou un formulaire passera. Fenêtre FERMÉE, seuls
+ * ceux qui OUVRENT par un template configuré, les seuls que Meta laisse passer. Un tag, une action ou une
+ * condition avant ce template ne gênent pas : c'est ce qui OUVRE qui compte, pas le premier bloc.
+ *
+ * `isCampaignEligible` répond exactement à cette question et sert déjà au sélecteur de campagne : même règle,
+ * même code, aucune seconde version à maintenir. Le serveur re-tranche de toute façon sur l'état réel.
+ *
+ * ⚠️ Déclaré au niveau MODULE, comme TemplateSendPanel : dans le corps de Thread, la fonction était recréée à
+ * chaque rendu, donc React démontait puis remontait la modale ouverte au moindre re-render (le fil recharge
+ * toutes les 4 s), effaçant la sélection en cours.
+ */
+function ScenarioSendPanel({
+  session,
+  conversationId,
+  windowOpen,
+  onClose,
+  onSent,
+}: {
+  session: Session;
+  conversationId: string;
+  windowOpen: boolean;
+  onClose: () => void;
+  onSent: () => void | Promise<void>;
+}) {
+  const t = useT();
+  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
+  const [total, setTotal] = useState(0);
+  const [selId, setSelId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await listWorkflows(session.tenantId);
+        if (!alive) return;
+        setTotal(res.workflows.length);
+        setWorkflows(windowOpen ? res.workflows : res.workflows.filter((w) => isCampaignEligible(w.graph)));
+      } catch (err) {
+        if (alive) setError(err instanceof Error ? err.message : t('Scénarios indisponibles', 'Scenarios unavailable'));
+      }
+    })();
+    return () => { alive = false; };
+  }, [session.tenantId, windowOpen, t]);
+
+  const sel = workflows.find((w) => w.id === selId) ?? null;
+
+  async function lancer() {
+    if (!sel) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await startWorkflowInConversation(session.tenantId, conversationId, sel.id);
+      await onSent();
+    } catch (err) {
+      // Le serveur rend la RAISON exacte du refus (422) : on l'affiche telle quelle, elle est déjà lisible.
+      setError(err instanceof Error ? err.message : t('Lancement impossible', 'Failed to start'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Lancer un scénario', 'Start a scenario')}</h3>
+          <button onClick={onClose} className="text-ink-400 hover:text-ink-700">×</button>
+        </div>
+        <p className="mt-1 text-xs text-ink-500">
+          {windowOpen
+            ? t('Le contact a écrit il y a moins de 24 h : tous tes scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
+            : t('Fenêtre de 24 h fermée : seuls les scénarios qui commencent par un template peuvent partir.', '24-hour window closed: only scenarios starting with a template can run.')}
+        </p>
+
+        <div className="mt-3">
+          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Scénario', 'Scenario')}</label>
+          {workflows.length === 0 ? (
+            <p className="text-xs text-amber-700" data-testid="scenario-none">
+              {total === 0
+                ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario yet. Create one from the "Scenario" menu on the left.')
+                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il commence par l'envoi d'un template (un tag, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to start by sending a template (a tag, an action or a condition before it is fine).')}
+            </p>
+          ) : (
+            <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
+              <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
+              {workflows.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="scenario-error">{error}</p>}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Annuler', 'Cancel')}</button>
+          <button
+            onClick={lancer}
+            disabled={!sel || busy}
+            data-testid="scenario-send"
+            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+          >
+            {busy ? t('Lancement…', 'Starting…') : t('Lancer', 'Start')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TemplateSendPanel({

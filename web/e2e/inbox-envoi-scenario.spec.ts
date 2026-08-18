@@ -89,6 +89,41 @@ test.describe('Inbox : lancer un scénario', () => {
     await expect.poll(() => lances).toEqual(['wf-qm']);
   });
 
+  test('🔴 la sélection survit à l’arrivée d’un message pendant que le panneau est ouvert', async ({ page }) => {
+    // Le panneau était déclaré DANS le corps de Thread : le fil qui se rafraîchit (poll de 4 s) re-rendait
+    // Thread, React voyait une fonction-composant d'identité différente, démontait la modale et la remontait
+    // VIDE. Le scénario choisi disparaissait sous les doigts de l'utilisateur.
+    //
+    // Il faut un VRAI changement du fil : `load` garde la référence précédente quand rien n'a bougé (garde
+    // anti-saut de scroll), donc un mock qui répète le même fil ne re-rend pas Thread et ne prouverait rien.
+    let appels = 0;
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.includes('/conversations/unread-count')) return json({ count: 0 });
+      if (url.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
+      if (url.includes('/messages')) {
+        appels += 1;
+        // Un message de plus à chaque tick : le contact continue d'écrire pendant qu'on choisit un scénario.
+        const messages = Array.from({ length: appels }, (_, i) => ({
+          id: `m${i + 1}`, direction: 'in', type: 'text', body: `message ${i + 1}`, buttonPayload: null, createdAt: '2026-08-15T11:00:00Z',
+        }));
+        return json({ waId: '33600000001', windowOpen: true, lastInboundAt: '2026-08-15T11:00:00Z', controlOwner: 'app_human', returnBehavior: null, messages });
+      }
+      if (url.endsWith('/workflows')) return json({ workflows: [WF_TEMPLATE, WF_SESSION] });
+      if (url.includes('/templates')) return json({ templates: [] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+
+    await ouvrirPanneau(page);
+    await page.getByTestId('scenario-select').selectOption('wf-qm');
+    const avant = appels;
+    await expect.poll(() => appels, { timeout: 15000 }).toBeGreaterThan(avant); // le fil a bien bougé
+    await expect(page.getByTestId('scenario-select')).toHaveValue('wf-qm');
+  });
+
   test('un refus du serveur s’affiche avec sa raison, pas un succès muet', async ({ page }) => {
     const lances: string[] = [];
     await mock(page, false, lances, 'le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h');
