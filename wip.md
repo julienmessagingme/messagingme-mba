@@ -381,6 +381,79 @@ l'ajout d'un contact à la main, la duplication d'un template, le carousel, l'é
 de session. Plus les deux pilotes en attente de sa main : l'OTP Zadarma (numéro dédié qui décroche) et une
 automation « étape de deal » avec un deal déplacé dans HubSpot.
 
+## 🚧 EN COURS (2026-08-18) : configurer l'agent MBA depuis la console — POINT DE REPRISE
+
+**Reprendre ici : les routes backend `/tenants/:t/mba/*`, puis les écrans.**
+
+### Ce qui a changé aujourd'hui, et qui débloque tout
+
+**MBA est OUVERT sur la France**, mesuré et non déduit : `agent_eligibility` renvoie `is_eligible:true` sur
+`+33 5 25 68 03 01` (`phone_number_id=1305301719324792`, WABA `1067000669256166`), après acceptation des ToS
+par Julien. Toute la surface `agent_config/*` répond. Le relevé complet et les 20 écarts avec notre
+transcription du 2026-07-20 sont dans `docs/MBA-API-REFERENCE.md` (chapitre en tête) et
+`messagingme-pilot/docs/META-BUSINESS-AGENT-API.md`.
+
+**L'agent du numéro de test est configuré et il RÉPOND.** Posé par API : business info, une skill de
+comportement (interdiction d'inventer horaire/tarif/délai, escalade sur incident), et **80 FAQ dont 77
+RÉELLES** tirées de la base du chatbot `keolis-auxerre`. Testé dans le bac à sable (`agent_test`, jetons non
+facturés) : il refuse d'inventer un horaire, cite les vrais contacts du réseau, suit le fil d'une
+conversation, et « je veux parler à un conseiller » déclenche un `handoff_reason: customer_request`.
+**Le mécanisme central du produit fonctionne de bout en bout.**
+
+### Fait et poussé
+
+- `src/mba/client.ts` : client des cinq ressources (business info, FAQ, skills, fichiers, sites web) plus
+  réglages, allowlist, éligibilité, `agent_test`. **9 tests** (`tests/mba-client.test.ts`), aucun réseau.
+  Trois pièges absorbés dans le client : `api.facebook.com` sans version dans le chemin (pas Graph), la forme
+  d'erreur `{title, detail}` propre à MBA (sinon le `detail`, qui porte la marche à suivre, est perdu), et le
+  REMPLACEMENT COMPLET de `business_info`/`settings` (`fusionnerBusinessInfo`, `modifierSettings` repassent
+  les clés inconnues telles quelles). `agent_id` toujours explicite sur les skills.
+- Outillage (`scripts/`) : `sonde-mba-live.mts` (état d'un agent), `mba-config-initiale.mts`,
+  `mba-charger-faq-auxerre.mts` (idempotent), `mba-test-agent.mts` (bac à sable, messages via `MBA_MESSAGES`),
+  `mba-activer-restreint.mts` (allowlist puis activation), `sonde-waba-billing.mts`, `sonde-capacites-app.mts`,
+  `sonde-webhooks.mts`. Plus un lanceur `mba-test.sh` sur le VPS.
+
+### La suite, dans cet ordre
+
+1. **Routes backend `/tenants/:t/mba/*`** : exposer les cinq ressources à la console, scoping tenant et RBAC
+   admin comme le reste de `src/http/`. Le client fait déjà le travail, ces routes sont mécaniques.
+2. **Écrans**, en remplacement de la maquette GELÉE de `web/app/mba/parametres/page.tsx` (151 lignes, tout est
+   désactivé, son propre commentaire dit « le jour de l'éligibilité, on branche chaque section »). Un onglet
+   par ressource.
+
+### Décisions produit prises avec Julien
+
+- **FAQ : saisie unitaire ET import en masse.** Une par une à la main, plus un chargement par lot depuis
+  **CSV, Excel, PDF, ou une URL qui porte les Q/R**. C'est le vrai sujet : un client arrive avec ses Q/R déjà
+  écrites ailleurs (Keolis en avait 78), le formulaire unitaire ne suffit pas. Réutiliser `CsvImport` côté
+  front. Le chargement doit rester **idempotent** (ne pas dupliquer une question déjà posée), comme
+  `mba-charger-faq-auxerre.mts`.
+- **Skills = personnalité et procédures, PAS du tool calling.** Trois champs : `title`, `description` (QUAND
+  l'appliquer), `skill` (QUOI faire, 20 000 caractères). Le tool calling, ce sont les **Connectors + Tools**,
+  qui décrivent un appel HTTP sortant dont l'agent extrait les paramètres depuis la conversation. Une skill
+  peut orchestrer des tools. C'est pour ça que l'étape « Tools » de l'écran Meta est grise sans connector.
+- **Connectors/Tools : REPORTÉS**, volontairement. Ils ne servent à rien tant que la connaissance de base
+  n'est pas pilotable, et l'étude du cas GTFS a montré que le vrai travail est côté API métier du client.
+
+### Le cas GTFS/Auxerre, étudié (à garder pour la reprise des connectors)
+
+⚠️ **Auxerre n'utilise PAS de GTFS** (c'est Grand Dole). Ses horaires viennent de **grilles JSON** générées
+hors ligne en parsant les PDF. L'API existe : `GET /api/bus/next?grille=&arret=&heure=&n=`, protégée par un
+jeton partagé (`x-api-key` ou `?token=`), ce que MBA sait consommer (`auth_type: API_KEY`).
+
+**Le maillon fragile est le paramètre `grille`** (`3`, `3-samedi`, `dim1`, `navette`) : aujourd'hui c'est le
+flow WhatsApp qui choisit la grille selon le jour. Confier ce choix au LLM lui demanderait de connaître les
+samedis, dimanches, fériés et vacances scolaires, et une erreur de grille donne un horaire faux avec l'aplomb
+d'une réponse juste. **À faire avant tout connector : un endpoint qui prend `arret`, `ligne`, `quand` et
+déduit la grille CÔTÉ SERVEUR.** Prévoir aussi un jeton dédié au connector, révocable seul.
+
+### En attente (hors de notre main)
+
+L'agent ne peut pas être allumé (`rollout.enabled=true`) : Meta répond « Cannot enable Meta Business Agent.
+A payment method is required », avec le lien exact du Billing Hub. Le numéro de Julien (`+33633921577`) est
+déjà dans l'allowlist de l'agent, et `mba-activer-restreint.mts` fait le reste en une commande le moment venu.
+**Julien s'en occupe, ne pas relancer sur le sujet.**
+
 ## Audit anti-slop du 2026-08-18 : CORRIGÉ et déployé ✅
 
 Demande de Julien : « audit code simple et structure maintenable, sans verbiage et sans slop ». Rapport
