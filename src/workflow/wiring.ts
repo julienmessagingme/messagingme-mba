@@ -166,6 +166,20 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours };
   };
 
+  /**
+   * L'APPEL META, sans la bascule locale.
+   *
+   * ⚠️ Les deux sont séparés délibérément : chaque appelant connaît l'état qu'il attendait avant de basculer
+   * (`only: ['app_workflow']` pour le scénario, `only: ['app_human']` pour le balayage de reprise). Une fonction
+   * qui ferait les deux avec un `only` figé échouerait EN SILENCE chez le second appelant, qui a déjà basculé.
+   */
+  const releaseThreadChezMeta = async (tenant: string, waId: string): Promise<void> => {
+    const pn = await repo.getTenantPhoneNumberId(tenant);
+    if (!pn) return;
+    const client = await metaFactory.mbaClientForTenant(tenant);
+    await client.releaseThread(pn, waId);
+  };
+
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
     // Canal RCS du bloc `rcs_message`. `agentIdFor` est scopé tenant : c'est lui qui empêche un scénario
@@ -181,6 +195,16 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
     // humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
     reclaimControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_workflow'); },
+    // L'agent de Meta est-il allumé chez ce client ? Décide de deux choses : qu'une étape sans choix cesse de
+    // bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Faux partout aujourd'hui, donc rien
+    // ne change tant qu'aucun client n'a MBA.
+    mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
+    // Rend le fil à l'agent de Meta. La bascule LOCALE d'abord, et seulement si le fil était encore au
+    // scénario : Meta exige de détenir le fil pour le relâcher, et cette condition le prouve.
+    releaseToMba: async (tenant, waId) => {
+      if (!(await inboxStore.setControlOwner(tenant, waId, 'mba', { only: ['app_workflow'] }))) return;
+      await releaseThreadChezMeta(tenant, waId);
+    },
     // Contexte d'évaluation des blocs `condition` (et du bloc `field` en mode NOW) : état du contact + fuseau et
     // horaires d'ouverture du tenant + `now`. Contact introuvable -> null -> le moteur prend la branche 'false'.
     evalContext: buildEvalContext,
@@ -352,5 +376,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     },
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack };
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta };
 }

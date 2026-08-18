@@ -148,6 +148,7 @@ async function main(): Promise<void> {
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
+    releaseThreadChezMeta,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
@@ -557,8 +558,10 @@ async function main(): Promise<void> {
         // Réglage par client du gel humain : c'est lui qui décide combien de temps on laisse un
         // opérateur travailler tranquille avant que la conversation reparte.
         handbackMsByTenant: (ids) => settingsStore.handbackMsByTenant(ids),
-        // Destination de reprise par client (C.4) : rendre au scénario (`resume`) ou laisser à l'humain
-        // (`inbox`). Une surcharge par conversation (portée par `listHeldControl`) prime sur ce défaut.
+        // Destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres. Plus
+        // rien à arbitrer, la règle se déduit de l'état du compte.
+        mbaActifParTenant: (ids) => settingsStore.mbaActifParTenant(ids),
+        releaseToMba: (tenant, waId) => releaseThreadChezMeta(tenant, waId),
       });
       // eslint-disable-next-line no-console
       if (rendues > 0) console.log(`control-sweep: ${rendues} conversation(s) rendue(s) au scénario`);

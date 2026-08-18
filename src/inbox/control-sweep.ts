@@ -24,6 +24,17 @@ export interface ControlSweepDeps {
    * de temps on laisse un opérateur travailler tranquille). Le délai `mba` reste un garde-fou technique.
    */
   handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
+  /**
+   * L'agent de Meta est-il allumé chez ce client ? Décide de la DESTINATION d'un fil rendu : l'agent quand il
+   * est là, le scénario sinon. Absent -> aucun tenant n'a MBA, donc comportement historique.
+   */
+  mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
+  /**
+   * Rend effectivement le fil à Meta (`thread_control` action `release`). Appelé UNIQUEMENT quand la
+   * destination est `mba`. Best-effort : un échec ne doit pas empêcher la bascule locale, sinon un fil resterait
+   * gelé pour toujours à cause d'un hoquet réseau, ce que ce balayage existe précisément pour éviter.
+   */
+  releaseToMba?(tenantId: string, waId: string): Promise<void>;
   now?: () => number;
 }
 
@@ -53,6 +64,8 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   const parTenant = deps.handbackMsByTenant
     ? await deps.handbackMsByTenant(tenantIds)
     : new Map<string, number>();
+  // Un seul aller-retour aussi pour savoir qui a l'agent de Meta allumé.
+  const avecMba = deps.mbaActifParTenant ? await deps.mbaActifParTenant(tenantIds) : new Set<string>();
 
   let rendues = 0;
   for (const c of held) {
@@ -68,7 +81,22 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     if (c.changedAt !== null && now() - c.changedAt.getTime() < ms) continue;
     // `only` sur le détenteur LU : si une bascule est survenue entre la lecture et l'écriture (un opérateur
     // qui reprend la main juste à cet instant), la garde refuse et on ne détruit pas un contrôle tout neuf.
-    if (await deps.setControlOwner(c.tenantId, c.waId, 'app_workflow', { only: [c.owner] })) rendues += 1;
+    // Destination : l'agent de Meta quand il est allumé chez ce client, le scénario sinon. Rien à arbitrer, la
+    // règle se déduit de l'état du compte, ce qui est tout l'objet de la suppression du réglage de reprise.
+    const versMba = c.owner === 'app_human' && avecMba.has(c.tenantId);
+    const dest: ControlOwner = versMba ? 'mba' : 'app_workflow';
+    if (!(await deps.setControlOwner(c.tenantId, c.waId, dest, { only: [c.owner] }))) continue;
+    rendues += 1;
+    // Bascule locale d'ABORD, appel Meta ensuite et en best-effort : l'inverse laisserait un fil gelé pour
+    // toujours sur un hoquet réseau, ce que ce balayage existe pour éviter.
+    if (versMba && deps.releaseToMba) {
+      try {
+        await deps.releaseToMba(c.tenantId, c.waId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`release vers MBA ignoré pour ${c.waId}:`, err instanceof Error ? err.message : err);
+      }
+    }
   }
   return rendues;
 }

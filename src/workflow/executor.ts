@@ -101,6 +101,33 @@ export interface WorkflowExecutorDeps {
    */
   escalateToHuman?(tenantId: string, waId: string): Promise<void>;
   /**
+   * L'agent de Meta est-il allumé sur le numéro de ce tenant ?
+   *
+   * Il décide de DEUX choses : qu'une étape sans choix cesse de bloquer le parcours (l'agent répond à la place,
+   * les actions du scénario continuent), et qu'on rende le fil à Meta en fin de chaîne. ABSENT ou faux -> le
+   * comportement historique est conservé au caractère près, ce qui est le cas de tous les clients aujourd'hui.
+   */
+  mbaActifPour?(tenantId: string): Promise<boolean>;
+  /**
+   * Rend le fil à l'agent de Meta (`thread_control` action `release`).
+   *
+   * Appelé quand le parcours se termine SANS attendre de choix du client : soit la chaîne est finie, soit le
+   * contact a répondu à côté des boutons attendus. Dans les deux cas plus personne n'attend une réponse précise,
+   * donc l'agent doit reprendre la parole.
+   *
+   * ⚠️ HYPOTHÈSE 1 du plan, invérifiable tant que MBA ne peut pas être allumé : tout envoi prend le contrôle du
+   * fil, template compris. On relâche donc systématiquement. Si c'est faux pour les templates, on relâchera dans
+   * le vide : une erreur journalisée, aucun dégât. Le pari inverse aurait laissé l'agent muet sur tous les
+   * destinataires d'une campagne sans que personne le voie.
+   *
+   * ⚠️ Le message hors script qu'on vient de recevoir n'a PAS besoin d'un traitement particulier : « non lu » est
+   * DÉRIVÉ en base (un entrant plus récent que la dernière ouverture du fil), donc il apparaît déjà dans l'Inbox.
+   * C'était le repli prévu au plan, il existait déjà.
+   *
+   * ABSENT -> aucun release. Best-effort : un échec ne fait jamais échouer un parcours.
+   */
+  releaseToMba?(tenantId: string, waId: string): Promise<void>;
+  /**
    * Publie « ce tag vient d'être posé » pour les automations. Appelée UNIQUEMENT sur un démarrage unitaire
    * (réponse d'un contact, automation, test), jamais depuis une campagne : voir la note de `apply`.
    * Absente -> aucune publication (rétro-compatible).
@@ -302,6 +329,7 @@ export class WorkflowExecutor {
     }
     await this.deps.runs.setState(run.id, restToState(rest, this.now()));
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+    if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
     return true;
   }
 
@@ -317,6 +345,27 @@ export class WorkflowExecutor {
    *
    * Les actions des walks successifs sont ACCUMULÉES : l'appelant les applique en un lot, comme avant.
    */
+  /** L'agent est-il allumé pour ce tenant ? Absent -> false, donc rien ne change. */
+  private async mbaActif(tenantId: string): Promise<boolean> {
+    return this.deps.mbaActifPour ? this.deps.mbaActifPour(tenantId) : false;
+  }
+
+  /**
+   * Rend le fil à l'agent de Meta, sans jamais faire échouer le parcours qui l'appelle. Un release raté laisse
+   * le fil à nous : l'agent reste muet sur ce fil, ce qui se voit dans l'Inbox, alors qu'une exception remontée
+   * ferait échouer un envoi déjà parti.
+   */
+  private async rendreLaMainAMba(tenantId: string, waId: string): Promise<void> {
+    if (!this.deps.releaseToMba) return;
+    if (!(await this.mbaActif(tenantId))) return; // gate : aucun appel Meta si l'agent n'est pas allumé
+    try {
+      await this.deps.releaseToMba(tenantId, waId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`release vers MBA ignoré pour ${waId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
   private async walkResolved(
     tenantId: string,
     waId: string,
@@ -328,7 +377,7 @@ export class WorkflowExecutor {
     const actions: WorkflowAction[] = [];
     let depart = startNodeId;
     for (let i = 0; i < MAX_RCS_ENCHAINES; i++) {
-      const r = walk(graph, depart, ctx);
+      const r = walk(graph, depart, ctx, { mbaActif: await this.mbaActif(tenantId) });
       actions.push(...r.actions);
       if (r.rest.status !== 'rcs_send') return { actions, rest: r.rest };
 
@@ -423,6 +472,7 @@ export class WorkflowExecutor {
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
+    if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
     return true;
   }
 
@@ -508,7 +558,11 @@ export class WorkflowExecutor {
       ? ((handle ? nextNodeByHandle(graph, run.currentNode, handle) : null) ?? (sortieTypee ? null : nextNode(graph, run.currentNode)))
       : null;
     if (!graph || !next) {
+      // Le contact a répondu À CÔTÉ des boutons attendus (aucune arête ne correspond), ou le scénario n'a plus
+      // de suite. Plus personne n'attend une réponse précise : l'agent de Meta reprend la parole. Le message
+      // reste visible dans l'Inbox, « non lu » étant dérivé d'un entrant plus récent que la dernière ouverture.
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
+      await this.rendreLaMainAMba(tenantId, waId);
       return;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
@@ -528,5 +582,8 @@ export class WorkflowExecutor {
     }
     await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), lastMessageId: messageId });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+    // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
+    // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.
+    if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
   }
 }

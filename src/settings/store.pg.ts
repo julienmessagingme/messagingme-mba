@@ -119,6 +119,19 @@ export class PgTenantSettingsStore {
    * il lit un lot de conversations de plusieurs clients d'un coup et doit appliquer à chacune le réglage
    * de SON client. Les tenants sans réglage sont absents de la Map, l'appelant retombe sur son défaut.
    */
+  /**
+   * Quels tenants de ce lot ont l'agent de Meta allumé ? Un seul aller-retour, comme `handbackMsByTenant` :
+   * le balayage traite un lot de conversations, une requête par tenant le rendrait quadratique.
+   */
+  async mbaActifParTenant(tenantIds: readonly string[]): Promise<Set<string>> {
+    if (tenantIds.length === 0) return new Set();
+    const res = await this.pool.query<{ tenant_id: string }>(
+      `select tenant_id from tenant_settings where tenant_id = any($1::uuid[]) and mba_enabled = true`,
+      [tenantIds],
+    );
+    return new Set(res.rows.map((r) => r.tenant_id));
+  }
+
   async handbackMsByTenant(tenantIds: readonly string[]): Promise<Map<string, number>> {
     if (tenantIds.length === 0) return new Map();
     const res = await this.pool.query<{ tenant_id: string; control_handback_seconds: number }>(
