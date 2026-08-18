@@ -59,7 +59,15 @@ async function mock(page: import('@playwright/test').Page, windowOpen: boolean, 
 async function ouvrirPanneau(page: import('@playwright/test').Page) {
   await page.goto('/inbox');
   await page.getByText('Alice').click();
-  await page.getByTestId('inbox-open-scenario').click();
+  // Deux fragilités traitées ensemble, toutes deux dues au fil qui se recharge tout seul (minuteur de 4 s) :
+  // un clic tombé pile pendant le re-rendu de la barre d'actions vise un noeud détaché et se perd sans rien
+  // signaler, et le panneau fraîchement monté affiche d'abord « aucun scénario » (liste vide) avant que sa
+  // requête ne réponde. On réessaie donc le clic jusqu'à voir le SÉLECTEUR, seule preuve que le panneau est
+  // ouvert ET chargé : tous les cas de ce fichier ont au moins un scénario proposable.
+  await expect(async () => {
+    await page.getByTestId('inbox-open-scenario').click();
+    await expect(page.getByTestId('scenario-select')).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 test.describe('Inbox : lancer un scénario', () => {
@@ -120,7 +128,11 @@ test.describe('Inbox : lancer un scénario', () => {
     await ouvrirPanneau(page);
     await page.getByTestId('scenario-select').selectOption('wf-qm');
     const avant = appels;
-    await expect.poll(() => appels, { timeout: 15000 }).toBeGreaterThan(avant); // le fil a bien bougé
+    // Le rechargement est déclenché à la demande : le fil écoute `visibilitychange` en plus de son minuteur
+    // de 4 s, et les deux passent par le même `load()`. Attendre le minuteur réel immobiliserait un worker
+    // cinq secondes et faisait expirer les tests voisins.
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(() => appels).toBeGreaterThan(avant); // le fil a bien rechargé
     await expect(page.getByTestId('scenario-select')).toHaveValue('wf-qm');
   });
 
