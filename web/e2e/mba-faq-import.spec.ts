@@ -134,6 +134,81 @@ test.describe('MBA Paramètres : import de FAQ', () => {
     expect(appelsMba(calls, 'POST', '/faq/preview')[0]?.body).toEqual({ csv: CSV });
   });
 
+  test('🔴 mode fichier : un second dépôt gagne, et l’aperçu du premier est périmé', async ({ page }) => {
+    // La lecture d'un fichier est asynchrone et change la source en arrivant. Deux fichiers déposés coup sur
+    // coup doivent laisser le SECOND en place, et aucun aperçu calculé sur le premier ne doit rester affiché
+    // comme s'il décrivait le fichier montré à l'écran.
+    const A = 'question,réponse\nFICHIER A ?,Réponse A.\n';
+    const B = 'question,réponse\nFICHIER B ?,Réponse B.\n';
+    const calls = await mockMba(page, { preview: APERCU });
+    await page.goto('/mba/parametres?tab=faq');
+    await page.getByTestId('mba-faq-import-open').click();
+    await page.getByTestId('mba-import-mode-fichier').click();
+
+    await page.getByTestId('mba-import-file').setInputFiles({ name: 'a.csv', mimeType: 'text/csv', buffer: Buffer.from(A, 'utf8') });
+    await page.getByTestId('mba-import-analyse').click();
+    await expect(page.getByTestId('mba-import-preview')).toBeVisible();
+
+    // Second dépôt : l'aperçu du premier fichier doit disparaître, sinon il décrit un contenu qui n'est plus là.
+    await page.getByTestId('mba-import-file').setInputFiles({ name: 'b.csv', mimeType: 'text/csv', buffer: Buffer.from(B, 'utf8') });
+    await expect(page.getByTestId('mba-import-preview')).toHaveCount(0);
+    await expect(page.getByTestId('mba-import-confirm')).toBeDisabled();
+
+    // Et c'est bien le SECOND fichier qui est analysé puis écrit, pas le premier.
+    await page.getByTestId('mba-import-analyse').click();
+    await expect(page.getByTestId('mba-import-preview')).toBeVisible();
+    await page.getByTestId('mba-import-confirm').click();
+    await expect.poll(() => appelsMba(calls, 'POST', '/faq/import')[0]?.body).toEqual({ csv: B });
+    expect(appelsMba(calls, 'POST', '/faq/preview').at(-1)?.body).toEqual({ csv: B });
+  });
+
+  test('🔴 mode fichier : une lecture qui atterrit après le clic ne fait PAS afficher l’aperçu du fichier précédent', async ({ page }) => {
+    // L'entrelacement qui compte, et le seul moyen honnête de l'atteindre : la lecture d'un fichier est
+    // asynchrone, et on la RALENTIT ici de façon déterministe (doublure de `Blob.prototype.text`, une API du
+    // navigateur, pas du produit) pour qu'elle atterrisse forcément après le clic sur Analyser.
+    //
+    // Sans la garde de séquence dans la lecture, la suite est : le champ affiche b.csv, l'aperçu décrit a.csv,
+    // et le bouton de confirmation est actif. L'écran mentirait sur ce qu'il décrit, sur une base de
+    // connaissance Meta qui n'a ni corbeille ni suppression en lot.
+    await page.addInitScript(() => {
+      const vrai = Blob.prototype.text;
+      Blob.prototype.text = function lente(this: Blob): Promise<string> {
+        return new Promise((r) => { setTimeout(() => { void vrai.call(this).then(r); }, 900); });
+      };
+    });
+
+    const A = 'question,réponse\nFICHIER A ?,Réponse A.\n';
+    const B = 'question,réponse\nFICHIER B ?,Réponse B.\n';
+    const calls = await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'POST' && url.includes('/faq/preview')) {
+          await new Promise((r) => setTimeout(r, 1500));
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(APERCU) });
+          return true;
+        }
+        return false;
+      },
+    });
+    await page.goto('/mba/parametres?tab=faq');
+    await page.getByTestId('mba-faq-import-open').click();
+    await page.getByTestId('mba-import-mode-fichier').click();
+
+    // a.csv déposé et LU (on attend que le bouton s'active, preuve que le contenu est en place).
+    await page.getByTestId('mba-import-file').setInputFiles({ name: 'a.csv', mimeType: 'text/csv', buffer: Buffer.from(A, 'utf8') });
+    await expect(page.getByTestId('mba-import-analyse')).toBeEnabled();
+
+    // b.csv déposé : sa lecture part et durera 900 ms. On clique Analyser tout de suite, donc sur a.csv.
+    await page.getByTestId('mba-import-file').setInputFiles({ name: 'b.csv', mimeType: 'text/csv', buffer: Buffer.from(B, 'utf8') });
+    await page.getByTestId('mba-import-analyse').click({ force: true });
+
+    // Le temps que la lecture de b.csv atterrisse ET que la réponse d'analyse revienne.
+    await page.waitForTimeout(3000);
+
+    await expect(page.getByTestId('mba-import-preview')).toHaveCount(0);
+    await expect(page.getByTestId('mba-import-confirm')).toBeDisabled();
+    expect(appelsMba(calls, 'POST', '/faq/import')).toHaveLength(0);
+  });
+
   test('🔴 import interrompu (207) : avertissement, reste à faire, et non-duplication annoncée', async ({ page }) => {
     // Une partie EST écrite. Peindre ça en rouge pousserait à tout relancer comme si rien n'était passé.
     await mockMba(page, {

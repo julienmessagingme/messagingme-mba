@@ -166,9 +166,18 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 invalider();
+                // ⚠️ La lecture du fichier est ASYNCHRONE, et elle change la source en arrivant. Sans le tour
+                // capturé ici, deux trous s'ouvraient : la lecture d'un fichier remplacé entre-temps écrasait
+                // le bon contenu, et une lecture qui atterrissait APRÈS un clic sur Analyser laissait passer
+                // l'aperçu du fichier PRÉCÉDENT, présenté comme décrivant le fichier affiché.
+                const monDepot = sequence.current;
                 setNomFichier(f?.name ?? '');
                 if (!f) { setCsv(''); return; }
-                void f.text().then((texte) => { setCsv(texte); });
+                void f.text().then((texte) => {
+                  if (sequence.current !== monDepot) return; // un autre fichier a été déposé depuis
+                  setCsv(texte);
+                  invalider(); // le contenu vient de changer : tout aperçu en vol est périmé
+                });
               }}
             />
             {nomFichier === '' ? t('Choisir un fichier .csv', 'Choose a .csv file') : nomFichier}
