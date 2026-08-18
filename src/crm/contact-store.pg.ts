@@ -38,7 +38,11 @@ export interface ContactFieldFilter { key: string; op: ContactFieldOp; value: st
  * neuf requêtes de ce fichier, et les copies avaient commencé à diverger. Une seule écriture, sinon un
  * ajustement s'applique à huit sites sur neuf sans que rien ne le signale.
  */
-export const MATCH_BY_WAID_SQL = `and (phone_e164 = '+' || $2 or regexp_replace(phone_e164, '[^0-9]', '', 'g') = $2 or bsuid = $2)
+export function matchWaIdPredicat(contact: string, waId: string): string {
+  return `(${contact}phone_e164 = '+' || ${waId} or regexp_replace(${contact}phone_e164, '[^0-9]', '', 'g') = ${waId} or ${contact}bsuid = ${waId})`;
+}
+
+export const MATCH_BY_WAID_SQL = `and ${matchWaIdPredicat('', '$2')}
        order by (phone_e164 = '+' || $2) desc limit 1`;
 
 /** Critères de requête composables de la « Liste de contacts » (source de campagne) et du mini-CRM. Tous
@@ -589,10 +593,24 @@ export class PgContactStore implements ContactStore {
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      // Les fils visés, par le numéro des contacts ciblés. Récupérés AVANT l'anonymisation, qui efface le lien.
+      // Numéros des contacts visés, lus AVANT l'anonymisation qui les remplace. Servent au cache RCS, indexé
+      // en E.164 (`+33…`) et NON en wa_id : lui passer des chiffres nus ne supprimait rien.
+      const cibles = await client.query<{ phone_e164: string | null }>(
+        `select phone_e164 from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+        [tenantId, ids],
+      );
+      const e164 = cibles.rows.map((r) => r.phone_e164).filter((p): p is string => p !== null && !p.startsWith('anon:'));
+
+      // Les fils visés, par la RÈGLE PARTAGÉE de correspondance contact <-> wa_id. Une simple égalité
+      // `conversations.wa_id = contacts.phone_e164` ne peut jamais être vraie : le fil porte `33612345678`,
+      // la fiche `+33612345678`. La purge anonymisait donc le contact en laissant la conversation intacte,
+      // ce qui est l'inverse exact de ce qu'elle promet. Vu en production le 2026-08-18.
       const fils = await client.query<{ id: string; wa_id: string }>(
-        `select c.id, c.wa_id from conversations c
-          where c.tenant_id = $1 and c.wa_id in (select phone_e164 from contacts where tenant_id = $1 and id = any($2::uuid[]))`,
+        `select v.id, v.wa_id from conversations v
+          where v.tenant_id = $1 and exists (
+            select 1 from contacts c
+             where c.tenant_id = $1 and c.id = any($2::uuid[]) and ${matchWaIdPredicat('c.', 'v.wa_id')}
+          )`,
         [tenantId, ids],
       );
       const convIds = fils.rows.map((r) => r.id);
@@ -606,9 +624,14 @@ export class PgContactStore implements ContactStore {
         await client.query(`delete from conversations where tenant_id = $1 and id = any($2::uuid[])`, [tenantId, convIds]);
       }
       if (waIds.length > 0) {
+        // `workflow_runs` et `automation_fires` portent bien un wa_id (chiffres nus), eux.
         await client.query(`delete from workflow_runs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
         await client.query(`delete from automation_fires where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
-        await client.query(`delete from rcs_capabilities_cache where phone_e164 = any($1::text[])`, [waIds]);
+      }
+      // Cache RCS : clé (agent_id, phone_e164), donc E.164. Effacé même si le contact n'a AUCUN fil, sinon un
+      // contact purgé sans conversation laisserait son numéro dans une table de joignabilité.
+      if (e164.length > 0) {
+        await client.query(`delete from rcs_capabilities_cache where phone_e164 = any($1::text[])`, [e164]);
       }
 
       // Quantitatif préservé : la ligne de campagne reste (statut, horodatage, livraison), son numéro et ses
