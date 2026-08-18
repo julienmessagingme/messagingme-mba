@@ -121,15 +121,6 @@ export class PgBossQueue implements Queue {
     this.ensured.add(name);
   }
 
-  /**
-   * Test-only : retire (fetch) et compte les jobs disponibles sur une file. Sert à vérifier
-   * qu'un job a bien atterri en DLQ. Effet de bord : marque les jobs récupérés `active`.
-   */
-  async pullPending(name: string): Promise<number> {
-    const jobs = await this.boss.fetch(name, { batchSize: 100 });
-    return jobs?.length ?? 0;
-  }
-
   async enqueue(name: string, data: unknown, opts?: { singletonKey?: string; expireInSeconds?: number }): Promise<void> {
     await this.ensure(name);
     // `expireInSeconds` PAR JOB (prime sur la policy de file) : dimensionne la durée max d'un run de campagne

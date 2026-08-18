@@ -63,11 +63,17 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
       });
       await dlqQueue.enqueue('itest-dlq-src', { boom: true });
 
-      // Attendre que le job atterrisse dans la DLQ (poll, max 20s).
+      // Attendre que le job atterrisse dans la DLQ (poll, max 20s). Lecture SQL directe plutôt qu'un
+      // `fetch` : compter ne doit pas CONSOMMER les jobs comptés (l'ancien helper les passait `active`),
+      // et cette plomberie de test n'a rien à faire dans la classe de production.
       let inDlq = 0;
       for (let i = 0; i < 40 && inDlq === 0; i += 1) {
         await new Promise((r) => setTimeout(r, 500));
-        inDlq = await dlqQueue.pullPending('itest-dlq-src-dlq');
+        const res = await pool.query<{ n: string }>(
+          "select count(*) as n from pgboss_test.job where name = $1 and state = 'created'",
+          ['itest-dlq-src-dlq'],
+        );
+        inDlq = Number(res.rows[0]?.n ?? 0);
       }
       expect(inDlq).toBeGreaterThanOrEqual(1);
       expect(attempts).toBe(1); // une seule tentative (retryLimit:0), pas de rejeu infini

@@ -215,12 +215,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
-  it('PgContactStore.mergeFieldsByPhone / addTagsByPhone : atteignent un contact identifié par BSUID', async () => {
+  it('PgContactStore.mergeFieldsByPhone / addTagsByPhoneReturningNew : atteignent un contact identifié par BSUID', async () => {
     const store = new PgContactStore(pool);
     const bsuid = '9876543210987654321';
     await pool.query(`insert into contacts (tenant_id, bsuid, opt_in_status) values ($1, $2, 'opted_in')`, [tenantId, bsuid]);
     expect(await store.mergeFieldsByPhone(tenantId, bsuid, { ville: 'Paris' })).toBe(1);
-    expect(await store.addTagsByPhone(tenantId, bsuid, ['vip-bsuid'])).toBe(1);
+    expect((await store.addTagsByPhoneReturningNew(tenantId, bsuid, ['vip-bsuid'])).touched).toBe(1);
     const row = (await store.list(tenantId, 500)).find((r) => r.bsuid === bsuid)!;
     expect(row.fields).toMatchObject({ ville: 'Paris' });
     expect(row.tags).toContain('vip-bsuid');
@@ -858,7 +858,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const ex = new WorkflowExecutor({
       runs: runStore,
       getGraph: async (id, t) => (await wfStore.getById(id, t))?.graph ?? null,
-      applyTag: (t, w, tag) => contactStore.addTagsByPhone(t, w, [tag]).then(() => undefined),
+      applyTag: (t, w, tag) => contactStore.addTagsByPhoneReturningNew(t, w, [tag]).then(() => undefined),
       setField: (t, w, k, v) => contactStore.mergeFieldsByPhone(t, w, { [k]: v }).then(() => undefined),
       removeTag: (t, w, tag) => contactStore.removeTagsByPhone(t, w, [tag]).then(() => undefined),
       clearField: (t, w, k) => contactStore.clearFieldsByPhone(t, w, [k]).then(() => undefined),

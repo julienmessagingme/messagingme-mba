@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { TemplateButtonInput } from '@/lib/api';
 import { TemplateBodyText } from '@/components/WhatsAppPreview';
 import { useT } from '@/lib/i18n';
+import { PhoneFrame } from '@/components/PhoneFrame';
 
 /**
  * Une carte d'aperçu. Deux sources, même rendu : les images LOCALES du formulaire de création (data URL du
@@ -54,7 +55,7 @@ export function CarouselPreview({
   buttons,
   examples = [],
   varLabels,
-  senderName = 'Messaging Me Tech',
+  senderName,
 }: {
   body: string;
   cards: CarouselPreviewCard[];
@@ -64,21 +65,12 @@ export function CarouselPreview({
   examples?: string[];
   /** Libellés de champ par position : affiche un chip `[Prénom]` au lieu de l'exemple (mode création). */
   varLabels?: Array<string | undefined>;
+  /** Nom affiché dans l'en-tête. Absent -> libellé générique (le nom vérifié n'est pas connu ici). */
   senderName?: string;
 }) {
   const t = useT();
   return (
-    <div>
-      <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu WhatsApp', 'WhatsApp preview')}</p>
-      <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
-        <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
-          <div className="leading-tight">
-            <div className="text-sm font-medium">{senderName}</div>
-            <div className="text-[10px] text-white/70">{t('en ligne', 'online')}</div>
-          </div>
-        </div>
-        <div className="space-y-2 px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
+    <PhoneFrame {...(senderName ? { senderName } : {})} contentClassName="space-y-2 px-3 py-4">
           <div className="max-w-[88%] rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 text-[13px] leading-snug text-ink-800 shadow-sm">
             {body.trim()
               ? <span className="whitespace-pre-wrap break-words"><TemplateBodyText body={body} examples={examples} {...(varLabels ? { varLabels } : {})} /></span>
@@ -110,8 +102,6 @@ export function CarouselPreview({
               })}
             </div>
           )}
-        </div>
-      </div>
-    </div>
+    </PhoneFrame>
   );
 }

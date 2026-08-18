@@ -31,7 +31,7 @@ function fakeStore(ctx: AnalysisContext | null): { store: AnalyzeStore; cap: Cap
 }
 
 const windowEnd = '2026-01-01 00:00:00.123456+00'; // borne = chaîne texte timestamptz (précision µs), pas un Date
-const ctx: AnalysisContext = { messages: [{ direction: 'in', body: 'devis ?', type: 'text' }], signals: { hasHumanOutbound: false, hasAutomated: false }, windowEnd };
+const ctx: AnalysisContext = { messages: [{ direction: 'in', body: 'devis ?', type: 'text' }], signals: { hasHumanOutbound: false }, windowEnd };
 const model = { provider: 'anthropic', model: 'm' };
 
 describe('analyzeConversationJob', () => {
@@ -60,7 +60,7 @@ describe('analyzeConversationJob', () => {
   });
 
   it('contexte vide (rien de nouveau) -> markDone, aucun appel LLM/save', async () => {
-    const { store, cap } = fakeStore({ messages: [], signals: { hasHumanOutbound: false, hasAutomated: false } });
+    const { store, cap } = fakeStore({ messages: [], signals: { hasHumanOutbound: false } });
     await analyzeConversationJob({ conversationId: 'c1', tenantId: 't1' }, { store, llm: new Llm(validJson), onAnalyzed: async () => {}, model });
     expect(cap.done).toEqual(['c1']);
     expect(cap.saved).toHaveLength(0);

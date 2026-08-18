@@ -186,14 +186,6 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Ajoute des tags (union dédupliquée) au contact d'un numéro (bloc « ajout de tag » d'un workflow).
-   * Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
-   */
-  async addTagsByPhone(tenantId: string, waId: string, tags: string[]): Promise<number> {
-    return (await this.addTagsByPhoneReturningNew(tenantId, waId, tags)).touched;
-  }
-
-  /**
    * Comme `addTagsByPhone`, mais dit AUSSI lesquels étaient réellement nouveaux.
    *
    * L'ajout est une union : reposer un tag déjà présent réécrit la ligne sans rien changer, donc le `rowCount`

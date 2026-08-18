@@ -111,12 +111,6 @@ export class VisibleIfError extends Error {
   }
 }
 
-/** Dérive les clés des éléments de type `field` (les autres passent tels quels). Collision -> erreur.
- *  Mono-écran historique : conservé pour les appels directs, la dérivation multi passe par deriveScreens. */
-export function deriveElements(elements: FlowElementInput[]): FlowElement[] {
-  return deriveScreens([{ elements }])[0]!.elements;
-}
-
 /** Types de champ admissibles comme SOURCE d'une condition de visibilité (V1). checkbox exclu : sa valeur
  *  est un tableau (multi-sélection), une égalité simple ne s'y applique pas. */
 const VISIBLE_SOURCE_TYPES: readonly FlowFieldType[] = ['dropdown', 'radio', 'optin'];
@@ -261,11 +255,6 @@ export function buildFlowScreens(name: string, screens: FlowScreenDef[], version
       };
     }),
   };
-}
-
-/** Mono-écran historique : enveloppe d'un seul écran (compat interne + tests existants). */
-export function buildFlowElements(name: string, elements: FlowElement[], version: string, ref: string, cta?: string): Record<string, unknown> {
-  return buildFlowScreens(name, [{ elements }], version, ref, cta);
 }
 
 /** Composant Flow JSON d'un champ selon son type. */

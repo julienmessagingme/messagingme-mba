@@ -184,12 +184,6 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
   return null;
 }
 
-/** Actions qui envoient un message de SESSION (hors template) : interdites en OUVERTURE de scénario, une
- *  campagne démarre hors fenêtre de service 24 h (Meta 131047). Seul un template peut ouvrir. */
-export function opensOutsideServiceWindow(graph: WorkflowGraph): boolean {
-  return scanOpening(graph).sessionOpen;
-}
-
 export type WalkRest =
   | { status: 'waiting'; nodeId: string } // en attente d'une RÉPONSE du contact (après un template ou un formulaire)
   | { status: 'sleeping'; nodeId: string; resumeInMs: number } // en attente du TEMPS qui passe (bloc Attente)

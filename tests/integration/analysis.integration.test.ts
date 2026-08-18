@@ -82,7 +82,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const ctx = await store.getContext(conv);
     expect(ctx).not.toBeNull();
     expect(ctx!.messages).toHaveLength(3);
-    expect(ctx!.signals).toEqual({ hasHumanOutbound: true, hasAutomated: true });
+    expect(ctx!.signals).toEqual({ hasHumanOutbound: true });
   });
 
   it('getContext : conversation inexistante -> null', async () => {

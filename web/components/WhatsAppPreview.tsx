@@ -3,6 +3,7 @@
 import { Fragment } from 'react';
 import type { TemplateButtonInput } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { PhoneFrame } from '@/components/PhoneFrame';
 
 /** Rendu du formatage WhatsApp (*gras*, _italique_, ~barré~, `mono`) en noeuds React. */
 function formatInline(text: string): React.ReactNode[] {
@@ -86,7 +87,7 @@ export interface WhatsAppPreviewProps {
   header?: { format: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT'; text?: string; mediaUrl?: string } | null;
   /** Pied de page : petit texte gris sous le corps. */
   footer?: string;
-  /** Nom affiché dans l'en-tête (défaut = le nom vérifié du WABA). */
+  /** Nom affiché dans l'en-tête. Absent -> libellé générique (le nom vérifié n'est pas connu ici). */
   senderName?: string;
   /** Masque la petite note sous l'aperçu (formatage supporté). */
   hideNote?: boolean;
@@ -95,24 +96,15 @@ export interface WhatsAppPreviewProps {
 const MEDIA_ICON: Record<'IMAGE' | 'VIDEO' | 'DOCUMENT', string> = { IMAGE: '🖼️', VIDEO: '🎬', DOCUMENT: '📄' };
 
 /** Aperçu façon fenêtre WhatsApp (message reçu = bulle blanche à gauche). Partagé Templates + Campagnes. */
-export function WhatsAppPreview({ body, examples, varLabels, buttons, header, footer, senderName = 'Messaging Me Tech', hideNote = false }: WhatsAppPreviewProps) {
+export function WhatsAppPreview({ body, examples, varLabels, buttons, header, footer, senderName, hideNote = false }: WhatsAppPreviewProps) {
   const t = useT();
   const mediaHeader = header && header.format !== 'TEXT' ? header.format : null;
   const textHeader = header && header.format === 'TEXT' && header.text?.trim() ? header.text : null;
   // Source média affichable (image/vidéo uploadée localement) : on montre le vrai visuel plutôt que l'icône.
   const mediaUrl = header && header.format !== 'TEXT' ? header.mediaUrl : undefined;
   return (
-    <div>
-      <p className="mb-2 text-xs font-medium text-ink-500">{t('Aperçu WhatsApp', 'WhatsApp preview')}</p>
-      <div className="overflow-hidden rounded-2xl border border-ink-200 shadow-sm">
-        <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-sm">🏢</div>
-          <div className="leading-tight">
-            <div className="text-sm font-medium">{senderName}</div>
-            <div className="text-[10px] text-white/70">{t('en ligne', 'online')}</div>
-          </div>
-        </div>
-        <div className="min-h-[220px] px-3 py-4" style={{ backgroundColor: '#efeae2' }}>
+    <>
+      <PhoneFrame {...(senderName ? { senderName } : {})} contentClassName="min-h-[220px] px-3 py-4">
           <div className="max-w-[88%]">
             <div className="rounded-lg rounded-tl-none bg-white px-2.5 py-1.5 shadow-sm">
               {mediaHeader && (
@@ -147,11 +139,10 @@ export function WhatsAppPreview({ body, examples, varLabels, buttons, header, fo
               )}
             </div>
           </div>
-        </div>
-      </div>
+      </PhoneFrame>
       {!hideNote && (
         <p className="mt-2 text-[11px] text-ink-400">{t("Le rendu réel peut varier légèrement selon l'appareil. *gras*, _italique_, ~barré~ sont supportés.", 'The actual rendering may vary slightly by device. *bold*, _italic_, ~strikethrough~ are supported.')}</p>
       )}
-    </div>
+    </>
   );
 }

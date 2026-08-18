@@ -27,11 +27,11 @@ describe('engine — buildTranscript', () => {
 
 describe('engine — deduceHandledBy', () => {
   it('humain si un sortant humain', () => {
-    expect(deduceHandledBy({ hasHumanOutbound: true, hasAutomated: true })).toBe('humain');
+    expect(deduceHandledBy({ hasHumanOutbound: true })).toBe('humain');
   });
   it('automatise sinon (y compris inbound jamais traité)', () => {
-    expect(deduceHandledBy({ hasHumanOutbound: false, hasAutomated: true })).toBe('automatise');
-    expect(deduceHandledBy({ hasHumanOutbound: false, hasAutomated: false })).toBe('automatise');
+    expect(deduceHandledBy({ hasHumanOutbound: false })).toBe('automatise');
+    expect(deduceHandledBy({ hasHumanOutbound: false })).toBe('automatise');
   });
 });
 

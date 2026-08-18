@@ -22,7 +22,7 @@ const ctx: AnalysisContext = {
     { direction: 'in', body: 'Vos horaires ?', type: 'text' },
     { direction: 'out', body: '9h-18h', type: 'text', senderUserId: 'u1' },
   ],
-  signals: { hasHumanOutbound: true, hasAutomated: false },
+  signals: { hasHumanOutbound: true },
 };
 
 describe('analyzeConversation', () => {

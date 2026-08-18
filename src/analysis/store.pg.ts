@@ -84,10 +84,9 @@ export class PgConversationAnalysisStore {
     );
     const messages: AnalysisMessage[] = rows.rows.map((r) => ({ direction: r.direction, body: r.body, type: r.type, senderUserId: r.sender_user_id }));
     const hasHumanOutbound = messages.some((m) => m.direction === 'out' && m.senderUserId != null);
-    const hasAutomated = messages.some((m) => m.direction === 'out' && m.senderUserId == null);
     // Ordre ASC + limit 500 : le dernier lu est le max created_at de la fenêtre (si >500 messages, le reste sera repris).
     const windowEnd = rows.rows.length > 0 ? rows.rows[rows.rows.length - 1]!.created_at : null;
-    return { messages, signals: { hasHumanOutbound, hasAutomated }, windowEnd };
+    return { messages, signals: { hasHumanOutbound }, windowEnd };
   }
 
   /**

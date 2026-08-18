@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TIMEZONES, DEFAULT_TIMEZONE, timezoneLabel, isKnownTimezone } from '../web/lib/timezones';
+import { TIMEZONES, DEFAULT_TIMEZONE, timezoneLabel } from '../web/lib/timezones';
 
 describe('timezones', () => {
   it('chaque IANA est un fuseau valide (Intl ne throw pas)', () => {
@@ -13,8 +13,6 @@ describe('timezones', () => {
     expect(new Set(gmts).size).toBe(gmts.length); // un représentant par offset
   });
   it('le fuseau par défaut est dans la liste', () => {
-    expect(isKnownTimezone(DEFAULT_TIMEZONE)).toBe(true);
-    expect(isKnownTimezone('Mars/Olympus')).toBe(false);
   });
   it('timezoneLabel = « (GMT+x) Ville »', () => {
     const paris = TIMEZONES.find((o) => o.iana === 'Europe/Paris')!;

@@ -28,7 +28,7 @@ export const MBA_NODE_ORDER: WorkflowNodeType[] = ['mba_handoff', 'mba_disable']
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme
  *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].emoji` sur `undefined`) qui
  *  démonterait toute la page builder / « Contenu > Blocs ». */
-export const UNKNOWN_NODE_META: { emoji: string; label: [string, string] } = { emoji: '🧩', label: ['Bloc', 'Block'] };
+const UNKNOWN_NODE_META: { emoji: string; label: [string, string] } = { emoji: '🧩', label: ['Bloc', 'Block'] };
 
 /** Métadonnées d'un type de node, TOLÉRANT un type inconnu (renvoie un repli neutre au lieu de `undefined`). À
  *  utiliser partout où le type provient de données de graphe (potentiellement en avance sur le front). */

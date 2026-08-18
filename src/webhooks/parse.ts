@@ -4,8 +4,7 @@ export type WebhookSource =
   | 'messages'
   | 'statuses'
   | 'messaging_handovers'
-  | 'standby'
-  | 'unknown';
+  | 'standby';
 
 export interface WebhookEvent {
   source: WebhookSource;

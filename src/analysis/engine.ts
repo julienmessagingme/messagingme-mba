@@ -12,8 +12,6 @@ export interface AnalysisMessage {
 export interface HandledBySignals {
   /** Au moins un message sortant posté par un humain (sender_user_id non nul, réponse inbox). */
   hasHumanOutbound: boolean;
-  /** Envoi automatisé détecté (campagne / workflow) pour ce contact. */
-  hasAutomated: boolean;
 }
 
 /**

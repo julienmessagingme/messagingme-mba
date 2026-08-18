@@ -76,7 +76,7 @@ intermédiaires `navigate` (payload `{}`), Footer terminal `complete` dont le pa
 : refs globales `${screen.<ID>.form.<clé>}` (écrans précédents) + `${form.<clé>}` (dernier) + la **constante
 `_ref`** (discriminant du retour `nfm_reply`). ⚠️ Refs globales : payloads d'action SEULEMENT, PAS dans les
 textes affichés (non résolues, sondé). Clés de champ GLOBALEMENT uniques (`deriveScreens`, collision inter-
-écrans -> 400). `buildFlowElements` = wrapper mono-écran (non-régression prouvée par test d'égalité).
+écrans -> 400). Un Flow mono-écran est un multi-écran à un seul élément : pas de chemin de code séparé.
 **Conditions** : `visibleIf` (input `{field: LIBELLÉ source, op eq|neq, value}` -> stocké `{fieldKey}`) ->
 propriété `visible` backticks ; sources dropdown/radio/optin du MÊME écran situées AVANT ; valeur ∈ options
 (sans apostrophe/backtick, refusées) ou booléen. Sondé live : champ masqué/vide **OMIS** du payload complete

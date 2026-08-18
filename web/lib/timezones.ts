@@ -46,7 +46,3 @@ export function timezoneLabel(o: TimezoneOption): string {
   return `(${o.gmt}) ${o.city}`;
 }
 
-/** Le fuseau fait-il partie de la liste proposée ? (le sélecteur ne propose que ceux-là). */
-export function isKnownTimezone(iana: string): boolean {
-  return TIMEZONES.some((o) => o.iana === iana);
-}

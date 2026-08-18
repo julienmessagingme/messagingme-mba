@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { deriveElements, fieldsOf, buildFlowElements, flowFieldToUserFieldType, DuplicateFieldKeyError, isFlowFieldType, FLOW_REF_KEY, type FlowElementInput } from '../src/meta/flow-json';
+import { deriveScreens, buildFlowScreens, fieldsOf, flowFieldToUserFieldType, DuplicateFieldKeyError, isFlowFieldType, FLOW_REF_KEY, type FlowElementInput, type FlowElement } from '../src/meta/flow-json';
 import { isUserFieldType } from '../src/crm/fields';
+
+/** Raccourci mono-écran des cas historiques de ce fichier : la production ne construit que du multi-écran. */
+const deriveElements = (elements: FlowElementInput[]) => deriveScreens([{ elements }])[0]!.elements;
+const buildFlowElements = (name: string, elements: FlowElement[], version: string, ref: string, cta?: string) =>
+  buildFlowScreens(name, [{ elements }], version, ref, cta);
 
 describe('isFlowFieldType', () => {
   it('reconnaît les types de champ valides (dont choix + optin), rejette le reste', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { walk, entryNode, nextNode, nextNodeByHandle, opensOutsideServiceWindow } from '../src/workflow/engine';
+import { walk, entryNode, nextNode, nextNodeByHandle, scanOpening } from '../src/workflow/engine';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { EvalContext, BusinessHours } from '../src/workflow/conditions';
 
@@ -192,33 +192,33 @@ describe('walk : node flow (Lot 7 : envoi du formulaire, fini le no-op)', () => 
   });
 });
 
-describe('opensOutsideServiceWindow (garde fenêtre 24 h à l\'ouverture)', () => {
+describe('scanOpening().sessionOpen (garde fenêtre 24 h à l\'ouverture)', () => {
   it('flow (ou chaîne synchrone -> flow) en ouverture -> true', () => {
     const direct: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1' })], edges: [] };
-    expect(opensOutsideServiceWindow(direct)).toBe(true);
+    expect(scanOpening(direct).sessionOpen).toBe(true);
     const chained: WorkflowGraph = {
       nodes: [n('t', 'tag', { tag: 'vip' }), n('f', 'flow', { flowId: 'fl1' })],
       edges: [e('e1', 't', 'f')],
     };
-    expect(opensOutsideServiceWindow(chained)).toBe(true);
+    expect(scanOpening(chained).sessionOpen).toBe(true);
   });
   it('quick_message en ouverture -> true ; template en ouverture -> false', () => {
     const qm: WorkflowGraph = { nodes: [n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] })], edges: [] };
-    expect(opensOutsideServiceWindow(qm)).toBe(true);
-    expect(opensOutsideServiceWindow(linear)).toBe(false);
+    expect(scanOpening(qm).sessionOpen).toBe(true);
+    expect(scanOpening(linear).sessionOpen).toBe(false);
   });
   it('flow APRÈS un template (pas en ouverture) -> false ; flow d\'ouverture NON configuré (sans flowId) -> false', () => {
     const after: WorkflowGraph = {
       nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('f', 'flow', { flowId: 'fl1' })],
       edges: [e('e1', 'tpl', 'f')],
     };
-    expect(opensOutsideServiceWindow(after)).toBe(false);
+    expect(scanOpening(after).sessionOpen).toBe(false);
     // Node flow vide : aucune action produite -> le graphe reste enregistrable pendant la construction.
     const unconfigured: WorkflowGraph = { nodes: [n('f', 'flow', {})], edges: [] };
-    expect(opensOutsideServiceWindow(unconfigured)).toBe(false);
+    expect(scanOpening(unconfigured).sessionOpen).toBe(false);
   });
   it('graphe vide -> false', () => {
-    expect(opensOutsideServiceWindow({ nodes: [], edges: [] })).toBe(false);
+    expect(scanOpening({ nodes: [], edges: [] }).sessionOpen).toBe(false);
   });
   it('condition dont une branche OUVRE par un message de session -> true (branch-aware)', () => {
     // condition --true--> quick_message (ouverture session illégale) ; --false--> template (légal)
@@ -226,14 +226,14 @@ describe('opensOutsideServiceWindow (garde fenêtre 24 h à l\'ouverture)', () =
       nodes: [n('c', 'condition', { match: 'all', clauses: [] }), n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] }), n('tpl', 'template', { templateName: 'p' })],
       edges: [eh('e1', 'c', 'q', 'true'), eh('e2', 'c', 'tpl', 'false')],
     };
-    expect(opensOutsideServiceWindow(g)).toBe(true);
+    expect(scanOpening(g).sessionOpen).toBe(true);
   });
   it('condition dont les DEUX branches sont légales (template) -> false', () => {
     const g: WorkflowGraph = {
       nodes: [n('c', 'condition', { match: 'all', clauses: [] }), n('a', 'template', { templateName: 'a' }), n('b', 'template', { templateName: 'b' })],
       edges: [eh('e1', 'c', 'a', 'true'), eh('e2', 'c', 'b', 'false')],
     };
-    expect(opensOutsideServiceWindow(g)).toBe(false);
+    expect(scanOpening(g).sessionOpen).toBe(false);
   });
 });
 
@@ -432,10 +432,10 @@ describe('node action (bloc unifié tag/field : ajouter/retirer/màj/vider)', ()
     };
     expect(walk(g, 'a', evalCtx({ fields: { statut: 'actif' } })).actions).toContainEqual({ kind: 'tag', tag: 'vidé' });
   });
-  it('opensOutsideServiceWindow : un bloc action est synchrone (jamais une ouverture)', () => {
+  it('sessionOpen : un bloc action est synchrone (jamais une ouverture)', () => {
     // action -> quick_message (ouverture session) -> reste détecté comme ouverture ; action seul n'ouvre rien.
-    expect(opensOutsideServiceWindow(only('add_tag', { tag: 'x' }))).toBe(false);
+    expect(scanOpening(only('add_tag', { tag: 'x' })).sessionOpen).toBe(false);
     const g: WorkflowGraph = { nodes: [n('a', 'action', { actionKind: 'add_tag', tag: 'x' }), n('q', 'quick_message', { body: 'Salut', quickReplies: ['Oui'] })], edges: [e('e', 'a', 'q')] };
-    expect(opensOutsideServiceWindow(g)).toBe(true); // l'action est traversée (synchrone), le quick_message ouvre
+    expect(scanOpening(g).sessionOpen).toBe(true); // l'action est traversée (synchrone), le quick_message ouvre
   });
 });

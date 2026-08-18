@@ -1,11 +1,5 @@
 import type { ConversationAnalysis } from './schema';
 
-/**
- * Déclencheur REMPLAÇABLE : « cette conversation est prête à analyser ». V1 = balayage d'inactivité qui enqueue un job.
- * Le jour où on veut le temps réel (signal d'un flow), on branche une autre implémentation SANS toucher au reste.
- */
-export type OnConversationReady = (conversationId: string, tenantId: string) => Promise<void>;
-
 /** Analyse stockée + son identité de conversation (payload du point de sortie). */
 export interface StoredConversationAnalysis extends ConversationAnalysis {
   conversationId: string;

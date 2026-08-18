@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { MetaFlowClient, FlowJsonInvalidError } from '../src/meta/flows';
 import { MetaApiError } from '../src/meta/errors';
-import { deriveElements } from '../src/meta/flow-json';
+import { deriveScreens, type FlowElementInput } from '../src/meta/flow-json';
 import type { FetchLike } from '../src/meta/templates';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
+
+/** Raccourci mono-écran des cas historiques de ce fichier : la production ne construit que du multi-écran. */
+const deriveElements = (elements: FlowElementInput[]) => deriveScreens([{ elements }])[0]!.elements;
 import type { UserAuthStore, AuthUser } from '../src/auth/store';
 import type { FlowRouteDeps } from '../src/http/flows';
 import type { FlowRow } from '../src/flow/store.pg';

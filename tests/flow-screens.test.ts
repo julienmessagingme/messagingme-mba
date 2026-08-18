@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildFlowScreens, buildFlowElements, deriveScreens, screensOf, fieldsOfScreens, screenId,
+  buildFlowScreens, deriveScreens, screensOf, fieldsOfScreens, screenId,
   DuplicateFieldKeyError, VisibleIfError, FLOW_REF_KEY,
 } from '../src/meta/flow-json';
 import type { FlowScreenInput } from '../src/meta/flow-json';
@@ -94,11 +94,6 @@ describe('buildFlowScreens (multi-écrans)', () => {
     expect(a).toBe(b);
   });
 
-  it('mono-écran via buildFlowScreens === buildFlowElements (wrapper, non-régression du généré)', () => {
-    const els = deriveScreens([{ elements: [{ kind: 'field', label: 'Nom', type: 'text', required: true }] }])[0]!.elements;
-    expect(JSON.stringify(buildFlowScreens('F', [{ elements: els }], '7.2', 'r', 'Go')))
-      .toBe(JSON.stringify(buildFlowElements('F', els, '7.2', 'r', 'Go')));
-  });
 });
 
 describe('deriveScreens : unicité GLOBALE des clés + visibleIf', () => {
