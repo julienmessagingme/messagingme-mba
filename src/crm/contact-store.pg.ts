@@ -391,7 +391,12 @@ export class PgContactStore implements ContactStore {
   async applyEdits(
     tenantId: string,
     contactId: string,
-    edits: { fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[]; profileName?: string | null },
+    edits: {
+      fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[];
+      profileName?: string | null;
+      /** Consentement posé À LA MAIN depuis la fiche. Voir le commentaire de l'écriture, plus bas. */
+      optInStatus?: 'opted_in' | 'opted_out';
+    },
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null> {
     const client = await this.pool.connect();
     try {
@@ -415,6 +420,17 @@ export class PgContactStore implements ContactStore {
       if (edits.profileName !== undefined) {
         // Nom (profile_name) éditable ; null = vider. Le téléphone et le BSUID (clés d'identité/routage) restent hors édition.
         await client.query('update contacts set profile_name = $3, updated_at = now() where id = $1 and tenant_id = $2', [contactId, tenantId, edits.profileName]);
+      }
+      if (edits.optInStatus !== undefined) {
+        // Écriture DIRECTE du statut, y compris à la baisse : c'est une décision d'opérateur devant la fiche,
+        // pas une donnée importée. L'upsert, lui, ne fait jamais régresser un statut. La source dit d'où vient
+        // la décision, pour qu'un `opted_out` posé ici ne se confonde pas plus tard avec un statut jamais
+        // renseigné. Aucun retour à « inconnu » : ce statut signifie « rien n'a jamais été enregistré », et
+        // l'écrire après coup falsifierait le registre plutôt que de le corriger.
+        await client.query(
+          `update contacts set opt_in_status = $3, opt_in_source = 'crm', updated_at = now() where id = $1 and tenant_id = $2`,
+          [contactId, tenantId, edits.optInStatus],
+        );
       }
       if (edits.addTags.length > 0) {
         await client.query(`update contacts set tags = (select coalesce(array_agg(distinct t), '{}') from unnest(tags || $3::text[]) t), updated_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId, edits.addTags]);

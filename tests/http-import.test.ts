@@ -237,14 +237,14 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
     await app.close();
   });
 
-  it('sans optIn -> statut unknown', async () => {
+  it('optIn: false explicite -> statut unknown (le defaut opt-in de la route ne l’ecrase pas)', async () => {
     const contacts = new FakeContacts();
     const app = inject(contacts, new FakeFields());
     const res = await app.inject({
       method: 'POST',
       url: '/tenants/t1/contacts/import',
       ...auth(),
-      payload: { csv: 'Téléphone\n+33611111111' },
+      payload: { csv: 'Téléphone\n+33611111111', optIn: false },
     });
     expect(res.statusCode).toBe(200);
     expect(contacts.upserts[0]?.optInStatus).toBe('unknown');
@@ -310,6 +310,29 @@ Marc,0622222222`;
     const serialise = JSON.stringify(journal);
     expect(serialise).not.toMatch(/[0-9]{9,}/); // aucun numéro, sous aucune forme
     expect(serialise.toLowerCase()).not.toContain('julie');
+    await app.close();
+  });
+
+  it('🔴 corps SANS `optIn` -> import OPT-IN, et le journal le dit', async () => {
+    // L'écran d'import a sa case pré-cochée et envoie toujours le booléen, donc ce défaut ne se voit pas
+    // depuis l'interface. Il compte quand même : un appel qui omet le champ chargerait sinon une liste entière
+    // que le garde-fou de campagne écarte ensuite du marketing (il exige un opt-in EXPLICITE), en silence.
+    const journal: Trace[] = [];
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields(), undefined, journal);
+    await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv } });
+    expect(contacts.upserts.every((c) => c.optInStatus === 'opted_in')).toBe(true);
+    expect(journal[0]?.detail).toMatchObject({ optIn: true });
+    await app.close();
+  });
+
+  it('🔴 `optIn: false` explicite reste respecté : le défaut ne l’écrase pas', async () => {
+    const journal: Trace[] = [];
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields(), undefined, journal);
+    await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv, optIn: false } });
+    expect(contacts.upserts.every((c) => c.optInStatus === 'unknown')).toBe(true);
+    expect(journal[0]?.detail).toMatchObject({ optIn: false });
     await app.close();
   });
 

@@ -16,7 +16,10 @@ export interface ContactsRouteDeps {
   applyEdits(
     tenantId: string,
     contactId: string,
-    edits: { fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[]; profileName?: string | null },
+    edits: {
+      fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[];
+      profileName?: string | null; optInStatus?: 'opted_in' | 'opted_out';
+    },
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
@@ -141,7 +144,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (forbidNonAdmin(req, reply)) return;
     const { contactId } = req.params as { contactId: string };
 
-    const b = (req.body ?? {}) as { fields?: unknown; removeFields?: unknown; addTags?: unknown; removeTags?: unknown; profileName?: unknown };
+    const b = (req.body ?? {}) as { fields?: unknown; removeFields?: unknown; addTags?: unknown; removeTags?: unknown; profileName?: unknown; optInStatus?: unknown };
     const rawFields = b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields) ? (b.fields as Record<string, unknown>) : {};
     const addTags = asStringArray(b.addTags);
     const removeTags = asStringArray(b.removeTags);
@@ -171,13 +174,32 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       profileName = trimmed === '' ? null : trimmed;
     }
 
-    if (Object.keys(values).length === 0 && removeFields.length === 0 && addTags.length === 0 && removeTags.length === 0 && profileName === undefined) {
-      return reply.code(400).send({ error: 'rien à modifier (fields / removeFields / addTags / removeTags / profileName)' });
+    // Consentement posé à la main depuis la fiche. DEUX valeurs seulement : « inconnu » veut dire « rien n'a
+    // jamais été enregistré », et le réécrire après coup falsifierait le registre au lieu de le corriger.
+    let optInStatus: 'opted_in' | 'opted_out' | undefined;
+    if (b.optInStatus !== undefined) {
+      if (b.optInStatus !== 'opted_in' && b.optInStatus !== 'opted_out') {
+        return reply.code(400).send({ error: 'consentement invalide (opted_in | opted_out)' });
+      }
+      optInStatus = b.optInStatus;
+    }
+
+    if (Object.keys(values).length === 0 && removeFields.length === 0 && addTags.length === 0 && removeTags.length === 0 && profileName === undefined && optInStatus === undefined) {
+      return reply.code(400).send({ error: 'rien à modifier (fields / removeFields / addTags / removeTags / profileName / optInStatus)' });
     }
 
     // Une transaction : MERGE/suppression fields + Nom + tags, ou 404 si le contact n'est pas dans le tenant.
-    const updated = await deps.applyEdits(tenant, contactId, { fields: values, removeFields, addTags, removeTags, ...(profileName !== undefined ? { profileName } : {}) });
+    const updated = await deps.applyEdits(tenant, contactId, {
+      fields: values, removeFields, addTags, removeTags,
+      ...(profileName !== undefined ? { profileName } : {}),
+      ...(optInStatus !== undefined ? { optInStatus } : {}),
+    });
     if (!updated) return reply.code(404).send({ error: 'contact inconnu' });
+    // Journalisé comme la bascule en masse : c'est la même décision, prise sur une fiche au lieu d'une liste.
+    // APRÈS l'écriture réussie, sinon on consignerait un consentement qu'on n'a pas posé.
+    if (optInStatus !== undefined) {
+      await journal(tenant, req, optInStatus === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: contactId }, { source: 'fiche' });
+    }
     // Automations « tag ajouté » (E.2), sur les tags RÉELLEMENT nouveaux : reposer un tag déjà présent ne
     // change rien en base, le déclencheur ne doit donc pas partir. APRÈS l'écriture réussie et en best-effort
     // (un incident de file ne transforme pas une édition de fiche réussie en erreur pour l'opérateur), mais

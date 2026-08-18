@@ -500,12 +500,27 @@ doit pas empêcher un client d'exercer son droit à l'effacement. Actions consig
 `contact.imported` (UNE ligne par LOT, sinon un import de 50 000 lignes noie l'historique), `contact.purged`,
 `contact.optin`, `contact.optout`. Lecture : `GET /tenants/:t/audit`, affichée dans Paramètres.
 
-**Consentement.** `opted_out` était lu par les filtres et le garde-fou de campagne mais **aucun chemin ne
-l'écrivait** : l'upsert d'import et d'API ne fait jamais régresser un statut, donc un client demandant à ne
-plus rien recevoir n'était enregistrable nulle part. L'action en masse `set_optin` (valeurs `opted_in` /
-`opted_out`, `BulkEdits.setOptIn`, source `crm`) est ce chemin. Un contact créé À LA MAIN est **opt-in par
-défaut** (le saisir suppose qu'on tient le numéro de la personne) ; l'import CSV et l'API publique gardent
-l'exigence inverse.
+**Consentement.** ⚠️ Tout part d'un fait à garder en tête : `optInAllows` (`src/campaign/guardrails.ts`) exige
+un opt-in **EXPLICITE** pour une campagne marketing. Un contact `unknown` est donc écarté des envois **en
+silence** ; seul `utility` passe. Chaque défaut d'opt-in ci-dessous se lit à cette lumière.
+
+`opted_out` était lu par les filtres et le garde-fou mais **aucun chemin ne l'écrivait** : l'upsert d'import et
+d'API ne fait jamais régresser un statut, donc un client demandant à ne plus rien recevoir n'était
+enregistrable nulle part. Trois chemins l'écrivent maintenant, tous journalisés :
+
+- **En masse** depuis le mini-CRM : action `set_optin` (`BulkEdits.setOptIn`, source `crm`).
+- **Sur la fiche** : `PATCH /tenants/:t/contacts/:id` accepte `optInStatus`. DEUX valeurs seulement, jamais un
+  retour à `unknown` : ce statut signifie « rien n'a jamais été enregistré », le repeindre falsifierait le
+  registre au lieu de le corriger. L'écran ne propose pas non plus le statut courant.
+- **Par WhatsApp Flow** (composant OptIn coché), la preuve de consentement la plus forte : `markOptedIn`,
+  source `flow`, acteur `null` au journal puisque c'est le contact lui-même qui a agi.
+
+**Opt-in PAR DÉFAUT** sur les deux chemins de création manuelle : la saisie à la main (case pré-cochée) et
+l'import CSV (idem, et le défaut de la route est aligné dessus). Les saisir suppose qu'on tient le numéro de la
+personne, et les créer muets en ferait des contacts que les campagnes ignorent sans rien dire. L'**API publique
+`/v1/contacts` et l'import HubSpot gardent l'exigence inverse** (opt-in explicite) : leur appelant charge une
+liste dont il ne connaît pas chaque ligne. ⚠️ Conséquence à connaître : les contacts venus de HubSpot arrivent
+`unknown`, donc hors marketing tant qu'on ne les bascule pas (fiche ou action en masse).
 
 ⚠️ **Une promesse d'effacement ne se teste pas avec un faux.** Les tests unitaires à faux store prouvaient que
 la route appelle `purgeMany`, jamais que `purgeMany` efface quelque chose : c'est ainsi que les trois pièges

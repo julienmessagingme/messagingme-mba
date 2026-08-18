@@ -160,17 +160,23 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
       }
     }
 
+    // OPT-IN PAR DEFAUT, aligne sur l'ecran d'import (sa case est pre-cochee). Les deux disaient l'inverse :
+    // l'ecran envoie toujours le booleen, donc le defaut de la route ne se voyait pas, et un appel qui omet le
+    // champ chargeait une liste entiere que le garde-fou de campagne ecarte ensuite du marketing (il exige un
+    // opt-in EXPLICITE), sans que rien ne le signale. Decision de Julien, 2026-08-19.
+    const optIn = body.optIn !== false;
+
     const parsed = parseCsv(body.csv);
     const mapping = body.mapping ?? mappingFromHeaders(parsed.headers);
     const report = await importContacts(
-      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn: body.optIn === true, tags },
+      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags },
       deps,
     );
     // Une ligne par LOT, pas par contact : un import de 50 000 lignes écrirait autant d'entrées, et noierait
     // l'historique qu'on cherche à rendre lisible. L'opt-in est consigné parce que c'est lui qui autorise les
     // envois marketing derrière : c'est la case que l'opérateur a cochée, et elle engage.
     await journal(effectiveTenant, req, 'contact.imported', { kind: 'contact', id: 'lot' }, {
-      created: report.created, updated: report.updated, skipped: report.skipped, optIn: body.optIn === true, tags: tags.length,
+      created: report.created, updated: report.updated, skipped: report.skipped, optIn, tags: tags.length,
     });
     return reply.code(200).send(report);
   });

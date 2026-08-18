@@ -79,7 +79,13 @@ export function listContacts(tenantId: string, opts?: { limit?: number; offset?:
 export function updateContact(
   tenantId: string,
   contactId: string,
-  patch: { fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[]; profileName?: string | null },
+  patch: {
+    fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[];
+    profileName?: string | null;
+    /** Consentement posé à la main depuis la fiche. Deux valeurs : « inconnu » ne se réécrit pas (il signifie
+     *  « rien n'a jamais été enregistré », le repeindre falsifierait le registre au lieu de le corriger). */
+    optInStatus?: 'opted_in' | 'opted_out';
+  },
 ): Promise<{ contact: Contact }> {
   return request<{ contact: Contact }>(`/tenants/${tenantId}/contacts/${contactId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }

@@ -92,6 +92,30 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
     expect((await store.query(tenantId, {}, 500)).some((c) => c.id === ids.C)).toBe(true);
   });
 
+  it('🔴 applyEdits pose le consentement EN BASE, opt-in comme opt-out, avec la source', async () => {
+    // Écrit puis relu en base, pas via un double : c'est la leçon de la purge, dont les tests à faux store
+    // prouvaient l'appel et jamais l'effet. Ici l'enjeu est direct : le garde-fou de campagne exige un opt-in
+    // EXPLICITE pour le marketing, donc un statut qui ne s'écrit pas veut dire des envois qui ne partent pas.
+    const lu = async (): Promise<{ opt_in_status: string; opt_in_source: string | null }> =>
+      (await pool.query<{ opt_in_status: string; opt_in_source: string | null }>(
+        'select opt_in_status, opt_in_source from contacts where id = $1', [ids.B!],
+      )).rows[0]!;
+
+    await store.applyEdits(tenantId, ids.B!, { fields: {}, addTags: [], removeTags: [], optInStatus: 'opted_out' });
+    expect(await lu()).toEqual({ opt_in_status: 'opted_out', opt_in_source: 'crm' });
+
+    // Et le retour en arrière : une décision d'opérateur écrase un opt-out, là où l'upsert d'import ne fait
+    // jamais régresser un statut.
+    await store.applyEdits(tenantId, ids.B!, { fields: {}, addTags: [], removeTags: [], optInStatus: 'opted_in' });
+    expect(await lu()).toEqual({ opt_in_status: 'opted_in', opt_in_source: 'crm' });
+  });
+
+  it('applyEdits SANS consentement ne touche pas au statut existant', async () => {
+    await store.applyEdits(tenantId, ids.B!, { fields: {}, addTags: ['neutre'], removeTags: [] });
+    const row = (await pool.query<{ opt_in_status: string }>('select opt_in_status from contacts where id = $1', [ids.B!])).rows[0]!;
+    expect(row.opt_in_status).toBe('opted_in');
+  });
+
   it('isolation tenant : une action sur un AUTRE tenant ne touche pas nos contacts', async () => {
     const other = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-minicrm-other') returning id`)).rows[0]!.id;
     try {

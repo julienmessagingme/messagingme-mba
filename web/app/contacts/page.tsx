@@ -753,7 +753,10 @@ function ContactDetail({
 
   const selectedDef = defByKey.get(newKey);
 
-  async function apply(patch: { fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[]; profileName?: string | null }) {
+  async function apply(patch: {
+    fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[];
+    profileName?: string | null; optInStatus?: 'opted_in' | 'opted_out';
+  }) {
     setBusy(true);
     setError(null);
     try {
@@ -855,7 +858,25 @@ function ContactDetail({
             </>
           )}
           <span className="text-ink-400">{t('Consentement', 'Consent')}</span>
-          <span><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span></span>
+          {/* Modifiable À LA MAIN, et ce n'est pas du confort : le garde-fou de campagne exige un opt-in
+              EXPLICITE pour le marketing, donc un contact « inconnu » est écarté des envois en silence. Sans ce
+              réglage sur la fiche, rien ne permettait de le rattraper au cas par cas.
+              Pas de retour à « inconnu » : ce statut veut dire « rien n'a jamais été enregistré ». */}
+          <span className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>{t(...badge.text)}</span>
+            {contact.optInStatus !== 'opted_in' && (
+              <button onClick={() => void apply({ optInStatus: 'opted_in' })} disabled={busy} data-testid="fiche-optin"
+                className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700 disabled:opacity-50">
+                {t('passer en opt-in', 'mark opted in')}
+              </button>
+            )}
+            {contact.optInStatus !== 'opted_out' && (
+              <button onClick={() => void apply({ optInStatus: 'opted_out' })} disabled={busy} data-testid="fiche-optout"
+                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50">
+                {t('passer en opt-out', 'mark opted out')}
+              </button>
+            )}
+          </span>
           <span className="text-ink-400">{t('Ajouté le', 'Added on')}</span>
           <span className="text-ink-900">{formatDate(contact.createdAt, locale)}</span>
         </div>

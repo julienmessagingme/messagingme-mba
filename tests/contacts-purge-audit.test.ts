@@ -255,3 +255,78 @@ describe('lecture du journal', () => {
     await server.close();
   });
 });
+
+describe('consentement posé à la main sur la fiche', () => {
+  const url = '/tenants/t1/contacts/c1';
+  const CONTACT = {
+    id: 'c1', phoneE164: '+33612345678', bsuid: null, profileName: 'dupontel',
+    optInStatus: 'opted_in', fields: {}, tags: [], createdAt: '2026-08-18T09:00:00.000Z',
+  };
+
+  /** Câblage avec un `applyEdits` qui RÉPOND (celui du fichier renvoie null = contact inconnu). */
+  function avecFiche(over: Record<string, unknown> = {}) {
+    const edits: Array<Record<string, unknown>> = [];
+    const monte = app({
+      applyEdits: async (_t: string, _id: string, e: Record<string, unknown>) => {
+        edits.push(e);
+        return { contact: CONTACT, addedTags: [] };
+      },
+      ...over,
+    } as never);
+    return { ...monte, edits };
+  }
+
+  it('🔴 opt-in depuis la fiche : le statut part au store ET laisse une trace', async () => {
+    // Le garde-fou de campagne exige un opt-in EXPLICITE pour le marketing : un contact « inconnu » est écarté
+    // des envois en silence. Sans ce réglage, rien ne permettait de le rattraper au cas par cas.
+    const { server, edits, journal } = avecFiche();
+    const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { optInStatus: 'opted_in' } });
+    expect(res.statusCode).toBe(200);
+    expect(edits[0]).toMatchObject({ optInStatus: 'opted_in' });
+    expect(journal.find((t) => t.action === 'contact.optin')).toMatchObject({ target: { kind: 'contact', id: 'c1' }, detail: { source: 'fiche' } });
+    await server.close();
+  });
+
+  it('opt-out depuis la fiche : action `contact.optout`', async () => {
+    const { server, edits, journal } = avecFiche();
+    await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { optInStatus: 'opted_out' } });
+    expect(edits[0]).toMatchObject({ optInStatus: 'opted_out' });
+    expect(journal.map((t) => t.action)).toEqual(['contact.optout']);
+    await server.close();
+  });
+
+  it('🔴 « inconnu » est REFUSÉ, comme toute valeur libre', async () => {
+    // « inconnu » veut dire « rien n'a jamais été enregistré ». Le réécrire après coup falsifierait le
+    // registre au lieu de le corriger, alors que l'opt-out exprime déjà un refus.
+    const { server, edits } = avecFiche();
+    for (const optInStatus of ['unknown', 'OPTED_IN', '', null, true]) {
+      const res = await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { optInStatus } });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(edits).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un statut SEUL suffit : ce n’est pas « rien à modifier »', async () => {
+    // La garde anti-PATCH-vide listait les champs un par un ; en oublier un le rend inéditable, sans que rien
+    // ne le signale à l'écran autrement qu'un 400 sur un formulaire pourtant rempli.
+    const { server } = avecFiche();
+    expect((await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { optInStatus: 'opted_in' } })).statusCode).toBe(200);
+    expect((await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: {} })).statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('contact inconnu -> 404, et AUCUNE trace (on ne consigne pas un consentement non posé)', async () => {
+    const { server, journal } = avecFiche({ applyEdits: async () => null });
+    expect((await server.inject({ method: 'PATCH', url, ...h(adminTok), payload: { optInStatus: 'opted_in' } })).statusCode).toBe(404);
+    expect(journal).toEqual([]);
+    await server.close();
+  });
+
+  it('réservé aux admins', async () => {
+    const { server, edits } = avecFiche();
+    expect((await server.inject({ method: 'PATCH', url, ...h(agentTok), payload: { optInStatus: 'opted_in' } })).statusCode).toBe(403);
+    expect(edits).toEqual([]);
+    await server.close();
+  });
+});

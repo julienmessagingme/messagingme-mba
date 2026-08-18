@@ -21,6 +21,7 @@ const CONTACTS = [
 async function monter(page: import('@playwright/test').Page) {
   const suppressions: Array<Record<string, unknown>> = [];
   const bulks: Array<Record<string, unknown>> = [];
+  const patchs: Array<Record<string, unknown>> = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -34,6 +35,12 @@ async function monter(page: import('@playwright/test').Page) {
       bulks.push((req.postDataJSON() ?? {}) as Record<string, unknown>);
       return json({ affected: 1 });
     }
+    if (req.method() === 'PATCH' && url.includes('/contacts/')) {
+      const body = (req.postDataJSON() ?? {}) as Record<string, unknown>;
+      patchs.push(body);
+      // Renvoie la fiche AVEC le nouveau statut : l'écran se réaffiche sur cette réponse.
+      return json({ contact: { ...CONTACTS[1], optInStatus: body.optInStatus ?? CONTACTS[1]!.optInStatus } });
+    }
     if (url.includes('/contacts/count')) return json({ count: CONTACTS.length });
     if (url.includes('/user-fields')) return json({ fields: [] });
     if (url.includes('/tags')) return json({ tags: [] });
@@ -45,7 +52,7 @@ async function monter(page: import('@playwright/test').Page) {
   // Coche le premier contact : la barre d'action n'apparaît qu'à partir d'une sélection.
   await page.locator('input[type="checkbox"]').nth(1).check();
   await expect(page.getByTestId('contacts-action')).toBeVisible();
-  return { suppressions, bulks };
+  return { suppressions, bulks, patchs };
 }
 
 test.describe('mini-CRM : suppression', () => {
@@ -113,5 +120,45 @@ test.describe('mini-CRM : bascule de consentement', () => {
 
     await expect.poll(() => bulks.length).toBe(1);
     expect(bulks[0]).toMatchObject({ action: { type: 'set_optin', value: 'opted_in' } });
+  });
+});
+
+test.describe('fiche contact : consentement modifiable à la main', () => {
+  /** Ouvre la fiche du contact « Bo », dont le consentement est « inconnu ». */
+  async function ouvrirFiche(page: import('@playwright/test').Page) {
+    const monte = await monter(page);
+    await page.getByText('Bo', { exact: true }).click();
+    await expect(page.getByText('Consentement')).toBeVisible();
+    return monte;
+  }
+
+  test('🔴 un contact « inconnu » peut passer en opt-in depuis sa fiche', async ({ page }) => {
+    // C'est le trou signalé : le garde-fou de campagne exige un opt-in EXPLICITE pour le marketing, donc un
+    // contact « inconnu » est écarté des envois en silence, et rien ne permettait de le rattraper.
+    const { patchs } = await ouvrirFiche(page);
+    await page.getByTestId('fiche-optin').click();
+    await expect.poll(() => patchs.length).toBe(1);
+    expect(patchs[0]).toEqual({ optInStatus: 'opted_in' });
+  });
+
+  test('le même écran sait aussi poser un opt-out', async ({ page }) => {
+    const { patchs } = await ouvrirFiche(page);
+    await page.getByTestId('fiche-optout').click();
+    await expect.poll(() => patchs.length).toBe(1);
+    expect(patchs[0]).toEqual({ optInStatus: 'opted_out' });
+  });
+
+  test('🔴 le statut COURANT n’est pas reproposé, et « inconnu » n’est jamais une option', async ({ page }) => {
+    // Reproposer l'état courant invite à un aller-retour qui n'écrit rien mais laisse une trace au journal.
+    // Et « inconnu » veut dire « rien n'a jamais été enregistré » : le repeindre falsifierait le registre.
+    const { patchs } = await ouvrirFiche(page);
+    await expect(page.getByTestId('fiche-optin')).toBeVisible();   // le contact est « inconnu »
+    await expect(page.getByTestId('fiche-optout')).toBeVisible();
+    await page.getByTestId('fiche-optin').click();
+    await expect.poll(() => patchs.length).toBe(1);
+    // La fiche revient en opt-in : l'action « passer en opt-in » disparaît, l'opt-out reste.
+    await expect(page.getByTestId('fiche-optin')).toHaveCount(0);
+    await expect(page.getByTestId('fiche-optout')).toBeVisible();
+    await expect(page.getByRole('button', { name: /inconnu/i })).toHaveCount(0);
   });
 });
