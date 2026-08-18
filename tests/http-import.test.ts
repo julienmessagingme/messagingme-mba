@@ -39,7 +39,10 @@ class FakeFields implements UserFieldStore {
 // routage query vs list). Partagé par les tests qui en ont besoin via un objet passé à inject.
 type QueryCapture = { queryFilters: unknown[]; countFilters: unknown[]; idsFilters: unknown[] };
 
-function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryCapture) {
+/** Trace d'audit telle que la route l'écrit. `journal` est fourni par les tests qui l'observent. */
+interface Trace { action: string; target: { kind: string; id: string }; detail: Record<string, unknown>; actor: { userId: string | null } }
+
+function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryCapture, journal?: Trace[]) {
   return buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -54,6 +57,7 @@ function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryC
       ]; },
       countContacts: async (_t, filters) => { cap?.countFilters.push(filters); return 3; },
       contactIdsForFilters: async (_t, filters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },
+      ...(journal ? { audit: async (_t: string, actor: { userId: string | null }, action: string, target: { kind: string; id: string }, detail: Record<string, unknown> = {}) => { journal.push({ action, target, detail, actor }); } } : {}),
     },
   });
 }
@@ -272,5 +276,48 @@ describe('POST /tenants/:tenantId/contacts/import', () => {
       expect(res.statusCode).toBe(403);
       await app.close();
     });
+  });
+});
+
+describe('journal d’audit de l’import', () => {
+  // Littéral multi-ligne : le CSV porte de vrais sauts de ligne, comme le corps réel de la requête.
+  const csv = `Nom,Téléphone
+Julie,+33611111111
+Marc,0622222222`;
+
+  it('🔴 un import laisse UNE trace pour le LOT, jamais une par contact', async () => {
+    // Un import de 50 000 lignes écrirait 50 000 entrées et noierait l'historique qu'on cherche à rendre
+    // lisible. C'est aussi la principale façon dont des personnes entrent dans la base : sans trace, personne
+    // ne peut dire d'où vient un contact ni qui l'a chargé.
+    const journal: Trace[] = [];
+    const app = inject(new FakeContacts(), new FakeFields(), undefined, journal);
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv, optIn: true, tags: 'salon' } });
+    expect(res.statusCode).toBe(200);
+    expect(journal).toHaveLength(1);
+    expect(journal[0]).toMatchObject({
+      action: 'contact.imported',
+      target: { kind: 'contact', id: 'lot' },
+      detail: { created: 2, updated: 0, skipped: 0, optIn: true, tags: 1 },
+      actor: { userId: 'u1' },
+    });
+    await app.close();
+  });
+
+  it('🔴 la trace ne porte AUCUN numéro ni nom, seulement des compteurs', async () => {
+    const journal: Trace[] = [];
+    const app = inject(new FakeContacts(), new FakeFields(), undefined, journal);
+    await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv, optIn: true } });
+    const serialise = JSON.stringify(journal);
+    expect(serialise).not.toMatch(/[0-9]{9,}/); // aucun numéro, sous aucune forme
+    expect(serialise.toLowerCase()).not.toContain('julie');
+    await app.close();
+  });
+
+  it('un CSV REFUSÉ ne laisse aucune trace', async () => {
+    const journal: Trace[] = [];
+    const app = inject(new FakeContacts(), new FakeFields(), undefined, journal);
+    expect((await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv: '' } })).statusCode).toBe(400);
+    expect(journal).toEqual([]);
+    await app.close();
   });
 });

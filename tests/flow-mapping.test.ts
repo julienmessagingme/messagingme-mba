@@ -86,9 +86,13 @@ class FakeWriter implements ContactFieldWriter {
     }
     this.writes.push({ tenantId, waId, values });
   }
-  async markOptedIn(tenantId: string, waId: string, source: string): Promise<void> {
+  /** Le vrai store rend l'IDENTIFIANT du contact (jamais son numéro) : c'est ce que le journal consigne. */
+  async markOptedIn(tenantId: string, waId: string, source: string): Promise<string | null> {
     this.optIns.push({ tenantId, waId, source });
+    return this.contactIdConnu;
   }
+  /** `null` reproduit le cas « numéro inconnu du CRM » (merge-only : aucune fiche créée). */
+  contactIdConnu: string | null = 'c-123';
   async setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<void> {
     this.names.push({ tenantId, waId, name });
   }
@@ -140,6 +144,33 @@ describe('processFlowCompletions', () => {
     await processFlowCompletions(nfm({ _ref: 'R', consent: true }, { from: '33611' }), lookup, writer);
     expect(writer.writes).toEqual([{ tenantId: 't1', waId: '33611', values: { whatsapp_optin: 'true' } }]);
     expect(writer.optIns).toEqual([{ tenantId: 't1', waId: '33611', source: 'flow' }]);
+  });
+
+  it('🔴 le consentement capté par le Flow est JOURNALISÉ, par identifiant, sans jamais le numéro', async () => {
+    // C'est l'opt-in qui a le plus de valeur en preuve : la personne a coché elle-même dans WhatsApp. Un
+    // journal qui ne consignerait que les bascules d'opérateur passerait à côté. Acteur null = le système.
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { consent: 'whatsapp_optin' }, fieldTypes: { consent: 'optin' }, optinFieldKeys: ['consent'] });
+    const writer = new FakeWriter();
+    const traces: unknown[] = [];
+    await processFlowCompletions(
+      nfm({ _ref: 'R', consent: true }, { from: '33611' }), lookup, writer,
+      async (tenantId, actor, action, target, detail) => { traces.push({ tenantId, actor, action, target, detail }); },
+    );
+    expect(traces).toEqual([{ tenantId: 't1', actor: { userId: null, email: null }, action: 'contact.optin', target: { kind: 'contact', id: 'c-123' }, detail: { source: 'flow' } }]);
+    expect(JSON.stringify(traces)).not.toContain('33611');
+  });
+
+  it('OptIn coché mais numéro INCONNU du CRM -> rien à journaliser (pas de trace orpheline)', async () => {
+    const lookup = new FakeLookup({ tenantId: 't1', mapping: { consent: 'whatsapp_optin' }, fieldTypes: { consent: 'optin' }, optinFieldKeys: ['consent'] });
+    const writer = new FakeWriter();
+    writer.contactIdConnu = null;
+    const traces: unknown[] = [];
+    await processFlowCompletions(
+      nfm({ _ref: 'R', consent: true }, { from: '33611' }), lookup, writer,
+      async (...args: unknown[]) => { traces.push(args); },
+    );
+    expect(writer.optIns).toHaveLength(1); // la bascule a bien été tentée
+    expect(traces).toEqual([]);            // mais rien à rattacher
   });
 
   it('OptIn décoché (false) -> champ « false », markOptedIn JAMAIS appelé', async () => {

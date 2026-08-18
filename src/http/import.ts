@@ -9,6 +9,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { scopeTenant } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 export interface ImportRouteDeps extends ImportDeps {
   listContacts(tenantId: string, limit?: number, offset?: number, tag?: string): Promise<ContactRow[]>;
@@ -18,6 +19,12 @@ export interface ImportRouteDeps extends ImportDeps {
   countContacts(tenantId: string, filters: ContactFilters): Promise<number>;
   /** Ids correspondant aux filtres (résolution serveur de la source de campagne). */
   contactIdsForFilters(tenantId: string, filters: ContactFilters): Promise<string[]>;
+  /**
+   * Journal d'audit. Un import est la principale façon dont des personnes ENTRENT dans la base, souvent par
+   * milliers d'un coup : sans trace, personne ne peut dire d'où vient un contact ni qui l'a chargé.
+   * Optionnel : absent -> aucune trace (câblages de test).
+   */
+  audit?: AuditSink;
 }
 
 /** Parse les critères de « Liste de contacts » depuis les query params (tous optionnels, valeurs = strings).
@@ -67,6 +74,7 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
  */
 export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  const journal = makeJournal(deps.audit);
 
   app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
@@ -158,6 +166,12 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
       { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn: body.optIn === true, tags },
       deps,
     );
+    // Une ligne par LOT, pas par contact : un import de 50 000 lignes écrirait autant d'entrées, et noierait
+    // l'historique qu'on cherche à rendre lisible. L'opt-in est consigné parce que c'est lui qui autorise les
+    // envois marketing derrière : c'est la case que l'opérateur a cochée, et elle engage.
+    await journal(effectiveTenant, req, 'contact.imported', { kind: 'contact', id: 'lot' }, {
+      created: report.created, updated: report.updated, skipped: report.skipped, optIn: body.optIn === true, tags: tags.length,
+    });
     return reply.code(200).send(report);
   });
 }

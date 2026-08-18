@@ -160,7 +160,8 @@ export function contactIdsForFilters(tenantId: string, filters: ContactFilters):
 export type BulkAction =
   | { type: 'add_tag'; tags: string[] }
   | { type: 'remove_tag'; tags: string[] }
-  | { type: 'set_field'; key: string; value: string };
+  | { type: 'set_field'; key: string; value: string }
+  | { type: 'set_optin'; value: 'opted_in' | 'opted_out' };
 export function bulkContactAction(tenantId: string, target: BulkTarget, action: BulkAction): Promise<{ affected: number }> {
   return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk`, { method: 'POST', body: JSON.stringify({ target, action }) });
 }
@@ -168,6 +169,32 @@ export function bulkContactAction(tenantId: string, target: BulkTarget, action: 
 /** Suppression DOUCE en masse (admin). Réversible en base, préserve l'historique de campagnes. */
 export function bulkDeleteContacts(tenantId: string, target: BulkTarget): Promise<{ affected: number }> {
   return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk-delete`, { method: 'POST', body: JSON.stringify({ target }) });
+}
+
+/**
+ * PURGE définitive (admin). IRRÉVERSIBLE : efface le fil de conversation, ses messages et l'analyse
+ * qualitative, puis anonymise ce qui porte les compteurs pour que les totaux de campagne restent justes.
+ * Le `confirm` n'est pas décoratif : le serveur le refuse sans lui, parce que cette route et la suppression
+ * douce se ressemblent assez pour qu'une erreur de copie soit plausible.
+ */
+export function purgeContacts(tenantId: string, target: BulkTarget): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
+  return request(`/tenants/${tenantId}/contacts/purge`, { method: 'POST', body: JSON.stringify({ target, confirm: 'PURGER' }) });
+}
+
+/** Une action sensible enregistrée sur les contacts. Ne porte JAMAIS de numéro : seulement l'identifiant. */
+export interface AuditEntry {
+  id: string;
+  at: string;
+  actorEmail: string | null;
+  action: string;
+  targetKind: string;
+  targetId: string;
+  detail: Record<string, unknown>;
+}
+
+/** Historique des actions sensibles de l'espace, du plus récent au plus ancien (admin). */
+export function listAudit(tenantId: string, limit = 100): Promise<{ entries: AuditEntry[] }> {
+  return request<{ entries: AuditEntry[] }>(`/tenants/${tenantId}/audit?limit=${limit}`);
 }
 
 // `listAllContacts` a vécu ici sans appelant : elle paginait correctement, avec un commentaire promettant de

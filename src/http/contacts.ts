@@ -7,6 +7,8 @@ import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 import { scopeTenant } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
+import { makeJournal, type AuditSink } from '../audit/journal';
+import type { AuditEntry } from '../audit/store.pg';
 
 export interface ContactsRouteDeps {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
@@ -31,7 +33,13 @@ export interface ContactsRouteDeps {
    * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test). BEST-EFFORT à l'appel : un journal
    * en échec ne doit jamais faire échouer l'action métier qu'il observe.
    */
-  audit?(tenantId: string, actor: { userId: string | null; email: string | null }, action: string, target: { kind: string; id: string }, detail?: Record<string, unknown>): Promise<void>;
+  audit?: AuditSink;
+  /**
+   * Lecture du journal. Séparée de l'écriture à dessein : le store est en AJOUT SEUL, et rien ici ne doit
+   * laisser croire qu'une entrée se modifie. Optionnelle -> la route répond 503 plutôt qu'une liste vide,
+   * qui se lirait comme « il ne s'est rien passé ».
+   */
+  listAudit?(tenantId: string, opts: { limit?: number; targetId?: string }): Promise<AuditEntry[]>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /**
@@ -127,6 +135,7 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
 
 export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
+  const journal = makeJournal(deps.audit);
 
   app.patch('/tenants/:tenantId/contacts/:contactId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -257,34 +266,19 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       ...(name ? { name } : {}),
       ...(Object.keys(fields).length > 0 ? { fields } : {}),
       tags: asStringArray(b.tags),
-      optIn: b.optIn === true,
+      // OPT-IN PAR DÉFAUT, et seulement ici. Saisir un numéro à la main suppose qu'on l'a obtenu de la personne :
+      // le créer muet en ferait un contact que les campagnes ignorent, sans que rien ne le dise à l'écran.
+      // L'import CSV et l'API publique gardent l'exigence inverse (opt-in explicite) : là, l'opérateur charge
+      // une liste dont il ne connaît pas chaque ligne. Décision de Julien, 2026-08-18.
+      optIn: b.optIn !== false,
     });
     if (res.status === 'error') return reply.code(400).send({ error: res.reason ?? 'contact invalide' });
+    // Le détail dit `updated` quand le numéro était déjà connu : sans ça, l'historique laisserait croire à une
+    // création alors que la fiche existait. L'opt-in figure ici plutôt que sur une ligne `contact.optin` à part,
+    // parce qu'il n'y a eu qu'UNE action de l'opérateur.
+    await journal(tenant, req, 'contact.created', { kind: 'contact', id: res.contactId ?? 'inconnu' }, { status: res.status, optIn: b.optIn === true });
     return reply.code(res.status === 'created' ? 201 : 200).send({ status: res.status, contactId: res.contactId });
   });
-
-  /**
-   * L'acteur de l'action. Le JWT ne porte que l'identifiant : l'email est résolu au câblage, où il est
-   * DÉNORMALISÉ dans le journal pour qu'il reste lisible même après le départ du collaborateur.
-   */
-  const acteur = (req: { auth?: { userId: string } }) => ({ userId: req.auth?.userId ?? null, email: null });
-
-  /** Journalise sans jamais faire échouer l'action observée. L'échec reste visible en console. */
-  async function journal(
-    tenantId: string,
-    req: { auth?: { userId: string; email?: string } },
-    action: string,
-    target: { kind: string; id: string },
-    detail: Record<string, unknown> = {},
-  ): Promise<void> {
-    if (!deps.audit) return;
-    try {
-      await deps.audit(tenantId, acteur(req), action, target, detail);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('audit ignoré:', err instanceof Error ? err.message : err);
-    }
-  }
 
   app.post('/tenants/:tenantId/contacts/bulk', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -315,7 +309,17 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       return reply.code(200).send({ affected });
     }
 
-    return reply.code(400).send({ error: 'action inconnue (add_tag | remove_tag | set_field)' });
+    if (action.type === 'set_optin') {
+      // Seul chemin capable de poser `opted_out` : l'import et l'API publique ne font jamais régresser un
+      // statut. C'est donc ici qu'un « ne m'envoyez plus rien » devient exécutoire pour les campagnes.
+      const value = action.value === 'opted_in' || action.value === 'opted_out' ? action.value : null;
+      if (value === null) return reply.code(400).send({ error: 'valeur requise (opted_in | opted_out)' });
+      const affected = await deps.applyEditsMany(tenant, target, { setOptIn: value });
+      await journal(tenant, req, value === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: 'lot' }, { affected });
+      return reply.code(200).send({ affected });
+    }
+
+    return reply.code(400).send({ error: 'action inconnue (add_tag | remove_tag | set_field | set_optin)' });
   });
 
   /**
@@ -331,6 +335,24 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const affected = await deps.softDeleteMany(tenant, target);
     await journal(tenant, req, 'contact.deleted', { kind: 'contact', id: 'lot' }, { affected });
     return reply.code(200).send({ affected });
+  });
+
+  /**
+   * Historique d'audit de l'espace, du plus récent au plus ancien. Lecture seule, admin-only.
+   *
+   * Monté ici et pas dans un fichier à part : toutes les actions journalisées sont des actions de CONTACT,
+   * et ce fichier est déjà leur périmètre admin. `targetId` filtre sur un contact précis (fiche).
+   */
+  app.get('/tenants/:tenantId/audit', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.listAudit) return reply.code(503).send({ error: 'journal indisponible sur cette instance' });
+    const q = (req.query ?? {}) as { limit?: unknown; targetId?: unknown };
+    const limit = Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined;
+    const targetId = typeof q.targetId === 'string' && q.targetId.trim() !== '' ? q.targetId.trim() : undefined;
+    const entries = await deps.listAudit(tenant, { ...(limit !== undefined ? { limit } : {}), ...(targetId ? { targetId } : {}) });
+    return reply.code(200).send({ entries });
   });
 
   /**

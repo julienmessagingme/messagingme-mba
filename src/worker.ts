@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
+import { PgAuditStore } from './audit/store.pg';
 import { handleWebhookJob } from './webhooks/handler';
 import { PgEventStore } from './webhooks/store';
 import {
@@ -116,6 +117,7 @@ async function main(): Promise<void> {
   const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
   const contactStore = new PgContactStore(pool);
+  const auditStore = new PgAuditStore(pool);
   const repo = new PgCampaignRepo(pool);
   const transport = new FetchTransport();
   const dryRun = config.DRY_RUN === 'true';
@@ -202,7 +204,9 @@ async function main(): Promise<void> {
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(
       data, eventStore, recipientStore, inboxStore,
-      { lookup: flowStore, writer: contactStore },
+      // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
+      // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
+      { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
       { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp) },
       // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.

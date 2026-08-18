@@ -454,12 +454,22 @@ describe('POST /tenants/:t/contacts (ajout a la main)', () => {
     return { server, recus };
   }
 
-  it('numero seul -> 201, et l’entree part telle quelle a l’upsert partage', async () => {
+  it('🔴 numero seul -> 201, et le contact est OPT-IN par defaut', async () => {
+    // Saisir un numéro à la main suppose qu'on l'a obtenu de la personne. Le créer muet en ferait un contact
+    // que les campagnes ignorent sans que rien ne le dise à l'écran, ce qui se découvre au premier envoi qui
+    // ne part pas. L'import CSV et l'API publique gardent la règle inverse.
     const { server, recus } = avecCreation();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '06 12 34 56 78' }) });
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ status: 'created', contactId: 'c-neuf' });
-    expect(recus[0]).toMatchObject({ phone: '06 12 34 56 78', optIn: false });
+    expect(recus[0]).toMatchObject({ phone: '06 12 34 56 78', optIn: true });
+    await server.close();
+  });
+
+  it('🔴 une case DECOCHEE reste respectee : le defaut ne l’ecrase pas', async () => {
+    const { server, recus } = avecCreation();
+    await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '0612345678', optIn: false }) });
+    expect(recus[0]).toMatchObject({ optIn: false });
     await server.close();
   });
 

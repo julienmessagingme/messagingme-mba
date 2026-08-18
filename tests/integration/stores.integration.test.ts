@@ -183,15 +183,19 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const store = new PgContactStore(pool);
     const phone = '+33600000081';
     // Contact explicitement DÉSINSCRIT : un consentement de flow doit l'écraser (décision produit).
-    await pool.query(`insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_out')`, [tenantId, phone]);
-    expect(await store.markOptedIn(tenantId, '33600000081', 'flow')).toBe(1);
+    const inserted = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_out') returning id`, [tenantId, phone],
+    )).rows[0]!.id;
+    // Rend l'IDENTIFIANT du contact touché (et pas un compteur) : c'est la seule chose que le journal d'audit
+    // ait le droit d'écrire. L'assertion vérifie que c'est bien CE contact, pas juste « une ligne ».
+    expect(await store.markOptedIn(tenantId, '33600000081', 'flow')).toBe(inserted);
     const row = (await pool.query<{ opt_in_status: string; opt_in_source: string }>(
       `select opt_in_status, opt_in_source from contacts where tenant_id = $1 and phone_e164 = $2`, [tenantId, phone],
     )).rows[0]!;
     expect(row.opt_in_status).toBe('opted_in'); // l'opt-out est écrasé
     expect(row.opt_in_source).toBe('flow');
     // Numéro inconnu -> aucune ligne touchée (merge-only).
-    expect(await store.markOptedIn(tenantId, '33699999998', 'flow')).toBe(0);
+    expect(await store.markOptedIn(tenantId, '33699999998', 'flow')).toBeNull();
   });
 
   it('PgFlowStore.findByRef : renvoie mapping + fieldTypes + optinFieldKeys (repère les champs OptIn)', async () => {

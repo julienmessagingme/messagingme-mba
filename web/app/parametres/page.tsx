@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
+import { AuditJournal } from '@/components/AuditJournal';
 
 export default function ParametresPage() {
   return <AppShell active="parametres">{(session) => <Parametres tenantId={session.tenantId} />}</AppShell>;
@@ -144,6 +145,9 @@ function Parametres({ tenantId }: { tenantId: string }) {
               {!allValid && <span className="text-xs text-coral">{t('Corrigez les jours en rouge avant d’enregistrer.', 'Fix the days in red before saving.')}</span>}
             </div>
           </section>
+
+          {/* Journal d'audit : lecture seule, alimenté par les actions sur les contacts. */}
+          <AuditJournal tenantId={tenantId} />
         </>
       )}
     </div>

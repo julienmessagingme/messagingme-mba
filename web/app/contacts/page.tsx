@@ -14,6 +14,7 @@ import {
   contactIdentity,
   bulkContactAction,
   bulkDeleteContacts,
+  purgeContacts,
   createContact,
   type Contact,
   type UserFieldDef,
@@ -65,7 +66,7 @@ function ContactsInner({ session }: { session: Session }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   // Action en masse ouverte (modale). null = fermée.
-  const [action, setAction] = useState<BulkAction['type'] | 'delete' | null>(null);
+  const [action, setAction] = useState<ActionCrm | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const LIMIT = 500;
@@ -257,7 +258,11 @@ function ContactsInner({ session }: { session: Session }) {
                   <button onClick={() => { setAction('remove_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Retirer un tag', 'Remove a tag')}</button>
                   <button onClick={() => { setAction('set_field'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un champ', 'Set a field')}</button>
                   <div className="my-1 border-t border-ink-100" />
+                  <button onClick={() => { setAction('optin'); setMenuOpen(false); }} data-testid="contacts-action-optin" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-in', 'Mark as opted in')}</button>
+                  <button onClick={() => { setAction('optout'); setMenuOpen(false); }} data-testid="contacts-action-optout" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-out', 'Mark as opted out')}</button>
+                  <div className="my-1 border-t border-ink-100" />
                   <button onClick={() => { setAction('delete'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left text-red-600 hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
+                  <button onClick={() => { setAction('purge'); setMenuOpen(false); }} data-testid="contacts-action-purge" className="block w-full px-4 py-2 text-left text-red-700 hover:bg-red-50">{t('Effacer définitivement', 'Erase permanently')}</button>
                 </div>
               </>
             )}
@@ -323,7 +328,8 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [tag, setTag] = useState('');
-  const [optIn, setOptIn] = useState(false);
+  // PRÉ-COCHÉE : un numéro saisi à la main vient de la personne. Décochable pour le cas contraire.
+  const [optIn, setOptIn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
     const canSubmit = phone.trim() !== '' && !busy;
@@ -382,7 +388,8 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
             <input list="ajout-tag-suggestions" value={tag} onChange={(e) => setTag(e.target.value)} data-testid="ajout-tag" className={inputCls} />
             <datalist id="ajout-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
           </div>
-          {/* Case NON pré-cochée : le consentement marketing ne se présume pas. */}
+          {/* Pré-cochée : voir le commentaire de `optIn`. Un contact saisi à la main sans opt-in serait ignoré
+              par toutes les campagnes, sans que rien ne l'annonce au moment de la saisie. */}
           <label className="flex items-start gap-2 text-sm text-ink-700">
             <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} data-testid="ajout-optin" className="mt-0.5 h-4 w-4" />
             <span>{t('Ce contact a donné son accord pour recevoir des messages marketing', 'This contact agreed to receive marketing messages')}</span>
@@ -404,10 +411,25 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
   );
 }
 
-/** Modale d'une action en masse : formulaire adapté (tag / champ / suppression), appelle l'API bulk avec la
- *  cible calculée, puis onDone(affected). La suppression est douce (réversible en base) mais on confirme fort. */
+/**
+ * Actions en masse du mini-CRM, telles que l'écran les propose.
+ *
+ * Volontairement distinctes des actions de l'API : le consentement s'expose ici en DEUX entrées de menu
+ * (« Passer en opt-in » / « Passer en opt-out ») là où le serveur n'a qu'une action portant une valeur.
+ * Faire choisir la valeur dans un menu déroulant aurait ajouté un clic pour rien.
+ */
+type ActionCrm = 'add_tag' | 'remove_tag' | 'set_field' | 'optin' | 'optout' | 'delete' | 'purge';
+
+/** Modale d'une action en masse : formulaire adapté (tag / champ / consentement / suppression / effacement),
+ *  appelle l'API avec la cible calculée, puis onDone(affected).
+ *
+ *  DEUX destructions, à ne pas confondre. « Supprimer » est DOUCE : le contact quitte le CRM et les campagnes,
+ *  mais la ligne reste en base et l'historique est intact. « Effacer définitivement » détruit le fil, ses
+ *  messages et l'analyse qualitative, puis anonymise ce qui porte les compteurs. La seconde exige de taper le
+ *  mot : le serveur le demande déjà, mais un client qui l'enverrait tout seul ne protégerait que des erreurs
+ *  d'API, pas de celles de l'opérateur, qui sont les seules qui arrivent vraiment ici. */
 function BulkActionModal({ action, tenantId, target, count, userFields, tagSuggestions, onDone, onClose }: {
-  action: BulkAction['type'] | 'delete';
+  action: ActionCrm;
   tenantId: string;
   target: BulkTarget;
   count: number;
@@ -420,21 +442,28 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
   const [tag, setTag] = useState('');
   const [fieldKey, setFieldKey] = useState(userFields.find((d) => d.key !== 'email')?.key ?? userFields[0]?.key ?? '');
   const [fieldVal, setFieldVal] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const titles: Record<string, string> = {
+
+  const titles: Record<ActionCrm, string> = {
     add_tag: t('Ajouter un tag', 'Add a tag'),
     remove_tag: t('Retirer un tag', 'Remove a tag'),
     set_field: t('Ajouter un champ', 'Set a field'),
+    optin: t('Passer en opt-in', 'Mark as opted in'),
+    optout: t('Passer en opt-out', 'Mark as opted out'),
     delete: t('Supprimer les contacts', 'Delete contacts'),
+    purge: t('Effacer définitivement', 'Erase permanently'),
   };
 
-  const canSubmit = action === 'delete'
-    ? true
-    : action === 'set_field'
-      ? fieldKey !== '' && fieldVal.trim() !== ''
-      : tag.trim() !== '';
+  const destructive = action === 'delete' || action === 'purge';
+  const canSubmit = action === 'purge'
+    ? confirmation.trim().toUpperCase() === 'PURGER'
+    : action === 'delete' || action === 'optin' || action === 'optout'
+      ? true
+      : action === 'set_field'
+        ? fieldKey !== '' && fieldVal.trim() !== ''
+        : tag.trim() !== '';
 
   async function submit() {
     if (busy) return; // garde de ré-entrance : un double Entrée (inputs non désactivés) ne double pas l'appel
@@ -444,10 +473,16 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
       let affected: number;
       if (action === 'delete') {
         affected = (await bulkDeleteContacts(tenantId, target)).affected;
+      } else if (action === 'purge') {
+        // `purges` = le nombre de PERSONNES effacées, c'est ce que l'opérateur a demandé ; pas le nombre de
+        // messages détruits au passage, qui serait un chiffre spectaculaire et sans rapport avec sa décision.
+        affected = (await purgeContacts(tenantId, target)).purges;
       } else {
         const act: BulkAction = action === 'set_field'
           ? { type: 'set_field', key: fieldKey, value: fieldVal.trim() }
-          : { type: action, tags: [tag.trim()] };
+          : action === 'optin' || action === 'optout'
+            ? { type: 'set_optin', value: action === 'optin' ? 'opted_in' : 'opted_out' }
+            : { type: action, tags: [tag.trim()] };
         affected = (await bulkContactAction(tenantId, target, act)).affected;
       }
       onDone(affected);
@@ -479,10 +514,31 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
               <p className="text-xs text-ink-400">{t('La valeur écrase le champ sur tous les contacts sélectionnés.', 'The value overwrites the field on all selected contacts.')}</p>
             </div>
           )}
+          {action === 'optin' && (
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {t(`Les ${count} contact(s) deviennent destinataires de campagne. À n'utiliser que si vous détenez une preuve de leur consentement.`, `The ${count} contact(s) become eligible for campaigns. Only use this if you hold proof of their consent.`)}
+            </p>
+          )}
+          {action === 'optout' && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {t(`Les ${count} contact(s) seront exclus de toute campagne, y compris de celles déjà programmées. Leur fiche et leur historique restent intacts.`, `The ${count} contact(s) will be excluded from every campaign, including already scheduled ones. Their record and history stay intact.`)}
+            </p>
+          )}
           {action === 'delete' && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
               {t(`Les ${count} contact(s) seront retirés de la liste. Réversible côté base, mais ils disparaissent du CRM et ne seront plus destinataires de campagne.`, `The ${count} contact(s) will be removed from the list. Reversible in the database, but they disappear from the CRM and won't receive campaigns.`)}
             </p>
+          )}
+          {action === 'purge' && (
+            <>
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la conversation, ses messages et son analyse sont détruits, et la fiche est anonymisée. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the conversation, its messages and its analysis are destroyed, and the record is anonymised. Campaign counters stay accurate, but nobody is identifiable any more.`)}
+              </p>
+              <label className="block text-sm text-ink-600">
+                {t('Tapez PURGER pour confirmer', 'Type PURGER to confirm')}
+                <input autoFocus value={confirmation} onChange={(e) => setConfirmation(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder="PURGER" data-testid="purge-confirm" className={`${inputCls} mt-1`} />
+              </label>
+            </>
           )}
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         </div>
@@ -492,10 +548,10 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
           <button
             onClick={() => void submit()}
             disabled={busy || !canSubmit}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-500 hover:bg-brand-600'}`}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-500 hover:bg-brand-600'}`}
             data-testid="bulk-submit"
           >
-            {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : t('Appliquer', 'Apply')}
+            {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : action === 'purge' ? t('Effacer définitivement', 'Erase permanently') : t('Appliquer', 'Apply')}
           </button>
         </div>
       </div>

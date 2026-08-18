@@ -14,11 +14,14 @@ import type { HandoverDeps } from './handover';
 import type { TriggerDeps } from './triggers';
 import type { TestTokenDeps } from './test-token';
 import type { EventStore } from './store';
+import type { AuditSink } from '../audit/journal';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
 export interface FlowMappingDeps {
   lookup: FlowMappingLookup;
   writer: ContactFieldWriter;
+  /** Journal d'audit du consentement capté par le Flow. Optionnel -> aucune trace (câblages de test). */
+  audit?: AuditSink;
 }
 
 /**
@@ -73,7 +76,7 @@ export async function handleWebhookJob(
   // livraison + l'inbox). Un throw ici rejouerait/DLQ tout le webhook, donc aussi les statuts déjà traités.
   if (flowMapping) {
     try {
-      await processFlowCompletions(raw, flowMapping.lookup, flowMapping.writer);
+      await processFlowCompletions(raw, flowMapping.lookup, flowMapping.writer, flowMapping.audit);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('handleWebhookJob: mapping flow ignoré:', err instanceof Error ? err.message : err);

@@ -1,5 +1,6 @@
 import { extractFlowCompletions } from './inbound';
 import { canonicalizeFieldValue } from '../crm/fields';
+import type { AuditSink } from '../audit/journal';
 import { flowFieldToUserFieldType } from '../meta/flow-json';
 import type { FlowFieldType } from '../meta/flow-json';
 
@@ -25,8 +26,9 @@ export const PROFILE_NAME_TARGET = '@profile_name';
  *  No-op si contact inconnu (V1). Les retours sont ignorés ici -> `unknown`. */
 export interface ContactFieldWriter {
   mergeFieldsByPhone(tenantId: string, waId: string, values: Record<string, unknown>): Promise<unknown>;
-  /** Consentement marketing explicite capté par un Flow (composant OptIn coché) : opt_in_status='opted_in'. */
-  markOptedIn(tenantId: string, waId: string, source: string): Promise<unknown>;
+  /** Consentement marketing explicite capté par un Flow (composant OptIn coché) : opt_in_status='opted_in'.
+   *  Rend l'identifiant du contact touché (`null` si numéro inconnu), pour le journal d'audit. */
+  markOptedIn(tenantId: string, waId: string, source: string): Promise<string | null>;
   /** Champ de base « Nom » (profile_name) : écrit hors de contacts.fields. */
   setProfileNameByPhone(tenantId: string, waId: string, name: string): Promise<unknown>;
 }
@@ -47,6 +49,7 @@ export async function processFlowCompletions(
   payload: unknown,
   lookup: FlowMappingLookup,
   writer: ContactFieldWriter,
+  audit?: AuditSink,
 ): Promise<void> {
   for (const c of extractFlowCompletions(payload)) {
     try {
@@ -73,7 +76,15 @@ export async function processFlowCompletions(
       }
       if (Object.keys(mapped).length > 0) await writer.mergeFieldsByPhone(flow.tenantId, c.waId, mapped);
       if (profileName !== undefined && profileName.trim() !== '') await writer.setProfileNameByPhone(flow.tenantId, c.waId, profileName.trim());
-      if (consented) await writer.markOptedIn(flow.tenantId, c.waId, 'flow');
+      if (consented) {
+        const contactId = await writer.markOptedIn(flow.tenantId, c.waId, 'flow');
+        // Le consentement donné par la personne elle-même dans WhatsApp est la preuve la plus forte qu'on
+        // possède : un journal qui ne consignerait que les bascules d'opérateur passerait à côté de l'essentiel.
+        // Acteur `null` = le système, pas un humain. Numéro inconnu -> rien à journaliser.
+        if (contactId && audit) {
+          await audit(flow.tenantId, { userId: null, email: null }, 'contact.optin', { kind: 'contact', id: contactId }, { source: 'flow' });
+        }
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('flow mapping: complétion ignorée:', err instanceof Error ? err.message : err);

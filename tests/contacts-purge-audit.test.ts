@@ -28,9 +28,14 @@ interface Trace { action: string; target: { kind: string; id: string }; detail: 
 function app(over: Partial<ContactsRouteDeps> = {}) {
   const journal: Trace[] = [];
   const purges: string[][] = [];
+  const editsRecus: unknown[] = [];
   const deps = {
     applyEdits: async () => null,
-    applyEditsMany: async () => 0,
+    applyEditsMany: async (_t: string, _target: unknown, edits: unknown) => { editsRecus.push(edits); return 4; },
+    createOneContact: async () => ({ status: 'created' as const, contactId: 'c-neuf' }),
+    listAudit: async () => [
+      { id: 'a1', at: '2026-08-18T10:00:00.000Z', actorEmail: 'julien@messagingme.fr', action: 'contact.purged' as const, targetKind: 'contact', targetId: 'c1', detail: { lot: 1 } },
+    ],
     softDeleteMany: async () => 3,
     listUserFields: async () => [],
     contactIdsForTarget: async (_t: string, target: unknown) => ('ids' in (target as { ids?: string[] }) ? (target as { ids: string[] }).ids : ['c-filtre']),
@@ -43,7 +48,7 @@ function app(over: Partial<ContactsRouteDeps> = {}) {
     },
     ...over,
   } as unknown as ContactsRouteDeps;
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus };
 }
 
 const url = '/tenants/t1/contacts/purge';
@@ -140,6 +145,100 @@ describe('journal d’audit', () => {
     const { server } = app({ audit: async () => { throw new Error('base indisponible'); } } as never);
     const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { ids: ['c1'] }, confirm: 'PURGER' } });
     expect(res.statusCode).toBe(200);
+    await server.close();
+  });
+});
+
+describe('bascule du consentement (le seul chemin qui sait écrire opted_out)', () => {
+  const bulk = '/tenants/t1/contacts/bulk';
+
+  it('🔴 opt-out : écrit le statut ET laisse une trace `contact.optout`', async () => {
+    // Avant cette action, `opted_out` était une valeur que les filtres et le garde-fou de campagne savaient
+    // LIRE, mais qu'aucun chemin d'écriture ne posait jamais : un client demandant à ne plus rien recevoir
+    // n'était enregistrable nulle part.
+    const { server, journal, editsRecus } = app();
+    const res = await server.inject({ method: 'POST', url: bulk, ...h(adminTok), payload: { target: { ids: ['c1', 'c2'] }, action: { type: 'set_optin', value: 'opted_out' } } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ affected: 4 });
+    expect(editsRecus).toEqual([{ setOptIn: 'opted_out' }]);
+    expect(journal.find((t) => t.action === 'contact.optout')?.detail).toEqual({ affected: 4 });
+    await server.close();
+  });
+
+  it('opt-in : même chemin, action `contact.optin`', async () => {
+    const { server, journal, editsRecus } = app();
+    await server.inject({ method: 'POST', url: bulk, ...h(adminTok), payload: { target: { ids: ['c1'] }, action: { type: 'set_optin', value: 'opted_in' } } });
+    expect(editsRecus).toEqual([{ setOptIn: 'opted_in' }]);
+    expect(journal.map((t) => t.action)).toEqual(['contact.optin']);
+    await server.close();
+  });
+
+  it('🔴 valeur libre refusée : rien n’est écrit', async () => {
+    // Sans cette garde, un `value` fantaisiste partirait tel quel vers un `update ... opt_in_status = $1` que
+    // seule la contrainte CHECK de la table arrêterait, en 500.
+    const { server, editsRecus } = app();
+    for (const value of ['peut_etre', '', null, 'OPTED_OUT']) {
+      const res = await server.inject({ method: 'POST', url: bulk, ...h(adminTok), payload: { target: { ids: ['c1'] }, action: { type: 'set_optin', value } } });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(editsRecus).toEqual([]);
+    await server.close();
+  });
+
+  it('réservée aux admins', async () => {
+    const { server, editsRecus } = app();
+    const res = await server.inject({ method: 'POST', url: bulk, ...h(agentTok), payload: { target: { ids: ['c1'] }, action: { type: 'set_optin', value: 'opted_out' } } });
+    expect(res.statusCode).toBe(403);
+    expect(editsRecus).toEqual([]);
+    await server.close();
+  });
+});
+
+describe('entrée d’un contact dans la base', () => {
+  it('🔴 une création à la main laisse une trace, et dit si la fiche EXISTAIT déjà', async () => {
+    // L'upsert partagé met à jour un numéro déjà connu au lieu d'échouer : sans ce détail, l'historique
+    // laisserait croire à une création là où il n'y a eu qu'une mise à jour.
+    const { server, journal } = app({ createOneContact: async () => ({ status: 'updated', contactId: 'c-deja-la' }) } as never);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: { phone: '+33600000001', optIn: true } });
+    expect(res.statusCode).toBe(200);
+    const trace = journal.find((t) => t.action === 'contact.created');
+    expect(trace?.target).toEqual({ kind: 'contact', id: 'c-deja-la' });
+    expect(trace?.detail).toEqual({ status: 'updated', optIn: true });
+    await server.close();
+  });
+
+  it('une création REFUSÉE ne laisse aucune trace', async () => {
+    const { server, journal } = app({ createOneContact: async () => ({ status: 'error', reason: 'numéro invalide' }) } as never);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: { phone: 'nawak' } });
+    expect(res.statusCode).toBe(400);
+    expect(journal).toEqual([]);
+    await server.close();
+  });
+});
+
+describe('lecture du journal', () => {
+  const url = '/tenants/t1/audit';
+
+  it('rend l’historique de l’espace', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'GET', url, ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ entries: unknown[] }>().entries).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 instance sans journal -> 503, PAS une liste vide', async () => {
+    // Une liste vide se lirait « il ne s'est rien passé », ce qui est le contraire de ce qu'un journal doit
+    // savoir dire quand il est absent.
+    const { server } = app({ listAudit: undefined } as never);
+    const res = await server.inject({ method: 'GET', url, ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
+    await server.close();
+  });
+
+  it('réservée aux admins', async () => {
+    const { server } = app();
+    expect((await server.inject({ method: 'GET', url, ...h(agentTok) })).statusCode).toBe(403);
     await server.close();
   });
 });

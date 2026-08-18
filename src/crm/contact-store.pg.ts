@@ -65,7 +65,18 @@ export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeI
 
 /** Mutation d'une action en masse (une seule à la fois côté menu, mais cumulable). Valeur de champ déjà
  *  VALIDÉE + canonicalisée en amont (route). */
-export interface BulkEdits { addTags?: string[]; removeTags?: string[]; setField?: { key: string; value: string } }
+export interface BulkEdits {
+  addTags?: string[];
+  removeTags?: string[];
+  setField?: { key: string; value: string };
+  /**
+   * Bascule du consentement marketing depuis le mini-CRM. C'est le SEUL chemin capable d'écrire `opted_out` :
+   * l'upsert d'import et d'API ne fait JAMAIS régresser un statut (unknown -> opted_in seulement, cf.
+   * `upsertByPhone`), si bien qu'un client demandant à ne plus rien recevoir n'était enregistrable nulle part.
+   * Le garde-fou de campagne, lui, lisait déjà `opted_out` pour exclure.
+   */
+  setOptIn?: 'opted_in' | 'opted_out';
+}
 
 /**
  * Store Postgres des contacts. Upsert par (tenant, téléphone) avec MERGE jsonb des
@@ -152,18 +163,23 @@ export class PgContactStore implements ContactStore {
    * Consentement marketing EXPLICITE capté par un WhatsApp Flow (composant OptIn coché) : passe le contact à
    * opt_in_status='opted_in'. GAGNE toujours, même sur un opted_out antérieur (décision produit Julien : une
    * action fraîche du contact lui-même dans WhatsApp est une preuve forte, cohérent avec l'opt-in de l'import
-   * CSV). Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu. Renvoie le nb de contacts touchés (0 = inconnu).
+   * CSV). Matching `MATCH_BY_WAID_SQL`. Merge-only : ne crée pas de fiche pour un numéro inconnu.
+   *
+   * Renvoie l'IDENTIFIANT du contact touché, `null` si le numéro est inconnu. L'identifiant, et pas un
+   * compteur : c'est la seule chose que le journal d'audit ait le droit d'écrire (y consigner le numéro
+   * ruinerait la purge, qui existe pour l'effacer).
    */
-  async markOptedIn(tenantId: string, waId: string, source: string): Promise<number> {
-    const res = await this.pool.query(
+  async markOptedIn(tenantId: string, waId: string, source: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
       `update contacts set opt_in_status = 'opted_in', opt_in_source = $3, updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}
-       )`,
+       )
+       returning id`,
       [tenantId, waId, source],
     );
-    return res.rowCount ?? 0;
+    return res.rows[0]?.id ?? null;
   }
 
   /**
@@ -485,7 +501,8 @@ export class PgContactStore implements ContactStore {
     const addTags = [...new Set((edits.addTags ?? []).map((t) => t.trim()).filter((t) => t !== ''))];
     const removeTags = [...new Set((edits.removeTags ?? []).map((t) => t.trim()).filter((t) => t !== ''))];
     const hasSet = edits.setField !== undefined && edits.setField.key.trim() !== '';
-    if (addTags.length === 0 && removeTags.length === 0 && !hasSet) return 0;
+    const optIn = edits.setOptIn === 'opted_in' || edits.setOptIn === 'opted_out' ? edits.setOptIn : undefined;
+    if (addTags.length === 0 && removeTags.length === 0 && !hasSet && optIn === undefined) return 0;
 
     const sel = buildBulkSelector(tenantId, target);
     const params = [...sel.params];
@@ -502,6 +519,12 @@ export class PgContactStore implements ContactStore {
     if (hasSet) {
       // MERGE jsonb : n'écrase que la clé posée, préserve les autres champs (invariant import/flow).
       sets.push(`fields = fields || ${add(JSON.stringify({ [edits.setField!.key]: edits.setField!.value }))}::jsonb`);
+    }
+    if (optIn !== undefined) {
+      // Écriture DIRECTE du statut, y compris à la baisse : c'est une décision d'opérateur, pas une donnée
+      // importée. La source dit d'où vient la décision, pour qu'un `opted_out` ne soit pas confondu plus tard
+      // avec un statut jamais renseigné.
+      sets.push(`opt_in_status = ${add(optIn)}`, `opt_in_source = ${add('crm')}`);
     }
     sets.push('updated_at = now()');
     const res = await this.pool.query(`update contacts set ${sets.join(', ')} where ${sel.where}`, params);
