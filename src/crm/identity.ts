@@ -22,6 +22,15 @@ export function waIdOf(phoneE164: string | null | undefined, bsuid: string | nul
 }
 
 /**
+ * Même règle, pour une cible d'envoi qui porte les deux identités dans UN seul champ (le `toE164` d'un
+ * destinataire de campagne : un E.164 commençant par « + », ou un BSUID opaque). Le moteur de campagne la
+ * redérivait, alors qu'une divergence créerait deux conversations pour un même contact.
+ */
+export function waIdOfTarget(toE164OrBsuid: string): string {
+  return toE164OrBsuid.startsWith('+') ? toE164OrBsuid.replace(/[^0-9]/g, '') : toE164OrBsuid;
+}
+
+/**
  * Classe le `wa_id` d'un message entrant en numéro OU BSUID. Un `wa_id` de 7 à 15 chiffres est un numéro
  * (E.164, max 15 chiffres) -> on le stocke `'+' + chiffres` (cohérent avec le matching `'+' || wa_id`
  * de l'inbox). Tout le reste (plus long, ou non numérique) est traité comme un BSUID opaque.

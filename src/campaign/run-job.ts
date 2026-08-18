@@ -6,6 +6,7 @@ import type {
   FrequencyStore,
   QualityProvider,
   RateGate,
+  EngineDeps,
 } from './engine';
 import { RateLimiter } from '../meta/http';
 import { resolveRatePerMinute } from './pacing';
@@ -14,7 +15,10 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
 import type { CampaignSender } from './sender';
 
-export interface RunJobDeps {
+export interface RunJobDeps extends Pick<
+  EngineDeps,
+  'startWorkflow' | 'startWorkflowFromNode' | 'getTemplateCarousel' | 'getTemplateHeaderMedia' | 'recordOutbound' | 'thresholds'
+> {
   getCampaign(id: string): Promise<Campaign | null>;
   /** Construit le sender pour la campagne (MetaClient sur le token du tenant en prod, fake en test). Async : la
    *  résolution du token par tenant (B1) lit la base + déchiffre. */
@@ -47,27 +51,8 @@ export interface RunJobDeps {
    * sur le chemin WhatsApp, qui l'enverrait depuis un `phone_number_id` vide.
    */
   rcsSenderFor?: (campaign: Campaign) => Promise<CampaignSender | null>;
-  /** Campagne WORKFLOW : démarre le workflow pour un destinataire (au lieu d'un envoi template).
-   *  `firstTemplateParams` = variables du 1er template déjà résolues par contact (transmises à l'envoi). */
-  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
-  /** Campagne NODE (/v1/sends) : démarre le workflow à un bloc précis (fenêtre 24 h déjà vérifiée en amont). */
-  startWorkflowFromNode?: (tenantId: string, workflowId: string, startNodeId: string, waId: string, contactId: string) => Promise<void | boolean | string>;
-  /** Cartes du CAROUSEL du template (relues chez Meta, UNE fois par run). null / absente -> envoi inchangé. */
-  getTemplateCarousel?: (tenantId: string, name: string, language: string) => Promise<{ cards: OutboundCarouselCard[] } | null>;
-  /** En-tête média du template, PRÉPARÉ pour l'envoi (UNE fois par run). null / absente -> envoi inchangé. */
-  getTemplateHeaderMedia?: (
-    tenantId: string,
-    name: string,
-    language: string,
-  ) => Promise<{ headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null>;
-  /** Journalise l'envoi sortant dans le fil de conversation (best-effort). */
-  recordOutbound?: (
-    tenantId: string,
-    waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
-  ) => Promise<void>;
-  thresholds?: GuardrailThresholds;
 }
+
 
 /**
  * Handler du job `campaign-run` : charge la campagne, assemble ses dépendances et

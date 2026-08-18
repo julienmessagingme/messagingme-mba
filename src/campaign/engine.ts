@@ -7,6 +7,7 @@ import { messagingTarget } from '../meta/types';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError } from '../meta/errors';
 import type { CampaignSender } from './sender';
+import { waIdOfTarget } from '../crm/identity';
 
 /** Satisfait par MetaClient (Loop 2). */
 /**
@@ -117,11 +118,6 @@ export interface EngineDeps {
   thresholds?: GuardrailThresholds;
 }
 
-/** wa_id d'un destinataire : numéro en chiffres nus, BSUID tel quel. Règle unique, partagée avec le webhook
- *  et le store d'inbox : la dériver deux fois différemment créerait deux conversations pour un contact. */
-function waIdOf(toE164: string): string {
-  return toE164.startsWith('+') ? toE164.replace(/[^0-9]/g, '') : toE164;
-}
 
 const DEFAULT_THRESHOLDS: GuardrailThresholds = {
   // Cap anti-répétition marketing DÉSACTIVÉ par défaut (pilote, décision 2026-07-15) : l'opérateur choisit
@@ -254,7 +250,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // Campagne NODE (/v1/sends) : on démarre le workflow à un BLOC PRÉCIS. Les destinataires hors fenêtre
         // 24 h ont déjà été écartés (`out_of_window`) à la création, donc l'envoi de session est légitime ici.
         if (!deps.startWorkflowFromNode) throw new Error('startWorkflowFromNode non câblé');
-        const waId = waIdOf(r.toE164);
+        const waId = waIdOfTarget(r.toE164);
         const started = await deps.startWorkflowFromNode(campaign.tenantId, campaign.workflowId, campaign.startNodeId, waId, r.contactId);
         // Une CHAÎNE porte la raison exacte du refus : on l'affiche telle quelle plutôt que d'énumérer les
         // causes possibles et de laisser l'opérateur deviner laquelle s'applique.
@@ -266,7 +262,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         // envoie son 1er template). message_id synthétique (le wamid réel vit dans le run du workflow).
         // wa_id du run = numéro en chiffres nus (comme le webhook) OU BSUID tel quel (jamais dénaturé).
         if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
-        const waId = waIdOf(r.toE164);
+        const waId = waIdOfTarget(r.toE164);
         // r.resolvedParams = variables du 1er template résolues à la construction (paramMapping de la campagne).
         // On les passe telles quelles : l'envoi du 1er template n'a PAS à re-résoudre via les hints stockés.
         const started = await deps.startWorkflow(campaign.tenantId, campaign.workflowId, waId, r.contactId, params);
@@ -330,7 +326,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // Sans ça, l'opérateur ouvre le fil d'un client et ne voit AUCUNE trace de ce qui vient de lui être
     // envoyé. Le libellé diffère parce que le RCS n'a pas de template : on journalise le message lui-même.
     if (deps.recordOutbound && !campaign.workflowId) {
-      const waId = waIdOf(r.toE164);
+      const waId = waIdOfTarget(r.toE164);
       const rcs = deps.channelSender !== undefined;
       const body = rcs
         ? rcsCampaignBody(campaign.rcsMessage)

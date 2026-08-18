@@ -123,6 +123,7 @@ async function main(): Promise<void> {
   // Résolution du token Meta PAR TENANT (B1). En SOMMEIL tant qu'aucun WABA n'a de credentials propres : le
   // résolveur retombe alors sur config.META_ACCESS_TOKEN -> comportement identique au token global d'avant.
   const esStore = new PgEmbeddedSignupStore(pool);
+  const phoneStatusStore = new PgPhoneStatusStore(pool);
   const metaCredentials = new MetaCredentialsResolver({
     getWabaIdForTenant: (t) => repo.getTenantWabaId(t),
     getCredentialsByWaba: (w) => esStore.getCredentialsByWaba(w),
@@ -261,7 +262,7 @@ async function main(): Promise<void> {
     await campaignRunJob(data, {
       getCampaign: (id) => repo.getCampaign(id),
       senderFor,
-      recipients: new PgRecipientStore(pool),
+      recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
@@ -330,7 +331,6 @@ async function main(): Promise<void> {
     // (durable + DLQ). INERTE si CONNECTOR_PUSH_URL vide -> onAnalyzed = no-op, aucune file push, zéro appel réseau.
     const pushEnabled = config.CONNECTOR_PUSH_URL !== '';
     if (pushEnabled) {
-      const phoneStatusStore = new PgPhoneStatusStore(pool);
       await queue.work('push-analysis', (data) =>
         pushAnalysisJob(data, {
           // Refetch FRAIS (F3-a) : le payload ne porte qu'une référence, on relit l'analyse courante ICI.
@@ -599,7 +599,6 @@ async function main(): Promise<void> {
   let statusSweeper: NodeJS.Timeout | null = null;
   if (config.META_ACCESS_TOKEN) {
     const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
-    const statusStore = new PgPhoneStatusStore(pool);
     const alertedPhones = new Map<string, PhoneProblem>();
     const statusSweep = async (): Promise<void> => {
       try {
@@ -617,7 +616,7 @@ async function main(): Promise<void> {
               return pullFromError(err);
             }
           },
-          save: (id, patch) => statusStore.saveStatus(id, patch),
+          save: (id, patch) => phoneStatusStore.saveStatus(id, patch),
           alert: (msg) => { void sendTelegram(`[mba-worker] ${msg}`); },
           alertedState: alertedPhones,
         });

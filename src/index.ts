@@ -435,7 +435,6 @@ async function main(): Promise<void> {
     },
     embeddedSignup: (() => {
       const esClient = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
-      const esStore = new PgEmbeddedSignupStore(pool);
       return {
         configId: config.META_ES_CONFIG_ID,
         appId: config.META_APP_ID,
@@ -448,11 +447,11 @@ async function main(): Promise<void> {
         // Repêchage quand la popup n'annonce pas les identifiants (parcours déjà abouti chez Meta).
         wabasForToken: (tok: string) => esClient.wabasForToken(tok),
         listPhones: (waba: string, tok: string) => esClient.listPhones(waba, tok),
-        link: (input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }) => esStore.linkTenant(input),
+        link: (input: { tenantId: string; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null; verifiedName: string | null }) => esCredentialsStore.linkTenant(input),
         // Chiffrement au repos ICI (la route ne voit jamais le stockage) : AES-GCM avec ENCRYPTION_KEY. Token ET pin
         // (PIN 2FA du numéro = secret Meta) chiffrés.
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
-          esStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
+          esCredentialsStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
       };
     })(),
     account: {

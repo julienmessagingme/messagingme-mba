@@ -134,6 +134,35 @@ export interface PhoneNumberRow {
   verifiedName: string | null;
 }
 
+/**
+ * Un destinataire est en ÉCHEC de deux façons : rejet SYNCHRONE à l'envoi (`status`) ou échec ASYNCHRONE
+ * signalé plus tard par le webhook de livraison (`delivery_status`). Les deux comptent, sinon les relances
+ * et les compteurs affichés ne parlent pas de la même population. Écrit ici seulement : cette définition
+ * était recopiée dans les compteurs, la liste des relances, la remise en file et la clôture.
+ */
+const RECIPIENT_FAILED_SQL = `r.status = 'failed' or r.delivery_status = 'failed'`;
+
+/**
+ * Projection commune de la liste et du détail d'une campagne : l'en-tête, le nom du scénario, et les
+ * compteurs par statut. Les deux requêtes ne diffèrent QUE par leur `where` et leur `group by`, qui suivent
+ * cette chaîne. Deux copies divergeaient au premier compteur ajusté.
+ *
+ * `colonnesEnPlus` sert au détail, qui a besoin d'une colonne que la liste ne doit PAS payer (le
+ * `param_mapping`, un jsonb par campagne). Le `group by c.id` porte sur la clé primaire : toute colonne de
+ * `campaigns` y est sélectionnable sans agrégat (dépendance fonctionnelle).
+ */
+const summarySelect = (colonnesEnPlus = '') => `select c.id, c.name, c.category, c.status, c.phone_number_id,
+              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
+              (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
+              count(r.id) as total,
+              count(r.id) filter (where r.status = 'pending') as pending,
+              count(r.id) filter (where r.status = 'sending') as sending,
+              count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed') as sent,
+              count(r.id) filter (where ${RECIPIENT_FAILED_SQL}) as failed,
+              count(r.id) filter (where r.status = 'skipped') as skipped${colonnesEnPlus}
+       from campaigns c
+       left join campaign_recipients r on r.campaign_id = c.id`;
+
 /** Lecture/écriture des campagnes et de leurs destinataires (assemblage). */
 export class PgCampaignRepo {
   constructor(private readonly pool: Pool) {}
@@ -302,17 +331,7 @@ export class PgCampaignRepo {
       // Nom du scénario en SOUS-REQUÊTE SCALAIRE, pas en jointure : la requête agrège avec `group by c.id`, et
       // Postgres refuserait `w.name` d'une table jointe (« must appear in the GROUP BY clause »). Au pire une
       // lecture par clé primaire et par campagne.
-      `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
-              (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
-              count(r.id) as total,
-              count(r.id) filter (where r.status = 'pending') as pending,
-              count(r.id) filter (where r.status = 'sending') as sending,
-              count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed') as sent,
-              count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed') as failed,
-              count(r.id) filter (where r.status = 'skipped') as skipped
-       from campaigns c
-       left join campaign_recipients r on r.campaign_id = c.id
+      `${summarySelect()}
        where c.tenant_id = $1 and ${archivedFilter}
        group by c.id
        order by c.created_at desc`,
@@ -375,21 +394,11 @@ export class PgCampaignRepo {
 
   /** Détail d'une campagne (scopée tenant) + ses destinataires. null si absente/autre tenant. */
   async getCampaignDetail(campaignId: string, tenantId: string): Promise<CampaignDetail | null> {
-    const head = await this.pool.query<CampaignSummaryRow>(
+    const head = await this.pool.query<CampaignSummaryRow & { param_mapping: TemplateParam[] | null }>(
       // Le détail ne filtre PAS sur archived_at : une campagne archivée reste consultable (c'est tout l'intérêt
       // d'archiver plutôt que de supprimer). On sélectionne quand même la colonne, sinon `toSummary` rendrait
       // `archivedAt: null` sur une campagne archivée, c'est-à-dire une réponse fausse.
-      `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
-              (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
-              count(r.id) as total,
-              count(r.id) filter (where r.status = 'pending') as pending,
-              count(r.id) filter (where r.status = 'sending') as sending,
-              count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed') as sent,
-              count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed') as failed,
-              count(r.id) filter (where r.status = 'skipped') as skipped
-       from campaigns c
-       left join campaign_recipients r on r.campaign_id = c.id
+      `${summarySelect(',\n              c.param_mapping')}
        where c.id = $1 and c.tenant_id = $2
        group by c.id`,
       [campaignId, tenantId],
@@ -404,14 +413,10 @@ export class PgCampaignRepo {
        from campaign_recipients where campaign_id = $1 order by status, id limit 500`,
       [campaignId],
     );
-    // param_mapping est un jsonb, renvoyé déjà parsé par node-pg (comme getCampaign). '{}' -> [] si null.
-    const mapRes = await this.pool.query<{ param_mapping: TemplateParam[] | null }>(
-      `select param_mapping from campaigns where id = $1 and tenant_id = $2`,
-      [campaignId, tenantId],
-    );
     return {
       ...rowToSummary(h),
-      paramMapping: mapRes.rows[0]?.param_mapping ?? [],
+      // jsonb renvoyé déjà parsé par node-pg (comme getCampaign) ; null -> [].
+      paramMapping: h.param_mapping ?? [],
       recipients: recs.rows.map((r) => ({
         id: r.id,
         contactId: r.contact_id,
@@ -498,7 +503,7 @@ export class PgCampaignRepo {
        from campaign_recipients r
          join campaigns c on c.id = r.campaign_id
          join tenant_settings ts on ts.tenant_id = c.tenant_id
-       where ts.auto_retry_enabled = true and (r.status = 'failed' or r.delivery_status = 'failed') and ${cond}
+       where ts.auto_retry_enabled = true and (${RECIPIENT_FAILED_SQL}) and ${cond}
        order by r.id
        limit ${limit}`,
       params,

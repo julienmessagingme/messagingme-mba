@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import type { PhoneNumberRecord, HubspotPortalLink } from '../http/account';
+import type { PhoneNumberRecord, HubspotPortalLink } from './types';
 
 /** Accès en lecture/écriture au statut d'un numéro (page Accueil : numéro + pastille de statut). */
 export class PgPhoneStatusStore {

@@ -98,6 +98,9 @@ describe.skipIf(!url)('E2E CSV -> campagne -> envoi (Supabase, sender fake)', ()
     const detail = await repo.getCampaignDetail(campaignId, tenantId);
     expect(detail?.recipients).toHaveLength(2);
     expect(detail?.recipients.every((r) => r.status === 'sent')).toBe(true);
+    // paramMapping vient de la requête d'en-tête (colonne demandée en plus, `group by` sur la clé primaire),
+    // pas d'un aller-retour dédié : c'est ce que cette assertion verrouille.
+    expect(detail?.paramMapping).toEqual([{ position: 1, source: { type: 'attribute', key: 'name' } }]);
     expect(await repo.getCampaignDetail(campaignId, '00000000-0000-0000-0000-000000000000')).toBeNull(); // scope tenant
 
     // 5) Re-run idempotent : plus aucun pending -> 0 envoi.
