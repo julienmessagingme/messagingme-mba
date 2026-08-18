@@ -35,6 +35,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   n'ajoute un membre QUE par invitation (front + route + code backend retirés).
 - ✅ **Mot de passe** : « oublié » (`/forgot`, lien de réinitialisation par email, réponse toujours générique
   anti-énumération) + changement depuis le compte (`/compte`).
+- ✅ **Session expirée : on le dit, et on propose de revenir** (2026-08-17) : quand le jeton tombe pendant
+  qu'on travaille, une bannière apparaît en haut de l'écran avec un bouton **« Se reconnecter »** qui ramène à
+  la connexion. Avant, l'interface restait active et les enregistrements échouaient en silence.
 - ✅ **Crochet paiement (inerte)** : chaque espace a un statut (`trial|active|locked`) ; un espace `locked`
   serait bloqué (403). Pas de Stripe pour l'instant, le contrôle est en place mais neutre.
 
@@ -54,6 +57,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   Une action en masse (et l'import CSV) **ne déclenche aucun scénario** : poser un tag sur 5 000 contacts d'un coup
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
   **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
+- ✅ **Ajouter un contact à la main** (2026-08-17) : bouton **« + Ajouter un contact »** dans le mini-CRM
+  (numéro, prénom, email, tags). Jusque-là il fallait fabriquer un fichier CSV pour un seul numéro. Le serveur
+  passe par le MÊME enregistrement que l'import et que l'API publique : le numéro est donc normalisé pareil, et
+  un numéro DÉJÀ connu met la fiche à jour au lieu d'en créer une seconde. L'écran le dit, plutôt que d'annoncer
+  une création qui n'a pas eu lieu.
 - ✅ **Contacts / opt-in** : opt-in tracé, tags. **Identité = numéro OU BSUID** (compte WhatsApp d'un client qui
   n'a pas partagé son numéro, post-octobre) : le tableau porte **une colonne par identité** (Téléphone, BSUID,
   WhatsApp ID), chacune remplie quand elle existe, et la **fiche** affiche en sous-titre celle qui identifie le
@@ -134,8 +142,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   puis en réinsérer une ne casse pas la numérotation (renumérotée proprement à l'envoi).
   Le lien variable→champ est mémorisé : à la création d'une campagne avec ce template, le mapping est **déjà
   pré-rempli** (modifiable). Le texte d'un **bouton** est limité à **25 caractères** (limite Meta).
+- ✅ **Dupliquer un template** (2026-08-17) : l'action **« Dupliquer »** ouvre l'écran de création DÉJÀ REMPLI
+  avec le contenu du template choisi, sous un nom libre suffixé `_copie`. Rien n'est envoyé à Meta tant qu'on
+  n'a pas cliqué sur « Créer le template », et un bandeau le dit : c'est une COPIE en préparation, l'original
+  n'est jamais modifié ni renvoyé en validation.
 - ✅ **En-tête média** : l'image **ou la vidéo** uploadée s'affiche pour de vrai dans l'aperçu WhatsApp (plus
-  juste une icône).
+  juste une icône). L'en-tête de l'aperçu porte un libellé générique (« Votre entreprise ») : le nom vérifié du
+  compte WhatsApp n'est pas connu de cet écran, et afficher un nom en dur serait faux chez tous les clients.
 - ✅ **Envoi d'un carousel** : un template carousel s'envoie **depuis une campagne**, les images de chaque carte
   étant relues au lancement (l'opérateur n'a rien à ressaisir). Avant, tout envoi de carousel échouait pour
   100 % des destinataires, avec un message qui parlait d'une variable alors que le template n'en avait aucune.

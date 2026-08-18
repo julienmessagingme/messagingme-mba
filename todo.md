@@ -155,7 +155,7 @@ Chacun est un compromis assumé, pas un oubli.
 
 ## Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16)
 
-Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **0058** (0056 et 0057 appliquées le 2026-08-17).
+Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **0059**.
 
 - 🔴 **Le pilote OTP, avant toute construction.** Répondeur Zadarma sur un numéro DÉDIÉ, un OTP déclenché, et
   on regarde si Meta dicte son code à une machine ou raccroche. Aucun retour d'expérience publié : c'est la
@@ -175,6 +175,17 @@ Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **
 - ✅ **Souscription webhook HubSpot envoyée** (2026-08-16, build #8 sur le compte dev 148896252). La chaîne
   est donc vivante de bout en bout ; reste à l'éprouver sur le portail cobaye avec un deal dont le contact
   porte un numéro, et un scénario qui ouvre par un template.
+
+## Suite de l'audit anti-slop (2026-08-18) — 1 item sur 57
+
+Les 6 rouges et 50 des 51 jaunes sont corrigés et déployés (cf. `wip.md`). Ne reste que celui-ci, laissé
+volontairement à l'arbitrage de Julien.
+
+- 🟡 **Découper `web/lib/api.ts`** (1325 lignes, 203 exports, une quinzaine de domaines) par domaine dans
+  `web/lib/api/`, derrière un barrel qui re-exporte tout (aucun import appelant ne change). Le repo pratique
+  déjà l'extraction avec shim de re-export (`contact-filters`, `field-kinds`). Mécanique, mais ça brasse tous
+  les imports du front, d'où l'arrêt : à faire dans un lot dédié, pas en fin de session. ⚠️ Reporter le
+  `'use client'` de tête dans les modules qui touchent `session`/`window`.
 
 ## Post-live — prochaines actions
 

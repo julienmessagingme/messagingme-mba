@@ -44,8 +44,9 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
-`sudo docker compose run --rm --no-deps mba-api npx tsx db/migrate.ts`, PUIS `up -d --build`). Dernière : **0026**
-(`auth_tokens` + `tenants.status`). En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+`sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`). Dernière appliquée : **0058**
+(fil unique par conversation ; 0056 canal et 0057 RCS le 2026-08-17). En pratique on applique aussi via
+`npm run migrate` en local (même Supabase prod).
 
 ## Docs du repo (séparation stricte)
 
@@ -68,6 +69,10 @@ passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` pui
   Supabase), pas contre le Meta live tant qu'on n'a pas de numéro branché. La chaîne tourne
   déjà end-to-end en **DRY_RUN** sur le déploiement ; l'envoi Meta réel se valide en live plus tard.
 - **Pas de tirets longs** dans la doc (« — » / « – » interdits).
+- **Avant d'écrire un helper, regarder s'il existe déjà.** L'audit du 2026-08-18 a supprimé une centaine de
+  copies de fonctions que le repo possédait déjà (dont `scopeTenant`, le contrôle d'accès tenant, présent dans
+  22 fichiers de routes). Les points de passage obligés sont listés dans `documentation.md` (« Modules
+  partagés ») : un fragment SQL, une classe Tailwind ou une normalisation de texte s'y importe, ne se recopie pas.
 - Git : rester sur `main`, committer sur `main`, push `origin`.
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
@@ -75,7 +80,7 @@ passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` pui
 
 ### Automation (règles d'archi issues des revues, 2026-08-03)
 
-- **Prochaine migration = 0054.** Les migrations ne sont PAS auto-appliquées : construire l'image AVANT de
+- **Prochaine migration libre = 0059.** Les migrations ne sont PAS auto-appliquées : construire l'image AVANT de
   migrer (une migration ajoutée après le dernier build est absente de l'image, et `migrate` répond « à jour »
   sans rien appliquer). Cf `DEPLOY.md`.
 - **L'émission d'un événement d'automation est gouvernée par le CHEMIN appelant, jamais par la dépendance

@@ -360,26 +360,18 @@ surfacé dans Analytics. Détail usage : `features.md §Analytics`. Détail tech
    (cf `todo.md`) : **HubSpot import #14** (multi-repo, re-consentement portail = action Julien) · chantier dédié
    **endpoints API publics** · analytics palier L (erreurs Inbox/Workflow).
 
-## Lot UX du 2026-08-17 (soir) : LIVRÉ et déployé, reste la vérification de Julien
+## Lot UX du 2026-08-17 (soir) : LIVRÉ, déployé, et porté dans `features.md`
 
-Neuf retouches demandées d'un bloc, plus deux bugs trouvés en chemin. Tout est en ligne (`ee2229f`), gates
-verts : racine 1700 tests, web 78 E2E, build et types propres.
-
-| Demande | État |
-|---|---|
-| Ajouter un contact à la main (mini-CRM) | fait, route `POST /tenants/:t/contacts` + modale |
-| Dupliquer un template | fait, pré-remplissage + bandeau d'honnêteté sur le visuel |
-| « + Ajouter une carte » du carousel | fait, tuile à droite des cartes |
-| Boutons du carousel déplacés sous les cartes | ABANDONNÉ par Julien après explication, libellé clarifié |
-| Astérisques rouges des formulaires | PARTIEL : nom + liste des manquants sous le bouton grisé |
-| Tableau redondant sous la création de formulaire | fait (c'était la galerie, pas un tableau) |
-| Rassurer sur l'auto-save des scénarios | fait, indicateur remonté et encadré |
-| Bouton « Reconnecter » à l'expiration de session | fait, bannière dans la coquille |
-| « modifier / supprimer » sur les champs de la fiche | fait, ils existaient mais étaient invisibles |
+Neuf retouches demandées d'un bloc, plus deux bugs trouvés en chemin. Les features sont désormais décrites
+dans `features.md` (ajout d'un contact à la main, duplication d'un template, bannière de session expirée).
+Ne restent ici que les suites.
 
 **Deux bugs corrigés au passage, non signalés par Julien** : l'auto-save d'un scénario se relançait après un
 ÉCHEC et bouclait à l'infini sur une session expirée (E2E qui compte les appels) ; et un espace NEUF refusait
 le champ Prénom que son propre écran propose (cf. §champs socles).
+
+**Abandonné après discussion** : déplacer les boutons du carousel sous les cartes (Julien a retiré la demande
+une fois la contrainte Meta expliquée ; le libellé a été clarifié à la place).
 
 **Reste à faire, petit et mécanique** : les astérisques sur les onze champs de l'éditeur de formulaire. La
 liste des manquants sous le bouton couvre déjà tous les cas de blocage, d'où l'arrêt volontaire.
@@ -389,7 +381,48 @@ l'ajout d'un contact à la main, la duplication d'un template, le carousel, l'é
 de session. Plus les deux pilotes en attente de sa main : l'OTP Zadarma (numéro dédié qui décroche) et une
 automation « étape de deal » avec un deal déplacé dans HubSpot.
 
-## Migrations : 0056 et 0057 APPLIQUÉES le 2026-08-17, prochaine libre = 0058
+## Audit anti-slop du 2026-08-18 : CORRIGÉ et déployé ✅
+
+Demande de Julien : « audit code simple et structure maintenable, sans verbiage et sans slop ». Rapport
+complet dans `AUDIT-ANTI-SLOP-2026-08-18.md`, corrections dans les commits `b1f3758` -> `87ba4e0`, déployées
+sur `mba.messagingme.app`.
+
+**Méthode** : 7 auditeurs en parallèle (une zone chacun, ~40 000 lignes lues) puis 7 contre-experts séparés
+qui rouvrent chaque fichier, refont les grep et réfutent par défaut. **57 findings rapportés, 57 confirmés.**
+Le juge n'était pas le producteur, et ça se voit : plusieurs findings ont été regradés ou corrigés dans le
+détail par la contre-expertise, aucun n'était inventé.
+
+**Verdict** : la structure profonde est saine (moteurs purs à IO injectée, `tenant_id` partout, transactions
+propres, commentaires narratifs jugés « un actif »). La dette avait UNE nature dominante, le copier-coller :
+24 findings de duplication sur 57. Le repo connaissait pourtant son antidote (fragments SQL partagés, tests de
+parité) ; la dette, c'est là où le réflexe a manqué.
+
+**Les 6 rouges** : `scopeTenant` (le contrôle d'accès tenant) copié 22 fois · un cast non validé sur l'API
+publique qui transformait un 400 en 500 · l'INSERT de campagne écrit deux fois (déjà responsable d'un faux
+vert sur `workflow_id`) · le matching wa_id copié 10 fois · un composant React déclaré dans le corps d'un
+autre, donc une modale qui perdait sa sélection à chaque message reçu (BUG RÉEL) · l'assistant de campagne à
+1000 lignes et 41 états.
+
+**50 des 51 jaunes** ont suivi (7 lots) : code mort fauché, documentation décollée de sa fonction recollée,
+fragments SQL et helpers front mutualisés. Détail des modules créés : `documentation.md` § Modules partagés.
+
+**Reste UN item, à cadrer avec Julien** : le découpage de `web/lib/api.ts` (1325 lignes, 203 exports) par
+domaine derrière un barrel. Mécanique, mais il brasse tous les imports du front. Voir `todo.md`.
+
+**Deux changements VISIBLES à l'écran**, assumés : l'aperçu WhatsApp affiche « Votre entreprise » au lieu du
+nom du compte pilote figé en dur (faux chez tout autre client), et l'interrupteur MBA grise pendant sa
+sauvegarde comme les trois autres de la page.
+
+**Un flake E2E PRÉEXISTANT supprimé au passage** : mesuré à 3 échecs sur 5 suites complètes avant, 0 sur 5
+après. Les tests de l'inbox cliquaient pendant que le fil se rechargeait, et le clic se perdait sur un noeud
+détaché. La mesure comptait : sans elle, je me serais attribué un flake qui ne venait pas de moi.
+
+**Gates à la fin** : 1702 tests unitaires, 100 tests d'intégration (base réelle), 79 E2E, build web, types
+propres des deux côtés. Déploiement du 2026-08-18 fait dans l'ordre : `git log` du commit déployé (13 commits,
+aucun travail tiers embarqué), migrations vérifiées AVANT (« à jour, rien à appliquer »), puis build et
+redémarrage. Vérifié après : API saine, worker reparti avec ses 6 files, front public en 200, zéro erreur.
+
+## Migrations : 0058 appliquée, prochaine libre = 0059
 
 Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
 `conversations`/`conversation_messages`/`campaigns` (défaut `whatsapp`, tout l'existant intact), unique de

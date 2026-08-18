@@ -610,6 +610,46 @@ donc être à nous (ou son répondeur, dont on n'a pas confirmé qu'il produise 
 HEXADÉCIMAL (56 caractères) ; en écriture les paramètres vont dans le CORPS, URL nue. Les deux erreurs
 produisent le même « 401 Not authorized » qui fait accuser des clés pourtant bonnes.
 
+## Modules partagés (audit anti-slop du 2026-08-18)
+
+Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrite plusieurs fois et avait commencé
+à diverger : le rapport complet est dans `AUDIT-ANTI-SLOP-2026-08-18.md`. Avant d'écrire un helper, chercher ici.
+
+**Backend**
+
+| Module | Ce qu'il porte | Ce qu'il remplaçait |
+|---|---|---|
+| `src/http/scope.ts` | `scopeTenant` (contrôle d'accès tenant) et `nonEmpty` | 22 et 12 copies dans `src/http/` |
+| `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | Résolution d'un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) | 9 copies + 1 dans `inbox/store.pg` |
+| `src/stats/range.ts` -> `BOUNDS_CTE` | CTE des bornes de date, robuste au changement d'heure | 9 copies dans les 2 stores de stats |
+| `src/campaign/store.pg.ts` -> `insertCampaignRow`, `summarySelect()`, `RECIPIENT_FAILED_SQL` | L'INSERT d'une campagne, la projection des résumés, la définition d'un échec | 2 INSERT, 2 projections |
+| `src/crm/contact-filters.ts` | Règles de filtrage des contacts (bornes, opérateurs, plafonds) | query params et corps JSON, alignés à la main |
+| `src/webhooks/json.ts` | `asArray`, `asRecord` (lecture défensive d'un payload Meta) | 3 copies. ⚠️ `str` reste LOCAL (null vs undefined selon le lecteur) |
+| `src/crm/identity.ts` -> `waIdOfTarget` | La règle wa_id pour une cible d'envoi | redérivée dans le moteur de campagne |
+| `src/account/types.ts` | Types de persistance du compte | ils vivaient dans la couche HTTP, que le store importait |
+
+**Front**
+
+| Module | Ce qu'il porte |
+|---|---|
+| `web/lib/ui.ts` | `inputCls` et `inputClsAuto` (sans `w-full`). Une variante s'écrit `${inputCls} py-1.5`, ne se recopie pas |
+| `web/lib/normalize.ts` | `normalizeText` (minuscules, sans accents, espaces resserrés) |
+| `web/lib/fields.ts` | `fieldValue` (champ perso, casse insensible) et `varCountOf` (variables `{{n}}` distinctes) |
+| `web/components/Toggle.tsx` | L'interrupteur on/off de l'Accueil |
+| `web/components/PhoneFrame.tsx` | Le chrome « fenêtre WhatsApp » des aperçus |
+| `web/components/CampaignCreateForm.tsx` | L'assistant de création de campagne (extrait de la page, qui passait de 1637 à 486 lignes) |
+
+⚠️ **Un composant React se déclare au niveau MODULE, jamais dans le corps d'un autre composant.** Sa fonction
+change alors d'identité à chaque rendu, donc React démonte et remonte le sous-arbre : une modale ouverte perd
+son état. Vu en prod sur le panneau « lancer un scénario » de l'inbox, où l'arrivée d'un message effaçait la
+sélection en cours (corrigé le 2026-08-18, test E2E `inbox-envoi-scenario.spec.ts`).
+
+⚠️ **Deux styles de fin de ligne cohabitent dans ce repo** (LF et CRLF selon les fichiers). Un script de
+refactor par expression régulière qui n'attend que `
+` rate silencieusement les fichiers CRLF : toujours
+`?
+`, et vérifier le compte de remplacements.
+
 ## Gotchas et décisions (journal, déplacé de CLAUDE.md)
 
 Vue chronologique par lot. La vue thématique correspondante est dans les sections ci-dessus.
