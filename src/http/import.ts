@@ -5,10 +5,10 @@ import { importContacts } from '../crm/import';
 import type { ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/contact-store.pg';
-import { isContactFieldOp } from '../crm/contact-store.pg';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { scopeTenant } from './scope';
+import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 
 export interface ImportRouteDeps extends ImportDeps {
   listContacts(tenantId: string, limit?: number, offset?: number, tag?: string): Promise<ContactRow[]>;
@@ -24,40 +24,26 @@ export interface ImportRouteDeps extends ImportDeps {
  *  `tags`/`tagsExclude`=CSV, `fields`=JSON `[{key,op,value}]` (défensif : ignoré si illisible). Bornes anti-abus.
  *  Exporté pour le test de round-trip anti-drift (filtersToQuery côté web <-> parseFilters ici). */
 export function parseFilters(q: Record<string, unknown>): ContactFilters {
-  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
   const csv = (v: unknown): string[] =>
-    typeof v === 'string' ? [...new Set(v.split(',').map((t) => t.trim()).filter((t) => t !== ''))].slice(0, 50) : [];
-  const tags = csv(q.tags);
-  const tagsExclude = csv(q.tagsExclude);
+    typeof v === 'string' ? v.split(',') : [];
+  // Les filtres de champ arrivent ici en JSON dans un query param : illisible -> ignoré (donnée externe).
   let fieldFilters: ContactFieldFilter[] = [];
   if (typeof q.fields === 'string' && q.fields.trim() !== '') {
     try {
       const parsed = JSON.parse(q.fields) as unknown;
-      if (Array.isArray(parsed)) {
-        fieldFilters = parsed
-          .map((f) => f as { key?: unknown; op?: unknown; value?: unknown })
-          .filter((f) => typeof f.key === 'string')
-          // `empty`/`not_empty` n'ont pas de valeur ; op inconnu -> `eq` (défensif, donnée externe).
-          .map((f): ContactFieldFilter => ({
-            key: String(f.key).slice(0, 120),
-            op: isContactFieldOp(f.op) ? f.op : 'eq',
-            value: typeof f.value === 'string' ? String(f.value).slice(0, 500) : '',
-          }))
-          .slice(0, 20);
-      }
+      if (Array.isArray(parsed)) fieldFilters = normalizeFieldFilters(parsed);
     } catch { /* filtre de champ illisible -> ignoré (donnée externe) */ }
   }
-  const optInRaw = str(q.optIn);
-  return {
-    ...(tags.length > 0 ? { tags } : {}),
-    ...(q.tagMode === 'or' ? { tagMode: 'or' as const } : {}),
-    ...(tagsExclude.length > 0 ? { tagsExclude } : {}),
-    ...(optInRaw === 'opted_in' || optInRaw === 'opted_out' || optInRaw === 'unknown' ? { optIn: optInRaw } : {}),
-    ...(str(q.phonePrefix) ? { phonePrefix: str(q.phonePrefix) } : {}),
-    ...(str(q.phoneContains) ? { phoneContains: str(q.phoneContains) } : {}),
-    ...(str(q.nameSearch) ? { nameSearch: str(q.nameSearch) } : {}),
-    ...(fieldFilters.length > 0 ? { fieldFilters } : {}),
-  };
+  return buildContactFilters({
+    tags: csv(q.tags),
+    tagMode: q.tagMode,
+    tagsExclude: csv(q.tagsExclude),
+    optIn: q.optIn,
+    phonePrefix: q.phonePrefix,
+    phoneContains: q.phoneContains,
+    nameSearch: q.nameSearch,
+    fieldFilters,
+  });
 }
 
 /** Un des filtres avancés est-il posé ? (sinon on garde le chemin `listContacts` historique, avec `tag`.) */

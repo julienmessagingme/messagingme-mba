@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { ContactRow, ContactFilters, ContactFieldFilter, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
-import { isContactFieldOp } from '../crm/contact-store.pg';
+import type { ContactRow, ContactFilters, BulkTarget, BulkEdits } from '../crm/contact-store.pg';
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend } from '../crm/contact-history.pg';
 import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
 import { scopeTenant } from './scope';
+import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 
 export interface ContactsRouteDeps {
   /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
@@ -56,41 +56,22 @@ export interface ContactsRouteDeps {
 const asIdArray = (v: unknown): string[] =>
   Array.isArray(v) ? [...new Set(v.map(String).map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 100_000) : [];
 
-/** Normalise un ContactFilters depuis un corps JSON (défensif : donnée cliente). Mêmes règles que `parseFilters`
- *  (query params) côté import.ts, opérateurs via la whitelist partagée `isContactFieldOp`. */
+/** Normalise un ContactFilters depuis un corps JSON (donnée cliente). Le corps porte des TABLEAUX là où les
+ *  query params portent des chaînes CSV : seul ce décodage est local, les règles viennent de crm/contact-filters. */
 function normalizeContactFilters(raw: unknown): ContactFilters {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const r = raw as Record<string, unknown>;
-  const tagArr = (v: unknown): string[] =>
-    Array.isArray(v) ? [...new Set(v.map(String).map((s) => s.trim()).filter((s) => s !== ''))].slice(0, 50) : [];
-  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
-  const tags = tagArr(r.tags);
-  const tagsExclude = tagArr(r.tagsExclude);
-  let fieldFilters: ContactFieldFilter[] = [];
-  if (Array.isArray(r.fieldFilters)) {
-    fieldFilters = r.fieldFilters
-      // Garde-fou : un élément null / non-objet (corps JSON hostile, ex. `fieldFilters: [null]`) ne doit PAS
-      // planter en 500 sur `f.key`. Miroir de la robustesse try/catch de parseFilters côté import.ts.
-      .filter((f): f is { key?: unknown; op?: unknown; value?: unknown } => f !== null && typeof f === 'object' && !Array.isArray(f))
-      .filter((f) => typeof f.key === 'string')
-      .map((f): ContactFieldFilter => ({
-        key: String(f.key).slice(0, 120),
-        op: isContactFieldOp(f.op) ? f.op : 'eq',
-        value: typeof f.value === 'string' ? String(f.value).slice(0, 500) : '',
-      }))
-      .slice(0, 20);
-  }
-  const optIn = str(r.optIn);
-  return {
-    ...(tags.length > 0 ? { tags } : {}),
-    ...(r.tagMode === 'or' ? { tagMode: 'or' as const } : {}),
-    ...(tagsExclude.length > 0 ? { tagsExclude } : {}),
-    ...(optIn === 'opted_in' || optIn === 'opted_out' || optIn === 'unknown' ? { optIn } : {}),
-    ...(str(r.phonePrefix) ? { phonePrefix: str(r.phonePrefix) } : {}),
-    ...(str(r.phoneContains) ? { phoneContains: str(r.phoneContains) } : {}),
-    ...(str(r.nameSearch) ? { nameSearch: str(r.nameSearch) } : {}),
-    ...(fieldFilters.length > 0 ? { fieldFilters } : {}),
-  };
+  const liste = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+  return buildContactFilters({
+    tags: liste(r.tags),
+    tagMode: r.tagMode,
+    tagsExclude: liste(r.tagsExclude),
+    optIn: r.optIn,
+    phonePrefix: r.phonePrefix,
+    phoneContains: r.phoneContains,
+    nameSearch: r.nameSearch,
+    fieldFilters: Array.isArray(r.fieldFilters) ? normalizeFieldFilters(r.fieldFilters) : [],
+  });
 }
 
 /** Cible d'une action en masse depuis le corps : `ids` non vides -> par ids ; sinon `filters` (+ `excludeIds`).
