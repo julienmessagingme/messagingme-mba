@@ -1,3 +1,81 @@
+# WIP
+
+## 🚧 POINT DE REPRISE (2026-08-18, fin de session)
+
+**Reprendre ici : l'écran de la purge RGPD, et le journal branché sur l'opt-in / opt-out.**
+
+### Ce qui tourne en production
+
+Prod sur **`e756025`**, migrations appliquées **jusqu'à 0059**. Vérifié sur le serveur, pas déduit.
+
+Sont EN LIGNE : les écrans MBA > Paramètres (7 onglets, branchés sur les vraies routes), le chantier complet du
+contrôle du fil, et la suppression du réglage « À la reprise, le fil… ».
+
+### Ce qui N'EST PAS déployé
+
+Le commit **`8bcbb90`** (purge RGPD + journal d'audit) et sa **migration 0060**.
+
+⚠️ **RÈGLE APPRISE AUJOURD'HUI, à appliquer au prochain déploiement.** La consigne « migrations AVANT le
+déploiement » vaut pour les migrations ADDITIVES. Pour une migration **destructive**, c'est l'inverse : déployer
+le code neuf D'ABORD (il ne lit plus les colonnes), puis supprimer. La 0059 supprimait deux colonnes que le code
+en place lisait encore ; l'ordre inverse aurait cassé la prod jusqu'au redémarrage. La 0060 est ADDITIVE (une
+table et une colonne), donc pour elle l'ordre habituel s'applique : migrer, puis déployer.
+
+### Ce qui reste sur le chantier RGPD
+
+Le backend est complet et testé (10 tests), il manque :
+
+1. **L'écran** : un bouton « Effacer définitivement » dans le mini-CRM, distinct de « Supprimer », avec la
+   confirmation `PURGER` que la route exige déjà. Et une page qui affiche l'historique d'audit (`PgAuditStore.list`
+   existe, aucune route ne l'expose encore).
+2. **Le journal sur l'opt-in et l'opt-out**, que Julien a explicitement demandés. Les actions `contact.optin` et
+   `contact.optout` sont déjà déclarées dans le type `AuditAction`, mais **je n'ai pas trouvé où l'opt-in bascule
+   dans le code** : à chercher à froid (probablement l'import CSV et l'API publique `/v1/contacts`).
+3. **La création de contact** (`contact.created`, `contact.imported`) : même chose, l'action est déclarée mais
+   pas encore appelée.
+
+### Décisions prises avec Julien, à ne pas rouvrir
+
+- **On anonymise pour garder le quanti.** Les lignes de campagne restent (statut, livraison, horodatage), leur
+  `to_e164` et leurs `resolved_params` partent. Les compteurs restent justes.
+- **L'identifiant de remplacement est ALÉATOIRE, pas une empreinte du numéro.** Une empreinte est réversible en
+  pratique : un numéro français tient dans quelques milliards de possibilités.
+- **Le journal ne porte JAMAIS le numéro**, seulement l'identifiant interne. L'y écrire annulerait la purge.
+- **Un seul réglage de contrôle du fil**, le délai sur l'accueil, 10 minutes par défaut, pour toutes les
+  conversations. Le choix « défaut du compte / repart du scénario / reste à traiter » est supprimé (migration 0059).
+- **Le bloc « Assigner à un agent » n'est pas neuf** : c'est l'ancien bloc `inbox`, renommé. Son nom disait une
+  destination au lieu d'une action, ce qui le rendait invisible.
+
+### Pièges rencontrés aujourd'hui, à ne pas repayer
+
+- **`git add <répertoire>` a le même défaut que `git add -A`** : il prend ce qu'il trouve. Deux fois aujourd'hui
+  il a ramassé le travail d'une session concurrente, dont une fois une MUTATION de test laissée par un agent de
+  revue, partie sur `origin/main`. **Chemins de FICHIERS explicites, sans exception.**
+- **`agent()` d'un workflow ne LÈVE PAS sur erreur d'API, il rend `null`.** Toute transformation appliquée avant
+  le test efface le signal : `{ ...null }` donne un objet parfaitement vrai. Deux revues ont ainsi rendu « PASS »
+  avec zéro juge ayant tourné. Tester le retour BRUT.
+- **Un test qui passe ne prouve rien tant qu'on n'a pas vu la mutation le faire tomber**, et il faut muter le BON
+  site : une mutation posée sur une occurrence non exercée m'a fait croire à une couverture inexistante.
+
+### Deux instables E2E, mesurés, hors de mes lots
+
+- `campaign-carousel-preview` : **1 échec sur 3 EN ISOLATION**. Chantier d'une session concurrente.
+- `inbox-envoi-scenario` : **15 sur 15 en isolation**, ne tombe qu'en pleine charge à 4 workers.
+
+La config Playwright documente déjà cette classe (« 54/54 à 1 worker »). La suite est passée à 130 tests, ce
+plafond commence à mentir. Sujet en soi, Julien n'a pas encore tranché.
+
+### Autre session en cours dans le même dépôt
+
+Une session concurrente travaille sur un **node « Envoi de mail » (SMTP)** : `docs/superpowers/` (commité),
+`src/email/` et `tests/email-account-store.test.ts` (non suivis chez moi). **Ne pas les committer.**
+
+### Les plans détaillés
+
+`.loop/mba-ecrans-parametres.md` et `.loop/mba-controle-du-fil.md` portent le détail de chaque tour, les
+critères d'acceptation et les hypothèses assumées. ⚠️ `.loop/` est **gitignoré** : ces fichiers vivent seulement
+en local, ils ne sont pas dans le dépôt distant.
+
 # wip.md — travail en cours
 
 ## Lots A-F + E.2 (2026-08-02/03) : LIVE ✅
@@ -608,6 +686,23 @@ code en direct (qui est aussi le repli assisté si le full-auto meurt), et l'ins
 `index.ts`. Question NON technique à trancher tôt : le dossier d'identité exigé pour un numéro français. S'il
 en faut un par client final, le geste manuel revient par la porte juridique et c'est le modèle qui est touché,
 pas le code.
+
+## Node « Envoi de mail » (SMTP) dans les Scénarios — design validé, plan à venir (2026-08-18)
+
+Demande de Julien : un node « Envoi de mail » dans les Scénarios. Décidé avec lui : **SMTP
+uniquement** (pas d'expéditeur partagé Resend, pas de vérif de domaine, Gmail/Google Sign-In
+écarté vu le coût de validation du scope restreint), **plusieurs boîtes SMTP par client** (le
+node choisit laquelle envoie), setup **dans le menu en haut à droite** (admin-only), modèles
+d'email (basique + HTML, variables `{{champ}}`) dans « Contenu », destinataire **libre**
+(adresse en dur, nous/contact/tiers, ou variable d'un champ). Node best-effort non bloquant :
+un mail raté n'arrête jamais le parcours WhatsApp.
+
+Design complet : `docs/superpowers/specs/2026-08-18-node-email-smtp-design.md`. Réutilise le
+coffre `secretbox`, le patron `waba_credentials`, le câblage unique `wiring.ts`, la résolution
+de variables des templates. Neuf : tables `email_accounts`/`email_templates` (**migration
+0060**), stores + résolveur + client `nodemailer`, routes admin-only, écran de connexion,
+section « Modèles d'email », type de node `email`. ⚠️ Contacts sans colonne email : « écrire au
+contact » suppose son email dans un `user_field`. Prochaine étape : plan d'implémentation.
 
 ## En attente (dépendances externes)
 
