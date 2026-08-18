@@ -521,6 +521,99 @@ export class PgContactStore implements ContactStore {
     );
     return res.rowCount ?? 0;
   }
+
+  /**
+   * PURGE : efface réellement les données d'une personne, et garde les compteurs.
+   *
+   * Deux traitements distincts, et c'est tout le sujet.
+   *
+   * EFFACÉ, parce que c'est du contenu et qu'il identifie : le fil de conversation, tous ses messages, et son
+   * ANALYSE qualitative (la table `conversation_analysis` porte un `topic` et une `justification` en texte libre
+   * produits par un modèle à partir de la conversation, donc potentiellement tout ce que la personne a raconté).
+   * Plus les traces techniques qui portent le numéro : parcours de scénario, déclenchements d'automation, cache
+   * de joignabilité RCS.
+   *
+   * ANONYMISÉ, pour que le QUANTITATIF survive : la ligne de contact et ses lignes de campagne restent, mais
+   * leurs colonnes identifiantes sont remplacées. Les totaux d'envoi, de livraison et d'échec restent donc
+   * justes, et plus personne n'est reconnaissable.
+   *
+   * ⚠️ L'identifiant de remplacement est ALÉATOIRE, pas une empreinte du numéro. Une empreinte serait
+   * réversible en pratique : un numéro français tient dans un espace de quelques milliards, qu'un attaquant
+   * parcourt en quelques minutes pour retrouver qui se cache derrière un hachage. Le prix de l'aléatoire est
+   * qu'on ne reconnaît plus la personne si elle revient, ce qui est précisément ce que « plus aucune trace » veut
+   * dire.
+   *
+   * TRANSACTIONNEL : une purge à moitié faite laisserait des messages orphelins d'un contact déjà anonymisé,
+   * c'est-à-dire le contenu sans le moyen de le retrouver pour finir le travail.
+   */
+  /** Résout une cible de masse (identifiants explicites OU filtres) en liste d'identifiants. */
+  async contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]> {
+    if ('ids' in target) {
+      if (target.ids.length === 0) return [];
+      const res = await this.pool.query<{ id: string }>(
+        `select id from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+        [tenantId, target.ids],
+      );
+      return res.rows.map((r) => r.id);
+    }
+    const ids = await this.idsForFilters(tenantId, target.filters);
+    const exclus = new Set(target.excludeIds ?? []);
+    return ids.filter((id) => !exclus.has(id));
+  }
+
+  async purgeMany(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
+    if (ids.length === 0) return { purges: 0, conversations: 0, messages: 0, analyses: 0 };
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      // Les fils visés, par le numéro des contacts ciblés. Récupérés AVANT l'anonymisation, qui efface le lien.
+      const fils = await client.query<{ id: string; wa_id: string }>(
+        `select c.id, c.wa_id from conversations c
+          where c.tenant_id = $1 and c.wa_id in (select phone_e164 from contacts where tenant_id = $1 and id = any($2::uuid[]))`,
+        [tenantId, ids],
+      );
+      const convIds = fils.rows.map((r) => r.id);
+      const waIds = fils.rows.map((r) => r.wa_id);
+
+      let messages = 0;
+      let analyses = 0;
+      if (convIds.length > 0) {
+        analyses = (await client.query(`delete from conversation_analysis where conversation_id = any($1::uuid[])`, [convIds])).rowCount ?? 0;
+        messages = (await client.query(`delete from conversation_messages where conversation_id = any($1::uuid[])`, [convIds])).rowCount ?? 0;
+        await client.query(`delete from conversations where tenant_id = $1 and id = any($2::uuid[])`, [tenantId, convIds]);
+      }
+      if (waIds.length > 0) {
+        await client.query(`delete from workflow_runs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
+        await client.query(`delete from automation_fires where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
+        await client.query(`delete from rcs_capabilities_cache where phone_e164 = any($1::text[])`, [waIds]);
+      }
+
+      // Quantitatif préservé : la ligne de campagne reste (statut, horodatage, livraison), son numéro et ses
+      // variables résolues partent. `resolved_params` porte les valeurs injectées dans le template, donc
+      // typiquement le prénom.
+      await client.query(
+        `update campaign_recipients set to_e164 = 'anonyme', resolved_params = '{}'::jsonb
+          where contact_id = any($1::uuid[])`,
+        [ids],
+      );
+
+      const res = await client.query(
+        `update contacts
+            set phone_e164 = 'anon:' || gen_random_uuid(), bsuid = null, profile_name = null,
+                fields = '{}'::jsonb, deleted_at = coalesce(deleted_at, now()), anonymized_at = now(),
+                updated_at = now()
+          where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
+        [tenantId, ids],
+      );
+      await client.query('commit');
+      return { purges: res.rowCount ?? 0, conversations: convIds.length, messages, analyses };
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 /**

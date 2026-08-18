@@ -20,6 +20,18 @@ export interface ContactsRouteDeps {
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /** Suppression DOUCE en masse sur une cible. Renvoie le nb supprimé. */
   softDeleteMany(tenantId: string, target: BulkTarget): Promise<number>;
+  /**
+   * PURGE : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les compteurs.
+   * Irréversible. Optionnelle : absente -> la route répond 503 au lieu de faire semblant.
+   */
+  purgeMany?(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
+  /** Résout une cible (ids OU filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
+  contactIdsForTarget?(tenantId: string, target: BulkTarget): Promise<string[]>;
+  /**
+   * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test). BEST-EFFORT à l'appel : un journal
+   * en échec ne doit jamais faire échouer l'action métier qu'il observe.
+   */
+  audit?(tenantId: string, actor: { userId: string | null; email: string | null }, action: string, target: { kind: string; id: string }, detail?: Record<string, unknown>): Promise<void>;
   /** Définitions des user fields du tenant (pour valider clé + type d'une valeur saisie). */
   listUserFields(tenantId: string): Promise<UserFieldDef[]>;
   /**
@@ -251,6 +263,29 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     return reply.code(res.status === 'created' ? 201 : 200).send({ status: res.status, contactId: res.contactId });
   });
 
+  /**
+   * L'acteur de l'action. Le JWT ne porte que l'identifiant : l'email est résolu au câblage, où il est
+   * DÉNORMALISÉ dans le journal pour qu'il reste lisible même après le départ du collaborateur.
+   */
+  const acteur = (req: { auth?: { userId: string } }) => ({ userId: req.auth?.userId ?? null, email: null });
+
+  /** Journalise sans jamais faire échouer l'action observée. L'échec reste visible en console. */
+  async function journal(
+    tenantId: string,
+    req: { auth?: { userId: string; email?: string } },
+    action: string,
+    target: { kind: string; id: string },
+    detail: Record<string, unknown> = {},
+  ): Promise<void> {
+    if (!deps.audit) return;
+    try {
+      await deps.audit(tenantId, acteur(req), action, target, detail);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('audit ignoré:', err instanceof Error ? err.message : err);
+    }
+  }
+
   app.post('/tenants/:tenantId/contacts/bulk', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -294,6 +329,36 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const target = parseBulkTarget((req.body as { target?: unknown } | undefined)?.target);
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
     const affected = await deps.softDeleteMany(tenant, target);
+    await journal(tenant, req, 'contact.deleted', { kind: 'contact', id: 'lot' }, { affected });
     return reply.code(200).send({ affected });
+  });
+
+  /**
+   * PURGE : efface pour de vrai. Route SÉPARÉE de la suppression douce, et volontairement plus exigeante.
+   *
+   * Le corps doit porter `confirm: 'PURGER'`. Ce n'est pas de la décoration : la suppression douce se défait en
+   * base, celle-ci non, et les deux routes se ressemblent assez pour qu'une erreur de copie soit plausible.
+   *
+   * ⚠️ Le journal enregistre l'IDENTIFIANT du contact, jamais son numéro : y écrire le numéro annulerait la
+   * purge, en réinscrivant la personne dans une table faite pour ne jamais être modifiée.
+   */
+  app.post('/tenants/:tenantId/contacts/purge', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const b = (req.body ?? {}) as { target?: unknown; confirm?: unknown };
+    if (b.confirm !== 'PURGER') {
+      return reply.code(400).send({ error: "purge irréversible : envoyer confirm: 'PURGER' pour confirmer" });
+    }
+    const target = parseBulkTarget(b.target);
+    if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
+    if (!deps.purgeMany || !deps.contactIdsForTarget) {
+      return reply.code(503).send({ error: 'purge indisponible sur cette instance' });
+    }
+    const ids = await deps.contactIdsForTarget(tenant, target);
+    if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
+    const res = await deps.purgeMany(tenant, ids);
+    for (const id of ids) await journal(tenant, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length });
+    return reply.code(200).send(res);
   });
 }

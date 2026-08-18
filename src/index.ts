@@ -24,6 +24,7 @@ import { PgFlowStore } from './flow/store.pg';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
+import { PgAuditStore } from './audit/store.pg';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
 import { resolveRatePerMinute } from './campaign/pacing';
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
   const flowStore = new PgFlowStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
   const idempotencyStore = new PgApiIdempotencyStore(pool);
+  const auditStore = new PgAuditStore(pool);
   const phoneStatusStore = new PgPhoneStatusStore(pool);
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
@@ -419,6 +421,14 @@ async function main(): Promise<void> {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
       applyEditsMany: (tenant, target, edits) => contactStore.applyEditsMany(tenant, target, edits),
       softDeleteMany: (tenant, target) => contactStore.softDeleteMany(tenant, target),
+      purgeMany: (tenant, ids) => contactStore.purgeMany(tenant, ids),
+      contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
+      // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur
+      // `users` rendrait l'historique illisible au premier départ d'un collaborateur.
+      audit: async (tenant, actor, action, target, detail) => {
+        const email = actor.userId ? (await userStore.getSessionUser(actor.userId))?.email ?? null : null;
+        await auditStore.record(tenant, { userId: actor.userId, email }, action as never, target, detail);
+      },
       listUserFields: (tenant) => fieldStore.list(tenant),
       // Champ socle absent -> on le crée au premier usage (idempotent). Aucun chemin d'inscription ne les
       // créait, donc un espace neuf refusait « Prénom » alors que l'écran le propose.
