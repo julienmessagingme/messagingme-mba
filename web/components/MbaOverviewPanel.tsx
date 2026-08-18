@@ -78,7 +78,7 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
           </div>
           <div>
             <dt className="text-xs text-ink-500">{t('Identifiant d’agent', 'Agent id')}</dt>
-            <dd className="font-mono text-xs text-ink-700">{status.agentId ?? '—'}</dd>
+            <dd className="font-mono text-xs text-ink-700">{status.agentId ?? t('pas encore créé', 'not created yet')}</dd>
           </div>
         </dl>
         {!status.onboarded && (

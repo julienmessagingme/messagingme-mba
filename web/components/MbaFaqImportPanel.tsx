@@ -4,7 +4,8 @@ import { useRef, useState } from 'react';
 import { useT, useLocale } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
-import { resumeApercu, resumeImport } from '@/lib/mba-faq';
+import { MbaFaqImportPreview } from './MbaFaqImportPreview';
+import { resumeImport } from '@/lib/mba-faq';
 import { importMbaFaq, previewMbaFaqImport, type MbaFaqPreview, type MbaFaqSource } from '@/lib/api-mba';
 
 /**
@@ -20,7 +21,6 @@ import { importMbaFaq, previewMbaFaqImport, type MbaFaqPreview, type MbaFaqSourc
  */
 
 type Mode = 'texte' | 'fichier' | 'url';
-const APERCU_LIGNES = 15;
 
 export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
   tenantId: string;
@@ -231,45 +231,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
         )}
       </div>
 
-      {apercu !== null && (
-        <div className="rounded-xl border border-ink-200 p-4" data-testid="mba-import-preview">
-          <p className="text-sm font-medium text-ink-900" data-testid="mba-import-summary">{resumeApercu(apercu, locale)}</p>
-          <p className="mt-1 text-xs text-ink-500">
-            {t(`Source détectée : ${apercu.source}. ${apercu.total} question(s) lue(s).`, `Detected source: ${apercu.source}. ${apercu.total} question(s) read.`)}
-          </p>
-
-          {apercu.aCreer.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{t('À créer', 'To create')}</p>
-              <ul className="mt-1 space-y-1" data-testid="mba-import-tocreate">
-                {apercu.aCreer.slice(0, APERCU_LIGNES).map((f) => (
-                  <li key={f.question} className="truncate text-xs text-ink-700">
-                    <span className="font-medium">{f.question}</span> <span className="text-ink-500">{f.answer}</span>
-                  </li>
-                ))}
-              </ul>
-              {apercu.aCreer.length > APERCU_LIGNES && (
-                <p className="mt-1 text-xs text-ink-500">
-                  {t(`et ${apercu.aCreer.length - APERCU_LIGNES} autre(s).`, `and ${apercu.aCreer.length - APERCU_LIGNES} more.`)}
-                </p>
-              )}
-            </div>
-          )}
-
-          {apercu.aMettreAJour.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">{t('À mettre à jour', 'To update')}</p>
-              <ul className="mt-1 space-y-1" data-testid="mba-import-toupdate">
-                {apercu.aMettreAJour.slice(0, APERCU_LIGNES).map((f) => (
-                  <li key={f.id} className="truncate text-xs text-ink-700">
-                    <span className="font-medium">{f.question}</span> <span className="text-ink-500">{f.answer}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+      {apercu !== null && <MbaFaqImportPreview apercu={apercu} />}
     </section>
   );
 }
