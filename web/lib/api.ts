@@ -166,19 +166,13 @@ export function bulkContactAction(tenantId: string, target: BulkTarget, action: 
   return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk`, { method: 'POST', body: JSON.stringify({ target, action }) });
 }
 
-/** Suppression DOUCE en masse (admin). Réversible en base, préserve l'historique de campagnes. */
-export function bulkDeleteContacts(tenantId: string, target: BulkTarget): Promise<{ affected: number }> {
-  return request<{ affected: number }>(`/tenants/${tenantId}/contacts/bulk-delete`, { method: 'POST', body: JSON.stringify({ target }) });
-}
-
 /**
- * PURGE définitive (admin). IRRÉVERSIBLE : efface le fil de conversation, ses messages et l'analyse
- * qualitative, puis anonymise ce qui porte les compteurs pour que les totaux de campagne restent justes.
- * Le `confirm` n'est pas décoratif : le serveur le refuse sans lui, parce que cette route et la suppression
- * douce se ressemblent assez pour qu'une erreur de copie soit plausible.
+ * SUPPRESSION de contacts (admin). LA seule, et elle est IRRÉVERSIBLE : le fil de conversation, ses messages
+ * et l'analyse qualitative sont effacés, puis ce qui porte les compteurs est anonymisé pour que les totaux de
+ * campagne restent justes. Le `confirm` n'est pas décoratif : le serveur refuse sans lui.
  */
-export function purgeContacts(tenantId: string, target: BulkTarget): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
-  return request(`/tenants/${tenantId}/contacts/purge`, { method: 'POST', body: JSON.stringify({ target, confirm: 'PURGER' }) });
+export function deleteContacts(tenantId: string, target: BulkTarget): Promise<{ purges: number; conversations: number; messages: number; analyses: number }> {
+  return request(`/tenants/${tenantId}/contacts/purge`, { method: 'POST', body: JSON.stringify({ target, confirm: 'SUPPRIMER' }) });
 }
 
 /** Une action sensible enregistrée sur les contacts. Ne porte JAMAIS de numéro : seulement l'identifiant. */

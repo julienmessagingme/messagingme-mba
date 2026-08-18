@@ -428,7 +428,6 @@ async function main(): Promise<void> {
     contacts: {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),
       applyEditsMany: (tenant, target, edits) => contactStore.applyEditsMany(tenant, target, edits),
-      softDeleteMany: (tenant, target) => contactStore.softDeleteMany(tenant, target),
       purgeMany: (tenant, ids) => contactStore.purgeMany(tenant, ids),
       contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
       audit: auditSink,

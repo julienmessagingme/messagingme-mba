@@ -50,7 +50,6 @@ function app(over: Partial<ContactsRouteDeps> = {}, opts: { contact?: ContactRow
       return { contact: result, addedTags: edits.addTags.filter((t) => !result.tags.includes(t)) };
     },
     applyEditsMany: async (_t, target, edits) => { cap.bulk.push({ target, edits }); return 3; },
-    softDeleteMany: async (_t, target) => { cap.deleted.push(target); return 5; },
     listUserFields: async () => FIELDS,
     getContactHistory: async () => ({ sends: [], conversations: [] }),
     listSendsForExport: async () => [],
@@ -294,33 +293,6 @@ describe('POST /tenants/:t/contacts/bulk — action en masse', () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk', headers: { 'content-type': 'application/json' }, payload: { target: { ids: ['a'] }, action: { type: 'add_tag', tags: ['vip'] } } });
     expect(res.statusCode).toBe(401);
-    await server.close();
-  });
-});
-
-describe('POST /tenants/:t/contacts/bulk-delete — suppression douce en masse', () => {
-  it('par ids -> 200, softDeleteMany reçoit la cible, renvoie affected', async () => {
-    const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(adminTok), payload: { target: { ids: ['a', 'b'] } } });
-    expect(res.statusCode).toBe(200);
-    expect(res.json<{ affected: number }>().affected).toBe(5);
-    expect(cap.deleted).toEqual([{ ids: ['a', 'b'] }]);
-    await server.close();
-  });
-
-  it('cible absente -> 400 (jamais de suppression globale)', async () => {
-    const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(adminTok), payload: {} });
-    expect(res.statusCode).toBe(400);
-    expect(cap.deleted).toHaveLength(0);
-    await server.close();
-  });
-
-  it('agent -> 403 (admin-only)', async () => {
-    const { server, cap } = app();
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts/bulk-delete', ...h(agentTok), payload: { target: { ids: ['a'] } } });
-    expect(res.statusCode).toBe(403);
-    expect(cap.deleted).toHaveLength(0);
     await server.close();
   });
 });

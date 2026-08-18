@@ -536,20 +536,6 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
-   * Suppression DOUCE en masse (mini-CRM) : pose `deleted_at = now()` sur la cible (ids OU filtres + exclusions).
-   * Réversible en base, préserve l'historique de campagnes (pas de cascade). Idempotent : ne re-touche pas un
-   * contact déjà supprimé (`deleted_at is null` dans le sélecteur). Renvoie le nombre de contacts supprimés.
-   */
-  async softDeleteMany(tenantId: string, target: BulkTarget): Promise<number> {
-    const sel = buildBulkSelector(tenantId, target);
-    const res = await this.pool.query(
-      `update contacts set deleted_at = now(), updated_at = now() where ${sel.where}`,
-      sel.params,
-    );
-    return res.rowCount ?? 0;
-  }
-
-  /**
    * PURGE : efface réellement les données d'une personne, et garde les compteurs.
    *
    * Deux traitements distincts, et c'est tout le sujet.

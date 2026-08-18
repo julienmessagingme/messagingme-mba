@@ -14,8 +14,6 @@ import type { Pool } from 'pg';
 export type AuditAction =
   | 'contact.created'
   | 'contact.imported'
-  | 'contact.deleted'
-  | 'contact.restored'
   | 'contact.purged'
   | 'contact.optin'
   | 'contact.optout';

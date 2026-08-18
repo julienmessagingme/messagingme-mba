@@ -467,6 +467,51 @@ touchée, les uuid internes restent la source de vérité des relations.
   - `waitBeforeSessionMessage` (pur, + miroir front) détecte « attente >= 24 h puis message de session » pour
     l'afficher dans le builder ; cumul plafonné à 24 h, ce qui garantit la terminaison sur graphe cyclique.
 
+## RGPD — journal d'audit et suppression (2026-08-19, migration 0061)
+
+**Une seule destruction.** Il en a existé deux : `softDeleteMany` (douce, `deleted_at`, réversible, qui gardait
+la conversation) et la purge. Les distinguer à l'écran ne servait personne : on supprime un contact pour qu'il
+disparaisse, pas à moitié, et le fil restait dans l'Inbox après coup. « Supprimer » appelle donc
+`POST /tenants/:t/contacts/purge`, qui exige `confirm: 'SUPPRIMER'` dans le corps, et l'écran fait TAPER le mot
+(le serveur le demande déjà, mais c'est le client qui l'envoie : cette garde ne protège que d'une erreur d'API).
+La colonne `deleted_at` reste : la purge la pose en même temps que `anonymized_at`, pour que la fiche vidée
+quitte le CRM, et l'upsert par numéro la remet à null (résurrection).
+
+**Ce que `purgeMany` efface, et ce qu'il garde.** EFFACÉ (contenu identifiant) : la conversation, ses messages,
+son analyse qualitative (`topic` et `justification` en texte libre produits par un modèle), plus les traces
+techniques portant le numéro (parcours de scénario, déclenchements d'automation, cache de joignabilité RCS).
+ANONYMISÉ (pour que le quantitatif survive) : la ligne de contact (`phone_e164` remplacé par `anon:<uuid>`
+ALÉATOIRE, pas une empreinte, qui serait réversible sur un espace de numéros français) et les lignes de
+campagne (`to_e164`, `resolved_params`). Les totaux d'envoi et de livraison restent donc justes.
+
+⚠️ **Trois pièges de format dans cette fonction, tous vus en production le 2026-08-18.** (1) Le fil porte un
+`wa_id` SANS `+` (`33612345678`), la fiche un E.164 (`+33612345678`) : la correspondance passe par le prédicat
+partagé `matchWaIdPredicat`, jamais par une égalité directe. (2) `rcs_capabilities_cache` a pour clé
+`(agent_id, phone_e164)`, donc E.164 et non wa_id. (3) `automation_fires` a pour clé `(automation_id, wa_id)`
+et **ne porte PAS de `tenant_id`** : son cloisonnement passe par un `using automations`. Un filtre sur une
+colonne absente ne renvoie pas « rien », il LÈVE et annule toute la transaction.
+
+**Le journal d'audit** (`src/audit/store.pg.ts`, table `audit_log`, migration 0061) est en AJOUT SEUL : ni
+update ni delete, sinon il ne prouve rien. Il ne porte JAMAIS de donnée personnelle, seulement l'identifiant
+interne du contact : y écrire le numéro au moment d'une suppression annulerait la suppression. `actor_email`
+est DÉNORMALISÉ pour que l'historique reste lisible après le départ d'un collaborateur ; acteur `null` = le
+système (webhook, script serveur). Écriture BEST-EFFORT partout (`src/audit/journal.ts`) : une panne de log ne
+doit pas empêcher un client d'exercer son droit à l'effacement. Actions consignées : `contact.created`,
+`contact.imported` (UNE ligne par LOT, sinon un import de 50 000 lignes noie l'historique), `contact.purged`,
+`contact.optin`, `contact.optout`. Lecture : `GET /tenants/:t/audit`, affichée dans Paramètres.
+
+**Consentement.** `opted_out` était lu par les filtres et le garde-fou de campagne mais **aucun chemin ne
+l'écrivait** : l'upsert d'import et d'API ne fait jamais régresser un statut, donc un client demandant à ne
+plus rien recevoir n'était enregistrable nulle part. L'action en masse `set_optin` (valeurs `opted_in` /
+`opted_out`, `BulkEdits.setOptIn`, source `crm`) est ce chemin. Un contact créé À LA MAIN est **opt-in par
+défaut** (le saisir suppose qu'on tient le numéro de la personne) ; l'import CSV et l'API publique gardent
+l'exigence inverse.
+
+⚠️ **Une promesse d'effacement ne se teste pas avec un faux.** Les tests unitaires à faux store prouvaient que
+la route appelle `purgeMany`, jamais que `purgeMany` efface quelque chose : c'est ainsi que les trois pièges
+ci-dessus sont partis en production. `tests/integration/purge-rgpd.integration.test.ts` écrit un contact, son
+fil, ses messages, son analyse, un parcours et un déclenchement, purge, et RELIT ce qui reste.
+
 ## Lot UX 6 clusters (2026-07-28, migration 0049)
 
 - **Mini-CRM — filtres + actions en masse** (`src/crm/contact-store.pg.ts`) : `buildContactWhere` et
@@ -474,8 +519,9 @@ touchée, les uuid internes restent la source de vérité des relations.
   TOUJOURS dans le WHERE. Opérateurs de champ étendus (`ContactFieldOp` : eq/contains/not_contains/empty/not_empty)
   + `tagsExclude` (« ne possède pas »), whitelist partagée `CONTACT_FIELD_OPS`/`isContactFieldOp` (miroir du parse
   serveur `parseFilters` et du corps `normalizeContactFilters`). Méthodes ensemblistes `applyEditsMany` (une seule
-  clause `tags=` add+remove, MERGE jsonb pour set_field) et `softDeleteMany`. Cible = ids OU `{filters, excludeIds}`
-  (jamais un payload de 100k UUID). Routes `POST /tenants/:t/contacts/bulk` + `/bulk-delete` (admin-only).
+  clause `tags=` add+remove, MERGE jsonb pour set_field). Cible = ids OU `{filters, excludeIds}`
+  (jamais un payload de 100k UUID). Route `POST /tenants/:t/contacts/bulk` (admin-only). ⚠️ `softDeleteMany` et
+  `/bulk-delete` ont été RETIRÉS le 2026-08-19 : voir « Une seule destruction » plus bas.
   Migration **0049** : colonne `deleted_at` + index partiel `idx_contacts_active`. ⚠️ Soft-delete propagé à
   `listContactsForBuild`/`listContactsForBuildByIds` (campaign/store.pg.ts) + `findByPhone` ; l'upsert par numéro
   remet `deleted_at=null` (résurrection). Front : `web/lib/contact-filters.ts` (types + `filtersToQuery`, PUR).
@@ -647,7 +693,8 @@ sélection en cours (corrigé le 2026-08-18, test E2E `inbox-envoi-scenario.spec
 ⚠️ **Deux styles de fin de ligne cohabitent dans ce repo** (LF et CRLF selon les fichiers). Un script de
 refactor par expression régulière qui n'attend que `
 ` rate silencieusement les fichiers CRLF : toujours
-`?
+`
+?
 `, et vérifier le compte de remplacements.
 
 ## Gotchas et décisions (journal, déplacé de CLAUDE.md)

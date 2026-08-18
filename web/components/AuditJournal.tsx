@@ -21,9 +21,7 @@ import { cardCls } from '@/lib/ui';
 const LIBELLES: Record<string, [string, string]> = {
   'contact.created': ['Contact ajouté', 'Contact added'],
   'contact.imported': ['Import de contacts', 'Contact import'],
-  'contact.deleted': ['Contacts supprimés', 'Contacts deleted'],
-  'contact.restored': ['Contacts restaurés', 'Contacts restored'],
-  'contact.purged': ['Contact effacé définitivement', 'Contact permanently erased'],
+  'contact.purged': ['Contact supprimé', 'Contact deleted'],
   'contact.optin': ['Passage en opt-in', 'Marked as opted in'],
   'contact.optout': ['Passage en opt-out', 'Marked as opted out'],
 };
@@ -31,7 +29,6 @@ const LIBELLES: Record<string, [string, string]> = {
 /** Rouge pour ce qui détruit, ambre pour ce qui coupe les envois, vert pour ce qui les ouvre. */
 const TONS: Record<string, string> = {
   'contact.purged': 'bg-red-50 text-red-700',
-  'contact.deleted': 'bg-red-50 text-red-700',
   'contact.optout': 'bg-amber-50 text-amber-800',
   'contact.optin': 'bg-emerald-50 text-emerald-800',
 };

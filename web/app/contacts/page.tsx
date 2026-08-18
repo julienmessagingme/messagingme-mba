@@ -13,8 +13,7 @@ import {
   listTags,
   contactIdentity,
   bulkContactAction,
-  bulkDeleteContacts,
-  purgeContacts,
+  deleteContacts,
   createContact,
   type Contact,
   type UserFieldDef,
@@ -261,8 +260,7 @@ function ContactsInner({ session }: { session: Session }) {
                   <button onClick={() => { setAction('optin'); setMenuOpen(false); }} data-testid="contacts-action-optin" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-in', 'Mark as opted in')}</button>
                   <button onClick={() => { setAction('optout'); setMenuOpen(false); }} data-testid="contacts-action-optout" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-out', 'Mark as opted out')}</button>
                   <div className="my-1 border-t border-ink-100" />
-                  <button onClick={() => { setAction('delete'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left text-red-600 hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
-                  <button onClick={() => { setAction('purge'); setMenuOpen(false); }} data-testid="contacts-action-purge" className="block w-full px-4 py-2 text-left text-red-700 hover:bg-red-50">{t('Effacer définitivement', 'Erase permanently')}</button>
+                  <button onClick={() => { setAction('delete'); setMenuOpen(false); }} data-testid="contacts-action-delete" className="block w-full px-4 py-2 text-left text-red-600 hover:bg-red-50">{t('Supprimer', 'Delete')}</button>
                 </div>
               </>
             )}
@@ -418,16 +416,16 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
  * (« Passer en opt-in » / « Passer en opt-out ») là où le serveur n'a qu'une action portant une valeur.
  * Faire choisir la valeur dans un menu déroulant aurait ajouté un clic pour rien.
  */
-type ActionCrm = 'add_tag' | 'remove_tag' | 'set_field' | 'optin' | 'optout' | 'delete' | 'purge';
+type ActionCrm = 'add_tag' | 'remove_tag' | 'set_field' | 'optin' | 'optout' | 'delete';
 
-/** Modale d'une action en masse : formulaire adapté (tag / champ / consentement / suppression / effacement),
- *  appelle l'API avec la cible calculée, puis onDone(affected).
+/** Modale d'une action en masse : formulaire adapté (tag / champ / consentement / suppression), appelle l'API
+ *  avec la cible calculée, puis onDone(affected).
  *
- *  DEUX destructions, à ne pas confondre. « Supprimer » est DOUCE : le contact quitte le CRM et les campagnes,
- *  mais la ligne reste en base et l'historique est intact. « Effacer définitivement » détruit le fil, ses
- *  messages et l'analyse qualitative, puis anonymise ce qui porte les compteurs. La seconde exige de taper le
- *  mot : le serveur le demande déjà, mais un client qui l'enverrait tout seul ne protégerait que des erreurs
- *  d'API, pas de celles de l'opérateur, qui sont les seules qui arrivent vraiment ici. */
+ *  UNE SEULE destruction. Il en a existé deux, une douce qui gardait la conversation et une définitive ;
+ *  personne ne veut supprimer un contact à moitié, et la douce laissait le fil dans l'Inbox après coup.
+ *  Supprimer efface donc pour de vrai, et exige de taper le mot : le serveur le demande déjà, mais c'est le
+ *  client qui l'envoie, donc cette garde-là ne protège que d'une erreur d'API. La saisie est la seule qui
+ *  protège l'opérateur, et c'est la seule erreur qui arrive vraiment ici. */
 function BulkActionModal({ action, tenantId, target, count, userFields, tagSuggestions, onDone, onClose }: {
   action: ActionCrm;
   tenantId: string;
@@ -453,13 +451,11 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
     optin: t('Passer en opt-in', 'Mark as opted in'),
     optout: t('Passer en opt-out', 'Mark as opted out'),
     delete: t('Supprimer les contacts', 'Delete contacts'),
-    purge: t('Effacer définitivement', 'Erase permanently'),
   };
 
-  const destructive = action === 'delete' || action === 'purge';
-  const canSubmit = action === 'purge'
-    ? confirmation.trim().toUpperCase() === 'PURGER'
-    : action === 'delete' || action === 'optin' || action === 'optout'
+  const canSubmit = action === 'delete'
+    ? confirmation.trim().toUpperCase() === 'SUPPRIMER'
+    : action === 'optin' || action === 'optout'
       ? true
       : action === 'set_field'
         ? fieldKey !== '' && fieldVal.trim() !== ''
@@ -472,11 +468,9 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
     try {
       let affected: number;
       if (action === 'delete') {
-        affected = (await bulkDeleteContacts(tenantId, target)).affected;
-      } else if (action === 'purge') {
-        // `purges` = le nombre de PERSONNES effacées, c'est ce que l'opérateur a demandé ; pas le nombre de
+        // `purges` = le nombre de PERSONNES supprimées, c'est ce que l'opérateur a demandé ; pas le nombre de
         // messages détruits au passage, qui serait un chiffre spectaculaire et sans rapport avec sa décision.
-        affected = (await purgeContacts(tenantId, target)).purges;
+        affected = (await deleteContacts(tenantId, target)).purges;
       } else {
         const act: BulkAction = action === 'set_field'
           ? { type: 'set_field', key: fieldKey, value: fieldVal.trim() }
@@ -525,18 +519,13 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
             </p>
           )}
           {action === 'delete' && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-              {t(`Les ${count} contact(s) seront retirés de la liste. Réversible côté base, mais ils disparaissent du CRM et ne seront plus destinataires de campagne.`, `The ${count} contact(s) will be removed from the list. Reversible in the database, but they disappear from the CRM and won't receive campaigns.`)}
-            </p>
-          )}
-          {action === 'purge' && (
             <>
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-                {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la conversation, ses messages et son analyse sont détruits, et la fiche est anonymisée. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the conversation, its messages and its analysis are destroyed, and the record is anonymised. Campaign counters stay accurate, but nobody is identifiable any more.`)}
+                {t(`IRRÉVERSIBLE. Pour les ${count} contact(s) : la fiche, la conversation dans l'Inbox, ses messages et son analyse sont détruits. Les compteurs de campagne restent justes, mais plus personne n'est reconnaissable.`, `IRREVERSIBLE. For the ${count} contact(s): the record, the Inbox conversation, its messages and its analysis are destroyed. Campaign counters stay accurate, but nobody is identifiable any more.`)}
               </p>
               <label className="block text-sm text-ink-600">
-                {t('Tapez PURGER pour confirmer', 'Type PURGER to confirm')}
-                <input autoFocus value={confirmation} onChange={(e) => setConfirmation(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder="PURGER" data-testid="purge-confirm" className={`${inputCls} mt-1`} />
+                {t('Tapez SUPPRIMER pour confirmer', 'Type SUPPRIMER to confirm')}
+                <input autoFocus value={confirmation} onChange={(e) => setConfirmation(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder="SUPPRIMER" data-testid="suppression-confirm" className={`${inputCls} mt-1`} />
               </label>
             </>
           )}
@@ -548,10 +537,10 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
           <button
             onClick={() => void submit()}
             disabled={busy || !canSubmit}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-500 hover:bg-brand-600'}`}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-500 hover:bg-brand-600'}`}
             data-testid="bulk-submit"
           >
-            {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : action === 'purge' ? t('Effacer définitivement', 'Erase permanently') : t('Appliquer', 'Apply')}
+            {busy ? t('…', '…') : action === 'delete' ? t('Supprimer', 'Delete') : t('Appliquer', 'Apply')}
           </button>
         </div>
       </div>

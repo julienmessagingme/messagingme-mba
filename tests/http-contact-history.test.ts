@@ -54,7 +54,6 @@ function app(
   const contacts: ContactsRouteDeps = {
     applyEdits: async () => null,
     applyEditsMany: async () => 0,
-    softDeleteMany: async () => 0,
     listUserFields: async () => [],
     getContactHistory: history,
     listSendsForExport: exportSends ?? (async (_t, id) => (id === 'c1' ? FULL.sends : null)),

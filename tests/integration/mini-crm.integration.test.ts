@@ -81,25 +81,12 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
     expect(await names({ tags: ['vip'] })).toEqual([]);        // retiré (A était le seul « vip »)
   });
 
-  it('softDeleteMany : C disparaît de query/count/idsForFilters/list, historique préservé', async () => {
-    const before = await store.count(tenantId, {});
-    const affected = await store.softDeleteMany(tenantId, { ids: [ids.C!] });
-    expect(affected).toBe(1);
-    expect(await store.count(tenantId, {})).toBe(before - 1);
+  it('ré-upsert par téléphone RESSUSCITE un contact masqué (deleted_at remis à null)', async () => {
+    // `deleted_at` survit au retrait de la suppression douce : la purge le pose en même temps que
+    // l'anonymisation, pour que la fiche vidée quitte le CRM. Le comportement de l'upsert reste donc vivant,
+    // et on le pose ici à la main, faute d'une action de l'écran qui le fasse encore.
+    await pool.query('update contacts set deleted_at = now() where id = $1', [ids.C!]);
     expect((await store.query(tenantId, {}, 500)).some((c) => c.id === ids.C)).toBe(false);
-    expect(await store.idsForFilters(tenantId, {})).not.toContain(ids.C);
-    expect((await store.list(tenantId, 500)).some((c) => c.id === ids.C)).toBe(false);
-    // La ligne existe toujours (soft) : deleted_at renseigné.
-    const row = (await pool.query<{ deleted_at: Date | null }>('select deleted_at from contacts where id = $1', [ids.C!])).rows[0]!;
-    expect(row.deleted_at).not.toBeNull();
-  });
-
-  it('softDeleteMany est idempotent : re-supprimer C ne touche rien', async () => {
-    expect(await store.softDeleteMany(tenantId, { ids: [ids.C!] })).toBe(0);
-  });
-
-  it('ré-upsert par téléphone RESSUSCITE un contact supprimé (deleted_at remis à null)', async () => {
-    // C est soft-deleted. Ré-ajouter son numéro (import CSV / createMissing) le remet dans le CRM.
     const r = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600000103', profileName: 'C', fields: {}, optInStatus: 'opted_in' });
     expect(r.created).toBe(false); // conflit sur la ligne existante, pas une nouvelle ligne
     expect((await store.query(tenantId, {}, 500)).some((c) => c.id === ids.C)).toBe(true);

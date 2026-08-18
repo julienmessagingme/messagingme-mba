@@ -20,11 +20,9 @@ export interface ContactsRouteDeps {
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
-  /** Suppression DOUCE en masse sur une cible. Renvoie le nb supprimé. */
-  softDeleteMany(tenantId: string, target: BulkTarget): Promise<number>;
   /**
-   * PURGE : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les compteurs.
-   * Irréversible. Optionnelle : absente -> la route répond 503 au lieu de faire semblant.
+   * SUPPRESSION : efface le contenu (fil, messages, analyse qualitative) et anonymise ce qui porte les
+   * compteurs. Irréversible. Optionnelle : absente -> la route répond 503 au lieu de faire semblant.
    */
   purgeMany?(tenantId: string, ids: readonly string[]): Promise<{ purges: number; conversations: number; messages: number; analyses: number }>;
   /** Résout une cible (ids OU filtres) en identifiants. Nécessaire à la purge, qui travaille par identifiants. */
@@ -323,21 +321,6 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * Suppression DOUCE en masse (mini-CRM, admin-only). Route SÉPARÉE de /bulk (action destructive isolée).
-   * Réversible en base, préserve l'historique de campagnes. Renvoie `{ affected }`.
-   */
-  app.post('/tenants/:tenantId/contacts/bulk-delete', opts, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (forbidNonAdmin(req, reply)) return;
-    const target = parseBulkTarget((req.body as { target?: unknown } | undefined)?.target);
-    if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
-    const affected = await deps.softDeleteMany(tenant, target);
-    await journal(tenant, req, 'contact.deleted', { kind: 'contact', id: 'lot' }, { affected });
-    return reply.code(200).send({ affected });
-  });
-
-  /**
    * Historique d'audit de l'espace, du plus récent au plus ancien. Lecture seule, admin-only.
    *
    * Monté ici et pas dans un fichier à part : toutes les actions journalisées sont des actions de CONTACT,
@@ -356,10 +339,14 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   });
 
   /**
-   * PURGE : efface pour de vrai. Route SÉPARÉE de la suppression douce, et volontairement plus exigeante.
+   * SUPPRESSION d'un contact : la SEULE, et elle efface pour de vrai.
    *
-   * Le corps doit porter `confirm: 'PURGER'`. Ce n'est pas de la décoration : la suppression douce se défait en
-   * base, celle-ci non, et les deux routes se ressemblent assez pour qu'une erreur de copie soit plausible.
+   * Il a existé deux destructions, une douce (réversible, qui gardait le fil) et celle-ci. Les distinguer à
+   * l'écran ne servait personne : on supprime un contact pour qu'il disparaisse, pas pour qu'il disparaisse
+   * à moitié. Décision de Julien le 2026-08-19, après avoir supprimé un contact dont la conversation restait.
+   *
+   * Le corps doit porter `confirm: 'SUPPRIMER'`. Ce n'est pas de la décoration : l'action est irréversible et
+   * peut viser des milliers de fiches d'un coup via des filtres.
    *
    * ⚠️ Le journal enregistre l'IDENTIFIANT du contact, jamais son numéro : y écrire le numéro annulerait la
    * purge, en réinscrivant la personne dans une table faite pour ne jamais être modifiée.
@@ -369,13 +356,13 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const b = (req.body ?? {}) as { target?: unknown; confirm?: unknown };
-    if (b.confirm !== 'PURGER') {
-      return reply.code(400).send({ error: "purge irréversible : envoyer confirm: 'PURGER' pour confirmer" });
+    if (b.confirm !== 'SUPPRIMER') {
+      return reply.code(400).send({ error: "suppression irréversible : envoyer confirm: 'SUPPRIMER' pour confirmer" });
     }
     const target = parseBulkTarget(b.target);
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
     if (!deps.purgeMany || !deps.contactIdsForTarget) {
-      return reply.code(503).send({ error: 'purge indisponible sur cette instance' });
+      return reply.code(503).send({ error: 'suppression indisponible sur cette instance' });
     }
     const ids = await deps.contactIdsForTarget(tenant, target);
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });

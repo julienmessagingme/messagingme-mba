@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * E2E mini-CRM : l'effacement DÉFINITIF et la bascule de consentement.
+ * E2E mini-CRM : la SUPPRESSION d'un contact et la bascule de consentement.
  *
- * Ce fichier existe pour une raison précise. Le serveur exige `confirm: 'PURGER'`, mais c'est le client qui
- * l'envoie, systématiquement : cette garde ne protège donc que d'une erreur d'API, jamais de celle de
- * l'opérateur. La SEULE chose qui protège la personne devant l'écran est la saisie du mot dans la modale, et
- * elle n'est prouvée que par ce test. Une purge est irréversible : un bouton actif trop tôt détruit des
- * conversations qu'aucune restauration ne ramène.
+ * Ce fichier existe pour une raison précise. Supprimer un contact efface aussi sa conversation, ses messages
+ * et son analyse : c'est irréversible, et une cible par filtres peut viser des milliers de fiches d'un coup.
+ * Le serveur exige `confirm: 'SUPPRIMER'`, mais c'est le client qui l'envoie, systématiquement : cette garde
+ * ne protège donc que d'une erreur d'API, jamais de celle de l'opérateur. La SEULE chose qui protège la
+ * personne devant l'écran est la saisie du mot dans la modale, et elle n'est prouvée que par ce test.
  *
  * Backend intercepté, aucune base requise (pattern des E2E accueil / paramètres).
  */
@@ -17,9 +17,9 @@ const CONTACTS = [
   { id: 'c2', phoneE164: '+33622222222', bsuid: null, profileName: 'Bo', optInStatus: 'unknown', fields: {}, tags: [], createdAt: '2026-08-02T09:00:00.000Z' },
 ];
 
-/** Monte la page Contacts avec un backend simulé, et rend les corps reçus sur la purge et sur /bulk. */
+/** Monte la page Contacts avec un backend simulé, et rend les corps reçus sur la suppression et sur /bulk. */
 async function monter(page: import('@playwright/test').Page) {
-  const purges: Array<Record<string, unknown>> = [];
+  const suppressions: Array<Record<string, unknown>> = [];
   const bulks: Array<Record<string, unknown>> = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -27,7 +27,7 @@ async function monter(page: import('@playwright/test').Page) {
     const url = req.url();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (req.method() === 'POST' && url.includes('/contacts/purge')) {
-      purges.push((req.postDataJSON() ?? {}) as Record<string, unknown>);
+      suppressions.push((req.postDataJSON() ?? {}) as Record<string, unknown>);
       return json({ purges: 1, conversations: 1, messages: 7, analyses: 1 });
     }
     if (req.method() === 'POST' && url.includes('/contacts/bulk')) {
@@ -45,52 +45,57 @@ async function monter(page: import('@playwright/test').Page) {
   // Coche le premier contact : la barre d'action n'apparaît qu'à partir d'une sélection.
   await page.locator('input[type="checkbox"]').nth(1).check();
   await expect(page.getByTestId('contacts-action')).toBeVisible();
-  return { purges, bulks };
+  return { suppressions, bulks };
 }
 
-test.describe('mini-CRM : effacement définitif', () => {
-  test('🔴 le bouton reste INACTIF tant que « PURGER » n’est pas tapé, et aucun appel ne part', async ({ page }) => {
-    const { purges } = await monter(page);
+test.describe('mini-CRM : suppression', () => {
+  test('🔴 le bouton reste INACTIF tant que « SUPPRIMER » n’est pas tapé, et aucun appel ne part', async ({ page }) => {
+    const { suppressions } = await monter(page);
     await page.getByTestId('contacts-action').click();
-    await page.getByTestId('contacts-action-purge').click();
+    await page.getByTestId('contacts-action-delete').click();
 
     const valider = page.getByTestId('bulk-submit');
     await expect(valider).toBeDisabled();
 
     // Un mot approchant ne suffit pas : c'est tout l'intérêt d'une confirmation par saisie.
-    await page.getByTestId('purge-confirm').fill('PURGE');
+    await page.getByTestId('suppression-confirm').fill('SUPPRIME');
     await expect(valider).toBeDisabled();
-    await page.getByTestId('purge-confirm').fill('supprimer');
+    await page.getByTestId('suppression-confirm').fill('effacer');
     await expect(valider).toBeDisabled();
-    expect(purges).toEqual([]);
+    expect(suppressions).toEqual([]);
 
-    await page.getByTestId('purge-confirm').fill('PURGER');
+    await page.getByTestId('suppression-confirm').fill('SUPPRIMER');
     await expect(valider).toBeEnabled();
   });
 
-  test('confirmé : la purge part avec la cible cochée et le mot de confirmation', async ({ page }) => {
-    const { purges } = await monter(page);
+  test('confirmée : part avec la cible cochée et le mot de confirmation', async ({ page }) => {
+    const { suppressions } = await monter(page);
     await page.getByTestId('contacts-action').click();
-    await page.getByTestId('contacts-action-purge').click();
-    await page.getByTestId('purge-confirm').fill('PURGER');
+    await page.getByTestId('contacts-action-delete').click();
+    await page.getByTestId('suppression-confirm').fill('SUPPRIMER');
     await page.getByTestId('bulk-submit').click();
 
-    await expect.poll(() => purges.length).toBe(1);
-    expect(purges[0]).toEqual({ target: { ids: ['c1'] }, confirm: 'PURGER' });
+    await expect.poll(() => suppressions.length).toBe(1);
+    expect(suppressions[0]).toEqual({ target: { ids: ['c1'] }, confirm: 'SUPPRIMER' });
   });
 
-  test('🔴 « Supprimer » et « Effacer définitivement » sont DEUX entrées distinctes', async ({ page }) => {
-    // Les confondre est le risque réel de cet écran : l'une se défait, l'autre non.
+  test('🔴 UNE SEULE destruction au menu, et elle annonce que la conversation part avec', async ({ page }) => {
+    // Il en a existé deux, une douce et une définitive. Les distinguer laissait le fil dans l'Inbox après une
+    // suppression, ce qui est exactement le piège dans lequel l'exploitant est tombé.
     await monter(page);
     await page.getByTestId('contacts-action').click();
-    await expect(page.getByTestId('contacts-action-purge')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Supprimer', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /supprimer/i })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: /effacer|purge/i })).toHaveCount(0);
+
+    await page.getByTestId('contacts-action-delete').click();
+    await expect(page.getByText(/IRRÉVERSIBLE/)).toBeVisible();
+    await expect(page.getByText(/conversation dans l'Inbox/)).toBeVisible();
   });
 });
 
 test.describe('mini-CRM : bascule de consentement', () => {
   test('opt-out : envoie set_optin/opted_out, sans confirmation par saisie', async ({ page }) => {
-    // Pas de mot à taper ici : la bascule se défait d'un clic, contrairement à la purge.
+    // Pas de mot à taper ici : la bascule se défait d'un clic, contrairement à la suppression.
     const { bulks } = await monter(page);
     await page.getByTestId('contacts-action').click();
     await page.getByTestId('contacts-action-optout').click();
