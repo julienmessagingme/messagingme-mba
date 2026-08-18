@@ -58,11 +58,14 @@ const PAGES = [
   ['agent-test', `${BASE}/reference/operate/agent-test`],
   ['agent-eval', `${BASE}/reference/operate/agent-eval`],
   ['delete-agent', `${BASE}/reference/delete-agent/delete-agent`],
+  // Reperees le 2026-08-18 en relisant les pages : referencees par Meta, jamais lues par notre corpus.
+  ['agent-insights', `${BASE}/reference/operate/agent-insights`],
+  ['capabilities', `${BASE}/capabilities`],
   // Pages PLAUSIBLES mais jamais vues : un passage de 404 a 200 est le signal le plus interessant
   // de tout ce script, c'est ainsi qu'on verra arriver une nouveaute.
   ['pricing', `${BASE}/pricing`],
   ['webhooks', `${BASE}/reference/operate/webhooks`],
-  ['changelog', `${BASE}/changelog`],
+  ['changelog', `${BASE}/changelog`], // apparue le 2026-08-14, c'est elle qui a annonce l'action `take`
 ];
 
 function log(msg) {

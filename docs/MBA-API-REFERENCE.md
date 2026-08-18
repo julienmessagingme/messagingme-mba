@@ -14,6 +14,105 @@
 >
 > **Ce document n'est pas une feuille de route.** Il décrit ce que Meta expose, pas ce qu'on construit.
 
+## ⚠️ Ce qui a changé chez Meta depuis cette transcription (relevé du 2026-08-18)
+
+La transcription ci-dessous date du **2026-07-20**. Entre le 11 et le 15 août, la veille
+(`ops/mba-docs-watch.mjs`) a signalé **neuf modifications** sur les pages suivies, dont **une page
+entièrement nouvelle**. Les pages ont été retéléchargées et comparées chapitre par chapitre, puis chaque
+écart a été re-vérifié contre le texte de Meta par un second lecteur : **20 écarts confirmés sur 24
+rapportés**. Ce qui suit ne liste que les confirmés, avec la citation d'origine.
+
+Les chapitres concernés ont été corrigés SUR PLACE quand ils étaient devenus faux (contrôle du fil).
+Le reste est consigné ici, sans réécrire la transcription.
+
+### 🔴 Contrôle du fil : l'action `take` existe (corrigé sur place, chapitre « Contrôle du fil »)
+
+> « `take` acquires thread control from the current owner and is restricted to the configured escalation
+> partner. » · « `pass` is reserved for future use **and is not currently accepted**. »
+
+Le résumé de l'endpoint est passé de « Release thread control » à « **Release or take** ». Un champ
+`metadata` apparaît (chaîne libre relayée à l'app receveuse dans le webhook `messaging_handovers`).
+
+**Ce que ça change vraiment** : notre thèse « il n'y a pas d'endpoint take control » est morte, et notre enum
+client à deux valeurs rejetterait une valeur valide. **Ce que ça ne change pas encore** : `take` est réservé
+au « configured escalation partner », une notion que Meta ne définit nulle part, dont la procédure de
+désignation est inconnue et dont rien ne dit qu'elle nous soit ouverte. La prise de contrôle par envoi d'un
+message reste le seul chemin vérifié. Question à instruire avant de concevoir le handoff.
+
+### 🟠 Réglages : le handoff pilote enfin le contrôle du fil
+
+Notre transcription posait, à trois endroits, que le lien entre `handoff.enabled` et le transfert de contrôle
+n'était **pas documenté** et devait être mesuré. Meta le documente désormais :
+
+> « Controls whether the agent will release thread control after sending a handoff message. true = agent will
+> release control, false = agent will not release control. »
+
+Et la source du message devient réglable :
+
+> « Controls the source of the consumer-facing handoff message. CUSTOM: the business supplies its own handoff
+> message. AGENT: the AI agent composes a handoff message for each conversation. DEFAULT: a fixed, standard
+> handoff message is used. »
+
+⚠️ **Le nom exact de ces deux champs n'est pas lisible dans le rendu extrait**, seulement leur description :
+à relever avant de coder. Reste inconnu : **sur quel webhook arrive la suite de la conversation** après
+libération. Le protocole de test décrit plus bas reste donc à jouer.
+
+**Piège de conception qui en découle** : `settings` est une ressource en REMPLACEMENT COMPLET. Un modèle typé
+fermé côté console (Zod ou interface qui ne connaît que `enabled` et `message`) DÉPOUILLERAIT ces champs au
+read-modify-write et les remettrait à leur défaut sans que personne l'ait demandé. Sur cette ressource, les
+clés inconnues doivent être repassées telles quelles.
+
+### 🟠 Réglages : `never_say_phrases` est documenté, avec une sémantique d'écriture à part
+
+> « Exact phrases the AI agent must never include in a response. Each turn is checked against this list and a
+> matching response is withheld. **Provide the full replacement list; omit to leave the current list
+> unchanged, or send an empty list to clear it.** »
+
+Le champ avait été mesuré en live le 2026-08-18 (`never_say_phrases: []`) ; c'est sa sémantique qui est neuve.
+Noter la contradiction interne de la page : la règle générale du PUT dit « All fields must be provided for a
+complete replacement », mais ce champ-là est explicitement omissible. Suivre la règle du champ.
+
+### 🟠 Un moyen de paiement conditionne la LIVRAISON, pas seulement l'activation
+
+> « Set up billing before you turn your agent on. Meta Business Agent messages are not delivered unless your
+> Business Agent account has a payment method attached. »
+
+C'est cohérent avec l'écran WhatsApp Manager, qui liste « Payment method » parmi les 5 tâches obligatoires.
+À dire au client à l'onboarding : sans moyen de paiement, l'agent ne répond pas, et rien ne le signale côté
+console.
+
+### 🟢 Test d'agent : les jetons consommés ne sont pas facturés
+
+> « Tokens consumed while testing through this endpoint are not billed. »
+
+Écrit deux fois dans la page. Le bac à sable `agent_test` est donc utilisable largement pour la QA, sans
+compter les appels.
+
+### 🆕 Deux surfaces Meta que notre corpus n'a jamais lues
+
+- **`agent-insights`** (groupe Operate) : « Review which knowledge sources and skills the agent uses in its
+  responses. » Un endroit où voir CE QUI a servi à répondre : intéressant pour expliquer une réponse à un
+  client. Jamais transcrit chez nous.
+- **`capabilities`** (référencée depuis Overview) : « see what the agent can do today and where to configure
+  each capability ». Jamais lue non plus.
+
+Les deux sont ajoutées à la veille.
+
+### 🟡 Connecteurs : les règles de validation deviennent explicites
+
+> « At least one of headers, query_params, or body_params must contain a populated entry. The request fails
+> with HTTP 400 if this field is null or missing. »
+
+Même durcissement documentaire pour `oauth_config` (400 si null ou absent) et pour `auth_config`, dont la
+consigne est réécrite valeur par valeur, avec obligation d'OMETTRE le champ quand `auth_type` vaut `NONE`.
+
+### 🟡 Tarification propre aux messages MBA
+
+> « Meta Business Agent messages are priced differently from other WhatsApp message types. »
+
+Renvoi vers la grille « WhatsApp pricing for non-template messages ». Notre modèle de coût, calé sur les
+catégories de template, ne couvre pas ce régime.
+
 ## Pourquoi ce document existe
 
 `mba.messagingme.app` est une couche logicielle qui aide les entreprises à **onboarder et piloter finement
@@ -25,9 +124,12 @@ automatiquement, ça non », et surtout **comment on passe la main à un humain*
 (pour `ai_audience` et l'allowlist) et « Contrôle du fil » (pour le handoff) sont donc le cœur de cette
 référence. Le reste est du contexte.
 
-**Blocage actuel, contractuel et non technique.** `agent_eligibility` renvoie aujourd'hui HTTP 403
-« The Meta Business AI Terms of Service must be accepted » sur notre WABA française. Surveillé par
-`ops/mba-eligibility-watch.mjs`. Aucune ligne de code ne débloque cette date.
+**~~Blocage actuel~~ LEVÉ le 2026-08-18.** `agent_eligibility` renvoyait HTTP 403 « The Meta Business AI
+Terms of Service must be accepted » sur notre WABA française. Julien a accepté les Terms of Sales, et la
+sonde `scripts/sonde-mba-live.mts` mesure désormais `{"is_eligible": true}` sur le numéro
+`+33 5 25 68 03 01` (`phone_number_id=1305301719324792`), avec un agent déjà créé et `rollout.enabled=false`.
+Toute la surface `agent_config/*` répond. Ce qui reste fermé est ailleurs : moyen de paiement, et la notion
+de « configured escalation partner » pour `take`.
 
 ## Sommaire
 
@@ -700,9 +802,28 @@ C'est exactement le levier dont on a besoin pour tout le protocole de test recom
 
 ### Prendre le contrôle du fil
 
-#### Il n'y a pas d'endpoint « take control »
+#### ⚠️ RÉÉCRIT le 2026-08-18 : une action `take` existe désormais
 
-C'est le point le plus contre-intuitif de tout le modèle, et il est explicite dans Get Started :
+**Ce chapitre affirmait « il n'y a pas d'endpoint take control ». C'est FAUX depuis la mise à jour Meta du
+13 août 2026.** La page `thread-control-cloud-api` documente maintenant trois actions, et son résumé est passé
+de « Release thread control » à « **Release or take** thread control for a consumer conversation » :
+
+> « `take` acquires thread control from the current owner and **is restricted to the configured escalation
+> partner**. »
+
+Deux conséquences, à ne pas confondre :
+
+- **Sur la doc** : notre enum client (`pass` | `release`) rejetterait une valeur désormais valide, et le
+  raisonnement du chapitre « La contradiction pass contre release » plus bas s'appuie sur des phrases qui
+  n'existent plus dans la page (« Currently only "release" is supported » a disparu).
+- **Sur le produit : rien n'est acquis.** `take` est verrouillé par une notion de **« configured escalation
+  partner »** que Meta ne définit nulle part, dont la procédure de désignation est inconnue, et dont rien ne
+  dit que nous y ayons droit. Tant que ce point n'est pas instruit, le mécanisme décrit ci-dessous (prendre le
+  contrôle en envoyant un message) reste notre seul chemin vérifié.
+
+Le paragraphe qui suit décrit donc l'ancien chemin, qui reste valable, pas le seul possible.
+
+C'est le point le plus contre-intuitif du modèle historique, et il est explicite dans Get Started :
 
 > To respond to a conversation, your app needs control of it. **Your app takes control simply by sending a message to the conversation.**
 
@@ -768,9 +889,10 @@ Schéma `ThreadControlRequest`, type `object`. Champs requis : `messaging_produc
 | Champ | Type | Requis | Valeurs autorisées | Défaut | Description (verbatim de la spec) |
 |---|---|---|---|---|---|
 | `messaging_product` | string | oui | enum : `whatsapp` (valeur unique) | aucun | « Messaging service used for the request. Must be "whatsapp". » |
-| `action` | string | oui | enum : `pass`, `release` | aucun | « The thread control action to perform. Currently only "release" is supported; it relinquishes thread control and hands the conversation back to Meta Business Agent as the automatic responder. "pass" is reserved for future use. You must currently hold thread control for the conversation. » |
+| `action` | string | oui | enum : `pass`, `release`, `take` | aucun | ⚠️ **Réécrit par Meta le 2026-08-13.** Verbatim actuel : « The thread control action to perform. "release" relinquishes thread control and hands the conversation back to Meta Business Agent as the automatic responder; you must currently hold thread control. "take" acquires thread control from the current owner and is restricted to the configured escalation partner. "pass" is reserved for future use and is not currently accepted. » |
 | `to` | string | non | libre | aucun | « Consumer identifier (phone number or WhatsApp ID) whose thread control is being transferred. » |
 | `recipient` | string | non | libre | aucun | « Business-scoped user ID of the consumer whose thread control is being transferred. Accepted but not yet wired; provide `to` instead. » |
+| `metadata` | string | non | libre | aucun | 🆕 **Ajouté par Meta le 2026-08-13.** « Optional free-form string forwarded verbatim to the receiving app in the resulting messaging_handovers webhook. » ⚠️ « receiving app » : sur un `release`, l'app receveuse est MBA, pas nous. Rien ne dit que ce champ nous revienne quand c'est nous qui lâchons le contrôle. |
 
 > ATTENTION : **ni `to` ni `recipient` n'est marqué requis** dans le schéma, alors qu'il est évidemment impossible d'identifier une conversation sans l'un des deux. Il faut lire ça comme un `oneOf` non exprimé. En pratique : **toujours envoyer `to`**, jamais `recipient` seul, puisque la spec dit elle-même que `recipient` est « accepted but not yet wired ». Le comportement d'une requête sans `to` ni `recipient` n'est pas documenté (erreur ? no-op ? release sur toutes les conversations du numéro ?). Ne pas tester ça en production.
 

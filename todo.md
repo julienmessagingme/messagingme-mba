@@ -187,6 +187,34 @@ volontairement à l'arbitrage de Julien.
   les imports du front, d'où l'arrêt : à faire dans un lot dédié, pas en fin de session. ⚠️ Reporter le
   `'use client'` de tête dans les modules qui touchent `session`/`window`.
 
+## MBA ouvert sur la France (2026-08-18) — ce que la doc fraîche impose d'instruire
+
+Contexte : `agent_eligibility` renvoie `is_eligible:true` sur `+33 5 25 68 03 01` (ToS acceptées par Julien),
+et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` neuve. Relevé complet :
+`docs/MBA-API-REFERENCE.md` § « Ce qui a changé chez Meta ». Rien n'est cassé, rien n'est branché.
+
+- 🔴 **Instruire « configured escalation partner ».** C'est la condition d'accès à l'action `take` de
+  `thread_control`, donc au handoff propre vers un humain, donc à la plus-value centrale du produit. Meta
+  écrit la restriction et ne définit NI qui désigne ce partenaire, NI comment. Sans réponse, on reste sur la
+  prise de contrôle par envoi de message. À poser à Meta, ou à mesurer sur le numéro de test.
+- 🔴 **Relever le nom exact des deux nouveaux champs de `handoff`** (« release thread control after sending a
+  handoff message » et « source du message : CUSTOM / AGENT / DEFAULT »). Leur description est documentée,
+  pas leur nom : il faut le lire dans le rendu de la page ou le déduire d'un GET une fois un handoff
+  configuré. Ne pas coder dessus avant.
+- 🔴 **Le read-modify-write de `settings` doit repasser les clés inconnues telles quelles.** La ressource est
+  en remplacement complet ; un modèle typé fermé (Zod ou interface qui ne connaît que `enabled`/`message`)
+  effacerait `never_say_phrases` et les champs de handoff au premier PUT, sans que personne l'ait demandé.
+- 🟠 **Dire au client qu'un moyen de paiement conditionne la LIVRAISON**, pas seulement l'activation :
+  « messages are not delivered unless your Business Agent account has a payment method attached ». Rien ne le
+  signale côté console aujourd'hui.
+- 🟠 **Lire les deux pages Meta jamais transcrites** : `agent-insights` (quelles sources de connaissance et
+  quelles skills ont servi à répondre, utile pour expliquer une réponse à un client) et `capabilities`. Elles
+  sont désormais dans la veille.
+- 🟡 **Modèle de coût** : les messages MBA ont un régime tarifaire propre (grille « non-template messages »),
+  que notre estimation par catégorie de template ne couvre pas.
+- 🟢 **`agent_test` ne facture pas les jetons** (« Tokens consumed while testing through this endpoint are not
+  billed »), écrit deux fois dans la page : la QA peut s'appuyer dessus sans compter.
+
 ## Post-live — prochaines actions
 
 - 🟡 **Aucun outil de rejeu de la file d échecs (DLQ).** Un job en échec part dans `<file>-dlq`, que RIEN ne
