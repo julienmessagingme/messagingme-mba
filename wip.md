@@ -381,7 +381,26 @@ l'ajout d'un contact à la main, la duplication d'un template, le carousel, l'é
 de session. Plus les deux pilotes en attente de sa main : l'OTP Zadarma (numéro dédié qui décroche) et une
 automation « étape de deal » avec un deal déplacé dans HubSpot.
 
-## 🚧 EN COURS (2026-08-18) : configurer l'agent MBA depuis la console — POINT DE REPRISE
+## ✅ LIVE (2026-08-18) : configurer l'agent MBA depuis la console
+
+**Déployé en production le 2026-08-18** (`8043f1d`), après vérification des deux règles de déploiement :
+`git log 91f9cde..HEAD` (10 commits, tous ceux de ce chantier, aucun travail d'une autre session embarqué au
+passage) et migrations (58 appliquées pour 58 fichiers, aucune en attente).
+
+Vérifié EN PRODUCTION, pas déduit : les 7 ressources répondent **401** sur `/tenants/:t/mba/:pn/*` (donc les
+routes sont montées ET la garde admin est active ; un 404 aurait signifié « pas montées »), `/health` répond
+`ok:true`, `mba.messagingme.app/mba/parametres` répond 200, aucune erreur dans les journaux des 3 conteneurs.
+
+⚠️ Le `git pull` sur le VPS échouait d'abord : des copies de sondes y traînaient en non-suivi alors que ces
+mêmes chemins sont désormais suivis dans le dépôt. Retirées avant le pull. Réflexe pour la prochaine fois : une
+sonde déposée à la main sur le VPS devient un obstacle le jour où elle est committée.
+
+**Reste à faire, non bloquant** : le coup d'œil visuel de Julien sur les 4 points marqués « vérif Julien » dans
+`.loop/mba-ecrans-parametres.md` (cohérence de style, lisibilité des 8 onglets sur écran étroit, ton des
+messages FR et EN, rendu de la transcription du bac à sable).
+
+### Le détail du chantier (historique)
+
 
 **Reprendre ici : les routes backend `/tenants/:t/mba/*`, puis les écrans.**
 
