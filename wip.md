@@ -36,14 +36,15 @@ La purge écrite la veille était couverte par des tests à FAUX store. Ils prou
 parcours et un déclenchement d'automation, purge, et relit ce qui reste. Vérifié dans les deux sens : rouge
 sur l'ancien code, vert sur le nouveau, dans une vraie base.
 
-### ⚠️ RESTE À TRAITER : un contact déjà supprimé n'est plus effaçable à l'écran
+### TRANCHÉ : une seule destruction (2026-08-19)
 
-Une fois « Supprimer » cliqué, le contact quitte la liste du CRM, donc plus moyen de le cocher pour
-l'effacer définitivement. C'est le chemin exact qu'a pris Julien. Le backend, lui, sait le faire (la purge par
-identifiants ne filtre pas `deleted_at`). **Décision produit à prendre avec Julien**, deux options :
-- un filtre « afficher les contacts supprimés » dans le mini-CRM (demande d'ouvrir `buildContactWhere`, qui
-  pose `deleted_at is null` en dur) ;
-- ou faire que « Supprimer » efface aussi la conversation, et n'avoir qu'une seule destruction.
+Julien a choisi la seconde option : **« Supprimer » efface aussi la conversation.** La suppression douce, la
+route `/bulk-delete`, `softDeleteMany` et les actions d'audit `contact.deleted` / `contact.restored` sont
+retirés, faute d'appelant. Vérifié en production AVANT de retirer : zéro ligne `contact.deleted` au journal et
+zéro contact en suppression douce, donc rien ne restait en rade.
+
+La confirmation par saisie est conservée et le mot suit le bouton (`SUPPRIMER`, plus `PURGER`). La colonne
+`deleted_at` reste : la purge la pose avec `anonymized_at` pour que la fiche vidée quitte le CRM.
 
 Le contact de Geoffrey a été purgé à la main côté serveur (fil, 28 messages, analyse, 2 parcours), trace au
 journal. Vérifié : 0 fil, 0 fiche, 0 ligne d'envoi nominative.
