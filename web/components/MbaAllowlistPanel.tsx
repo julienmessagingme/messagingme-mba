@@ -7,7 +7,13 @@ import { MbaNotice } from './MbaNotice';
 import { addMbaAllowlistEntry, listMbaAllowlist, removeMbaAllowlistEntry, type MbaAllowlistEntry } from '@/lib/api-mba';
 
 /**
- * Les numéros que l'agent a le droit de gérer quand l'audience est restreinte.
+ * Les numéros de TEST : ceux que l'agent a le droit de gérer quand l'audience est restreinte.
+ *
+ * ⚠️ Ce n'est PAS un mode d'exploitation. Personne n'autorise ses clients un par un. Meta n'offre que deux
+ * audiences, « tout le monde » (le mode normal) et « liste d'autorisation uniquement », et la seconde n'existe
+ * que pour essayer l'agent sur un vrai numéro avec son propre téléphone avant de l'ouvrir. C'est pour cela que
+ * cette liste vit DANS la vue d'ensemble, sous le choix d'audience, et non dans un onglet à elle : sa place
+ * disait « étape normale de configuration » alors qu'elle est un banc d'essai.
  *
  * Le rappel sur l'audience n'est pas décoratif : une liste bien remplie ne protège de RIEN si l'audience est
  * restée « tout le monde », et l'inverse (audience restreinte, liste vide) éteint l'agent en pratique.
@@ -53,14 +59,23 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
   if (chargement) return <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>;
 
   return (
-    <div className="space-y-5">
+    <section className={`${cardCls} space-y-4`}>
+      <div>
+        <h3 className="text-sm font-semibold text-ink-900">{t('Numéros de test', 'Test numbers')}</h3>
+        <p className="mt-1 text-xs leading-relaxed text-ink-600">
+          {t(
+            'Quand l’audience est restreinte, l’agent ne répond QU’À ces numéros. Sert à l’essayer sur votre vrai numéro avant de l’ouvrir à vos clients, pas à autoriser les clients un par un.',
+            'When the audience is restricted, the agent answers ONLY these numbers. Use it to try the agent on your own number before opening it to your customers, not to allow customers one by one.',
+          )}
+        </p>
+      </div>
       {err !== '' && <MbaNotice kind="error" testid="mba-allowlist-error">{err}</MbaNotice>}
 
       {audience === 'EVERYONE' && (
         <MbaNotice kind="warning" testid="mba-allowlist-inactive">
           {t(
-            'L’audience est réglée sur « tout le monde » : cette liste n’a aucun effet pour l’instant. Passez l’audience sur « liste d’autorisation uniquement » dans Vue d’ensemble pour la rendre active.',
-            'The audience is set to “everyone”: this list has no effect right now. Switch the audience to “allowlisted only” in Overview to make it active.',
+            'L’audience est réglée sur « tout le monde » : cette liste n’a aucun effet. Elle ne sert que si vous passez l’audience juste au-dessus sur « liste d’autorisation uniquement », le temps d’un essai.',
+            'The audience is set to “everyone”: this list has no effect. It only matters if you switch the audience just above to “allowlisted only”, for the duration of a trial.',
           )}
         </MbaNotice>
       )}
@@ -73,9 +88,8 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
         </MbaNotice>
       )}
 
-      <section className={cardCls}>
-        <h3 className="text-sm font-semibold text-ink-900">{t('Ajouter un numéro', 'Add a number')}</h3>
-        <div className="mt-3 flex gap-2">
+      <div>
+        <div className="flex gap-2">
           <input
             className={inputCls}
             data-testid="mba-allowlist-phone"
@@ -96,11 +110,11 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
             {t('Ajouter', 'Add')}
           </button>
         </div>
-      </section>
+      </div>
 
       <ul className="space-y-2" data-testid="mba-allowlist-list">
         {entrees.map((e) => (
-          <li key={e.id ?? e.consumer_phone_number} className={`${cardCls} flex items-center justify-between gap-4 p-4`}>
+          <li key={e.id ?? e.consumer_phone_number} className="flex items-center justify-between gap-4 rounded-lg border border-ink-100 px-3 py-2">
             <span className="text-sm text-ink-900">{e.consumer_phone_number}</span>
             <button
               className="text-xs font-medium text-rose-600 hover:text-rose-700"
@@ -115,6 +129,6 @@ export function MbaAllowlistPanel({ tenantId, phoneNumberId, audience }: {
         ))}
         {entrees.length === 0 && <li className="text-sm text-ink-500">{t('Aucun numéro pour l’instant.', 'No numbers yet.')}</li>}
       </ul>
-    </div>
+    </section>
   );
 }

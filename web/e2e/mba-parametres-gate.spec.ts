@@ -21,12 +21,15 @@ test.describe('MBA Paramètres : blocages', () => {
     await expect(page.getByTestId('mba-tab-faq')).toHaveCount(0);
   });
 
-  test('numéro ouvert : les 8 onglets sont là', async ({ page }) => {
+  test('numéro ouvert : les 7 onglets sont là, et PAS d’onglet pour les numéros de test', async ({ page }) => {
     await mockMba(page);
     await page.goto('/mba/parametres');
-    for (const cle of ['apercu', 'business', 'faq', 'competences', 'fichiers', 'sites', 'allowlist', 'test']) {
+    for (const cle of ['apercu', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test']) {
       await expect(page.getByTestId(`mba-tab-${cle}`), cle).toBeVisible();
     }
+    // La liste d'autorisation n'est PAS une étape de configuration : elle vit dans la vue d'ensemble, sous le
+    // choix d'audience, parce qu'elle n'a de sens que par rapport à lui.
+    await expect(page.getByTestId('mba-tab-allowlist')).toHaveCount(0);
     await expect(page.getByTestId('mba-gate-not-eligible')).toHaveCount(0);
   });
 

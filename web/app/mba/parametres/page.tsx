@@ -16,7 +16,6 @@ import { MbaFaqPanel } from '@/components/MbaFaqPanel';
 import { MbaSkillsPanel } from '@/components/MbaSkillsPanel';
 import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
-import { MbaAllowlistPanel } from '@/components/MbaAllowlistPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
 
 export default function MbaSettingsPage() {
@@ -33,7 +32,7 @@ export default function MbaSettingsPage() {
   );
 }
 
-const ONGLETS = ['apercu', 'business', 'faq', 'competences', 'fichiers', 'sites', 'allowlist', 'test'] as const;
+const ONGLETS = ['apercu', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test'] as const;
 type Onglet = (typeof ONGLETS)[number];
 
 function lireOnglet(v: string | null): Onglet {
@@ -103,7 +102,6 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
   if (phoneNumberId === null) return coquille(<MbaGateBanner reason="no-number" />);
   if (status === null || !status.eligible) return coquille(<MbaGateBanner reason="not-eligible" />);
 
-  const audience = status.settings?.ai_audience === 'ALLOWLISTED_ONLY' ? 'ALLOWLISTED_ONLY' : 'EVERYONE';
   const props = { tenantId, phoneNumberId };
 
   return coquille(
@@ -118,7 +116,6 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
           { key: 'competences', label: t('Compétences', 'Skills') },
           { key: 'fichiers', label: t('Fichiers', 'Files') },
           { key: 'sites', label: t('Sites web', 'Websites') },
-          { key: 'allowlist', label: t('Liste d’autorisation', 'Allowlist') },
           { key: 'test', label: t('Tester', 'Test') },
         ]}
       />
@@ -129,7 +126,6 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
       {onglet === 'competences' && <MbaSkillsPanel {...props} />}
       {onglet === 'fichiers' && <MbaFilesPanel {...props} />}
       {onglet === 'sites' && <MbaWebsitesPanel {...props} />}
-      {onglet === 'allowlist' && <MbaAllowlistPanel {...props} audience={audience} />}
       {onglet === 'test' && <MbaTestPanel {...props} />}
     </>,
   );

@@ -5,6 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputClsAuto } from '@/lib/ui';
 import { Toggle } from './Toggle';
 import { MbaNotice } from './MbaNotice';
+import { MbaAllowlistPanel } from './MbaAllowlistPanel';
 import { patchMbaSettings, putMbaRollout, type MbaStatus, type MbaSettings } from '@/lib/api-mba';
 
 /**
@@ -125,6 +126,13 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
           <option value="ALLOWLISTED_ONLY">{t('Liste d’autorisation uniquement', 'Allowlisted only')}</option>
         </select>
       </section>
+
+      {/* Les numéros de test vivent ICI, sous le choix d'audience : ils n'ont de sens que par rapport à lui. */}
+      <MbaAllowlistPanel
+        tenantId={tenantId}
+        phoneNumberId={phoneNumberId}
+        audience={s?.ai_audience === 'ALLOWLISTED_ONLY' ? 'ALLOWLISTED_ONLY' : 'EVERYONE'}
+      />
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">{t('Ce que l’agent ne doit jamais dire', 'What the agent must never say')}</h3>
