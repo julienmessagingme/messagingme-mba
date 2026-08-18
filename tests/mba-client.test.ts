@@ -106,6 +106,19 @@ describe('modifierSettings : survivre à un champ que Meta ajouterait', () => {
     expect(envoye.champ_invente_par_meta_demain).toEqual({ garde: 'moi' });
   });
 
+  it('🔴 retire agent_id et channel du CORPS et repasse agent_id en QUERY', async () => {
+    // Ces deux champs sont dans la réponse du GET mais pas dans le schéma de requête : les renvoyer tels
+    // quels expose à un 400. Et sans `agent_id` en query, le PUT bascule en « create-or-fetch » : on ne sait
+    // plus quelle configuration on écrit.
+    const { impl, appels } = faux([{ body: [{ agent_id: 'a1', channel: 'whatsapp', rollout: { enabled: false } }] }, { body: {} }]);
+    await modifierSettings(new MbaClient('tok', impl), 'PN1', { rollout: { enabled: true } });
+    expect(appels[1]!.url).toBe('https://api.facebook.com/PN1/agent_config/settings?agent_id=a1');
+    const envoye = appels[1]!.body as Record<string, unknown>;
+    expect(envoye).not.toHaveProperty('agent_id');
+    expect(envoye).not.toHaveProperty('channel');
+    expect(envoye.rollout).toEqual({ enabled: true });
+  });
+
   it('fusionne rollout sans perdre les autres clés du sous-objet', async () => {
     const { impl, appels } = faux([{ body: [{ rollout: { enabled: false, autre: 1 } }] }, { body: {} }]);
     await modifierSettings(new MbaClient('tok', impl), 'PN1', { rollout: { enabled: true } });

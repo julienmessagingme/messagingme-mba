@@ -3,6 +3,7 @@ import { MetaTemplateClient } from './templates';
 import { MetaFlowClient } from './flows';
 import { MetaPricingClient } from './pricing';
 import { MetaPhoneNumberClient } from './phone-number';
+import { MbaClient } from '../mba/client';
 import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
 import type { MetaCredentialsResolver } from './credentials';
@@ -65,6 +66,12 @@ export class MetaClientFactory {
   async phoneClientForTenant(tenantId: string): Promise<MetaPhoneNumberClient> {
     const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
     return this.guard(new MetaPhoneNumberClient(token, this.o.version), wabaId);
+  }
+
+  /** Client de configuration de l'agent MBA. Pas de `version` : cette surface la passe par en-tête, pas par chemin. */
+  async mbaClientForTenant(tenantId: string): Promise<MbaClient> {
+    const { token, wabaId } = await this.o.resolver.resolveForTenant(tenantId);
+    return this.guard(new MbaClient(token), wabaId);
   }
 
   /**

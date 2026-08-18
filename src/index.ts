@@ -43,6 +43,7 @@ import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
+import { fetchUrlBorne } from './http/mba';
 import { MetaClientFactory } from './meta/factory';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { buildWorkflowRuntime } from './workflow/wiring';
@@ -380,6 +381,13 @@ async function main(): Promise<void> {
       getWorkspaceName: (tenantId) => userStore.getTenantName(tenantId),
       appUrl: config.APP_URL,
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
+    },
+    // Configuration de l'agent MBA depuis la console (admin-only). `phoneNumberBelongsToTenant` est le contrôle
+    // d'isolation : la surface MBA est indexée par NUMÉRO, pas par tenant.
+    mba: {
+      clientFor: (tenant) => metaFactory.mbaClientForTenant(tenant),
+      phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+      fetchUrl: fetchUrlBorne(),
     },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil

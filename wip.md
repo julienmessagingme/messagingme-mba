@@ -413,13 +413,41 @@ conversation, et « je veux parler à un conseiller » déclenche un `handoff_re
   `mba-activer-restreint.mts` (allowlist puis activation), `sonde-waba-billing.mts`, `sonde-capacites-app.mts`,
   `sonde-webhooks.mts`. Plus un lanceur `mba-test.sh` sur le VPS.
 
+### Routes backend : FAITES (2026-08-18)
+
+`src/http/mba.ts`, montées sous `/tenants/:t/mba/:phoneNumberId/*`, groupe **admin-only**. Le contrôle
+d'isolation est `phoneNumberBelongsToTenant` : la surface MBA est indexée par NUMÉRO, pas par tenant, donc
+sans lui un admin authentifié piloterait l'agent d'un autre client en changeant l'id dans l'URL.
+
+`status` · `settings` (PATCH) · `rollout` (PUT, route SÉPARÉE car l'effet est asymétrique) · `business-info`
+(GET/PATCH) · `faq` (CRUD + `preview` + `import`) · `skills` (CRUD) · `websites` · `files` · `allowlist` ·
+`test` (bac à sable). **27 tests** (`tests/http-mba.test.ts`) + **16** sur l'extraction (`tests/mba-faq-import.test.ts`).
+
+Trois défauts corrigés au passage, dont deux trouvés en relisant la spec :
+
+- **`PUT settings` renvoyait `agent_id` et `channel` dans le CORPS** alors qu'ils sont dans la réponse du GET
+  mais PAS dans le schéma de requête (risque de 400), et sans `agent_id` en QUERY le PUT bascule en
+  « create-or-fetch » : on ne sait plus quelle configuration on écrit. Corrigé dans `src/mba/client.ts` ET
+  dans `scripts/mba-activer-restreint.mts`, test vérifié dans les deux sens.
+- **SSRF par redirection** sur l'import de FAQ depuis une URL : le contrôle d'hôte ne portait que sur l'URL
+  saisie. Les redirections sont maintenant suivies à la main et CHAQUE saut est revalidé (3 max).
+- Le compte-rendu d'import comptait les créations par identifiant retourné : une entrée créée sans `id`
+  aurait été recomptée comme « restant à faire » au passage suivant.
+
 ### La suite, dans cet ordre
 
-1. **Routes backend `/tenants/:t/mba/*`** : exposer les cinq ressources à la console, scoping tenant et RBAC
-   admin comme le reste de `src/http/`. Le client fait déjà le travail, ces routes sont mécaniques.
-2. **Écrans**, en remplacement de la maquette GELÉE de `web/app/mba/parametres/page.tsx` (151 lignes, tout est
+1. **Écrans**, en remplacement de la maquette GELÉE de `web/app/mba/parametres/page.tsx` (151 lignes, tout est
    désactivé, son propre commentaire dit « le jour de l'éligibilité, on branche chaque section »). Un onglet
-   par ressource.
+   par ressource, plus l'écran d'import de FAQ (aperçu avant écriture).
+2. **Excel et PDF vers des FAQ structurées : NON FAIT, décision en attente.** Aucun parseur dans le dépôt et
+   les deux candidats sont mauvais (`xlsx` npm est figé en 0.18.5 avec une CVE de pollution de prototype ;
+   `exceljs` est énorme). Ce qui marche DÉJÀ sans rien ajouter : Meta accepte nativement `.pdf`, `.docx`,
+   `.csv` et `.xlsx` comme **fichiers de connaissance** (route `files`), donc un client qui arrive avec ses
+   procédures en PDF est servi aujourd'hui. La conversion d'un PDF en Q/R structurées demanderait en plus une
+   segmentation par LLM, avec une perte de fidélité : à ne faire que si le besoin d'ÉDITER chaque Q/R une par
+   une le justifie. ⚠️ `.csv` et `.xlsx` en fichier de connaissance sont conditionnés à un réglage de l'asset
+   WhatsApp que la doc Meta ne dit ni comment vérifier ni comment activer : prévoir un message d'aide dédié
+   quand un CSV part en 400 alors qu'un PDF passe.
 
 ### Décisions produit prises avec Julien
 

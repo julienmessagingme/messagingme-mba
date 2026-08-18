@@ -69,7 +69,13 @@ const voulu: Record<string, unknown> = {
   rollout: { ...(courant.rollout as object ?? {}), enabled: !ETEINDRE },
   ...(ETEINDRE ? {} : { ai_audience: 'ALLOWLISTED_ONLY' }),
 };
-await json('PUT', `${BASE}/settings`, voulu);
+// ⚠️ `agent_id` et `channel` sont dans la réponse du GET mais PAS dans le schéma de requête : les renvoyer
+// tels quels expose à un 400. `agent_id` repart en query, où Meta l'attend (sinon le PUT bascule en
+// « create-or-fetch » et on ne sait plus quelle configuration on écrit).
+const agentId = typeof courant.agent_id === 'string' ? courant.agent_id : '';
+delete voulu.agent_id;
+delete voulu.channel;
+await json('PUT', `${BASE}/settings${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''}`, voulu);
 
 const apres = (await json('GET', `${BASE}/settings`)) as unknown;
 console.log('\nreglages APRES :', JSON.stringify(apres));

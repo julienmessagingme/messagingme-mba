@@ -226,9 +226,18 @@ export class MbaClient {
    * ⚠️ REMPLACEMENT COMPLET, et c'est le piège le plus coûteux de cette API. Passer par `modifierSettings`,
    * qui relit l'objet et ne touche qu'aux clés voulues : un modèle typé fermé effacerait `never_say_phrases`,
    * `handoff` et tout champ que Meta ajouterait, sans que personne le demande.
+   *
+   * ⚠️ `agent_id` et `channel` sont dans la RÉPONSE du GET mais PAS dans le schéma de requête : renvoyer
+   * l'objet lu tel quel expose à un 400. Ils sont retirés du corps ici, et `agent_id` repart en QUERY, où
+   * Meta l'attend. Sans lui, le comportement documenté est « create-or-fetch » (le libellé de la spec, qui
+   * n'est PAS « create-or-update ») : on ne sait plus quelle configuration on écrit.
    */
-  async putSettings(phoneNumberId: string, settings: AgentSettings): Promise<unknown> {
-    return this.appel<unknown>('PUT', `${phoneNumberId}/agent_config/settings`, settings);
+  async putSettings(phoneNumberId: string, settings: AgentSettings, agentId?: string): Promise<unknown> {
+    const corps: Record<string, unknown> = { ...settings };
+    delete corps.agent_id;
+    delete corps.channel;
+    const q = agentId === undefined ? '' : `?agent_id=${encodeURIComponent(agentId)}`;
+    return this.appel<unknown>('PUT', `${phoneNumberId}/agent_config/settings${q}`, corps);
   }
 
   async listAllowlist(phoneNumberId: string): Promise<AllowlistEntry[]> {
@@ -300,10 +309,15 @@ export async function modifierSettings(
   patch: Partial<AgentSettings>,
 ): Promise<unknown> {
   const actuel = (await client.getSettings(phoneNumberId)) ?? {};
-  return client.putSettings(phoneNumberId, {
-    ...actuel,
-    ...patch,
-    ...(patch.rollout ? { rollout: { ...(actuel.rollout ?? {}), ...patch.rollout } } : {}),
-    ...(patch.followup ? { followup: { ...(actuel.followup ?? {}), ...patch.followup } } : {}),
-  });
+  return client.putSettings(
+    phoneNumberId,
+    {
+      ...actuel,
+      ...patch,
+      ...(patch.rollout ? { rollout: { ...(actuel.rollout ?? {}), ...patch.rollout } } : {}),
+      ...(patch.followup ? { followup: { ...(actuel.followup ?? {}), ...patch.followup } } : {}),
+    },
+    // Relu à l'instant : c'est la configuration qu'on vient de lire qu'on réécrit, pas « la plus récente ».
+    typeof actuel.agent_id === 'string' ? actuel.agent_id : undefined,
+  );
 }
