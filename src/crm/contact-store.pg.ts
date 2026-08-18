@@ -626,7 +626,15 @@ export class PgContactStore implements ContactStore {
       if (waIds.length > 0) {
         // `workflow_runs` et `automation_fires` portent bien un wa_id (chiffres nus), eux.
         await client.query(`delete from workflow_runs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
-        await client.query(`delete from automation_fires where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIds]);
+        // `automation_fires` a pour clé (automation_id, wa_id) et NE PORTE PAS de tenant_id : le cloisonnement
+        // passe par l'automation. La version precedente filtrait sur une colonne inexistante, ce qui faisait
+        // echouer et ROULER EN ARRIERE toute la purge des qu'un contact avait un fil. Invisible jusqu'ici :
+        // aucun fil n'etait jamais trouve, donc cette branche n'etait jamais atteinte.
+        await client.query(
+          `delete from automation_fires f using automations a
+            where a.id = f.automation_id and a.tenant_id = $1 and f.wa_id = any($2::text[])`,
+          [tenantId, waIds],
+        );
       }
       // Cache RCS : clé (agent_id, phone_e164), donc E.164. Effacé même si le contact n'a AUCUN fil, sinon un
       // contact purgé sans conversation laisserait son numéro dans une table de joignabilité.

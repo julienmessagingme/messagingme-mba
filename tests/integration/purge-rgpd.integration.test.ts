@@ -44,6 +44,32 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
       [convId, `wam-itest-${WA_ID}-1`, `wam-itest-${WA_ID}-2`],
     );
     await pool.query(`insert into rcs_capabilities_cache (agent_id, phone_e164, reachable) values ($1, $2, true)`, ['itest-agent', E164]);
+
+    // L'ANALYSE qualitative : le pire de ce qu'on garde, un topic et une justification en texte libre produits
+    // par un modèle à partir de ce que la personne a raconté.
+    await pool.query(
+      `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by,
+        exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model)
+       values ($1, $2, 'negatif', 'reclamation', 'sujet qui identifie la personne', false, 'humain', 2, 'rappeler', 0.9,
+               'justification qui reprend ses mots', 'itest', 'itest')`,
+      [convId, tenantId],
+    );
+
+    // Traces techniques portant le wa_id. Elles sont créées ICI parce que la branche qui les efface n'était
+    // JAMAIS atteinte tant que la recherche de fils ne trouvait rien : c'est ce qui a laissé passer un
+    // `delete from automation_fires where tenant_id = ...` sur une table qui n'a pas cette colonne.
+    const workflowId = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name) values ($1, 'itest-purge-wf') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into workflow_runs (workflow_id, tenant_id, wa_id, status) values ($1, $2, $3, 'waiting')`,
+      [workflowId, tenantId, WA_ID],
+    );
+    const automationId = (await pool.query<{ id: string }>(
+      `insert into automations (tenant_id, name, trigger_kind, workflow_id) values ($1, 'itest-purge-auto', 'tag_added', $2) returning id`,
+      [tenantId, workflowId],
+    )).rows[0]!.id;
+    await pool.query(`insert into automation_fires (automation_id, wa_id) values ($1, $2)`, [automationId, WA_ID]);
   });
 
   afterAll(async () => {
@@ -60,6 +86,23 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect(fils.rowCount).toBe(0);
     const msgs = await pool.query('select 1 from conversation_messages where conversation_id = $1', [convId]);
     expect(msgs.rowCount).toBe(0);
+  });
+
+  it('🔴 l’ANALYSE qualitative part avec le fil (topic et justification en texte libre)', async () => {
+    const a = await pool.query('select 1 from conversation_analysis where conversation_id = $1', [convId]);
+    expect(a.rowCount).toBe(0);
+  });
+
+  it('🔴 les traces techniques portant le numéro partent aussi (parcours, déclenchements)', async () => {
+    // `automation_fires` n'a PAS de tenant_id : son cloisonnement passe par l'automation. Un filtre sur une
+    // colonne absente ne renvoie pas « rien », il fait ÉCHOUER la transaction et annule toute la purge.
+    const runs = await pool.query('select 1 from workflow_runs where tenant_id = $1 and wa_id = $2', [tenantId, WA_ID]);
+    expect(runs.rowCount).toBe(0);
+    const fires = await pool.query(
+      `select 1 from automation_fires f join automations a on a.id = f.automation_id where a.tenant_id = $1 and f.wa_id = $2`,
+      [tenantId, WA_ID],
+    );
+    expect(fires.rowCount).toBe(0);
   });
 
   it('🔴 le cache de joignabilité RCS est purgé (indexé en E.164, pas en wa_id)', async () => {
