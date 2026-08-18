@@ -28,6 +28,7 @@ function WorkflowsInner({ session }: { session: Session }) {
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   // MBA actif chez le tenant ? Gouverne l'activation des blocs MBA (grisés sinon) dans le builder. Défaut prudent : false.
   const [mbaEnabled, setMbaEnabled] = useState(false);
+  const [rcsEnabled, setRcsEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -61,7 +62,7 @@ function WorkflowsInner({ session }: { session: Session }) {
 
   // MBA actif ? Best-effort, non bloquant : un échec laisse les blocs MBA grisés (défaut prudent).
   useEffect(() => {
-    void getSettings(session.tenantId).then((s) => setMbaEnabled(s.mbaEnabled)).catch(() => {});
+    void getSettings(session.tenantId).then((s) => { setMbaEnabled(s.mbaEnabled); setRcsEnabled(s.rcsEnabled === true); }).catch(() => {});
   }, [session.tenantId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -181,7 +182,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         <div className="min-h-0 flex-1">
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} mbaEnabled={mbaEnabled} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} />
         </div>
       </div>
     );

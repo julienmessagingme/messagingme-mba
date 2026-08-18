@@ -14,7 +14,7 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, RCS_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { isCampaignEligible, waitBeforeSessionMessage, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
@@ -307,7 +307,7 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
  * point bas d'un bloc vers un autre). +/poubelle sur chaque flèche. Panneau de config par bloc. PB1 : édition
  * + sauvegarde du graphe (pas d'exécution). Le graphe est validé/sanitisé côté serveur au save.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean }) {
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false, rcsEnabled = false }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean; rcsEnabled?: boolean }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -566,6 +566,21 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
         <span className="text-xs text-ink-500">{t('+ Créer un bloc :', '+ Create a block:')}</span>
         {NODE_ORDER.map((nt) => (
           <button key={nt} data-testid={`add-node-${nt}`} onClick={() => addNode(nt)} className="rounded-md border border-ink-200 px-2 py-1 text-xs text-brand-600 hover:bg-brand-50">
+            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
+          </button>
+        ))}
+        {/* Bloc RCS : GRISÉ + non cliquable tant qu'aucun agent RCS n'est rattaché au tenant. Le canal est
+            complet côté outil, mais rien ne peut partir avant qu'un agent soit déposé et approuvé par Google
+            et les opérateurs. Le bloc reste visible pour préparer ses scénarios. */}
+        {RCS_NODE_ORDER.map((nt) => (
+          <button
+            key={nt}
+            data-testid={`add-node-${nt}`}
+            onClick={() => { if (rcsEnabled) addNode(nt); }}
+            disabled={!rcsEnabled}
+            title={rcsEnabled ? undefined : t('Disponible quand votre agent RCS sera déposé et validé', 'Available once your RCS agent is filed and approved')}
+            className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
+          >
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}

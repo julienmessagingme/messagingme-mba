@@ -31,6 +31,7 @@ async function mockBuilder(page: import('@playwright/test').Page, initial: Graph
     if (url.includes('/flows')) return json({ flows: [] });
     if (url.includes('/tags')) return json({ tags: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
+    if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: true, hubspotListsEnabled: false, campaignsPaused: false });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
@@ -92,5 +93,21 @@ test.describe('Builder : bloc RCS', () => {
       }),
       { timeout: 10_000 },
     ).toBe(true);
+  });
+
+  test('sans agent depose, la brique RCS est VISIBLE mais grisee dans la palette', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(page, { nodes: [{ id: 't', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'promo' } }], edges: [] }, saved);
+    // Le mock ci-dessus sert rcsEnabled: true ; on le repasse à false pour CE test.
+    await page.route('**/api/backend/**/settings', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ mbaEnabled: false, rcsEnabled: false, hubspotListsEnabled: false, campaignsPaused: false }) }));
+
+    await page.goto('/workflows?open=wf1');
+
+    const brique = page.getByTestId('add-node-rcs_message');
+    await expect(brique).toBeVisible();
+    await expect(brique).toBeDisabled();
+    // Les briques normales, elles, restent utilisables.
+    await expect(page.getByTestId('add-node-template')).toBeEnabled();
   });
 });

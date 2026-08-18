@@ -30,6 +30,13 @@ export class PgRcsAgentStore {
     return res.rows.map((r) => ({ agentId: r.agent_id, brandName: r.brand_name, status: r.status }));
   }
 
+  /** Le tenant a-t-il au moins un agent RCS ? C'est CE test qui allume ou éteint le canal dans l'interface :
+   *  pas de drapeau à basculer à la main, l'outil suit l'état réel du dépôt d'agent. */
+  async hasAgent(tenantId: string): Promise<boolean> {
+    const res = await this.pool.query('select 1 from rcs_agents where tenant_id = $1 limit 1', [tenantId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** L'agent appartient-il au tenant ? Garde d'isolation de la création de campagne, symétrique de
    *  `phoneNumberBelongsToTenant`. */
   async belongsToTenant(agentId: string, tenantId: string): Promise<boolean> {

@@ -328,6 +328,8 @@ async function main(): Promise<void> {
     },
     settings: {
       getSettings: (tenant) => settingsStore.get(tenant),
+      // Canal RCS allumé dès qu'un agent est rattaché au tenant : l'interface suit l'état réel du dépôt.
+      rcsEnabledFor: (tenant) => workflowRuntime.rcsStack.agents.hasAgent(tenant),
       setMbaEnabled: (tenant, enabled) => settingsStore.setMbaEnabled(tenant, enabled),
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),

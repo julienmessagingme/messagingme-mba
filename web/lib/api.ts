@@ -752,6 +752,9 @@ export interface TenantSettings {
    *  null = pas de choix explicite -> repli usine `resume`. Surchargeable par conversation. */
   returnBehavior: ReturnBehavior | null;
   mbaEnabled: boolean;
+  /** Canal RCS exploitable : vrai dès qu'un agent RCS est rattaché au tenant. DÉRIVÉ de l'état réel du dépôt,
+   *  pas un réglage à basculer. Absent (backend plus ancien que le front) = éteint. */
+  rcsEnabled?: boolean;
   hubspotListsEnabled: boolean;
   /** Pause des campagnes via listes HubSpot (F3-b). true = source HubSpot suspendue (pilotée par l'action Pause). */
   campaignsPaused: boolean;

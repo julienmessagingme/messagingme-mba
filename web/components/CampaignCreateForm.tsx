@@ -78,7 +78,7 @@ function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]):
   return customFields.some((f) => f.key === key) ? `field:${key}` : 'sys:name';
 }
 
-export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void }) {
+export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange, rcsEnabled = false }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void; rcsEnabled?: boolean }) {
   const t = useT();
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [name, setName] = useState('');
@@ -755,12 +755,27 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange 
             { m: 'template', label: t('Un template', 'A template'), tip: t('Privilégiez cela pour l’envoi d’un message simple avec un ou des boutons (CTA) qui pointent vers des URL. Si le client répond, le Meta Business Agent prend le relais.', 'Best for sending a simple message with one or more buttons (CTA) that point to URLs. If the customer replies, the Meta Business Agent takes over.') },
             { m: 'workflow', label: t('Un scénario', 'A scenario'), tip: t('Privilégiez cette méthode pour enchaîner plusieurs étapes : envoi d’un template PUIS d’autres éléments (ajout d’un tag, d’un champ, envoi d’un formulaire, ...).', 'Best for chaining several steps: sending a template THEN other elements (adding a tag, a field, sending a form, ...).') },
             { m: 'rcs', label: t('Un message RCS', 'An RCS message'), tip: t('Autre CANAL : le message part sous votre agent de marque, sans template à faire approuver et sans fenêtre de 24 h. Seuls les contacts joignables en RCS sont servis, les autres sont comptés « ignorés ».', 'A different CHANNEL: the message goes out under your brand agent, with no template to get approved and no 24h window. Only contacts reachable on RCS are served, the others are counted as skipped.') },
-          ] as const).map(({ m, label, tip }) => (
-            <span key={m} className="group relative">
-              <button type="button" onClick={() => chooseMode(m)} className={`rounded-md px-3 py-1 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>{label}</button>
-              <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-64 -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg group-hover:block">{tip}</span>
-            </span>
-          ))}
+          ] as const).map(({ m, label, tip }) => {
+            // Le RCS reste VISIBLE mais éteint tant qu'aucun agent n'est rattaché au tenant : rien ne peut
+            // partir avant qu'un agent soit déposé et approuvé par Google et les opérateurs. L'infobulle dit
+            // pourquoi, plutôt que de laisser l'opérateur cliquer sur un canal qui échouerait à l'envoi.
+            const eteint = m === 'rcs' && !rcsEnabled;
+            const aide = eteint ? t('Disponible quand votre agent RCS sera déposé et validé', 'Available once your RCS agent is filed and approved') : tip;
+            return (
+              <span key={m} className="group relative">
+                <button
+                  type="button"
+                  data-testid={`campaign-mode-${m}`}
+                  onClick={() => { if (!eteint) chooseMode(m); }}
+                  disabled={eteint}
+                  className={`rounded-md px-3 py-1 disabled:cursor-not-allowed disabled:text-ink-400 disabled:opacity-60 ${mode === m ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+                >
+                  {label}
+                </button>
+                <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-64 -translate-x-1/2 rounded-lg bg-ink-900 px-3 py-2 text-xs font-normal leading-snug text-white shadow-lg group-hover:block">{aide}</span>
+              </span>
+            );
+          })}
         </div>
       </div>
 

@@ -30,7 +30,7 @@ async function mockCampagnes(page: import('@playwright/test').Page, cree: Cree[]
     if (url.includes('/workflows')) return json({ workflows: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
     if (url.includes('/tags')) return json({ tags: [] });
-    if (url.includes('/settings')) return json({ hubspotListsEnabled: false, campaignsPaused: false });
+    if (url.includes('/settings')) return json({ hubspotListsEnabled: false, campaignsPaused: false, mbaEnabled: false, rcsEnabled: agents.length > 0 });
     if (url.includes('/contacts')) return json({ contacts: [{ id: 'c1', phoneE164: '+33611', profileName: 'A', fields: {}, tags: [], optInStatus: 'opted_in' }], total: 1 });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (url.endsWith('/campaigns')) return json({ campaigns: [] });
@@ -39,15 +39,18 @@ async function mockCampagnes(page: import('@playwright/test').Page, cree: Cree[]
 }
 
 test.describe('Campagnes : canal RCS', () => {
-  test('sans agent configure, l assistant le DIT au lieu de proposer un canal inutilisable', async ({ page }) => {
+  test('sans agent depose, le canal RCS est VISIBLE mais eteint et non cliquable', async ({ page }) => {
     await mockCampagnes(page, [], []);
     await page.goto('/campaigns');
     await page.getByRole('button', { name: /ajouter une campagne/i }).first().click();
-    // Nommer la campagne est un préalable : sans nom, la zone Message reste grisée.
     await page.getByTestId('campaign-name').fill('Promo RCS');
 
-    await page.getByRole('button', { name: 'Un message RCS' }).click();
-    await expect(page.getByTestId('rcs-no-agent')).toBeVisible();
+    // Le canal reste montré (on prépare son projet), mais il ne peut pas être choisi tant qu'aucun agent
+    // n'est déposé : rien ne partirait. Les deux autres canaux, eux, restent cliquables.
+    const rcs = page.getByTestId('campaign-mode-rcs');
+    await expect(rcs).toBeVisible();
+    await expect(rcs).toBeDisabled();
+    await expect(page.getByTestId('campaign-mode-template')).toBeEnabled();
   });
 
   test('choisir le canal RCS remplace le numero Meta par un agent et le template par un message', async ({ page }) => {
@@ -57,7 +60,7 @@ test.describe('Campagnes : canal RCS', () => {
     // Nommer la campagne est un préalable : sans nom, la zone Message reste grisée.
     await page.getByTestId('campaign-name').fill('Promo RCS');
 
-    await page.getByRole('button', { name: 'Un message RCS' }).click();
+    await page.getByTestId('campaign-mode-rcs').click();
 
     // L'expéditeur devient un agent de marque, pas un numéro.
     await expect(page.getByTestId('rcs-agent-select')).toBeVisible();

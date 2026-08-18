@@ -19,7 +19,13 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
 };
 
 // La palette ne propose plus `tag`/`field` séparés : le bloc « Action » les regroupe (ajouter/retirer tag, màj/vider champ).
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'rcs_message', 'flow', 'action', 'condition', 'wait', 'inbox'];
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'action', 'condition', 'wait', 'inbox'];
+
+// Bloc RCS : présenté à part et GRISÉ tant que le tenant n'a pas d'agent RCS rattaché. Même doctrine que les
+// blocs MBA. Le canal est construit de bout en bout, mais un agent doit être déposé et approuvé par Google et
+// les opérateurs avant qu'un seul message puisse partir : proposer le bloc avant, c'est promettre un envoi qui
+// finirait en erreur.
+export const RCS_NODE_ORDER: WorkflowNodeType[] = ['rcs_message'];
 
 // Blocs MBA : pré-câblage INERTE, présentés à part et GRISÉS tant que le tenant n'a pas MBA actif (ToS Meta non
 // signées, agent_eligibility 403). Hors NODE_ORDER pour ne pas polluer le sélecteur de type ni la palette normale.

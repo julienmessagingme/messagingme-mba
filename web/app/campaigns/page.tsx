@@ -11,6 +11,7 @@ import {
   listCampaigns,
   getCampaign,
   listPhoneNumbers,
+  getSettings,
   runCampaign,
   retryRecipient,
   updateContact,
@@ -72,6 +73,7 @@ function CampaignsInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [mode, setMode] = useState<'list' | 'create'>('list');
+  const [rcsEnabled, setRcsEnabled] = useState(false);
   // Corbeille : la liste montre SOIT les campagnes actives SOIT les archivées, jamais les deux mélangées.
   const [showArchived, setShowArchived] = useState(false);
   // Un lancement inline (étape 2) est en cours dans CreateForm -> on gèle le retour liste (remonté par callback).
@@ -81,6 +83,12 @@ function CampaignsInner({ session }: { session: Session }) {
 
   useEffect(() => {
     getTemplateStats(session.tenantId).then((ts) => setPricing(ts.pricing)).catch(() => setPricing(null));
+  }, [session.tenantId]);
+
+  // Canal RCS : lecture DÉCOUPLÉE des référentiels (jamais dans le Promise.all all-or-nothing), même patron
+  // que la page Scénarios. Un hoquet ici ne doit pas vider la liste des campagnes ; le canal reste éteint.
+  useEffect(() => {
+    void getSettings(session.tenantId).then((s) => setRcsEnabled(s.rcsEnabled === true)).catch(() => {});
   }, [session.tenantId]);
 
   const reload = useCallback(async () => {
@@ -185,6 +193,7 @@ function CampaignsInner({ session }: { session: Session }) {
           numbers={numbers}
           onBusyChange={setCreateBusy}
           onCreated={() => { void reload(); setMode('list'); }}
+          rcsEnabled={rcsEnabled}
         />
       </div>
     );

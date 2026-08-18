@@ -8,6 +8,13 @@ import { scopeTenant } from './scope';
 
 export interface SettingsRouteDeps {
   getSettings(tenantId: string): Promise<TenantSettings>;
+  /**
+   * Le canal RCS est-il exploitable pour ce tenant ? Vrai dès qu'un agent RCS lui est rattaché. Volontairement
+   * DÉRIVÉ de l'état réel plutôt que porté par un réglage à basculer : le jour où l'agent est validé et
+   * enregistré, l'outil s'allume seul, et il n'existe aucun état où l'interface promet un canal qui ne peut
+   * pas envoyer. Absent du câblage -> false, donc briques éteintes.
+   */
+  rcsEnabledFor?(tenantId: string): Promise<boolean>;
   setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Auto-relance des échecs de livraison (F6). */
@@ -57,7 +64,9 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
   app.get('/tenants/:tenantId/settings', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send(await deps.getSettings(tenant));
+    const settings = await deps.getSettings(tenant);
+    const rcsEnabled = deps.rcsEnabledFor ? await deps.rcsEnabledFor(tenant) : false;
+    return reply.code(200).send({ ...settings, rcsEnabled });
   });
 
   app.put('/tenants/:tenantId/settings', guard, async (req, reply) => {
