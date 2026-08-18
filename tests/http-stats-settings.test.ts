@@ -45,12 +45,11 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {}, returnBehavior: null }),
+    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
     setAutoRetryEnabled: async () => {},
     setControlHandbackSeconds: async () => {},
-    setReturnBehavior: async () => {},
     setTimezone: async () => {},
     setBusinessHours: async () => {},
     ...over.settings,
@@ -232,7 +231,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {}, returnBehavior: null }) } });
+    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
@@ -386,40 +385,3 @@ describe('PATCH /settings/control-handback', () => {
   });
 });
 
-// Destination de reprise par défaut du tenant (C.4) : 'resume' (rendu au scénario) | 'inbox' (reste à
-// l'humain) | null (repli usine 'resume'). Écriture admin-only, validation stricte de la valeur.
-describe('PATCH /settings/return-behavior', () => {
-  const url = '/tenants/t1/settings/return-behavior';
-
-  it('accepte resume | inbox | null et renvoie la valeur posée', async () => {
-    const poses: Array<'resume' | 'inbox' | null> = [];
-    const a = app({ settings: { setReturnBehavior: async (_t: string, b: 'resume' | 'inbox' | null) => { poses.push(b); } } });
-    for (const behavior of ['resume', 'inbox', null] as const) {
-      const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { behavior } });
-      expect(res.statusCode).toBe(200);
-      expect(res.json<{ returnBehavior: unknown }>().returnBehavior).toBe(behavior);
-    }
-    expect(poses).toEqual(['resume', 'inbox', null]);
-    await a.close();
-  });
-
-  it('refuse une valeur hors domaine (jamais coercée en silence)', async () => {
-    const poses: Array<'resume' | 'inbox' | null> = [];
-    const a = app({ settings: { setReturnBehavior: async (_t: string, b: 'resume' | 'inbox' | null) => { poses.push(b); } } });
-    for (const behavior of ['mba', 'RESUME', '', 0, true, undefined]) {
-      const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { behavior } });
-      expect(res.statusCode).toBe(400);
-    }
-    expect(poses).toEqual([]);
-    await a.close();
-  });
-
-  it('un agent ne peut pas changer ce réglage (admin seulement)', async () => {
-    const poses: Array<'resume' | 'inbox' | null> = [];
-    const a = app({ settings: { setReturnBehavior: async (_t: string, b: 'resume' | 'inbox' | null) => { poses.push(b); } } });
-    const res = await a.inject({ method: 'PATCH', url, ...h(agentTok), payload: { behavior: 'inbox' } });
-    expect(res.statusCode).toBe(403);
-    expect(poses).toEqual([]);
-    await a.close();
-  });
-});

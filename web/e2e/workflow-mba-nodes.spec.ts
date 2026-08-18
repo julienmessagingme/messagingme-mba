@@ -19,7 +19,7 @@ test.describe('Builder : blocs MBA grisés (pré-câblage inerte)', () => {
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       if (/\/workflows\/wf1$/.test(url)) return json({ workflow: wf });
       if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf1', name: 'Scénario E2E', graph: initial }] });
-      if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {}, returnBehavior: null });
+      if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} });
       if (url.includes('/templates')) return json({ templates: [] });
       if (url.includes('/flows')) return json({ flows: [] });
       if (url.includes('/tags')) return json({ tags: [] });

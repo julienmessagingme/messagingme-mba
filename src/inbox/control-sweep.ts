@@ -1,10 +1,10 @@
-import type { ControlOwner, ReturnBehavior } from './store.pg';
+import type { ControlOwner } from './store.pg';
 
 /** Ce dont le balayage a besoin (interface étroite, satisfaite par PgInboxStore). */
 export interface ControlSweepDeps {
   listHeldControl(
     limit?: number,
-  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null; returnBehavior?: ReturnBehavior | null }>>;
+  ): Promise<Array<{ tenantId: string; waId: string; owner: ControlOwner; changedAt: Date | null }>>;
   setControlOwner(
     tenantId: string,
     waId: string,
@@ -24,13 +24,6 @@ export interface ControlSweepDeps {
    * de temps on laisse un opérateur travailler tranquille). Le délai `mba` reste un garde-fou technique.
    */
   handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
-  /**
-   * Défaut PAR CLIENT de la destination d'un fil humain quand le sweep voudrait le rendre (C.4) : `resume`
-   * (rendu au scénario) ou `inbox` (reste à l'humain). Une surcharge par conversation (`returnBehavior` sur la
-   * ligne) prime. Tenant absent de la Map = pas de choix explicite -> repli `resume`. Ne concerne QUE
-   * `app_human` : `mba` n'est jamais rendu localement par arbitrage métier.
-   */
-  returnBehaviorByTenant?(tenantIds: readonly string[]): Promise<Map<string, ReturnBehavior>>;
   now?: () => number;
 }
 
@@ -60,20 +53,9 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   const parTenant = deps.handbackMsByTenant
     ? await deps.handbackMsByTenant(tenantIds)
     : new Map<string, number>();
-  // Destination de reprise par client (C.4), même lot de tenants, un seul aller-retour.
-  const destParTenant = deps.returnBehaviorByTenant
-    ? await deps.returnBehaviorByTenant(tenantIds)
-    : new Map<string, ReturnBehavior>();
 
   let rendues = 0;
   for (const c of held) {
-    // Destination de reprise (C.4) : surcharge de la conversation, sinon défaut du client, sinon `resume`.
-    // `inbox` = le fil reste à l'humain, le sweep ne le rend jamais au scénario ; il reste visible dans
-    // « À traiter » jusqu'à un « Rendre la main » explicite. Ne s'applique qu'au gel humain.
-    if (c.owner === 'app_human') {
-      const dest = c.returnBehavior ?? destParTenant.get(c.tenantId) ?? 'resume';
-      if (dest === 'inbox') continue;
-    }
     // Le réglage du client prime sur le défaut du serveur, et UNIQUEMENT sur le gel humain : c'est la
     // seule durée qui relève d'un arbitrage métier (combien de temps on laisse un opérateur travailler).
     const reglageClient = c.owner === 'app_human' ? parTenant.get(c.tenantId) : undefined;

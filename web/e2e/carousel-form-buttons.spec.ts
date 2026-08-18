@@ -17,7 +17,7 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
       if (url.includes('/user-fields')) return json({ fields: [] });
       if (url.includes('/tags')) return json({ tags: [] });
       if (url.includes('/flows')) return json({ flows: [] });
-      if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {}, returnBehavior: null });
+      if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} });
       if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
       return json({});
     });

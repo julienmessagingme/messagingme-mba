@@ -6,7 +6,7 @@ import { AppShell, UNREAD_CHANGED_EVENT } from '@/components/AppShell';
 import { TemplatePreview } from '@/components/TemplatePreview';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
 import { dayKey, dayLabel, hourMin } from '@/lib/day';
-import type { ControlOwner, ReturnBehavior } from '@/lib/api';
+import type { ControlOwner } from '@/lib/api';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -15,7 +15,6 @@ import {
   listConversations,
   getConversationMessages,
   releaseConversation,
-  setConversationReturnBehavior,
   replyConversation,
   listTemplates,
   sendTemplateToConversation,
@@ -226,12 +225,6 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   // Qui détient le fil. Sans cette information, l'opérateur voit le scénario se taire sans comprendre
   // pourquoi, et ne sait pas s'il doit rendre la main.
   const [controlOwner, setControlOwner] = useState<ControlOwner>('app_workflow');
-  // Surcharge de reprise de CE fil (C.4). '' = suit le défaut du tenant. Dit au sweep de handback si, à la
-  // reprise, ce fil précis repart au scénario ou reste à traiter.
-  const [returnBehavior, setReturnBehaviorState] = useState<ReturnBehavior | ''>('');
-  const [savingReturn, setSavingReturn] = useState(false);
-  // Garde de synchro : tant qu'une sauvegarde de l'override est en vol, le poll ne réécrit pas le select.
-  const savingReturnRef = useRef(false);
   const [releasing, setReleasing] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -266,8 +259,6 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
       );
       setWindowOpen(res.windowOpen);
       setControlOwner(res.controlOwner);
-      // Ne pas écraser une saisie en cours : on ne (re)synchronise l'override que si aucune sauvegarde n'est en vol.
-      if (!savingReturnRef.current) setReturnBehaviorState(res.returnBehavior ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     }
@@ -320,22 +311,6 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
     }
   }
 
-  /** Surcharge de reprise de CE fil (C.4). '' = suit le défaut du tenant. Sauvegarde optimiste au changement. */
-  async function saveReturn(next: ReturnBehavior | '') {
-    setReturnBehaviorState(next);
-    savingReturnRef.current = true;
-    setSavingReturn(true);
-    setError(null);
-    try {
-      await setConversationReturnBehavior(session.tenantId, conversation.id, next === '' ? null : next);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('Réglage impossible', 'Failed to save'));
-    } finally {
-      savingReturnRef.current = false;
-      setSavingReturn(false);
-    }
-  }
-
   return (
     <div className="flex h-[540px] flex-col rounded-2xl border border-ink-200 bg-white shadow-sm lg:h-full">
       <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
@@ -360,25 +335,6 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
             {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
           </span>
         </div>
-      </div>
-
-      {/* Surcharge de reprise de CE fil (C.4) : après une prise en main, ce fil précis repart au scénario,
-          reste à traiter, ou suit le défaut du tenant. Réglage lu par le sweep de handback, ne bascule rien tout de suite. */}
-      <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-1.5 text-[11px] text-ink-500">
-        <label htmlFor="thread-return" className="shrink-0">{t('À la reprise :', 'On resume:')}</label>
-        <select
-          id="thread-return"
-          data-testid="thread-return-select"
-          value={returnBehavior}
-          onChange={(e) => { void saveReturn(e.target.value as ReturnBehavior | ''); }}
-          disabled={savingReturn}
-          className="rounded-md border border-ink-200 px-1.5 py-0.5 text-[11px] text-ink-700 outline-none focus:border-brand-500 disabled:opacity-60"
-        >
-          <option value="">{t('défaut du compte', 'account default')}</option>
-          <option value="resume">{t('repart au scénario', 'resumes the scenario')}</option>
-          <option value="inbox">{t('reste à traiter', 'stays to handle')}</option>
-        </select>
-        {savingReturn && <span className="text-ink-400">{t('enregistrement...', 'saving...')}</span>}
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">

@@ -470,7 +470,6 @@ export type ControlOwner = 'app_workflow' | 'app_human' | 'mba';
 
 /** Destination d'un fil après une prise en main opérateur (C.4). `resume` = rendu au scénario ; `inbox` =
  *  reste à l'humain. Réglé par tenant (défaut) et/ou par conversation (surcharge). Miroir du serveur. */
-export type ReturnBehavior = 'resume' | 'inbox';
 
 export interface Conversation {
   id: string;
@@ -521,7 +520,6 @@ export interface ConversationThread {
   lastInboundAt: string | null;
   controlOwner: ControlOwner;
   /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
-  returnBehavior: ReturnBehavior | null;
   messages: InboxMessage[];
 }
 export function getConversationMessages(tenantId: string, conversationId: string): Promise<ConversationThread> {
@@ -533,9 +531,6 @@ export function releaseConversation(tenantId: string, conversationId: string): P
 }
 /** Surcharge de reprise de CE fil (C.4) : `resume` (repart au scénario), `inbox` (reste à l'humain), ou
  *  null (suit le défaut du tenant). Ne bascule pas le contrôle : réglage lu par le sweep de handback. */
-export function setConversationReturnBehavior(tenantId: string, conversationId: string, behavior: ReturnBehavior | null): Promise<{ returnBehavior: ReturnBehavior | null }> {
-  return request(`/tenants/${tenantId}/conversations/${conversationId}/return-behavior`, { method: 'PATCH', body: JSON.stringify({ behavior }) });
-}
 export function replyConversation(tenantId: string, conversationId: string, text: string): Promise<{ messageId: string }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
 }
@@ -700,7 +695,6 @@ export interface TenantSettings {
   controlHandbackSeconds: number | null;
   /** Défaut : à la reprise d'un fil pris en main, `resume` (rendu au scénario) ou `inbox` (reste à l'humain).
    *  null = pas de choix explicite -> repli usine `resume`. Surchargeable par conversation. */
-  returnBehavior: ReturnBehavior | null;
   mbaEnabled: boolean;
   /** Canal RCS exploitable : vrai dès qu'un agent RCS est rattaché au tenant. DÉRIVÉ de l'état réel du dépôt,
    *  pas un réglage à basculer. Absent (backend plus ancien que le front) = éteint. */
@@ -748,9 +742,6 @@ export function setControlHandbackSeconds(tenantId: string, seconds: number | nu
 }
 
 /** Défaut du tenant pour la destination de reprise (C.4). `resume` | `inbox` | null (repli usine `resume`). */
-export function setReturnBehavior(tenantId: string, behavior: ReturnBehavior | null): Promise<{ returnBehavior: ReturnBehavior | null }> {
-  return request(`/tenants/${tenantId}/settings/return-behavior`, { method: 'PATCH', body: JSON.stringify({ behavior }) });
-}
 
 /** Fuseau IANA du tenant (base des conditions temporelles : NOW, jour de semaine, heures d'ouverture). */
 export function setTimezone(tenantId: string, timezone: string): Promise<{ timezone: string }> {

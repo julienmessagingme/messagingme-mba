@@ -1,6 +1,5 @@
 import type { Pool } from 'pg';
 import type { BusinessHours } from '../workflow/conditions';
-import type { ReturnBehavior } from '../inbox/store.pg';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
 export const DEFAULT_TIMEZONE = 'Europe/Paris';
@@ -45,7 +44,6 @@ export interface TenantSettings {
    * automatiquement. null = pas de choix explicite -> repli usine `resume` (rien ne change en silence). Une
    * surcharge par conversation prime sur ce défaut.
    */
-  returnBehavior: ReturnBehavior | null;
 }
 
 /** Réglages par tenant (upsert). Toggle MBA on/off + toggle import de listes HubSpot. */
@@ -53,8 +51,8 @@ export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; return_behavior: ReturnBehavior | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, return_behavior from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -66,7 +64,6 @@ export class PgTenantSettingsStore {
       controlHandbackSeconds: r?.control_handback_seconds ?? null,
       timezone: r?.timezone ?? DEFAULT_TIMEZONE,
       businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
-      returnBehavior: r?.return_behavior === 'inbox' || r?.return_behavior === 'resume' ? r.return_behavior : null,
     };
   }
 
@@ -136,28 +133,11 @@ export class PgTenantSettingsStore {
    * Défaut du tenant pour la destination de reprise (C.4). `null` retire le choix explicite -> repli usine
    * `resume`. Upsert ciblé : n'écrase aucun autre réglage.
    */
-  async setReturnBehavior(tenantId: string, behavior: ReturnBehavior | null): Promise<void> {
-    await this.pool.query(
-      `insert into tenant_settings (tenant_id, return_behavior, updated_at) values ($1, $2, now())
-       on conflict (tenant_id) do update set return_behavior = excluded.return_behavior, updated_at = now()`,
-      [tenantId, behavior],
-    );
-  }
-
   /**
    * Défaut de destination de reprise par tenant, pour les tenants donnés (C.4). Utilisé par le sweep : il
    * traite un lot de conversations de plusieurs clients et doit appliquer à chacune le défaut de SON client.
    * Les tenants sans choix explicite sont ABSENTS de la Map -> l'appelant retombe sur `resume`.
    */
-  async returnBehaviorByTenant(tenantIds: readonly string[]): Promise<Map<string, ReturnBehavior>> {
-    if (tenantIds.length === 0) return new Map();
-    const res = await this.pool.query<{ tenant_id: string; return_behavior: ReturnBehavior }>(
-      `select tenant_id, return_behavior from tenant_settings
-       where tenant_id = any($1::uuid[]) and return_behavior in ('resume', 'inbox')`,
-      [[...tenantIds]],
-    );
-    return new Map(res.rows.map((r) => [r.tenant_id, r.return_behavior]));
-  }
 
   /** Active/désactive l'import de listes HubSpot. N'ÉCRASE PAS mba_enabled (upsert ciblé sur la colonne). */
   async setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void> {

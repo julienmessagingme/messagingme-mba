@@ -1076,10 +1076,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
   // Forme COMPLÈTE de TenantSettings (8 clés) : évite les toEqual qui périment quand un réglage est ajouté.
   // ⚠️ À COMPLÉTER quand un réglage arrive dans TenantSettings, sinon ces tests cassent (comportement voulu :
-  // ils signalent qu'un champ neuf n'a pas été relu ici). `returnBehavior` a été ajouté au Lot C.4.
+  // ils signalent qu'un champ neuf n'a pas été relu ici).
   const settingsShape = (over: object = {}) => ({
     mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-    controlHandbackSeconds: null, returnBehavior: null, timezone: DEFAULT_TIMEZONE, businessHours: DEFAULT_BUSINESS_HOURS, ...over,
+    controlHandbackSeconds: null, timezone: DEFAULT_TIMEZONE, businessHours: DEFAULT_BUSINESS_HOURS, ...over,
   });
 
   it('PgTenantSettingsStore : hubspot_lists_enabled par défaut false, toggle indépendant de mba_enabled', async () => {

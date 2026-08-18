@@ -18,7 +18,7 @@ function app(over: Partial<InboxRouteDeps> = {}) {
     listConversations: async () => [
       { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true },
     ],
-    getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z', returnBehavior: null } : null),
+    getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
     getMessages: async () => [
       { id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z' },
     ],
@@ -97,7 +97,7 @@ describe('inbox routes', () => {
 
   it('POST reply HORS fenêtre 24 h -> 422 (texte libre interdit)', async () => {
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z', returnBehavior: null }),
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'coucou' } });
     expect(res.statusCode).toBe(422);
@@ -109,7 +109,7 @@ describe('inbox routes', () => {
     let sent: { tenant: string; pn: string; to: string; tpl: unknown } | null = null;
     let recordedType: string | undefined;
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z', returnBehavior: null }),
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
       sendTemplateMessage: async (tenant, pn, to, tpl) => { sent = { tenant, pn, to, tpl }; return 'wamid.TPL'; },
       recordOutbound: async (_id, _body, _msg, type) => { recordedType = type; },
     });
@@ -129,7 +129,7 @@ describe('inbox routes', () => {
   it('POST send-template -> persiste la catégorie normalisée en minuscule (le split dashboard)', async () => {
     let recorded: { type?: string; cat?: string | null; name?: string | null } = {};
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z', returnBehavior: null }),
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
       recordOutbound: async (_id, _body, _msg, type, cat, name) => { recorded = { type, cat, name }; },
     });
     const res = await a.inject({
@@ -146,7 +146,7 @@ describe('inbox routes', () => {
   it('POST send-template -> catégorie absente ou invalide persiste null', async () => {
     const cats: Array<string | null> = [];
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z', returnBehavior: null }),
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
       recordOutbound: async (_id, _body, _msg, _type, cat) => { cats.push(cat ?? null); },
     });
     // catégorie inconnue (ex. AUTHENTICATION / typo) -> null
@@ -293,61 +293,6 @@ describe('rendre la main depuis la conversation', () => {
  * repartir au scénario (`resume`) ou rester à l'humain (`inbox`), ou suivre le défaut du tenant (`null`).
  * Elle ne bascule PAS le contrôle : elle n'écrit qu'un réglage lu plus tard par le sweep.
  */
-describe('surcharge de reprise par conversation (C.4)', () => {
-  it('le détail de conversation expose la surcharge courante', async () => {
-    const a = app({ getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z', returnBehavior: 'inbox' }) });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
-    expect(res.statusCode).toBe(200);
-    expect(res.json<{ returnBehavior: string | null }>().returnBehavior).toBe('inbox');
-    await a.close();
-  });
-
-  it('PATCH accepte resume | inbox | null et pose la surcharge avec le wa_id du fil', async () => {
-    const poses: Array<[string, string, 'resume' | 'inbox' | null]> = [];
-    const a = app({ setConversationReturnBehavior: async (t, w, b) => { poses.push([t, w, b]); } });
-    for (const behavior of ['resume', 'inbox', null] as const) {
-      const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/return-behavior', ...auth(), payload: { behavior } });
-      expect(res.statusCode).toBe(200);
-      expect(res.json<{ returnBehavior: unknown }>().returnBehavior).toBe(behavior);
-    }
-    expect(poses).toEqual([['t1', '33611', 'resume'], ['t1', '33611', 'inbox'], ['t1', '33611', null]]);
-    await a.close();
-  });
-
-  it('PATCH refuse une valeur hors domaine (jamais coercée)', async () => {
-    const poses: unknown[] = [];
-    const a = app({ setConversationReturnBehavior: async (_t, _w, b) => { poses.push(b); } });
-    for (const behavior of ['mba', '', 0, true]) {
-      const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/return-behavior', ...auth(), payload: { behavior } });
-      expect(res.statusCode).toBe(400);
-    }
-    expect(poses).toEqual([]);
-    await a.close();
-  });
-
-  it('PATCH conversation inconnue -> 404 sans rien poser', async () => {
-    const poses: unknown[] = [];
-    const a = app({ setConversationReturnBehavior: async (_t, _w, b) => { poses.push(b); } });
-    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/nope/return-behavior', ...auth(), payload: { behavior: 'inbox' } });
-    expect(res.statusCode).toBe(404);
-    expect(poses).toEqual([]);
-    await a.close();
-  });
-
-  it('dep absente -> 503 (réglage indisponible), jamais un 200 trompeur', async () => {
-    const a = app(); // pas de setConversationReturnBehavior
-    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/return-behavior', ...auth(), payload: { behavior: 'inbox' } });
-    expect(res.statusCode).toBe(503);
-    await a.close();
-  });
-
-  it('tenant de l’URL != tenant du jeton -> 403', async () => {
-    const a = app({ setConversationReturnBehavior: async () => {} });
-    const res = await a.inject({ method: 'PATCH', url: '/tenants/AUTRE/conversations/c1/return-behavior', ...auth(), payload: { behavior: 'inbox' } });
-    expect(res.statusCode).toBe(403);
-    await a.close();
-  });
-});
 
 /**
  * Compteur de non-lus (pastille du menu) + marquage « lu » à l'ouverture d'un fil. La notion n'existait
@@ -490,7 +435,7 @@ describe('inbox : lancer un scénario sur une conversation', () => {
   it("passe l'état RÉEL de la fenêtre, pas ce que l'écran croyait", async () => {
     let vu: boolean | null = null;
     const a = app({
-      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z', returnBehavior: null }),
+      getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
       startWorkflow: async (_t, _w, _wa, open) => { vu = open; return true; },
     });
     await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...auth(), payload: { workflowId: 'wf1' } });

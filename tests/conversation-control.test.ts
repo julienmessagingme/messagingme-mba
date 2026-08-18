@@ -272,96 +272,56 @@ describe('durée du gel réglable PAR CLIENT', () => {
   });
 });
 
-describe('destination de reprise (C.4) : rendre au scénario vs laisser en inbox', () => {
-  type Held = { tenantId: string; waId: string; owner: 'app_workflow' | 'app_human' | 'mba'; changedAt: Date | null; returnBehavior?: 'resume' | 'inbox' | null };
-  /** Sweep avec un défaut de destination par tenant + surcharge possible par conversation. Délai humain = 2 h. */
-  function withDest(
-    held: Held[],
-    destParTenant: Record<string, 'resume' | 'inbox'>,
-  ): { deps: ControlSweepDeps; rendues: string[]; demandesDest: string[][] } {
+describe('reprise après un gel humain : une seule règle, sans exception', () => {
+  /**
+   * Le choix « défaut du compte / repart du scénario / reste à traiter » a été SUPPRIMÉ (migration 0059).
+   *
+   * Ce qu'il demandait au client d'arbitrer est dérivable, et deux niveaux de réglage pour une valeur
+   * déductible étaient deux occasions de se contredire. Ces tests remplacent ceux de l'ancien réglage : ils
+   * vérifient que le délai décide SEUL, et qu'aucune conversation n'échappe plus à la reprise.
+   */
+  function sweep(held: Array<{ tenantId: string; waId: string; owner: 'app_workflow' | 'app_human' | 'mba'; changedAt: Date | null }>, reglages: Record<string, number> = {}) {
     const rendues: string[] = [];
-    const demandesDest: string[][] = [];
-    return {
-      rendues,
-      demandesDest,
-      deps: {
-        listHeldControl: async () => held,
-        setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
-        returnBehaviorByTenant: async (ids) => { demandesDest.push([...ids]); return new Map(Object.entries(destParTenant)); },
-        timeouts: { app_human: 2 * H, mba: 24 * H },
-        now: () => T0,
-      },
-    };
-  }
-
-  it('défaut tenant `inbox` -> un fil humain inactif reste à l’humain (jamais rendu)', async () => {
-    const { deps, rendues } = withDest(
-      [{ tenantId: 't1', waId: 'reste', owner: 'app_human', changedAt: ago(100 * H) }],
-      { t1: 'inbox' },
-    );
-    expect(await runControlSweep(deps)).toBe(0);
-    expect(rendues).toEqual([]);
-  });
-
-  it('défaut tenant `resume` -> comportement historique : le fil inactif est rendu', async () => {
-    const { deps, rendues } = withDest(
-      [{ tenantId: 't1', waId: 'rendu', owner: 'app_human', changedAt: ago(3 * H) }],
-      { t1: 'resume' },
-    );
-    expect(await runControlSweep(deps)).toBe(1);
-    expect(rendues).toEqual(['rendu']);
-  });
-
-  it('surcharge conversation `inbox` prime sur défaut tenant `resume`', async () => {
-    const { deps, rendues } = withDest(
-      [
-        { tenantId: 't1', waId: 'surcharge-inbox', owner: 'app_human', changedAt: ago(100 * H), returnBehavior: 'inbox' },
-        { tenantId: 't1', waId: 'suit-defaut', owner: 'app_human', changedAt: ago(100 * H) },
-      ],
-      { t1: 'resume' },
-    );
-    expect(await runControlSweep(deps)).toBe(1);
-    expect(rendues).toEqual(['suit-defaut']); // seul celui qui suit le défaut `resume` est rendu
-  });
-
-  it('surcharge conversation `resume` prime sur défaut tenant `inbox`', async () => {
-    const { deps, rendues } = withDest(
-      [
-        { tenantId: 't1', waId: 'surcharge-resume', owner: 'app_human', changedAt: ago(3 * H), returnBehavior: 'resume' },
-        { tenantId: 't1', waId: 'suit-inbox', owner: 'app_human', changedAt: ago(3 * H) },
-      ],
-      { t1: 'inbox' },
-    );
-    expect(await runControlSweep(deps)).toBe(1);
-    expect(rendues).toEqual(['surcharge-resume']);
-  });
-
-  it('sans choix explicite (tenant absent) -> repli `resume` : le comportement par défaut est préservé', async () => {
-    const { deps, rendues } = withDest(
-      [{ tenantId: 'sansChoix', waId: 'rendu', owner: 'app_human', changedAt: ago(3 * H) }],
-      {},
-    );
-    expect(await runControlSweep(deps)).toBe(1);
-    expect(rendues).toEqual(['rendu']);
-  });
-
-  it('la destination ne concerne QUE le gel humain, pas le garde-fou MBA', async () => {
-    // Un défaut `inbox` ne doit pas empêcher le garde-fou technique MBA (24 h) de libérer un fil MBA figé.
-    const { deps, rendues } = withDest(
-      [{ tenantId: 't1', waId: 'agent', owner: 'mba', changedAt: ago(30 * H) }],
-      { t1: 'inbox' },
-    );
-    expect(await runControlSweep(deps)).toBe(1);
-    expect(rendues).toEqual(['agent']);
-  });
-
-  it('dep destination absente -> repli `resume` (rétro-compatibilité des suites existantes)', async () => {
     const deps: ControlSweepDeps = {
-      listHeldControl: async () => [{ tenantId: 't1', waId: 'rendu', owner: 'app_human', changedAt: ago(3 * H) }],
-      setControlOwner: async () => true,
-      timeouts: { app_human: 2 * H },
+      listHeldControl: async () => held,
+      setControlOwner: async (_t, waId) => { rendues.push(waId); return true; },
+      handbackMsByTenant: async () => new Map(Object.entries(reglages)),
+      timeouts: { app_human: 2 * H, mba: 24 * H },
       now: () => T0,
     };
+    return { deps, rendues };
+  }
+
+  it('🔴 un fil humain inactif est TOUJOURS rendu : plus aucune destination ne peut le retenir', async () => {
+    const { deps, rendues } = sweep([
+      { tenantId: 't1', waId: 'a', owner: 'app_human', changedAt: ago(100 * H) },
+      { tenantId: 't2', waId: 'b', owner: 'app_human', changedAt: ago(3 * H) },
+    ]);
+    expect(await runControlSweep(deps)).toBe(2);
+    expect(rendues.sort()).toEqual(['a', 'b']);
+  });
+
+  it('le SEUL moyen de garder la main est le délai à 0, et il vaut pour tout l’espace', async () => {
+    // C'est ce qui remplace l'ancienne valeur `inbox` : un client qui ne veut aucune reprise automatique
+    // règle son délai à 0 sur l'accueil, plutôt que d'arbitrer une destination par conversation.
+    const { deps, rendues } = sweep(
+      [
+        { tenantId: 'garde', waId: 'jamais-rendu', owner: 'app_human', changedAt: ago(100 * H) },
+        { tenantId: 'normal', waId: 'rendu', owner: 'app_human', changedAt: ago(100 * H) },
+      ],
+      { garde: 0 },
+    );
     expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['rendu']);
+  });
+
+  it('le garde-fou technique MBA reste indépendant du délai humain', async () => {
+    const { deps, rendues } = sweep(
+      [{ tenantId: 'garde', waId: 'mba-fige', owner: 'mba', changedAt: ago(100 * H) }],
+      { garde: 0 },
+    );
+    // Le 0 du client ne concerne QUE le gel humain : un fil MBA figé depuis 100 h doit quand même être libéré.
+    expect(await runControlSweep(deps)).toBe(1);
+    expect(rendues).toEqual(['mba-fige']);
   });
 });

@@ -208,7 +208,6 @@ async function main(): Promise<void> {
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
       // Surcharge de reprise d'un fil (C.4) : dit au sweep de handback s'il faut, pour CE fil, le rendre au
       // scénario ou le laisser à l'humain. Ne bascule pas le contrôle par elle-même.
-      setConversationReturnBehavior: (tenant, waId, behavior) => inboxStore.setConversationReturnBehavior(tenant, waId, behavior),
       /**
        * L'opérateur rend la main. Aujourd'hui la conversation repart au scénario.
        *
@@ -335,7 +334,6 @@ async function main(): Promise<void> {
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
-      setReturnBehavior: (tenant, behavior) => settingsStore.setReturnBehavior(tenant, behavior),
       setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
       setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
     },

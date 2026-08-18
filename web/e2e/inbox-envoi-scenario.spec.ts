@@ -44,7 +44,7 @@ async function mock(page: import('@playwright/test').Page, windowOpen: boolean, 
     if (url.includes('/messages')) {
       return json({
         waId: '33600000001', windowOpen, lastInboundAt: '2026-08-15T11:00:00Z',
-        controlOwner: 'app_human', returnBehavior: null,
+        controlOwner: 'app_human',
         messages: [{ id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-08-15T11:00:00Z' }],
       });
     }
@@ -117,7 +117,7 @@ test.describe('Inbox : lancer un scénario', () => {
         const messages = Array.from({ length: appels }, (_, i) => ({
           id: `m${i + 1}`, direction: 'in', type: 'text', body: `message ${i + 1}`, buttonPayload: null, createdAt: '2026-08-15T11:00:00Z',
         }));
-        return json({ waId: '33600000001', windowOpen: true, lastInboundAt: '2026-08-15T11:00:00Z', controlOwner: 'app_human', returnBehavior: null, messages });
+        return json({ waId: '33600000001', windowOpen: true, lastInboundAt: '2026-08-15T11:00:00Z', controlOwner: 'app_human', messages });
       }
       if (url.endsWith('/workflows')) return json({ workflows: [WF_TEMPLATE, WF_SESSION] });
       if (url.includes('/templates')) return json({ templates: [] });

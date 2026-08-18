@@ -40,7 +40,7 @@ async function mock(page: import('@playwright/test').Page, unreadCount: number) 
     if (url.includes('/messages')) {
       return json({
         waId: '33600000002', windowOpen: false, lastInboundAt: '2026-08-10T10:00:00Z',
-        controlOwner: 'app_human', returnBehavior: null,
+        controlOwner: 'app_human',
         messages: [{ id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-08-15T11:00:00Z' }],
       });
     }
