@@ -23,8 +23,9 @@ export interface WakeSweepDeps {
  * Réveille les parcours dont l'attente est arrivée à échéance. Miroir de `campaign/schedule-sweep.ts` :
  * fonction PURE de logique, toute l'IO passe par les deps -> testable sans base.
  *
- * Le claim se fait AVANT la reprise, en une requête, et prend la forme d'un BAIL : l'échéance est repoussée de
- * 5 minutes, le run RESTE `sleeping`. Deux workers qui balaient en même temps ne peuvent donc pas prendre le
+ * Le claim se fait AVANT la reprise, en une requête, et prend la forme d'un BAIL : l'échéance est repoussée
+ * (durée posée par `claimDueSleeping`, seul endroit où elle est écrite), le run RESTE `sleeping`. Deux workers
+ * qui balaient en même temps ne peuvent donc pas prendre le
  * même parcours, et le run reste invisible de l'avance par message entrant pendant toute la reprise (le passer
  * à `waiting` l'aurait exposé à `advance`, qui aurait rejoué le même bloc). Un worker tué en pleine reprise ne
  * perd pas le parcours : le bail expire et il redevient dû.

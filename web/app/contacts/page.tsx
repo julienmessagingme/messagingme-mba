@@ -302,8 +302,6 @@ function ContactsInner({ session }: { session: Session }) {
   );
 }
 
-/** Modale d'une action en masse : formulaire adapté (tag / champ / suppression), appelle l'API bulk avec la
- *  cible calculée, puis onDone(affected). La suppression est douce (réversible en base) mais on confirme fort. */
 /**
  * Ajout d'UN contact à la main. Le mini-CRM ne savait créer que par import CSV : il fallait fabriquer un
  * fichier pour un seul numéro. Réutilise la coquille de `BulkActionModal` (overlay, `inputCls`, pied
@@ -405,6 +403,8 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
   );
 }
 
+/** Modale d'une action en masse : formulaire adapté (tag / champ / suppression), appelle l'API bulk avec la
+ *  cible calculée, puis onDone(affected). La suppression est douce (réversible en base) mais on confirme fort. */
 function BulkActionModal({ action, tenantId, target, count, userFields, tagSuggestions, onDone, onClose }: {
   action: BulkAction['type'] | 'delete';
   tenantId: string;

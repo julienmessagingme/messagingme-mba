@@ -15,17 +15,17 @@ export class ApiError extends Error {
 }
 
 /**
- * Un 5xx sur une LECTURE est très majoritairement transitoire (pool Postgres saturé une fraction de seconde,
- * conteneur qui vient de redémarrer). Une seule reprise, après une courte pause, évite d'infliger un écran
- * d'erreur pour un hoquet. On ne rejoue QUE les requêtes idempotentes : rejouer un POST enverrait des messages
- * WhatsApp en double, ce qu'aucun gain d'ergonomie ne justifie.
- */
-/**
  * Événement « la session vient d'expirer », émis dès qu'une réponse 401 a vidé la session locale. Écouté par
  * `AppShell`, qui affiche alors une bannière avec un bouton de reconnexion.
  */
 export const SESSION_EXPIRED_EVENT = 'mba:session-expired';
 
+/**
+ * Un 5xx sur une LECTURE est très majoritairement transitoire (pool Postgres saturé une fraction de seconde,
+ * conteneur qui vient de redémarrer). Une seule reprise, après une courte pause, évite d'infliger un écran
+ * d'erreur pour un hoquet. On ne rejoue QUE les requêtes idempotentes : rejouer un POST enverrait des messages
+ * WhatsApp en double, ce qu'aucun gain d'ergonomie ne justifie.
+ */
 const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
 const RETRY_DELAY_MS = 400;
 

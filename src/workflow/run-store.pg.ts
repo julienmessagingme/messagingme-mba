@@ -119,13 +119,13 @@ export class PgWorkflowRunStore {
       id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
       current_node: string | null; last_message_id: string | null;
     }>(
-      // BAIL, pas changement de statut : on repousse l'échéance de 5 minutes en RESTANT `sleeping`.
+      // BAIL, pas changement de statut : on repousse l'échéance en RESTANT `sleeping` (durée fixée plus bas).
       //  - passer à `waiting` mettrait le run à portée de `findWaitingByWaId`, donc de `advance` : un message
       //    du contact pendant la reprise rejouerait le MÊME bloc suivant et enverrait le message deux fois ;
       //  - et un worker tué après le claim laisserait un run `waiting` figé sur le bloc Attente, indiscernable
       //    d'un run sain, que n'importe quel message ultérieur ressusciterait (y compris après l'envoi).
       // Avec le bail : les autres workers ne voient plus la ligne comme due, `advance` ne la voit pas du tout,
-      // et un worker tué la rend simplement due à nouveau 5 minutes plus tard.
+      // et un worker tué la rend simplement due à nouveau à l'expiration du bail.
       //
       // `created_at` borné : deux blocs Attente qui se pointent l'un l'autre relanceraient un sommeil à chaque
       // réveil, pour toujours. Au-delà de 90 jours on cesse de réveiller (le sweeper clôt ces runs à part).

@@ -52,15 +52,6 @@ export function makeRequireRole(roles: readonly string[]): PreHandler {
 }
 
 /**
- * Construit un preHandler Fastify qui exige un Bearer JWT valide et pose `req.auth`.
- * 401 si absent/invalide. Les routes DÉRIVENT le tenant de `req.auth`, jamais de l'URL.
- *
- * `loadState` (optionnel) relit l'état du compte EN BASE à chaque requête : compte supprimé ou
- * révoqué -> 401 immédiat (le JWT ne fait plus foi seul), et le rôle est rafraîchi depuis la base
- * (un changement de rôle prend effet tout de suite). Ferme la fenêtre de staleness du token de 12 h.
- * Sans `loadState` (tests DB-free), on retombe sur la vérification JWT seule.
- */
-/**
  * preHandler de la surface d'exploitation cross-tenant `/ops` : exige le header `x-ops-token` ÉGAL
  * (comparaison constant-time) au secret d'env `OPS_TOKEN`. 401 si le token est vide (surface
  * désactivée par défaut), absent, ou incorrect. N'utilise PAS `req.auth` : c'est une autorité
@@ -77,6 +68,15 @@ export function makeRequireOps(opsToken: string): PreHandler {
   };
 }
 
+/**
+ * Construit un preHandler Fastify qui exige un Bearer JWT valide et pose `req.auth`.
+ * 401 si absent/invalide. Les routes DÉRIVENT le tenant de `req.auth`, jamais de l'URL.
+ *
+ * `loadState` (optionnel) relit l'état du compte EN BASE à chaque requête : compte supprimé ou
+ * révoqué -> 401 immédiat (le JWT ne fait plus foi seul), et le rôle est rafraîchi depuis la base
+ * (un changement de rôle prend effet tout de suite). Ferme la fenêtre de staleness du token de 12 h.
+ * Sans `loadState` (tests DB-free), on retombe sur la vérification JWT seule.
+ */
 export function makeRequireAuth(secret: string, loadState?: UserStateLoader): PreHandler {
   return async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;

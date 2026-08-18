@@ -143,11 +143,6 @@ export class WorkflowExecutor {
   }
 
   /**
-   * `firstTemplateParams` (optionnel) : variables du corps déjà résolues, transmises à l'envoi de template. Un
-   * `walk` depuis un seul point d'entrée s'arrête au 1er bloc template/flow (bloquant) -> il produit AU PLUS une
-   * action `sendTemplate`, donc ces params ne s'appliquent qu'à ce 1er envoi (jamais à un template ultérieur).
-   */
-  /**
    * Construit le contexte d'évaluation UNIQUEMENT si le graphe en a besoin (au moins un node `condition` ou un
    * bloc `field` en mode NOW) : évite 2 requêtes DB par étape pour les scénarios tag/template purs (l'immense
    * majorité, qui n'ont jamais de condition). Une erreur de `evalContext` (timeout pool, réseau Supabase) est
@@ -177,6 +172,10 @@ export class WorkflowExecutor {
    * workflow sur 5 000 destinataires dont le graphe contient un bloc Action poserait 5 000 événements, donc
    * potentiellement 5 000 scénarios et autant de messages facturés que personne n'a demandés. Le défaut est
    * donc `false` : on n'émet que si l'appelant prouve qu'il est unitaire.
+   *
+   * `firstTemplateParams` (optionnel) : variables du corps déjà résolues, transmises à l'envoi de template. Un
+   * `walk` depuis un seul point d'entrée s'arrête au 1er bloc template/flow (bloquant) -> il produit AU PLUS une
+   * action `sendTemplate`, donc ces params ne s'appliquent qu'à ce 1er envoi (jamais à un template ultérieur).
    */
   private async apply(
     tenantId: string,
@@ -225,20 +224,6 @@ export class WorkflowExecutor {
     return { refus, partis };
   }
 
-  /**
-   * Corps commun de `start` et `startFromNode` : parcourt depuis `startNodeId`, applique les actions, persiste
-   * l'état (sauf 100 % synchrone -> done). `startNodeId` inconnu (bloc supprimé entre-temps) -> `walk` renvoie
-   * `done` sans action : aucun envoi, aucun throw.
-   *
-   * ⚠️ `opts.allowSessionOpen` est la SEULE façon de lever la garde fenêtre 24 h, et il n'est posé que par
-   * `startFromNode` (appelé par /v1/sends, qui a DÉJÀ vérifié la fenêtre par destinataire). Le défaut
-   * (`start`, campagne classique) garde la garde : ne jamais l'inverser.
-   *
-   * Renvoie `false` quand le run N'A PAS démarré : bloc de départ absent du graphe (bloc supprimé entre-temps),
-   * fil détenu par un humain/MBA, ou ouverture par un message de session hors fenêtre. Sans ce signal, l'appelant
-   * campagne comptait le destinataire en `sent` alors que rien n'était parti (campagne « 500 envoyés, 0 échec »
-   * pour 0 message réel). `true` = le parcours a bien été appliqué.
-   */
   /**
    * Réveille un parcours endormi (bloc Attente arrivé à échéance) et reprend au bloc SUIVANT.
    *
@@ -364,6 +349,20 @@ export class WorkflowExecutor {
     return { actions, rest: { status: 'done' } };
   }
 
+  /**
+   * Corps commun de `start` et `startFromNode` : parcourt depuis `startNodeId`, applique les actions, persiste
+   * l'état (sauf 100 % synchrone -> done). `startNodeId` inconnu (bloc supprimé entre-temps) -> `walk` renvoie
+   * `done` sans action : aucun envoi, aucun throw.
+   *
+   * ⚠️ `opts.allowSessionOpen` est la SEULE façon de lever la garde fenêtre 24 h, et il n'est posé que par
+   * `startFromNode` (appelé par /v1/sends, qui a DÉJÀ vérifié la fenêtre par destinataire). Le défaut
+   * (`start`, campagne classique) garde la garde : ne jamais l'inverser.
+   *
+   * Renvoie la RAISON (une chaîne lisible) quand le run N'A PAS démarré : bloc de départ absent du graphe (bloc supprimé entre-temps),
+   * fil détenu par un humain/MBA, ou ouverture par un message de session hors fenêtre. Sans ce signal, l'appelant
+   * campagne comptait le destinataire en `sent` alors que rien n'était parti (campagne « 500 envoyés, 0 échec »
+   * pour 0 message réel). `true` = le parcours a bien été appliqué.
+   */
   private async runFrom(
     tenantId: string,
     workflowId: string,
@@ -432,7 +431,7 @@ export class WorkflowExecutor {
    * `firstTemplateParams` (campagne workflow) = variables du 1er template déjà résolues par contact -> passées à
    * l'envoi du 1er template SANS re-résolution via les hints stockés. Garde fenêtre 24 h APPLIQUÉE.
    *
-   * Renvoie `false` si le run n'a PAS démarré (cf. `runFrom`), y compris sur un graphe VIDE : l'appelant
+   * Renvoie la RAISON du refus (une chaîne) si le run n'a PAS démarré (cf. `runFrom`), y compris sur un graphe VIDE : l'appelant
    * campagne doit pouvoir marquer le destinataire en échec plutôt que de le compter comme envoyé.
    */
   async start(

@@ -182,7 +182,7 @@ export class PgUserStore {
    * L'UPDATE est gardé : une rétrogradation admin->agent du DERNIER admin est refusée (le
    * sous-select compte les admins EN BASE, donc l'invariant tient même si l'appelant agit avec un
    * JWT admin périmé — la base fait foi, pas le token). Retour :
-   *  - 'updated'   : rôle appliqué.
+   *  - 'ok'        : rôle appliqué.
    *  - 'last_admin': refusé, ce serait le dernier admin rétrogradé.
    *  - 'not_found' : id inconnu / autre tenant.
    * (Course théorique : deux rétrogradations croisées simultanées sur READ COMMITTED pourraient
