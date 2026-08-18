@@ -464,38 +464,14 @@ export class PgContactStore implements ContactStore {
     return res.rows.map((r) => r.id);
   }
 
-  /** Liste paginée des contacts d'un tenant (les plus récents d'abord). */
+  /**
+   * Liste paginée des contacts d'un tenant (les plus récents d'abord), éventuellement filtrée sur UN tag.
+   * Délègue à `query` : elle réécrivait le même WHERE (tenant, non supprimé, tag) et remappait les lignes à la
+   * main, donc deux définitions de « lister des contacts » à garder alignées pour rien.
+   */
   async list(tenantId: string, limit = 100, offset = 0, tag?: string): Promise<ContactRow[]> {
-    const capped = Math.min(Math.max(limit, 1), 500);
-    const hasTag = typeof tag === 'string' && tag.trim() !== '';
-    const params: unknown[] = [tenantId, capped, Math.max(offset, 0)];
-    if (hasTag) params.push(tag!.trim());
-    const res = await this.pool.query<{
-      id: string;
-      phone_e164: string | null;
-      bsuid: string | null;
-      profile_name: string | null;
-      opt_in_status: string;
-      fields: Record<string, unknown>;
-      tags: string[] | null;
-      created_at: Date;
-    }>(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at
-       from contacts where tenant_id = $1 and deleted_at is null${hasTag ? ' and tags @> array[$4]::text[]' : ''}
-       order by created_at desc
-       limit $2 offset $3`,
-      params,
-    );
-    return res.rows.map((r) => ({
-      id: r.id,
-      phoneE164: r.phone_e164,
-      bsuid: r.bsuid,
-      profileName: r.profile_name,
-      optInStatus: r.opt_in_status,
-      fields: r.fields,
-      tags: r.tags ?? [],
-      createdAt: r.created_at.toISOString(),
-    }));
+    const t = tag?.trim();
+    return this.query(tenantId, t ? { tags: [t] } : {}, limit, offset);
   }
 
   /**

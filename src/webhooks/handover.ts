@@ -1,4 +1,5 @@
 import type { ControlOwner } from '../inbox/store.pg';
+import { asArray, asRecord } from './json';
 
 /**
  * Changements de contrôle du fil annoncés par Meta (`messaging_handovers`), et messages que l'agent de
@@ -25,8 +26,6 @@ export interface HandoverDeps {
   recordAgentMessage?(tenantId: string, waId: string, body: string, messageId: string | null): Promise<void>;
 }
 
-const asRecord = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {});
-const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
 /** Trace structurée : c'est elle qu'on lira pendant le premier test MBA. */
@@ -45,8 +44,10 @@ function trace(msg: string, extra: Record<string, unknown>): void {
  */
 export function ownerFromHandover(value: Record<string, unknown>): ControlOwner | null {
   const brut = JSON.stringify(value).toLowerCase();
-  const prise = str(value['take_thread_control']) !== undefined || 'take_thread_control' in value;
-  const rendue = str(value['pass_thread_control']) !== undefined || 'pass_thread_control' in value;
+  // La PRÉSENCE de la clé suffit : sa valeur (objet, chaîne, vide) varie selon la formulation de Meta, et
+  // c'est justement ce qu'on ne veut pas présumer avant le premier payload réel.
+  const prise = 'take_thread_control' in value;
+  const rendue = 'pass_thread_control' in value;
   // Un contrôle PRIS par l'app (nous) : le fil revient à notre automate. Un contrôle RENDU (release) le
   // donne à l'agent de Meta, qui redevient le répondeur principal.
   if (prise && !rendue) return 'app_workflow';

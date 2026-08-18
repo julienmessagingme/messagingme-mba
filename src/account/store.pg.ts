@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { PhoneNumberRecord, HubspotPortalLink } from '../http/account';
 
 /** Accès en lecture/écriture au statut d'un numéro (page Accueil : numéro + pastille de statut). */
@@ -127,19 +127,7 @@ export class PgPhoneStatusStore {
          where id = $1 and tenant_id = $2`,
         [phoneNumberId, tenantId, connected, startingPause],
       );
-      // F3-b : la MÊME action Pause pilote AUSSI le flag campagnes-via-listes du tenant, dans la MÊME transaction
-      // (aucun drift possible avec hubspot_paused_at). campaigns_paused est PAR TENANT alors que la pause est PAR
-      // numéro : on le calcule donc par AGRÉGATION (« au moins un numéro du tenant est en pause »), PAS comme le miroir
-      // du seul numéro togglé, sinon reprendre un numéro rouvrirait les campagnes alors qu'un autre reste en pause
-      // (tenant multi-numéros). L'EXISTS lit l'état APRÈS l'update ci-dessus (read-your-writes intra-transaction) et
-      // emploie la même définition de « en pause » que hubspot_paused_at (connected=false ET paused_at non-null), pour
-      // ne pas bloquer sur un numéro jamais activé. Upsert ciblé : n'écrase aucun autre réglage du tenant.
-      await client.query(
-        `insert into tenant_settings (tenant_id, campaigns_paused, updated_at)
-         values ($1, exists(select 1 from phone_numbers where tenant_id = $1 and hubspot_connected = false and hubspot_paused_at is not null), now())
-         on conflict (tenant_id) do update set campaigns_paused = excluded.campaigns_paused, updated_at = now()`,
-        [tenantId],
-      );
+      await this.recomputeCampaignsPaused(client, tenantId);
       await client.query('commit');
       return { updated: true, resumedFrom };
     } catch (err) {
@@ -168,12 +156,7 @@ export class PgPhoneStatusStore {
         `update phone_numbers set hubspot_connected = false, hubspot_paused_at = null where tenant_id = $1`,
         [tenantId],
       );
-      await client.query(
-        `insert into tenant_settings (tenant_id, campaigns_paused, updated_at)
-         values ($1, exists(select 1 from phone_numbers where tenant_id = $1 and hubspot_connected = false and hubspot_paused_at is not null), now())
-         on conflict (tenant_id) do update set campaigns_paused = excluded.campaigns_paused, updated_at = now()`,
-        [tenantId],
-      );
+      await this.recomputeCampaignsPaused(client, tenantId);
       await client.query('commit');
       return { updated: (r.rowCount ?? 0) > 0 };
     } catch (err) {
@@ -220,5 +203,28 @@ export class PgPhoneStatusStore {
     );
     const r = res.rows[0];
     return { connected: r?.hubspot_connected ?? false, pausedAt: r?.hubspot_paused_at ?? null };
+  }
+
+  /**
+   * Recalcule `tenant_settings.campaigns_paused` DANS la transaction en cours (le client est passé, pas le pool).
+   *
+   * F3-b : la MÊME action Pause pilote AUSSI le flag campagnes-via-listes du tenant, dans la MÊME transaction
+   * (aucun drift possible avec `hubspot_paused_at`). Le flag est PAR TENANT alors que la pause est PAR numéro :
+   * on l'obtient donc par AGRÉGATION (« au moins un numéro du tenant est en pause »), PAS en miroir du seul
+   * numéro togglé, sinon reprendre un numéro rouvrirait les campagnes alors qu'un autre reste en pause (tenant
+   * multi-numéros). L'EXISTS lit l'état APRÈS l'update appelant (read-your-writes intra-transaction) et emploie
+   * la même définition de « en pause » que `hubspot_paused_at` (connected=false ET paused_at non-null), pour ne
+   * pas bloquer sur un numéro jamais activé. Upsert ciblé : n'écrase aucun autre réglage du tenant.
+   *
+   * Partagé par la pause d'un numéro et la déconnexion du portail : cette définition de « en pause » était
+   * écrite deux fois, elle ne doit exister qu'une.
+   */
+  private async recomputeCampaignsPaused(client: PoolClient, tenantId: string): Promise<void> {
+    await client.query(
+      `insert into tenant_settings (tenant_id, campaigns_paused, updated_at)
+       values ($1, exists(select 1 from phone_numbers where tenant_id = $1 and hubspot_connected = false and hubspot_paused_at is not null), now())
+       on conflict (tenant_id) do update set campaigns_paused = excluded.campaigns_paused, updated_at = now()`,
+      [tenantId],
+    );
   }
 }

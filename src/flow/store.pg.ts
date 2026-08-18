@@ -35,6 +35,30 @@ export interface FlowMappingRow {
  * On stocke `elements` (modèle riche) + `ref` (discriminant au retour) + `mapping` (champ -> user field),
  * ET `fields` DÉRIVÉ (fieldsOf) pour ne pas casser les consommateurs de FlowRow.fields.
  */
+/** Forme brute d'une ligne `flows` telle que Postgres la rend. */
+interface FlowDbRow {
+  id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
+  fields: FlowField[]; elements: unknown; ref: string | null; mapping: Record<string, string> | null; cta: string | null;
+  created_at: Date; updated_at: Date;
+}
+
+/** Ligne brute -> FlowRow. Partagé par la liste et la lecture unitaire, qui en portaient chacune une copie :
+ *  un champ ajouté à FlowRow devait sinon être reporté à quatre endroits. */
+function toFlowRow(r: FlowDbRow): FlowRow {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    name: r.name,
+    status: r.status,
+    fields: r.fields,
+    screens: screensOf(r.elements),
+    ref: r.ref,
+    mapping: r.mapping,
+    cta: r.cta,
+    createdAt: r.created_at.toISOString(),
+    updatedAt: r.updated_at.toISOString(),
+  };
+}
 export class PgFlowStore {
   constructor(private readonly pool: Pool) {}
 
@@ -49,56 +73,24 @@ export class PgFlowStore {
   }
 
   async list(tenantId: string): Promise<FlowRow[]> {
-    const res = await this.pool.query<{
-      id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
-      fields: FlowField[]; elements: unknown; ref: string | null; mapping: Record<string, string> | null; cta: string | null;
-      created_at: Date; updated_at: Date;
-    }>(
+    const res = await this.pool.query<FlowDbRow>(
       `select id, tenant_id, name, status, fields, elements, ref, mapping, cta, created_at, updated_at from flows
        where tenant_id = $1 order by created_at desc`,
       [tenantId],
     );
-    return res.rows.map((r) => ({
-      id: r.id,
-      tenantId: r.tenant_id,
-      name: r.name,
-      status: r.status,
-      fields: r.fields,
-      screens: screensOf(r.elements),
-      ref: r.ref,
-      mapping: r.mapping,
-      cta: r.cta,
-      createdAt: r.created_at.toISOString(),
-      updatedAt: r.updated_at.toISOString(),
-    }));
+    return res.rows.map(toFlowRow);
   }
 
   /** Un flow par id, scopé tenant (pour l'édition : lire le status/screens). null si absent/autre tenant. */
   async getById(id: string, tenantId: string): Promise<FlowRow | null> {
-    const res = await this.pool.query<{
-      id: string; tenant_id: string; name: string; status: 'DRAFT' | 'PUBLISHED';
-      fields: FlowField[]; elements: unknown; ref: string | null; mapping: Record<string, string> | null; cta: string | null;
-      created_at: Date; updated_at: Date;
-    }>(
+    const res = await this.pool.query<FlowDbRow>(
       `select id, tenant_id, name, status, fields, elements, ref, mapping, cta, created_at, updated_at from flows
        where id = $1 and tenant_id = $2 limit 1`,
       [id, tenantId],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return {
-      id: r.id,
-      tenantId: r.tenant_id,
-      name: r.name,
-      status: r.status,
-      fields: r.fields,
-      screens: screensOf(r.elements),
-      ref: r.ref,
-      mapping: r.mapping,
-      cta: r.cta,
-      createdAt: r.created_at.toISOString(),
-      updatedAt: r.updated_at.toISOString(),
-    };
+    return toFlowRow(r);
   }
 
   /**

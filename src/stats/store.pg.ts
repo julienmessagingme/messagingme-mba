@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { STATS_TZ } from './range';
+import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
 
 export interface DailyPoint {
@@ -66,10 +66,7 @@ export class PgStatsStore {
     //    somme courante des nouveaux/jour. Série DENSE (generate_series de from à to) pour que les jours
     //    sans nouvel ajout reportent le total (pas de retour à 0), sans logique côté front.
     const contacts = await this.pool.query<{ d: string; count: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts,
-                (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       ),
+      `with ${BOUNDS_CTE},
        series as (
          select generate_series($2::date, $3::date, interval '1 day')::date as day
        ),
@@ -93,9 +90,7 @@ export class PgStatsStore {
     // 2) Templates envoyés / jour, par catégorie : campagnes (campaign_recipients + campaigns.category)
     //    + envois template depuis l'inbox (conversation_messages.template_category).
     const templates = await this.pool.query<{ d: string; category: string | null; count: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select d, category, sum(cnt)::int as count from (
          select to_char(date_trunc('day', r.sent_at at time zone $4), 'YYYY-MM-DD') d, c.category, count(*) cnt
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
@@ -121,9 +116,7 @@ export class PgStatsStore {
 
     // 3) Messages échangés hors template / jour : reçus + réponses texte sortantes.
     const exchanged = await this.pool.query<{ d: string; count: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d, count(*)::int as count
        from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
        where cv.tenant_id = $1 and not cv.is_test and m.created_at >= b.start_ts and m.created_at < b.end_ts
@@ -154,9 +147,7 @@ export class PgStatsStore {
   async getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]> {
     const { from, to } = range;
     const res = await this.pool.query<{ name: string; category: string | null; count: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select name, category, sum(cnt)::int as count from (
          select c.template_name as name, c.category as category, count(*) cnt
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
@@ -234,9 +225,7 @@ export class PgStatsStore {
   async getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]> {
     const { from, to } = range;
     const res = await this.pool.query<{ code: number; template_name: string | null; count: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select r.error_code as code, c.template_name as template_name, count(*)::int as count
        from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
        where c.tenant_id = $1 and r.error_code is not null
@@ -258,9 +247,7 @@ export class PgStatsStore {
   async getCostVolume(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostVolumeRow[]> {
     const { from, to } = range;
     const res = await this.pool.query<{ date: string; category: string; count: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select to_char(r.sent_at at time zone $4, 'YYYY-MM-DD') as date, c.category as category, count(*)::int as count
        from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
        where c.tenant_id = $1

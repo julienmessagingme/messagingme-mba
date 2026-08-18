@@ -81,3 +81,17 @@ export function parseRange(query: Record<string, unknown>): { range: DateRange }
   const to2 = todayParis();
   return { range: { from: addDays(to2, -(days - 1)), to: to2 } };
 }
+
+/**
+ * CTE `bounds` : les deux instants UTC qui bornent la plage, calculés PAR POSTGRES dans le fuseau passé en
+ * `$4` (`to` inclus, d'où le `+ 1` sur la borne haute). Attend `$2` = from, `$3` = to, `$4` = fuseau, mêmes
+ * positions dans les neuf requêtes de stats.
+ *
+ * Fragment partagé : c'est l'invariant de changement d'heure du module (une soustraction naïve en secondes
+ * décalerait les journées deux fois par an), et il était recopié à l'identique dans les deux stores. Une
+ * seule écriture, comme `UNREAD_SQL` pour l'inbox.
+ */
+export const BOUNDS_CTE = `bounds as (
+         select ($2::date)::timestamp at time zone $4 as start_ts,
+                (($3::date) + 1)::timestamp at time zone $4 as end_ts
+       )`;

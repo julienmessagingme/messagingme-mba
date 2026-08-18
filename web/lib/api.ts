@@ -1278,7 +1278,7 @@ export function completeEmbeddedSignup(
 
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---
 
-/** Types de déclencheur proposés à la création. Miroir de `AUTOMATION_TRIGGER_KINDS_CREATABLE` serveur. */
+/** Types de déclencheur proposés à la création. Miroir de `AUTOMATION_TRIGGER_KINDS` serveur. */
 export type AutomationTriggerKind = 'keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed' | 'hubspot_deal_stage';
 
 export interface Automation {

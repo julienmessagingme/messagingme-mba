@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchesTrigger, isInCooldown, keywordsOf, keywordModeOf, normalizeText, isCreatableTriggerKind } from '../src/automation/match';
+import { matchesTrigger, isInCooldown, keywordsOf, keywordModeOf, normalizeText, isAutomationTriggerKind } from '../src/automation/match';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 
 /**
@@ -90,9 +90,9 @@ describe('déclencheur tag ajouté (émis depuis E.2, chemins unitaires seulemen
   });
   it('est proposé à la création depuis E.2 (la file `automation-event` l’émet)', () => {
     for (const k of ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed']) {
-      expect(isCreatableTriggerKind(k), k).toBe(true);
+      expect(isAutomationTriggerKind(k), k).toBe(true);
     }
-    expect(isCreatableTriggerKind('nawak')).toBe(false);
+    expect(isAutomationTriggerKind('nawak')).toBe(false);
   });
 });
 
@@ -208,6 +208,6 @@ describe('matchesTrigger : étape de deal HubSpot', () => {
   });
 
   it('le type est créable depuis l’API/l’écran', () => {
-    expect(isCreatableTriggerKind('hubspot_deal_stage')).toBe(true);
+    expect(isAutomationTriggerKind('hubspot_deal_stage')).toBe(true);
   });
 });

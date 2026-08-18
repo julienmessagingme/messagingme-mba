@@ -26,11 +26,6 @@ import type { ConditionGroup } from '../workflow/conditions';
  * automation sans que rien ne le dise. Le libellé n'est stocké que pour l'affichage.
  */
 export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage'] as const;
-/** Ce que l'UI/API autorise à CRÉER aujourd'hui (sous-ensemble de ce que le moteur sait faire). */
-export const AUTOMATION_TRIGGER_KINDS_CREATABLE = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage'] as const;
-export function isCreatableTriggerKind(v: unknown): v is AutomationTriggerKind {
-  return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS_CREATABLE as readonly string[]).includes(v);
-}
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);

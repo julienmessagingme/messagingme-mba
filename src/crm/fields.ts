@@ -104,13 +104,7 @@ export async function ensureField(
   label: string,
   type: UserFieldType = 'text',
 ): Promise<UserFieldDef> {
-  if (!isUserFieldType(type)) throw new Error(`type de champ invalide: ${type}`);
-  const key = slugify(label);
-  const existing = (await store.list(tenantId)).find((f) => f.key === key);
-  if (existing) return existing;
-  const def: UserFieldDef = { key, label, type };
-  await store.upsert(tenantId, def);
-  return def;
+  return ensureFieldByKey(store, tenantId, slugify(label), label, type);
 }
 
 /** Crée le champ perso à une CLÉ EXPLICITE s'il n'existe pas (idempotent PAR CLÉ, pas par slug du libellé) :

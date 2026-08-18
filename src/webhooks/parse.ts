@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { asArray, asRecord } from './json';
 
 export type WebhookSource =
   | 'messages'
@@ -32,13 +33,6 @@ function stableStringify(v: unknown): string {
 function hash(source: WebhookSource, data: unknown): string {
   const h = createHash('sha256').update(stableStringify(data)).digest('hex').slice(0, 32);
   return `${source}:${h}`;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
 }
 
 /**

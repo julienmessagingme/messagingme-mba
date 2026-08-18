@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { isCreatableTriggerKind, keywordsOf } from '../automation/match';
+import { isAutomationTriggerKind, keywordsOf } from '../automation/match';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
 import { scopeTenant, nonEmpty } from './scope';
@@ -85,7 +85,7 @@ function parseBody(body: unknown, partial: boolean): { error: string } | { input
     out.name = b.name.trim().slice(0, 120);
   }
   if (b.triggerKind !== undefined || !partial) {
-    if (!isCreatableTriggerKind(b.triggerKind)) {
+    if (!isAutomationTriggerKind(b.triggerKind)) {
       return { error: "triggerKind invalide ('keyword' | 'new_contact' | 'tag_added' | 'conversation_analyzed')" };
     }
     out.triggerKind = b.triggerKind;

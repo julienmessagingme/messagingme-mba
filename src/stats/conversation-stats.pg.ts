@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { STATS_TZ } from './range';
+import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
 
 /**
@@ -70,10 +70,7 @@ export class PgConversationStatsStore {
       a_devis: string; a_rappeler: string; a_relancer: string; a_escalader: string; a_aucune: string;
       c_lt50: string; c_50_70: string; c_70_90: string; c_gte90: string;
     }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts,
-                (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select
          count(*)::int as total,
          count(*) filter (where sentiment = 'positif')::int as s_pos,
@@ -111,9 +108,7 @@ export class PgConversationStatsStore {
 
     // Top topics : GROUP BY séparé (cardinalité variable). lower(btrim) pour regrouper casse/espaces.
     const topics = await this.pool.query<{ topic: string; n: string }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select lower(btrim(topic)) as topic, count(*)::int as n
        from conversation_analysis ca, bounds b
        where ca.tenant_id = $1 and ca.created_at >= b.start_ts and ca.created_at < b.end_ts
@@ -156,9 +151,7 @@ export class PgConversationStatsStore {
       sentiment: string; intent: string; topic: string; resolved: boolean; action_suggestion: string;
       confidence: number; justification: string; handled_by: string; exchanges_count: number; created_at: Date;
     }>(
-      `with bounds as (
-         select ($2::date)::timestamp at time zone $4 as start_ts, (($3::date) + 1)::timestamp at time zone $4 as end_ts
-       )
+      `with ${BOUNDS_CTE}
        select ca.conversation_id, c.wa_id, ct.profile_name,
               ca.sentiment, ca.intent, ca.topic, ca.resolved, ca.action_suggestion,
               ca.confidence, ca.justification, ca.handled_by, ca.exchanges_count, ca.created_at

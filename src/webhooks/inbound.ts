@@ -5,6 +5,7 @@
  */
 
 import { FLOW_REF_KEY } from '../meta/flow-json';
+import { asArray, asRecord } from './json';
 
 export interface InboundMessage {
   phoneNumberId: string;
@@ -36,12 +37,6 @@ export interface InboxStore {
   recordInbound(tenantId: string, m: InboundMessage): Promise<void>;
 }
 
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-}
 function str(v: unknown): string | null {
   return typeof v === 'string' && v !== '' ? v : null;
 }
