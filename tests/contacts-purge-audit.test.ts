@@ -199,6 +199,27 @@ describe('entrée d’un contact dans la base', () => {
     await server.close();
   });
 
+  it('🔴 le journal dit l’opt-in RÉELLEMENT appliqué, pas celui du corps reçu', async () => {
+    // Un corps sans `optIn` crée un contact OPT-IN (défaut de la saisie à la main). Le journal doit dire
+    // « oui ». Il a dit « non » le temps d'un déploiement, parce que la valeur était calculée deux fois : à la
+    // création avec le défaut, au journal sans. Un registre d'audit qui ment est pire que pas de registre.
+    const recus: Array<{ optIn?: boolean }> = [];
+    const { server, journal } = app({
+      createOneContact: async (_t: string, input: { optIn?: boolean }) => { recus.push(input); return { status: 'created', contactId: 'c-neuf' }; },
+    } as never);
+    await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: { phone: '+33600000001' } });
+    expect(recus[0]?.optIn).toBe(true);
+    expect(journal.find((t) => t.action === 'contact.created')?.detail).toEqual({ status: 'created', optIn: true });
+    await server.close();
+  });
+
+  it('case DÉCOCHÉE : le journal le dit aussi', async () => {
+    const { server, journal } = app();
+    await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: { phone: '+33600000001', optIn: false } });
+    expect(journal.find((t) => t.action === 'contact.created')?.detail).toMatchObject({ optIn: false });
+    await server.close();
+  });
+
   it('une création REFUSÉE ne laisse aucune trace', async () => {
     const { server, journal } = app({ createOneContact: async () => ({ status: 'error', reason: 'numéro invalide' }) } as never);
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: { phone: 'nawak' } });

@@ -258,23 +258,28 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       fields[key] = canonicalizeFieldValue(def.type, val);
     }
 
+    // OPT-IN PAR DÉFAUT, et seulement ici. Saisir un numéro à la main suppose qu'on l'a obtenu de la personne ;
+    // le créer muet en ferait un contact que le garde-fou de campagne ÉCARTE du marketing (il exige un opt-in
+    // explicite), sans que rien ne le dise à l'écran. L'import CSV et l'API publique gardent l'exigence inverse :
+    // là, l'opérateur charge une liste dont il ne connaît pas chaque ligne. Décision de Julien, 2026-08-18.
+    //
+    // Calculé UNE fois : la valeur sert à créer le contact ET à le journaliser. Deux expressions séparées ont
+    // divergé le temps d'un déploiement, et le journal annonçait « optIn: non » sur un contact opt-in.
+    const optIn = b.optIn !== false;
+
     const name = typeof b.name === 'string' && b.name.trim() !== '' ? b.name.trim().slice(0, 120) : undefined;
     const res = await deps.createOneContact(tenant, {
       phone,
       ...(name ? { name } : {}),
       ...(Object.keys(fields).length > 0 ? { fields } : {}),
       tags: asStringArray(b.tags),
-      // OPT-IN PAR DÉFAUT, et seulement ici. Saisir un numéro à la main suppose qu'on l'a obtenu de la personne :
-      // le créer muet en ferait un contact que les campagnes ignorent, sans que rien ne le dise à l'écran.
-      // L'import CSV et l'API publique gardent l'exigence inverse (opt-in explicite) : là, l'opérateur charge
-      // une liste dont il ne connaît pas chaque ligne. Décision de Julien, 2026-08-18.
-      optIn: b.optIn !== false,
+      optIn,
     });
     if (res.status === 'error') return reply.code(400).send({ error: res.reason ?? 'contact invalide' });
     // Le détail dit `updated` quand le numéro était déjà connu : sans ça, l'historique laisserait croire à une
     // création alors que la fiche existait. L'opt-in figure ici plutôt que sur une ligne `contact.optin` à part,
     // parce qu'il n'y a eu qu'UNE action de l'opérateur.
-    await journal(tenant, req, 'contact.created', { kind: 'contact', id: res.contactId ?? 'inconnu' }, { status: res.status, optIn: b.optIn === true });
+    await journal(tenant, req, 'contact.created', { kind: 'contact', id: res.contactId ?? 'inconnu' }, { status: res.status, optIn });
     return reply.code(res.status === 'created' ? 201 : 200).send({ status: res.status, contactId: res.contactId });
   });
 
