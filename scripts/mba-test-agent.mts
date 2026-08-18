@@ -31,12 +31,18 @@ const token = cred.rows[0]?.business_token_enc
   : (process.env.META_ACCESS_TOKEN ?? '');
 
 /** Ce qu'on veut voir : une réponse utile, et AUCUNE information inventée. */
-const MESSAGES = [
-  'Bonjour, à quelle heure passe le prochain bus de la ligne 3 à la gare ?',
-  'Combien coûte un ticket à l’unité ?',
-  'J’ai laissé mon sac dans le bus ce matin.',
-  'Je veux parler à un conseiller.',
-];
+const MESSAGES = (process.env.MBA_MESSAGES ?? '')
+  .split('|')
+  .map((s) => s.trim())
+  .filter((s) => s !== '');
+if (MESSAGES.length === 0) {
+  MESSAGES.push(
+    'Bonjour, à quelle heure passe le prochain bus de la ligne 3 à la gare ?',
+    'Combien coûte un ticket à l’unité ?',
+    'J’ai laissé mon sac dans le bus ce matin.',
+    'Je veux parler à un conseiller.',
+  );
+}
 
 let conversationId: string | undefined;
 for (const msg of MESSAGES) {
