@@ -4,10 +4,28 @@ import { parseGraph, isWorkflowNodeType } from '../src/workflow/graph';
 const node = (id: string, type: string, over: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data: {}, ...over });
 
 describe('isWorkflowNodeType', () => {
-  it('accepte les types connus (dont les blocs MBA inertes), rejette le reste', () => {
-    for (const t of ['template', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'mba_handoff', 'mba_disable']) expect(isWorkflowNodeType(t)).toBe(true);
-    expect(isWorkflowNodeType('mba')).toBe(false); // 'mba' seul n'est pas un type (c'est mba_handoff / mba_disable)
+  it('accepte les types connus, rejette le reste', () => {
+    for (const t of ['template', 'quick_message', 'inbox', 'flow', 'condition', 'action', 'wait', 'rcs_message']) expect(isWorkflowNodeType(t)).toBe(true);
+    expect(isWorkflowNodeType('mba')).toBe(false);
     expect(isWorkflowNodeType(3)).toBe(false);
+  });
+
+  it('🔴 accepte encore les types LEGACY, sinon un ancien scénario devient inenregistrable', () => {
+    // `parseGraph` rejette le graphe ENTIER dès qu'un type lui est inconnu. `tag`/`field` (remplacés par le bloc
+    // Action) et `mba_handoff`/`mba_disable` (retirés du produit) ne sont plus dans la palette, mais un scénario
+    // enregistré avant leur retrait doit continuer de se sauvegarder. Sans cette tolérance, l'utilisateur se
+    // prendrait un « graphe invalide » sur un scénario qu'il n'a pas modifié.
+    for (const t of ['tag', 'field', 'mba_handoff', 'mba_disable']) expect(isWorkflowNodeType(t), t).toBe(true);
+  });
+
+  it('🔴 un graphe contenant un bloc legacy se parse ENTIÈREMENT, sans perdre les autres blocs', () => {
+    const g = parseGraph({
+      nodes: [node('n1', 'mba_handoff'), node('n2', 'template', { data: { templateName: 'promo' } })],
+      edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
+    });
+    expect(g).not.toBeNull();
+    expect(g?.nodes.map((n) => n.id)).toEqual(['n1', 'n2']);
+    expect(g?.edges).toHaveLength(1);
   });
 });
 

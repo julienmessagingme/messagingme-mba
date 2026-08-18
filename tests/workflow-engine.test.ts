@@ -63,19 +63,23 @@ describe('walk : action sendTemplate porte les boutons du template', () => {
   });
 });
 
-describe('walk : blocs MBA (pré-câblage inerte)', () => {
-  it('mba_handoff / mba_disable ne produisent AUCUNE action et sont traversés (synchrones, no-op)', async () => {
-    // tag(vip) -> mba_handoff -> mba_disable -> template : les deux blocs MBA sont inertes, le walk les traverse
-    // comme des blocs vides et s'arrête au template (waiting). Aucune action mba, aucun effet.
-    const g: WorkflowGraph = {
+describe('walk : un type de bloc RETIRÉ ne casse pas un ancien scénario', () => {
+  it('🔴 un type inconnu est traversé en PASSE-PLAT, les actions autour continuent', async () => {
+    // `mba_handoff` et `mba_disable` ont été retirés des types reconnus (ils ne faisaient rien, et le retour à
+    // l'agent de Meta est désormais implicite). Un scénario enregistré AVANT le retrait doit continuer de
+    // tourner : sans ce comportement, un graphe sauvegardé deviendrait inexécutable après une mise à jour, et
+    // le contact ne recevrait plus rien sans qu'aucune erreur n'apparaisse.
+    //
+    // Ce n'est plus une ligne dédiée dans le moteur mais la branche générique de fin de boucle, ce qui vaut
+    // pour TOUT type retiré un jour, pas seulement ces deux-là.
+    const g = {
       nodes: [
         n('t', 'tag', { tag: 'vip' }),
-        n('h', 'mba_handoff'),
-        n('d', 'mba_disable'),
+        { id: 'h', type: 'mba_handoff', position: { x: 0, y: 0 }, data: {} },
         n('tpl', 'template', { templateName: 'promo', language: 'fr' }),
       ],
-      edges: [e('e1', 't', 'h'), e('e2', 'h', 'd'), e('e3', 'd', 'tpl')],
-    };
+      edges: [e('e1', 't', 'h'), e('e2', 'h', 'tpl')],
+    } as unknown as WorkflowGraph;
     const r = walk(g, 't');
     expect(r.actions).toEqual([
       { kind: 'tag', tag: 'vip' },
@@ -84,8 +88,8 @@ describe('walk : blocs MBA (pré-câblage inerte)', () => {
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'tpl' });
   });
 
-  it('un bloc MBA seul en fin de chaîne -> done sans action (jamais terminal comme inbox)', () => {
-    const g: WorkflowGraph = { nodes: [n('h', 'mba_handoff')], edges: [] };
+  it('un type inconnu seul en fin de chaîne -> done sans action', () => {
+    const g = { nodes: [{ id: 'h', type: 'mba_disable', position: { x: 0, y: 0 }, data: {} }], edges: [] } as unknown as WorkflowGraph;
     const r = walk(g, 'h');
     expect(r.actions).toEqual([]);
     expect(r.rest).toEqual({ status: 'done' });

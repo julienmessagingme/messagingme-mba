@@ -14,7 +14,7 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, RCS_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { isCampaignEligible, waitBeforeSessionMessage, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
@@ -75,8 +75,6 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     return n === 1 ? t(`${m} de 1 condition`, `${m} of 1 condition`) : t(`${m} de ${n} conditions`, `${m} of ${n} conditions`);
   }
   // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
-  if (wfType === 'mba_handoff') return t('passe la main à MBA (inerte)', 'hands off to MBA (inert)');
-  if (wfType === 'mba_disable') return t('désactive MBA (inerte)', 'disables MBA (inert)');
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
 
@@ -584,20 +582,6 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
-        {/* Blocs MBA : pré-câblage inerte. GRISÉS + non cliquables tant que MBA n'est pas actif chez le tenant
-            (agent_eligibility 403 / ToS non signées). Visibles pour préparer, non exploitables. */}
-        {MBA_NODE_ORDER.map((nt) => (
-          <button
-            key={nt}
-            data-testid={`add-node-${nt}`}
-            onClick={() => { if (mbaEnabled) addNode(nt); }}
-            disabled={!mbaEnabled}
-            title={mbaEnabled ? undefined : t('Disponible quand MBA sera actif sur votre numéro', 'Available once MBA is active on your number')}
-            className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
-          >
-            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
-          </button>
-        ))}
         <button
           onClick={autoArrange}
           disabled={nodes.length === 0}
@@ -995,19 +979,12 @@ function ConfigPanel({
         </div>
       )}
       {wfType === 'inbox' && (
-        <p className="text-xs text-ink-500">{t("Quand le contact répond (quick-reply), la conversation remonte dans l'inbox pour un humain.", 'When the contact replies (quick-reply), the conversation moves to the inbox for a human.')}</p>
-      )}
-      {(wfType === 'mba_handoff' || wfType === 'mba_disable') && (
-        <div className="rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2 text-xs text-ink-500">
-          <p className="font-medium text-ink-600">
-            {wfType === 'mba_handoff'
-              ? t("Passe la main à l'agent MBA de Meta.", "Hands the thread off to Meta's MBA agent.")
-              : t('Désactive MBA sur ce fil.', 'Disables MBA on this thread.')}
-          </p>
-          <p className="mt-1">
-            {t("Bloc préparé mais INERTE : il ne fait rien tant que MBA n'est pas actif sur votre numéro (accord Meta requis). Aucune configuration pour l'instant.", "Prepared but INERT: it does nothing until MBA is active on your number (Meta agreement required). No configuration for now.")}
-          </p>
-        </div>
+        <p className="text-xs leading-relaxed text-ink-500">
+          {t(
+            "Le fil passe à un humain : le scénario s'arrête ici et la conversation apparaît dans « À traiter » dans l'Inbox. À placer APRÈS le message qui annonce le conseiller, c'est lui qui fait taire l'agent automatique.",
+            "The thread goes to a human: the scenario stops here and the conversation shows up under « To handle » in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
+          )}
+        </p>
       )}
     </div>
   );

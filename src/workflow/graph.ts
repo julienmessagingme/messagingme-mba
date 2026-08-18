@@ -6,11 +6,21 @@
 
 // `action` = bloc unifié (ajouter/retirer un tag, mettre à jour/vider un champ) via `data.actionKind`. Les types
 // `tag`/`field` restent lus pour les scénarios existants (legacy), mais la palette ne crée plus que `action`.
-// `mba_handoff` (envoi vers MBA) / `mba_disable` (désactivation MBA) = PRÉ-CÂBLAGE INERTE : reconnus par le
-// moteur pour qu'un graphe les contenant valide, mais SANS effet à l'exécution (aucune action, aucun appel Meta,
-// jamais de `control_owner='mba'` local, cette pose reste réservée au webhook messaging_handovers). Grisés dans
-// la palette tant que le tenant n'a pas MBA actif (agent_eligibility 403 / ToS non signées). Le vrai câblage
-// thread_control viendra le jour de l'activation MBA (tâche séparée).
+// `inbox` = le fil passe à un HUMAIN : le scénario s'arrête là et la conversation apparaît dans « À traiter ».
+// C'est le bloc « Assigner à un agent ». Il ne coupe pas l'agent de Meta par lui-même : c'est le message qui le
+// précède qui a pris le contrôle du fil, en partant. Lui ne fait que revendiquer le fil pour l'humain, ce qui
+// suffit à ce que la règle du hors-script ne le rende plus à l'agent.
+//
+// `mba_handoff` / `mba_disable` : blocs RETIRÉS du produit (ils ne faisaient rien, et le retour à l'agent de
+// Meta est désormais implicite : une étape qui n'offre aucun choix relâche le fil). Ils ne sont plus dans la
+// palette, plus dans le panneau de configuration, et le moteur les traverse en passe-plat par sa branche
+// générique.
+//
+// ⚠️ Ils restent ACCEPTÉS ici, exactement comme `tag`/`field`, et ce n'est PAS un oubli : `parseGraph` rejette
+// le graphe ENTIER dès qu'un type est inconnu. Les retirer de cette liste rendrait un scénario enregistré avant
+// le retrait impossible à sauvegarder, avec un « graphe invalide » que personne ne saurait expliquer. Vérifié
+// en production avant le retrait : 0 scénario sur 8 en contient, mais la tolérance ne coûte rien et la
+// suppression coûterait un incident.
 // `rcs_message` = envoi sur le canal RCS. Deux sorties TYPÉES ('sent' / 'unreachable') : sa branche dépend de la
 // joignabilité du numéro, donc d'un appel réseau. Le walk (PUR) rend la main à l'executor, qui fait cette IO.
 export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message'] as const;

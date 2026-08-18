@@ -1048,7 +1048,6 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 
 // --- Workflows (bot builder : graphe de blocs) ---
 
-// `mba_handoff`/`mba_disable` : pré-câblage inerte (envoi vers MBA / désactivation MBA), grisés tant que MBA n'est pas actif.
 // `rcs_message` : envoi sur le canal RCS, DEUX sorties ('sent' / 'unreachable') -> permet de brancher un
 // repli WhatsApp sur les contacts que le RCS n'atteint pas.
 export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message';
