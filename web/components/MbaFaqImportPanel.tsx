@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useT, useLocale } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
@@ -40,8 +40,20 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
   const [err, setErr] = useState('');
   const [resultat, setResultat] = useState<{ kind: 'success' | 'warning'; texte: string } | null>(null);
 
+  /**
+   * Numéro de la source courante. Il change à CHAQUE modification, et une analyse dont le numéro n'est plus
+   * celui du moment est jetée à son retour.
+   *
+   * ⚠️ Sans ce compteur, taper pendant qu'une analyse est en vol produisait un écran qui ment : la frappe
+   * périmait bien l'aperçu, puis la réponse de l'analyse le RÉARMAIT par-dessus, avec le bouton de
+   * confirmation actif, alors que la zone de texte affichait déjà autre chose. L'utilisateur validait un plan
+   * périmé présenté comme courant, sur une base de connaissance qui n'a ni corbeille ni suppression en lot.
+   */
+  const sequence = useRef(0);
+
   /** Toute modification d'une source périme l'aperçu : on ne peut plus écrire sans réanalyser. */
   function invalider(): void {
+    sequence.current += 1;
     setSource(null);
     setApercu(null);
     setResultat(null);
@@ -55,18 +67,25 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
   async function analyser(): Promise<void> {
     const charge = chargePrevue();
     if (charge === null) return;
+    const monTour = sequence.current;
     setBusy(true);
     setErr('');
     setResultat(null);
     try {
       const plan = await previewMbaFaqImport(tenantId, phoneNumberId, charge);
+      // La source a bougé pendant l'analyse : ce plan décrit un texte que l'écran n'affiche plus. On le jette
+      // au lieu de le montrer, l'utilisateur relancera l'analyse sur ce qu'il voit.
+      if (sequence.current !== monTour) return;
       setSource(charge);
       setApercu(plan);
     } catch (e) {
+      if (sequence.current !== monTour) return;
       setSource(null);
       setApercu(null);
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
+      // Toujours relâché, même pour une analyse jetée : une seule analyse est en vol à la fois (le bouton est
+      // désactivé pendant), donc ne pas le relâcher figerait l'écran.
       setBusy(false);
     }
   }

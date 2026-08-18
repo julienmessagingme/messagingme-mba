@@ -77,6 +77,63 @@ test.describe('MBA Paramètres : import de FAQ', () => {
     expect(appelsMba(calls, 'POST', '/faq/preview').at(-1)?.body).toEqual({ csv: AUTRE });
   });
 
+  test('🔴 une analyse dont la source a bougé pendant le vol est JETÉE, pas affichée', async ({ page }) => {
+    // Le cas qui rend l'invariant réellement vérifiable. Sans le compteur de séquence, la frappe périme bien
+    // l'aperçu, puis la réponse de l'analyse le RÉARME par-dessus, bouton de confirmation actif, alors que la
+    // zone de texte affiche déjà autre chose : l'utilisateur valide un plan périmé présenté comme courant.
+    // Les comparaisons de corps des autres tests ne peuvent pas voir ça, les deux valeurs y sont égales par
+    // construction (toute modification désactive la confirmation).
+    let analyses = 0;
+    const calls = await mockMba(page, {
+      custom: async (route, method, url) => {
+        if (method === 'POST' && url.includes('/faq/preview')) {
+          analyses += 1;
+          await new Promise((r) => setTimeout(r, 1200));
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(APERCU) });
+          return true;
+        }
+        return false;
+      },
+    });
+    await page.goto('/mba/parametres?tab=faq');
+    await page.getByTestId('mba-faq-import-open').click();
+
+    await page.getByTestId('mba-import-csv').fill(CSV);
+    await page.getByTestId('mba-import-analyse').click();
+    // Frappe PENDANT que l'analyse est en vol : rien ne l'empêche, le champ n'est pas verrouillé.
+    await page.getByTestId('mba-import-csv').fill(`${CSV}Les poussettes ?,Pliées.\n`);
+
+    // On attend que la réponse de l'analyse soit bel et bien revenue avant de conclure.
+    await expect.poll(() => analyses, { timeout: 8000 }).toBe(1);
+    await page.waitForTimeout(1500);
+
+    await expect(page.getByTestId('mba-import-preview')).toHaveCount(0);
+    await expect(page.getByTestId('mba-import-confirm')).toBeDisabled();
+    expect(appelsMba(calls, 'POST', '/faq/import')).toHaveLength(0);
+    // Et l'écran n'est pas figé : on peut réanalyser ce qui est affiché.
+    await expect(page.getByTestId('mba-import-analyse')).toBeEnabled();
+  });
+
+  test('mode fichier : le CSV déposé est analysé puis importé tel quel', async ({ page }) => {
+    // Ce mode alimente le même état de façon ASYNCHRONE (lecture du fichier), et n'était emprunté par aucun test.
+    const calls = await mockMba(page, {
+      preview: APERCU,
+      importResult: { source: 'csv', created: 1, updated: 1, unchanged: 1, remaining: 0, ids: { created: ['f9'], updated: ['2'] }, failed: null },
+    });
+    await page.goto('/mba/parametres?tab=faq');
+    await page.getByTestId('mba-faq-import-open').click();
+    await page.getByTestId('mba-import-mode-fichier').click();
+    await page.getByTestId('mba-import-file').setInputFiles({ name: 'faq.csv', mimeType: 'text/csv', buffer: Buffer.from(CSV, 'utf8') });
+
+    await expect(page.getByTestId('mba-import-analyse')).toBeEnabled();
+    await page.getByTestId('mba-import-analyse').click();
+    await expect(page.getByTestId('mba-import-preview')).toBeVisible();
+    await page.getByTestId('mba-import-confirm').click();
+
+    await expect.poll(() => appelsMba(calls, 'POST', '/faq/import')[0]?.body).toEqual({ csv: CSV });
+    expect(appelsMba(calls, 'POST', '/faq/preview')[0]?.body).toEqual({ csv: CSV });
+  });
+
   test('🔴 import interrompu (207) : avertissement, reste à faire, et non-duplication annoncée', async ({ page }) => {
     // Une partie EST écrite. Peindre ça en rouge pousserait à tout relancer comme si rien n'était passé.
     await mockMba(page, {
