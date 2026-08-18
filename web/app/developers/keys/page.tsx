@@ -6,9 +6,7 @@ import type { Session } from '@/lib/session';
 import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, type ApiKeyRow, type ApiKeyCreated } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
-
-const inputCls =
-  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+import { inputCls } from '@/lib/ui';
 
 export default function ApiKeysPage() {
   return <AppShell active="api-keys">{(session) => <KeysInner session={session} />}</AppShell>;

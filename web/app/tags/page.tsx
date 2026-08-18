@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listTags, createTag, renameTag, deleteTag, listContacts, type TagCount, type Contact } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { fieldValue } from '@/lib/fields';
 
 export default function TagsPage() {
   return <AppShell active="tags">{(session) => <TagsInner session={session} />}</AppShell>;
@@ -191,7 +192,7 @@ function TagContactsModal({ tenantId, tag, onClose }: { tenantId: string; tag: s
             <div className="divide-y divide-ink-100">
               {contacts.map((c) => (
                 <div key={c.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="truncate font-medium text-ink-900">{c.profileName ?? (fieldValueOf(c, 'prenom') ?? '-')}</span>
+                  <span className="truncate font-medium text-ink-900">{c.profileName ?? (fieldValue(c, 'prenom') ?? '-')}</span>
                   <span className="shrink-0 font-mono text-xs text-ink-500">{c.phoneE164 ?? '-'}</span>
                 </div>
               ))}
@@ -204,7 +205,3 @@ function TagContactsModal({ tenantId, tag, onClose }: { tenantId: string; tag: s
   );
 }
 
-function fieldValueOf(c: Contact, key: string): string | null {
-  const v = (c.fields ?? {})[key] ?? (c.fields ?? {})[key.toLowerCase()];
-  return v == null || String(v).trim() === '' ? null : String(v);
-}

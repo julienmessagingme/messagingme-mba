@@ -45,7 +45,7 @@ import {
   type CampaignDetail,
   type WorkflowSummary,
 } from '@/lib/api';
-import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample } from '@/lib/fields';
+import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample, varCountOf } from '@/lib/fields';
 import { filtersActive } from '@/lib/contact-filters';
 import { firstTemplateOf, isCampaignEligible } from '@/lib/campaign-eligibility';
 interface VarRow {
@@ -241,7 +241,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange 
   // catégorie NI le nom de campagne (le workflow choisit sa catégorie à part).
   async function loadTemplateVars(nm: string, language: string) {
     const tpl = templates.find((x) => x.name === nm);
-    const n = new Set((tpl?.body ?? '').match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
+    const n = varCountOf(tpl?.body);
     // Défaut immédiat : chaque variable -> Nom. On affine ensuite avec les indices posés à la création du template.
     setVars(Array.from({ length: n }, () => ({ sel: 'sys:name', value: '' })));
     if (n === 0) return;

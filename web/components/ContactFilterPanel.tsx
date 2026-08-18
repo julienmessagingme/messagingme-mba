@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import type { ContactFilters, ContactFieldFilter, ContactFieldOp, UserFieldDef } from '@/lib/api';
+import { inputClsAuto } from '@/lib/ui';
 
 /**
  * Panneau de filtres de contacts, CONTRÔLÉ (édite un ContactFilters via onChange). Partagé par le mini-CRM
@@ -24,7 +25,6 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
   const [tagInput, setTagInput] = useState('');
   const [tagExInput, setTagExInput] = useState('');
   const set = (patch: Partial<ContactFilters>) => onChange({ ...filters, ...patch });
-  const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
   const tags = filters.tags ?? [];
   const tagsExclude = filters.tagsExclude ?? [];
@@ -65,11 +65,11 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Nom contient', 'Name contains')}
-          <input value={filters.nameSearch ?? ''} onChange={(e) => set({ nameSearch: e.target.value || undefined })} className={inputCls} placeholder={t('ex. Marc', 'e.g. Marc')} />
+          <input value={filters.nameSearch ?? ''} onChange={(e) => set({ nameSearch: e.target.value || undefined })} className={inputClsAuto} placeholder={t('ex. Marc', 'e.g. Marc')} />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Consentement', 'Consent')}
-          <select value={filters.optIn ?? ''} onChange={(e) => set({ optIn: (e.target.value || undefined) as ContactFilters['optIn'] })} className={`${inputCls} bg-white`}>
+          <select value={filters.optIn ?? ''} onChange={(e) => set({ optIn: (e.target.value || undefined) as ContactFilters['optIn'] })} className={`${inputClsAuto} bg-white`}>
             <option value="">{t('tous', 'all')}</option>
             <option value="opted_in">opt-in</option>
             <option value="opted_out">opt-out</option>
@@ -79,24 +79,24 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           Email
           <div className="flex gap-2">
-            <select value={emailMode} onChange={(e) => setEmail(e.target.value as typeof emailMode)} className={`${inputCls} bg-white`}>
+            <select value={emailMode} onChange={(e) => setEmail(e.target.value as typeof emailMode)} className={`${inputClsAuto} bg-white`}>
               <option value="">{t('tous', 'all')}</option>
               <option value="not_empty">{t('rempli', 'filled')}</option>
               <option value="empty">{t('vide', 'empty')}</option>
               <option value="eq">{t('valeur précise', 'exact value')}</option>
             </select>
             {emailMode === 'eq' && (
-              <input value={emailRow?.value ?? ''} onChange={(e) => setEmail('eq', e.target.value)} className={`${inputCls} flex-1`} placeholder="jean@ex.fr" />
+              <input value={emailRow?.value ?? ''} onChange={(e) => setEmail('eq', e.target.value)} className={`${inputClsAuto} flex-1`} placeholder="jean@ex.fr" />
             )}
           </div>
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Téléphone commence par', 'Phone starts with')}
-          <input value={filters.phonePrefix ?? ''} onChange={(e) => set({ phonePrefix: e.target.value || undefined })} className={inputCls} placeholder="+336" />
+          <input value={filters.phonePrefix ?? ''} onChange={(e) => set({ phonePrefix: e.target.value || undefined })} className={inputClsAuto} placeholder="+336" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-500">
           {t('Téléphone contient', 'Phone contains')}
-          <input value={filters.phoneContains ?? ''} onChange={(e) => set({ phoneContains: e.target.value || undefined })} className={inputCls} placeholder="42 42" />
+          <input value={filters.phoneContains ?? ''} onChange={(e) => set({ phoneContains: e.target.value || undefined })} className={inputClsAuto} placeholder="42 42" />
         </label>
       </div>
 
@@ -118,7 +118,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               {x}<button type="button" onClick={() => rmTag(x)} className="text-brand-400 hover:text-coral">×</button>
             </span>
           ))}
-          <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputCls} w-28`} />
+          <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputClsAuto} w-28`} />
         </div>
       </div>
 
@@ -131,7 +131,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               {x}<button type="button" onClick={() => rmTagEx(x)} className="text-ink-400 hover:text-coral">×</button>
             </span>
           ))}
-          <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputCls} w-28`} />
+          <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputClsAuto} w-28`} />
         </div>
       </div>
       <datalist id="contact-filter-tags">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
@@ -141,13 +141,13 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
         <span className="text-xs text-ink-500">{t('Champs', 'Fields')}</span>
         {fieldRows.map((r, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
-            <select value={r.key} onChange={(e) => updRow(i, { key: e.target.value })} className={`${inputCls} bg-white`}>
+            <select value={r.key} onChange={(e) => updRow(i, { key: e.target.value })} className={`${inputClsAuto} bg-white`}>
               {fieldKeys.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
             </select>
-            <select value={r.op} onChange={(e) => updRow(i, { op: e.target.value as ContactFieldOp })} className={`${inputCls} bg-white`}>
+            <select value={r.op} onChange={(e) => updRow(i, { op: e.target.value as ContactFieldOp })} className={`${inputClsAuto} bg-white`}>
               {(['contains', 'not_contains', 'eq', 'empty', 'not_empty'] as ContactFieldOp[]).map((op) => <option key={op} value={op}>{opLabels[op]}</option>)}
             </select>
-            {needsValue(r.op) && <input value={r.value} onChange={(e) => updRow(i, { value: e.target.value })} className={`${inputCls} flex-1`} placeholder={t('valeur', 'value')} />}
+            {needsValue(r.op) && <input value={r.value} onChange={(e) => updRow(i, { value: e.target.value })} className={`${inputClsAuto} flex-1`} placeholder={t('valeur', 'value')} />}
             <button type="button" onClick={() => rmRow(i)} className="text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
           </div>
         ))}

@@ -15,7 +15,7 @@ import {
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, MBA_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
-import { isCampaignEligible, waitBeforeSessionMessage } from '@/lib/campaign-eligibility';
+import { isCampaignEligible, waitBeforeSessionMessage, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
@@ -533,14 +533,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   // campagne (source unique : `isCampaignEligible`). Depuis le 2026-08-15, la règle porte sur ce qui OUVRE et
   // non sur la racine : « tag -> template » est éligible. L'avertissement reste posé sur la racine, faute d'un
   // bloc fautif unique (l'inéligibilité peut venir d'une branche, d'une attente ou d'une ambiguïté).
-  const rootNodeId = (() => {
-    if (nodes.length === 0) return null;
-    const hasIncoming = new Set(edges.map((e) => e.target));
-    return (nodes.find((n) => !hasIncoming.has(n.id)) ?? nodes[0]!).id;
-  })();
-  // Mémoïsé : ces trois calculs ne dépendent QUE du graphe, alors que le composant re-rend aussi sur la
+  // Mémoïsé : ces calculs ne dépendent QUE du graphe, alors que le composant re-rend aussi sur la
   // sélection, l'ouverture du chooser, le statut de sauvegarde ou l'arrivée des templates.
   const graphe = useMemo(() => fromRF(nodes, edges), [nodes, edges]);
+  // `entryNodeOf` porte déjà cette règle (« bloc sans arête entrante, sinon le premier »), elle est testée, et
+  // elle sert juste en dessous à juger l'éligibilité : la réécrire ici en ferait une seconde version.
+  const rootNodeId = entryNodeOf(graphe)?.id ?? null;
   const campaignEligible = nodes.length === 0 || isCampaignEligible(graphe);
   // Montage qui ne partira JAMAIS : attente >= 24 h puis message hors template. Nommé au constructeur plutôt
   // que découvert par le silence en production. N'empêche PAS l'enregistrement (le builder sauve en continu).

@@ -9,6 +9,7 @@ import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
+import { inputCls } from '@/lib/ui';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,7 +54,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              className={inputCls}
               placeholder="admin@demo.test"
             />
           </div>
@@ -64,7 +65,7 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+              className={inputCls}
               placeholder="********"
             />
           </div>

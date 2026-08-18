@@ -1,8 +1,10 @@
 /**
- * Règles PURES du mapping « champ de formulaire -> champ contact ». Zéro import (ni React, ni Next, ni le reste
- * de lib/) : ce module est testé depuis la suite racine (`tests/web-flow-mapping.test.ts`) par import relatif,
- * ce qui n'est possible que s'il ne tire rien de l'arbre web (le tsconfig racine n'a pas la lib DOM).
+ * Règles PURES du mapping « champ de formulaire -> champ contact ». N'importe QUE des modules eux-mêmes purs
+ * (aucun React, aucun Next, rien du DOM) : ce module est testé depuis la suite racine
+ * (`tests/web-flow-mapping.test.ts`) par import relatif, ce qui n'est possible que si toute sa chaîne
+ * d'imports reste hors de l'arbre web (le tsconfig racine n'a pas la lib DOM).
  */
+import { normalizeText } from './normalize';
 
 /** Clé du champ booléen de consentement par défaut. Miroir de `src/crm/fields.ts` (WHATSAPP_OPTIN_FIELD_KEY) :
  *  un OptIn qui pointe dessus est un mapping PAR DÉFAUT (saveTo vide dans l'éditeur), pas un choix explicite. */
@@ -48,8 +50,7 @@ export const BASE_SAVE_FIELDS: BaseSaveField[] = [
   { key: 'email', label: 'Email' },
 ];
 
-const COMBINING = /[̀-ͯ]/g;
-const normalizeLabel = (s: string): string => s.normalize('NFD').replace(COMBINING, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const normalizeLabel = normalizeText;
 
 // Synonymes (normalisés) -> champ de base. Correspondance EXACTE sur le libellé normalisé : « prenom » et
 // « nom » ne se marchent donc jamais dessus (pas de piège de sous-chaîne « nom » ⊂ « prenom »).

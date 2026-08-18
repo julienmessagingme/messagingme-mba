@@ -67,3 +67,26 @@ export function systemFieldExample(key: string): string {
       return '…';
   }
 }
+
+/**
+ * Valeur d'un champ perso d'un contact, insensible à la casse de la clé (les clés posées à l'import peuvent
+ * être « prenom » comme « Prénom »). null si absente ou vide après trim.
+ *
+ * Partagée par le mini-CRM et l'écran Tags, qui en portaient chacun une copie.
+ */
+export function fieldValue(c: { fields?: Record<string, unknown> | null }, key: string): string | null {
+  const f = c.fields ?? {};
+  const v = f[key] ?? f[key.toLowerCase()];
+  return v == null || String(v).trim() === '' ? null : String(v);
+}
+
+/**
+ * Nombre de variables `{{n}}` DISTINCTES d'un corps de template : c'est ce nombre qui dit combien de valeurs
+ * l'envoi doit fournir. Partagé par l'inbox et la création de campagne.
+ *
+ * ⚠️ La règle est aussi écrite côté serveur (`src/meta/template-components.ts`) : les deux builds ne
+ * partagent aucun module, la synchro reste une convention, verrouillée par les tests de parité.
+ */
+export function varCountOf(body: string | undefined | null): number {
+  return body ? new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size : 0;
+}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { Toggle } from '@/components/Toggle';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, type StatusBadge } from '@/lib/format';
@@ -348,16 +349,13 @@ function AccueilInner({ session }: { session: Session }) {
               </div>
             </div>
             <div className="flex items-center gap-3 pt-2">
-              <button
-                data-testid="mba-toggle"
-                onClick={toggleMba}
+              <Toggle
+                testid="mba-toggle"
+                checked={mbaEnabled}
+                onChange={toggleMba}
                 disabled={!isAdmin || savingMba}
-                aria-pressed={mbaEnabled}
                 title={isAdmin ? '' : t('Réservé aux admins', 'Admins only')}
-                className={`relative h-7 w-12 shrink-0 rounded-full transition ${mbaEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${!isAdmin ? 'cursor-not-allowed opacity-60' : ''}`}
-              >
-                <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${mbaEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-              </button>
+              />
               <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
             </div>
             {/* Reprise après intervention d'un opérateur, juste sous le toggle MBA. Gouverne le gel du scénario
@@ -436,16 +434,13 @@ function AccueilInner({ session }: { session: Session }) {
                   </p>
                 </div>
                 {isAdmin && (
-                  <button
-                    onClick={toggleAutoRetry}
+                  <Toggle
+                    testid="auto-retry-toggle"
+                    checked={autoRetryEnabled}
+                    onChange={toggleAutoRetry}
                     disabled={savingAutoRetry}
-                    data-testid="auto-retry-toggle"
-                    aria-pressed={autoRetryEnabled}
                     title={t("Activer/désactiver l'auto-relance des échecs", 'Enable/disable auto-retry of failed sends')}
-                    className={`relative h-7 w-12 shrink-0 rounded-full transition ${autoRetryEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${savingAutoRetry ? 'opacity-60' : ''}`}
-                  >
-                    <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${autoRetryEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                  </button>
+                  />
                 )}
               </div>
             </div>
@@ -572,16 +567,13 @@ function AccueilInner({ session }: { session: Session }) {
                       )}
                     </div>
                     {isAdmin && account.phoneNumberId && (
-                      <button
-                        data-testid="hubspot-sync-toggle"
-                        onClick={() => (account.hubspotConnected ? setShowDisconnect(true) : void applyHubspotState(true))}
+                      <Toggle
+                        testid="hubspot-sync-toggle"
+                        checked={account.hubspotConnected}
+                        onChange={() => (account.hubspotConnected ? setShowDisconnect(true) : void applyHubspotState(true))}
                         disabled={savingHubspot}
                         title={t('Activer/couper la synchro HubSpot', 'Enable/disable HubSpot sync')}
-                        aria-pressed={account.hubspotConnected}
-                        className={`relative h-7 w-12 shrink-0 rounded-full transition ${account.hubspotConnected ? 'bg-brand-500' : 'bg-ink-300'} ${savingHubspot ? 'opacity-60' : ''}`}
-                      >
-                        <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${account.hubspotConnected ? 'left-[22px]' : 'left-0.5'}`} />
-                      </button>
+                      />
                     )}
                   </div>
 
@@ -647,15 +639,12 @@ function AccueilInner({ session }: { session: Session }) {
                         <p className="mt-0.5 text-xs text-ink-500">{t('Importe une liste HubSpot comme destinataires de campagne.', 'Import a HubSpot list as campaign recipients.')}</p>
                       </div>
                       {isAdmin && (
-                        <button
-                          onClick={toggleHubspotLists}
+                        <Toggle
+                          checked={hubspotListsEnabled}
+                          onChange={toggleHubspotLists}
                           disabled={savingLists}
-                          aria-pressed={hubspotListsEnabled}
                           title={t("Activer/désactiver l'import de listes HubSpot", 'Enable/disable HubSpot list import')}
-                          className={`relative h-7 w-12 shrink-0 rounded-full transition ${hubspotListsEnabled ? 'bg-brand-500' : 'bg-ink-300'} ${savingLists ? 'opacity-60' : ''}`}
-                        >
-                          <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${hubspotListsEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                        </button>
+                        />
                       )}
                     </div>
                     {/* Activé mais scope crm.lists.read pas encore accordé -> CTA de re-consentement CIBLÉ (ajoute le

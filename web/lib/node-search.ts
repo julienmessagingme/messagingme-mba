@@ -3,6 +3,8 @@
 // (mot-clé / contenu). La recherche texte balaie le contenu (summary), le nom du scénario, le code public et le
 // type brut, insensible à la casse ET aux accents.
 
+import { normalizeText } from './normalize';
+
 export interface SearchableNode {
   type: string;
   /** Nom libre du bloc (peut être vide). */
@@ -15,12 +17,8 @@ export interface SearchableNode {
   code: string | null;
 }
 
-const COMBINING = /[̀-ͯ]/g;
-
 /** Normalise pour comparaison : minuscules, sans accents, espaces resserrés. */
-export function normalizeSearch(s: string): string {
-  return s.normalize('NFD').replace(COMBINING, '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
+export const normalizeSearch = normalizeText;
 
 /**
  * Filtre une liste de blocs par type (typologie) ET par texte libre (mot-clé/contenu), cumulatifs. `type='all'`

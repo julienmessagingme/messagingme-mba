@@ -6,6 +6,7 @@ import type { Session } from '@/lib/session';
 import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, type AdminUser, type UserRole } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
+import { inputCls } from '@/lib/ui';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -199,7 +200,7 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[200px] flex-1">
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Email', 'Email')}</label>
-          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" placeholder={t('membre@entreprise.fr', 'member@company.com')} />
+          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} placeholder={t('membre@entreprise.fr', 'member@company.com')} />
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Rôle', 'Role')}</label>

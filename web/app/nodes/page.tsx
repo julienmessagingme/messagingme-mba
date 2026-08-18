@@ -8,6 +8,7 @@ import { listNodes, type NodeListItem, type WorkflowNodeType } from '@/lib/api';
 import { filterNodes } from '@/lib/node-search';
 import { NODE_META, NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { useT } from '@/lib/i18n';
+import { inputCls } from '@/lib/ui';
 
 export default function NodesPage() {
   return <AppShell active="nodes">{(session) => <NodesInner session={session} />}</AppShell>;
@@ -61,7 +62,7 @@ function NodesInner({ session }: { session: Session }) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={t('Rechercher un bloc (contenu, scénario, code…)', 'Search a block (content, scenario, code…)')}
-        className="w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+        className={inputCls}
         data-testid="nodes-search"
       />
 

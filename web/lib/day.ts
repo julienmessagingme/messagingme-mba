@@ -1,4 +1,5 @@
 import type { Locale } from './locale';
+import { todayParis, addDays } from './range';
 
 /**
  * Helpers de date fuseau Europe/Paris (séparateurs de jour inbox, dates courtes). Purs, sans dépendance.
@@ -22,10 +23,10 @@ export function dayKey(iso: string): string {
 /** Libellé de séparateur : « Aujourd'hui/Today » / « Hier/Yesterday » / « 12 juillet 2026 / 12 July 2026 ». */
 export function dayLabel(iso: string, locale: Locale): string {
   const key = dayKey(iso);
-  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
-  // Hier = jour calendaire précédent, calculé sur les composantes de date (robuste au passage heure d'été).
-  const [y, m, d] = todayKey.split('-').map(Number) as [number, number, number];
-  const yestKey = new Date(Date.UTC(y, m - 1, d) - 86_400_000).toISOString().slice(0, 10);
+  // « Aujourd'hui » et « hier » viennent de `range`, qui portait déjà ces deux calculs à l'identique (jour
+  // civil Paris, puis arithmétique UTC pure, robuste au passage à l'heure d'été) et les teste.
+  const todayKey = todayParis();
+  const yestKey = addDays(todayKey, -1);
   if (key === todayKey) return locale === 'en' ? 'Today' : "Aujourd'hui";
   if (key === yestKey) return locale === 'en' ? 'Yesterday' : 'Hier';
   return new Date(iso).toLocaleDateString(tag(locale), { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' });

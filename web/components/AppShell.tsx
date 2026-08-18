@@ -59,16 +59,6 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const [unread, setUnread] = useState(0);
   // Session tombée : on l'apprend par l'événement émis au premier 401 (cf. `lib/api.ts`).
   const [sessionExpiree, setSessionExpiree] = useState(false);
-  // Groupes de nav repliables. Ouvert au départ seulement si la page active est un de ses enfants
-  // (`active` est une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
-  // Chaque groupe DOIT figurer ici : un groupe absent de cet initialiseur reste replié même quand on arrive
-  // directement sur une de ses pages, et l'élément actif est alors invisible.
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => ({
-    mba: ['mba-guide', 'mba-settings'].includes(active),
-    contenu: ['templates', 'flows', 'nodes', 'tags', 'fields'].includes(active),
-    analytics: ['dashboard', 'dashboard-quali'].includes(active),
-    developers: ['api-docs', 'api-keys'].includes(active),
-  }));
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
   const NAV_ADMIN: NavItem[] = [
@@ -105,6 +95,18 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     ] },
   ];
   const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];
+
+  // Appartenance page -> groupe, DÉDUITE de la nav ci-dessus. Elle y était réécrite à la main deux fois de
+  // plus (l'initialiseur des groupes ouverts et la table du groupe actif) : un groupe oublié dans l'une
+  // laissait sa page active invisible, l'autre le gardait replié. Il n'y a plus qu'un endroit à tenir.
+  const GROUP_OF: Record<string, string> = {};
+  for (const item of [...NAV_ADMIN, ...NAV_ADMIN_BAS]) {
+    for (const enfant of item.children ?? []) GROUP_OF[enfant.key] = item.key;
+  }
+
+  // Groupes repliables : ouvert au départ seulement si la page active est un de ses enfants (`active` est
+  // une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => ({ [GROUP_OF[active] ?? '']: true }));
 
   // Fail-safe : tout ce qui n'est pas l'inbox est réservé aux admins.
   const adminOnly = active !== 'inbox';
@@ -152,14 +154,6 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     router.replace('/login');
   }
 
-  // Groupe de nav actif. Sans cette table, `itemCls(group === item.key)` ne s'allume jamais sur un parent de
-  // groupe et l'entrée reste grise alors qu'on est sur une de ses pages.
-  const GROUP_OF: Partial<Record<Tab, string>> = {
-    'mba-guide': 'mba', 'mba-settings': 'mba',
-    dashboard: 'analytics', 'dashboard-quali': 'analytics',
-    templates: 'contenu', flows: 'contenu', nodes: 'contenu', tags: 'contenu', fields: 'contenu',
-    'api-docs': 'developers', 'api-keys': 'developers',
-  };
   const group = GROUP_OF[active] ?? active;
   const nav = session.role === 'admin' ? NAV_ADMIN : NAV_AGENT;
 

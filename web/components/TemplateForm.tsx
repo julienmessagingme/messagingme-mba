@@ -11,6 +11,7 @@ import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
+import { inputCls } from '@/lib/ui';
 
 /**
  * Formulaire de creation (et d'edition) d'un template Meta.
@@ -19,9 +20,6 @@ import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
  * l'ecran Campagne : on y cree un template sans quitter la campagne en cours. Le corps et ses variables
  * vivent dans `TemplateBodyField` : le formulaire CAROUSEL s'en sert aussi, à l'identique.
  */
-
-const inputCls =
-  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /** Ce qu'un template neuf renvoie a l'appelant. `status` vaut PENDING chez Meta : il n'est PAS envoyable. */
 export interface CreatedTemplate { name: string; language: string; status: string }

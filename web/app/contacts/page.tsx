@@ -27,6 +27,8 @@ import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate } from '@/lib/day';
+import { inputCls } from '@/lib/ui';
+import { fieldValue } from '@/lib/fields';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
@@ -324,8 +326,7 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
   const [optIn, setOptIn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-  const canSubmit = phone.trim() !== '' && !busy;
+    const canSubmit = phone.trim() !== '' && !busy;
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
@@ -421,8 +422,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
   const [fieldVal, setFieldVal] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-
+  
   const titles: Record<string, string> = {
     add_tag: t('Ajouter un tag', 'Add a tag'),
     remove_tag: t('Retirer un tag', 'Remove a tag'),
@@ -517,12 +517,6 @@ function waIdOf(c: Contact): string | null {
   return c.bsuid ?? null;
 }
 
-/** Valeur d'un champ perso (insensible à la casse pour les clés type prenom/prénom). */
-function fieldValue(c: Contact, key: string): string | null {
-  const f = c.fields ?? {};
-  const v = f[key] ?? f[key.toLowerCase()];
-  return v == null || String(v).trim() === '' ? null : String(v);
-}
 
 function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow, onToggleHeader, headerChecked }: {
   contacts: Contact[];

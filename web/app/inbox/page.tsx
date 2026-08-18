@@ -9,6 +9,8 @@ import { dayKey, dayLabel, hourMin } from '@/lib/day';
 import type { ControlOwner, ReturnBehavior } from '@/lib/api';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
+import { inputCls } from '@/lib/ui';
+import { varCountOf } from '@/lib/fields';
 import {
   listConversations,
   getConversationMessages,
@@ -496,13 +498,6 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
       )}
     </div>
   );
-}
-
-const inputCls =
-  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-
-function varCountOf(body: string | undefined): number {
-  return body ? new Set(body.match(/\{\{\s*\d+\s*\}\}/g) ?? []).size : 0;
 }
 
 /**

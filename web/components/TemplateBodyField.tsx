@@ -5,6 +5,7 @@ import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/
 import { listUserFields, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
+import { inputCls } from '@/lib/ui';
 
 /**
  * Le corps d'un template avec ses VARIABLES : éditeur à chips, sélecteur de champ, emojis, exemples exigés
@@ -60,9 +61,6 @@ export function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (
   if (sys) return sys.label;
   return fields.find((f) => f.key === source.key)?.label ?? source.key ?? t('Champ', 'Field');
 }
-
-const inputCls =
-  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /** Sélecteur d'emojis : insère au curseur, se ferme au clic extérieur. */
 function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose: () => void }) {

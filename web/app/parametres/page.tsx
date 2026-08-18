@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
+import { inputClsAuto } from '@/lib/ui';
 
 export default function ParametresPage() {
   return <AppShell active="parametres">{(session) => <Parametres tenantId={session.tenantId} />}</AppShell>;
@@ -69,7 +70,6 @@ function Parametres({ tenantId }: { tenantId: string }) {
 
   const cardCls = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
   const kicker = 'text-xs font-semibold uppercase tracking-wide text-brand-600';
-  const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
   const statusText = (s: typeof tzStatus) =>
     s === 'saving' ? t('enregistrement…', 'saving…') : s === 'saved' ? t('enregistré', 'saved') : s === 'error' ? t('erreur', 'error') : '';
@@ -95,7 +95,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
               </div>
               <span className={`text-xs ${tzStatus === 'error' ? 'text-coral' : 'text-ink-400'}`}>{statusText(tzStatus)}</span>
             </div>
-            <select data-testid="param-timezone" value={timezone} onChange={(e) => onTimezone(e.target.value)} className={`${inputCls} w-full bg-white sm:w-96`}>
+            <select data-testid="param-timezone" value={timezone} onChange={(e) => onTimezone(e.target.value)} className={`${inputClsAuto} w-full bg-white sm:w-96`}>
               {TIMEZONES.map((o) => <option key={o.iana} value={o.iana}>{timezoneLabel(o)}</option>)}
             </select>
           </section>
@@ -122,9 +122,9 @@ function Parametres({ tenantId }: { tenantId: string }) {
                     </label>
                     {!day.closed && (
                       <div className="flex items-center gap-2">
-                        <input type="time" value={day.open} onChange={(e) => patchDay(d, { open: e.target.value })} className={`${inputCls} bg-white`} />
+                        <input type="time" value={day.open} onChange={(e) => patchDay(d, { open: e.target.value })} className={`${inputClsAuto} bg-white`} />
                         <span className="text-sm text-ink-400">{t('à', 'to')}</span>
-                        <input type="time" value={day.close} onChange={(e) => patchDay(d, { close: e.target.value })} className={`${inputCls} bg-white`} />
+                        <input type="time" value={day.close} onChange={(e) => patchDay(d, { close: e.target.value })} className={`${inputClsAuto} bg-white`} />
                         {invalid && <span className="text-xs text-coral">{t('l’heure de fin doit suivre le début', 'end time must be after start')}</span>}
                       </div>
                     )}

@@ -20,6 +20,7 @@ import { resizeToDataUrl, dataUrlBase64Length } from '@/lib/image';
 import { isDefaultSaveTo, suggestBaseField, BASE_SAVE_FIELDS } from '@/lib/flow-mapping';
 import { FlowScreen, conditionText, type FlowScreenElement } from '@/components/FlowScreen';
 import { useT } from '@/lib/i18n';
+import { inputClsAuto } from '@/lib/ui';
 
 // Libellés bilingues [FR, EN] résolus au rendu via t(...) (useT est inappelable hors composant).
 const TYPE_LABELS: Record<FlowFieldType, [string, string]> = {
@@ -46,7 +47,6 @@ type BElem =
 type BField = Extract<BElem, { kind: 'field' }>;
 type BScreen = { uid: number; title: string; cta: string; elements: BElem[] };
 
-const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 const cleanOptions = (opts: string[]): string[] => [...new Set(opts.map((o) => o.trim()).filter((o) => o !== ''))];
 
@@ -412,7 +412,7 @@ export function FlowBuilder({
             <input
               value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setNomTouche(true)}
               data-testid="flow-nom"
-              className={`${inputCls} w-full ${nomTouche && name.trim() === '' ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+              className={`${inputClsAuto} w-full ${nomTouche && name.trim() === '' ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
               placeholder={t('Demande de rendez-vous', 'Appointment request')}
             />
             {nomTouche && name.trim() === '' && (
@@ -421,7 +421,7 @@ export function FlowBuilder({
           </div>
           <div className="min-w-[160px]">
             <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton final (dernier écran)', 'Final button (last screen)')}</label>
-            <input value={cta} onChange={(e) => setCta(e.target.value)} maxLength={30} className={`${inputCls} w-full`} placeholder={t('Envoyer', 'Send')} />
+            <input value={cta} onChange={(e) => setCta(e.target.value)} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Envoyer', 'Send')} />
           </div>
         </div>
 
@@ -447,12 +447,12 @@ export function FlowBuilder({
           <div className="flex flex-wrap gap-3">
             <div className="min-w-[200px] flex-1">
               <label className="mb-1 block text-xs font-medium text-ink-600">{t("Titre de l'écran (en-tête WhatsApp)", 'Screen title (WhatsApp header)')}</label>
-              <input value={scr.title} onChange={(e) => patchScreenMeta({ title: e.target.value })} maxLength={30} className={`${inputCls} w-full`} placeholder={t('Vos coordonnées', 'Your details')} />
+              <input value={scr.title} onChange={(e) => patchScreenMeta({ title: e.target.value })} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Vos coordonnées', 'Your details')} />
             </div>
             {idx < screens.length - 1 && (
               <div className="min-w-[160px]">
                 <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton Continuer', 'Continue button')}</label>
-                <input value={scr.cta} onChange={(e) => patchScreenMeta({ cta: e.target.value })} maxLength={30} className={`${inputCls} w-full`} placeholder={t('Continuer', 'Continue')} />
+                <input value={scr.cta} onChange={(e) => patchScreenMeta({ cta: e.target.value })} maxLength={30} className={`${inputClsAuto} w-full`} placeholder={t('Continuer', 'Continue')} />
               </div>
             )}
           </div>
@@ -473,7 +473,7 @@ export function FlowBuilder({
               </div>
 
               {(e.kind === 'heading' || e.kind === 'subheading' || e.kind === 'body' || e.kind === 'caption') && (
-                <textarea value={e.text} onChange={(ev) => patch(e.uid, { text: ev.target.value } as Partial<BElem>)} rows={e.kind === 'body' ? 3 : 1} className={`${inputCls} w-full`} placeholder={`${t(...TEXT_LABELS[e.kind])}…`} />
+                <textarea value={e.text} onChange={(ev) => patch(e.uid, { text: ev.target.value } as Partial<BElem>)} rows={e.kind === 'body' ? 3 : 1} className={`${inputClsAuto} w-full`} placeholder={`${t(...TEXT_LABELS[e.kind])}…`} />
               )}
 
               {e.kind === 'image' && (
@@ -501,8 +501,8 @@ export function FlowBuilder({
               {e.kind === 'field' && (
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <input value={e.label} onChange={(ev) => patch(e.uid, { label: ev.target.value } as Partial<BElem>)} className={`${inputCls} min-w-0 flex-1`} placeholder={t('Libellé du champ (ex. Email)', 'Field label (e.g. Email)')} />
-                    <select value={e.type} onChange={(ev) => changeType(e.uid, ev.target.value as FlowFieldType)} className={`${inputCls} bg-white`}>
+                    <input value={e.label} onChange={(ev) => patch(e.uid, { label: ev.target.value } as Partial<BElem>)} className={`${inputClsAuto} min-w-0 flex-1`} placeholder={t('Libellé du champ (ex. Email)', 'Field label (e.g. Email)')} />
+                    <select value={e.type} onChange={(ev) => changeType(e.uid, ev.target.value as FlowFieldType)} className={`${inputClsAuto} bg-white`}>
                       {(Object.keys(TYPE_LABELS) as FlowFieldType[]).map((ft) => (
                         <option key={ft} value={ft}>{t(...TYPE_LABELS[ft])}</option>
                       ))}
@@ -521,7 +521,7 @@ export function FlowBuilder({
                           <input
                             value={opt}
                             onChange={(ev) => patchField(e.uid, (f) => ({ ...f, options: f.options.map((o, k) => (k === oi ? ev.target.value : o)) }))}
-                            className={`${inputCls} min-w-0 flex-1 py-1`}
+                            className={`${inputClsAuto} min-w-0 flex-1 py-1`}
                             placeholder={`${t('Option', 'Option')} ${oi + 1}`}
                           />
                           <button type="button" onClick={() => patchField(e.uid, (f) => ({ ...f, options: f.options.filter((_, k) => k !== oi) }))} className="text-ink-400 hover:text-coral" aria-label={t("Retirer l'option", 'Remove option')}>✕</button>
@@ -537,7 +537,7 @@ export function FlowBuilder({
                       {e.type === 'optin' ? (
                         // Consentement : cible = champ Oui/Non uniquement (le serveur refuse un champ non booléen).
                         // Sans cible = champ de consentement par défaut (whatsapp_optin), qui ouvre le statut opt-in.
-                        <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
+                        <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputClsAuto} bg-white`}>
                           <option value="">{t('Consentement WhatsApp (par défaut)', 'WhatsApp consent (default)')}</option>
                           {userFields.filter((uf) => uf.type === 'boolean').map((uf) => (
                             <option key={uf.key} value={uf.key}>{uf.label}</option>
@@ -546,7 +546,7 @@ export function FlowBuilder({
                       ) : (
                         // Champs de BASE (Nom/Prénom/Email) toujours proposés, PUIS les champs perso (hors clés de
                         // base pour éviter le doublon). Sans cible = nouveau champ dérivé du libellé (défaut serveur).
-                        <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputCls} bg-white`}>
+                        <select value={e.saveTo} onChange={(ev) => patch(e.uid, { saveTo: ev.target.value } as Partial<BElem>)} className={`${inputClsAuto} bg-white`}>
                           <option value="">{t("Nouveau champ (d'après le libellé)", 'New field (from label)')}</option>
                           <optgroup label={t('Champs de base', 'Base fields')}>
                             {BASE_SAVE_FIELDS.map((bf) => (
@@ -603,7 +603,7 @@ export function FlowBuilder({
                               // Valeur amorcée selon le type du source : optin -> coché, choix -> à choisir.
                               setVis(e.uid, { sourceUid: srcUid, op: 'eq', value: src.type === 'optin' ? true : '' });
                             }}
-                            className={`${inputCls} bg-white py-1 text-xs`}
+                            className={`${inputClsAuto} bg-white py-1 text-xs`}
                           >
                             <option value="">{t('(toujours visible)', '(always visible)')}</option>
                             {sources.map((s) => (
@@ -615,7 +615,7 @@ export function FlowBuilder({
                               <select
                                 value={e.visibleIf.op}
                                 onChange={(ev) => setVis(e.uid, { ...e.visibleIf!, op: ev.target.value as 'eq' | 'neq' })}
-                                className={`${inputCls} bg-white py-1 text-xs`}
+                                className={`${inputClsAuto} bg-white py-1 text-xs`}
                               >
                                 <option value="eq">{t('est', 'is')}</option>
                                 <option value="neq">{t("n'est pas", 'is not')}</option>
@@ -624,7 +624,7 @@ export function FlowBuilder({
                                 <select
                                   value={e.visibleIf.value === false ? 'false' : 'true'}
                                   onChange={(ev) => setVis(e.uid, { ...e.visibleIf!, value: ev.target.value === 'true' })}
-                                  className={`${inputCls} bg-white py-1 text-xs`}
+                                  className={`${inputClsAuto} bg-white py-1 text-xs`}
                                 >
                                   <option value="true">{t('coché', 'checked')}</option>
                                   <option value="false">{t('non coché', 'unchecked')}</option>
@@ -633,7 +633,7 @@ export function FlowBuilder({
                                 <select
                                   value={typeof e.visibleIf.value === 'string' ? e.visibleIf.value : ''}
                                   onChange={(ev) => setVis(e.uid, { ...e.visibleIf!, value: ev.target.value })}
-                                  className={`${inputCls} bg-white py-1 text-xs`}
+                                  className={`${inputClsAuto} bg-white py-1 text-xs`}
                                 >
                                   <option value="">{t('Choisir…', 'Choose…')}</option>
                                   {cleanOptions(curSrc.options).map((o) => (

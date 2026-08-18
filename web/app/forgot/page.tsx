@@ -6,8 +6,7 @@ import { forgotPassword } from '@/lib/api';
 import { Logo } from '@/components/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
-
-const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+import { inputCls } from '@/lib/ui';
 
 export default function ForgotPage() {
   const t = useT();

@@ -7,6 +7,7 @@ import { CarouselPreview } from '@/components/CarouselPreview';
 import { useTemplateBody, TemplateBodyField, TemplateVariableExamples, unmappedVariablesMessage } from '@/components/TemplateBodyField';
 import { isSendableButtonUrl } from '@/lib/button-url';
 import { useT } from '@/lib/i18n';
+import { inputClsAuto } from '@/lib/ui';
 
 /** Type d'un bouton de carte. Meta n'accepte que ces deux-là dans un carousel. */
 type CardButtonType = 'QUICK_REPLY' | 'URL';
@@ -31,7 +32,6 @@ const emptyCard = (buttonCount: number): Card => ({
   headerHandle: '', preview: '', body: '', uploading: false,
   buttons: Array.from({ length: buttonCount }, () => ({ text: '', url: '' })),
 });
-const inputCls = 'rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 /**
  * Éditeur de template CAROUSEL : message d'introduction commun + 2 à 10 cartes (image, texte, boutons).
@@ -161,7 +161,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
     <div className="space-y-4 rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div>
         <label className="mb-1 block text-xs font-medium text-ink-600">{t('Nom du carousel', 'Carousel name')}</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} w-full max-w-sm`} placeholder="promo_selection" />
+        <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClsAuto} w-full max-w-sm`} placeholder="promo_selection" />
       </div>
       <TemplateBodyField
         state={bodyState}
@@ -238,7 +238,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                 onChange={(e) => onFile(i, e.target.files?.[0])}
               />
               {c.error && <p className="text-xs text-coral">{c.error}</p>}
-              <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} className={`${inputCls} w-full`} placeholder={t('Texte de la carte (optionnel)', 'Card text (optional)')} />
+              <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} className={`${inputClsAuto} w-full`} placeholder={t('Texte de la carte (optionnel)', 'Card text (optional)')} />
               {layout.map((type, j) => (
                 <div key={j} className="space-y-1.5 rounded-lg bg-ink-50 p-2">
                   <div className="text-[11px] font-medium text-ink-500">
@@ -248,7 +248,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                     value={c.buttons[j]?.text ?? ''}
                     onChange={(e) => setCardButton(i, j, { text: e.target.value })}
                     maxLength={25}
-                    className={`${inputCls} w-full`}
+                    className={`${inputClsAuto} w-full`}
                     placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
                   />
                   {type === 'URL' && (
@@ -256,7 +256,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                       <input
                         value={c.buttons[j]?.url ?? ''}
                         onChange={(e) => setCardButton(i, j, { url: e.target.value })}
-                        className={`${inputCls} w-full ${urlKo(c, j) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
+                        className={`${inputClsAuto} w-full ${urlKo(c, j) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
                         placeholder="https://exemple.fr/cette-carte"
                       />
                       {urlKo(c, j) && (

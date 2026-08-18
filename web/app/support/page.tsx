@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { sendSupportMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { inputCls } from '@/lib/ui';
 
 export default function SupportPage() {
   return <AppShell active="support">{(session) => <SupportInner session={session} />}</AppShell>;
@@ -32,8 +33,7 @@ function SupportInner({ session }: { session: Session }) {
     }
   }
 
-  const inputCls = 'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
-
+  
   return (
     <div className="max-w-2xl space-y-6">
       <div>

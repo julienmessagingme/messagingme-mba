@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { previewImport, importCsv, type ImportReport, type ImportPreview, type ColumnMapping } from '@/lib/api';
+import { inputCls } from '@/lib/ui';
 
 // --- Import CSV avec mapping des colonnes (composant partagé Contacts + Campagne) ---
-
-const inputCls =
-  'w-full rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
 
 // Catégories proposées pour chaque colonne IMPORTÉE. phone/name = attributs standard ; les
 // autres presets et « custom » sont des champs perso (fields.<key>). L'inclusion (importer ou
