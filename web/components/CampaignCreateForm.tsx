@@ -107,14 +107,29 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   // Débit d'envoi (« vitesse du canon ») : jauge TOUJOURS active, 1..80 messages/min (plafond WhatsApp), défaut 60.
   // On protège la réputation du numéro d'entrée de jeu plutôt que d'envoyer au max par défaut.
   const [ratePerMinute, setRatePerMinute] = useState<number>(60);
-  // Lancement rapatrié sur l'écran (étape 2) : idle -> creating -> launching (avec polling inline) -> done|error.
-  // Programmation : idle -> creating -> scheduled (pas de polling, le worker déclenche l'envoi à l'échéance).
+  // Lancement rapatrié sur l'écran (étape 2) : idle -> creating -> launching (avec polling inline) -> error.
+  //
+  // ⚠️ Cet état ne porte QUE les phases où l'écran travaille. Le RÉSULTAT vit dans `dernierEnvoi`, et c'est
+  // tout le sujet d'un bug vécu le 2026-08-19 : les phases terminales `done`/`scheduled` masquaient les
+  // boutons d'action alors que le formulaire restait éditable. Un opérateur qui enchaînait une 2e campagne la
+  // saisissait devant un écran ne proposant plus que « Nouvelle campagne », lequel effaçait sa saisie sans
+  // rien lancer. Séparer le travail en cours du résultat rend cet état impossible.
   const [launch, setLaunch] = useState<{
-    phase: 'idle' | 'creating' | 'launching' | 'scheduled' | 'done' | 'error';
+    phase: 'idle' | 'creating' | 'launching' | 'error';
     campaignId?: string;
     detail?: CampaignDetail;
     message?: string;
   }>({ phase: 'idle' });
+  /**
+   * Résultat du DERNIER envoi, indépendant du formulaire. Purement informatif : le formulaire est déjà remis à
+   * neuf quand ceci s'affiche, donc on peut enchaîner immédiatement sans effacer quoi que ce soit.
+   */
+  const [dernierEnvoi, setDernierEnvoi] = useState<{
+    kind: 'lance' | 'planifie';
+    message: string;
+    campaignId: string;
+    detail?: CampaignDetail;
+  } | null>(null);
   // Timing du lancement (étape 2) : 'now' = envoi immédiat, 'later' = programmation à une date/heure future.
   const [timing, setTiming] = useState<'now' | 'later'>('now');
   // Date/heure choisie pour la programmation, en HEURE LOCALE (valeur brute d'un <input datetime-local>).
@@ -489,6 +504,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   async function createAndLaunch() {
     setError(null);
     setOk(null);
+    setDernierEnvoi(null); // le résultat affiché est celui de l'envoi PRÉCÉDENT : il ne survit pas au suivant
     setLaunch({ phase: 'creating' });
     try {
       const res = await createCampaign(tenantId, buildCreateInput());
@@ -510,12 +526,15 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       }
       const sent = detail?.counts.sent ?? 0;
       const failed = detail?.counts.failed ?? 0;
-      setLaunch({
-        phase: 'done',
+      setDernierEnvoi({
+        kind: 'lance',
         campaignId: res.campaignId,
-        detail,
+        ...(detail ? { detail } : {}),
         message: t(`Campagne lancée : ${sent} envoyés / ${failed} échecs.`, `Campaign launched: ${sent} sent / ${failed} failures.`),
       });
+      // Remise à neuf IMMÉDIATE : c'est ce qui permet d'enchaîner une autre campagne sans trace de celle-ci.
+      // `resetForm` repasse `launch` en idle, donc les boutons d'action redeviennent actifs.
+      resetForm();
     } catch (err) {
       setLaunch({ phase: 'error', message: err instanceof Error ? err.message : t('Lancement impossible', 'Launch failed') });
     }
@@ -528,6 +547,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     const scheduledISO = new Date(scheduledLocal).toISOString();
     setError(null);
     setOk(null);
+    setDernierEnvoi(null);
     setLaunch({ phase: 'creating' });
     try {
       const res = await createCampaign(tenantId, buildCreateInput());
@@ -540,11 +560,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       const r = await runCampaign(res.campaignId, scheduledISO);
       if (!mountedRef.current) return; // écran quitté entre-temps -> on cesse tout setState
       const when = new Date(r.scheduledAt ?? scheduledISO).toLocaleString();
-      setLaunch({
-        phase: 'scheduled',
+      setDernierEnvoi({
+        kind: 'planifie',
         campaignId: res.campaignId,
         message: t(`Campagne planifiée le ${when}.`, `Campaign scheduled for ${when}.`),
       });
+      resetForm();
     } catch (err) {
       setLaunch({ phase: 'error', message: err instanceof Error ? err.message : t('Programmation impossible', 'Scheduling failed') });
     }
@@ -946,6 +967,42 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       </section>
 
       {/* ÉTAPE 2 (Lancement) : grisée tant que l'étape 1 n'est pas prête. Le lancement « maintenant » s'exécute ici. */}
+      {/* Résultat du dernier envoi. Le formulaire est DÉJÀ remis à neuf : ce panneau n'est qu'un accusé de
+          réception, il ne bloque rien et se ferme. Pas de bouton « Nouvelle campagne », qui laissait
+          croire qu'il fallait une action pour repartir alors que l'écran était déjà prêt. */}
+      {dernierEnvoi && (
+        <div
+          data-testid="campagne-dernier-envoi"
+          className={`mt-4 rounded-xl border p-4 text-sm ${dernierEnvoi.kind === 'lance' ? 'border-emerald-200 bg-emerald-50/60' : 'border-violet-200 bg-violet-50/60'}`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p className={`font-medium ${dernierEnvoi.kind === 'lance' ? 'text-emerald-800' : 'text-violet-800'}`}>{dernierEnvoi.message}</p>
+            <button
+              type="button"
+              onClick={() => setDernierEnvoi(null)}
+              aria-label={t('Fermer', 'Close')}
+              data-testid="campagne-fermer-resultat"
+              className="shrink-0 text-ink-400 transition hover:text-ink-700"
+            >
+              ✕
+            </button>
+          </div>
+          {dernierEnvoi.detail && <LaunchCounts counts={dernierEnvoi.detail.counts} />}
+          {dernierEnvoi.kind === 'planifie' && (
+            <p className="mt-1 text-xs text-ink-500">{t('Elle partira automatiquement à la date prévue. Tu peux annuler la planification depuis la liste.', 'It will go out automatically at the scheduled time. You can cancel the schedule from the list.')}</p>
+          )}
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => onCreated()}
+              className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
+            >
+              {t('Voir dans les campagnes', 'View in campaigns')}
+            </button>
+          </div>
+        </div>
+      )}
+
       <section className={`rounded-2xl border border-ink-200 bg-white p-6 shadow-sm transition ${step1Ready ? '' : 'opacity-60'}`} aria-disabled={!step1Ready}>
         <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">{t('Étape 2', 'Step 2')}</p>
         <h2 className="mt-0.5 text-base font-semibold tracking-tight text-ink-900">{t('Lancement', 'Launch')}</h2>
@@ -1006,59 +1063,15 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                     {launch.detail && <LaunchCounts counts={launch.detail.counts} />}
                   </div>
                 )}
-                {launch.phase === 'done' && (
-                  <div>
-                    <p className="font-medium text-emerald-800">{launch.message}</p>
-                    {launch.detail && <LaunchCounts counts={launch.detail.counts} />}
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => onCreated()}
-                        className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
-                      >
-                        {t('Voir dans les campagnes', 'View in campaigns')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={resetForm}
-                        className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
-                      >
-                        {t('Nouvelle campagne', 'New campaign')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {launch.phase === 'scheduled' && (
-                  <div>
-                    <p className="font-medium text-violet-800">{launch.message}</p>
-                    <p className="mt-1 text-xs text-ink-500">{t('Elle partira automatiquement à la date prévue. Tu peux annuler la planification depuis la liste.', 'It will go out automatically at the scheduled time. You can cancel the schedule from the list.')}</p>
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={() => onCreated()}
-                        className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-600"
-                      >
-                        {t('Voir dans les campagnes', 'View in campaigns')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={resetForm}
-                        className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
-                      >
-                        {t('Nouvelle campagne', 'New campaign')}
-                      </button>
-                    </div>
-                  </div>
-                )}
                 {launch.phase === 'error' && <p className="text-red-700">{launch.message}</p>}
               </div>
             )}
 
-            {/* Boutons d'action : masqués une fois le lancement/programmation terminé (les boutons de suite prennent
-                le relais). Le bouton primaire dépend du timing : « Créer et lancer » (now) ou « Créer et planifier »
-                (later, actif seulement si la date est dans le futur). Le brouillon reste disponible dans les deux cas. */}
-            {launch.phase !== 'done' && launch.phase !== 'scheduled' && (
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {/* Boutons d'action : TOUJOURS présents. Ils ont été masqués après un lancement, et c'est ce qui a
+                produit le bug du 2026-08-19 : le formulaire restait éditable sans plus offrir de quoi lancer.
+                Le bouton primaire dépend du timing : « Créer et lancer » (now) ou « Créer et planifier »
+                (later, actif seulement si la date est dans le futur). Le brouillon reste dispo dans les deux cas. */}
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 {timing === 'now' ? (
                   <button
                     type="button"
@@ -1086,8 +1099,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                 >
                   {busy ? t('Création...', 'Creating...') : t('Créer le brouillon (lancer plus tard)', 'Create draft (launch later)')}
                 </button>
-              </div>
-            )}
+            </div>
             {ok && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{ok}</p>}
           </>
         )}
