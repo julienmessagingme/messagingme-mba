@@ -23,7 +23,10 @@
 // suppression coûterait un incident.
 // `rcs_message` = envoi sur le canal RCS. Deux sorties TYPÉES ('sent' / 'unreachable') : sa branche dépend de la
 // joignabilité du numéro, donc d'un appel réseau. Le walk (PUR) rend la main à l'executor, qui fait cette IO.
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message'] as const;
+// `email` = node « Envoi de mail » (boîte SMTP + modèle + destinataire). Contrairement à `rcs_message`, ce n'est
+// PAS un envoi bloquant côté walk : c'est une action SYNCHRONE non bloquante (même branche que `tag`/`action`),
+// l'IO réelle étant faite best-effort par l'executor après coup (le parcours ne l'attend jamais).
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

@@ -49,6 +49,10 @@ import { fetchUrlBorne } from './http/mba';
 import { MetaClientFactory } from './meta/factory';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { buildWorkflowRuntime } from './workflow/wiring';
+import { PgEmailAccountStore } from './email/account-store.pg';
+import { PgEmailTemplateStore } from './email/template-store.pg';
+import { EmailAccountResolver } from './email/resolver';
+import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
@@ -98,6 +102,14 @@ async function main(): Promise<void> {
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
   const automationStore = new PgAutomationStore(pool);
+  // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
+  // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
+  const emailAccounts = new PgEmailAccountStore(pool);
+  const emailTemplates = new PgEmailTemplateStore(pool);
+  const emailResolver = new EmailAccountResolver({
+    getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
+    buildTransport: buildEmailTransport,
+  });
   const transport = new FetchTransport();
   // Clients Meta phone/pricing/templates/flows : résolus PAR TENANT via metaFactory (B1, plus de singleton global).
   // media reste global : endpoint /{appId}/uploads app-scoped (décision assumée, cf. .loop/bloc4.md).
@@ -522,6 +534,9 @@ async function main(): Promise<void> {
       ensureTestToken: (id, tenant, token) => workflowStore.ensureTestToken(id, tenant, token),
       getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
     },
+    // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
+    // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
+    email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
     // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {
       list: (tenant) => automationStore.list(tenant),

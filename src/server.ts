@@ -29,6 +29,7 @@ import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
 import { registerHubspotInstall } from './http/hubspot-install';
 import { registerMba } from './http/mba';
+import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole } from './auth/middleware';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
@@ -62,6 +63,7 @@ import type { HubspotImportRouteDeps } from './http/hubspot-import';
 import type { HubspotPipelinesRouteDeps } from './http/hubspot-pipelines';
 import type { HubspotInstallRouteDeps } from './http/hubspot-install';
 import type { MbaRouteDeps } from './http/mba';
+import type { EmailRoutesDeps } from './http/email';
 import type { ApiKeyLookup } from './auth/api-key-store.pg';
 import type { Queue } from './queue/queue';
 
@@ -131,6 +133,8 @@ export interface ServerDeps {
   hubspotPipelines?: HubspotPipelinesRouteDeps;
   /** Configuration de l'agent MBA (connaissance, personnalité, réglages) — réservé aux admins. */
   mba?: MbaRouteDeps;
+  /** Node « Envoi de mail » (boîtes SMTP + modèles) — réservé aux admins, comme workflows. */
+  email?: EmailRoutesDeps;
 }
 
 /**
@@ -139,7 +143,7 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport || deps.hubspotInstall || deps.hubspotPipelines || deps.mba) && !deps.auth) {
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport || deps.hubspotInstall || deps.hubspotPipelines || deps.mba || deps.email) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
     throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
@@ -238,6 +242,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.hubspotInstall) registerHubspotInstall(app, deps.hubspotInstall, requireAdmin);
   if (deps.hubspotPipelines) registerHubspotPipelines(app, deps.hubspotPipelines, requireAdmin);
   if (deps.mba) registerMba(app, deps.mba, requireAdmin);
+  if (deps.email) registerEmailRoutes(app, deps.email, requireAdmin);
   if (deps.apiKeys) registerApiKeys(app, deps.apiKeys, requireAdmin);
   // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Le rate limiter est un SINGLETON
   // (partagé entre requêtes). Chaque route compose [requireApiKey, requireScope('<scope>')].
