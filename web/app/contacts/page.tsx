@@ -325,23 +325,46 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
   const [phone, setPhone] = useState('');
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
-  const [tag, setTag] = useState('');
+  const [email, setEmail] = useState('');
+  const [bsuid, setBsuid] = useState('');
+  // PLUSIEURS tags : la saisie est un tampon, les tags retenus vivent dans `tags`. Un seul champ texte
+  // n'en acceptait qu'un, alors que la route accepte déjà une liste et que la fiche sait en afficher plusieurs.
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagBuffer, setTagBuffer] = useState('');
   // PRÉ-COCHÉE : un numéro saisi à la main vient de la personne. Décochable pour le cas contraire.
   const [optIn, setOptIn] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-    const canSubmit = phone.trim() !== '' && !busy;
+  const canSubmit = phone.trim() !== '' && !busy;
+
+  /** Retient le tampon comme tag. Borné et dédupliqué comme côté serveur, pour ne pas promettre autre chose. */
+  function ajouterTag(): void {
+    const brut = tagBuffer.trim().slice(0, 64);
+    if (brut === '') return;
+    setTags((prev) => (prev.includes(brut) || prev.length >= 50 ? prev : [...prev, brut]));
+    setTagBuffer('');
+  }
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
     try {
+      // Un tag laissé dans le tampon sans validation compte quand même : sinon on perd en silence ce que
+      // l'opérateur vient de taper, juste parce qu'il n'a pas appuyé sur Entrée.
+      const tousLesTags = [...new Set(tagBuffer.trim() !== '' ? [...tags, tagBuffer.trim().slice(0, 64)] : tags)];
+      // `prenom` et `email` sont des champs SOCLE : la route les matérialise à la première écriture, il n'y a
+      // donc rien à créer avant. Les clés vides sont écartées plutôt qu'envoyées à blanc.
+      const champs: Record<string, string> = {};
+      if (prenom.trim() !== '') champs.prenom = prenom.trim();
+      if (email.trim() !== '') champs.email = email.trim();
+
       const res = await createContact(tenantId, {
         phone: phone.trim(),
         ...(nom.trim() !== '' ? { name: nom.trim() } : {}),
-        ...(prenom.trim() !== '' ? { fields: { prenom: prenom.trim() } } : {}),
-        ...(tag.trim() !== '' ? { tags: [tag.trim()] } : {}),
+        ...(Object.keys(champs).length > 0 ? { fields: champs } : {}),
+        ...(tousLesTags.length > 0 ? { tags: tousLesTags } : {}),
+        ...(bsuid.trim() !== '' ? { bsuid: bsuid.trim() } : {}),
         optIn,
       });
       onDone(res.status === 'created'
@@ -382,9 +405,41 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tag (optionnel)', 'Tag (optional)')}</label>
-            <input list="ajout-tag-suggestions" value={tag} onChange={(e) => setTag(e.target.value)} data-testid="ajout-tag" className={inputCls} />
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('E-mail (optionnel)', 'Email (optional)')}</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="ajout-email" className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tags (optionnel)', 'Tags (optional)')}</label>
+            {tags.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="ajout-tags-retenus">
+                {tags.map((tg) => (
+                  <span key={tg} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                    {tg}
+                    <button type="button" onClick={() => setTags((prev) => prev.filter((x) => x !== tg))} aria-label={t('Retirer', 'Remove')} className="text-brand-400 transition hover:text-coral">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* Entrée AJOUTE le tag au lieu de valider le formulaire : sinon saisir un 2e tag envoyait la fiche. */}
+            <div className="flex gap-2">
+              <input
+                list="ajout-tag-suggestions" value={tagBuffer} onChange={(e) => setTagBuffer(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterTag(); } }}
+                placeholder={t('Un tag, puis Entrée', 'A tag, then Enter')} data-testid="ajout-tag" className={inputCls}
+              />
+              <button type="button" onClick={ajouterTag} disabled={tagBuffer.trim() === ''} data-testid="ajout-tag-valider"
+                className="shrink-0 rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50">
+                {t('Ajouter', 'Add')}
+              </button>
+            </div>
             <datalist id="ajout-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Compte WhatsApp / BSUID (optionnel)', 'WhatsApp account / BSUID (optional)')}</label>
+            <input value={bsuid} onChange={(e) => setBsuid(e.target.value)} data-testid="ajout-bsuid" className={`${inputCls} font-mono`} />
+            <p className="mt-1 text-xs text-ink-400">
+              {t("Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. À ne renseigner que si tu l'as.", "WhatsApp identifier for a customer who hasn't shared their number. Only fill this in if you have it.")}
+            </p>
           </div>
           {/* Pré-cochée : voir le commentaire de `optIn`. Un contact saisi à la main sans opt-in serait ignoré
               par toutes les campagnes, sans que rien ne l'annonce au moment de la saisie. */}

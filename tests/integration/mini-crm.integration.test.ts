@@ -116,6 +116,31 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
     expect(row.opt_in_status).toBe('opted_in');
   });
 
+  it('🔴 le BSUID s’ecrit en base, et un upsert SANS bsuid ne l’efface pas', async () => {
+    // Ecrit puis relu en base : la colonne existe depuis l'origine mais aucun chemin de saisie ne la remplissait.
+    // Le second upsert est le vrai piege : un import CSV ne porte pas de BSUID, et une affectation seche
+    // effacerait l'identifiant d'un contact arrive par l'inbound sans numero partage.
+    const phone = '+33600000105';
+    const r1 = await store.upsertByPhoneReturningId({
+      tenantId, phoneE164: phone, profileName: 'Sans numero partage', fields: {},
+      optInStatus: 'opted_in', bsuid: 'wa-itest-105',
+    });
+    const lu = async (): Promise<string | null> =>
+      (await pool.query<{ bsuid: string | null }>('select bsuid from contacts where id = $1', [r1.id])).rows[0]!.bsuid;
+    expect(await lu()).toBe('wa-itest-105');
+
+    await store.upsertByPhoneReturningId({ tenantId, phoneE164: phone, profileName: null, fields: { ville: 'Lyon' }, optInStatus: 'unknown' });
+    expect(await lu()).toBe('wa-itest-105');
+  });
+
+  it('un BSUID deja pris dans l’espace remonte une violation d’unicite (pas un ecrasement silencieux)', async () => {
+    // `contacts_tenant_bsuid_uidx` est unique par espace. L'upsert de l'API traduit cette violation en erreur
+    // de saisie ; ici on verifie seulement que la base la LEVE, sinon deux contacts partageraient une identite.
+    await expect(store.upsertByPhoneReturningId({
+      tenantId, phoneE164: '+33600000106', profileName: null, fields: {}, optInStatus: 'unknown', bsuid: 'wa-itest-105',
+    })).rejects.toMatchObject({ code: '23505' });
+  });
+
   it('isolation tenant : une action sur un AUTRE tenant ne touche pas nos contacts', async () => {
     const other = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-minicrm-other') returning id`)).rows[0]!.id;
     try {

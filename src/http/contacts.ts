@@ -55,7 +55,7 @@ export interface ContactsRouteDeps {
    */
   createOneContact?(
     tenantId: string,
-    input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean },
+    input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean; bsuid?: string },
   ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string }>;
   /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
   getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
@@ -262,7 +262,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     if (!deps.createOneContact) return reply.code(503).send({ error: 'création de contact non configurée' });
-    const b = (req.body ?? {}) as { phone?: unknown; name?: unknown; fields?: unknown; tags?: unknown; optIn?: unknown };
+    const b = (req.body ?? {}) as { phone?: unknown; name?: unknown; fields?: unknown; tags?: unknown; optIn?: unknown; bsuid?: unknown };
     const phone = typeof b.phone === 'string' ? b.phone.trim() : '';
     if (phone === '') return reply.code(400).send({ error: 'téléphone requis' });
     const rawFields = b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields) ? (b.fields as Record<string, unknown>) : {};
@@ -296,6 +296,8 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       ...(Object.keys(fields).length > 0 ? { fields } : {}),
       tags: asStringArray(b.tags),
       optIn,
+      // Facultatif, et surtout PAS une seconde identité obligatoire : le numéro reste la clé de ce chemin.
+      ...(typeof b.bsuid === 'string' && b.bsuid.trim() !== '' ? { bsuid: b.bsuid.trim().slice(0, 200) } : {}),
     });
     if (res.status === 'error') return reply.code(400).send({ error: res.reason ?? 'contact invalide' });
     // Le détail dit `updated` quand le numéro était déjà connu : sans ça, l'historique laisserait croire à une

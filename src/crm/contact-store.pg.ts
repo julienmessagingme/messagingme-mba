@@ -95,12 +95,15 @@ export class PgContactStore implements ContactStore {
     // Index unique PARTIEL contacts_tenant_phone_uidx (where phone_e164 is not null) :
     // le ON CONFLICT doit répéter le prédicat pour cibler cet index.
     const res = await this.pool.query<{ id: string; created: boolean }>(
-      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags)
-       values ($1, $2, $3, $4::jsonb, $5, $6, $7::text[])
+      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags, bsuid)
+       values ($1, $2, $3, $4::jsonb, $5, $6, $7::text[], $8)
        on conflict (tenant_id, phone_e164) where phone_e164 is not null
        do update set
          fields = contacts.fields || excluded.fields,
          profile_name = coalesce(excluded.profile_name, contacts.profile_name),
+         -- coalesce, et pas une affectation seche : un upsert SANS bsuid (import CSV, /v1/sends) ne doit pas
+         -- effacer l'identifiant d'un contact arrivé par l'inbound sans numéro partagé.
+         bsuid = coalesce(excluded.bsuid, contacts.bsuid),
          opt_in_status = case
            when excluded.opt_in_status = 'opted_in' then 'opted_in'
            else contacts.opt_in_status
@@ -121,6 +124,7 @@ export class PgContactStore implements ContactStore {
         c.optInStatus,
         c.optInSource ?? null,
         c.tags ?? [],
+        c.bsuid ?? null,
       ],
     );
     const row = res.rows[0]!;

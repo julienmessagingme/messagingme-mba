@@ -438,6 +438,30 @@ describe('POST /tenants/:t/contacts (ajout a la main)', () => {
     await server.close();
   });
 
+  it('🔴 BSUID et plusieurs tags arrivent a l’upsert, et restent OPTIONNELS', async () => {
+    // Le BSUID identifie un client qui n'a pas partage son numero. Il ne doit pas devenir une seconde identite
+    // obligatoire : le numero reste la cle de ce chemin, et une saisie sans BSUID marche comme avant.
+    const { server, recus } = avecCreation();
+    await server.inject({
+      method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok),
+      payload: JSON.stringify({ phone: '0612345678', tags: ['salon', 'vip'], bsuid: '  wa-abc123  ' }),
+    });
+    expect(recus[0]).toMatchObject({ tags: ['salon', 'vip'], bsuid: 'wa-abc123' });
+
+    await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '0612345679' }) });
+    expect(recus[1]).not.toHaveProperty('bsuid'); // absent, pas une chaine vide
+    await server.close();
+  });
+
+  it('un BSUID vide ou non textuel est IGNORE, pas transmis a blanc', async () => {
+    const { server, recus } = avecCreation();
+    for (const bsuid of ['', '   ', 42, null]) {
+      await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '0612345678', bsuid }) });
+    }
+    expect(recus.every((r) => !('bsuid' in r))).toBe(true);
+    await server.close();
+  });
+
   it('🔴 une case DECOCHEE reste respectee : le defaut ne l’ecrase pas', async () => {
     const { server, recus } = avecCreation();
     await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '0612345678', optIn: false }) });

@@ -14,6 +14,8 @@ export interface ApiContactInput {
   fields?: Record<string, string>;
   tags?: string[];
   optIn?: boolean;
+  /** Identifiant WhatsApp d'un client sans numéro partagé. Optionnel ; unique par espace côté base. */
+  bsuid?: string;
 }
 
 export interface ApiUpsertOutcome {
@@ -73,16 +75,29 @@ export async function upsertContactsFromApi(
     }
 
     const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 200) : null;
-    const res = await deps.contacts.upsertByPhoneReturningId({
-      tenantId,
-      phoneE164: p.e164,
-      profileName: name,
-      fields: fieldValues,
-      optInStatus: item.optIn === true ? 'opted_in' : 'unknown',
-      ...(item.optIn === true ? { optInSource: 'api' } : {}),
-      ...(normalizeTags(item.tags).length > 0 ? { tags: normalizeTags(item.tags) } : {}),
-    });
-    out.push({ index: i, status: res.created ? 'created' : 'updated', contactId: res.id });
+    const bsuid = typeof item.bsuid === 'string' && item.bsuid.trim() !== '' ? item.bsuid.trim().slice(0, 200) : null;
+    try {
+      const res = await deps.contacts.upsertByPhoneReturningId({
+        tenantId,
+        phoneE164: p.e164,
+        profileName: name,
+        fields: fieldValues,
+        optInStatus: item.optIn === true ? 'opted_in' : 'unknown',
+        ...(item.optIn === true ? { optInSource: 'api' } : {}),
+        ...(normalizeTags(item.tags).length > 0 ? { tags: normalizeTags(item.tags) } : {}),
+        ...(bsuid !== null ? { bsuid } : {}),
+      });
+      out.push({ index: i, status: res.created ? 'created' : 'updated', contactId: res.id });
+    } catch (err) {
+      // `contacts_tenant_bsuid_uidx` rend le BSUID unique par espace. Le violer est une erreur de SAISIE, pas
+      // une panne : sans ce filet elle sortirait en 500, et Cloudflare remplace le corps des 5xx par sa propre
+      // page, donc l'opérateur ne verrait même pas ce qu'on lui reproche.
+      if ((err as { code?: string }).code === '23505') {
+        out.push({ index: i, status: 'error', reason: 'ce BSUID est déjà utilisé par un autre contact de cet espace' });
+        continue;
+      }
+      throw err;
+    }
   }
   return out;
 }

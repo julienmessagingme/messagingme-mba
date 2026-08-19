@@ -873,7 +873,7 @@ export function listHubspotDealStages(tenantId: string): Promise<{ connected: bo
  */
 export function createContact(
   tenantId: string,
-  input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean },
+  input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean; bsuid?: string },
 ): Promise<{ status: 'created' | 'updated'; contactId?: string }> {
   return request(`/tenants/${tenantId}/contacts`, { method: 'POST', body: JSON.stringify(input) });
 }

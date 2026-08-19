@@ -13,6 +13,12 @@ export interface ContactUpsert {
   optInSource?: string;
   /** Tags à ajouter (union avec les tags existants côté store, jamais d'écrasement). */
   tags?: string[];
+  /**
+   * Identifiant WhatsApp d'un client qui n'a pas partagé son numéro. OPTIONNEL et jamais requis : le numéro
+   * reste l'identité de ce chemin d'upsert. Absent -> le BSUID déjà en base est PRÉSERVÉ (jamais écrasé par
+   * du vide), sinon un import CSV effacerait l'identifiant d'un contact arrivé par l'inbound.
+   */
+  bsuid?: string | null;
 }
 
 export interface ContactStore {
