@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'inbox' | 'admin' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -75,6 +75,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
       { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
       { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
+      { key: 'email-templates', href: '/email-templates', label: t('Modèles d’email', 'Email templates') },
       { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
       { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },

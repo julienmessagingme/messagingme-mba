@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
-import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
+import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, listEmailAccounts, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 
@@ -29,6 +29,10 @@ function WorkflowsInner({ session }: { session: Session }) {
   // MBA actif chez le tenant ? Gouverne l'activation des blocs MBA (grisés sinon) dans le builder. Défaut prudent : false.
   const [mbaEnabled, setMbaEnabled] = useState(false);
   const [rcsEnabled, setRcsEnabled] = useState(false);
+  // Au moins une boîte SMTP connectée ? Gouverne le bloc « Envoi de mail » (grisé sinon), même doctrine que RCS.
+  // Dérivé de `listEmailAccounts` (pas de `getSettings`, contrairement à rcsEnabled) : contrairement à l'agent
+  // RCS, une boîte email n'a pas de réglage tenant dédié, sa seule preuve d'existence est la liste elle-même.
+  const [emailEnabled, setEmailEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -63,6 +67,11 @@ function WorkflowsInner({ session }: { session: Session }) {
   // MBA actif ? Best-effort, non bloquant : un échec laisse les blocs MBA grisés (défaut prudent).
   useEffect(() => {
     void getSettings(session.tenantId).then((s) => { setMbaEnabled(s.mbaEnabled); setRcsEnabled(s.rcsEnabled === true); }).catch(() => {});
+  }, [session.tenantId]);
+
+  // Une boîte email existe-t-elle ? Best-effort, non bloquant : un échec laisse le bloc Email grisé (défaut prudent).
+  useEffect(() => {
+    void listEmailAccounts(session.tenantId).then((r) => setEmailEnabled(r.accounts.length > 0)).catch(() => {});
   }, [session.tenantId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -182,7 +191,7 @@ function WorkflowsInner({ session }: { session: Session }) {
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         <div className="min-h-0 flex-1">
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} />
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} />
         </div>
       </div>
     );

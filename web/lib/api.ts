@@ -1078,7 +1078,9 @@ export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: stri
 
 // `rcs_message` : envoi sur le canal RCS, DEUX sorties ('sent' / 'unreachable') -> permet de brancher un
 // repli WhatsApp sur les contacts que le RCS n'atteint pas.
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message';
+// `email` : envoi via une boîte SMTP connectée (node « Envoi de mail »). Action SYNCHRONE best-effort (un
+// échec est journalisé côté serveur, jamais bloquant) -> une seule sortie, comme tag/field/action.
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
@@ -1293,4 +1295,83 @@ export function deleteAutomation(tenantId: string, id: string): Promise<void> {
 export interface WorkflowTestLink { token: string; phone: string | null; link: string | null }
 export function createWorkflowTestLink(tenantId: string, workflowId: string): Promise<WorkflowTestLink> {
   return request(`/tenants/${tenantId}/workflows/${workflowId}/test-link`, { method: 'POST' });
+}
+
+// --- Email : boîtes SMTP du node « Envoi de mail » (Compte > Boîtes email, admin-only) ---
+
+export interface EmailAccount {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  fromAddress: string;
+  fromName: string | null;
+  replyTo: string | null;
+  /** Dernier test d'envoi réussi (ISO). null = jamais testée. */
+  verifiedAt: string | null;
+  createdAt: string;
+  /** Toujours `true` : le mot de passe n'est JAMAIS renvoyé par le serveur, ce booléen dit juste qu'il est défini. */
+  hasPassword: true;
+}
+export interface EmailAccountInput {
+  label: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password: string;
+  fromAddress: string;
+  fromName?: string | null;
+  replyTo?: string | null;
+}
+export function listEmailAccounts(tenantId: string): Promise<{ accounts: EmailAccount[] }> {
+  return request<{ accounts: EmailAccount[] }>(`/tenants/${tenantId}/email/accounts`);
+}
+export function createEmailAccount(tenantId: string, input: EmailAccountInput): Promise<EmailAccount> {
+  return request<EmailAccount>(`/tenants/${tenantId}/email/accounts`, { method: 'POST', body: JSON.stringify(input) });
+}
+/** Édition : le mot de passe n'est re-chiffré que si `password` est fourni (l'omettre le laisse inchangé). */
+export function updateEmailAccount(tenantId: string, id: string, patch: Partial<EmailAccountInput>): Promise<EmailAccount> {
+  return request<EmailAccount>(`/tenants/${tenantId}/email/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteEmailAccount(tenantId: string, id: string): Promise<{ ok: true }> {
+  return request(`/tenants/${tenantId}/email/accounts/${id}`, { method: 'DELETE' });
+}
+/** Envoie un email de test via cette boîte. Un échec SMTP répond 422 : `request()` le transforme en `ApiError`
+ *  (message = celui du serveur), il n'y a donc jamais de branche `{ ok:false }` à lire ici, uniquement un rejet. */
+export function testEmailAccount(tenantId: string, id: string, to: string): Promise<{ ok: true }> {
+  return request(`/tenants/${tenantId}/email/accounts/${id}/test`, { method: 'POST', body: JSON.stringify({ to }) });
+}
+
+// --- Email : modèles (Contenu > Modèles d'email) ---
+
+export type EmailTemplateFormat = 'basic' | 'html';
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  format: EmailTemplateFormat;
+  subject: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface EmailTemplateInput {
+  name: string;
+  format: EmailTemplateFormat;
+  subject: string;
+  body: string;
+}
+export function listEmailTemplates(tenantId: string): Promise<{ templates: EmailTemplate[] }> {
+  return request<{ templates: EmailTemplate[] }>(`/tenants/${tenantId}/email/templates`);
+}
+export function createEmailTemplate(tenantId: string, input: EmailTemplateInput): Promise<EmailTemplate> {
+  return request<EmailTemplate>(`/tenants/${tenantId}/email/templates`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function updateEmailTemplate(tenantId: string, id: string, patch: Partial<EmailTemplateInput>): Promise<EmailTemplate> {
+  return request<EmailTemplate>(`/tenants/${tenantId}/email/templates/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteEmailTemplate(tenantId: string, id: string): Promise<{ ok: true }> {
+  return request(`/tenants/${tenantId}/email/templates/${id}`, { method: 'DELETE' });
 }

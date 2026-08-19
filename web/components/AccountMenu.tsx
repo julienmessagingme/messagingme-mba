@@ -88,6 +88,7 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
           {isAdmin && (
             <>
               <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
+              <Link href="/settings/email" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-700 hover:bg-ink-50">{t('Boîtes email', 'Email accounts')}</Link>
               {disabledItem(t('Abonnement', 'Subscription'))}
               {disabledItem(t('Billing', 'Billing'))}
             </>

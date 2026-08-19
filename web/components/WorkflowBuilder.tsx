@@ -10,11 +10,13 @@ import {
   type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
-  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag,
+  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag, listEmailAccounts, listEmailTemplates,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
+  type EmailAccount, type EmailTemplate,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { emailResolvableFields } from '@/lib/fields';
 import { isCampaignEligible, waitBeforeSessionMessage, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
@@ -36,8 +38,13 @@ function uid(): string {
 function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
   if (wfType === 'action') return { wfType, actionKind: 'add_tag' };
   if (wfType === 'wait') return { wfType, delay: 1, unit: 'hours' };
+  if (wfType === 'email') return { wfType, emailAccountId: '', templateId: '', to: { kind: 'literal', value: '' } };
   return { wfType };
 }
+
+/** Destinataire tel que porté par `data.to` du node email : `{kind:'literal',value}` ou `{kind:'field',field}`,
+ *  lu défensivement (le graphe est opaque, cf. `actionOf` côté moteur). */
+type EmailRecipientData = { kind?: string; value?: string; field?: string };
 
 function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) => string): string {
   const wfType = data.wfType as WorkflowNodeType;
@@ -73,6 +80,12 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     if (n === 0) return t('définir une condition…', 'set a condition…');
     const m = data.match === 'any' ? t('au moins une', 'at least one') : t('toutes', 'all');
     return n === 1 ? t(`${m} de 1 condition`, `${m} of 1 condition`) : t(`${m} de ${n} conditions`, `${m} of ${n} conditions`);
+  }
+  if (wfType === 'email') {
+    const to = data.to as EmailRecipientData | undefined;
+    const dest = to?.kind === 'field' ? (to.field ? `{{${to.field}}}` : '') : (to?.value ?? '');
+    if (!data.emailAccountId || !data.templateId || !dest) return t('configurer l’envoi…', 'configure the send…');
+    return `${t('Mail vers', 'Email to')} ${dest}`;
   }
   // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
@@ -305,7 +318,7 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
  * point bas d'un bloc vers un autre). +/poubelle sur chaque flèche. Panneau de config par bloc. PB1 : édition
  * + sauvegarde du graphe (pas d'exécution). Le graphe est validé/sanitisé côté serveur au save.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false, rcsEnabled = false }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean; rcsEnabled?: boolean }) {
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false, rcsEnabled = false, emailEnabled = false }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean; rcsEnabled?: boolean; emailEnabled?: boolean }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -320,11 +333,15 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [fields, setFields] = useState<UserFieldDef[]>([]);
+  const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   useEffect(() => {
     listTemplates(tenantId).then((r) => setTemplates(r.templates.filter((t) => t.status === 'APPROVED'))).catch(() => {});
     listFlows(tenantId).then((r) => setFlows(r.flows.filter((f) => f.status === 'PUBLISHED'))).catch(() => {});
     listTags(tenantId).then((r) => setTags(r.tags)).catch(() => {});
     listUserFields(tenantId).then((r) => setFields(r.fields)).catch(() => {});
+    listEmailAccounts(tenantId).then((r) => setEmailAccounts(r.accounts)).catch(() => {});
+    listEmailTemplates(tenantId).then((r) => setEmailTemplates(r.templates)).catch(() => {});
   }, [tenantId]);
 
   // Persiste un tag saisi inline dans un nœud « ajout de tag » (au blur) -> il apparaît tout de suite dans Contenus >
@@ -582,6 +599,20 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
           </button>
         ))}
+        {/* Bloc Email : GRISÉ + non cliquable tant qu'aucune boîte SMTP n'est connectée (menu Compte > Boîtes
+            email). Même doctrine que le bloc RCS ci-dessus. */}
+        {EMAIL_NODE_ORDER.map((nt) => (
+          <button
+            key={nt}
+            data-testid={`add-node-${nt}`}
+            onClick={() => { if (emailEnabled) addNode(nt); }}
+            disabled={!emailEnabled}
+            title={emailEnabled ? undefined : t('Disponible dès qu’une boîte email est connectée (menu Compte > Boîtes email)', 'Available once an email mailbox is connected (Account menu > Email accounts)')}
+            className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
+          >
+            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
+          </button>
+        ))}
         <button
           onClick={autoArrange}
           disabled={nodes.length === 0}
@@ -681,7 +712,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} emailAccounts={emailAccounts} emailTemplates={emailTemplates} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -768,7 +799,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 function ConfigPanel({
-  node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, onCommitTag,
+  node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, emailAccounts, emailTemplates, onCommitTag,
 }: {
   node: RFNode;
   /** Ce bloc est-il la RACINE du scénario (sans arête entrante) ? C'est lui que la règle campagne regarde. */
@@ -777,6 +808,7 @@ function ConfigPanel({
   campaignEligible: boolean;
   onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
+  emailAccounts: EmailAccount[]; emailTemplates: EmailTemplate[];
   onCommitTag: (tag: string) => void;
 }) {
   const t = useT();
@@ -1003,6 +1035,99 @@ function ConfigPanel({
           )}
         </p>
       )}
+      {wfType === 'email' && (() => {
+        const to: EmailRecipientData = (d.to as EmailRecipientData | undefined) ?? { kind: 'literal', value: '' };
+        // Champs proposés comme destinataire « variable » : ceux qui résolvent réellement à l'envoi (le
+        // node fait feu au premier échec silencieux si le champ choisi ne tient jamais d'adresse, ex. « Nom »).
+        const recipientFields = emailResolvableFields(fields);
+        return (
+          <div className="space-y-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Boîte d’envoi', 'Sending mailbox')}</label>
+              <select
+                data-testid="email-account-select"
+                value={(d.emailAccountId as string) ?? ''}
+                onChange={(e) => onPatch({ emailAccountId: e.target.value })}
+                className={`${cls} bg-white`}
+              >
+                <option value="">{t('Choisir…', 'Choose…')}</option>
+                {emailAccounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              </select>
+              {emailAccounts.length === 0 && (
+                <p className="mt-1 text-[11px] text-ink-400">{t('Aucune boîte connectée. Connecte-en une depuis le menu Compte > Boîtes email.', 'No mailbox connected yet. Connect one from the Account menu > Email accounts.')}</p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Modèle', 'Template')}</label>
+              <select
+                data-testid="email-template-select"
+                value={(d.templateId as string) ?? ''}
+                onChange={(e) => onPatch({ templateId: e.target.value })}
+                className={`${cls} bg-white`}
+              >
+                <option value="">{t('Choisir…', 'Choose…')}</option>
+                {emailTemplates.map((tpl) => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}
+              </select>
+              {emailTemplates.length === 0 && (
+                <p className="mt-1 text-[11px] text-ink-400">{t('Aucun modèle. Crée-en un dans Contenu > Modèles d’email.', 'No template yet. Create one in Content > Email templates.')}</p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Destinataire', 'Recipient')}</label>
+              <div className="mb-1.5 inline-flex overflow-hidden rounded-lg border border-ink-200 text-xs">
+                <button
+                  type="button"
+                  data-testid="email-recipient-kind-literal"
+                  onClick={() => onPatch({ to: { kind: 'literal', value: '' } })}
+                  className={`px-2 py-1 font-medium transition ${to.kind !== 'field' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                >
+                  {t('Adresse fixe', 'Fixed address')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="email-recipient-kind-field"
+                  onClick={() => onPatch({ to: { kind: 'field', field: '' } })}
+                  className={`px-2 py-1 font-medium transition ${to.kind === 'field' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                >
+                  {t('Variable', 'Variable')}
+                </button>
+              </div>
+              {to.kind === 'field' ? (
+                <select
+                  data-testid="email-recipient-field"
+                  value={to.field ?? ''}
+                  onChange={(e) => onPatch({ to: { kind: 'field', field: e.target.value } })}
+                  className={`${cls} bg-white`}
+                >
+                  <option value="">{t('Choisir un champ…', 'Choose a field…')}</option>
+                  {recipientFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              ) : (
+                <input
+                  data-testid="email-recipient-value"
+                  type="email"
+                  value={to.value ?? ''}
+                  onChange={(e) => onPatch({ to: { kind: 'literal', value: e.target.value } })}
+                  className={cls}
+                  placeholder={t('destinataire@exemple.fr', 'recipient@example.com')}
+                />
+              )}
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t(
+                  'En mode variable, le champ choisi doit contenir une adresse email valide sur la fiche du contact (ex. le champ « Email »).',
+                  'In variable mode, the chosen field must hold a valid email address on the contact (e.g. the “Email” field).',
+                )}
+              </p>
+            </div>
+            <p className="text-[11px] leading-snug text-ink-400">
+              {t(
+                "L'envoi est best-effort : un échec (boîte injoignable, adresse invalide…) est journalisé mais n'arrête jamais le parcours du contact.",
+                'The send is best-effort: a failure (unreachable mailbox, invalid address…) is logged but never stops the contact’s journey.',
+              )}
+            </p>
+          </div>
+        );
+      })()}
     </div>
   );
 }

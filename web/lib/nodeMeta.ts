@@ -16,6 +16,7 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   wait: { emoji: '⏳', label: ['Attente', 'Wait'] },
   action: { emoji: '⚙️', label: ['Action', 'Action'] },
   rcs_message: { emoji: '📱', label: ['Message RCS', 'RCS message'] },
+  email: { emoji: '✉️', label: ['Envoi de mail', 'Send email'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
   mba_handoff: { emoji: '🗑️', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
@@ -30,6 +31,10 @@ export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flo
 // les opérateurs avant qu'un seul message puisse partir : proposer le bloc avant, c'est promettre un envoi qui
 // finirait en erreur.
 export const RCS_NODE_ORDER: WorkflowNodeType[] = ['rcs_message'];
+
+// Bloc Email : présenté à part et GRISÉ tant qu'aucune boîte SMTP n'est connectée (Compte > Boîtes email).
+// Même doctrine que RCS_NODE_ORDER : le bloc se prépare, mais ne peut rien envoyer sans boîte derrière.
+export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 
 
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme

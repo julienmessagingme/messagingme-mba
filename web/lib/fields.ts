@@ -44,6 +44,18 @@ export function customFieldsOnly(fields: UserFieldDef[]): UserFieldDef[] {
   return fields.filter((f) => !isSystemFieldKey(f.key));
 }
 
+/**
+ * Champs RÉSOLUBLES par le node « Envoi de mail » : variable `{{champ}}` d'un modèle, ou destinataire en mode
+ * variable. La table de substitution email (`src/crm/render.ts::contactVars`) ne couvre que `phone`/`bsuid`
+ * (ajoutés à part par le résolveur) et les clés de `contacts.fields` : `name` et `wa_id` sont des champs système
+ * de type ATTRIBUT (pas stockés dans `contacts.fields`, cf. `SYSTEM_FIELDS`) et resteraient donc TOUJOURS vides
+ * si on les proposait. Exclusion volontairement étroite (ces deux clés nommément), pas une règle générique sur
+ * `source.type` : elle dériverait du contrat serveur sans le dire si `contactVars` change un jour.
+ */
+export function emailResolvableFields(fields: UserFieldDef[]): UserFieldDef[] {
+  return fields.filter((f) => f.key !== 'name' && f.key !== 'wa_id');
+}
+
 /** Code public DÉTERMINISTE d'un champ SYSTÈME. Défini dans `./codes` (module PUR, testé depuis la suite
  *  racine) et ré-exporté ici pour rester avec les autres helpers de champs. */
 export { systemFieldCode } from './codes';
