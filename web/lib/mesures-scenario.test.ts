@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { blocsDuScenario, mesuresDisponibles, libelleHandle, valeurDe, handlesMesuresParBloc, estMesurable } from './mesures-scenario';
+import {
+  blocsDuScenario, mesuresDisponibles, libelleHandle, valeurDe, handlesMesuresParBloc, estMesurable,
+  couleurDe, groupesDuTableau,
+} from './mesures-scenario';
 import type { Graph, CompteurBrut } from './mesures-scenario';
 
 /**
@@ -138,5 +141,55 @@ describe('lecture des compteurs', () => {
   it('handlesMesuresParBloc : ne remonte que les clics, dédupliqués', () => {
     const avecDoublon = [...counts, { nodeId: 'a', kind: 'reply_button', handle: 'btn:0', count: 1, contacts: 1 }];
     expect(handlesMesuresParBloc(avecDoublon)).toEqual({ a: ['btn:0'] });
+  });
+});
+
+describe('les groupes de barres du tableau', () => {
+  const g = { nodes: [
+    n('a', 'template', { templateName: 'promo' }),
+    n('b', 'quick_message', { body: 'Ça te va ?', quickReplies: [{ text: 'Oui' }, { text: 'Non' }] }),
+  ], edges: [{ source: 'a', target: 'b' }] };
+  const blocs = blocsDuScenario(g);
+  const counts: CompteurBrut[] = [
+    { nodeId: 'a', kind: 'sent', handle: null, count: 40, contacts: 40 },
+    { nodeId: 'b', kind: 'reply_button', handle: 'btn:0', count: 12, contacts: 9 },
+    { nodeId: 'b', kind: 'reply_button', handle: 'btn:1', count: 5, contacts: 5 },
+  ];
+  const mes = (id: string, kind: string, handle: string | null = null) => ({
+    cle: `${id}|${kind}${handle ? `|${handle}` : ''}`, label: 'x', kind, handle,
+  });
+
+  it('🔴 l’ordre est celui du PARCOURS, pas celui des clics de l’opérateur', () => {
+    // Un entonnoir se lit de gauche a droite dans le sens du scenario. Suivre l'ordre des clics donnerait un
+    // dessin different a chaque fois qu'on recompose la meme selection.
+    const groupes = groupesDuTableau([mes('b', 'sent'), mes('a', 'sent')], counts, blocs);
+    expect(groupes.map((x) => x.nodeId)).toEqual(['a', 'b']);
+  });
+
+  it('un bloc sans mesure retenue n’occupe PAS de place', () => {
+    // Reserver une colonne vide a chaque bloc du scenario ecraserait les groupes reellement mesures.
+    expect(groupesDuTableau([mes('a', 'sent')], counts, blocs).map((x) => x.nodeId)).toEqual(['a']);
+  });
+
+  it('🔴 une même NATURE garde la même couleur d’un bloc à l’autre', () => {
+    // C'est ce qui permet de comparer « envoyes » du bloc 1 a « envoyes » du bloc 2 sans relire la legende.
+    const groupes = groupesDuTableau([mes('a', 'sent'), mes('b', 'sent')], counts, blocs);
+    expect(groupes[0]!.barres[0]!.couleur).toBe(groupes[1]!.barres[0]!.couleur);
+    expect(couleurDe('sent')).not.toBe(couleurDe('read'));
+    expect(couleurDe('read')).not.toBe(couleurDe('failed'));
+  });
+
+  it('🔴 deux CHOIX du même bloc se distinguent, sinon les barres voisines seraient identiques', () => {
+    const groupes = groupesDuTableau([mes('b', 'reply_button', 'btn:0'), mes('b', 'reply_button', 'btn:1')], counts, blocs);
+    const [c0, c1] = groupes[0]!.barres.map((x) => x.couleur);
+    expect(c0).not.toBe(c1);
+    // La nuance suit la POSITION du choix : le « premier choix » garde sa couleur d'un bloc a l'autre.
+    expect(c0).toBe(couleurDe('reply_button', 0));
+  });
+
+  it('les valeurs viennent des compteurs, et une mesure absente vaut zéro', () => {
+    const groupes = groupesDuTableau([mes('a', 'sent'), mes('a', 'read')], counts, blocs);
+    expect(groupes[0]!.barres.map((x) => x.count)).toEqual([40, 0]);
+    expect(groupes[0]!.barres[0]!.contacts).toBe(40);
   });
 });

@@ -204,3 +204,72 @@ export function handlesMesuresParBloc(counts: CompteurBrut[]): Record<string, st
   for (const k of Object.keys(out)) out[k] = [...new Set(out[k]!)];
   return out;
 }
+
+/**
+ * Couleur d'une mesure. UNE couleur par NATURE : toutes les barres « Envoyés » d'un tableau ont la même, tous
+ * les « Lus » la même, etc. C'est ce qui rend un histogramme à plusieurs blocs lisible d'un coup d'œil — on
+ * compare une nature d'un bloc à l'autre sans relire la légende.
+ *
+ * Les CLICS font exception, et c'est nécessaire : un bloc peut en porter plusieurs, et les peindre à
+ * l'identique rendrait deux barres voisines indiscernables. Ils prennent donc des nuances d'une même teinte,
+ * assignées par la POSITION du choix dans le bloc : « premier choix » garde la même nuance d'un bloc à l'autre.
+ */
+const COULEUR_PAR_NATURE: Record<string, string> = {
+  sent: '#0080D6',
+  failed: '#E5484D',
+  delivered: '#8B5CF6',
+  read: '#17C74E',
+  reply_text: '#F59E0B',
+};
+const NUANCES_CLIC = ['#0E7490', '#14B8A6', '#5EEAD4', '#A5F3FC'];
+
+export function couleurDe(kind: string, indexChoix = 0): string {
+  if (kind === 'reply_button') return NUANCES_CLIC[indexChoix % NUANCES_CLIC.length]!;
+  return COULEUR_PAR_NATURE[kind] ?? '#94A3B8';
+}
+
+export interface BarreTableau {
+  cle: string;
+  label: string;
+  count: number;
+  contacts: number;
+  couleur: string;
+}
+
+export interface GroupeTableau {
+  nodeId: string;
+  titre: string;
+  barres: BarreTableau[];
+}
+
+/**
+ * Les groupes de barres d'un tableau, DANS L'ORDRE DU PARCOURS.
+ *
+ * L'ordre vient des blocs et non de l'ordre où l'opérateur a cliqué : un histogramme d'entonnoir se lit de
+ * gauche à droite dans le sens du scénario, et suivre l'ordre des clics donnerait un dessin différent à chaque
+ * fois qu'on recompose la même sélection.
+ *
+ * Un bloc sans mesure retenue n'apparaît pas : réserver une place vide à chaque bloc du scénario écraserait
+ * les groupes réellement mesurés.
+ */
+export function groupesDuTableau(
+  retenues: MesureDispo[],
+  counts: CompteurBrut[],
+  blocs: BlocMesurable[],
+): GroupeTableau[] {
+  const parBloc = new Map<string, MesureDispo[]>();
+  for (const m of retenues) {
+    const id = m.cle.split('|')[0]!;
+    parBloc.set(id, [...(parBloc.get(id) ?? []), m]);
+  }
+  return blocs
+    .filter((b) => (parBloc.get(b.id) ?? []).length > 0)
+    .map((b) => ({
+      nodeId: b.id,
+      titre: b.titre,
+      barres: (parBloc.get(b.id) ?? []).map((m) => {
+        const iChoix = m.handle ? Math.max(0, b.choix.findIndex((c) => c.handle === m.handle)) : 0;
+        return { cle: m.cle, label: m.label, ...valeurDe(counts, b.id, m.kind, m.handle), couleur: couleurDe(m.kind, iChoix) };
+      }),
+    }));
+}

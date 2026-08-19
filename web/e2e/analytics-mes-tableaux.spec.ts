@@ -134,6 +134,45 @@ test.describe('Analytics : Mes tableaux', () => {
   });
 });
 
+test.describe('Mes tableaux : l’histogramme', () => {
+  test('🔴 UNE seule ligne d’abscisse pour tout le tableau', async ({ page }) => {
+    // C'est elle qui dit que les groupes appartiennent au meme parcours. Un axe par bloc donnerait trois
+    // graphes cote a cote, et on ne compare pas trois graphes.
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-sent').check();
+    await page.getByTestId('bloc-mesurable').nth(1).click();
+    await page.getByTestId('mesure-sent').check();
+    await expect(page.getByTestId('barre')).toHaveCount(2);
+    await expect(page.getByTestId('tableaux-graphe').locator('svg line')).toHaveCount(1);
+  });
+
+  test('🔴 une MEME nature garde la meme couleur d’un bloc a l’autre', async ({ page }) => {
+    // C'est ce qui permet de comparer « envoyes » du bloc 1 a « envoyes » du bloc 2 sans relire la legende.
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-sent').check();
+    await page.getByTestId('bloc-mesurable').nth(1).click();
+    await page.getByTestId('mesure-sent').check();
+
+    const couleurs = await page.getByTestId('barre').locator('rect').evaluateAll((n) => n.map((r) => r.getAttribute('fill')));
+    expect(couleurs[0]).toBe(couleurs[1]);
+    // Et la legende ne repete pas deux fois « Envoyes » : c'est une cle de lecture, pas une liste de barres.
+    await expect(page.getByTestId('tableau-legende').getByText('Envoyés')).toHaveCount(1);
+  });
+
+  test('une barre a ZERO reste dessinee, avec sa valeur', async ({ page }) => {
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-read').check();
+    await expect(page.getByTestId('barre')).toHaveCount(1);
+    await expect(page.getByTestId('tableaux-graphe')).toContainText('0');
+  });
+});
+
 test.describe('Mes tableaux : enregistrement', () => {
   test('🔴 nommer puis enregistrer envoie le scénario ET la sélection', async ({ page }) => {
     const { sauvegardes } = await monter(page);

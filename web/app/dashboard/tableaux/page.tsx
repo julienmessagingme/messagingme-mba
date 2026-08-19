@@ -12,8 +12,9 @@ import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
 import { cardCls, inputClsAuto } from '@/lib/ui';
 import { ScenarioCanvas } from '@/components/ScenarioCanvas';
+import { TableauHistogramme } from '@/components/TableauHistogramme';
 import {
-  blocsDuScenario, mesuresDisponibles, valeurDe, handlesMesuresParBloc,
+  blocsDuScenario, mesuresDisponibles, handlesMesuresParBloc, groupesDuTableau,
   type BlocMesurable, type CompteurBrut, type MesureDispo,
 } from '@/lib/mesures-scenario';
 
@@ -95,7 +96,6 @@ function TableauxInner({ session }: { session: Session }) {
     () => (graph ? blocsDuScenario(graph as never, handlesMesuresParBloc(counts)) : []),
     [graph, counts],
   );
-  const titreDuBloc = useMemo(() => new Map(blocs.map((b) => [b.id, b.titre])), [blocs]);
   // Le PREMIER bloc de message du parcours : lui seul propose « Échecs » et « Délivrés » (cf. mesuresDisponibles).
   const premierMessage = useMemo(() => blocs.find((b) => b.mesurable)?.id ?? '', [blocs]);
   const blocOuvert = useMemo(() => blocs.find((b) => b.id === ouvert && b.mesurable) ?? null, [blocs, ouvert]);
@@ -108,6 +108,9 @@ function TableauxInner({ session }: { session: Session }) {
     }
     return out;
   }, [retenues]);
+
+  /** Les groupes de barres, dans l'ordre du parcours. Recalcules a chaque changement de selection ou de periode. */
+  const groupes = useMemo(() => groupesDuTableau(retenues, counts, blocs), [retenues, counts, blocs]);
 
   const basculer = (m: MesureDispo): void => {
     setEtat(null);
@@ -255,7 +258,24 @@ function TableauxInner({ session }: { session: Session }) {
             </div>
           </section>
 
-          <TableauMesures retenues={retenues} counts={counts} titreDuBloc={titreDuBloc} onRetirer={basculer} />
+          <section className={cardCls}>
+            <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Le tableau', 'The report')}</h3>
+            {retenues.length === 0 ? (
+              <p className="text-sm text-ink-500">
+                {t('Clique un bloc du scénario pour choisir ce que tu veux compter.', 'Click a block in the scenario to choose what to count.')}
+              </p>
+            ) : (
+              <>
+                <TableauHistogramme groupes={groupes} />
+                <p className="mt-3 text-xs text-ink-400">
+                  {t(
+                    'Les mesures démarrent à la mise en service du suivi : une période antérieure reste à zéro.',
+                    'Measurement starts when tracking was switched on: an earlier period stays at zero.',
+                  )}
+                </p>
+              </>
+            )}
+          </section>
 
           {retenues.length > 0 && (
             <section className={cardCls}>
@@ -296,86 +316,5 @@ function TableauxInner({ session }: { session: Session }) {
         </>
       )}
     </div>
-  );
-}
-
-/**
- * Le tableau : un groupe de barres PAR BLOC, dans l'ordre où les mesures ont été choisies.
- *
- * Barres en largeur relative au MAXIMUM du tableau, pas au maximum de chaque groupe : sinon deux blocs aux
- * volumes très différents afficheraient des barres de même longueur, ce qui inverserait la lecture.
- */
-function TableauMesures({ retenues, counts, titreDuBloc, onRetirer }: {
-  retenues: MesureDispo[];
-  counts: CompteurBrut[];
-  titreDuBloc: Map<string, string>;
-  onRetirer: (m: MesureDispo) => void;
-}) {
-  const t = useT();
-  const lignes = retenues.map((m) => {
-    const nodeId = m.cle.split('|')[0]!;
-    return { m, nodeId, ...valeurDe(counts, nodeId, m.kind, m.handle) };
-  });
-  const max = lignes.reduce((acc, l) => Math.max(acc, l.count), 0);
-
-  if (retenues.length === 0) {
-    return (
-      <section className={cardCls}>
-        <p className="text-sm text-ink-500">
-          {t('Clique un bloc ci-dessus pour choisir ce que tu veux compter.', 'Click a block above to choose what to count.')}
-        </p>
-      </section>
-    );
-  }
-
-  // Regroupé par bloc, en conservant l'ordre d'apparition des blocs dans la sélection.
-  const parBloc = new Map<string, typeof lignes>();
-  for (const l of lignes) {
-    const liste = parBloc.get(l.nodeId) ?? [];
-    liste.push(l);
-    parBloc.set(l.nodeId, liste);
-  }
-
-  return (
-    <section className={cardCls} data-testid="tableaux-graphe">
-      <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Le tableau', 'The report')}</h3>
-      <div className="space-y-4">
-        {[...parBloc.entries()].map(([nodeId, groupe]) => (
-          <div key={nodeId}>
-            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-500">{titreDuBloc.get(nodeId) ?? nodeId}</p>
-            <div className="space-y-1.5">
-              {groupe.map((l) => (
-                <div key={l.m.cle} className="flex items-center gap-2 text-sm" data-testid="barre">
-                  <span className="w-52 shrink-0 truncate text-ink-600">{l.m.label}</span>
-                  <div className="h-4 flex-1 overflow-hidden rounded bg-ink-100">
-                    <div className="h-full rounded bg-brand-500" style={{ width: max > 0 ? `${Math.round((l.count / max) * 100)}%` : '0%' }} />
-                  </div>
-                  <span className="w-28 shrink-0 text-right tabular-nums text-ink-900">
-                    {l.count}
-                    {/* Le nombre de PERSONNES n'est montré que s'il diffère : l'afficher partout ferait douter
-                        d'un chiffre qui, la plupart du temps, dit exactement la même chose. */}
-                    {l.contacts !== l.count && <span className="ml-1 text-xs text-ink-400">({l.contacts} {t('pers.', 'ppl')})</span>}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onRetirer(l.m)}
-                    aria-label={t('Retirer', 'Remove')}
-                    className="shrink-0 text-ink-300 transition hover:text-coral"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3 text-xs text-ink-400">
-        {t(
-          'Les mesures démarrent à la mise en service du suivi : une période antérieure reste à zéro.',
-          'Measurement starts when tracking was switched on: an earlier period stays at zero.',
-        )}
-      </p>
-    </section>
   );
 }
