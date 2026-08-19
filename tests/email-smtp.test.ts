@@ -128,6 +128,45 @@ describe('EmailAccountResolver', () => {
   });
 });
 
+/** Le WORKER construit sa PROPRE instance d'EmailAccountResolver (voir worker.ts) et ne reçoit jamais
+ *  l'invalidation posée par les routes email du process API. Sans TTL, un mot de passe SMTP changé ou un
+ *  compte supprimé restait servi par le worker jusqu'au prochain redéploiement. Le TTL (calqué sur
+ *  MetaCredentialsResolver, src/meta/credentials.ts) borne cette staleness. Horloge injectée (`now`) pour
+ *  contrôler le temps sans vrai délai dans le test. */
+describe('EmailAccountResolver : TTL du cache (borne la staleness inter-process)', () => {
+  it('un hit AVANT expiration du TTL réutilise le transport en cache (buildTransport appelé une seule fois)', async () => {
+    let now = 0;
+    const build = vi.fn(() => ({ sendMail: vi.fn() }) as never);
+    const getDecrypted = vi.fn().mockResolvedValue(account);
+    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build, cacheTtlMs: 1000, now: () => now });
+
+    const first = await r.getTransport('t1', 'a1');
+    now += 999; // juste avant expiration (now - at = 999 < ttl 1000)
+    const second = await r.getTransport('t1', 'a1');
+
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(getDecrypted).toHaveBeenCalledTimes(1);
+    expect(first?.transport).toBe(second?.transport); // même instance, pas juste égales
+  });
+
+  it("après expiration du TTL, l'appel suivant reconstruit : buildTransport et getDecrypted rappelés, ancien transport fermé", async () => {
+    let now = 0;
+    const close = vi.fn();
+    const build = vi.fn(() => ({ sendMail: vi.fn(), close }) as never);
+    const getDecrypted = vi.fn().mockResolvedValue(account);
+    const r = new EmailAccountResolver({ getDecrypted, buildTransport: build, cacheTtlMs: 1000, now: () => now });
+
+    const first = await r.getTransport('t1', 'a1');
+    now += 1000; // TTL écoulé (now - at = 1000 >= ttl 1000 -> traité comme un miss)
+    const second = await r.getTransport('t1', 'a1');
+
+    expect(build).toHaveBeenCalledTimes(2);
+    expect(getDecrypted).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(1); // l'ancien transport a été fermé avant la reconstruction
+    expect(first?.transport).not.toBe(second?.transport);
+  });
+});
+
 /** Critical 2 : le cache était indexé par accountId SEUL. Sur un hit, tenantId n'était jamais revérifié : une
  *  fois (t1, a1) mis en cache, `getTransport('t2', 'a1')` renvoyait directement l'entrée de t1 (mot de passe en
  *  clair inclus) sans jamais rappeler getDecrypted, qui est le seul point qui applique le scoping tenant réel.
