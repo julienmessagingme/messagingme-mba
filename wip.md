@@ -2,8 +2,13 @@
 
 ## 🚧 POINT DE REPRISE (2026-08-19, matin)
 
-**Le lot de 4 demandes est CODÉ, TESTÉ, COMMITÉ et POUSSÉ. Il n'est PAS DÉPLOYÉ** (pas d'OK de Julien pour
-celui-là). Prod toujours sur **`6f918c9`**, migrations jusqu'à 0061. `main` est sur `33aa4e6`.
+**Le lot de 4 demandes est EN PRODUCTION.** Prod sur **`89a4efb`**, migrations jusqu'à **0062**.
+
+Le déploiement a emporté, en plus de mes 4 commits, tout le chantier du node « Envoi de mail » de la session
+concurrente, dont `89a4efb` où le node ENVOIE réellement. Vérifié avant de basculer : le node est INERTE sans
+boîte SMTP configurée (le résolveur rend `null`, l'envoi est best-effort et n'interrompt pas le parcours), et
+aucune boîte n'existe en base. `ENCRYPTION_KEY` était déjà présente dans `.env.prod` (elle sert aux
+`waba_credentials`), donc rien à ajouter côté environnement.
 
 ### Ce que contient le lot (4 commits séparés, un par demande)
 
@@ -62,11 +67,11 @@ Une autre session construit le node « Envoi de mail » (SMTP) et commite sur `m
 
 ### Ce qui reste ouvert
 
-- **Déployer le lot** (4 commits + ceux de la session e-mail : `git log 6f918c9..HEAD` AVANT de déployer).
-  Aucune migration neuve de mon côté ; la **0062** de la session e-mail attend, elle.
-- `tests/integration/email-account-store.integration.test.ts` a échoué sur un `src/email/account-store.pg`
-  absent lors d'un premier passage : chantier de l'autre session, à ne pas « corriger » à sa place.
-- Le coup d'œil visuel de Julien sur les 4 écrans touchés.
+- Le coup d'œil visuel de Julien sur les 4 écrans touchés (campagne, ajout de contact, bloc Action, Analytics).
+- Le node « Envoi de mail » est en ligne mais sans aucune boîte SMTP : il ne fera rien tant qu'une boîte n'est
+  pas créée. C'est le chantier de l'autre session, pas le mien.
+- Après déploiement : 115 tests d'intégration verts contre la base réelle, tables `audit_log`,
+  `email_accounts`, `email_templates` en place, zéro erreur dans les logs, site à 200.
 
 # wip.md — travail en cours
 
