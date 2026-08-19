@@ -1,89 +1,72 @@
 # WIP
 
-## 🚧 POINT DE REPRISE (2026-08-19, nuit)
+## 🚧 POINT DE REPRISE (2026-08-19, matin)
 
-**Tout le chantier RGPD est EN LIGNE.** Prod sur `f3df192`, migrations appliquées jusqu'à **0061**.
+**Le lot de 4 demandes est CODÉ, TESTÉ, COMMITÉ et POUSSÉ. Il n'est PAS DÉPLOYÉ** (pas d'OK de Julien pour
+celui-là). Prod toujours sur **`6f918c9`**, migrations jusqu'à 0061. `main` est sur `33aa4e6`.
 
-### Ce qui a été livré cette nuit
+### Ce que contient le lot (4 commits séparés, un par demande)
 
-- Le **journal d'audit est branché** sur ce qu'il observait pas : entrée d'un contact (création à la main,
-  import CSV), sortie (suppression douce, effacement définitif), et bascules de consentement. Consultable
-  dans Paramètres.
-- **`opted_out` est enfin écrivable.** C'était une valeur que les filtres et le garde-fou de campagne savaient
-  LIRE, mais qu'aucun chemin ne posait jamais : un client demandant à ne plus rien recevoir n'était
-  enregistrable nulle part. Action en masse « Passer en opt-out » dans le mini-CRM.
-- L'**opt-in capté par un WhatsApp Flow** est journalisé (preuve de consentement la plus forte, la personne a
-  coché elle-même). `markOptedIn` rend l'identifiant du contact au lieu d'un compteur.
-- **Opt-in par défaut sur les DEUX créations manuelles** : saisie à la main et import CSV (cases pré-cochées,
-  défauts de route alignés). L'API publique et l'import HubSpot gardent l'exigence inverse. Décision de Julien.
-- **Le consentement se modifie sur la FICHE** (`PATCH ... { optInStatus }`), deux valeurs seulement, jamais de
-  retour à « inconnu ». Sans ça, un contact `unknown` restait injoignable en marketing sans recours : le
-  garde-fou `optInAllows` exige un opt-in EXPLICITE et écarte les autres EN SILENCE.
-- ⚠️ **Les contacts importés depuis HubSpot arrivent `unknown`**, donc hors marketing tant qu'on ne les bascule
-  pas. Volontaire (leur consentement vient d'ailleurs), mais à savoir avant de lancer une campagne dessus.
-- Écran **« Effacer définitivement »**, distinct de « Supprimer », avec saisie du mot `PURGER`.
+1. **BUG campagne corrigé** (`5354d99`). Après un lancement, les phases terminales masquaient les boutons
+   d'action alors que le formulaire restait éditable : Julien a saisi une 2e campagne devant un écran ne
+   proposant plus que « Nouvelle campagne », qui a effacé sa saisie sans rien lancer. Le résultat sort de la
+   machine à états (`dernierEnvoi`), le formulaire se remet à neuf tout seul, les boutons ne sont plus jamais
+   masqués et « Nouvelle campagne » disparaît. Le panneau de résultat vit HORS du bloc « Étape 2 », sinon il
+   disparaît au moment même de la remise à zéro.
+2. **Création de contact** (`57d7aa3`) : plusieurs tags (pastilles retirables, Entrée ajoute au lieu de
+   valider, un tag non validé compte quand même), e-mail (champ socle), BSUID. Les trois optionnels.
+3. **Bloc Action opt-in / opt-out** (`2d4510c`) : `set_optin` / `set_optout`, seul chemin qui pose un opt-out
+   AUTOMATIQUEMENT (à brancher derrière un mot-clé de désinscription). `setOptInByWaId` est l'écriture unique
+   des deux sens, `markOptedIn` délègue dessus.
+4. **Analytics multi-sélection** (`33aa4e6`) : campagnes et templates acceptent plusieurs valeurs, série
+   compilée. Axes mutuellement exclusifs (les croiser donnerait leur intersection). Liste vide -> `null` et pas
+   tableau vide, sinon `= any('{}')` effacerait le graphe.
 
-### 🔴 Trois bugs de la purge, trouvés EN PRODUCTION en purgeant un vrai contact
+### Vérifications faites
 
-La purge écrite la veille était couverte par des tests à FAUX store. Ils prouvaient que la route appelle
-`purgeMany`, jamais que `purgeMany` efface quoi que ce soit. En base, elle ne marchait pas du tout :
+Racine **1895** tests, web **41**, intégration sur la vraie base **115** (12 fichiers), tsc racine + web, build
+web, E2E ciblés (campagne 2, ajout contact 5, bloc action 3, analytics 4). Chaque item vérifié DANS LES DEUX
+SENS par mutation. Les tests d'intégration neufs ont d'ailleurs été vus ROUGES sur l'ancien code avant d'être
+verts sur le nouveau (BSUID null, `setOptInByWaId` inexistante, filtre de coût sans effet).
 
-1. **Les fils n'étaient jamais trouvés** : `conversations.wa_id = contacts.phone_e164` ne peut pas être vraie
-   (`33612345678` contre `+33612345678`). Le contact était anonymisé, la conversation restait, avec le vrai
-   numéro et tous ses messages. Le dépôt a pourtant une règle partagée pour ce rapprochement, écrite parce que
-   ses copies avaient divergé ; la purge ne l'utilisait pas. Prédicat désormais extrait et réutilisé.
-2. **Le cache RCS** est indexé en E.164 et recevait des `wa_id` nus : il n'effaçait rien non plus.
-3. **`automation_fires` n'a pas de `tenant_id`** (clé `(automation_id, wa_id)`). Le filtre portait sur une
-   colonne inexistante : Postgres LÈVE, donc toute la transaction de purge roulait en arrière. Invisible tant
-   que le bug 1 empêchait d'atteindre cette branche.
+### ⚠️ Comment lancer les tests d'intégration SANS déployer
 
-`tests/integration/purge-rgpd.integration.test.ts` écrit un contact, son fil, ses messages, son analyse, un
-parcours et un déclenchement d'automation, purge, et relit ce qui reste. Vérifié dans les deux sens : rouge
-sur l'ancien code, vert sur le nouveau, dans une vraie base.
+`docker exec mba-api` vise le conteneur EN PLACE, donc l'ancien code : c'est un faux vert. Et
+`docker cp src mba-api:/app/src` crée `/app/src/src` au lieu d'écraser (sémantique de `docker cp` quand la
+cible existe). La bonne façon, sans toucher à la production :
 
-### TRANCHÉ : une seule destruction (2026-08-19)
+```
+sudo docker compose build mba-api
+sudo docker run -d --name mba-itest --env-file .env.prod --network mcp-robot_default mba-mba-api:latest sleep 1200
+sudo docker cp vitest.integration.config.ts mba-itest:/app/ && sudo docker cp tests mba-itest:/app/tests
+sudo docker exec mba-itest npx vitest run --config vitest.integration.config.ts
+sudo docker rm -f mba-itest
+```
 
-Julien a choisi la seconde option : **« Supprimer » efface aussi la conversation.** La suppression douce, la
-route `/bulk-delete`, `softDeleteMany` et les actions d'audit `contact.deleted` / `contact.restored` sont
-retirés, faute d'appelant. Vérifié en production AVANT de retirer : zéro ligne `contact.deleted` au journal et
-zéro contact en suppression douce, donc rien ne restait en rade.
+L'image `tests/` et `vitest.integration.config.ts` ne sont PAS dans l'image : il faut les copier.
 
-La confirmation par saisie est conservée et le mot suit le bouton (`SUPPRIMER`, plus `PURGER`). La colonne
-`deleted_at` reste : la purge la pose avec `anonymized_at` pour que la fiche vidée quitte le CRM.
+### ⚠️ Session e-mail EN PARALLÈLE dans le même dépôt
 
-Le contact de Geoffrey a été purgé à la main côté serveur (fil, 28 messages, analyse, 2 parcours), trace au
-journal. Vérifié : 0 fil, 0 fiche, 0 ligne d'envoi nominative.
-
-### ⚠️ Piège de déploiement découvert, à ne plus repayer
-
-`sudo docker compose run --rm mba-api npm run migrate` a répondu **« à jour, rien à appliquer »** alors que les
-migrations n'étaient même pas dans l'image : `run` part de l'IMAGE, pas du dépôt fraîchement pull. Un vert qui
-ne prouve rien, même famille que l'incident du 2026-08-17. **Ordre correct : `build` -> `run migrate` ->
-`up -d`.** Le build ne touche pas les conteneurs en place, donc l'ordre reste sûr.
-
-Autre piège : deux sessions parallèles avaient écrit **deux migrations 0060**. Le runner indexe par nom de
-fichier, donc rien n'était sauté en silence, mais l'ambiguïté a été levée (la mienne est passée en 0061)
-pendant qu'aucune n'était appliquée. Une migration déjà appliquée, elle, ne se renomme plus.
+Une autre session construit le node « Envoi de mail » (SMTP) et commite sur `main` : `src/email/`,
+`src/crm/render.ts`, migration **0062**, et des modifications de `src/server.ts` et `src/workflow/graph.ts`
+(type de node `email`). **Ne jamais committer par répertoire ni par `-A`** : chemins de FICHIERS explicites.
 
 ### Décisions prises avec Julien, à ne pas rouvrir
 
-- **On anonymise pour garder le quanti.** Les lignes de campagne restent (statut, livraison, horodatage),
-  leur `to_e164` et leurs `resolved_params` partent. Les compteurs restent justes.
-- **L'identifiant de remplacement est ALÉATOIRE, pas une empreinte du numéro.**
-- **Le journal ne porte JAMAIS le numéro**, seulement l'identifiant interne.
-- **Un seul réglage de contrôle du fil**, le délai sur l'accueil, 10 minutes par défaut.
-- **Le bloc « Assigner à un agent »** est l'ancien bloc `inbox`, renommé.
+- **Une seule destruction** : « Supprimer » un contact efface aussi sa conversation (saisie de `SUPPRIMER`).
+- **Opt-in par défaut** sur les deux créations manuelles (à la main et import CSV). API publique et import
+  HubSpot gardent l'exigence inverse : leurs contacts arrivent `unknown`, donc hors marketing.
+- **Le consentement se modifie sur la fiche**, deux valeurs, jamais de retour à « inconnu ».
+- **On anonymise pour garder le quanti**, identifiant de remplacement ALÉATOIRE, journal sans numéro.
+- **Un seul réglage de contrôle du fil** (délai sur l'accueil, 10 min).
 
-### Pièges d'outillage, à ne pas repayer
+### Ce qui reste ouvert
 
-- **`git add <répertoire>` a le même défaut que `git add -A`.** Chemins de FICHIERS explicites, sans exception.
-- **`agent()` d'un workflow ne LÈVE PAS sur erreur d'API, il rend `null`.** Tester le retour BRUT.
-- **Un test qui passe ne prouve rien tant qu'on n'a pas vu la mutation le faire tomber**, et il faut muter le
-  BON site.
-
-### Session concurrente — NE PAS COMMITTER
-`src/email/`, `tests/email-account-store.test.ts`, `web/e2e/zzprobe-*.spec.ts` appartiennent au chantier du
-node « Envoi de mail (SMTP) » d'une autre session. Sa migration `0060_email.sql` est appliquée en prod.
+- **Déployer le lot** (4 commits + ceux de la session e-mail : `git log 6f918c9..HEAD` AVANT de déployer).
+  Aucune migration neuve de mon côté ; la **0062** de la session e-mail attend, elle.
+- `tests/integration/email-account-store.integration.test.ts` a échoué sur un `src/email/account-store.pg`
+  absent lors d'un premier passage : chantier de l'autre session, à ne pas « corriger » à sa place.
+- Le coup d'œil visuel de Julien sur les 4 écrans touchés.
 
 # wip.md — travail en cours
 
