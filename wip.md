@@ -7,7 +7,9 @@ Prod sur **`44887c6`**, migrations jusqu'a **0063**. Sont EN LIGNE : le lot des 
 creation de contact, bloc Action opt-in/opt-out, Analytics multi-selection) ET « Analytics > Mes tableaux ».
 
 ⚠️ **Les mesures ont commence a s'accumuler le 2026-08-19 vers 15h30.** Toute periode anterieure reste vide,
-c'est normal et l'ecran le dit.
+c'est normal et l'ecran le dit. Verifie ce jour-la : le scenario « randstad » avait tourne a 9h49, donc bien
+AVANT la mise en service, d'ou un tableau vide qui n'etait pas un bug. Le chemin d'une CAMPAGNE passe bien par
+l'instrumentation (`worker.ts` -> `executor.start` -> `apply`), donc les envois suivants sont mesures.
 
 Le deploiement a aussi emporte le front e-mail d'une session concurrente (ecran Boites SMTP, page Modeles
 d'email, node dans le builder). Le node est VERROUILLE tant qu'aucune boite n'est connectee, avec l'infobulle
@@ -27,8 +29,12 @@ instrumenter. **Les mesures demarrent au deploiement, pas d'historique retroacti
 - Ecran `/dashboard/tableaux`.
 - ⚠️ RGPD : la purge ANONYMISE ces lignes (elles portent un wa_id), elle ne les supprime pas.
 
-**MANQUE : l'enregistrement d'un tableau** (il se compose en direct et se perd au rechargement). Laisse apres
-le coup d'oeil de Julien, pour ne pas batir la persistance sur une forme qu'il voudra changer.
+L'ENREGISTREMENT est fait (migration **0064**, `workflow_reports`) : ouvrir, nommer, enregistrer, mettre a
+jour, supprimer. Un tableau ne contient que la SELECTION, jamais des chiffres : ils se recalculent a la
+lecture, donc un tableau rouvert sur une autre periode repond juste.
+
+« Echecs » et « Delivres » ne sont proposes que sur le PREMIER bloc de message : apres lui, le message part a
+quelqu'un qui vient de repondre, l'envoi aboutit et arrive quasiment toujours (demande de Julien).
 
 **Les clics sur boutons URL ne sont PAS mesurables** : Meta n'envoie aucun evenement. Chantier separe.
 
