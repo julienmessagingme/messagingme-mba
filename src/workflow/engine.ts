@@ -13,14 +13,32 @@ import type { EvalContext } from './conditions';
  *  bouton quick-reply (branche déterministe) et à afficher les sorties dans l'éditeur. */
 export interface WorkflowButton { type: string; text: string }
 
+/** Destinataire du node « Envoi de mail » : adresse en dur, ou variable résolue depuis un champ du contact
+ *  (même identité déjà résolue pour l'envoi de template : téléphone ou BSUID, pas un nouveau chemin). */
+export type EmailRecipient =
+  | { kind: 'literal'; value: string }
+  | { kind: 'field'; field: string };
+
+/** Action « Envoi de mail » : boîte SMTP + modèle + destinataire, portés par leur id/valeur opaques. Exportée :
+ *  consommée par l'executor (câblage de l'envoi réel, IO). */
+export interface SendEmailAction {
+  kind: 'sendEmail';
+  emailAccountId: string;
+  templateId: string;
+  to: EmailRecipient;
+}
+
 export type WorkflowAction =
   | { kind: 'tag'; tag: string }
   | { kind: 'removeTag'; tag: string }
   | { kind: 'field'; key: string; value: string }
   | { kind: 'clearField'; key: string }
+  /** Consentement marketing posé par un scénario. Les deux sens, comme depuis la fiche et l'action en masse. */
+  | { kind: 'optIn'; value: 'opted_in' | 'opted_out' }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
   | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[] }
-  | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string };
+  | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string }
+  | SendEmailAction;
 
 /** Ce que l'OUVERTURE d'un scénario contient, en un seul parcours (les deux questions posées sur l'ouverture
  *  ont la même exploration : les séparer en deux fonctions dupliquerait la traversée ET ses règles). */
@@ -257,7 +275,19 @@ export function nextNodeByHandle(graph: WorkflowGraph, nodeId: string, handle: s
   return graph.edges.find((e) => e.source === nodeId && e.sourceHandle === handle)?.target ?? null;
 }
 
-function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null {
+/** Destinataire valide : littéral non vide, ou champ non vide à résoudre à l'envoi (executor). Toute autre
+ *  forme (kind absent/inconnu, valeur/champ vide) -> null, comme un bloc non configuré. */
+function emailRecipientOf(raw: unknown): EmailRecipient | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (r.kind === 'literal' && typeof r.value === 'string' && r.value.trim() !== '') return { kind: 'literal', value: r.value };
+  if (r.kind === 'field' && typeof r.field === 'string' && r.field.trim() !== '') return { kind: 'field', field: r.field };
+  return null;
+}
+
+/** Exportée : consommée directement par le test unitaire du node email (`actionOf` en isolation), sans passer
+ *  par `walk`. */
+export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null {
   if (node.type === 'tag') {
     const tag = String(node.data.tag ?? '').trim();
     return tag ? { kind: 'tag', tag } : null;
@@ -285,6 +315,11 @@ function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null 
       return { kind: 'field', key, value };
     }
     if (kind === 'clear_field') return key ? { kind: 'clearField', key } : null;
+    // Consentement : rien à saisir, donc rien qui puisse rendre le bloc incomplet. C'est le SEUL chemin qui
+    // pose un opt-out automatiquement (l'upsert d'import ne fait jamais régresser un statut), typiquement
+    // derrière un mot-clé « STOP » branché en automation.
+    if (kind === 'set_optin') return { kind: 'optIn', value: 'opted_in' };
+    if (kind === 'set_optout') return { kind: 'optIn', value: 'opted_out' };
     return null;
   }
   if (node.type === 'template') {
@@ -320,6 +355,15 @@ function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null 
     // le contact ne recevait jamais rien et aucune erreur n'apparaissait nulle part.
     if (!body) return null;
     return { kind: 'sendQuickMessage', body, buttons };
+  }
+  if (node.type === 'email') {
+    // Lecture défensive comme les autres blocs de config : `data` est opaque (parseGraph ne le valide pas pour
+    // 'email', pareil que pour les autres types). Compte, modèle ou destinataire manquant/invalide -> null.
+    const emailAccountId = String(node.data.emailAccountId ?? '').trim();
+    const templateId = String(node.data.templateId ?? '').trim();
+    const to = emailRecipientOf(node.data.to);
+    if (!emailAccountId || !templateId || !to) return null;
+    return { kind: 'sendEmail', emailAccountId, templateId, to };
   }
   return null;
 }
@@ -414,7 +458,8 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       current = nextNode(graph, current); // durée non configurée -> passe-plat
       continue;
     }
-    // tag / field : bloc synchrone -> action + on continue. On répercute l'effet dans la copie de travail.
+    // tag / field / email : bloc synchrone -> action + on continue. On répercute l'effet dans la copie de
+    // travail (email n'y a rien à répercuter, applyToWork ignore son kind, comme optIn).
     const a = actionOf(node, work);
     if (a) {
       actions.push(a);

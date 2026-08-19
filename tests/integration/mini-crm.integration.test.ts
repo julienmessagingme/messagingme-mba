@@ -141,6 +141,27 @@ describe.skipIf(!url)('mini-CRM — actions en masse + soft-delete', () => {
     })).rejects.toMatchObject({ code: '23505' });
   });
 
+  it('🔴 setOptInByWaId ecrit les DEUX sens, par wa_id (sans le « + »)', async () => {
+    // Le fil porte `33600000101`, la fiche `+33600000101` : c'est la correspondance qui a deja fait un bug de
+    // purge dans ce depot. Un test a faux store ne l'aurait pas vu.
+    const lu = async (): Promise<{ opt_in_status: string; opt_in_source: string | null }> =>
+      (await pool.query<{ opt_in_status: string; opt_in_source: string | null }>(
+        'select opt_in_status, opt_in_source from contacts where id = $1', [ids.A!],
+      )).rows[0]!;
+
+    expect(await store.setOptInByWaId(tenantId, '33600000101', 'opted_out', 'scenario')).toBe(ids.A);
+    expect(await lu()).toEqual({ opt_in_status: 'opted_out', opt_in_source: 'scenario' });
+
+    expect(await store.setOptInByWaId(tenantId, '33600000101', 'opted_in', 'scenario')).toBe(ids.A);
+    expect((await lu()).opt_in_status).toBe('opted_in');
+  });
+
+  it('setOptInByWaId sur un numero inconnu -> null, aucune fiche creee (merge-only)', async () => {
+    const avant = await store.count(tenantId, {});
+    expect(await store.setOptInByWaId(tenantId, '33699999997', 'opted_out', 'scenario')).toBeNull();
+    expect(await store.count(tenantId, {})).toBe(avant);
+  });
+
   it('isolation tenant : une action sur un AUTRE tenant ne touche pas nos contacts', async () => {
     const other = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-minicrm-other') returning id`)).rows[0]!.id;
     try {

@@ -244,6 +244,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       await contactStore.removeTagsByPhone(tenant, waId, [clean]);
     },
     clearField: async (tenant, waId, key) => { await contactStore.clearFieldsByPhone(tenant, waId, [key]); },
+    // Source `scenario` : elle distingue un consentement pose par un parcours de celui saisi a la main
+    // (`crm`) ou coche par la personne dans un Flow (`flow`). Utile quand il faut savoir d'ou vient un opt-out.
+    setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario'); },
     sendTemplate: async (tenant, waId, name, language, buttons, explicitParams) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       const pn = await repo.getTenantPhoneNumberId(tenant);

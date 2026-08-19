@@ -942,18 +942,35 @@ function ConfigPanel({
       {wfType === 'action' && (() => {
         const kind = (d.actionKind as string) ?? 'add_tag';
         const isTag = kind === 'add_tag' || kind === 'remove_tag';
+        // Le consentement n'a RIEN à configurer : le sens est dans le choix de l'action. Pas de second champ,
+        // donc pas de bloc « incomplet » possible, contrairement à un tag ou un champ laissé vide.
+        const isConsentement = kind === 'set_optin' || kind === 'set_optout';
         return (
           <div className="space-y-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Action', 'Action')}</label>
-              <select value={kind} onChange={(e) => onPatch({ actionKind: e.target.value })} className={`${cls} bg-white`}>
+              <select value={kind} onChange={(e) => onPatch({ actionKind: e.target.value })} data-testid="action-kind" className={`${cls} bg-white`}>
                 <option value="add_tag">{t('Ajouter un tag', 'Add a tag')}</option>
                 <option value="remove_tag">{t('Retirer un tag', 'Remove a tag')}</option>
                 <option value="set_field">{t('Mettre à jour un champ', 'Update a field')}</option>
                 <option value="clear_field">{t('Vider un champ', 'Clear a field')}</option>
+                <option value="set_optin">{t('Passer en opt-in', 'Mark as opted in')}</option>
+                <option value="set_optout">{t('Passer en opt-out', 'Mark as opted out')}</option>
               </select>
             </div>
-            {isTag ? (
+            {isConsentement ? (
+              <p className="text-[11px] leading-snug text-ink-500">
+                {kind === 'set_optin'
+                  ? t(
+                    "Le contact devient destinataire des campagnes marketing. À placer après une étape où il a donné son accord, pas au hasard d'un parcours.",
+                    'The contact becomes eligible for marketing campaigns. Place it after a step where they agreed, not anywhere in a flow.',
+                  )
+                  : t(
+                    "Le contact est exclu de toute campagne, y compris de celles déjà programmées. C'est ce qu'il faut derrière un mot-clé de désinscription.",
+                    'The contact is excluded from every campaign, including already scheduled ones. This is what belongs behind an unsubscribe keyword.',
+                  )}
+              </p>
+            ) : isTag ? (
               <TagPicker
                 label={kind === 'add_tag' ? t('Tag à ajouter', 'Tag to add') : t('Tag à retirer', 'Tag to remove')}
                 value={(d.tag as string) ?? ''}

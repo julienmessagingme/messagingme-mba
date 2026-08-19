@@ -178,14 +178,32 @@ export class PgContactStore implements ContactStore {
    * ruinerait la purge, qui existe pour l'effacer).
    */
   async markOptedIn(tenantId: string, waId: string, source: string): Promise<string | null> {
+    return this.setOptInByWaId(tenantId, waId, 'opted_in', source);
+  }
+
+  /**
+   * Écrit le consentement d'un contact désigné par son `wa_id`, dans les DEUX sens. Sert au bloc « Action » d'un
+   * scénario (passer le contact en opt-in ou en opt-out) et, via `markOptedIn`, au consentement capté par un Flow.
+   *
+   * Une SEULE écriture pour les deux sens, et une seule copie de `MATCH_BY_WAID_SQL` : ce prédicat a déjà
+   * divergé dans ce dépôt (bug de purge du 2026-08-18, où une correspondance recopiée à la main ne pouvait
+   * jamais être vraie). Renvoie l'identifiant du contact touché, `null` si le numéro est inconnu. Merge-only :
+   * ne crée aucune fiche.
+   */
+  async setOptInByWaId(
+    tenantId: string,
+    waId: string,
+    statut: 'opted_in' | 'opted_out',
+    source: string,
+  ): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
-      `update contacts set opt_in_status = 'opted_in', opt_in_source = $3, updated_at = now()
+      `update contacts set opt_in_status = $4, opt_in_source = $3, updated_at = now()
        where id = (
          select id from contacts where tenant_id = $1
          ${MATCH_BY_WAID_SQL}
        )
        returning id`,
-      [tenantId, waId, source],
+      [tenantId, waId, source, statut],
     );
     return res.rows[0]?.id ?? null;
   }

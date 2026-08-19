@@ -41,6 +41,11 @@ export interface WorkflowExecutorDeps {
   /** Vide un champ du contact = retire la clé (bloc Action « vider un champ »). */
   clearField(tenantId: string, waId: string, key: string): Promise<void>;
   /**
+   * Pose le consentement marketing du contact (bloc « Action » d'un scénario). Optionnelle : absente, le bloc
+   * est un no-op silencieux plutôt qu'une erreur, comme les autres actions sur un câblage partiel.
+   */
+  setOptIn?(tenantId: string, waId: string, value: 'opted_in' | 'opted_out'): Promise<void>;
+  /**
    * `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton).
    * `explicitParams` (optionnel) = variables du corps DÉJÀ résolues (campagne workflow, 1er template) : si fourni,
    * l'envoi utilise ces valeurs directement au lieu de re-résoudre via les hints. Absent (advance/webhook) ->
@@ -226,6 +231,11 @@ export class WorkflowExecutor {
       else if (a.kind === 'removeTag') await this.deps.removeTag(tenantId, waId, a.tag);
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
       else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);
+      else if (a.kind === 'optIn') await this.deps.setOptIn?.(tenantId, waId, a.value);
+      // Câblage de l'envoi réel (dep sendEmail + résolution boîte/modèle) : pas encore branché ici. No-op
+      // défensif en attendant (garde la même forme que les autres branches, ne bloque jamais le parcours ;
+      // besoin réel best-effort comme documenté sur le node 'email' de graph.ts).
+      else if (a.kind === 'sendEmail') { /* à câbler : executor + wiring */ }
       else {
         // ⚠️ Jamais `refus ??= await …` : `??=` n'évalue pas sa droite quand la gauche est déjà remplie, donc
         // l'envoi lui-même serait SAUTÉ. On envoie toujours, on ne garde que la 1re raison.
