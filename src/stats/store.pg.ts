@@ -31,10 +31,17 @@ export interface CostVolumeRow {
   count: number;
 }
 
-/** Filtre optionnel du graphe de coût : une campagne OU un template précis. */
+/**
+ * Filtre optionnel du graphe de coût : DES campagnes OU DES templates. Plusieurs valeurs -> une série
+ * COMPILÉE sur l'ensemble (les volumes s'additionnent jour par jour), pas la première de la liste.
+ *
+ * Les deux axes restent MUTUELLEMENT EXCLUSIFS côté écran : combiner « campagne A » et « template B » ne
+ * décrirait pas une union mais leur intersection, qui ne veut rien dire pour un opérateur. Une liste vide
+ * équivaut à « tout », comme l'absence de filtre.
+ */
 export interface CostFilter {
-  campaignId?: string;
-  templateName?: string;
+  campaignIds?: string[];
+  templateNames?: string[];
 }
 
 export interface DashboardStats {
@@ -253,10 +260,16 @@ export class PgStatsStore {
        where c.tenant_id = $1
          and r.status = 'sent' and r.delivery_status is distinct from 'failed'
          and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
-         and ($5::uuid is null or c.id = $5::uuid)
-         and ($6::text is null or c.template_name = $6::text)
+         and ($5::uuid[] is null or c.id = any($5::uuid[]))
+         and ($6::text[] is null or c.template_name = any($6::text[]))
        group by 1, 2`,
-      [tenantId, from, to, TZ, filter.campaignId ?? null, filter.templateName ?? null],
+      // Liste VIDE -> null, pas un tableau vide : `= any('{}')` ne matche rien, donc un filtre vide effacerait
+      // le graphe au lieu de le laisser complet.
+      [
+        tenantId, from, to, TZ,
+        filter.campaignIds?.length ? filter.campaignIds : null,
+        filter.templateNames?.length ? filter.templateNames : null,
+      ],
     );
     return res.rows.map((r) => ({ date: r.date, category: r.category, count: Number(r.count) }));
   }

@@ -613,7 +613,13 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const vol = await stats.getCostVolume(tenantId, range, {});
     expect(vol.find((v) => v.category === 'marketing' && v.date === today)?.count).toBe(2); // r1 + r2 (r3 échec exclu)
     // Filtre par template inexistant -> aucun volume.
-    expect(await stats.getCostVolume(tenantId, range, { templateName: 'inconnu' })).toHaveLength(0);
+    expect(await stats.getCostVolume(tenantId, range, { templateNames: ['inconnu'] })).toHaveLength(0);
+    // Liste VIDE = « tout », pas « rien » : `= any('{}')` ne matche aucune ligne, donc un filtre vide effacerait
+    // le graphe. C'est la raison du passage a null cote store.
+    expect(await stats.getCostVolume(tenantId, range, { templateNames: [], campaignIds: [] })).toHaveLength(1);
+    // 🔴 Plusieurs valeurs -> serie COMPILEE : le template reel est pris avec un inconnu, le volume reste entier.
+    const compile = await stats.getCostVolume(tenantId, range, { templateNames: ['inconnu', 'te'] });
+    expect(compile.find((v) => v.category === 'marketing')?.count).toBe(2);
   });
 
   it('getCampaignFunnel : une réponse est attribuée à la DERNIÈRE campagne (pas de double-comptage)', async () => {

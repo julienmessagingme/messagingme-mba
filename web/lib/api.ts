@@ -630,10 +630,11 @@ export interface CostSeries {
   total: number;
   hasRates: boolean;
 }
-export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { campaignId?: string; templateName?: string }): Promise<CostSeries> {
+/** Filtre du graphe de coût. Plusieurs valeurs -> série COMPILÉE. Les deux axes sont mutuellement exclusifs. */
+export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { campaignIds?: string[]; templateNames?: string[] }): Promise<CostSeries> {
   const parts: string[] = [];
-  if (filter?.campaignId) parts.push(`campaignId=${encodeURIComponent(filter.campaignId)}`);
-  if (filter?.templateName) parts.push(`templateName=${encodeURIComponent(filter.templateName)}`);
+  if (filter?.campaignIds?.length) parts.push(`campaignIds=${encodeURIComponent(filter.campaignIds.join(','))}`);
+  if (filter?.templateNames?.length) parts.push(`templateNames=${encodeURIComponent(filter.templateNames.join(','))}`);
   const base = rangeQuery(range);
   const extra = parts.length ? (base ? `&${parts.join('&')}` : `?${parts.join('&')}`) : '';
   return request<CostSeries>(`/tenants/${tenantId}/stats/cost${base}${extra}`);

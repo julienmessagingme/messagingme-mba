@@ -188,15 +188,65 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
   );
 }
 
+/**
+ * Sélecteur MULTIPLE compact : la liste déroulante sert à AJOUTER, la sélection s'affiche en pastilles
+ * retirables. Un `<select multiple>` natif aurait demandé Ctrl+clic et occupé quatre lignes dans un en-tête de
+ * carte ; ici, choisir plusieurs valeurs se fait au clic, et ce qui est retenu se lit d'un coup d'œil.
+ *
+ * Rien de sélectionné = « tout », comme avant.
+ */
+function SelecteurMultiple({ libelleTous, options, selection, onChange, testId }: {
+  libelleTous: string;
+  options: Array<{ value: string; label: string }>;
+  selection: string[];
+  onChange: (suivant: string[]) => void;
+  testId: string;
+}) {
+  const t = useT();
+  const dispo = options.filter((o) => !selection.includes(o.value));
+  const selectCls = 'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  const libelleDe = (v: string): string => options.find((o) => o.value === v)?.label ?? v;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <select
+        value=""
+        onChange={(e) => { if (e.target.value !== '') onChange([...selection, e.target.value]); }}
+        data-testid={testId}
+        className={selectCls}
+        disabled={dispo.length === 0}
+      >
+        <option value="">{selection.length === 0 ? libelleTous : t('Ajouter…', 'Add…')}</option>
+        {dispo.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {selection.map((v) => (
+        <span key={v} data-testid={`${testId}-retenu`} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+          {libelleDe(v)}
+          <button
+            type="button"
+            onClick={() => onChange(selection.filter((x) => x !== v))}
+            aria-label={t('Retirer', 'Remove')}
+            className="text-brand-400 transition hover:text-coral"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Breakdown des codes d'erreur Meta sur la période (avec libellé FR). */
 function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
   const t = useT();
   const { locale } = useLocale();
-  const [tpl, setTpl] = useState('');
+  const [tpls, setTpls] = useState<string[]>([]);
   // Templates ayant généré des erreurs (pour le filtre). Les erreurs des envois Inbox/Workflow ne sont pas
   // trackées (colonne d'erreur seulement sur campaign_recipients) : ce breakdown couvre les CAMPAGNES.
   const templates = [...new Set(errors.map((e) => e.templateName).filter((x): x is string => !!x))].sort();
-  const filtered = tpl ? errors.filter((e) => e.templateName === tpl) : errors;
+  // Plusieurs templates -> breakdown COMPILÉ sur l'ensemble. L'agrégation par code juste en dessous s'en
+  // charge déjà : elle sommait le cas « tous les templates », donc rien de neuf à écrire pour un sous-ensemble.
+  const filtered = tpls.length > 0 ? errors.filter((e) => e.templateName !== null && tpls.includes(e.templateName)) : errors;
   // Agrège par code (somme sur les templates de la sélection : plusieurs lignes par code sinon).
   const byCode = new Map<number, number>();
   for (const e of filtered) byCode.set(e.code, (byCode.get(e.code) ?? 0) + e.count);
@@ -211,10 +261,13 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
           <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
         </div>
         {templates.length > 0 && (
-          <select value={tpl} onChange={(e) => setTpl(e.target.value)} className="rounded-md border border-ink-300 bg-white px-2 py-1 text-xs text-ink-700 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
-            <option value="">{t('Tous les templates', 'All templates')}</option>
-            {templates.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <SelecteurMultiple
+            libelleTous={t('Tous les templates', 'All templates')}
+            options={templates.map((n) => ({ value: n, label: n }))}
+            selection={tpls}
+            onChange={setTpls}
+            testId="erreurs-templates"
+          />
         )}
       </div>
       {rows.length === 0 ? (
@@ -245,26 +298,29 @@ function CostChartCard({
   tenantId, range, campaigns, templates,
 }: { tenantId: string; range: StatsRange; campaigns: CampaignSummary[]; templates: TemplateStats['breakdown'] }) {
   const t = useT();
-  const [campaignId, setCampaignId] = useState('');
-  const [templateName, setTemplateName] = useState('');
+  const [campaignIds, setCampaignIds] = useState<string[]>([]);
+  const [templateNames, setTemplateNames] = useState<string[]>([]);
   const [cost, setCost] = useState<CostSeries | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Les clés de dépendance sont les listes SÉRIALISÉES : un tableau recréé à chaque rendu relancerait la
+  // requête en boucle, alors que son contenu n'a pas changé.
+  const cleCampagnes = campaignIds.join(',');
+  const cleTemplates = templateNames.join(',');
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    const filter: { campaignId?: string; templateName?: string } = {
-      ...(campaignId ? { campaignId } : {}),
-      ...(templateName ? { templateName } : {}),
+    const filter: { campaignIds?: string[]; templateNames?: string[] } = {
+      ...(cleCampagnes ? { campaignIds: cleCampagnes.split(',') } : {}),
+      ...(cleTemplates ? { templateNames: cleTemplates.split(',') } : {}),
     };
     getCostSeries(tenantId, range, filter)
       .then((c) => { if (alive) setCost(c); })
       .catch(() => { if (alive) setCost(null); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [tenantId, range, campaignId, templateName]);
-
-  const selectCls = 'rounded-lg border border-ink-300 bg-white px-2.5 py-1 text-xs text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100';
+  }, [tenantId, range, cleCampagnes, cleTemplates]);
 
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
@@ -275,15 +331,23 @@ function CostChartCard({
             {t('par jour, tarif Meta × volume', 'per day, Meta rate × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total)}</span></> : null}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <select value={campaignId} onChange={(e) => { setCampaignId(e.target.value); setTemplateName(''); }} className={selectCls}>
-            <option value="">{t('Toutes campagnes', 'All campaigns')}</option>
-            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={templateName} onChange={(e) => { setTemplateName(e.target.value); setCampaignId(''); }} className={selectCls}>
-            <option value="">{t('Tous templates', 'All templates')}</option>
-            {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-          </select>
+        {/* Les deux axes restent MUTUELLEMENT EXCLUSIFS : choisir des campagnes vide les templates et
+            inversement. Les croiser ne donnerait pas une union mais leur intersection, qui ne décrit rien. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <SelecteurMultiple
+            libelleTous={t('Toutes campagnes', 'All campaigns')}
+            options={campaigns.map((c) => ({ value: c.id, label: c.name }))}
+            selection={campaignIds}
+            onChange={(suivant) => { setCampaignIds(suivant); if (suivant.length > 0) setTemplateNames([]); }}
+            testId="cout-campagnes"
+          />
+          <SelecteurMultiple
+            libelleTous={t('Tous templates', 'All templates')}
+            options={templates.map((tp) => ({ value: tp.name, label: tp.name }))}
+            selection={templateNames}
+            onChange={(suivant) => { setTemplateNames(suivant); if (suivant.length > 0) setCampaignIds([]); }}
+            testId="cout-templates"
+          />
         </div>
       </div>
       {loading ? (

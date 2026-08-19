@@ -35,6 +35,15 @@ export interface StatsRouteDeps {
 
 /** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (guard passé par server.ts). Plage de dates
  *  via ?from&?to (YYYY-MM-DD, Europe/Paris) ou repli ?days= ; invalide/futur/span>366 -> 400. */
+/**
+ * Liste CSV d'un query param : découpée, nettoyée, dédupliquée et PLAFONNÉE. Le plafond n'est pas décoratif :
+ * ces valeurs partent dans un `= any($n)`, et rien n'empêche un appelant d'en envoyer dix mille.
+ */
+function csvBorne(v: unknown): string[] {
+  if (typeof v !== 'string' || v.trim() === '') return [];
+  return [...new Set(v.split(',').map((x) => x.trim()).filter((x) => x !== ''))].slice(0, 200);
+}
+
 export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
 
@@ -86,8 +95,8 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     const r = parseRange(q);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     const filter: CostFilter = {
-      ...(typeof q.campaignId === 'string' && q.campaignId !== '' ? { campaignId: q.campaignId } : {}),
-      ...(typeof q.templateName === 'string' && q.templateName !== '' ? { templateName: q.templateName } : {}),
+      ...(csvBorne(q.campaignIds).length > 0 ? { campaignIds: csvBorne(q.campaignIds) } : {}),
+      ...(csvBorne(q.templateNames).length > 0 ? { templateNames: csvBorne(q.templateNames) } : {}),
     };
     return reply.code(200).send(await deps.getCostSeries(tenant, r.range, filter));
   });
