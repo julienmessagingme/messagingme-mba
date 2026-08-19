@@ -251,8 +251,21 @@ export function waitDurationMs(node: WorkflowNode): number {
   return Math.min(Math.round(brut * ms), WAIT_MAX_MS);
 }
 
+/**
+ * Une action ET le bloc qui l'a produite.
+ *
+ * Le bloc d'origine est porté ICI plutot que dans un tableau parallele au meme index : « meme longueur, meme
+ * ordre » est un invariant que rien ne verifie et qui finit par se casser en silence. C'est ce lien qui rend
+ * mesurable un scenario bloc par bloc (Analytics > Mes tableaux) : avant, l'executeur recevait une liste
+ * d'actions dont il ne savait plus d'ou elles venaient.
+ */
+export interface WalkStep {
+  nodeId: string;
+  action: WorkflowAction;
+}
+
 export interface WalkResult {
-  actions: WorkflowAction[];
+  actions: WalkStep[];
   rest: WalkRest;
 }
 
@@ -405,7 +418,7 @@ export interface WalkOptions {
 
 export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContext, opts?: WalkOptions): WalkResult {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const actions: WorkflowAction[] = [];
+  const actions: WalkStep[] = [];
   const visited = new Set<string>();
   // Copie de travail MUTABLE du contexte : une action tag/field décidée dans CE walk (appliquée en base seulement
   // APRÈS, via executor.apply) doit être visible par une condition rencontrée plus loin dans la MÊME chaîne
@@ -440,7 +453,7 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     }
     if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node, work);
-      if (a) actions.push(a);
+      if (a) actions.push({ nodeId: current, action: a });
       // Sans MBA : seul un message rapide sans bouton continue (règle historique). Avec MBA : TOUTE étape qui
       // n'offre pas de choix continue, l'agent de Meta répondant à sa place.
       const continuer = !etapeOffreUnChoix(a) && (opts?.mbaActif === true || a?.kind === 'sendQuickMessage');
@@ -462,7 +475,7 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
     // travail (email n'y a rien à répercuter, applyToWork ignore son kind, comme optIn).
     const a = actionOf(node, work);
     if (a) {
-      actions.push(a);
+      actions.push({ nodeId: current, action: a });
       if (work) applyToWork(work, a);
     }
     current = nextNode(graph, current);

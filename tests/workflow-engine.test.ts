@@ -59,7 +59,7 @@ describe('walk : action sendTemplate porte les boutons du template', () => {
       edges: [],
     };
     const r = walk(g, 'tpl');
-    expect(r.actions).toEqual([{ kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Site' }] }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Site' }] }]);
   });
 });
 
@@ -81,7 +81,7 @@ describe('walk : un type de bloc RETIRÉ ne casse pas un ancien scénario', () =
       edges: [e('e1', 't', 'h'), e('e2', 'h', 'tpl')],
     } as unknown as WorkflowGraph;
     const r = walk(g, 't');
-    expect(r.actions).toEqual([
+    expect(r.actions.map((e) => e.action)).toEqual([
       { kind: 'tag', tag: 'vip' },
       { kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [] },
     ]);
@@ -100,7 +100,7 @@ describe('walk : quick_message', () => {
   it('corps + réponses -> action sendQuickMessage (ordre préservé), waiting', () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Ça te va ?', quickReplies: ['Oui', 'Non'] })], edges: [] };
     const r = walk(g, 'qm');
-    expect(r.actions).toEqual([{ kind: 'sendQuickMessage', body: 'Ça te va ?', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'QUICK_REPLY', text: 'Non' }] }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'sendQuickMessage', body: 'Ça te va ?', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'QUICK_REPLY', text: 'Non' }] }]);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'qm' });
   });
   it('sans corps -> pas d\'action mais attend quand même (bloc bloquant)', () => {
@@ -115,7 +115,7 @@ describe('walk : quick_message', () => {
     // aucune erreur n'apparaissait. La couche d'envoi bascule sur un message texte quand aucun bouton n'est
     // utilisable. Un corps VIDE reste, lui, un no-op (cas juste en dessous).
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Salut', quickReplies: ['', ''] })], edges: [] };
-    expect(walk(g, 'qm').actions).toEqual([{ kind: 'sendQuickMessage', body: 'Salut', buttons: [{ type: 'QUICK_REPLY', text: '' }, { type: 'QUICK_REPLY', text: '' }] }]);
+    expect(walk(g, 'qm').actions.map((e) => e.action)).toEqual([{ kind: 'sendQuickMessage', body: 'Salut', buttons: [{ type: 'QUICK_REPLY', text: '' }, { type: 'QUICK_REPLY', text: '' }] }]);
   });
 
   it('bloc SANS corps -> toujours aucune action (rien à envoyer)', () => {
@@ -134,7 +134,7 @@ describe('walk : quick_message', () => {
       edges: [e('e1', 'qm', 'tg')],
     };
     const r = walk(g, 'qm');
-    expect(r.actions).toEqual([
+    expect(r.actions.map((e) => e.action)).toEqual([
       { kind: 'sendQuickMessage', body: 're ganial', buttons: [] },
       { kind: 'tag', tag: 'genial' },
     ]);
@@ -147,7 +147,7 @@ describe('walk : quick_message', () => {
       edges: [e('e1', 'qm', 'tg')],
     };
     const r = walk(g, 'qm');
-    expect(r.actions.map((a) => a.kind)).toEqual(['sendQuickMessage', 'tag']);
+    expect(r.actions.map((e) => e.action.kind)).toEqual(['sendQuickMessage', 'tag']);
     expect(r.rest).toEqual({ status: 'done' });
   });
 
@@ -170,7 +170,7 @@ describe('walk : quick_message', () => {
       edges: [e('e1', 'q1', 'q2'), e('e2', 'q2', 'tpl')],
     };
     const r = walk(g, 'q1');
-    expect(r.actions.map((a) => a.kind)).toEqual(['sendQuickMessage', 'sendQuickMessage', 'sendTemplate']);
+    expect(r.actions.map((e) => e.action.kind)).toEqual(['sendQuickMessage', 'sendQuickMessage', 'sendTemplate']);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'tpl' });
   });
 });
@@ -179,12 +179,12 @@ describe('walk : node flow (Lot 7 : envoi du formulaire, fini le no-op)', () => 
   it('flowId + nom -> action sendFlow avec accroche et cta par défaut, waiting', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'Prise de RDV' })], edges: [] };
     const r = walk(g, 'f');
-    expect(r.actions).toEqual([{ kind: 'sendFlow', flowId: 'fl1', flowName: 'Prise de RDV', body: 'Formulaire : Prise de RDV', cta: 'Envoyer' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'sendFlow', flowId: 'fl1', flowName: 'Prise de RDV', body: 'Formulaire : Prise de RDV', cta: 'Envoyer' }]);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'f' });
   });
   it('accroche et cta du node prioritaires (cta tronqué à 30)', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'RDV', body: ' Réserve ton créneau ', cta: 'Un libellé beaucoup trop long pour un bouton' })], edges: [] };
-    expect(walk(g, 'f').actions).toEqual([
+    expect(walk(g, 'f').actions.map((e) => e.action)).toEqual([
       { kind: 'sendFlow', flowId: 'fl1', flowName: 'RDV', body: 'Réserve ton créneau', cta: 'Un libellé beaucoup trop long ' },
     ]);
   });
@@ -244,7 +244,7 @@ describe('scanOpening().sessionOpen (garde fenêtre 24 h à l\'ouverture)', () =
 describe('walk', () => {
   it('depuis l\'entrée : applique le tag SYNCHRONE puis s\'arrête au template (waiting)', () => {
     const r = walk(linear, entryNode(linear)!);
-    expect(r.actions).toEqual([
+    expect(r.actions.map((e) => e.action)).toEqual([
       { kind: 'tag', tag: 'vip' },
       { kind: 'sendTemplate', templateName: 'promo', language: 'fr', buttons: [] },
     ]);
@@ -260,7 +260,7 @@ describe('walk', () => {
   it('bloc field -> action field', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'ville', value: 'Lyon' }), n('ib', 'inbox')], edges: [e('e', 'f', 'ib')] };
     const r = walk(g, 'f');
-    expect(r.actions).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
     expect(r.rest).toEqual({ status: 'inbox' });
   });
 
@@ -272,7 +272,7 @@ describe('walk', () => {
   it('cycle -> stoppe (done), pas de boucle infinie', () => {
     const g: WorkflowGraph = { nodes: [n('a', 'tag', { tag: 'a' }), n('b', 'tag', { tag: 'b' })], edges: [e('e1', 'a', 'b'), e('e2', 'b', 'a')] };
     const r = walk(g, 'a');
-    expect(r.actions).toEqual([{ kind: 'tag', tag: 'a' }, { kind: 'tag', tag: 'b' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'a' }, { kind: 'tag', tag: 'b' }]);
     expect(r.rest).toEqual({ status: 'done' });
   });
 
@@ -299,28 +299,28 @@ describe('walk : node condition (branche « Si réunie » / « Sinon »)', () =>
   };
   it('condition vraie -> sortie true (aucune action de condition, on continue)', () => {
     const r = walk(cond, 'c', evalCtx({ tags: ['vip'] }));
-    expect(r.actions).toEqual([{ kind: 'tag', tag: 'gold' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'gold' }]);
     expect(r.rest).toEqual({ status: 'done' });
   });
   it('condition fausse -> sortie false', () => {
-    expect(walk(cond, 'c', evalCtx({ tags: ['autre'] })).actions).toEqual([{ kind: 'tag', tag: 'std' }]);
+    expect(walk(cond, 'c', evalCtx({ tags: ['autre'] })).actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'std' }]);
   });
   it('sans contexte (ctx absent : analyse de graphe pure) -> branche false DÉTERMINISTE', () => {
-    expect(walk(cond, 'c').actions).toEqual([{ kind: 'tag', tag: 'std' }]);
+    expect(walk(cond, 'c').actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'std' }]);
   });
   it('sortie false en arête simple (repli nextNode) quand aucun handle false', () => {
     const g: WorkflowGraph = {
       nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] }), n('s', 'tag', { tag: 'std' })],
       edges: [e('e1', 'c', 's')],
     };
-    expect(walk(g, 'c', evalCtx({ tags: [] })).actions).toEqual([{ kind: 'tag', tag: 'std' }]);
+    expect(walk(g, 'c', evalCtx({ tags: [] })).actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'std' }]);
   });
   it('data de condition malformée -> coerce défensif (clauses non-array -> [] -> all vrai) -> sortie true', () => {
     const g: WorkflowGraph = {
       nodes: [n('c', 'condition', { clauses: 'pas-un-array' }), n('g', 'tag', { tag: 'gold' }), n('s', 'tag', { tag: 'std' })],
       edges: [eh('e1', 'c', 'g', 'true'), eh('e2', 'c', 's', 'false')],
     };
-    expect(walk(g, 'c', evalCtx()).actions).toEqual([{ kind: 'tag', tag: 'gold' }]);
+    expect(walk(g, 'c', evalCtx()).actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'gold' }]);
   });
   it('condition sans sortie câblée -> done sans action', () => {
     const g: WorkflowGraph = { nodes: [n('c', 'condition', { match: 'all', clauses: [] })], edges: [] };
@@ -365,8 +365,8 @@ describe('walk : le ctx reflète les tag/field posés PLUS TÔT dans la même ch
     };
     // Contact SANS visite_le en base : c'est le field NOW qui vient de le poser dans CE walk.
     const r = walk(g, 'f', evalCtx({ fields: {} }));
-    expect(r.actions).toContainEqual({ kind: 'tag', tag: 'vu' });
-    expect(r.actions).not.toContainEqual({ kind: 'tag', tag: 'pas_vu' });
+    expect(r.actions.map((e) => e.action)).toContainEqual({ kind: 'tag', tag: 'vu' });
+    expect(r.actions.map((e) => e.action)).not.toContainEqual({ kind: 'tag', tag: 'pas_vu' });
   });
   it('tag -> condition has CE MÊME tag -> branche true', () => {
     const g: WorkflowGraph = {
@@ -377,7 +377,7 @@ describe('walk : le ctx reflète les tag/field posés PLUS TÔT dans la même ch
       ],
       edges: [e('e0', 't', 'c'), eh('e1', 'c', 'a', 'true'), eh('e2', 'c', 'b', 'false')],
     };
-    expect(walk(g, 't', evalCtx({ tags: [] })).actions).toEqual([{ kind: 'tag', tag: 'vip' }, { kind: 'tag', tag: 'oui' }]);
+    expect(walk(g, 't', evalCtx({ tags: [] })).actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'vip' }, { kind: 'tag', tag: 'oui' }]);
   });
 });
 
@@ -385,28 +385,28 @@ describe('walk : bloc field en mode NOW (horodatage courant)', () => {
   it('valueKind now -> valeur = ISO UTC du contexte (comparable par une condition datetime)', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'derniere_visite', valueKind: 'now' }), n('ib', 'inbox')], edges: [e('e', 'f', 'ib')] };
     const r = walk(g, 'f', evalCtx({ now: new Date('2026-08-02T14:30:00Z') }));
-    expect(r.actions).toEqual([{ kind: 'field', key: 'derniere_visite', value: '2026-08-02T14:30:00.000Z' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'derniere_visite', value: '2026-08-02T14:30:00.000Z' }]);
   });
   it('valueKind now SANS contexte -> valeur vide (non exécuté hors run)', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'x', valueKind: 'now' })], edges: [] };
-    expect(walk(g, 'f').actions).toEqual([{ kind: 'field', key: 'x', value: '' }]);
+    expect(walk(g, 'f').actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'x', value: '' }]);
   });
   it('field valeur FIXE inchangé (pas de valueKind)', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'ville', value: 'Lyon' })], edges: [] };
-    expect(walk(g, 'f', evalCtx()).actions).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
+    expect(walk(g, 'f', evalCtx()).actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
   });
 });
 
 describe('node action (bloc unifié tag/field : ajouter/retirer/màj/vider)', () => {
   const only = (kind: string, data: Record<string, unknown> = {}): WorkflowGraph => ({ nodes: [n('a', 'action', { actionKind: kind, ...data })], edges: [] });
   it('les 4 sous-actions produisent la bonne WorkflowAction', () => {
-    expect(walk(only('add_tag', { tag: 'vip' }), 'a').actions).toEqual([{ kind: 'tag', tag: 'vip' }]);
-    expect(walk(only('remove_tag', { tag: 'vip' }), 'a').actions).toEqual([{ kind: 'removeTag', tag: 'vip' }]);
-    expect(walk(only('set_field', { fieldKey: 'ville', value: 'Lyon' }), 'a').actions).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
-    expect(walk(only('clear_field', { fieldKey: 'ville' }), 'a').actions).toEqual([{ kind: 'clearField', key: 'ville' }]);
+    expect(walk(only('add_tag', { tag: 'vip' }), 'a').actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'vip' }]);
+    expect(walk(only('remove_tag', { tag: 'vip' }), 'a').actions.map((e) => e.action)).toEqual([{ kind: 'removeTag', tag: 'vip' }]);
+    expect(walk(only('set_field', { fieldKey: 'ville', value: 'Lyon' }), 'a').actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
+    expect(walk(only('clear_field', { fieldKey: 'ville' }), 'a').actions.map((e) => e.action)).toEqual([{ kind: 'clearField', key: 'ville' }]);
   });
   it('set_field mode NOW dans un bloc action', () => {
-    expect(walk(only('set_field', { fieldKey: 'vu_le', valueKind: 'now' }), 'a', evalCtx({ now: new Date('2026-08-02T14:30:00Z') })).actions)
+    expect(walk(only('set_field', { fieldKey: 'vu_le', valueKind: 'now' }), 'a', evalCtx({ now: new Date('2026-08-02T14:30:00Z') })).actions.map((e) => e.action))
       .toEqual([{ kind: 'field', key: 'vu_le', value: '2026-08-02T14:30:00.000Z' }]);
   });
   it('bloc action incomplet (tag/clé vide, actionKind inconnu) -> no-op', () => {
@@ -423,7 +423,7 @@ describe('node action (bloc unifié tag/field : ajouter/retirer/màj/vider)', ()
       ],
       edges: [e('e0', 'a', 'c'), eh('e1', 'c', 'ok', 'true'), eh('e2', 'c', 'ko', 'false')],
     };
-    expect(walk(g, 'a', evalCtx({ tags: ['vip'] })).actions).toContainEqual({ kind: 'tag', tag: 'sorti' });
+    expect(walk(g, 'a', evalCtx({ tags: ['vip'] })).actions.map((e) => e.action)).toContainEqual({ kind: 'tag', tag: 'sorti' });
   });
   it('applyToWork : vider un champ est vu par une condition « champ vide » en aval (même walk)', () => {
     const g: WorkflowGraph = {
@@ -434,7 +434,7 @@ describe('node action (bloc unifié tag/field : ajouter/retirer/màj/vider)', ()
       ],
       edges: [e('e0', 'a', 'c'), eh('e1', 'c', 'ok', 'true'), eh('e2', 'c', 'ko', 'false')],
     };
-    expect(walk(g, 'a', evalCtx({ fields: { statut: 'actif' } })).actions).toContainEqual({ kind: 'tag', tag: 'vidé' });
+    expect(walk(g, 'a', evalCtx({ fields: { statut: 'actif' } })).actions.map((e) => e.action)).toContainEqual({ kind: 'tag', tag: 'vidé' });
   });
   it('sessionOpen : un bloc action est synchrone (jamais une ouverture)', () => {
     // action -> quick_message (ouverture session) -> reste détecté comme ouverture ; action seul n'ouvre rien.

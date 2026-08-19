@@ -70,6 +70,13 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
       [tenantId, workflowId],
     )).rows[0]!.id;
     await pool.query(`insert into automation_fires (automation_id, wa_id) values ($1, $2)`, [automationId, WA_ID]);
+
+    // Mesures par bloc : elles portent le wa_id, donc une donnee personnelle. Elles ne doivent PAS survivre
+    // telles quelles a une purge, mais elles ne doivent pas disparaitre non plus (cf. le test dedie).
+    await pool.query(
+      `insert into workflow_node_events (tenant_id, workflow_id, node_id, wa_id, kind) values ($1, $2, 'n1', $3, 'sent')`,
+      [tenantId, workflowId, WA_ID],
+    );
   });
 
   afterAll(async () => {
@@ -119,6 +126,17 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect(row.profile_name).toBeNull();
     expect(row.fields).toEqual({});
     expect(row.anonymized_at).not.toBeNull();
+  });
+
+  it('🔴 les mesures par bloc sont ANONYMISEES, pas supprimees (le quanti survit a l’effacement)', async () => {
+    // Les supprimer laisserait un trou dans tout tableau deja construit. La decision produit est « on
+    // anonymise pour garder le quanti » : la ligne reste, le numero part.
+    const restantes = await pool.query<{ wa_id: string }>(
+      'select wa_id from workflow_node_events where tenant_id = $1 and node_id = $2', [tenantId, 'n1'],
+    );
+    expect(restantes.rowCount).toBe(1);
+    expect(restantes.rows[0]!.wa_id).toBe('anonyme');
+    expect(restantes.rows[0]!.wa_id).not.toContain('600000901');
   });
 
   it('purger deux fois ne compte pas deux fois (anonymized_at fait garde)', async () => {

@@ -38,7 +38,7 @@ describe('walk : un bloc Attente endort le parcours', () => {
       [ed('t', 'w'), ed('w', 't2')],
     );
     const r = walk(graph, 't');
-    expect(r.actions).toEqual([{ kind: 'tag', tag: 'vip' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'vip' }]);
     expect(r.rest).toEqual({ status: 'sleeping', nodeId: 'w', resumeInMs: 2 * 3_600_000 });
   });
 
@@ -49,7 +49,7 @@ describe('walk : un bloc Attente endort le parcours', () => {
     );
     const r = walk(graph, 'w');
     expect(r.rest.status).toBe('waiting'); // arrivé au template, pas endormi
-    expect(r.actions.map((a) => a.kind)).toEqual(['sendTemplate']);
+    expect(r.actions.map((e) => e.action.kind)).toEqual(['sendTemplate']);
   });
 
   it('attente en fin de chaîne -> dort quand même (le réveil clôturera le run)', () => {

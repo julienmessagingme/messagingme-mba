@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { config } from '../config';
 import { PgWorkflowRunStore } from './run-store.pg';
 import { PgWorkflowStore } from './store.pg';
+import { PgWorkflowNodeEventStore } from './node-events.pg';
 import { PgTagStore } from '../crm/tag-store.pg';
 import { PgTemplateHintStore } from '../crm/template-hints.pg';
 import { PgContactStore } from '../crm/contact-store.pg';
@@ -68,6 +69,7 @@ export interface WorkflowRuntimeDeps {
 /** Construit l'exécuteur et ce qui l'accompagne. Une seule fois par process (les caches vivent dedans). */
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver } = deps;
+  const nodeEvents = new PgWorkflowNodeEventStore(pool);
   const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
@@ -300,6 +302,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Source `scenario` : elle distingue un consentement pose par un parcours de celui saisi a la main
     // (`crm`) ou coche par la personne dans un Flow (`flow`). Utile quand il faut savoir d'ou vient un opt-out.
     setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario'); },
+    // Mesure par bloc (Analytics > Mes tableaux). L'executeur l'appelle en best-effort : une panne ici ne doit
+    // jamais arreter un parcours.
+    recordNodeEvent: (e) => nodeEvents.record(e),
     sendTemplate: async (tenant, waId, name, language, buttons, explicitParams) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       const pn = await repo.getTenantPhoneNumberId(tenant);

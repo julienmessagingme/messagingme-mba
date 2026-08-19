@@ -624,6 +624,9 @@ export class PgContactStore implements ContactStore {
         [tenantId, ids],
       );
       const e164 = cibles.rows.map((r) => r.phone_e164).filter((p): p is string => p !== null && !p.startsWith('anon:'));
+      // Les mesures par bloc sont indexees par wa_id (chiffres nus). On derive donc les numeros vises ici, en
+      // plus des wa_id des fils : un contact peut avoir des mesures sans conversation ouverte.
+      const waIdsDuNumero = e164.map((p) => p.replace(/[^0-9]/g, '')).filter((d) => d !== '');
 
       // Les fils visés, par la RÈGLE PARTAGÉE de correspondance contact <-> wa_id. Une simple égalité
       // `conversations.wa_id = contacts.phone_e164` ne peut jamais être vraie : le fil porte `33612345678`,
@@ -664,6 +667,17 @@ export class PgContactStore implements ContactStore {
       // contact purgé sans conversation laisserait son numéro dans une table de joignabilité.
       if (e164.length > 0) {
         await client.query(`delete from rcs_capabilities_cache where phone_e164 = any($1::text[])`, [e164]);
+      }
+
+      // Mesures par bloc (Analytics > Mes tableaux) : ANONYMISEES, pas supprimees. Un tableau deja construit
+      // garderait sinon des trous a chaque effacement, alors que la decision produit est « on anonymise pour
+      // garder le quanti ». Le numero part, la ligne reste, les compteurs restent justes.
+      const waIdsAAnonymiser = [...new Set([...waIds, ...waIdsDuNumero])];
+      if (waIdsAAnonymiser.length > 0) {
+        await client.query(
+          `update workflow_node_events set wa_id = 'anonyme' where tenant_id = $1 and wa_id = any($2::text[])`,
+          [tenantId, waIdsAAnonymiser],
+        );
       }
 
       // Quantitatif préservé : la ligne de campagne reste (statut, horodatage, livraison), son numéro et ses

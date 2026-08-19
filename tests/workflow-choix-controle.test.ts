@@ -56,13 +56,13 @@ describe('walk : ce qui bloque le parcours selon que MBA est allumé', () => {
     // service, où le bloc qui suit un template n'est censé s'exécuter qu'à la réponse du contact.
     const r = walk(templateSansBouton, 'n1');
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'n1' });
-    expect(r.actions.map((a) => a.kind)).toEqual(['sendTemplate']);
+    expect(r.actions.map((e) => e.action.kind)).toEqual(['sendTemplate']);
   });
 
   it('🔴 MBA ALLUMÉ : le même template ne bloque plus, et les actions suivantes s’exécutent', () => {
     const r = walk(templateSansBouton, 'n1', undefined, { mbaActif: true });
     expect(r.rest).toEqual({ status: 'done' });
-    expect(r.actions.map((a) => a.kind)).toEqual(['sendTemplate', 'tag']);
+    expect(r.actions.map((e) => e.action.kind)).toEqual(['sendTemplate', 'tag']);
   });
 
   it('MBA allumé : un template AVEC bouton attend quand même, le scénario est plus fort', () => {

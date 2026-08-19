@@ -16,7 +16,7 @@ const n = (id: string, type: string, data: Record<string, unknown> = {}) =>
 describe('lecture du graphe : bloc Action, sous-actions de consentement', () => {
   /** Actions produites par un bloc Action seul, via le parcours PUBLIC (`actionOf` est prive, a raison). */
   const actionsDu = (data: Record<string, unknown>): unknown[] =>
-    walk({ nodes: [n('a', 'action', data)], edges: [] }, 'a').actions;
+    walk({ nodes: [n('a', 'action', data)], edges: [] }, 'a').actions.map((e) => e.action);
 
   it('set_optin / set_optout -> une action optIn dans le bon sens', () => {
     expect(actionsDu({ actionKind: 'set_optin' })).toEqual([{ kind: 'optIn', value: 'opted_in' }]);

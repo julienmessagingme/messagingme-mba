@@ -36,7 +36,7 @@ describe('bloc rcs_message', () => {
     const res = walk(g, 'tag', evalCtx());
     expect(res.rest).toEqual({ status: 'rcs_send', nodeId: 'r' });
     // Les actions accumulées AVANT le bloc partent quand même, comme pour un bloc d'attente.
-    expect(res.actions).toEqual([{ kind: 'tag', tag: 'promo' }]);
+    expect(res.actions.map((e) => e.action)).toEqual([{ kind: 'tag', tag: 'promo' }]);
   });
 
   it('n emet AUCUNE action pour le bloc lui-meme (l envoi est fait par l executor)', () => {

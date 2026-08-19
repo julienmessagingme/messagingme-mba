@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { walk, entryNode, nextNode, nextNodeByHandle } from './engine';
+import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction } from './engine';
 import type { WorkflowGraph, WorkflowNode } from './graph';
 import type { EvalContext } from './conditions';
@@ -45,6 +46,15 @@ export interface WorkflowExecutorDeps {
    * est un no-op silencieux plutôt qu'une erreur, comme les autres actions sur un câblage partiel.
    */
   setOptIn?(tenantId: string, waId: string, value: 'opted_in' | 'opted_out'): Promise<void>;
+  /**
+   * Enregistre une mesure par bloc (Analytics > Mes tableaux). Optionnelle : absente -> aucune mesure, et le
+   * parcours se déroule exactement comme avant. Aucune donnée n'existait avant cette dep, donc rien ne peut
+   * régresser en son absence.
+   */
+  recordNodeEvent?(e: {
+    tenantId: string; workflowId: string; nodeId: string; waId: string;
+    kind: 'sent' | 'failed' | 'reply_button' | 'reply_text'; handle?: string;
+  }): Promise<void>;
   /**
    * `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton).
    * `explicitParams` (optionnel) = variables du corps DÉJÀ résolues (campagne workflow, 1er template) : si fourni,
@@ -227,9 +237,10 @@ export class WorkflowExecutor {
   private async apply(
     tenantId: string,
     waId: string,
-    actions: WorkflowAction[],
+    steps: WalkStep[],
     firstTemplateParams?: string[],
     emitEvents = false,
+    workflowId?: string,
   ): Promise<{ refus: string | null; partis: number }> {
     const posedTags: string[] = [];
     // Un walk peut produire PLUSIEURS envois depuis qu'un message rapide sans bouton ne bloque plus (« message,
@@ -237,7 +248,7 @@ export class WorkflowExecutor {
     // parti : un refus n'est décisif pour l'appelant que si RIEN n'est parti.
     let refus: string | null = null;
     let partis = 0;
-    for (const a of actions) {
+    for (const { nodeId, action: a } of steps) {
       if (a.kind === 'tag') {
         const nouveau = await this.deps.applyTag(tenantId, waId, a.tag);
         // `false` = le contact portait déjà ce tag : rien n'a changé, donc rien à annoncer.
@@ -268,11 +279,15 @@ export class WorkflowExecutor {
           : a.kind === 'sendFlow'
             ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
             : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
-        if (typeof dit === 'string' && dit !== '') {
+        const rate = typeof dit === 'string' && dit !== '';
+        if (rate) {
           if (refus === null) refus = dit;
         } else {
           partis += 1;
         }
+        // Mesure par bloc (Analytics > Mes tableaux). APRÈS l'envoi, sur son issue réelle : compter avant
+        // gonflerait les « envoyés » de tout ce que Meta a refusé.
+        await this.mesurer(tenantId, workflowId, nodeId, waId, rate ? 'failed' : 'sent');
       }
     }
     // Publication APRÈS toutes les actions, et seulement sur un chemin unitaire. Best-effort : la pose du tag
@@ -283,6 +298,30 @@ export class WorkflowExecutor {
       }
     }
     return { refus, partis };
+  }
+
+  /**
+   * Enregistre une mesure par bloc, si le câblage la fournit et si l'on sait de quel scénario il s'agit.
+   *
+   * BEST-EFFORT ABSOLU : une panne d'écriture de mesure ne doit jamais faire échouer un parcours ni renvoyer
+   * un job en file d'échec. Un tableau de bord incomplet est un désagrément ; un message qui ne part pas
+   * parce qu'un compteur a trébuché est un incident.
+   */
+  private async mesurer(
+    tenantId: string,
+    workflowId: string | undefined,
+    nodeId: string,
+    waId: string,
+    kind: 'sent' | 'failed' | 'reply_button' | 'reply_text',
+    handle?: string,
+  ): Promise<void> {
+    if (!this.deps.recordNodeEvent || !workflowId) return;
+    try {
+      await this.deps.recordNodeEvent({ tenantId, workflowId, nodeId, waId, kind, ...(handle ? { handle } : {}) });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('mesure de bloc ignorée (best-effort):', err instanceof Error ? err.message : err);
+    }
   }
 
   /**
@@ -328,11 +367,11 @@ export class WorkflowExecutor {
     const aBesoinFenetre = (a: WorkflowAction): boolean => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage';
     let aExecuter = actions;
     let fenetreFermee = false;
-    if (actions.some(aBesoinFenetre)) {
+    if (actions.some((e) => aBesoinFenetre(e.action))) {
       const ouverte = this.deps.isWindowOpen ? await this.deps.isWindowOpen(tenantId, waId) : false;
       if (!ouverte) {
         fenetreFermee = true;
-        aExecuter = actions.filter((a) => !aBesoinFenetre(a));
+        aExecuter = actions.filter((e) => !aBesoinFenetre(e.action));
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: fenêtre 24 h fermée à la reprise, message de session NON envoyé à ${waId} -> conversation remontée en inbox`);
       }
@@ -341,7 +380,7 @@ export class WorkflowExecutor {
     // `emitEvents` VRAI : un réveil est unitaire par nature (un contact, ici et maintenant), comme `advance`.
     // Sans ça, « attendre 1 jour puis poser le tag relance » ne déclencherait pas l'automation branchée sur ce
     // tag, alors que le MÊME tag posé après une réponse la déclenche. Les campagnes, elles, n'émettent pas.
-    const { refus, partis } = await this.apply(tenantId, waId, aExecuter, undefined, true);
+    const { refus, partis } = await this.apply(tenantId, waId, aExecuter, undefined, true, run.workflowId);
     // Un message du parcours n'a pas pu atteindre le contact : on ne fait pas semblant de continuer, on clôt
     // et on remonte à un humain. Ce qui POUVAIT partir (template, tags) est déjà parti juste au-dessus.
     if (fenetreFermee) {
@@ -407,8 +446,8 @@ export class WorkflowExecutor {
     startNodeId: string,
     ctx: EvalContext | undefined,
     sendKey: string,
-  ): Promise<{ actions: WorkflowAction[]; rest: WalkRest }> {
-    const actions: WorkflowAction[] = [];
+  ): Promise<{ actions: WalkStep[]; rest: WalkRest }> {
+    const actions: WalkStep[] = [];
     let depart = startNodeId;
     for (let i = 0; i < MAX_RCS_ENCHAINES; i++) {
       const r = walk(graph, depart, ctx, { mbaActif: await this.mbaActif(tenantId) });
@@ -486,12 +525,12 @@ export class WorkflowExecutor {
     // n'interdit plus cette forme (un scénario peut ouvrir sur un message de session, il est alors réservé aux
     // déclenchements en fenêtre garantie) : c'est `POST /campaigns` qui refuse un tel scénario en campagne, et
     // CETTE garde est le filet runtime si un autre chemin tentait quand même un `start` classique.
-    if (!opts.allowSessionOpen && actions.some((a) => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) {
+    if (!opts.allowSessionOpen && actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage')) {
       // eslint-disable-next-line no-console
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
       return "le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h";
     }
-    const { refus, partis } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true);
+    const { refus, partis } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId);
     // Refus alors que RIEN n'est parti : le contact n'a rien reçu. On ne persiste PAS de run en attente, pour
     // deux raisons. D'abord il attendrait une réponse à un message jamais reçu. Ensuite il serait ressuscité
     // par n'importe quel message ultérieur du contact, qui recevrait alors le bloc SUIVANT, sorti de nulle
@@ -584,6 +623,24 @@ export class WorkflowExecutor {
     // bouton. Et le repli conditionnel suit la règle du bloc Condition : tant qu'une sortie TYPÉE existe, on
     // ne prend JAMAIS la 1re arête venue, sinon « non joignable » volerait la suite d'un envoi réussi.
     const courant = graph && run.currentNode ? graph.nodes.find((n) => n.id === run.currentNode) : undefined;
+
+    // Mesure de la RÉPONSE, rattachée au bloc qui l'attendait (Analytics > Mes tableaux). Enregistrée ICI,
+    // avant toute décision de routage : ce qui compte est ce que le contact a FAIT, pas ce que le graphe en a
+    // fait ensuite. Un bouton dont l'arête n'est pas câblée reste un clic, et doit se compter comme tel.
+    //
+    // `handle` distingue le choix : `btn:<i>` pour un template, et le handle carte/bouton pour un carousel,
+    // que `carouselButtonHandle` produit déjà. Pas de payload = le contact a ÉCRIT, ce qui est la mesure
+    // « a répondu sans utiliser les choix proposés ».
+    //
+    // Les blocs RCS sont exclus : leur reprise n'est pas une réponse du contact mais l'issue d'un envoi.
+    if (run.currentNode && courant?.type !== 'rcs_message') {
+      const aClique = typeof buttonPayload === 'string' && buttonPayload !== '';
+      await this.mesurer(
+        tenantId, run.workflowId, run.currentNode, waId,
+        aClique ? 'reply_button' : 'reply_text',
+        aClique ? buttonPayload : undefined,
+      );
+    }
     const handle = courant?.type === 'rcs_message' ? 'sent' : buttonPayload;
     const sortieTypee = graph && run.currentNode
       ? graph.edges.some((e) => e.source === run.currentNode && (e.sourceHandle === 'sent' || e.sourceHandle === 'unreachable'))
@@ -602,7 +659,7 @@ export class WorkflowExecutor {
     const ctx = await this.buildCtx(tenantId, waId, graph);
     const { actions, rest } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id);
     // Un contact qui répond est unitaire par nature : ses tags publient.
-    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, true);
+    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant
     // `lastMessageId`, sinon le même message serait re-traité) et on remonte la conversation à un humain.
     if (refus !== null) {
