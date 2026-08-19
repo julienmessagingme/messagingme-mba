@@ -3,11 +3,19 @@
 ## 🚧 POINT DE REPRISE (2026-08-19, apres-midi)
 
 ### En production
-Prod sur **`89a4efb`**, migrations jusqu'a **0062**. Le lot des 4 demandes (bug campagne, creation de contact,
-bloc Action opt-in/opt-out, Analytics multi-selection) est EN LIGNE.
+Prod sur **`44887c6`**, migrations jusqu'a **0063**. Sont EN LIGNE : le lot des 4 demandes (bug campagne,
+creation de contact, bloc Action opt-in/opt-out, Analytics multi-selection) ET « Analytics > Mes tableaux ».
 
-### Sur `main`, teste et NON deploye : « Analytics > Mes tableaux »
-Migration **0063** (`workflow_node_events`) + les 4 phases. CI verte (racine 1919, web 57, E2E, integration).
+⚠️ **Les mesures ont commence a s'accumuler le 2026-08-19 vers 15h30.** Toute periode anterieure reste vide,
+c'est normal et l'ecran le dit.
+
+Le deploiement a aussi emporte le front e-mail d'une session concurrente (ecran Boites SMTP, page Modeles
+d'email, node dans le builder). Le node est VERROUILLE tant qu'aucune boite n'est connectee, avec l'infobulle
+qui l'explique : rien ne peut partir par erreur.
+
+### « Analytics > Mes tableaux » — ce qui est en ligne
+Migration **0063** (`workflow_node_events`) + les 4 phases. CI verte, et 125 tests d'integration verts contre
+la base de production apres deploiement.
 
 Constat qui commande tout : **rien ne reliait un message envoye au bloc qui l'a envoye**. Il a fallu
 instrumenter. **Les mesures demarrent au deploiement, pas d'historique retroactif.**
