@@ -146,13 +146,24 @@ export interface MesureDispo {
   handle: string | null;
 }
 
-/** Ce qu'on peut compter sur un bloc de message. L'ordre suit la lecture naturelle d'un entonnoir. */
-export function mesuresDisponibles(bloc: BlocMesurable): MesureDispo[] {
+/**
+ * Ce qu'on peut compter sur un bloc de message. L'ordre suit la lecture naturelle d'un entonnoir.
+ *
+ * `estPremier` = ce bloc est-il le PREMIER message du scénario ? Lui seul propose « Échecs » et « Délivrés ».
+ * Après lui, le message part à quelqu'un qui vient de répondre : l'envoi aboutit et arrive quasiment toujours.
+ * Ces deux mesures y afficheraient des barres plates, l'une à zéro et l'autre collée aux « Envoyés », et
+ * noieraient le signal qu'on est venu chercher. Demandé par Julien le 2026-08-19.
+ */
+export function mesuresDisponibles(bloc: BlocMesurable, estPremier = true): MesureDispo[] {
   if (!bloc.mesurable) return [];
   const base: MesureDispo[] = [
     { cle: `${bloc.id}|sent`, label: 'Envoyés', kind: 'sent', handle: null },
-    { cle: `${bloc.id}|failed`, label: 'Échecs', kind: 'failed', handle: null },
-    { cle: `${bloc.id}|delivered`, label: 'Délivrés', kind: 'delivered', handle: null },
+    ...(estPremier
+      ? [
+        { cle: `${bloc.id}|failed`, label: 'Échecs', kind: 'failed', handle: null },
+        { cle: `${bloc.id}|delivered`, label: 'Délivrés', kind: 'delivered', handle: null },
+      ]
+      : []),
     { cle: `${bloc.id}|read`, label: 'Lus', kind: 'read', handle: null },
   ];
   const choix: MesureDispo[] = bloc.choix.map((c) => ({

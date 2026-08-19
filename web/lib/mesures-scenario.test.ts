@@ -93,6 +93,21 @@ describe('les mesures proposées sur un bloc', () => {
     expect(clics).toEqual([{ cle: 'a|reply_button|btn:0', label: 'A cliqué « Oui »', kind: 'reply_button', handle: 'btn:0' }]);
   });
 
+  it('🔴 « Échecs » et « Délivrés » ne sont proposés QUE sur le premier message', () => {
+    // Après le premier template, le message part à quelqu'un qui vient de répondre : l'envoi aboutit et arrive
+    // quasiment toujours. Ces deux mesures y afficheraient des barres plates, l'une à zéro et l'autre collée
+    // aux « Envoyés », ce qui noierait le signal qu'on est venu chercher.
+    const kindsPremier = mesuresDisponibles(bloc, true).map((m) => m.kind);
+    expect(kindsPremier).toContain('failed');
+    expect(kindsPremier).toContain('delivered');
+
+    const kindsSuivant = mesuresDisponibles(bloc, false).map((m) => m.kind);
+    expect(kindsSuivant).not.toContain('failed');
+    expect(kindsSuivant).not.toContain('delivered');
+    // Ce qui compte vraiment sur un bloc suivant reste proposé.
+    expect(kindsSuivant).toEqual(expect.arrayContaining(['sent', 'read', 'reply_button', 'reply_text']));
+  });
+
   it('🔴 un bloc NON mesurable ne propose rien', () => {
     const tag = blocsDuScenario({ nodes: [n('t', 'tag', { tag: 'vu' })], edges: [] })[0]!;
     expect(mesuresDisponibles(tag)).toEqual([]);

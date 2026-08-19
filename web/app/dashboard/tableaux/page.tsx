@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
-import { listWorkflows, getWorkflow, getWorkflowNodeCounts, type StatsRange, type WorkflowSummary } from '@/lib/api';
+import {
+  listWorkflows, getWorkflow, getWorkflowNodeCounts, listWorkflowReports, saveWorkflowReport, deleteWorkflowReport,
+  type StatsRange, type WorkflowSummary, type TableauEnregistre,
+} from '@/lib/api';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
@@ -41,9 +44,25 @@ function TableauxInner({ session }: { session: Session }) {
   /** Mesures retenues, par clé. L'ordre d'insertion est celui d'affichage : l'opérateur compose son tableau. */
   const [retenues, setRetenues] = useState<MesureDispo[]>([]);
   const [ouvert, setOuvert] = useState<string | null>(null);
+  // Tableaux enregistrés de l'espace, et celui qui est ouvert (vide = un tableau neuf, pas encore enregistré).
+  const [tableaux, setTableaux] = useState<TableauEnregistre[]>([]);
+  const [ouvertId, setOuvertId] = useState('');
+  const [nom, setNom] = useState('');
+  const [etat, setEtat] = useState<string | null>(null);
+  /**
+   * Mesures à réappliquer APRÈS le chargement d'un scénario. Ouvrir un tableau change le scénario, ce qui
+   * relance le chargement, lequel vide la sélection : sans ce relais, le tableau qu'on vient d'ouvrir
+   * s'effacerait aussitôt.
+   *
+   * Une RÉFÉRENCE et non un état : c'est un passage de main ponctuel, que rien n'affiche. En état, il faudrait
+   * le déclarer en dépendance de l'effet, et le remettre à null y relancerait le chargement, qui effacerait la
+   * sélection qu'on vient tout juste de poser.
+   */
+  const aAppliquer = useRef<MesureDispo[] | null>(null);
 
   useEffect(() => {
     listWorkflows(session.tenantId).then((r) => setScenarios(r.workflows)).catch(() => setScenarios([]));
+    listWorkflowReports(session.tenantId).then((r) => setTableaux(r.reports)).catch(() => setTableaux([]));
   }, [session.tenantId]);
 
   // Changer de scénario repart d'un tableau VIDE : les mesures retenues désignent des blocs de l'ancien, les
@@ -53,12 +72,15 @@ function TableauxInner({ session }: { session: Session }) {
     let vivant = true;
     setChargement(true);
     setErreur(null);
-    setRetenues([]);
     Promise.all([getWorkflow(session.tenantId, choisi), getWorkflowNodeCounts(session.tenantId, choisi, range)])
       .then(([w, c]) => {
         if (!vivant) return;
         setGraph(w.workflow.graph as { nodes: unknown[]; edges: unknown[] });
         setCounts(c.counts);
+        // Une sélection en attente vient d'un tableau qu'on ouvre : elle remplace la sélection courante.
+        // Sinon on repart d'un tableau vide, les mesures désignant des blocs de l'ancien scénario.
+        setRetenues(aAppliquer.current ?? []);
+        aAppliquer.current = null;
       })
       .catch((err: unknown) => { if (vivant) setErreur(err instanceof Error ? err.message : t('Mesures illisibles', 'Measures unreadable')); })
       .finally(() => { if (vivant) setChargement(false); });
@@ -70,9 +92,56 @@ function TableauxInner({ session }: { session: Session }) {
     [graph, counts],
   );
   const titreDuBloc = useMemo(() => new Map(blocs.map((b) => [b.id, b.titre])), [blocs]);
+  // Le PREMIER bloc de message du parcours : lui seul propose « Échecs » et « Délivrés » (cf. mesuresDisponibles).
+  const premierMessage = useMemo(() => blocs.find((b) => b.mesurable)?.id ?? '', [blocs]);
 
-  const basculer = (m: MesureDispo): void =>
+  const basculer = (m: MesureDispo): void => {
+    setEtat(null);
     setRetenues((prev) => (prev.some((x) => x.cle === m.cle) ? prev.filter((x) => x.cle !== m.cle) : [...prev, m]));
+  };
+
+  /** Ouvre un tableau enregistré : son scénario, puis sa sélection (via le relais `aAppliquer`). */
+  function ouvrirTableau(id: string): void {
+    setOuvertId(id);
+    setEtat(null);
+    const tb = tableaux.find((x) => x.id === id);
+    if (!tb) { setNom(''); aAppliquer.current = null; setRetenues([]); return; }
+    setNom(tb.name);
+    // Scénario DÉJÀ chargé : le relais ne servirait à rien, l'effet de chargement ne se relancerait pas
+    // (sa dépendance `choisi` ne change pas) et la sélection ne s'appliquerait jamais.
+    if (tb.workflowId === choisi) { setRetenues(tb.mesures as MesureDispo[]); return; }
+    aAppliquer.current = tb.mesures as MesureDispo[];
+    setChoisi(tb.workflowId);
+  }
+
+  async function enregistrer(): Promise<void> {
+    setEtat(null);
+    try {
+      const { report } = await saveWorkflowReport(session.tenantId, {
+        ...(ouvertId ? { id: ouvertId } : {}),
+        workflowId: choisi, name: nom.trim(), mesures: retenues,
+      });
+      setOuvertId(report.id);
+      setTableaux((prev) => [report, ...prev.filter((x) => x.id !== report.id)]);
+      setEtat(t('Tableau enregistré.', 'Report saved.'));
+    } catch (err) {
+      setEtat(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
+    }
+  }
+
+  async function supprimer(): Promise<void> {
+    if (!ouvertId) return;
+    try {
+      await deleteWorkflowReport(session.tenantId, ouvertId);
+      setTableaux((prev) => prev.filter((x) => x.id !== ouvertId));
+      setOuvertId('');
+      setNom('');
+      setRetenues([]);
+      setEtat(t('Tableau supprimé.', 'Report deleted.'));
+    } catch (err) {
+      setEtat(err instanceof Error ? err.message : t('Suppression impossible', 'Could not delete'));
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -87,6 +156,21 @@ function TableauxInner({ session }: { session: Session }) {
       </header>
 
       <RangeBar title={t('Période', 'Period')} range={range} onChange={setRange} />
+
+      {tableaux.length > 0 && (
+        <section className={cardCls}>
+          <label className="mb-1 block text-sm font-medium text-ink-700">{t('Ouvrir un tableau enregistré', 'Open a saved report')}</label>
+          <select
+            value={ouvertId}
+            onChange={(e) => ouvrirTableau(e.target.value)}
+            data-testid="tableaux-enregistres"
+            className={`${inputClsAuto} w-full bg-white sm:w-96`}
+          >
+            <option value="">{t('Nouveau tableau', 'New report')}</option>
+            {tableaux.map((tb) => <option key={tb.id} value={tb.id}>{tb.name}</option>)}
+          </select>
+        </section>
+      )}
 
       <section className={cardCls}>
         <label className="mb-1 block text-sm font-medium text-ink-700">{t('Scénario', 'Scenario')}</label>
@@ -136,7 +220,7 @@ function TableauxInner({ session }: { session: Session }) {
                   {ouvert === b.id && b.mesurable && (
                     <div className="mt-1.5 rounded-xl border border-brand-200 bg-brand-50/30 px-3 py-2" data-testid="bloc-mesures">
                       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                        {mesuresDisponibles(b).map((m) => (
+                        {mesuresDisponibles(b, b.id === premierMessage).map((m) => (
                           <label key={m.cle} className="flex items-center gap-1.5 text-sm text-ink-700">
                             <input
                               type="checkbox"
@@ -157,6 +241,43 @@ function TableauxInner({ session }: { session: Session }) {
           </section>
 
           <TableauMesures retenues={retenues} counts={counts} titreDuBloc={titreDuBloc} onRetirer={basculer} />
+
+          {retenues.length > 0 && (
+            <section className={cardCls}>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex-1 min-w-[12rem]">
+                  <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom du tableau', 'Report name')}</label>
+                  <input
+                    value={nom}
+                    onChange={(e) => { setNom(e.target.value); setEtat(null); }}
+                    placeholder={t('Ex. Entonnoir Randstad', 'e.g. Randstad funnel')}
+                    data-testid="tableau-nom"
+                    className={`${inputClsAuto} w-full`}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void enregistrer()}
+                  disabled={nom.trim() === ''}
+                  data-testid="tableau-enregistrer"
+                  className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:opacity-50"
+                >
+                  {ouvertId ? t('Mettre à jour', 'Update') : t('Enregistrer', 'Save')}
+                </button>
+                {ouvertId !== '' && (
+                  <button
+                    type="button"
+                    onClick={() => void supprimer()}
+                    data-testid="tableau-supprimer"
+                    className="rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50"
+                  >
+                    {t('Supprimer', 'Delete')}
+                  </button>
+                )}
+              </div>
+              {etat && <p className="mt-2 text-sm text-ink-600" data-testid="tableau-etat">{etat}</p>}
+            </section>
+          )}
         </>
       )}
     </div>

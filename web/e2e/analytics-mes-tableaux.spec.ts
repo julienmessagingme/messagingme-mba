@@ -28,10 +28,19 @@ const COUNTS = [
 ];
 
 async function monter(page: import('@playwright/test').Page) {
+  const sauvegardes: Array<Record<string, unknown>> = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (url.includes('/workflow-reports')) {
+      if (route.request().method() === 'POST') {
+        const b = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+        sauvegardes.push(b);
+        return json({ report: { id: 'rp1', workflowId: b.workflowId, name: b.name, mesures: b.mesures, updatedAt: '2026-08-19T10:00:00.000Z' } });
+      }
+      return json({ reports: [] });
+    }
     if (url.includes('/stats/workflow/')) return json({ counts: COUNTS });
     if (/\/workflows\/wf-1(\?|$)/.test(url)) return json({ workflow: { id: 'wf-1', name: 'Parcours promo', graph: GRAPH } });
     if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf-1', name: 'Parcours promo', graph: GRAPH }] });
@@ -41,6 +50,7 @@ async function monter(page: import('@playwright/test').Page) {
   });
   await page.goto('/dashboard/tableaux');
   await expect(page.getByTestId('tableaux-scenario')).toBeVisible({ timeout: 15_000 });
+  return { sauvegardes };
 }
 
 test.describe('Analytics : Mes tableaux', () => {
@@ -110,5 +120,59 @@ test.describe('Analytics : Mes tableaux', () => {
 
     await page.getByTestId('tableaux-scenario').selectOption('');
     await expect(page.getByTestId('barre')).toHaveCount(0);
+  });
+});
+
+test.describe('Mes tableaux : enregistrement', () => {
+  test('🔴 nommer puis enregistrer envoie le scénario ET la sélection', async ({ page }) => {
+    const { sauvegardes } = await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-sent').check();
+
+    await page.getByTestId('tableau-nom').fill('Entonnoir Randstad');
+    await page.getByTestId('tableau-enregistrer').click();
+
+    await expect.poll(() => sauvegardes.length).toBe(1);
+    expect(sauvegardes[0]).toMatchObject({ workflowId: 'wf-1', name: 'Entonnoir Randstad' });
+    expect((sauvegardes[0]!.mesures as unknown[])).toHaveLength(1);
+    await expect(page.getByTestId('tableau-etat')).toContainText(/enregistré/i);
+  });
+
+  test('🔴 le bouton reste INACTIF sans nom', async ({ page }) => {
+    // Un tableau sans nom serait introuvable dans le sélecteur : autant ne pas le laisser créer.
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-sent').check();
+    await expect(page.getByTestId('tableau-enregistrer')).toBeDisabled();
+  });
+
+  test('la zone d’enregistrement n’apparaît qu’une fois une mesure choisie', async ({ page }) => {
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('tableau-nom')).toHaveCount(0);
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-sent').check();
+    await expect(page.getByTestId('tableau-nom')).toBeVisible();
+  });
+
+  test('🔴 « Échecs » et « Délivrés » ne sont proposés que sur le 1er bloc de message', async ({ page }) => {
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+
+    await page.getByTestId('bloc-mesurable').first().click();
+    await expect(page.getByTestId('mesure-failed')).toHaveCount(1);
+    await expect(page.getByTestId('mesure-delivered')).toHaveCount(1);
+
+    // Un SEUL panneau est ouvert a la fois : ouvrir le 2e bloc referme le 1er.
+    await page.getByTestId('bloc-mesurable').nth(1).click();
+    const panneau = page.getByTestId('bloc-mesures');
+    await expect(panneau).toHaveCount(1);
+    await expect(panneau.getByTestId('mesure-failed')).toHaveCount(0);
+    await expect(panneau.getByTestId('mesure-delivered')).toHaveCount(0);
+    // Le reste est bien la : on n'a pas vide le panneau par accident.
+    await expect(panneau.getByTestId('mesure-sent')).toHaveCount(1);
+    await expect(panneau.getByTestId('mesure-read')).toHaveCount(1);
   });
 });

@@ -16,6 +16,8 @@ import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
 import { registerContacts } from './http/contacts';
+import { registerWorkflowReports } from './http/workflow-reports';
+import type { WorkflowReportsRouteDeps } from './http/workflow-reports';
 import { registerAccount } from './http/account';
 import { registerMe } from './http/me';
 import { registerOps } from './http/ops';
@@ -95,6 +97,8 @@ export interface ServerDeps {
   settings?: SettingsRouteDeps;
   /** Gestion des comptes (onglet Admin) — réservé aux admins. */
   admin?: UsersRouteDeps;
+  /** Tableaux enregistrés d'Analytics > Mes tableaux — réservé aux admins. */
+  workflowReports?: WorkflowReportsRouteDeps;
   /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
   flows?: FlowRouteDeps;
   /** Upload d'image (headers de cartes carousel) — réservé aux admins. */
@@ -236,6 +240,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.support) registerSupport(app, deps.support, requireAuth);
   if (deps.contacts) registerContacts(app, deps.contacts, requireAdmin);
   if (deps.workflows) registerWorkflows(app, deps.workflows, requireAdmin);
+  if (deps.workflowReports) registerWorkflowReports(app, deps.workflowReports, requireAdmin);
   if (deps.automations) registerAutomations(app, deps.automations, requireAuth);
   if (deps.embeddedSignup) registerEmbeddedSignup(app, deps.embeddedSignup, requireAdmin);
   if (deps.hubspotImport) registerHubspotImport(app, deps.hubspotImport, requireAdmin);

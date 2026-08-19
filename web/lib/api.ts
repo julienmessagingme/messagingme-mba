@@ -640,6 +640,31 @@ export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { c
   return request<CostSeries>(`/tenants/${tenantId}/stats/cost${base}${extra}`);
 }
 
+/** Un tableau ENREGISTRE : une selection (scenario + mesures), jamais des chiffres. */
+export interface TableauEnregistre {
+  id: string;
+  workflowId: string;
+  name: string;
+  mesures: Array<{ cle: string; label: string; kind: string; handle: string | null }>;
+  updatedAt: string;
+}
+
+export function listWorkflowReports(tenantId: string): Promise<{ reports: TableauEnregistre[] }> {
+  return request<{ reports: TableauEnregistre[] }>(`/tenants/${tenantId}/workflow-reports`);
+}
+
+/** Cree, ou met a jour si `id` est fourni. Meme bouton a l'ecran, donc meme route. */
+export function saveWorkflowReport(
+  tenantId: string,
+  input: { id?: string; workflowId: string; name: string; mesures: TableauEnregistre['mesures'] },
+): Promise<{ report: TableauEnregistre }> {
+  return request(`/tenants/${tenantId}/workflow-reports`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function deleteWorkflowReport(tenantId: string, id: string): Promise<{ ok: boolean }> {
+  return request(`/tenants/${tenantId}/workflow-reports/${id}`, { method: 'DELETE' });
+}
+
 /** Une mesure brute d'un bloc de scenario (« Mes tableaux »). */
 export interface NodeEventCount {
   nodeId: string;
