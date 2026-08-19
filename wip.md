@@ -65,6 +65,21 @@ Une autre session construit le node « Envoi de mail » (SMTP) et commite sur `m
 - **On anonymise pour garder le quanti**, identifiant de remplacement ALÉATOIRE, journal sans numéro.
 - **Un seul réglage de contrôle du fil** (délai sur l'accueil, 10 min).
 
+### ⚠️ La CI fait partie du controle AVANT deploiement
+
+Elle etait rouge a chaque push depuis le 2026-08-19 08:34 et je ne l'ai pas regardee : j'ai deploye en me
+fiant au local et au serveur. Deux causes, aucune dans le code de production :
+- **`ENCRYPTION_KEY` absente du job d'integration** : les tests du store de boites SMTP verifient le
+  chiffrement au repos, donc exigent une cle de 32 octets. Rouge SYSTEMATIQUE. Corrige : une cle jetable est
+  tiree a chaque execution (`openssl rand -hex 32`), donc rien en clair dans le depot.
+- **`campaign-carousel-preview` instable depuis des jours** : ses attentes etaient a 15 s dans un test plafonne
+  a 30 s dont l'ouverture de l'ecran consommait l'essentiel sous charge. Budget du test a 90 s + attente
+  EXPLICITE de l'option. Assertions inchangees.
+
+Le rouge intermittent avait rendu le rouge normal, et c'est ce qui a masque le rouge systematique.
+**`gh run list` avant tout deploiement**, au meme titre que `git log <deploye>..HEAD`. La CI teste contre un
+Postgres EPHEMERE reconstruit par les migrations : ce n'est pas la meme garantie que la base de prod.
+
 ### Ce qui reste ouvert
 
 - Le coup d'œil visuel de Julien sur les 4 écrans touchés (campagne, ajout de contact, bloc Action, Analytics).
