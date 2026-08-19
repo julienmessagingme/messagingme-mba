@@ -1,5 +1,6 @@
 import { parseWebhook } from './parse';
 import { processStatuses } from './delivery';
+import type { NodeStatusSink } from './delivery';
 import { processInbound } from './inbound';
 import { processFlowCompletions } from './flow-mapping';
 import { processWorkflowAdvance } from './workflow-advance';
@@ -43,6 +44,8 @@ export async function handleWebhookJob(
   triggers?: Omit<TriggerDeps, 'isNewContact'>,
   /** Jetons de test d'un scénario (Lot F). Prioritaires sur l'avance et sur les automations. */
   testTokens?: TestTokenDeps,
+  /** Mesure par bloc (« Mes tableaux ») : rattache les accusés Meta au bloc qui a envoyé le message. */
+  nodeEvents?: NodeStatusSink,
 ): Promise<void> {
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
@@ -54,7 +57,7 @@ export async function handleWebhookJob(
     const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
-  if (delivery) await processStatuses(events, delivery);
+  if (delivery) await processStatuses(events, delivery, nodeEvents);
   // Contacts CRÉÉS par ce webhook (clé `tenant:waId`). Le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert : une fois la fiche créée, plus rien ne le distingue d'un habitué. On le capture
   // donc au vol, pour la durée de CE job (aucun état global, aucune requête supplémentaire).

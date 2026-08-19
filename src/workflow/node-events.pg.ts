@@ -47,6 +47,34 @@ export class PgWorkflowNodeEventStore {
   }
 
   /**
+   * Rattache un ACCUSÉ Meta (délivré / lu / échec) au bloc qui a envoyé ce message.
+   *
+   * Tout est dérivé de la ligne d'envoi : l'espace, le scénario, le bloc et le destinataire sont recopiés
+   * depuis elle. C'est ce qui rend « combien lus » mesurable par bloc alors que les statuts Meta ne parlent
+   * que d'un identifiant de message, sans rien savoir des scénarios.
+   *
+   * IDEMPOTENT par (message, nature) : Meta répète volontiers ses statuts, et un accusé rejoué gonflerait le
+   * compteur. Un identifiant qui n'appartient à aucun envoi de scénario (message d'inbox, campagne) ne crée
+   * rien : cette méthode est appelée sur TOUS les statuts, et ne doit parler que des siens.
+   *
+   * Renvoie le nombre de lignes créées (0 ou 1).
+   */
+  async recordStatusForMessage(metaMessageId: string, kind: 'delivered' | 'read' | 'failed'): Promise<number> {
+    const res = await this.pool.query(
+      `insert into workflow_node_events (tenant_id, workflow_id, node_id, wa_id, kind, meta_message_id)
+       select tenant_id, workflow_id, node_id, wa_id, $2, meta_message_id
+         from workflow_node_events
+        where meta_message_id = $1 and kind = 'sent'
+          and not exists (
+            select 1 from workflow_node_events d where d.meta_message_id = $1 and d.kind = $2
+          )
+        limit 1`,
+      [metaMessageId, kind],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * Agrégat d'un scénario sur une période : par bloc, par nature, et par choix pour les clics.
    *
    * Rend AUSSI le nombre de contacts distincts. Les deux chiffres répondent à des questions différentes :

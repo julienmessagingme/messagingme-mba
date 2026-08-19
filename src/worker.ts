@@ -3,6 +3,7 @@ import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
 import { PgAuditStore } from './audit/store.pg';
+import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { handleWebhookJob } from './webhooks/handler';
 import { PgEventStore } from './webhooks/store';
 import {
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
   const flowStore = new PgFlowStore(pool);
   const contactStore = new PgContactStore(pool);
   const auditStore = new PgAuditStore(pool);
+  const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const repo = new PgCampaignRepo(pool);
   const transport = new FetchTransport();
   const dryRun = config.DRY_RUN === 'true';
@@ -270,6 +272,9 @@ async function main(): Promise<void> {
           return workflowExecutor.startInWindow(tenant, workflowId, wf.graph, { waId, contactId }, { emitEvents: true });
         },
       },
+      // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le
+      // message. Un identifiant hors scenario (inbox, campagne) ne cree rien.
+      nodeEventStore,
     );
   });
 

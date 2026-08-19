@@ -23,7 +23,19 @@ export type StartOutcome = true | string;
  * marquait le destinataire « envoyé » avec l'identifiant synthétique `wf-<id>` : succès à l'écran, rien sur
  * le téléphone (vécu trois fois en prod le 2026-08-15). La raison remonte maintenant jusqu'au destinataire.
  */
-export type SendRefusal = void | string;
+export type SendRefusal = void | string | { messageId: string };
+
+/**
+ * L'identifiant Meta d'un envoi réussi, quand la dépendance le remonte.
+ *
+ * Rétro-compatible À DESSEIN : `void` reste un succès (les câblages de test n'ont rien à remonter) et une
+ * chaîne non vide reste un refus. Seule s'ajoute la forme `{ messageId }`, qui permet de rattacher plus tard
+ * un accusé de livraison ou de lecture au BLOC qui a envoyé le message. Sans elle, « combien lus » resterait
+ * immesurable par bloc : les statuts Meta ne parlent que d'un identifiant de message.
+ */
+export function messageIdDe(issue: SendRefusal): string | undefined {
+  return typeof issue === 'object' && issue !== null && typeof issue.messageId === 'string' ? issue.messageId : undefined;
+}
 
 export interface WorkflowExecutorDeps {
   runs: {
@@ -53,7 +65,7 @@ export interface WorkflowExecutorDeps {
    */
   recordNodeEvent?(e: {
     tenantId: string; workflowId: string; nodeId: string; waId: string;
-    kind: 'sent' | 'failed' | 'reply_button' | 'reply_text'; handle?: string;
+    kind: 'sent' | 'failed' | 'reply_button' | 'reply_text'; handle?: string; metaMessageId?: string;
   }): Promise<void>;
   /**
    * `buttons` = boutons du template (pour poser un payload contrôlé sur les quick-reply : branche par bouton).
@@ -286,8 +298,9 @@ export class WorkflowExecutor {
           partis += 1;
         }
         // Mesure par bloc (Analytics > Mes tableaux). APRÈS l'envoi, sur son issue réelle : compter avant
-        // gonflerait les « envoyés » de tout ce que Meta a refusé.
-        await this.mesurer(tenantId, workflowId, nodeId, waId, rate ? 'failed' : 'sent');
+        // gonflerait les « envoyés » de tout ce que Meta a refusé. L'identifiant du message, quand la
+        // dépendance le remonte, est ce qui permettra à un accusé de lecture de retrouver ce bloc.
+        await this.mesurer(tenantId, workflowId, nodeId, waId, rate ? 'failed' : 'sent', undefined, messageIdDe(dit));
       }
     }
     // Publication APRÈS toutes les actions, et seulement sur un chemin unitaire. Best-effort : la pose du tag
@@ -314,10 +327,15 @@ export class WorkflowExecutor {
     waId: string,
     kind: 'sent' | 'failed' | 'reply_button' | 'reply_text',
     handle?: string,
+    metaMessageId?: string,
   ): Promise<void> {
     if (!this.deps.recordNodeEvent || !workflowId) return;
     try {
-      await this.deps.recordNodeEvent({ tenantId, workflowId, nodeId, waId, kind, ...(handle ? { handle } : {}) });
+      await this.deps.recordNodeEvent({
+        tenantId, workflowId, nodeId, waId, kind,
+        ...(handle ? { handle } : {}),
+        ...(metaMessageId ? { metaMessageId } : {}),
+      });
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('mesure de bloc ignorée (best-effort):', err instanceof Error ? err.message : err);

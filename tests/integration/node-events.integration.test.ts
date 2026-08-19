@@ -86,6 +86,37 @@ describe.skipIf(!url)('mesures par bloc — écriture et agrégat', () => {
     }
   });
 
+  it('🔴 un accusé Meta retrouve le BLOC qui a envoyé le message', async () => {
+    // Tout est dérivé de la ligne d'envoi : espace, scénario, bloc, destinataire. C'est ce qui rend
+    // « combien lus » mesurable par bloc alors que les statuts Meta ne connaissent qu'un identifiant.
+    await store.record({ tenantId, workflowId, nodeId: 'n9', waId: '33600010', kind: 'sent', metaMessageId: 'wamid.itest.1' });
+    expect(await store.recordStatusForMessage('wamid.itest.1', 'read')).toBe(1);
+
+    const ligne = (await pool.query<{ node_id: string; wa_id: string; workflow_id: string }>(
+      `select node_id, wa_id, workflow_id from workflow_node_events where meta_message_id = $1 and kind = 'read'`,
+      ['wamid.itest.1'],
+    )).rows[0]!;
+    expect(ligne).toMatchObject({ node_id: 'n9', wa_id: '33600010', workflow_id: workflowId });
+  });
+
+  it('🔴 un accusé REJOUÉ ne compte pas deux fois (Meta répète ses statuts)', async () => {
+    expect(await store.recordStatusForMessage('wamid.itest.1', 'read')).toBe(0);
+    const n = await pool.query(`select 1 from workflow_node_events where meta_message_id = $1 and kind = 'read'`, ['wamid.itest.1']);
+    expect(n.rowCount).toBe(1);
+  });
+
+  it('délivré ET lu coexistent : ce sont deux mesures différentes', async () => {
+    expect(await store.recordStatusForMessage('wamid.itest.1', 'delivered')).toBe(1);
+    const n = await pool.query(`select kind from workflow_node_events where meta_message_id = $1`, ['wamid.itest.1']);
+    expect(n.rowCount).toBe(3); // sent + read + delivered
+  });
+
+  it('🔴 un identifiant HORS scénario (inbox, campagne) ne crée rien', async () => {
+    // Cette méthode voit TOUS les statuts du webhook. Inventer une ligne pour un message qu'aucun bloc n'a
+    // envoyé polluerait les tableaux avec des mesures sans bloc.
+    expect(await store.recordStatusForMessage('wamid.inconnu.999', 'read')).toBe(0);
+  });
+
   it('supprimer le scénario emporte ses mesures (cascade)', async () => {
     const wf2 = (await pool.query<{ id: string }>(
       `insert into workflows (tenant_id, name) values ($1, 'itest-mesures-jetable') returning id`, [tenantId],

@@ -25,6 +25,7 @@ import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgAuditStore } from './audit/store.pg';
+import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
@@ -91,6 +92,7 @@ async function main(): Promise<void> {
   const apiKeyStore = new PgApiKeyStore(pool);
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const auditStore = new PgAuditStore(pool);
+  const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
   const auditSink: AuditSink = async (tenant, actor, action, target, detail) => {
@@ -348,6 +350,7 @@ async function main(): Promise<void> {
         };
         return estimateCostSeries(range.from, range.to, rows, rates);
       },
+      getWorkflowNodeCounts: (tenant, workflowId, range) => nodeEventStore.countByNode(tenant, workflowId, range),
       getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
       listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
     },

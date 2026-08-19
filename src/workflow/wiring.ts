@@ -342,7 +342,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
         }
         const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
         await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
-        return;
+        // Remonté pour la mesure par bloc : c'est cet identifiant qui permettra à un accusé de lecture de
+        // retrouver le bloc qui a envoyé ce message.
+        return { messageId: res.messageId };
       }
 
       // Variables du corps : on résout les {{n}} avec les attributs du contact (indices template_param_hints ->
@@ -390,6 +392,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
       // Journalise le template dans le fil de conversation (fil d'inbox complet + transcript d'analyse). Best-effort.
       await logTemplateSent(inboxStore, tenant, waId, name, res.messageId);
+      return { messageId: res.messageId };
     },
     // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Deux chemins d'accès,
     // tous deux EN fenêtre 24 h : `advance` (le contact vient de répondre) et `startFromNode` (cible node de
@@ -415,6 +418,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       const res = utilisables ? await client.sendInteractive(waId, body, buttons) : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+      return { messageId: res.messageId };
     },
     // Formulaire (node flow) : message interactif type flow, hors template. Atteint via `advance` (le save du
     // graphe + la garde de `start` refusent un flow en OUVERTURE) ou via `startFromNode` (cible node, fenêtre
@@ -434,6 +438,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}` });
       // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+      return { messageId: res.messageId };
     },
     // Node « Envoi de mail » (SMTP, Task 8). `apply` (executor.ts) enveloppe cet appel d'un try/catch best-effort
     // strict : rien ici ne doit faire échouer le parcours, cette dep ne fait donc que journaliser et sortir.

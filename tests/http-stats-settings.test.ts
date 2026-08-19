@@ -385,3 +385,44 @@ describe('PATCH /settings/control-handback', () => {
   });
 });
 
+
+describe('GET /tenants/:t/stats/workflow/:workflowId — mesures par bloc', () => {
+  const COUNTS = [
+    { nodeId: 'n1', kind: 'sent' as const, handle: null, count: 12, contacts: 12 },
+    { nodeId: 'n1', kind: 'reply_button' as const, handle: 'btn:0', count: 5, contacts: 4 },
+  ];
+
+  it('rend les compteurs BRUTS du scénario sur la plage', async () => {
+    // Bruts, et non un tableau tout fait : deux tableaux différents lisent les mêmes lignes, et agréger côté
+    // serveur obligerait à rejouer la requête à chaque changement de sélection à l'écran.
+    const recus: Array<{ workflowId: string; range: unknown }> = [];
+    const a = app({ stats: { getWorkflowNodeCounts: async (_t: string, workflowId: string, range: unknown) => { recus.push({ workflowId, range }); return COUNTS; } } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/workflow/wf-1?from=2026-08-01&to=2026-08-19', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ counts: unknown[] }>().counts).toEqual(COUNTS);
+    expect(recus[0]?.workflowId).toBe('wf-1');
+    await a.close();
+  });
+
+  it('🔴 instance sans mesures câblées -> 503, PAS une liste vide', async () => {
+    // Une liste vide se lirait « ce scénario n'a rien produit », ce qui est le contraire de « rien n'est
+    // branché ». C'est la même règle que pour le journal d'audit.
+    const a = app({ stats: { getWorkflowNodeCounts: undefined } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/workflow/wf-1?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
+    await a.close();
+  });
+
+  it('plage invalide -> 400, comme les autres routes de stats', async () => {
+    const a = app({ stats: { getWorkflowNodeCounts: async () => COUNTS } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/workflow/wf-1?from=pasunedate&to=2026-08-19', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('réservée aux admins', async () => {
+    const a = app({ stats: { getWorkflowNodeCounts: async () => COUNTS } });
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/workflow/wf-1?days=30', ...h(agentTok) })).statusCode).toBe(403);
+    await a.close();
+  });
+});
