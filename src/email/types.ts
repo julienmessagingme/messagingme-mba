@@ -32,3 +32,26 @@ export interface EmailAccountInput {
 
 /** Mise à jour : le mot de passe n'est re-chiffré que s'il est fourni. */
 export type EmailAccountUpdate = Partial<EmailAccountInput>;
+
+export type EmailTemplateFormat = 'basic' | 'html';
+
+export interface EmailTemplate {
+  id: string;
+  tenantId: string;
+  name: string;
+  format: EmailTemplateFormat;
+  subject: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailTemplateInput {
+  name: string;
+  format: EmailTemplateFormat;
+  subject: string;
+  body: string;
+}
+
+/** Mise à jour partielle : seuls les champs fournis sont modifiés. */
+export type EmailTemplateUpdate = Partial<EmailTemplateInput>;
