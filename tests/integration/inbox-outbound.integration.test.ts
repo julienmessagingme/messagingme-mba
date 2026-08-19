@@ -106,8 +106,11 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
 
     const waId = '33600022222';
     await store.recordInbound(tenantId, { waId, phoneNumberId: 'pn-test', body: 'Une question', type: 'text', buttonPayload: null, messageId: 'wamid-SVC-IN', profileName: null, field: 'messages' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Je regarde ça', messageId: 'wamid-SVC-OUT-1' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Voilà la réponse', messageId: 'wamid-SVC-OUT-2' });
+    // `type` EXPLICITE : ce store retombe sur 'template' quand on ne dit rien (il a d'abord servi aux envois de
+    // campagne). Les vrais messages de service le précisent — 'text' pour une réponse d'agent ou de scénario,
+    // 'mba' pour une réponse de l'assistant.
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Je regarde ça', messageId: 'wamid-SVC-OUT-1', type: 'text' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Voilà la réponse', messageId: 'wamid-SVC-OUT-2', type: 'mba' });
     await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo_svc »', messageId: 'wamid-SVC-TPL', type: 'template', templateCategory: 'marketing', templateName: 'promo_svc' });
 
     const apres = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
