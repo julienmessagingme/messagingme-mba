@@ -127,6 +127,25 @@ describe('users route — changement de rôle', () => {
     await server.close();
   });
 
+  it('🔴 PATCH role manager -> 200 (le 3e statut est attribuable)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/role', ...h(adminTok), payload: { role: 'manager' } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.roleSet[0]).toEqual({ tenant: 't1', userId: 'known', role: 'manager' });
+    await server.close();
+  });
+
+  it('🔴 un manager n’est PAS un admin : il ne change aucun rôle', async () => {
+    // Le statut existe, il n'ouvre aucune écriture. Si cette barrière tombait, « manager » deviendrait un
+    // second admin sans que personne ne l'ait décidé.
+    const managerTok = await signSession({ userId: 'u3', tenantId: 't1', role: 'manager' }, SECRET);
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/role', ...h(managerTok), payload: { role: 'admin' } });
+    expect(res.statusCode).toBe(403);
+    expect(cap.roleSet).toHaveLength(0);
+    await server.close();
+  });
+
   it('PATCH role user inconnu -> 404', async () => {
     const { server } = app();
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/ghost/role', ...h(adminTok), payload: { role: 'agent' } });
@@ -273,6 +292,15 @@ describe('users route — invitation', () => {
     const bad = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'x', role: 'agent' } });
     const role = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'a@b.co', role: 'root' } });
     expect([bad.statusCode, role.statusCode]).toEqual([400, 400]);
+    await server.close();
+  });
+  it('🔴 POST /invitations manager -> 201 (on peut inviter au 3e statut)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'chef@demo.test', role: 'manager' } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.invited[0]).toEqual({ tenant: 't1', email: 'chef@demo.test', role: 'manager' });
+    // Et l'email d'invitation le nomme, plutôt que de recracher la valeur technique.
+    expect(cap.emailObjs[0]?.html).toContain('manager');
     await server.close();
   });
   it('POST /invitations agent -> 403 (admin-only)', async () => {

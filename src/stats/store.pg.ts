@@ -49,6 +49,15 @@ export interface DashboardStats {
   contacts: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
+  /**
+   * Messages de SERVICE : les SORTANTS qui ne sont pas des templates (réponse d'un agent depuis l'inbox,
+   * message d'un scénario dans la fenêtre de 24 h). Affichés à côté des templates, parce que c'est là qu'on
+   * lit ce qui est parti. Ils n'entrent PAS dans le coût estimé : Meta ne les facture pas au message, et
+   * leur inventer un prix reviendrait à mentir sur la facture.
+   *
+   * Sous-ensemble de `exchanged`, qui compte aussi les ENTRANTS : deux lectures différentes, même requête.
+   */
+  service: DailyPoint[];
 }
 
 /** Un template envoyé sur la période, avec son volume (pour le dropdown + le prix estimé). */
@@ -121,10 +130,14 @@ export class PgStatsStore {
       [tenantId, from, to, TZ],
     );
 
-    // 3) Messages échangés hors template / jour : reçus + réponses texte sortantes.
-    const exchanged = await this.pool.query<{ d: string; count: string }>(
+    // 3) Messages hors template / jour. UNE requête pour deux lectures : les ÉCHANGÉS (entrants + sortants)
+    //    et, dans le même passage, les seuls SORTANTS, qui sont les messages de service. Un second balayage de
+    //    la même table pour un sous-ensemble ne serait qu'un coût de plus.
+    const exchanged = await this.pool.query<{ d: string; count: string; sortants: string }>(
       `with ${BOUNDS_CTE}
-       select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d, count(*)::int as count
+       select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d,
+              count(*)::int as count,
+              count(*) filter (where m.direction = 'out')::int as sortants
        from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
        where cv.tenant_id = $1 and not cv.is_test and m.created_at >= b.start_ts and m.created_at < b.end_ts
          and (m.direction = 'in' or (m.direction = 'out' and m.type is distinct from 'template'))
@@ -144,6 +157,7 @@ export class PgStatsStore {
       contacts: contacts.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
       templates: { utility, marketing },
       exchanged: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
+      service: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.sortants) })),
     };
   }
 

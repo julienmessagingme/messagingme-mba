@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import { metaCodeLabel } from '@/lib/meta-errors';
 import { fmtCost, fmtNum, fmtPct } from '@/lib/format';
+import { BoutonPdf } from '@/components/BoutonPdf';
 import { useT, useLocale } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
 
@@ -66,6 +67,7 @@ function DashboardInner({ session }: { session: Session }) {
           <DailyChart
             title={t('Contacts', 'Contacts')}
             subtitle={t('total cumulé', 'cumulative total')}
+            zonePdf="quanti-contacts"
             from={range.from}
             to={range.to}
             summary="last"
@@ -76,17 +78,26 @@ function DashboardInner({ session }: { session: Session }) {
             subtitle={t('reçus + réponses (hors template)', 'received + replies (excluding templates)')}
             from={range.from}
             to={range.to}
+            zonePdf="quanti-echanges"
             series={[{ label: t('Échangés', 'Exchanged'), color: '#6E5AE0', points: stats.exchanged }]}
           />
           <div className="lg:col-span-2">
+            {/* Templates ET messages de service au même endroit : c'est ici qu'on lit ce qui est parti, et les
+                séparer obligeait à additionner de tête pour connaître le volume envoyé. Les messages de service
+                n'entrent pas dans le coût : Meta ne les facture pas au message. */}
             <DailyChart
-              title={t('Templates envoyés', 'Templates sent')}
-              subtitle={t('par jour, marketing vs utility', 'per day, marketing vs utility')}
+              title={t('Messages envoyés', 'Messages sent')}
+              subtitle={t('par jour : templates (marketing, utility) et messages de service', 'per day: templates (marketing, utility) and service messages')}
               from={range.from}
               to={range.to}
+              zonePdf="quanti-messages-envoyes"
               series={[
                 { label: 'Marketing', color: '#0080D6', points: stats.templates.marketing },
                 { label: 'Utility', color: '#17C74E', points: stats.templates.utility },
+                // `?? []` : mba-web et mba-api sont deux conteneurs, et ils ne redemarrent pas a la meme seconde. Le
+                // temps d'un deploiement, le front neuf peut interroger l'API d'avant ; une page d'analytics qui
+                // tombe pendant ces quelques secondes se remarque plus qu'une courbe vide.
+                { label: t('Service', 'Service'), color: '#F5A623', points: stats.service ?? [] },
               ]}
             />
           </div>
@@ -142,10 +153,13 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
     : [];
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-funnel" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Funnel par campagne', 'Funnel by campaign')}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Funnel par campagne', 'Funnel by campaign')}</h3>
+            <BoutonPdf zone="quanti-funnel" />
+          </div>
           <p className="text-xs text-ink-400">{t('envoyés → délivrés → lus → répondus', 'sent → delivered → read → replied')}</p>
         </div>
         {campaigns.length > 0 && (
@@ -254,10 +268,13 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
   const total = rows.reduce((a, e) => a + e.count, 0);
   const max = rows.reduce((m, e) => Math.max(m, e.count), 0);
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-erreurs" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Erreurs Meta', 'Meta errors')}</h3>
+            <BoutonPdf zone="quanti-erreurs" />
+          </div>
           <p className="text-xs text-ink-400">{t('par code, sur la période', 'by code, over the period')}</p>
         </div>
         {templates.length > 0 && (
@@ -298,6 +315,7 @@ function CostChartCard({
   tenantId, range, campaigns, templates,
 }: { tenantId: string; range: StatsRange; campaigns: CampaignSummary[]; templates: TemplateStats['breakdown'] }) {
   const t = useT();
+  const { locale } = useLocale();
   const [campaignIds, setCampaignIds] = useState<string[]>([]);
   const [templateNames, setTemplateNames] = useState<string[]>([]);
   const [cost, setCost] = useState<CostSeries | null>(null);
@@ -323,12 +341,15 @@ function CostChartCard({
   }, [tenantId, range, cleCampagnes, cleTemplates]);
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-cout" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Coût estimé', 'Estimated cost')}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Coût estimé', 'Estimated cost')}</h3>
+            <BoutonPdf zone="quanti-cout" />
+          </div>
           <p className="text-xs text-ink-400">
-            {t('par jour, tarif Meta × volume', 'per day, Meta rate × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total)}</span></> : null}
+            {t('par jour, tarif Meta × volume', 'per day, Meta rate × volume')}{cost ? <> · {t('total ≈', 'total ≈')} <span className="font-medium text-ink-700">{fmtCost(cost.total, locale, cost.currency)}</span></> : null}
           </p>
         </div>
         {/* Les deux axes restent MUTUELLEMENT EXCLUSIFS : choisir des campagnes vide les templates et
@@ -372,6 +393,7 @@ function CostChartCard({
 /** Section « Templates envoyés » détaillée : dropdown par template + volume + prix estimé (Meta). */
 function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
   const t = useT();
+  const { locale } = useLocale();
   const rows = data?.breakdown ?? [];
   const [selected, setSelected] = useState<string | null>(null);
   const current = rows.find((r) => r.name === selected) ?? rows[0] ?? null;
@@ -381,10 +403,13 @@ function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
   const estimated = current && rate != null ? current.count * rate : null;
 
   return (
-    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+    <div id="quanti-templates" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Détail par template', 'Breakdown by template')}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Détail par template', 'Breakdown by template')}</h3>
+            <BoutonPdf zone="quanti-templates" />
+          </div>
           <p className="text-xs text-ink-400">{t('volume + prix estimé sur la période', 'volume + estimated price over the period')}</p>
         </div>
         {rows.length > 0 && (
@@ -410,15 +435,15 @@ function TemplateBreakdownCard({ data }: { data: TemplateStats | null }) {
           <Metric label={t('Envois', 'Sends')} value={String(current.count)} />
           <Metric
             label={t('Prix estimé', 'Estimated price')}
-            value={estimated != null ? `≈ ${fmtCost(estimated)}` : t('indisponible', 'unavailable')}
-            hint={estimated != null ? t('volume × tarif catégorie (Meta), devise du compte', 'volume × category rate (Meta), account currency') : t('tarif Meta indisponible', 'Meta rate unavailable')}
+            value={estimated != null ? `≈ ${fmtCost(estimated, locale, pricing?.currency)}` : t('indisponible', 'unavailable')}
+            hint={estimated != null ? t('volume × tarif catégorie (Meta)', 'volume × category rate (Meta)') : t('tarif Meta indisponible', 'Meta rate unavailable')}
           />
         </div>
       )}
 
       {pricing && (
         <p className="mt-4 border-t border-ink-100 pt-3 text-xs text-ink-500">
-          {t('Coût total période (Meta, approx., devise du compte) :', 'Total period cost (Meta, approx., account currency):')} <span className="font-semibold text-ink-800">{fmtCost(pricing.totalCost)}</span>
+          {t('Coût total période (Meta, approx.) :', 'Total period cost (Meta, approx.):')} <span className="font-semibold text-ink-800">{fmtCost(pricing.totalCost, locale, pricing.currency)}</span>
         </p>
       )}
       {data && !pricing && (

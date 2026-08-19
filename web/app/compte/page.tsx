@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { changePassword } from '@/lib/api';
-import { getSession, type Session } from '@/lib/session';
+import { getSession, pageDArrivee, type Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
@@ -43,7 +43,7 @@ export default function ComptePage() {
 
   return (
     <main className="mx-auto max-w-md px-4 py-10">
-      <Link href={session.role === 'agent' ? '/inbox' : '/accueil'} className="mb-4 inline-block text-sm text-brand-600 hover:underline">← {t('Retour', 'Back')}</Link>
+      <Link href={pageDArrivee(session.role)} className="mb-4 inline-block text-sm text-brand-600 hover:underline">← {t('Retour', 'Back')}</Link>
       <h1 className="text-lg font-semibold tracking-tight text-ink-900">{t('Mon compte', 'My account')}</h1>
       <p className="mt-1 text-sm text-ink-400">{session.email}</p>
 

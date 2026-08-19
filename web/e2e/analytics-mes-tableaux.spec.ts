@@ -171,6 +171,25 @@ test.describe('Mes tableaux : l’histogramme', () => {
     await expect(page.getByTestId('barre')).toHaveCount(1);
     await expect(page.getByTestId('tableaux-graphe')).toContainText('0');
   });
+
+  test('🔴 dans un bloc les barres sont JOINTIVES, entre deux blocs elles restent separees', async ({ page }) => {
+    // Les barres d'une meme etape decrivent UNE etape : collees, le groupe se lit comme un bloc. L'ecart ne
+    // subsiste qu'entre blocs, sinon on ne sait plus ou l'un finit et ou l'autre commence.
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await page.getByTestId('bloc-mesurable').first().click();
+    await page.getByTestId('mesure-sent').check();
+    await page.getByTestId('mesure-read').check();
+    await page.getByTestId('bloc-mesurable').nth(1).click();
+    await page.getByTestId('mesure-sent').check();
+
+    const geo = await page.getByTestId('barre').locator('rect').evaluateAll((n) => n.map((r) => ({
+      x: Number(r.getAttribute('x')), largeur: Number(r.getAttribute('width')),
+    })));
+    expect(geo).toHaveLength(3);
+    expect(geo[1]!.x).toBe(geo[0]!.x + geo[0]!.largeur);
+    expect(geo[2]!.x).toBeGreaterThan(geo[1]!.x + geo[1]!.largeur);
+  });
 });
 
 test.describe('Mes tableaux : enregistrement', () => {

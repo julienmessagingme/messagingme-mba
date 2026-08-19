@@ -588,6 +588,8 @@ export interface DashboardStats {
   contacts: DailyPoint[];
   templates: { utility: DailyPoint[]; marketing: DailyPoint[] };
   exchanged: DailyPoint[];
+  /** Sortants qui ne sont PAS des templates (inbox, scenario dans la fenetre de 24 h). Sous-ensemble d'`exchanged`. */
+  service: DailyPoint[];
 }
 /** Plage de dates des stats (YYYY-MM-DD, Europe/Paris). Absente -> le backend retombe sur 30 jours. */
 export interface StatsRange {
@@ -629,6 +631,8 @@ export interface CostSeries {
   utility: DailyPoint[];
   total: number;
   hasRates: boolean;
+  /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, on affiche le nombre nu. */
+  currency: string | null;
 }
 /** Filtre du graphe de coût. Plusieurs valeurs -> série COMPILÉE. Les deux axes sont mutuellement exclusifs. */
 export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { campaignIds?: string[]; templateNames?: string[] }): Promise<CostSeries> {
@@ -693,6 +697,8 @@ export interface CategoryPricing {
 export interface PricingSummary {
   byCategory: Record<string, CategoryPricing>;
   totalCost: number;
+  /** Devise du WABA (ISO 4217) rendue par Meta ; null = non communiquee. */
+  currency: string | null;
 }
 export interface TemplateStats {
   breakdown: TemplateBreakdownRow[];
@@ -984,7 +990,7 @@ export function sendSupportMessage(tenantId: string, input: { subject: string; m
 
 // --- Admin (gestion des comptes) ---
 
-export type UserRole = 'admin' | 'agent';
+export type UserRole = 'admin' | 'manager' | 'agent';
 export interface AdminUser {
   id: string;
   email: string;

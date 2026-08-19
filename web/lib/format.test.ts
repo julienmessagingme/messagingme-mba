@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sendingLimitLabel, tierLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, campaignSendLabel } from './format';
+import { sendingLimitLabel, tierLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, campaignSendLabel, fmtCost } from './format';
 
 /** Anti-tiret : règle projet, aucun libellé produit ne doit contenir de tiret cadratin/demi-cadratin. */
 const NO_EM_DASH = /[—–]/;
@@ -103,5 +103,35 @@ describe('campaignSendLabel (ce que la campagne envoie)', () => {
       expect(out.trim()).not.toBe('');
       expect(out).not.toMatch(/\(\s*\)/);
     }
+  });
+});
+
+describe('fmtCost (la devise vient de Meta, jamais devinée)', () => {
+  /** Les espaces d'`Intl` varient (insécable, insécable étroit) : on compare le contenu, pas l'espace exact. */
+  const normalise = (s: string): string => s.replace(/[  ]/g, ' ');
+
+  it('affiche la devise rendue par Meta, au format de la langue', () => {
+    expect(normalise(fmtCost(1.42, 'fr', 'EUR'))).toBe('1,42 €');
+    expect(normalise(fmtCost(1.42, 'en', 'EUR'))).toContain('1.42');
+    expect(normalise(fmtCost(1.42, 'fr', 'eur'))).toBe('1,42 €'); // code en minuscules toléré
+  });
+
+  it('🔴 sans devise connue, rend le nombre NU (jamais un euro supposé)', () => {
+    // Un compte hors zone euro afficherait sinon un montant faux, et personne ne le verrait passer.
+    expect(fmtCost(1.42, 'fr')).toBe('1,42');
+    expect(fmtCost(1.42, 'fr', null)).toBe('1,42');
+    expect(fmtCost(1.42, 'en')).toBe('1.42');
+  });
+
+  it('🔴 un code de devise invalide ne fait PAS tomber l’écran', () => {
+    // `Intl.NumberFormat` LÈVE sur un code inconnu, et cette valeur vient d'une API externe.
+    expect(fmtCost(1.42, 'fr', 'euros')).toBe('1,42');
+    expect(fmtCost(1.42, 'fr', '')).toBe('1,42');
+    expect(() => fmtCost(1.42, 'fr', 'ZZZ')).not.toThrow();
+  });
+
+  it('sous 1, quatre décimales : c’est un tarif au message, pas un total', () => {
+    expect(fmtCost(0.0425, 'fr')).toBe('0,0425');
+    expect(fmtCost(0, 'fr')).toBe('0,0000');
   });
 });

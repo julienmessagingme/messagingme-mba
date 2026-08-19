@@ -191,9 +191,12 @@ export class PgUserStore {
    */
   async setRole(tenantId: string, userId: string, role: string): Promise<UserMutation> {
     const upd = await this.pool.query(
+      // `role <> 'admin'` et non `role = 'agent'` : le compte visé n'étant PAS admin, le changer ne peut pas
+      // faire tomber le nombre d'admins, quel que soit son rôle. Écrit en dur sur 'agent', l'arrivée d'un
+      // troisième rôle refusait de rétrograder un manager dès qu'il ne restait qu'un seul admin.
       `update users set role = $3
          where id = $1 and tenant_id = $2
-           and ($3 = 'admin' or role = 'agent' or disabled_at is not null
+           and ($3 = 'admin' or role <> 'admin' or disabled_at is not null
                 or (select count(*) from users where tenant_id = $2 and role = 'admin' and disabled_at is null) > 1)`,
       [userId, tenantId, role],
     );

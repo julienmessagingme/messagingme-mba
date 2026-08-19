@@ -213,7 +213,7 @@ function CampaignsInner({ session }: { session: Session }) {
                désormais les archivées. Le dashboard, lui, compte tout. Deux chiffres différents sur deux écrans
                sont acceptables tant que chacun dit sur quoi il porte ; « total » ici serait un mensonge. */
             <p className="mt-0.5 text-xs text-ink-500">
-              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0))}</span> <span className="text-ink-400">({t('devise du compte', 'account currency')})</span>
+              {t('coût estimé des campagnes affichées', 'estimated cost of listed campaigns')} ≈ <span className="font-semibold text-ink-800">{fmtCost(campaigns.reduce((acc, c) => acc + (estimateCampaignCost(c.counts.sent, c.category, pricing) ?? 0), 0), locale, pricing?.currency)}</span>{!pricing?.currency && <span className="text-ink-400"> ({t('devise du compte', 'account currency')})</span>}
             </p>
           ) : (
             <p className="mt-0.5 text-xs text-ink-400">{t('coût estimé indisponible (tarif Meta)', 'estimated cost unavailable (Meta pricing)')}</p>
@@ -278,7 +278,7 @@ function CampaignsInner({ session }: { session: Session }) {
                       const cost = estimateCampaignCost(c.counts.sent, c.category, pricing);
                       return (
                         <p className="mt-1 text-xs text-ink-400">
-                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-700">{fmtCost(cost)}</span> ({t('devise du compte', 'account currency')})</> : t('indisponible', 'unavailable')}
+                          {t('coût estimé', 'estimated cost')} {cost != null ? <>≈ <span className="font-medium text-ink-700">{fmtCost(cost, locale, pricing?.currency)}</span>{!pricing?.currency && ` (${t('devise du compte', 'account currency')})`}</> : t('indisponible', 'unavailable')}
                         </p>
                       );
                     })()}
@@ -391,7 +391,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
           <span className="text-sm font-semibold">{detail.name}</span>
           <Badge status={detail.status} />
           <span className="text-xs text-ink-500">{campaignSendLabel(detail, locale)}</span>
-          <span className="text-xs text-ink-400">{t('coût estimé', 'estimated cost')} {cost != null ? `≈ ${fmtCost(cost)} (${t('devise du compte', 'account currency')})` : t('indisponible', 'unavailable')}</span>
+          <span className="text-xs text-ink-400">{t('coût estimé', 'estimated cost')} {cost != null ? `≈ ${fmtCost(cost, locale, pricing?.currency)}${pricing?.currency ? '' : ` (${t('devise du compte', 'account currency')})`}` : t('indisponible', 'unavailable')}</span>
         </div>
         <button onClick={onClose} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
       </div>

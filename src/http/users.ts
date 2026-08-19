@@ -27,7 +27,16 @@ export interface UsersRouteDeps {
   appUrl?: string;
 }
 
-const ROLES = new Set(['admin', 'agent']);
+/**
+ * Rôles attribuables à un membre.
+ *
+ * ⚠️ `manager` est un STATUT, pas encore un jeu de droits : côté serveur, tout ce qui n'est pas `admin` reste
+ * fermé (`makeRequireRole(['admin'])` sur les groupes de routes, `forbidNonAdmin` dans les handlers). Un
+ * manager a donc aujourd'hui exactement les accès d'un agent. Ouvrir des routes à ce rôle demandera de
+ * décider, écriture par écriture, ce qu'un manager a le droit de faire : on n'accorde pas une autorisation
+ * par défaut d'implémentation.
+ */
+const ROLES = new Set(['admin', 'manager', 'agent']);
 // Validation d'email minimale (un @, pas d'espace) : le vrai contrôle d'unicité est en base.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -54,7 +63,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
     const b = (req.body ?? {}) as Partial<{ email: unknown; role: unknown }>;
     const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
-    if (typeof b.role !== 'string' || !ROLES.has(b.role)) return reply.code(400).send({ error: 'role invalide (admin|agent)' });
+    if (typeof b.role !== 'string' || !ROLES.has(b.role)) return reply.code(400).send({ error: 'role invalide (admin|manager|agent)' });
 
     try {
       const user = await deps.createPendingUser(tenant, email, b.role);
@@ -100,7 +109,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, guard?
 
     const role = (req.body as { role?: unknown } | null)?.role;
     if (typeof role !== 'string' || !ROLES.has(role)) {
-      return reply.code(400).send({ error: 'role invalide (admin|agent)' });
+      return reply.code(400).send({ error: 'role invalide (admin|manager|agent)' });
     }
     // Self-block : un admin ne peut pas changer son PROPRE rôle (évite l'auto-lockout de l'UI en
     // pleine session). L'invariant « ≥1 admin par tenant » est réellement garanti EN BASE par

@@ -22,7 +22,9 @@ const H = 300;          // hauteur totale
 const BAS = 64;         // place sous l'axe pour le nom du bloc
 const HAUT = 26;        // place au-dessus des barres pour la valeur
 const LARGEUR_BARRE = 34;
-const ECART_BARRE = 10;
+// Les barres d'un MÊME bloc sont jointives : elles décrivent une seule étape, et c'est ce qui fait lire le
+// groupe comme un bloc plutôt que comme des mesures voisines. Le seul écart est celui qui sépare les blocs.
+const ECART_BARRE = 0;
 const ECART_GROUPE = 44; // l'espace entre blocs, demandé, qui sépare sans couper l'axe
 const MARGE = 16;
 
@@ -81,13 +83,11 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
                     <g key={b.cle} data-testid="barre">
                       <title>{`${b.label} : ${b.count}${b.contacts !== b.count ? ` (${b.contacts} ${t('personnes', 'people')})` : ''}`}</title>
                       <rect x={bx} y={yAxe - h} width={LARGEUR_BARRE} height={h} rx={3} fill={b.couleur} />
-                      {/* Valeur et personnes sur UNE seule ligne. Empilés, les deux nombres se lisaient comme
-                          un seul, et celui du dessus paraissait le plus important alors qu'il est secondaire.
-                          Le nombre de personnes n'apparaît que s'il DIFFÈRE : partout, il ferait douter d'un
-                          chiffre qui la plupart du temps dit la même chose. */}
+                      {/* La VALEUR seule au-dessus de la barre. Le nombre de personnes (différent du nombre
+                          d'événements quand quelqu'un répond deux fois) tient dans l'infobulle : sur des
+                          barres jointives, un second nombre chevaucherait celui de la barre d'à côté. */}
                       <text x={bx + LARGEUR_BARRE / 2} y={yAxe - h - 8} textAnchor="middle" fontSize={11} fontWeight={600} fill="#2b3245">
                         {b.count}
-                        {b.contacts !== b.count && <tspan fontSize={9} fontWeight={400} fill="#8a93a5">{` · ${b.contacts} p.`}</tspan>}
                       </text>
                     </g>
                   );

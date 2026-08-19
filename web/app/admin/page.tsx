@@ -114,6 +114,7 @@ function AdminInner({ session }: { session: Session }) {
                         className="rounded-lg border border-ink-300 bg-white px-2 py-1 text-sm text-ink-800 disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-400"
                       >
                         <option value="admin">Admin</option>
+                        <option value="manager">Manager</option>
                         <option value="agent">Agent</option>
                       </select>
                     </td>
@@ -205,7 +206,8 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Rôle', 'Role')}</label>
           <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-800 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
-            <option value="agent">Agent (inbox)</option>
+            <option value="agent">{t('Agent (inbox)', 'Agent (inbox)')}</option>
+            <option value="manager">{t('Manager (inbox)', 'Manager (inbox)')}</option>
             <option value="admin">Admin</option>
           </select>
         </div>
@@ -213,6 +215,14 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
           {busy ? t('Envoi…', 'Sending…') : t('Inviter', 'Invite')}
         </button>
       </div>
+      {/* Dit franchement ce que les rôles donnent AUJOURD'HUI : « manager » est un statut, ses droits propres
+          restent à définir. Sans cette ligne, on invite un manager en s'attendant à ce qu'il voie tout. */}
+      <p className="text-[11px] leading-snug text-ink-400">
+        {t(
+          'Manager et agent accèdent à l’inbox. Seul un admin accède au reste de la console.',
+          'Managers and agents get the inbox. Only an admin reaches the rest of the console.',
+        )}
+      </p>
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-mint-50 text-mint-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</p>}
     </form>
   );

@@ -14,7 +14,7 @@ const CAMPAGNES = [
   { id: 'camp-b', name: 'Promo B', status: 'sent', createdAt: '2026-08-02T09:00:00.000Z', counts: { queued: 0, sent: 2, delivered: 2, read: 0, failed: 0 } },
 ];
 const TEMPLATES = { total: 5, breakdown: [{ name: 'tpl-un', category: 'marketing', count: 3 }, { name: 'tpl-deux', category: 'utility', count: 2 }] };
-const COUT = { marketing: [], utility: [], total: 12.5, hasRates: true };
+const COUT = { marketing: [], utility: [], total: 12.5, hasRates: true, currency: 'EUR' };
 
 /** Monte /dashboard et rend les URL de la route de coût, dans l'ordre où elles partent. */
 async function monter(page: import('@playwright/test').Page) {
@@ -31,7 +31,7 @@ async function monter(page: import('@playwright/test').Page) {
     if (url.includes('/stats/errors')) {
       return json({ errors: [{ code: 131026, count: 4, templateName: 'tpl-un' }, { code: 131047, count: 2, templateName: 'tpl-deux' }] });
     }
-    if (url.includes('/stats')) return json({ contacts: [], templates: { utility: [], marketing: [] }, exchanged: [] });
+    if (url.includes('/stats')) return json({ contacts: [], templates: { utility: [], marketing: [] }, exchanged: [], service: [] });
     if (url.includes('/campaigns')) return json({ campaigns: CAMPAGNES });
     if (url.includes('/phone-numbers')) return json({ phoneNumbers: [] });
     if (url.endsWith('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} });

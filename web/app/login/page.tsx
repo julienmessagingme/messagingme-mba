@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { login } from '@/lib/api';
-import { saveSession } from '@/lib/session';
+import { saveSession, pageDArrivee } from '@/lib/session';
 import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
 import { LocaleToggle } from '@/components/LocaleToggle';
@@ -26,7 +26,7 @@ export default function LoginPage() {
     try {
       const res = await login(email.trim(), password);
       saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-      router.replace(res.user.role === 'agent' ? '/inbox' : '/accueil');
+      router.replace(pageDArrivee(res.user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Connexion impossible', 'Unable to sign in'));
     } finally {

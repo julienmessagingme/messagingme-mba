@@ -133,6 +133,31 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('🔴 setRole : le statut manager s’attribue, et il ne compte pas comme un admin', async () => {
+    // Deux invariants tenus ensemble, parce qu'ils se contredisent facilement : un rôle qui n'est pas admin
+    // doit pouvoir changer librement (le prédicat écrit en dur sur 'agent' bloquait le manager dès qu'il ne
+    // restait qu'un admin), et le DERNIER admin doit rester intouchable.
+    const users = new PgUserStore(pool);
+    const { tenantId: espace, userId: admin } = await users.createTenantWithAdmin('Espace roles', {
+      email: `roles.itest.${Date.now()}@exemple.fr`, name: 'Admin', passwordHash: null,
+    });
+    try {
+      const membre = await users.createPending(espace, `manager.itest.${Date.now()}@exemple.fr`, 'manager');
+      expect(membre.role).toBe('manager'); // la contrainte de base accepte le 3e statut (migration 0065)
+
+      // Un seul admin dans l'espace : changer le rôle de QUELQU'UN D'AUTRE reste permis.
+      expect(await users.setRole(espace, membre.id, 'agent')).toBe('ok');
+      expect(await users.setRole(espace, membre.id, 'manager')).toBe('ok');
+
+      // Le dernier admin, lui, ne se rétrograde pas — même vers ce nouveau statut.
+      expect(await users.setRole(espace, admin, 'manager')).toBe('last_admin');
+      const apres = (await pool.query<{ role: string }>(`select role from users where id = $1`, [admin])).rows[0]!;
+      expect(apres.role).toBe('admin');
+    } finally {
+      await pool.query('delete from tenants where id = $1', [espace]);
+    }
+  });
+
   it('PgAuthTokenStore : create renvoie le token en clair, consume valide/atomique/usage-unique/expiration', async () => {
     const users = new PgUserStore(pool);
     const tokens = new PgAuthTokenStore(pool);

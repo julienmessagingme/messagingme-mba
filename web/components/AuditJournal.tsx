@@ -5,6 +5,8 @@ import { listAudit, type AuditEntry } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { cardCls } from '@/lib/ui';
+import { toCsv, downloadCsv } from '@/lib/csv';
+import { ACTIONS_JOURNAL, resumeDetail, lignesJournalCsv } from '@/lib/journal';
 
 /**
  * Historique des actions sensibles sur les contacts : qui a ajouté, supprimé, effacé, ou basculé un
@@ -18,14 +20,6 @@ import { cardCls } from '@/lib/ui';
  * Lecture seule, et il n'existe aucun chemin d'écriture depuis l'écran : un journal qu'on peut retoucher ne
  * prouve rien.
  */
-const LIBELLES: Record<string, [string, string]> = {
-  'contact.created': ['Contact ajouté', 'Contact added'],
-  'contact.imported': ['Import de contacts', 'Contact import'],
-  'contact.purged': ['Contact supprimé', 'Contact deleted'],
-  'contact.optin': ['Passage en opt-in', 'Marked as opted in'],
-  'contact.optout': ['Passage en opt-out', 'Marked as opted out'],
-};
-
 /** Rouge pour ce qui détruit, ambre pour ce qui coupe les envois, vert pour ce qui les ouvre. */
 const TONS: Record<string, string> = {
   'contact.purged': 'bg-red-50 text-red-700',
@@ -33,18 +27,17 @@ const TONS: Record<string, string> = {
   'contact.optin': 'bg-emerald-50 text-emerald-800',
 };
 
-/** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */
-function resumeDetail(detail: Record<string, unknown>, oui: string, non: string): string {
-  return Object.entries(detail)
-    .map(([k, v]) => `${k} ${typeof v === 'boolean' ? (v ? oui : non) : String(v)}`)
-    .join(' · ');
-}
+/** Ce que l'export va chercher, indépendamment des 100 dernières lignes affichées. Plafond serveur. */
+const LIMITE_EXPORT = 1000;
 
 export function AuditJournal({ tenantId }: { tenantId: string }) {
   const t = useT();
   const { locale } = useLocale();
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exportEnCours, setExportEnCours] = useState(false);
+
+  const libelleAction = (action: string): string => (ACTIONS_JOURNAL[action] ? t(...ACTIONS_JOURNAL[action]!) : action);
 
   useEffect(() => {
     let alive = true;
@@ -54,16 +47,54 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
     return () => { alive = false; };
   }, [tenantId, t]);
 
+  /**
+   * Export CSV. Il RELIT le journal jusqu'au plafond serveur au lieu de reprendre les lignes affichées :
+   * l'écran n'en montre que les dernières, et un export tronqué à ce qu'on avait sous les yeux se présenterait
+   * comme le journal complet.
+   */
+  async function exporter(): Promise<void> {
+    setExportEnCours(true);
+    setError(null);
+    try {
+      const { entries: toutes } = await listAudit(tenantId, LIMITE_EXPORT);
+      const entetes = [
+        t('Date (ISO)', 'Date (ISO)'), t('Action', 'Action'), t('Auteur', 'Author'),
+        t('Type de cible', 'Target type'), t('Cible', 'Target'), t('Détail', 'Detail'),
+      ];
+      const lignes = lignesJournalCsv(toutes, {
+        action: libelleAction, oui: t('oui', 'yes'), non: t('non', 'no'), systeme: t('Système', 'System'),
+      });
+      downloadCsv('journal-des-actions.csv', toCsv(entetes, lignes));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Export impossible', 'Export failed'));
+    } finally {
+      setExportEnCours(false);
+    }
+  }
+
   return (
     <section className={cardCls} data-testid="audit-journal">
-      <div className="mb-3">
-        <h3 className="text-sm font-semibold text-ink-900">{t('Journal des actions', 'Action log')}</h3>
-        <p className="text-xs text-ink-500">
-          {t(
-            'Ajouts, suppressions, effacements et bascules de consentement. Les contacts y figurent par identifiant, jamais par numéro.',
-            'Additions, deletions, erasures and consent changes. Contacts appear by identifier, never by phone number.',
-          )}
-        </p>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-ink-900">{t('Journal des actions', 'Action log')}</h3>
+          <p className="text-xs text-ink-500">
+            {t(
+              'Ajouts, suppressions, effacements et bascules de consentement. Les contacts y figurent par identifiant, jamais par numéro.',
+              'Additions, deletions, erasures and consent changes. Contacts appear by identifier, never by phone number.',
+            )}
+          </p>
+        </div>
+        {/* `!entries` et non `entries === null` : une réponse sans `entries` (instance sans journal, coupure en
+            vol) laisse `undefined`, et lire `.length` dessus fait tomber TOUTE la page Paramètres. */}
+        <button
+          type="button"
+          onClick={() => void exporter()}
+          disabled={exportEnCours || !entries || entries.length === 0}
+          data-testid="journal-export-csv"
+          className="shrink-0 rounded-lg border border-ink-200 px-2.5 py-1 text-xs font-medium text-ink-600 transition hover:bg-ink-50 disabled:opacity-40"
+        >
+          {exportEnCours ? t('Export…', 'Exporting…') : t('Exporter en CSV', 'Export to CSV')}
+        </button>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -80,7 +111,7 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
                 {formatDate(e.at, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} {hourMin(e.at, locale)}
               </span>
               <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TONS[e.action] ?? 'bg-ink-100 text-ink-700'}`}>
-                {LIBELLES[e.action] ? t(...LIBELLES[e.action]!) : e.action}
+                {libelleAction(e.action)}
               </span>
               {/* Acteur absent = le système (webhook, balayage), pas un humain : le dire plutôt que laisser un blanc. */}
               <span className="text-ink-700">{e.actorEmail ?? t('Système', 'System')}</span>

@@ -3,6 +3,7 @@ import { MetaPricingClient, parsePricing } from '../src/meta/pricing';
 import type { FetchLike } from '../src/meta/templates';
 
 const RESPONSE = {
+  currency: 'EUR',
   pricing_analytics: {
     data: [
       {
@@ -42,6 +43,21 @@ describe('parsePricing', () => {
     const p = parsePricing({ pricing_analytics: { data: [{ data_points: [{ pricing_category: 'MARKETING', pricing_type: 'REGULAR', volume: 0, cost: 0 }] }] } })!;
     expect(p.byCategory.marketing?.ratePerMessage).toBe(0);
   });
+
+  it('🔴 rend la devise du compte telle que Meta la donne', () => {
+    expect(parsePricing(RESPONSE)!.currency).toBe('EUR');
+    expect(parsePricing({ ...RESPONSE, currency: 'inr' })!.currency).toBe('INR');
+  });
+
+  it('🔴 devise absente ou fantaisiste -> null (jamais une devise supposée)', () => {
+    // La valeur part dans `Intl.NumberFormat`, qui LÈVE sur un code invalide. Ce filtre est ce qui empêche une
+    // réponse Meta inattendue de faire tomber l'écran qui l'affiche.
+    const sansDevise: Record<string, unknown> = { ...RESPONSE };
+    delete sansDevise.currency;
+    expect(parsePricing(sansDevise)!.currency).toBeNull();
+    expect(parsePricing({ ...RESPONSE, currency: 'euros' })!.currency).toBeNull();
+    expect(parsePricing({ ...RESPONSE, currency: 42 })!.currency).toBeNull();
+  });
 });
 
 function fakeFetch(res: { ok: boolean; status: number; json: unknown }): FetchLike {
@@ -58,6 +74,17 @@ describe('MetaPricingClient.getPricingAnalytics', () => {
     const client = new MetaPricingClient('tok', 'v23.0', fakeFetch({ ok: true, status: 200, json: RESPONSE }));
     const p = await client.getPricingAnalytics('waba1', 1000, 2000);
     expect(p?.byCategory.marketing?.ratePerMessage).toBeCloseTo(0.1431, 4);
+  });
+
+  it('🔴 demande la devise SUR LE MÊME appel (pas de seconde requête pour un champ figé)', async () => {
+    let vue = '';
+    const client = new MetaPricingClient('tok', 'v23.0', async (url) => {
+      vue = String(url);
+      return { ok: true, status: 200, json: async () => RESPONSE } as Response;
+    });
+    const p = await client.getPricingAnalytics('waba1', 1000, 2000);
+    expect(decodeURIComponent(vue)).toContain('fields=currency,pricing_analytics');
+    expect(p?.currency).toBe('EUR');
   });
 
   it('HTTP non-ok (403 permission) -> null (dashboard survit)', async () => {

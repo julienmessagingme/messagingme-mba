@@ -66,8 +66,8 @@ export async function mockAccueil(
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (url.includes('/stats/templates')) return json({ breakdown: [], pricing: null });
-    if (url.includes('/stats/cost')) return json({ marketing: [], utility: [], total: 0, hasRates: false });
-    if (url.includes('/stats')) return json({ contacts: [], templates: { utility: [], marketing: [] }, exchanged: [] });
+    if (url.includes('/stats/cost')) return json({ marketing: [], utility: [], total: 0, hasRates: false, currency: null });
+    if (url.includes('/stats')) return json({ contacts: [], templates: { utility: [], marketing: [] }, exchanged: [], service: [] });
     return json({});
   });
 

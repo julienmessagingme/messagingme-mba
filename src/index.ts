@@ -349,6 +349,7 @@ async function main(): Promise<void> {
         const rates = {
           marketing: pricing?.byCategory['marketing']?.ratePerMessage ?? null,
           utility: pricing?.byCategory['utility']?.ratePerMessage ?? null,
+          currency: pricing?.currency ?? null,
         };
         return estimateCostSeries(range.from, range.to, rows, rates);
       },

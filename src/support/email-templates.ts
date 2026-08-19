@@ -155,9 +155,10 @@ function footnoteBlock(note?: string): string {
   return `<p style="margin:0 0 8px 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">${escapeHtml(note)}</p>`;
 }
 
-/** 'admin' | 'agent' -> libellé français lisible pour le corps de l'email. */
+/** 'admin' | 'manager' | 'agent' -> libellé français lisible pour le corps de l'email. */
 function roleLabel(role: string): string {
   if (role === 'admin') return 'administrateur';
+  if (role === 'manager') return 'manager';
   if (role === 'agent') return 'agent';
   return role;
 }

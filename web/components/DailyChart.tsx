@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { DailyPoint } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
+import { BoutonPdf } from '@/components/BoutonPdf';
 
 export interface ChartSeries {
   label: string;
@@ -70,6 +71,7 @@ export function DailyChart({
   to,
   subtitle,
   summary = 'sum',
+  zonePdf,
 }: {
   title: string;
   series: ChartSeries[];
@@ -79,6 +81,12 @@ export function DailyChart({
   subtitle?: string;
   /** Grand chiffre : 'sum' = total période (flux) ; 'last' = dernière valeur (séries CUMULÉES). */
   summary?: 'sum' | 'last';
+  /**
+   * Id de zone imprimable : présent -> la carte est exportable en PDF et porte le bouton. Absent quand le
+   * graphe est EMBOÎTÉ dans une autre carte (le coût estimé), sinon deux boutons se disputeraient une seule
+   * feuille.
+   */
+  zonePdf?: string;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -125,11 +133,14 @@ export function DailyChart({
   const multi = series.length > 1;
 
   return (
-    <div className="rounded-2xl border border-ink-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(11,14,36,0.04),0_12px_28px_-16px_rgba(11,14,36,0.14)]">
+    <div id={zonePdf} className="rounded-2xl border border-ink-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(11,14,36,0.04),0_12px_28px_-16px_rgba(11,14,36,0.14)]">
       {/* En-tête : libellé + grand chiffre + tendance / métriques */}
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">{title}</div>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+            <span className="truncate">{title}</span>
+            {zonePdf && <BoutonPdf zone={zonePdf} />}
+          </div>
           <div className="mt-1.5 flex items-baseline gap-2">
             <span className="text-[2.5rem] font-light leading-none tracking-tight text-ink-900 tabular-nums">{fmtNum(hero, locale)}</span>
             {delta !== null && (

@@ -67,6 +67,8 @@ function ContactsInner({ session }: { session: Session }) {
   // Action en masse ouverte (modale). null = fermée.
   const [action, setAction] = useState<ActionCrm | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  /** Menu « Rajouter des contacts » : les deux façons d'en ajouter tiennent derrière un seul bouton. */
+  const [ajoutMenuOuvert, setAjoutMenuOuvert] = useState(false);
 
   const LIMIT = 500;
   // Garde anti-course : chaque `load` prend un numéro de séquence ; une réponse périmée (filtre changé entre
@@ -181,20 +183,41 @@ function ContactsInner({ session }: { session: Session }) {
             {t('Filtres', 'Filters')}{active ? ' •' : ''}
           </button>
           <button onClick={() => void load()} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
-          {/* Ajout à l'unité : jusqu'ici il fallait fabriquer un fichier CSV pour un seul numéro. */}
-          <button
-            onClick={() => setAjoutOuvert(true)}
-            data-testid="contact-ajouter"
-            className="rounded-lg border border-brand-200 px-3 py-1.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-50"
-          >
-            + {t('Ajouter un contact', 'Add a contact')}
-          </button>
-          <button
-            onClick={() => setMode('import')}
-            className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
-          >
-            + {t('Importer un CSV', 'Import a CSV')}
-          </button>
+          {/* UN seul geste pour ajouter des contacts, et le choix de la façon ensuite. Les deux boutons côte à
+              côte donnaient deux actions de même poids, alors qu'on cherche d'abord « en ajouter ». */}
+          <div className="relative">
+            <button
+              onClick={() => setAjoutMenuOuvert((o) => !o)}
+              data-testid="contacts-ajouter-menu"
+              aria-haspopup="menu"
+              aria-expanded={ajoutMenuOuvert}
+              className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
+            >
+              + {t('Rajouter des contacts', 'Add contacts')}
+            </button>
+            {ajoutMenuOuvert && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setAjoutMenuOuvert(false)} />
+                <div role="menu" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-lg">
+                  {/* Ajout à l'unité : jusqu'ici il fallait fabriquer un fichier CSV pour un seul numéro. */}
+                  <button
+                    onClick={() => { setAjoutMenuOuvert(false); setAjoutOuvert(true); }}
+                    data-testid="contact-ajouter"
+                    className="block w-full px-4 py-2 text-left hover:bg-ink-50"
+                  >
+                    {t('Ajouter un contact', 'Add a contact')}
+                  </button>
+                  <button
+                    onClick={() => { setAjoutMenuOuvert(false); setMode('import'); }}
+                    data-testid="contact-importer-csv"
+                    className="block w-full px-4 py-2 text-left hover:bg-ink-50"
+                  >
+                    {t('Importer un CSV', 'Import a CSV')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -632,7 +655,7 @@ function ContactsTable({ contacts, loading, onSelect, isRowChecked, onToggleRow,
   if (contacts.length === 0)
     return (
       <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-        {t("Aucun contact pour l'instant. Clique « + Importer un CSV » pour commencer.", 'No contacts yet. Click "+ Import a CSV" to get started.')}
+        {t("Aucun contact pour l'instant. Clique « + Rajouter des contacts » pour commencer.", 'No contacts yet. Click "+ Add contacts" to get started.')}
       </div>
     );
   return (

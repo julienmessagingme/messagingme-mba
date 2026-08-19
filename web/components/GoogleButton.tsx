@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getAuthConfig, loginWithGoogle } from '@/lib/api';
-import { saveSession } from '@/lib/session';
+import { saveSession, pageDArrivee } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 
 // GIS (Google Identity Services) : typage minimal du global injecté par le script Google.
@@ -92,7 +92,7 @@ export function GoogleButton({ onError }: { onError?: (msg: string) => void }) {
               .then((res) => {
                 saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
                 // Nouvel espace -> onboarding (connecter le numéro), comme le signup email ; sinon inbox (agent) / accueil (admin).
-                router.replace(res.isNew ? '/accueil' : res.user.role === 'agent' ? '/inbox' : '/accueil');
+                router.replace(res.isNew ? '/accueil' : pageDArrivee(res.user.role));
               })
               .catch((err) => onErrorRef.current?.(err instanceof Error ? err.message : t('Connexion Google impossible', 'Google sign-in failed')));
           },

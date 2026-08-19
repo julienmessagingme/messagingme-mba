@@ -46,6 +46,7 @@ interface Kpis {
   templates: number;     // templates envoyés sur 30 j
   cost: number;          // coût estimé sur 30 j
   hasRates: boolean;     // false -> Meta n'a fourni aucun tarif : afficher « — » plutôt qu'un faux 0
+  currency: string | null; // devise du compte rendue par Meta ; null -> nombre nu, jamais un « € » supposé
 }
 
 function AccueilInner({ session }: { session: Session }) {
@@ -134,7 +135,7 @@ function AccueilInner({ session }: { session: Session }) {
       const contacts = stats.contacts.length ? (stats.contacts[stats.contacts.length - 1]?.count ?? 0) : 0;
       const exchanged = stats.exchanged.reduce((s, p) => s + p.count, 0);
       const templates = tpl.breakdown.reduce((s, r) => s + r.count, 0);
-      setKpis({ contacts, exchanged, templates, cost: cost.total, hasRates: cost.hasRates });
+      setKpis({ contacts, exchanged, templates, cost: cost.total, hasRates: cost.hasRates, currency: cost.currency });
     } catch {
       // Silencieux : les KPIs sont un plus, pas un bloquant. On laisse la rangée en « — ».
     }
@@ -278,7 +279,7 @@ function AccueilInner({ session }: { session: Session }) {
       { label: t('Contacts', 'Contacts'), value: kpis ? fmtNum(kpis.contacts, locale) : '—' },
       { label: t('Messages échangés', 'Messages exchanged'), value: kpis ? fmtNum(kpis.exchanged, locale) : '—' },
       { label: t('Templates envoyés', 'Templates sent'), value: kpis ? fmtNum(kpis.templates, locale) : '—' },
-      { label: t('Coût estimé', 'Estimated cost'), value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost) : '—') : '—' },
+      { label: t('Coût estimé', 'Estimated cost'), value: kpis ? (kpis.hasRates ? fmtCost(kpis.cost, locale, kpis.currency) : '—') : '—' },
     ],
     [kpis, t, locale],
   );

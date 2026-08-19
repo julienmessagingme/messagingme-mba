@@ -10,8 +10,8 @@ import { test, expect } from '@playwright/test';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
-/** Monte /contacts, ouvre la modale d'ajout, et rend les corps reçus sur la création. */
-async function ouvrirModale(page: import('@playwright/test').Page) {
+/** Monte /contacts (API bouchonnée) et rend les corps reçus sur la création. */
+async function monterContacts(page: import('@playwright/test').Page) {
   const creations: Array<Record<string, unknown>> = [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -30,10 +30,33 @@ async function ouvrirModale(page: import('@playwright/test').Page) {
     return json({});
   });
   await page.goto('/contacts');
-  await page.getByRole('button', { name: /Ajouter un contact/i }).click();
-  await expect(page.getByTestId('ajout-telephone')).toBeVisible();
   return { creations };
 }
+
+/** Monte /contacts puis ouvre la modale d'ajout à l'unité, en passant par le menu « Rajouter des contacts ». */
+async function ouvrirModale(page: import('@playwright/test').Page) {
+  const monte = await monterContacts(page);
+  await page.getByTestId('contacts-ajouter-menu').click();
+  await page.getByTestId('contact-ajouter').click();
+  await expect(page.getByTestId('ajout-telephone')).toBeVisible();
+  return monte;
+}
+
+test.describe('mini-CRM : un seul bouton pour rajouter des contacts', () => {
+  test('🔴 le menu mène AUX DEUX façons d’ajouter', async ({ page }) => {
+    // Deux boutons côte à côte donnaient deux actions de même poids ; on cherche d'abord « en ajouter », la
+    // façon vient ensuite. Ce test tient les deux chemins ensemble : ouvrir le menu en casserait un sinon.
+    await monterContacts(page);
+    await expect(page.getByTestId('contact-ajouter')).toHaveCount(0);
+
+    await page.getByTestId('contacts-ajouter-menu').click();
+    await expect(page.getByTestId('contact-ajouter')).toBeVisible();
+    await expect(page.getByTestId('contact-importer-csv')).toBeVisible();
+
+    await page.getByTestId('contact-importer-csv').click();
+    await expect(page.getByRole('button', { name: /Retour aux contacts/i })).toBeVisible();
+  });
+});
 
 test.describe('mini-CRM : ajouter un contact à la main', () => {
   test('🔴 plusieurs tags, e-mail et BSUID partent ensemble', async ({ page }) => {

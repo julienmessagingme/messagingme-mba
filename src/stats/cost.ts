@@ -7,12 +7,16 @@ export interface CostSeries {
   utility: DailyPoint[];
   total: number;
   hasRates: boolean;
+  /** Devise du compte (ISO 4217) rendue par Meta ; null = inconnue, l'écran affiche alors le nombre nu. */
+  currency: string | null;
 }
 
 /** Tarif Meta par message pour chaque catégorie (null = indisponible -> coût non estimable). */
 export interface CategoryRates {
   marketing: number | null;
   utility: number | null;
+  /** Devise du compte telle que Meta la rend, portée avec les tarifs parce qu'elle vient du même appel. */
+  currency?: string | null;
 }
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
@@ -46,5 +50,9 @@ export function estimateCostSeries(from: string, to: string, rows: CostVolumeRow
   const marketing = days.map((d) => ({ date: d, count: round2(mktByDay.get(d) ?? 0) }));
   const utility = days.map((d) => ({ date: d, count: round2(utilByDay.get(d) ?? 0) }));
   const total = round2([...mktByDay.values(), ...utilByDay.values()].reduce((a, b) => a + b, 0));
-  return { marketing, utility, total, hasRates: rates.marketing != null || rates.utility != null };
+  return {
+    marketing, utility, total,
+    hasRates: rates.marketing != null || rates.utility != null,
+    currency: rates.currency ?? null,
+  };
 }

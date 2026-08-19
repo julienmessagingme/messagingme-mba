@@ -9,3 +9,38 @@
 body {
   @apply bg-surface-subtle text-ink-900 antialiased;
 }
+
+/*
+ * Export PDF : une carte porte la classe `zone-impression` le temps de l'impression (cf. lib/impression.ts),
+ * et tout le reste de la page disparaît de la feuille.
+ *
+ * `visibility` et non `display` : retirer les ancêtres du flux casserait la grille qui porte la carte, et
+ * celle-ci sortirait déformée ou tronquée. Ici la mise en page reste intacte, seuls les pixels s'effacent.
+ */
+@media print {
+  body[data-impression] * {
+    visibility: hidden;
+  }
+
+  body[data-impression] .zone-impression,
+  body[data-impression] .zone-impression * {
+    visibility: visible;
+    /* Les couleurs SONT l'information (une barre « lus » verte, une barre « échecs » rouge). Sans cette
+       autorisation, la plupart des navigateurs impriment les aplats en blanc. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* La carte remonte en haut de la feuille : restée à sa place, elle s'imprimerait au milieu de pages vides. */
+  body[data-impression] .zone-impression {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* Le bouton qui a déclenché l'impression n'a rien à faire sur la feuille. */
+  body[data-impression] .sans-impression {
+    visibility: hidden !important;
+  }
+}

@@ -28,3 +28,14 @@ export function getSession(): Session | null {
 export function clearSession(): void {
   localStorage.removeItem(KEY);
 }
+
+/**
+ * Où atterrit un membre après connexion. SEUL l'admin va sur l'accueil ; tout le reste va à l'inbox.
+ *
+ * Écrite à l'envers (« agent -> inbox, sinon accueil »), la règle envoyait un manager sur un écran qu'AppShell
+ * lui refuse aussitôt : il aurait vu un aller-retour avant d'atterrir sur l'inbox. Elle suit donc la barrière
+ * serveur, qui n'ouvre rien à ce qui n'est pas admin.
+ */
+export function pageDArrivee(role: string): '/accueil' | '/inbox' {
+  return role === 'admin' ? '/accueil' : '/inbox';
+}

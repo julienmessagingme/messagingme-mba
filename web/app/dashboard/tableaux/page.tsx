@@ -13,6 +13,7 @@ import { presetRange } from '@/lib/range';
 import { cardCls, inputClsAuto } from '@/lib/ui';
 import { ScenarioCanvas } from '@/components/ScenarioCanvas';
 import { TableauHistogramme } from '@/components/TableauHistogramme';
+import { BoutonPdf } from '@/components/BoutonPdf';
 import {
   blocsDuScenario, mesuresDisponibles, handlesMesuresParBloc, groupesDuTableau,
   type BlocMesurable, type CompteurBrut, type MesureDispo,
@@ -258,8 +259,12 @@ function TableauxInner({ session }: { session: Session }) {
             </div>
           </section>
 
-          <section className={cardCls}>
-            <h3 className="mb-3 text-sm font-semibold text-ink-900">{t('Le tableau', 'The report')}</h3>
+          <section id="mes-tableaux-rendu" className={cardCls}>
+            <div className="mb-3 flex items-center gap-2">
+              {/* Le nom du tableau sur la feuille : sorti sans lui, un PDF de barres ne dit pas ce qu'il mesure. */}
+              <h3 className="text-sm font-semibold text-ink-900">{nom.trim() === '' ? t('Le tableau', 'The report') : nom.trim()}</h3>
+              {retenues.length > 0 && <BoutonPdf zone="mes-tableaux-rendu" />}
+            </div>
             {retenues.length === 0 ? (
               <p className="text-sm text-ink-500">
                 {t('Clique un bloc du scénario pour choisir ce que tu veux compter.', 'Click a block in the scenario to choose what to count.')}

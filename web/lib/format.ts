@@ -3,10 +3,24 @@ import type { Locale } from './locale';
 /** Formatage partagé (dashboard, campagnes, graphes). LOCALE REQUISE sur tout ce qui varie selon la langue
  *  (pas de défaut : tsc force chaque appelant). Les tags BCP47 vivent ICI (et dans day.ts), jamais dans les composants. */
 
-/** Coût estimé : 4 décimales sous 1 (tarifs au message), 2 sinon. Nombre nu (devise = « devise du compte »).
- *  Indépendant de la langue (point décimal technique). */
-export function fmtCost(n: number): string {
-  return n.toFixed(n < 1 ? 4 : 2);
+/**
+ * Coût estimé : 4 décimales sous 1 (on affiche alors un tarif au message), 2 sinon.
+ *
+ * La DEVISE vient de Meta (champ `currency` du WABA, rendu sur le même appel que `pricing_analytics`) et n'est
+ * jamais devinée : absente, on rend le nombre nu plutôt qu'un « € » qui serait faux hors zone euro. Elle n'est
+ * pas non plus écrite en dur, la console n'étant pas réservée à des comptes français.
+ *
+ * ⚠️ `Intl.NumberFormat` LÈVE sur un code de devise invalide. La valeur venant d'une API externe, le format est
+ * vérifié avant, et un code fantaisiste retombe sur le nombre nu au lieu de casser l'écran.
+ */
+export function fmtCost(n: number, locale: Locale, devise?: string | null): string {
+  const decimales = Math.abs(n) < 1 ? 4 : 2;
+  const tag = locale === 'en' ? 'en-GB' : 'fr-FR';
+  const options: Intl.NumberFormatOptions = { minimumFractionDigits: decimales, maximumFractionDigits: decimales };
+  if (devise && /^[A-Za-z]{3}$/.test(devise)) {
+    return new Intl.NumberFormat(tag, { ...options, style: 'currency', currency: devise.toUpperCase() }).format(n);
+  }
+  return new Intl.NumberFormat(tag, options).format(n);
 }
 
 /** Nombre entier lisible : « 1 000 » (fr) / « 1,000 » (en). */

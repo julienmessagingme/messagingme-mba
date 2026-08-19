@@ -90,4 +90,33 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
     const rows = await stats.getTemplateBreakdown(tenantId, { from: d(-1), to: d(1) });
     expect(rows.find((r) => r.name === 'promo_stat')?.count).toBe(1); // une fois, pas deux
   });
+
+  it('🔴 stats getDashboard : la série SERVICE compte les sortants hors template, et EXCLUT les templates', async () => {
+    // C'est l'exclusion qui distingue « service » de « templates envoyés ». Comptées ensemble, les deux séries
+    // diraient la même chose et le graphe doublerait le volume envoyé.
+    const store = new PgInboxStore(pool);
+    const stats = new PgStatsStore(pool);
+    const d = (o: number): string => new Date(Date.now() + o * 86_400_000).toISOString().slice(0, 10);
+    const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    const duJour = (pts: Array<{ date: string; count: number }>): number => pts.find((p) => p.date === jour)?.count ?? 0;
+
+    // Le tenant porte déjà les écritures des tests précédents : on mesure le DELTA de CE test, pas un total
+    // absolu qui dépendrait de l'ordre d'exécution.
+    const avant = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
+
+    const waId = '33600022222';
+    await store.recordInbound(tenantId, { waId, phoneNumberId: 'pn-test', body: 'Une question', type: 'text', buttonPayload: null, messageId: 'wamid-SVC-IN', profileName: null, field: 'messages' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Je regarde ça', messageId: 'wamid-SVC-OUT-1' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Voilà la réponse', messageId: 'wamid-SVC-OUT-2' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo_svc »', messageId: 'wamid-SVC-TPL', type: 'template', templateCategory: 'marketing', templateName: 'promo_svc' });
+
+    const apres = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
+
+    // 2 sortants libres, et RIEN de plus : le template sortant n'entre pas dans la série service.
+    expect(duJour(apres.service) - duJour(avant.service)).toBe(2);
+    // 2 sortants libres + 1 entrant : « service » est un sous-ensemble d'« échangés ».
+    expect(duJour(apres.exchanged) - duJour(avant.exchanged)).toBe(3);
+    // Le template, lui, est allé dans SA série.
+    expect(duJour(apres.templates.marketing) - duJour(avant.templates.marketing)).toBe(1);
+  });
 });
