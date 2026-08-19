@@ -1,5 +1,50 @@
 # WIP
 
+## 🚧 LOT UX + EXPORTS + STATUT MANAGER (2026-08-19, soir) — COMMITE, PAS DEPLOYE
+
+Commits `d9554fa` + `d428f06`, CI **verte** (unit, web, integration). **Migration 0065 A APPLIQUER AVANT le
+deploiement** (additive : elle elargit la contrainte de role, aucune ligne existante ne peut la violer).
+
+Six demandes, sans lien technique entre elles :
+
+1. **Mini-CRM** : UN bouton « Rajouter des contacts » ouvre un menu a deux choix (a l'unite / CSV).
+2. **Export PDF** de chaque carte d'Analytics quanti et du tableau de « Mes tableaux ». Impression ciblee du
+   navigateur, **sans dependance** : `web/lib/impression.ts` marque la zone, `globals.css` masque le reste
+   sous `@media print`, et « Enregistrer au format PDF » est dans la boite d'impression de tous les systemes.
+   jspdf + html2canvas pesent des centaines de kilo-octets et rendent une IMAGE, pas un document.
+   ⚠️ La zone est demarquee juste apres : `afterprint` n'est pas garanti, et une zone restee marquee
+   s'imprimerait avec la suivante (E2E dedie).
+3. **Export CSV du journal des actions** : relit le journal jusqu'au plafond serveur (1000) au lieu de
+   reprendre les 100 lignes affichees, date en **ISO brut** (un CSV se trie), et toujours aucune donnee
+   personnelle. Mise en forme dans `web/lib/journal.ts`, donc testable et partagee avec l'ecran.
+4. **Statut `manager`** (migration **0065**). ⚠️ **Un statut, pas des droits** : tout ce qui n'est pas `admin`
+   reste ferme, un manager a les acces d'un agent. Ce qu'il aura le droit de faire se decide ecriture par
+   ecriture. Corrige au passage le predicat de `setRole`, ecrit en dur sur `'agent'` : il refusait de
+   retrograder un manager des qu'il ne restait qu'un seul admin (`role <> 'admin'` desormais).
+   `pageDArrivee(role)` centralise la redirection : seul l'admin va sur `/accueil`.
+5. **Messages de SERVICE** dans Analytics quanti, avec les templates (« Messages envoyes »). Ce sont les
+   sortants hors template : reponse d'agent (`type: 'text'`), message de scenario (`'text'`), reponse de
+   l'assistant (`'mba'`). ⚠️ **Pas dans le cout estime** : verifie sur le compte de prod, Meta les classe
+   `FREE_CUSTOMER_SERVICE, cost: 0`.
+   **La DEVISE** s'affiche enfin, et elle vient de Meta : `GET /{waba}?fields=currency,pricing_analytics…`
+   rend `"currency":"EUR"` dans LA MEME reponse que les tarifs (mesure en live, pas suppose). Code invalide ou
+   absent -> nombre nu, jamais un euro suppose (`Intl.NumberFormat` LEVE sur un code inconnu).
+6. **Histogramme** : barres jointives dans un bloc, l'ecart ne separe plus que les blocs.
+
+### Reponse a la question de Julien sur le calcul des prix
+On ne reconstitue RIEN depuis un indicatif telephonique et une grille Meta. `src/meta/pricing.ts` lit
+`pricing_analytics` au niveau WABA : Meta rend le cout facture et le volume par categorie, on en derive un
+tarif effectif par message (`cost / volume`, lignes `REGULAR` seules, les `FREE_*` a 0 ne diluent pas). Le
+cout affiche = ce tarif x notre volume d'envois.
+
+### Piege trouve par la suite (a ne pas reperdre)
+`recordOutboundByWaId` retombe sur `type: 'template'` quand l'appelant ne precise rien : il a d'abord servi
+aux envois de campagne. Un test qui n'en dit rien enregistre donc des templates en croyant enregistrer des
+messages de service.
+
+### Question ouverte pour Julien
+Ce qu'un **manager** a le droit de faire.
+
 ## 🚧 POINT DE REPRISE (2026-08-19, apres-midi)
 
 ### En production
