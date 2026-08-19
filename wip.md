@@ -1,92 +1,36 @@
 # WIP
 
-## 🚧 POINT DE REPRISE (2026-08-19, matin)
+## 🚧 POINT DE REPRISE (2026-08-19, apres-midi)
 
-**Le lot de 4 demandes est EN PRODUCTION.** Prod sur **`89a4efb`**, migrations jusqu'à **0062**.
+### En production
+Prod sur **`89a4efb`**, migrations jusqu'a **0062**. Le lot des 4 demandes (bug campagne, creation de contact,
+bloc Action opt-in/opt-out, Analytics multi-selection) est EN LIGNE.
 
-Le déploiement a emporté, en plus de mes 4 commits, tout le chantier du node « Envoi de mail » de la session
-concurrente, dont `89a4efb` où le node ENVOIE réellement. Vérifié avant de basculer : le node est INERTE sans
-boîte SMTP configurée (le résolveur rend `null`, l'envoi est best-effort et n'interrompt pas le parcours), et
-aucune boîte n'existe en base. `ENCRYPTION_KEY` était déjà présente dans `.env.prod` (elle sert aux
-`waba_credentials`), donc rien à ajouter côté environnement.
+### Sur `main`, teste et NON deploye : « Analytics > Mes tableaux »
+Migration **0063** (`workflow_node_events`) + les 4 phases. CI verte (racine 1919, web 57, E2E, integration).
 
-### Ce que contient le lot (4 commits séparés, un par demande)
+Constat qui commande tout : **rien ne reliait un message envoye au bloc qui l'a envoye**. Il a fallu
+instrumenter. **Les mesures demarrent au deploiement, pas d'historique retroactif.**
 
-1. **BUG campagne corrigé** (`5354d99`). Après un lancement, les phases terminales masquaient les boutons
-   d'action alors que le formulaire restait éditable : Julien a saisi une 2e campagne devant un écran ne
-   proposant plus que « Nouvelle campagne », qui a effacé sa saisie sans rien lancer. Le résultat sort de la
-   machine à états (`dernierEnvoi`), le formulaire se remet à neuf tout seul, les boutons ne sont plus jamais
-   masqués et « Nouvelle campagne » disparaît. Le panneau de résultat vit HORS du bloc « Étape 2 », sinon il
-   disparaît au moment même de la remise à zéro.
-2. **Création de contact** (`57d7aa3`) : plusieurs tags (pastilles retirables, Entrée ajoute au lieu de
-   valider, un tag non validé compte quand même), e-mail (champ socle), BSUID. Les trois optionnels.
-3. **Bloc Action opt-in / opt-out** (`2d4510c`) : `set_optin` / `set_optout`, seul chemin qui pose un opt-out
-   AUTOMATIQUEMENT (à brancher derrière un mot-clé de désinscription). `setOptInByWaId` est l'écriture unique
-   des deux sens, `markOptedIn` délègue dessus.
-4. **Analytics multi-sélection** (`33aa4e6`) : campagnes et templates acceptent plusieurs valeurs, série
-   compilée. Axes mutuellement exclusifs (les croiser donnerait leur intersection). Liste vide -> `null` et pas
-   tableau vide, sinon `= any('{}')` effacerait le graphe.
+- `walk()` rend des ETAPES `{ nodeId, action }` : le bloc voyage AVEC son action.
+- L'executeur mesure `sent`/`failed` sur l'issue reelle, `reply_button` (avec le handle) et `reply_text`.
+- Les accuses Meta retrouvent leur bloc par `meta_message_id` (idempotent ; `sent` exclu, deja compte).
+- Route `GET /tenants/:t/stats/workflow/:workflowId` : compteurs BRUTS.
+- Ecran `/dashboard/tableaux`.
+- ⚠️ RGPD : la purge ANONYMISE ces lignes (elles portent un wa_id), elle ne les supprime pas.
 
-### Vérifications faites
+**MANQUE : l'enregistrement d'un tableau** (il se compose en direct et se perd au rechargement). Laisse apres
+le coup d'oeil de Julien, pour ne pas batir la persistance sur une forme qu'il voudra changer.
 
-Racine **1895** tests, web **41**, intégration sur la vraie base **115** (12 fichiers), tsc racine + web, build
-web, E2E ciblés (campagne 2, ajout contact 5, bloc action 3, analytics 4). Chaque item vérifié DANS LES DEUX
-SENS par mutation. Les tests d'intégration neufs ont d'ailleurs été vus ROUGES sur l'ancien code avant d'être
-verts sur le nouveau (BSUID null, `setOptInByWaId` inexistante, filtre de coût sans effet).
+**Les clics sur boutons URL ne sont PAS mesurables** : Meta n'envoie aucun evenement. Chantier separe.
 
-### ⚠️ Comment lancer les tests d'intégration SANS déployer
+### ⚠️ La CI fait partie du controle avant deploiement
+Elle a ete rouge a chaque push pendant des heures sans que je la regarde (voir le commit `d442ea3`).
+`gh run list` avant tout deploiement, au meme titre que `git log <deploye>..HEAD`.
 
-`docker exec mba-api` vise le conteneur EN PLACE, donc l'ancien code : c'est un faux vert. Et
-`docker cp src mba-api:/app/src` crée `/app/src/src` au lieu d'écraser (sémantique de `docker cp` quand la
-cible existe). La bonne façon, sans toucher à la production :
-
-```
-sudo docker compose build mba-api
-sudo docker run -d --name mba-itest --env-file .env.prod --network mcp-robot_default mba-mba-api:latest sleep 1200
-sudo docker cp vitest.integration.config.ts mba-itest:/app/ && sudo docker cp tests mba-itest:/app/tests
-sudo docker exec mba-itest npx vitest run --config vitest.integration.config.ts
-sudo docker rm -f mba-itest
-```
-
-L'image `tests/` et `vitest.integration.config.ts` ne sont PAS dans l'image : il faut les copier.
-
-### ⚠️ Session e-mail EN PARALLÈLE dans le même dépôt
-
-Une autre session construit le node « Envoi de mail » (SMTP) et commite sur `main` : `src/email/`,
-`src/crm/render.ts`, migration **0062**, et des modifications de `src/server.ts` et `src/workflow/graph.ts`
-(type de node `email`). **Ne jamais committer par répertoire ni par `-A`** : chemins de FICHIERS explicites.
-
-### Décisions prises avec Julien, à ne pas rouvrir
-
-- **Une seule destruction** : « Supprimer » un contact efface aussi sa conversation (saisie de `SUPPRIMER`).
-- **Opt-in par défaut** sur les deux créations manuelles (à la main et import CSV). API publique et import
-  HubSpot gardent l'exigence inverse : leurs contacts arrivent `unknown`, donc hors marketing.
-- **Le consentement se modifie sur la fiche**, deux valeurs, jamais de retour à « inconnu ».
-- **On anonymise pour garder le quanti**, identifiant de remplacement ALÉATOIRE, journal sans numéro.
-- **Un seul réglage de contrôle du fil** (délai sur l'accueil, 10 min).
-
-### ⚠️ La CI fait partie du controle AVANT deploiement
-
-Elle etait rouge a chaque push depuis le 2026-08-19 08:34 et je ne l'ai pas regardee : j'ai deploye en me
-fiant au local et au serveur. Deux causes, aucune dans le code de production :
-- **`ENCRYPTION_KEY` absente du job d'integration** : les tests du store de boites SMTP verifient le
-  chiffrement au repos, donc exigent une cle de 32 octets. Rouge SYSTEMATIQUE. Corrige : une cle jetable est
-  tiree a chaque execution (`openssl rand -hex 32`), donc rien en clair dans le depot.
-- **`campaign-carousel-preview` instable depuis des jours** : ses attentes etaient a 15 s dans un test plafonne
-  a 30 s dont l'ouverture de l'ecran consommait l'essentiel sous charge. Budget du test a 90 s + attente
-  EXPLICITE de l'option. Assertions inchangees.
-
-Le rouge intermittent avait rendu le rouge normal, et c'est ce qui a masque le rouge systematique.
-**`gh run list` avant tout deploiement**, au meme titre que `git log <deploye>..HEAD`. La CI teste contre un
-Postgres EPHEMERE reconstruit par les migrations : ce n'est pas la meme garantie que la base de prod.
-
-### Ce qui reste ouvert
-
-- Le coup d'œil visuel de Julien sur les 4 écrans touchés (campagne, ajout de contact, bloc Action, Analytics).
-- Le node « Envoi de mail » est en ligne mais sans aucune boîte SMTP : il ne fera rien tant qu'une boîte n'est
-  pas créée. C'est le chantier de l'autre session, pas le mien.
-- Après déploiement : 115 tests d'intégration verts contre la base réelle, tables `audit_log`,
-  `email_accounts`, `email_templates` en place, zéro erreur dans les logs, site à 200.
+### Session e-mail en parallele
+Une autre session travaille sur le node « Envoi de mail » dans le MEME depot et commite sur `main`. Ne jamais
+committer par repertoire ni par `-A` : chemins de FICHIERS explicites.
 
 # wip.md — travail en cours
 
