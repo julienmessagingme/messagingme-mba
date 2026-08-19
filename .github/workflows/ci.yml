@@ -46,6 +46,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Cle de chiffrement JETABLE, tiree a chaque execution. Les tests du store de boites SMTP verifient que le
+      # mot de passe est chiffre au repos, donc ils exigent une cle de 32 octets ; sans elle, le job d'integration
+      # echoue a CHAQUE push (constate le 2026-08-19, CI rouge en continu). Generee ici plutot qu'ecrite en dur :
+      # une cle en clair dans le depot serait un mauvais exemple, et un secret de depot serait de la ceremonie
+      # pour une valeur qui ne protege rien de reel.
+      - name: Cle de chiffrement ephemere (tests du store SMTP)
+        run: echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - name: Migrations (crée le schéma applicatif)
         run: npm run migrate
       - name: Tests d'intégration (pg-boss + stores + e2e contre Postgres éphémère)

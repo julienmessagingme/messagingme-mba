@@ -27,6 +27,12 @@ const TEMPLATES = [
 ];
 
 test.describe('Campagnes : miniature réelle d’un carousel', () => {
+  // Budget du TEST, pas seulement des locators. Les attentes internes etaient deja a 15 s, mais dans un test
+  // plafonne a 30 s dont l'ouverture de l'ecran consomme l'essentiel sous la charge de la suite complete
+  // (workers partageant un serveur) : l'action expirait avant sa propre patience. Ce spec est le principal
+  // responsable de la CI rouge par intermittence depuis plusieurs jours. Les assertions sont INCHANGEES.
+  test.describe.configure({ timeout: 90_000 });
+
   test.beforeEach(async ({ page }) => {
     await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
     await page.route('**/api/backend/**', async (route) => {
@@ -51,6 +57,10 @@ test.describe('Campagnes : miniature réelle d’un carousel', () => {
     await page.getByRole('button', { name: 'Un scénario', exact: true }).click();
     const wfSelect = page.locator('select').filter({ has: page.locator('option', { hasText: 'Choisir un scénario' }) });
     await expect(wfSelect).toBeVisible({ timeout: 15_000 });
+    // Attente EXPLICITE de l'option : le scenario n'apparait qu'une fois workflows ET templates charges (le
+    // selecteur ne propose que les scenarios lancables en broadcast). Sans elle, l'echec etait un « timeout »
+    // muet sur l'action, qui ne disait pas que la liste n'etait jamais arrivee.
+    await expect(wfSelect.locator('option[value="wf-car"]')).toHaveCount(1, { timeout: 30_000 });
     await wfSelect.selectOption('wf-car');
 
     // Attente allongée, comme le fait déjà campaign-workflow-filter.spec.ts pour la même raison : sous la
@@ -64,6 +74,7 @@ test.describe('Campagnes : miniature réelle d’un carousel', () => {
   test('template carousel choisi DIRECTEMENT -> même aperçu (le choix suit le template, pas l’écran)', async ({ page }) => {
     const tplSelect = page.locator('select').filter({ has: page.locator('option', { hasText: 'Choisir un template' }) });
     await expect(tplSelect).toBeVisible({ timeout: 15_000 });
+    await expect(tplSelect.locator('option[value="promo_carousel"]')).toHaveCount(1, { timeout: 30_000 });
     await tplSelect.selectOption('promo_carousel');
     await expect(page.getByTestId('carousel-cards')).toBeVisible({ timeout: 15_000 });
   });
