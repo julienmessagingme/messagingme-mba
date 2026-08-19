@@ -640,6 +640,20 @@ export function getCostSeries(tenantId: string, range?: StatsRange, filter?: { c
   return request<CostSeries>(`/tenants/${tenantId}/stats/cost${base}${extra}`);
 }
 
+/** Une mesure brute d'un bloc de scenario (« Mes tableaux »). */
+export interface NodeEventCount {
+  nodeId: string;
+  kind: string;
+  handle: string | null;
+  count: number;
+  contacts: number;
+}
+
+/** Mesures d'un scenario, bloc par bloc, sur la periode. Brutes : c'est l'ecran qui compose le tableau. */
+export function getWorkflowNodeCounts(tenantId: string, workflowId: string, range?: StatsRange): Promise<{ counts: NodeEventCount[] }> {
+  return request<{ counts: NodeEventCount[] }>(`/tenants/${tenantId}/stats/workflow/${workflowId}${rangeQuery(range)}`);
+}
+
 export interface TemplateBreakdownRow {
   name: string;
   category: string | null;

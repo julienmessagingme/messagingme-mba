@@ -1,0 +1,195 @@
+/**
+ * Lecture d'un scénario pour en construire un TABLEAU DE MESURES (Analytics > Mes tableaux).
+ *
+ * Tout est PUR ici : ordonner les blocs, dire lesquels sont mesurables, nommer les choix, agréger les
+ * compteurs. Aucun appel réseau, donc testable sans navigateur — et c'est là que vivent les règles qui
+ * décident ce que l'écran a le droit d'afficher.
+ */
+
+export interface GraphNode {
+  id: string;
+  type: string;
+  data?: Record<string, unknown>;
+}
+export interface GraphEdge {
+  source: string;
+  target: string;
+  sourceHandle?: string;
+}
+export interface Graph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/** Une mesure brute telle que la route la rend. */
+export interface CompteurBrut {
+  nodeId: string;
+  kind: string;
+  handle: string | null;
+  count: number;
+  contacts: number;
+}
+
+/**
+ * Un bloc qui ENVOIE un message, donc qui peut être mesuré.
+ *
+ * Les autres blocs (tag, champ, condition, attente, assignation, mail) ne produisent rien qu'un contact
+ * reçoive : les proposer à la mesure ferait miroiter des compteurs qui resteraient à zéro pour toujours.
+ */
+const BLOCS_MESSAGE = new Set(['template', 'quick_message', 'flow', 'rcs_message']);
+
+export const estMesurable = (type: string): boolean => BLOCS_MESSAGE.has(type);
+
+export interface Choix {
+  /** Le handle tel qu'il arrive dans les mesures (`btn:0`, `card:1:btn:0`). */
+  handle: string;
+  label: string;
+}
+
+export interface BlocMesurable {
+  id: string;
+  type: string;
+  /** Ce que le bloc fait, en une ligne, pour le reconnaître dans la liste. */
+  titre: string;
+  mesurable: boolean;
+  choix: Choix[];
+}
+
+/** Titre lisible d'un bloc. Volontairement court : la liste doit se parcourir des yeux. */
+function titreDe(n: GraphNode): string {
+  const d = n.data ?? {};
+  const s = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  if (n.type === 'template') return s(d.templateName) || 'Template (non choisi)';
+  if (n.type === 'quick_message') return s(d.body).slice(0, 60) || 'Message rapide (vide)';
+  if (n.type === 'flow') return s(d.flowName) || 'Formulaire';
+  if (n.type === 'rcs_message') return 'Message RCS';
+  if (n.type === 'condition') return 'Condition';
+  if (n.type === 'wait') return 'Attente';
+  if (n.type === 'inbox') return 'Assigner à un agent';
+  if (n.type === 'email') return 'Envoi de mail';
+  if (n.type === 'action') return 'Action';
+  return n.type;
+}
+
+/** Libellé d'un handle de choix, pour ne pas afficher `card:1:btn:0` à un opérateur. */
+export function libelleHandle(handle: string, boutons: string[]): string {
+  const carousel = /^card:(\d+):btn:(\d+)$/.exec(handle);
+  if (carousel) return `Carte ${Number(carousel[1]) + 1}, bouton ${Number(carousel[2]) + 1}`;
+  const simple = /^btn:(\d+)$/.exec(handle);
+  if (simple) {
+    const i = Number(simple[1]);
+    const texte = boutons[i]?.trim();
+    return texte ? `« ${texte} »` : `Bouton ${i + 1}`;
+  }
+  return handle;
+}
+
+/** Textes des boutons déclarés sur un bloc (message rapide ou template). */
+function boutonsDe(n: GraphNode): string[] {
+  const d = n.data ?? {};
+  const brut = Array.isArray(d.quickReplies) ? d.quickReplies : Array.isArray(d.templateButtons) ? d.templateButtons : [];
+  return brut.map((b) => (typeof b === 'object' && b !== null && 'text' in b ? String((b as { text: unknown }).text ?? '') : ''));
+}
+
+/**
+ * Les blocs d'un scénario, DANS L'ORDRE DU PARCOURS.
+ *
+ * L'ordre est celui d'un tableau qui se lit en entonnoir : le bloc d'entrée d'abord, puis ce qu'il atteint.
+ * Un bloc inatteignable (branche orpheline en cours de construction) n'est pas ignoré pour autant, il est
+ * ajouté à la fin : le masquer donnerait l'impression qu'il n'existe pas, alors qu'il peut très bien avoir
+ * déjà tourné avant qu'on débranche son arête.
+ *
+ * `handlesMesures` = les handles réellement vus dans les données. Ils complètent les boutons déclarés : un
+ * carousel ne déclare pas ses cartes dans le graphe, donc ses choix n'apparaissent qu'une fois cliqués.
+ */
+export function blocsDuScenario(graph: Graph, handlesMesures: Record<string, string[]> = {}): BlocMesurable[] {
+  const parId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const cibles = new Set(graph.edges.map((e) => e.target));
+  const entree = graph.nodes.find((n) => !cibles.has(n.id)) ?? graph.nodes[0];
+
+  const ordre: string[] = [];
+  const vus = new Set<string>();
+  const file: string[] = entree ? [entree.id] : [];
+  while (file.length > 0) {
+    const id = file.shift()!;
+    if (vus.has(id) || !parId.has(id)) continue;
+    vus.add(id);
+    ordre.push(id);
+    for (const e of graph.edges) if (e.source === id) file.push(e.target);
+  }
+  for (const n of graph.nodes) if (!vus.has(n.id)) ordre.push(n.id);
+
+  return ordre.map((id) => {
+    const n = parId.get(id)!;
+    const boutons = boutonsDe(n);
+    // Handles connus : ceux des boutons déclarés, ceux des arêtes du graphe, et ceux effectivement mesurés.
+    const desBoutons = boutons.map((_, i) => `btn:${i}`);
+    const desAretes = graph.edges.filter((e) => e.source === id && e.sourceHandle).map((e) => e.sourceHandle!);
+    const tous = [...new Set([...desBoutons, ...desAretes, ...(handlesMesures[id] ?? [])])]
+      // Les sorties TYPÉES d'un bloc ne sont pas des choix du contact : elles décrivent une issue technique.
+      .filter((h) => !['true', 'false', 'sent', 'unreachable'].includes(h));
+    return {
+      id,
+      type: n.type,
+      titre: titreDe(n),
+      mesurable: estMesurable(n.type),
+      choix: tous.map((h) => ({ handle: h, label: libelleHandle(h, boutons) })),
+    };
+  });
+}
+
+/** Une mesure sélectionnable sur un bloc. `handle` non nul = un choix précis. */
+export interface MesureDispo {
+  cle: string;
+  label: string;
+  kind: string;
+  handle: string | null;
+}
+
+/** Ce qu'on peut compter sur un bloc de message. L'ordre suit la lecture naturelle d'un entonnoir. */
+export function mesuresDisponibles(bloc: BlocMesurable): MesureDispo[] {
+  if (!bloc.mesurable) return [];
+  const base: MesureDispo[] = [
+    { cle: `${bloc.id}|sent`, label: 'Envoyés', kind: 'sent', handle: null },
+    { cle: `${bloc.id}|failed`, label: 'Échecs', kind: 'failed', handle: null },
+    { cle: `${bloc.id}|delivered`, label: 'Délivrés', kind: 'delivered', handle: null },
+    { cle: `${bloc.id}|read`, label: 'Lus', kind: 'read', handle: null },
+  ];
+  const choix: MesureDispo[] = bloc.choix.map((c) => ({
+    cle: `${bloc.id}|reply_button|${c.handle}`,
+    label: `A cliqué ${c.label}`,
+    kind: 'reply_button',
+    handle: c.handle,
+  }));
+  // « A répondu sans cliquer » est proposé partout, et pas seulement sur les blocs à boutons : sur un bloc qui
+  // n'offre aucun choix, c'est LA mesure de l'engagement.
+  return [...base, ...choix, { cle: `${bloc.id}|reply_text`, label: 'A répondu (sans cliquer)', kind: 'reply_text', handle: null }];
+}
+
+/** Une barre du graphe final. */
+export interface Barre {
+  nodeId: string;
+  label: string;
+  count: number;
+  contacts: number;
+}
+
+/**
+ * Valeur d'une mesure depuis les compteurs bruts. Absente des données = 0, et non « pas de barre » : une
+ * mesure choisie qui vaut zéro est une information, la masquer laisserait croire à un oubli.
+ */
+export function valeurDe(counts: CompteurBrut[], nodeId: string, kind: string, handle: string | null): { count: number; contacts: number } {
+  const l = counts.find((c) => c.nodeId === nodeId && c.kind === kind && (c.handle ?? null) === handle);
+  return { count: l?.count ?? 0, contacts: l?.contacts ?? 0 };
+}
+
+/** Les handles réellement mesurés, par bloc : sert à révéler les choix qu'un carousel ne déclare pas. */
+export function handlesMesuresParBloc(counts: CompteurBrut[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const c of counts) {
+    if (c.kind !== 'reply_button' || !c.handle) continue;
+    (out[c.nodeId] ??= []).push(c.handle);
+  }
+  for (const k of Object.keys(out)) out[k] = [...new Set(out[k]!)];
+  return out;
+}

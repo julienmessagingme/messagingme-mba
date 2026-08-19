@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -83,6 +83,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'analytics', label: t('Analytics', 'Analytics'), d: icons.analytics, children: [
       { key: 'dashboard', href: '/dashboard', label: t('Quantitatif', 'Quantitative') },
       { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Qualitatif', 'Qualitative') },
+      { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
     ] },
     { key: 'parametres', href: '/parametres', label: t('Paramètres', 'Settings'), d: icons.settings },
     { key: 'support', href: '/support', label: t('Support', 'Support'), d: icons.support },
