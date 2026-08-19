@@ -1,4 +1,5 @@
--- 0060_email.sql : boîtes SMTP et modèles d'email par tenant, pour le node « Envoi de mail ».
+-- 0061_email.sql : boîtes SMTP et modèles d'email par tenant, pour le node « Envoi de mail ».
+-- (Numérotée 0061 : la 0060 était déjà prise par le chantier RGPD/audit d'une session concurrente.)
 -- password_enc chiffré au repos (AES-256-GCM, clé ENCRYPTION_KEY) via src/crypto/secretbox.ts, comme
 -- waba_credentials. Suppression douce (deleted_at) pour ne pas casser un node qui référence une boîte/modèle
 -- retiré : le node devient inerte, le graphe reste valide.
