@@ -29,6 +29,10 @@ import { runAutomations } from './automation/runner';
 import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
+import { PgEmailAccountStore } from './email/account-store.pg';
+import { PgEmailTemplateStore } from './email/template-store.pg';
+import { EmailAccountResolver } from './email/resolver';
+import { buildTransport as buildEmailTransport } from './email/smtp';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { runAnalysisSweep } from './analysis/sweep';
@@ -144,6 +148,17 @@ async function main(): Promise<void> {
   const workflowStore = new PgWorkflowStore(pool);
   const automationStore = new PgAutomationStore(pool);
 
+  // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache PAR PROCESS
+  // (comme metaCredentials/metaFactory ci-dessus, l'API a le sien dans index.ts). L'invalidation posée par les
+  // routes email (process API) ne traverse donc pas jusqu'ici : un compte modifié y garde son ancien transport
+  // jusqu'au prochain redémarrage du worker, écart déjà assumé pour les autres caches de ce module.
+  const emailAccounts = new PgEmailAccountStore(pool);
+  const emailTemplates = new PgEmailTemplateStore(pool);
+  const emailResolver = new EmailAccountResolver({
+    getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
+    buildTransport: buildEmailTransport,
+  });
+
   // Exécuteur de scénarios + ce qui l'accompagne. Câblage PARTAGÉ avec l'API (`workflow/wiring.ts`) : elle
   // doit lancer un scénario depuis l'Inbox avec exactement la même sémantique. Un second câblage recopié
   // serait le troisième doublon de cette famille, après le constructeur de composants Meta et la préparation
@@ -154,6 +169,7 @@ async function main(): Promise<void> {
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
+    emailTemplates, emailResolver,
   });
 
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur

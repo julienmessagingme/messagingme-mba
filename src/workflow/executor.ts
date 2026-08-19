@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { walk, entryNode, nextNode, nextNodeByHandle } from './engine';
-import type { WorkflowAction, WalkRest, WorkflowButton } from './engine';
+import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction } from './engine';
 import type { WorkflowGraph, WorkflowNode } from './graph';
 import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow } from './run-store.pg';
@@ -62,6 +62,21 @@ export interface WorkflowExecutorDeps {
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
   sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<SendRefusal>;
+  /**
+   * Envoie l'email du bloc « Envoi de mail » (résolution boîte SMTP + modèle + destinataire, rendu des
+   * variables, envoi SMTP réel). Appelée en BEST-EFFORT par `apply` (try/catch autour de l'appel) : un échec
+   * (boîte ou modèle supprimé, SMTP injoignable, destinataire vide) est journalisé et NE DOIT JAMAIS interrompre
+   * le parcours, contrairement aux canaux WhatsApp/RCS ci-dessus qui peuvent refuser tout le run.
+   *
+   * Signature alignée sur les autres deps d'envoi (`tenantId, waId, action`), pas sur un `ResolvableContact`
+   * déjà résolu : `apply` ne dispose que de `waId`, jamais d'un contact résolu (c'est `sendTemplate` qui
+   * résout lui-même le contact dans `wiring.ts` pour ses variables ; `sendEmail` fait de même).
+   *
+   * OPTIONNELLE : absente, aucun envoi (no-op silencieux), comme les autres deps optionnelles de ce fichier.
+   * Nécessaire pour ne pas casser les suites de tests à deps minimales (dont l'intégration Postgres) qui ne la
+   * fournissent pas.
+   */
+  sendEmail?(tenantId: string, waId: string, action: SendEmailAction): Promise<void>;
   /**
    * Canal RCS. ABSENT = un bloc `rcs_message` n'envoie rien et part TOUJOURS sur sa sortie « non joignable ».
    * Jamais d'envoi muet, jamais de parcours bloqué sur un canal non câblé.
@@ -232,10 +247,19 @@ export class WorkflowExecutor {
       else if (a.kind === 'field') await this.deps.setField(tenantId, waId, a.key, a.value);
       else if (a.kind === 'clearField') await this.deps.clearField(tenantId, waId, a.key);
       else if (a.kind === 'optIn') await this.deps.setOptIn?.(tenantId, waId, a.value);
-      // Câblage de l'envoi réel (dep sendEmail + résolution boîte/modèle) : pas encore branché ici. No-op
-      // défensif en attendant (garde la même forme que les autres branches, ne bloque jamais le parcours ;
-      // besoin réel best-effort comme documenté sur le node 'email' de graph.ts).
-      else if (a.kind === 'sendEmail') { /* à câbler : executor + wiring */ }
+      // Best-effort STRICT (contrairement aux canaux WhatsApp/RCS ci-dessous, qui peuvent refuser tout le run) :
+      // un envoi email raté (boîte/modèle supprimé, SMTP injoignable, destinataire vide) est journalisé mais ne
+      // doit JAMAIS arrêter le parcours ni compter comme un refus. `sendEmail` absente (deps minimales de test,
+      // dont l'intégration Postgres) -> no-op silencieux via l'optional chaining, même contrat qu'une dep
+      // optionnelle non câblée ailleurs dans ce fichier (ex. `setOptIn` ci-dessus).
+      else if (a.kind === 'sendEmail') {
+        try {
+          await this.deps.sendEmail?.(tenantId, waId, a);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error(`workflow sendEmail: envoi mail échoué pour ${waId}, on continue le parcours :`, err instanceof Error ? err.message : err);
+        }
+      }
       else {
         // ⚠️ Jamais `refus ??= await …` : `??=` n'évalue pas sa droite quand la gauche est déjà remplie, donc
         // l'envoi lui-même serait SAUTÉ. On envoie toujours, on ne garde que la 1re raison.

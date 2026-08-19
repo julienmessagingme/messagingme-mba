@@ -147,6 +147,9 @@ async function main(): Promise<void> {
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
+    // Node « Envoi de mail » (Task 8) : mêmes instances que celles passées aux routes email (registerRoutes,
+    // ci-dessous), pour que l'invalidation du résolveur à une écriture de compte vaille aussi pour l'exécuteur.
+    emailTemplates, emailResolver,
   });
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.

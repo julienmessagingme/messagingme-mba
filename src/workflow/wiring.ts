@@ -20,6 +20,11 @@ import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
 import { buildRcsStack } from '../rcs/factory';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
+import type { PgEmailTemplateStore } from '../email/template-store.pg';
+import type { EmailAccountResolver } from '../email/resolver';
+import { sendSmtpEmail } from '../email/smtp';
+import { renderText, contactVars } from '../crm/render';
+import type { SendEmailAction } from './engine';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -51,11 +56,18 @@ export interface WorkflowRuntimeDeps {
   /** Provider du canal RCS (`config.RCS_PROVIDER`). Passé explicitement, comme `dryRun` : ce module ne lit pas
    *  la config, ses appelants la lui donnent. */
   rcsProvider: 'fake' | 'google';
+  /** Modèles d'email (Contenu, Task 3) : chargés par id à l'envoi du bloc « Envoi de mail » (sujet + corps à
+   *  rendre avec les variables du contact). */
+  emailTemplates: PgEmailTemplateStore;
+  /** Résolveur de transport SMTP par boîte (Task 5), cache le transport tant que la boîte n'est pas modifiée.
+   *  On le REÇOIT (comme `metaCredentials`) pour ne pas dupliquer son cache : les routes email (Task 6)
+   *  l'invalident à chaque écriture d'un compte, l'exécuteur doit voir la MÊME instance. */
+  emailResolver: EmailAccountResolver;
 }
 
 /** Construit l'exécuteur et ce qui l'accompagne. Une seule fois par process (les caches vivent dedans). */
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
-  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider } = deps;
+  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver } = deps;
   const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
@@ -178,6 +190,47 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     if (!pn) return;
     const client = await metaFactory.mbaClientForTenant(tenant);
     await client.releaseThread(pn, waId);
+  };
+
+  /**
+   * Envoi réel du bloc « Envoi de mail » (Task 8). Résout le modèle et la boîte SMTP, calcule le destinataire,
+   * rend les variables `{{champ}}` (sujet toujours en texte, corps en HTML seulement si le modèle est 'html'),
+   * envoie via SMTP. `apply` (executor.ts) est la SEULE garante du best-effort (try/catch autour de cet appel) :
+   * ici on se contente de journaliser et sortir SANS LEVER sur un cas attendu (modèle ou boîte supprimé depuis
+   * la sauvegarde du scénario, tables en suppression douce ; destinataire vide).
+   */
+  const sendEmail = async (tenant: string, waId: string, action: SendEmailAction): Promise<void> => {
+    const template = await emailTemplates.getById(tenant, action.templateId);
+    if (!template) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow sendEmail: modèle ${action.templateId} introuvable pour ${tenant}, envoi ignoré`);
+      return;
+    }
+    const resolved = await emailResolver.getTransport(tenant, action.emailAccountId);
+    if (!resolved) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow sendEmail: boîte ${action.emailAccountId} introuvable pour ${tenant}, envoi ignoré`);
+      return;
+    }
+    // Contact résolu ICI, comme `sendTemplate` le fait pour ses propres variables (contactVars a besoin des
+    // champs du contact pour {{prenom}} etc., que le destinataire soit littéral ou une variable). `apply` ne
+    // porte qu'un waId, jamais un contact déjà résolu. Hors base -> objet vide (variables système à null).
+    const contact = await contactStore.getResolvableByPhone(tenant, waId);
+    const vars = contactVars(contact ?? {});
+    const to = action.to.kind === 'literal' ? action.to.value : (vars[action.to.field] ?? '');
+    if (!to) {
+      // eslint-disable-next-line no-console
+      console.error(`workflow sendEmail: destinataire vide pour ${waId} (${tenant}), envoi ignoré`);
+      return;
+    }
+    const html = template.format === 'html';
+    await sendSmtpEmail(resolved.transport, resolved.account, {
+      to,
+      subject: renderText(template.subject, vars, { html: false }),
+      ...(html
+        ? { html: renderText(template.body, vars, { html: true }) }
+        : { text: renderText(template.body, vars, { html: false }) }),
+    });
   };
 
   const workflowExecutor = new WorkflowExecutor({
@@ -377,6 +430,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
     },
+    // Node « Envoi de mail » (SMTP, Task 8). `apply` (executor.ts) enveloppe cet appel d'un try/catch best-effort
+    // strict : rien ici ne doit faire échouer le parcours, cette dep ne fait donc que journaliser et sortir.
+    sendEmail,
   });
 
   return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta };
