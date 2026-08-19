@@ -26,7 +26,10 @@ instrumenter. **Les mesures demarrent au deploiement, pas d'historique retroacti
 - L'executeur mesure `sent`/`failed` sur l'issue reelle, `reply_button` (avec le handle) et `reply_text`.
 - Les accuses Meta retrouvent leur bloc par `meta_message_id` (idempotent ; `sent` exclu, deja compte).
 - Route `GET /tenants/:t/stats/workflow/:workflowId` : compteurs BRUTS.
-- Ecran `/dashboard/tableaux`.
+- Ecran `/dashboard/tableaux` : le scenario s'affiche TEL QU'IL EST DESSINE (memes positions, memes fleches),
+  blocs non-mesurables grises et inertes, panneau des mesures a droite comme dans l'editeur. Rendu par
+  `web/components/ScenarioCanvas.tsx`, composant SEPARE du builder : celui-ci porte l'auto-save, et un mode
+  « lecture seule » y aurait mis un enregistrement automatique a un clic d'un ecran de consultation.
 - ⚠️ RGPD : la purge ANONYMISE ces lignes (elles portent un wa_id), elle ne les supprime pas.
 
 L'ENREGISTREMENT est fait (migration **0064**, `workflow_reports`) : ouvrir, nommer, enregistrer, mettre a
