@@ -11,6 +11,7 @@ import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
 import { cardCls, inputClsAuto } from '@/lib/ui';
+import { ScenarioCanvas } from '@/components/ScenarioCanvas';
 import {
   blocsDuScenario, mesuresDisponibles, valeurDe, handlesMesuresParBloc,
   type BlocMesurable, type CompteurBrut, type MesureDispo,
@@ -23,10 +24,13 @@ import {
  * message envoyé au bloc qui l'avait envoyé. Une période antérieure rend donc un tableau vide, et c'est le
  * comportement juste, pas une panne. L'écran le dit plutôt que de laisser chercher.
  *
- * Le scénario est présenté en LISTE ordonnée par le parcours, et non comme le graphe de l'éditeur. C'est
- * délibéré : le tableau final se lit en entonnoir, bloc après bloc, et une liste dit exactement cet ordre-là.
- * Rejouer l'éditeur en lecture seule aurait ajouté sa mécanique (auto-save, sélection, déplacement) pour une
- * information que la liste donne déjà.
+ * Le scénario s'affiche TEL QU'IL EST DESSINÉ dans l'onglet Scénario (mêmes positions, mêmes flèches) : on
+ * retrouve son parcours au lieu d'en lire une transcription. Le rendu vit dans `ScenarioCanvas`, un composant
+ * SÉPARÉ du builder : celui-ci porte l'auto-save, et lui ajouter un mode « lecture seule » aurait mis un
+ * enregistrement automatique à un clic d'un écran de consultation.
+ *
+ * L'ORDRE DU PARCOURS reste calculé (`blocsDuScenario`) : il ne sert plus à l'affichage du scénario, mais au
+ * regroupement du tableau et à savoir quel bloc est le PREMIER message.
  */
 export default function MesTableauxPage() {
   return <AppShell active="dashboard-tableaux">{(session) => <TableauxInner session={session} />}</AppShell>;
@@ -94,6 +98,16 @@ function TableauxInner({ session }: { session: Session }) {
   const titreDuBloc = useMemo(() => new Map(blocs.map((b) => [b.id, b.titre])), [blocs]);
   // Le PREMIER bloc de message du parcours : lui seul propose « Échecs » et « Délivrés » (cf. mesuresDisponibles).
   const premierMessage = useMemo(() => blocs.find((b) => b.mesurable)?.id ?? '', [blocs]);
+  const blocOuvert = useMemo(() => blocs.find((b) => b.id === ouvert && b.mesurable) ?? null, [blocs, ouvert]);
+  /** Combien de mesures retenues par bloc : la pastille sur la carte dit d'un coup d'oeil ce qui compose le tableau. */
+  const retenuesParBloc = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const m of retenues) {
+      const id = m.cle.split('|')[0]!;
+      out[id] = (out[id] ?? 0) + 1;
+    }
+    return out;
+  }, [retenues]);
 
   const basculer = (m: MesureDispo): void => {
     setEtat(null);
@@ -188,56 +202,57 @@ function TableauxInner({ session }: { session: Session }) {
       {erreur && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erreur}</p>}
       {chargement && <p className="text-sm text-ink-400">{t('Chargement…', 'Loading…')}</p>}
 
-      {choisi !== '' && !chargement && !erreur && (
+      {/* `graph` conditionne le rendu, et pas seulement `chargement` : entre le choix du scenario et le premier
+          passage de l'effet, l'ecran se rend une fois avec `chargement` encore a faux et le graphe encore nul. */}
+      {choisi !== '' && graph !== null && !chargement && !erreur && (
         <>
           <section className={cardCls} data-testid="tableaux-blocs">
-            <h3 className="mb-1 text-sm font-semibold text-ink-900">{t('Les blocs du scénario', 'Scenario blocks')}</h3>
+            <h3 className="mb-1 text-sm font-semibold text-ink-900">{t('Le scénario', 'The scenario')}</h3>
             <p className="mb-3 text-xs text-ink-500">
               {t(
-                'Dans l’ordre du parcours. Seuls les blocs qui envoient un message sont mesurables.',
-                'In parcours order. Only blocks that send a message can be measured.',
+                'Clique un bloc de message pour choisir ce que tu veux compter. Les blocs grisés n’envoient rien, il n’y a rien à y mesurer.',
+                'Click a message block to choose what to count. Greyed blocks send nothing, there is nothing to measure there.',
               )}
             </p>
-            <ul className="space-y-1.5">
-              {blocs.map((b, i) => (
-                <li key={b.id}>
-                  <button
-                    type="button"
-                    disabled={!b.mesurable}
-                    onClick={() => setOuvert((o) => (o === b.id ? null : b.id))}
-                    data-testid={b.mesurable ? 'bloc-mesurable' : 'bloc-grise'}
-                    className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${
-                      b.mesurable
-                        ? 'border-ink-200 bg-white text-ink-800 hover:border-brand-300 hover:bg-brand-50/40'
-                        : 'cursor-not-allowed border-ink-100 bg-ink-50/60 text-ink-400'
-                    }`}
-                  >
-                    <span className="w-6 shrink-0 text-xs tabular-nums text-ink-400">{i + 1}</span>
-                    <span className="flex-1 truncate">{b.titre}</span>
-                    <span className="shrink-0 text-xs text-ink-400">{b.type}</span>
-                  </button>
+            <div className="flex flex-col gap-4 lg:flex-row">
+              <div className="min-w-0 flex-1">
+                <ScenarioCanvas
+                  graph={graph as never}
+                  blocs={blocs}
+                  selectionne={ouvert}
+                  onSelect={(id) => setOuvert((o) => (o === id ? null : id))}
+                  retenuesParBloc={retenuesParBloc}
+                />
+              </div>
 
-                  {ouvert === b.id && b.mesurable && (
-                    <div className="mt-1.5 rounded-xl border border-brand-200 bg-brand-50/30 px-3 py-2" data-testid="bloc-mesures">
-                      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                        {mesuresDisponibles(b, b.id === premierMessage).map((m) => (
-                          <label key={m.cle} className="flex items-center gap-1.5 text-sm text-ink-700">
-                            <input
-                              type="checkbox"
-                              checked={retenues.some((x) => x.cle === m.cle)}
-                              onChange={() => basculer(m)}
-                              data-testid={`mesure-${m.kind}`}
-                              className="h-4 w-4"
-                            />
-                            {m.label}
-                          </label>
-                        ))}
-                      </div>
+              {/* Panneau du bloc choisi, à droite du canevas comme dans l'éditeur : le même geste (cliquer un
+                  bloc, régler à droite) évite de réapprendre l'écran. */}
+              <aside className="w-full shrink-0 lg:w-72">
+                {blocOuvert ? (
+                  <div className="rounded-xl border border-brand-200 bg-brand-50/30 p-3" data-testid="bloc-mesures">
+                    <p className="mb-2 truncate text-sm font-semibold text-ink-900">{blocOuvert.titre}</p>
+                    <div className="space-y-1.5">
+                      {mesuresDisponibles(blocOuvert, blocOuvert.id === premierMessage).map((m) => (
+                        <label key={m.cle} className="flex items-center gap-2 text-sm text-ink-700">
+                          <input
+                            type="checkbox"
+                            checked={retenues.some((x) => x.cle === m.cle)}
+                            onChange={() => basculer(m)}
+                            data-testid={`mesure-${m.kind}`}
+                            className="h-4 w-4"
+                          />
+                          {m.label}
+                        </label>
+                      ))}
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-ink-200 p-3 text-sm text-ink-400">
+                    {t('Choisis un bloc dans le scénario.', 'Pick a block in the scenario.')}
+                  </p>
+                )}
+              </aside>
+            </div>
           </section>
 
           <TableauMesures retenues={retenues} counts={counts} titreDuBloc={titreDuBloc} onRetirer={basculer} />

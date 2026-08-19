@@ -10,11 +10,13 @@ import { test, expect } from '@playwright/test';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
+// Positions DISTINCTES, comme dans un vrai scenario : le canevas les respecte, et des blocs empiles au meme
+// point se recouvriraient (le clic irait au dernier rendu, pas a celui qu'on vise).
 const GRAPH = {
   nodes: [
-    { id: 'tag1', type: 'action', position: { x: 0, y: 0 }, data: { actionKind: 'add_tag', tag: 'vu' } },
+    { id: 'tag1', type: 'action', position: { x: 0, y: 400 }, data: { actionKind: 'add_tag', tag: 'vu' } },
     { id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'promo', language: 'fr' } },
-    { id: 'n2', type: 'quick_message', position: { x: 0, y: 0 }, data: { body: 'Ça te va ?', quickReplies: [{ text: 'Oui' }, { text: 'Non' }] } },
+    { id: 'n2', type: 'quick_message', position: { x: 0, y: 200 }, data: { body: 'Ça te va ?', quickReplies: [{ text: 'Oui' }, { text: 'Non' }] } },
   ],
   edges: [
     { id: 'e0', source: 'n1', target: 'n2' },
@@ -54,25 +56,34 @@ async function monter(page: import('@playwright/test').Page) {
 }
 
 test.describe('Analytics : Mes tableaux', () => {
-  test('🔴 les blocs sortent dans l’ordre du PARCOURS, et les non-messages sont inertes', async ({ page }) => {
+  test('🔴 le SCENARIO s’affiche tel qu’il est dessine, et les non-messages sont grises', async ({ page }) => {
+    // Le canevas rend les blocs a leurs positions d'origine, avec leurs fleches : l'operateur retrouve son
+    // scenario au lieu d'en lire une transcription. L'ORDRE du parcours, lui, n'est plus une propriete du DOM :
+    // il sert au regroupement du tableau, et il est couvert par les tests de `mesures-scenario`.
     await monter(page);
     await page.getByTestId('tableaux-scenario').selectOption('wf-1');
-    await expect(page.getByTestId('tableaux-blocs')).toBeVisible({ timeout: 15_000 });
-
-    // L'ordre de stockage du graphe place le bloc « tag » en premier ; le parcours, lui, commence au template.
-    const libelles = await page.getByTestId('tableaux-blocs').locator('li button').allInnerTexts();
-    expect(libelles[0]).toContain('promo');
-    expect(libelles[2]).toContain('Action');
+    await expect(page.getByTestId('scenario-canvas')).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByTestId('bloc-mesurable')).toHaveCount(2);
     await expect(page.getByTestId('bloc-grise')).toHaveCount(1);
-    await expect(page.getByTestId('bloc-grise')).toBeDisabled();
+    // Les fleches du scenario sont bien dessinees : sans elles, ce ne serait plus le scenario.
+    await expect(page.locator('.react-flow__edge')).toHaveCount(2);
+  });
+
+  test('🔴 cliquer un bloc GRISE n’ouvre rien', async ({ page }) => {
+    // Un bloc qui n'envoie pas de message n'a rien a mesurer. Le laisser ouvrir un panneau vide ferait chercher
+    // une configuration qui n'existe pas.
+    await monter(page);
+    await page.getByTestId('tableaux-scenario').selectOption('wf-1');
+    await expect(page.getByTestId('scenario-canvas')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('bloc-grise').click();
+    await expect(page.getByTestId('bloc-mesures')).toHaveCount(0);
   });
 
   test('🔴 choisir des mesures compose le tableau, et un choix est nommé par son TEXTE', async ({ page }) => {
     await monter(page);
     await page.getByTestId('tableaux-scenario').selectOption('wf-1');
-    await expect(page.getByTestId('tableaux-blocs')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('scenario-canvas')).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId('bloc-mesurable').first().click();
     await page.getByTestId('mesure-sent').check();
@@ -94,7 +105,7 @@ test.describe('Analytics : Mes tableaux', () => {
     // une reponse (« personne »), pas une absence de configuration.
     await monter(page);
     await page.getByTestId('tableaux-scenario').selectOption('wf-1');
-    await expect(page.getByTestId('tableaux-blocs')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('scenario-canvas')).toBeVisible({ timeout: 15_000 });
 
     await page.getByTestId('bloc-mesurable').first().click();
     await page.getByTestId('mesure-read').check();
