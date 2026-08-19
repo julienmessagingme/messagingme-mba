@@ -3,7 +3,7 @@
 ## 🚧 POINT DE REPRISE (2026-08-19, apres-midi)
 
 ### En production
-Prod sur **`44887c6`**, migrations jusqu'a **0063**. Sont EN LIGNE : le lot des 4 demandes (bug campagne,
+Prod sur **`922d541`**, migrations jusqu'a **0064**. Sont EN LIGNE : le lot des 4 demandes (bug campagne,
 creation de contact, bloc Action opt-in/opt-out, Analytics multi-selection) ET « Analytics > Mes tableaux ».
 
 ⚠️ **Les mesures ont commence a s'accumuler le 2026-08-19 vers 15h30.** Toute periode anterieure reste vide,
@@ -45,6 +45,15 @@ lecture, donc un tableau rouvert sur une autre periode repond juste.
 quelqu'un qui vient de repondre, l'envoi aboutit et arrive quasiment toujours (demande de Julien).
 
 **Les clics sur boutons URL ne sont PAS mesurables** : Meta n'envoie aucun evenement. Chantier separe.
+
+### ⚠️ CI rouge le 2026-08-19 au soir : test INSTABLE de la session e-mail
+`web/e2e/email-accounts.spec.ts:90` echoue en CI (`getByText('Support')` matche 3 elements) alors qu'il passe
+en isolation en local (6/6). Les 172 autres tests passent. Ce n'est PAS mon lot : signale a Julien plutot que
+corrige, le fichier appartenant a une session active. **A reprendre : un rouge intermittent finit par rendre le
+rouge normal, et c'est exactement ce qui a masque un rouge systematique ce matin.**
+
+Deux executions CI sont aussi restees BLOQUEES 25 min sur `npx playwright install --with-deps` (incident
+d'infrastructure, pas le code). Annulees puis relancees, la relance a tourne en 3 min.
 
 ### ⚠️ La CI fait partie du controle avant deploiement
 Elle a ete rouge a chaque push pendant des heures sans que je la regarde (voir le commit `d442ea3`).
