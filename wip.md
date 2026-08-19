@@ -30,6 +30,11 @@ instrumenter. **Les mesures demarrent au deploiement, pas d'historique retroacti
   blocs non-mesurables grises et inertes, panneau des mesures a droite comme dans l'editeur. Rendu par
   `web/components/ScenarioCanvas.tsx`, composant SEPARE du builder : celui-ci porte l'auto-save, et un mode
   « lecture seule » y aurait mis un enregistrement automatique a un clic d'un ecran de consultation.
+- Le tableau est un HISTOGRAMME (`web/components/TableauHistogramme.tsx`) : barres verticales groupees par
+  bloc, espace entre les groupes, UNE SEULE ligne d'abscisse (c'est elle qui dit que les groupes sont du meme
+  parcours). UNE couleur par NATURE, sauf les clics qui prennent des nuances par POSITION du choix, sans quoi
+  deux barres voisines du meme bloc seraient indiscernables. Hauteurs relatives au MAXIMUM DU TABLEAU, pas de
+  chaque groupe. Regles de couleur et de groupement dans `lib/mesures-scenario.ts`, donc testables.
 - ⚠️ RGPD : la purge ANONYMISE ces lignes (elles portent un wa_id), elle ne les supprime pas.
 
 L'ENREGISTREMENT est fait (migration **0064**, `workflow_reports`) : ouvrir, nommer, enregistrer, mettre a
