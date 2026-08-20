@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { walk, entryNode, nextNode, nextNodeByHandle } from './engine';
+import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle } from './engine';
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction } from './engine';
 import type { WorkflowGraph, WorkflowNode } from './graph';
@@ -625,8 +625,14 @@ export class WorkflowExecutor {
 
   /**
    * Avance le run en attente d'un contact quand il répond. No-op si aucun run / message déjà traité.
-   * `buttonPayload` = bouton quick-reply tapé (`btn:<index>`) : si une arête part de ce handle on la suit
-   * (branche par bouton), sinon on retombe sur la 1re arête sortante (réponse texte, ou bouton non câblé).
+   * `buttonPayload` = bouton quick-reply tapé (`btn:<index>`). Routage en TROIS cas, dans cet ordre :
+   *   1. une arête part de CE handle -> sa branche (le bouton est câblé) ;
+   *   2. sinon une arête LIBRE existe (chaîne linéaire, ou sortie « toute autre réponse » tirée exprès)
+   *      -> on la suit : le scénario a prévu ce cas ;
+   *   3. sinon toutes les arêtes partent d'un bouton -> le scénario n'a rien prévu pour cette réponse, on
+   *      clôt le run et l'agent reprend la parole.
+   * Le cas 3 remplace l'ancien repli sur la 1re arête sortante, qui envoyait « non merci » dans la branche
+   * du bouton « Oui ». Décision produit du 2026-08-20.
    */
   async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
@@ -664,7 +670,8 @@ export class WorkflowExecutor {
       ? graph.edges.some((e) => e.source === run.currentNode && (e.sourceHandle === 'sent' || e.sourceHandle === 'unreachable'))
       : false;
     const next = graph && run.currentNode
-      ? ((handle ? nextNodeByHandle(graph, run.currentNode, handle) : null) ?? (sortieTypee ? null : nextNode(graph, run.currentNode)))
+      ? ((handle ? nextNodeByHandle(graph, run.currentNode, handle) : null)
+        ?? (sortieTypee ? null : nextNodeSansHandle(graph, run.currentNode)))
       : null;
     if (!graph || !next) {
       // Le contact a répondu À CÔTÉ des boutons attendus (aucune arête ne correspond), ou le scénario n'a plus

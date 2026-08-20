@@ -220,6 +220,14 @@ function WFNode({ id, data, selected }: NodeProps) {
               </div>
             );
           })}
+          {/* Sortie LIBRE, sans id : l'arête créée ne porte aucun sourceHandle, et c'est elle que l'exécuteur
+              suit quand le contact ÉCRIT au lieu de taper un bouton. Non reliée, une réponse hors boutons
+              termine le parcours et rend la parole à l'agent : c'est voulu, mais il faut pouvoir choisir. */}
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-500">
+            <span className="shrink-0">✎</span>
+            <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
+            <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-ink-400" title={t('Le contact écrit au lieu de taper un bouton', 'The contact writes instead of tapping a button')} />
+          </div>
         </div>
       ) : isRcs ? (
         // Bloc RCS : DEUX sorties fixes, à droite. Les id 'sent'/'unreachable' sont ceux que l'exécuteur

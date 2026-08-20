@@ -188,19 +188,53 @@ describe('WorkflowExecutor', () => {
     expect(runs.run).toMatchObject({ status: 'inbox' });
   });
 
-  it('advance REPLI : réponse texte (buttonPayload null) -> 1re arête sortante', async () => {
-    const { ex, calls } = make(branched);
+  // Toutes les arêtes de `branched` partent d'un bouton : le scénario n'a rien prévu pour une réponse hors
+  // boutons. Règle produit du 2026-08-20 : on ne l'envoie PAS dans la branche du 1er bouton (« non merci » se
+  // faisait taguer « oui »), on clôt le run et l'agent reprend la parole.
+  it('advance HORS boutons : réponse texte (buttonPayload null) -> aucune branche, run clos', async () => {
+    const releases: string[] = [];
+    const { ex, runs, calls } = make(branched, {
+      mbaActifPour: async () => true,
+      releaseToMba: async (_t, w) => { releases.push(w); },
+    });
     await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm2', null);
-    expect(calls).toContain('tag:oui'); // 1re arête (btn:0)
+    expect(calls).not.toContain('tag:oui');
     expect(calls).not.toContain('tag:non');
+    expect(runs.run).toMatchObject({ status: 'done', currentNode: null });
+    expect(releases).toEqual(['33600']); // l'agent reprend la parole
   });
 
-  it('advance REPLI : bouton non câblé (btn:9) -> 1re arête sortante', async () => {
-    const { ex, calls } = make(branched);
+  it('advance HORS boutons : bouton non câblé (btn:9) -> aucune branche, run clos', async () => {
+    const { ex, runs, calls } = make(branched);
     await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm3', 'btn:9');
-    expect(calls).toContain('tag:oui'); // repli : aucun handle btn:9 -> nextNode
+    expect(calls).not.toContain('tag:oui');
+    expect(calls).not.toContain('tag:non');
+    expect(runs.run).toMatchObject({ status: 'done', currentNode: null });
+  });
+
+  // Même bloc à boutons, plus une arête LIBRE tirée depuis le corps du bloc : c'est la sortie « toute autre
+  // réponse ». Elle existe -> le scénario A prévu le cas, et on la suit.
+  const branchedAvecSortieLibre: WorkflowGraph = {
+    nodes: [...branched.nodes, n('tc', 'tag', { tag: 'autre' })],
+    edges: [...branched.edges, e('e4', 'tpl', 'tc')],
+  };
+
+  it('advance HORS boutons : une arête LIBRE existe -> on la suit', async () => {
+    const { ex, calls } = make(branchedAvecSortieLibre);
+    await ex.start('t1', 'wf1', branchedAvecSortieLibre, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm4', null);
+    expect(calls).toContain('tag:autre');
+    expect(calls).not.toContain('tag:oui');
+  });
+
+  it('advance BRANCHE par bouton : le bouton câblé passe AVANT l\'arête libre', async () => {
+    const { ex, calls } = make(branchedAvecSortieLibre);
+    await ex.start('t1', 'wf1', branchedAvecSortieLibre, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm5', 'btn:1');
+    expect(calls).toContain('tag:non');
+    expect(calls).not.toContain('tag:autre');
   });
 
   // Capture le 6e arg (explicitParams) de sendTemplate pour vérifier le câblage campagne workflow.

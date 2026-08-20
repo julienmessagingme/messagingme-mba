@@ -288,6 +288,17 @@ export function nextNodeByHandle(graph: WorkflowGraph, nodeId: string, handle: s
   return graph.edges.find((e) => e.source === nodeId && e.sourceHandle === handle)?.target ?? null;
 }
 
+/** Le bloc suivant par une arête LIBRE, c'est-à-dire qui ne part d'aucun handle : la chaîne linéaire, ou la
+ *  sortie tirée exprès depuis le corps du bloc pour dire « toute autre réponse ». null si TOUTES les arêtes
+ *  sortantes partent d'un bouton.
+ *
+ *  Sert à router une réponse qui ne correspond à aucun bouton. `nextNode` prendrait la 1re arête venue, donc
+ *  la branche du 1er bouton : un contact qui écrit « non merci » à un bloc Oui/Non se ferait taguer « oui ».
+ *  Sans arête libre, le scénario n'a rien prévu pour ce cas, et s'arrêter vaut mieux qu'inventer une branche. */
+export function nextNodeSansHandle(graph: WorkflowGraph, nodeId: string): string | null {
+  return graph.edges.find((e) => e.source === nodeId && !e.sourceHandle)?.target ?? null;
+}
+
 /** Destinataire valide : littéral non vide, ou champ non vide à résoudre à l'envoi (executor). Toute autre
  *  forme (kind absent/inconnu, valeur/champ vide) -> null, comme un bloc non configuré. */
 function emailRecipientOf(raw: unknown): EmailRecipient | null {
