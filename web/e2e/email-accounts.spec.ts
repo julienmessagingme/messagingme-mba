@@ -83,7 +83,11 @@ test.describe('Réglages : boîtes email (SMTP)', () => {
     await expect.poll(() => created.length).toBe(1);
     expect(created[0]).toMatchObject({ label: 'Support', host: 'ssl0.ovh.net', username: 'support@exemple.fr', fromAddress: 'support@exemple.fr' });
     expect(created[0]).not.toHaveProperty('password');
-    await expect(page.getByText('Support')).toBeVisible();
+    // La CELLULE du tableau, pas « le texte Support quelque part » : cette page porte aussi un lien
+    // « Support » dans le menu et une adresse « support@exemple.fr », donc trois éléments correspondent.
+    // La ligne apparaissant APRÈS le reste, le localisateur large passait ou violait le mode strict selon
+    // l'instant où il s'évaluait : un test rouge une fois sur trois, sans rien à voir avec le code.
+    await expect(page.getByRole('cell', { name: 'Support', exact: true })).toBeVisible();
     await expect(page.getByText('Non testée')).toBeVisible();
   });
 
@@ -92,7 +96,9 @@ test.describe('Réglages : boîtes email (SMTP)', () => {
     const { patched } = await mockPage(page, accounts);
 
     await page.goto('/settings/email');
-    await page.getByText('Support').waitFor();
+    // Cf. plus haut : la cellule, et elle seule. Attendre la ligne du tableau est bien ce qu'on veut ici,
+    // c'est le localisateur qui était ambigu.
+    await page.getByRole('cell', { name: 'Support', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Modifier' }).click();
 
     await expect(page.getByTestId('email-account-password')).toHaveValue('');
@@ -164,4 +170,5 @@ test.describe('Réglages : boîtes email (SMTP)', () => {
     await expect.poll(() => deletedIds.length).toBe(1);
     expect(deletedIds[0]).toBe('a1');
   });
+
 });
