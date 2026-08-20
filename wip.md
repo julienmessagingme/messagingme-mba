@@ -1,9 +1,17 @@
 # WIP
 
-## 🚧 LOT UX + EXPORTS + STATUT MANAGER (2026-08-19, soir) — COMMITE, PAS DEPLOYE
+## 🚧 LOT UX + EXPORTS + STATUT MANAGER (2026-08-19, soir) — EN LIGNE
 
-Commits `d9554fa` + `d428f06`, CI **verte** (unit, web, integration). **Migration 0065 A APPLIQUER AVANT le
-deploiement** (additive : elle elargit la contrainte de role, aucune ligne existante ne peut la violer).
+**Deploye le 2026-08-19 au soir** : prod sur `e4d2c8e`, migrations jusqu'a **0065**. CI verte (unit, web,
+integration) et **127 tests d'integration verts contre la base de PRODUCTION apres deploiement**.
+
+Ordre suivi (celui qui compte) : `git pull` -> `docker compose build` -> `run --rm migrate` -> `up -d`. Le
+build AVANT la migration n'est pas cosmetique : `docker compose run` utilise l'IMAGE, pas le checkout de
+l'hote, donc migrer avant de construire aurait applique les migrations de la version PRECEDENTE. Verifie au
+passage que `0065_role_manager.sql` etait bien dans l'image avant de lancer le migrate.
+
+Contrainte en base apres migration : `role = ANY (ARRAY['admin','manager','agent'])`. Aucune ligne existante
+ne pouvait la violer (7 admins, 0 autre role).
 
 Six demandes, sans lien technique entre elles :
 
@@ -45,10 +53,10 @@ messages de service.
 ### Question ouverte pour Julien
 Ce qu'un **manager** a le droit de faire.
 
-## 🚧 POINT DE REPRISE (2026-08-19, apres-midi)
+## POINT DE REPRISE (2026-08-19, apres-midi)
 
 ### En production
-Prod sur **`922d541`**, migrations jusqu'a **0064**. Sont EN LIGNE : le lot des 4 demandes (bug campagne,
+Prod sur **`e4d2c8e`**, migrations jusqu'a **0065**. Sont EN LIGNE : le lot des 4 demandes (bug campagne,
 creation de contact, bloc Action opt-in/opt-out, Analytics multi-selection) ET « Analytics > Mes tableaux ».
 
 ⚠️ **Les mesures ont commence a s'accumuler le 2026-08-19 vers 15h30.** Toute periode anterieure reste vide,
