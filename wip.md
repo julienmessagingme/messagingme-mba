@@ -1,5 +1,54 @@
 # WIP
 
+## TRACAGE DES CLICS SUR LES LIENS DES TEMPLATES (2026-08-20) — EN LIGNE
+
+Prod sur **`81fff2f`**, migrations jusqu'a **0066**. CI verte (unit, web, integration).
+
+**Le principe.** L'utilisateur saisit son lien normalement. A la SOUMISSION a Meta, le serveur le remplace
+par `https://mba.messagingme.app/r/<code>` et garde la destination d'origine en base. Au clic : on compte,
+puis on redirige. La console remontre TOUJOURS le lien saisi (re-habillage a la relecture, fait a un seul
+endroit : la route de liste, donc valable pour les 4 ecrans qui listent des templates).
+
+**UN LIEN PAR BOUTON**, pas par template : un template peut porter deux boutons URL, un carousel en porte
+par carte. A la maille template, deux destinations auraient partage un compteur.
+
+**AUCUN parametre de bouton a l'envoi** : les quatre chemins d'envoi (campagne, scenario, inbox, API) sont
+inchanges. C'est ce qui rend le lot sans risque de regression.
+
+### Mesure Meta faite AVANT de deployer (2026-08-20)
+Deux templates d'essai soumis en meme temps sur le WABA de test, pour ne pas confondre deux causes de refus.
+**Les deux APPROUVES.** Donc : le domaine du bouton n'a PAS besoin d'appartenir a l'entreprise (le WABA etait
+« AuxR M le Bus », le lien pointait chez nous), et Meta ne verifie PAS l'accessibilite de l'URL a la revue
+(le template A pointait une adresse qui rendait un 404). Detail : `brain/LEARNINGS.md` 2026-08-20.
+⚠️ `test_lien_redir_a` et `test_lien_redir_b` restent sur le WABA de test : le token cree un template mais ne
+sait pas le supprimer (« Need permission on either WhatsApp Business Account or owner/shared business »). A
+retirer depuis Business Manager.
+
+### Verifie EN PROD apres deploiement
+`GET /r/<code>` inconnu -> 404 avec NOTRE page (preuve que le rewrite Next relaie bien vers l'API, un 404
+Next ne contiendrait pas « Lien introuvable »). Lien reel -> **302 + Location + cache-control: no-store**, et
+le clic enregistre. Rien dans le depot ne testait qu'un rewrite Next relaie un 302 : c'est fait.
+
+### 🔴 Porte a sens unique
+Des qu'un template trace est approuve et ENVOYE, son lien circule dans des messages livres. Retirer la route
+`/r/` les casserait TOUS, sans recours. Le retour arriere n'est plus gratuit a partir de la.
+
+### Ce que ca mesure, et ce que ca ne mesure pas
+Des CLICS, pas des personnes, et sans savoir de quel bloc venait l'envoi : si un template sert dans deux
+blocs, les deux barres affichent le total du lien. Meta n'autorisant qu'un SUFFIXE de variable, le lien
+`/r/<code>` accepte `/r/<code><jeton>` plus tard, sans resoumettre un seul template.
+
+### Corrige au passage : une case qui MENTAIT dans Mes tableaux
+`boutonsDe` ignorait le type du bouton, donc un bloc template a bouton URL proposait deja « A cliqué « Voir
+le site » » de nature `reply_button`, que Meta n'emet JAMAIS. Elle restait a zero pour toujours. Remplacee
+par une vraie mesure `url_click`, et proposee UNIQUEMENT si le lien est reellement trace.
+
+### Reste ouvert
+- Liens du CORPS du message (pas seulement les boutons) : meme mecanique, mais WhatsApp appelle reellement
+  ces liens pour l'apercu, donc il faudrait distinguer un apercu d'un vrai clic.
+- Ecran des clics par CAMPAGNE : les clics sont comptes, la surface manque.
+- Seuls les templates crees APRES la mise en service sont mesures.
+
 ## 🚧 LOT UX + EXPORTS + STATUT MANAGER (2026-08-19, soir) — EN LIGNE
 
 **Deploye le 2026-08-19 au soir** : prod sur `e4d2c8e`, migrations jusqu'a **0065**. CI verte (unit, web,
