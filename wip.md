@@ -2,7 +2,21 @@
 
 ## TRACAGE DES CLICS SUR LES LIENS DES TEMPLATES (2026-08-20) — EN LIGNE
 
-Prod sur **`81fff2f`**, migrations jusqu'a **0066**. CI verte (unit, web, integration).
+Prod sur **`139eba2`**, migrations jusqu'a **0066**. CI verte (unit, web, integration).
+
+### Carte « Clics sur les liens » (2026-08-20, demande de Julien)
+Dans Mes tableaux, une carte qui liste TOUS les liens traces de l'espace avec leurs clics sur la periode,
+**tous envois confondus** (campagnes, scenarios, inbox). Elle bouche le trou de la mesure par bloc : un
+template utilise UNIQUEMENT en campagne n'a aucun bloc de scenario ou s'accrocher, donc il n'apparaissait
+nulle part. Un lien ne sait pas qui l'a envoye, et c'est ce qui rend ce compteur juste.
+
+Rendue en LISTE et non en histogramme, apres avoir REGARDE le rendu : les libelles de liens sont plus longs
+que des titres de blocs, et l'histogramme les tronquait a une quinzaine de caracteres — deux boutons d'un
+template au nom long devenaient indiscernables. La liste les affiche en entier et montre la DESTINATION,
+qui est ce qu'un operateur reconnait.
+
+Route `GET /tenants/:t/stats/links`. 503 si le tracage n'est pas configure, jamais une liste vide : l'ecran
+doit distinguer « pas de donnees » de « pas de fonctionnalite ».
 
 **Le principe.** L'utilisateur saisit son lien normalement. A la SOUMISSION a Meta, le serveur le remplace
 par `https://mba.messagingme.app/r/<code>` et garde la destination d'origine en base. Au clic : on compte,
