@@ -675,7 +675,8 @@ export interface NodeEventCount {
   kind: string;
   handle: string | null;
   count: number;
-  contacts: number;
+  /** Personnes distinctes. null quand la mesure ne sait pas les distinguer (un clic sur un lien de template). */
+  contacts: number | null;
 }
 
 /** Mesures d'un scenario, bloc par bloc, sur la periode. Brutes : c'est l'ecran qui compose le tableau. */

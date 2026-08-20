@@ -6,6 +6,8 @@ import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
 import { PgUserStore, DuplicateEmailError } from '../../src/user/store.pg';
+import { PgTrackedLinkStore } from '../../src/links/tracked-links.pg';
+import { newTrackingCode } from '../../src/ids/code';
 import { PgAuthTokenStore } from '../../src/auth/token-store.pg';
 import { PgUserFieldStore } from '../../src/crm/field-store.pg';
 import { PgTagStore } from '../../src/crm/tag-store.pg';
@@ -106,6 +108,57 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(byBsuid).toBeTruthy();
     expect(byBsuid.phoneE164).toBeNull();
     expect(byBsuid.profileName).toBe('Sans Numero');
+  });
+
+  it('🔴 PgTrackedLinkStore : réservation, confirmation, redirection et comptage des clics', async () => {
+    const store = new PgTrackedLinkStore(pool);
+    const nom = `promo.itest.${Date.now()}`;
+    const cible = { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 1 };
+    const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    const plage = { from: jour, to: jour };
+
+    const code = await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo');
+
+    // La redirection marche AVANT toute confirmation : si Meta a accepté mais que notre confirmation a
+    // échoué, le lien circule déjà dans des messages livrés et doit fonctionner.
+    expect(await store.getByCode(code)).toEqual({ tenantId, destination: 'https://client.fr/promo' });
+    // ... alors que les mesures, elles, ignorent un lien non confirmé (sinon : une case qui ment).
+    expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
+
+    // Ré-allouer le MÊME bouton garde le code (les messages déjà livrés continuent de fonctionner) et suit
+    // la nouvelle destination.
+    const code2 = await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo-v2');
+    expect(code2).toBe(code);
+    expect((await store.getByCode(code))?.destination).toBe('https://client.fr/promo-v2');
+
+    await store.confirm(tenantId, [code]);
+    expect(await store.listByTemplates(tenantId, [nom])).toEqual([
+      { code, templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 1, destination: 'https://client.fr/promo-v2' },
+    ]);
+
+    // Comptage des clics sur la période.
+    expect(await store.countClicks(tenantId, [code], plage)).toEqual({});
+    await store.recordClick(code, tenantId);
+    await store.recordClick(code, tenantId);
+    expect(await store.countClicks(tenantId, [code], plage)).toEqual({ [code]: 2 });
+
+    // Une plage ANTÉRIEURE ne voit rien : le compteur suit la période de l'écran.
+    const hier = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+    expect(await store.countClicks(tenantId, [code], { from: hier, to: hier })).toEqual({});
+
+    // 🔴 Isolation tenant : un AUTRE espace ne voit ni le lien ni ses clics.
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-liens-autre') returning id`)).rows[0]!.id;
+    try {
+      expect(await store.listByTemplates(autre, [nom])).toEqual([]);
+      expect(await store.countClicks(autre, [code], plage)).toEqual({});
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
+
+    // Une réservation ultérieure REMET la confirmation à zéro : un template resoumis puis refusé ne doit pas
+    // garder la confirmation de sa version précédente.
+    await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo-v3');
+    expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
   });
 
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {

@@ -15,7 +15,7 @@ import { ScenarioCanvas } from '@/components/ScenarioCanvas';
 import { TableauHistogramme } from '@/components/TableauHistogramme';
 import { BoutonPdf } from '@/components/BoutonPdf';
 import {
-  blocsDuScenario, mesuresDisponibles, handlesMesuresParBloc, groupesDuTableau,
+  blocsDuScenario, mesuresDisponibles, handlesMesuresParBloc, handlesClicsLienParBloc, groupesDuTableau,
   type BlocMesurable, type CompteurBrut, type MesureDispo,
 } from '@/lib/mesures-scenario';
 
@@ -94,7 +94,7 @@ function TableauxInner({ session }: { session: Session }) {
   }, [session.tenantId, choisi, range, t]);
 
   const blocs = useMemo<BlocMesurable[]>(
-    () => (graph ? blocsDuScenario(graph as never, handlesMesuresParBloc(counts)) : []),
+    () => (graph ? blocsDuScenario(graph as never, handlesMesuresParBloc(counts), handlesClicsLienParBloc(counts)) : []),
     [graph, counts],
   );
   // Le PREMIER bloc de message du parcours : lui seul propose « Échecs » et « Délivrés » (cf. mesuresDisponibles).

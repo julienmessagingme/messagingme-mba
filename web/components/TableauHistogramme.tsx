@@ -81,7 +81,10 @@ export function TableauHistogramme({ groupes }: TableauHistogrammeProps) {
                   const h = b.count === 0 ? 0 : Math.max(2, Math.round((b.count / max) * hauteurUtile));
                   return (
                     <g key={b.cle} data-testid="barre">
-                      <title>{`${b.label} : ${b.count}${b.contacts !== b.count ? ` (${b.contacts} ${t('personnes', 'people')})` : ''}`}</title>
+                      {/* Le nombre de personnes n'apparaît que s'il est CONNU et différent du nombre
+                          d'événements. Un clic sur un lien de template arrive sans identité : afficher
+                          « 0 personnes » à côté de 40 clics serait un contresens. */}
+                      <title>{`${b.label} : ${b.count}${b.contacts !== null && b.contacts !== b.count ? ` (${b.contacts} ${t('personnes', 'people')})` : ''}`}</title>
                       <rect x={bx} y={yAxe - h} width={LARGEUR_BARRE} height={h} rx={3} fill={b.couleur} />
                       {/* La VALEUR seule au-dessus de la barre. Le nombre de personnes (différent du nombre
                           d'événements quand quelqu'un répond deux fois) tient dans l'infobulle : sur des

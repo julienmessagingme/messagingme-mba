@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   blocsDuScenario, mesuresDisponibles, libelleHandle, valeurDe, handlesMesuresParBloc, estMesurable,
-  couleurDe, groupesDuTableau,
+  couleurDe, groupesDuTableau, handlesClicsLienParBloc,
 } from './mesures-scenario';
 import type { Graph, CompteurBrut } from './mesures-scenario';
 
@@ -191,5 +191,74 @@ describe('les groupes de barres du tableau', () => {
     const groupes = groupesDuTableau([mes('a', 'sent'), mes('a', 'read')], counts, blocs);
     expect(groupes[0]!.barres.map((x) => x.count)).toEqual([40, 0]);
     expect(groupes[0]!.barres[0]!.contacts).toBe(40);
+  });
+});
+
+describe('clics sur un LIEN de template', () => {
+  /** Un bloc template portant un bouton de choix puis un bouton URL, comme le WorkflowBuilder les enregistre. */
+  const blocAvecLien: Graph = {
+    nodes: [{
+      id: 'a',
+      type: 'template',
+      data: {
+        templateName: 'promo',
+        templateButtons: [
+          { type: 'QUICK_REPLY', text: 'Oui' },
+          { type: 'URL', text: 'Voir le site', url: 'https://client.fr/promo' },
+        ],
+      },
+    }],
+    edges: [],
+  };
+
+  it('🔴 un bouton URL ne propose PLUS de mesure de CHOIX', () => {
+    // Meta n'émet AUCUN événement quand on clique un bouton URL. La case « A cliqué « Voir le site » » de
+    // nature `reply_button` existait, et restait à zéro pour toujours : une mesure qui ment.
+    const bloc = blocsDuScenario(blocAvecLien)[0]!;
+    expect(bloc.choix).toEqual([{ handle: 'btn:0', label: '« Oui »' }]);
+    expect(mesuresDisponibles(bloc).filter((m) => m.kind === 'reply_button').map((m) => m.handle)).toEqual(['btn:0']);
+  });
+
+  it('🔴 un bouton URL TRACÉ propose la mesure de clic, à son index Meta', () => {
+    // L'index reste celui de TOUS les boutons (le bouton URL est le second), sinon le clic se rattacherait
+    // au mauvais bouton.
+    const bloc = blocsDuScenario(blocAvecLien, {}, { a: ['btn:1'] })[0]!;
+    expect(bloc.liens).toEqual([{ handle: 'btn:1', label: '« Voir le site »' }]);
+    const mesure = mesuresDisponibles(bloc).find((m) => m.kind === 'url_click');
+    expect(mesure).toEqual({ cle: 'a|url_click|btn:1', label: 'A cliqué sur le lien « Voir le site »', kind: 'url_click', handle: 'btn:1' });
+  });
+
+  it('🔴 un bouton URL NON tracé ne propose RIEN', () => {
+    // Un template approuvé avant la mise en service porte l'adresse du client en dur : rien ne le mesurera
+    // jamais, et proposer la case reproduirait exactement le défaut qu'on vient de corriger.
+    const bloc = blocsDuScenario(blocAvecLien)[0]!;
+    expect(bloc.liens).toEqual([]);
+    expect(mesuresDisponibles(bloc).some((m) => m.kind === 'url_click')).toBe(false);
+  });
+
+  it('handlesClicsLienParBloc ne retient que les clics de LIEN', () => {
+    const counts: CompteurBrut[] = [
+      { nodeId: 'a', kind: 'url_click', handle: 'btn:1', count: 12, contacts: null },
+      { nodeId: 'a', kind: 'reply_button', handle: 'btn:0', count: 5, contacts: 5 },
+      { nodeId: 'a', kind: 'sent', handle: null, count: 40, contacts: 40 },
+    ];
+    expect(handlesClicsLienParBloc(counts)).toEqual({ a: ['btn:1'] });
+    expect(handlesMesuresParBloc(counts)).toEqual({ a: ['btn:0'] });
+  });
+
+  it('🔴 un clic de lien ne prend PAS la couleur d’un bouton de choix', () => {
+    // Dans un même bloc, « a cliqué « Oui » » et « a cliqué sur le lien » sont deux gestes différents : les
+    // peindre dans la même famille de teintes les confondrait à l'oeil.
+    expect(couleurDe('url_click', 0)).not.toBe(couleurDe('reply_button', 0));
+    expect(couleurDe('url_click', 0)).not.toBe(couleurDe('reply_button', 1));
+  });
+
+  it('la barre d’un clic de lien porte son compteur, et « personnes » reste INCONNU', () => {
+    const bloc = blocsDuScenario(blocAvecLien, {}, { a: ['btn:1'] })[0]!;
+    const mesure = mesuresDisponibles(bloc).find((m) => m.kind === 'url_click')!;
+    const counts: CompteurBrut[] = [{ nodeId: 'a', kind: 'url_click', handle: 'btn:1', count: 12, contacts: null }];
+    const barre = groupesDuTableau([mesure], counts, [bloc])[0]!.barres[0]!;
+    expect(barre.count).toBe(12);
+    expect(barre.contacts).toBeNull();
   });
 });

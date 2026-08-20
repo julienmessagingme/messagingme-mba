@@ -674,3 +674,117 @@ describe('MetaTemplateClient.list — relecture des cartes de CAROUSEL (pour l e
     expect(all[0]!.carousel).toBeUndefined();
   });
 });
+
+describe('traçage des liens : la route substitue à la soumission et ré-habille à la relecture', () => {
+  /** Un faux traçage qui note l'ORDRE des opérations : c'est lui qui compte, pas seulement le résultat. */
+  function tracage() {
+    const journal: string[] = [];
+    const destinations = new Map<string, string>();
+    return {
+      journal,
+      dep: {
+        allocate: async (_t: string, cible: { buttonIndex: number }, destination: string) => {
+          journal.push(`allocate:${cible.buttonIndex}:${destination}`);
+          const code = `code${cible.buttonIndex}aaaaaaa`;
+          destinations.set(`https://mba.messagingme.app/r/${code}`, destination);
+          return code;
+        },
+        confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); },
+        lienDe: (code: string) => `https://mba.messagingme.app/r/${code}`,
+        destinations: async () => destinations,
+      },
+    };
+  }
+
+  const corps = {
+    name: 'promo_lien', language: 'fr', category: 'MARKETING', body: 'Bonjour',
+    buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir le site', url: 'https://client.fr/promo' }],
+  };
+
+  it('🔴 META reçoit NOTRE lien, et la destination est enregistrée AVANT l’appel', async () => {
+    // L'ordre n'est pas un détail : soumettre d'abord laisserait, en cas de panne entre les deux, un template
+    // approuvé pointant un code inexistant — un lien mort dans des messages déjà livrés, irréparable.
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const t = tracage();
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: { templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
+    expect(res.statusCode).toBe(201);
+
+    const envoye = JSON.parse(String(calls[0]!.init.body)) as { components: Array<{ type: string; buttons?: Array<{ type: string; url?: string }> }> };
+    const boutons = envoye.components.find((c) => c.type === 'BUTTONS')!.buttons!;
+    expect(boutons[1]!.url).toBe('https://mba.messagingme.app/r/code1aaaaaaa');
+    expect(boutons[0]).toEqual({ type: 'QUICK_REPLY', text: 'Oui' }); // le bouton de choix reste intact
+
+    // Réservation AVANT la soumission, confirmation APRÈS.
+    expect(t.journal).toEqual(['allocate:1:https://client.fr/promo', 'confirm:code1aaaaaaa']);
+    await server.close();
+  });
+
+  it('🔴 Meta REFUSE -> aucune confirmation (sinon la mesure proposerait une case qui ment)', async () => {
+    const { fn } = makeFetch([{ ok: false, status: 400, json: { error: { message: 'Invalid parameter' } } }]);
+    const t = tracage();
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: { templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
+    expect(res.statusCode).toBe(422);
+    expect(t.journal).toEqual(['allocate:1:https://client.fr/promo']); // réservé, jamais confirmé
+    await server.close();
+  });
+
+  it('🔴 une panne du traçage soumet le template avec le lien SAISI, elle ne le fait pas échouer', async () => {
+    // Un template non mesuré vaut mieux qu'un template refusé, ou pire, approuvé avec une adresse qu'on ne
+    // saurait pas servir.
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: {
+        templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn),
+        getWabaId: async () => 'waba1',
+        tracking: {
+          allocate: async () => { throw new Error('base indisponible'); },
+          confirm: async () => {},
+          lienDe: (c: string) => `https://mba.messagingme.app/r/${c}`,
+          destinations: async () => new Map(),
+        },
+      },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
+    expect(res.statusCode).toBe(201);
+    const envoye = JSON.parse(String(calls[0]!.init.body)) as { components: Array<{ type: string; buttons?: Array<{ url?: string }> }> };
+    expect(envoye.components.find((c) => c.type === 'BUTTONS')!.buttons![1]!.url).toBe('https://client.fr/promo');
+    await server.close();
+  });
+
+  it('🔴 la LISTE remontre le lien saisi, pas le nôtre', async () => {
+    // Sans ça, la promesse « tu saisis ton lien » serait fausse dès le premier rechargement de la page.
+    const meta = {
+      data: [{
+        id: 'tpl-1', name: 'promo_lien', status: 'APPROVED', category: 'MARKETING', language: 'fr',
+        components: [
+          { type: 'BODY', text: 'Bonjour' },
+          { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Voir le site', url: 'https://mba.messagingme.app/r/code1aaaaaaa' }] },
+        ],
+      }],
+    };
+    const { fn } = makeFetch([{ ok: true, status: 200, json: meta }]);
+    const t = tracage();
+    await t.dep.allocate('t1', { buttonIndex: 1 }, 'https://client.fr/promo'); // le lien existe en base
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: { templatesFor: async () => new MetaTemplateClient('tok', 'v23.0', fn), getWabaId: async () => 'waba1', tracking: t.dep },
+    });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/templates', ...h(token) });
+    const body = res.json<{ templates: Array<{ buttons?: Array<{ url?: string }> }> }>();
+    expect(body.templates[0]!.buttons![0]!.url).toBe('https://client.fr/promo');
+    await server.close();
+  });
+});

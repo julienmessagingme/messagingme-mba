@@ -44,6 +44,34 @@ export function makeCode(type: EntityType, tenantCode: string): string {
   return `${type}_${tenantCode}_${newUlid()}`;
 }
 
+/**
+ * Code d'un lien de redirection tracé : 12 caractères base32, en minuscules, TIRÉS AU SORT.
+ *
+ * Délibérément différent du schéma `<type>_<tenantCode>_<ULID>` sur deux points, et pour deux raisons :
+ *  - COURT (12 car. au lieu de 36) : ce code voyage dans une URL qu'un destinataire voit s'ouvrir, et qui
+ *    compte dans les 2000 caractères que Meta accepte pour une URL de bouton.
+ *  - SANS code client ni horodatage : `deriveTenantCode` est déterministe et l'ULID porte l'heure de
+ *    création. Sur un lien public, les deux se lisent de l'extérieur et disent qui envoie et quand.
+ *
+ * 12 caractères base32 = 60 bits d'aléa : deviner un code voisin n'a pas de sens à cette échelle, ce qui
+ * compte puisque la route de redirection est publique par nature.
+ */
+export function newTrackingCode(): string {
+  let out = '';
+  let value = 0;
+  let bits = 0;
+  for (const b of randomBytes(8)) {
+    value = (value << 8) | b;
+    bits += 8;
+    while (bits >= 5 && out.length < 12) {
+      bits -= 5;
+      out += CROCKFORD[(value >> bits) & 31]!;
+      value &= (1 << bits) - 1;
+    }
+  }
+  return out.toLowerCase();
+}
+
 // `systemFieldCode` a vécu ici sans jamais avoir d'appelant côté serveur : le seul générateur utilisé est
 // celui du front (`web/lib/codes.ts`, appelé par la page Champs). Supprimé le 2026-07-18. Le format
 // `fld_<tenantCode>_sys_<key>` reste RÉSERVÉ et documenté côté front ; le résolveur d'API le reconnaît via

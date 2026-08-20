@@ -1,12 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader } from '../meta/templates';
+import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader, TemplateSummary } from '../meta/templates';
 import type { CampaignStatus } from '../campaign/types';
 import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../meta/languages';
 import { isSendableButtonUrl } from '../meta/button-url';
+import { boutonsTracables, appliquerLiens, cleBouton, rehabillerBoutons } from '../links/rewrite';
+import type { CibleLien } from '../links/tracked-links.pg';
 import { scopeTenant, nonEmpty } from './scope';
 
 export interface TemplateRouteDeps {
@@ -29,6 +31,23 @@ export interface TemplateRouteDeps {
   saveParamHints?(tenantId: string, name: string, language: string, hints: Array<{ position: number; source: ParamSource }>): Promise<void>;
   getParamHints?(tenantId: string, name: string, language: string): Promise<Array<{ position: number; source: ParamSource }>>;
   removeParamHints?(tenantId: string, name: string): Promise<void>;
+  /**
+   * Traçage des liens : réserve un code par bouton URL, et rend l'adresse de redirection à soumettre à Meta.
+   *
+   * OPTIONNEL, et son absence est un mode de fonctionnement à part entière : sans base de liens ou sans
+   * adresse publique configurée, le template part avec les liens SAISIS. On ne soumet jamais une adresse de
+   * redirection qu'on ne saurait pas servir.
+   */
+  tracking?: {
+    /** Réserve le code du bouton et enregistre sa destination. Rend le code. */
+    allocate(tenantId: string, cible: CibleLien, destination: string): Promise<string>;
+    /** Meta a accepté : ces liens sont bien ceux que porte le template. */
+    confirm(tenantId: string, codes: readonly string[]): Promise<void>;
+    /** Adresse publique d'un code. */
+    lienDe(code: string): string;
+    /** `adresse de redirection -> destination d'origine`, pour ces templates. Sert au ré-habillage. */
+    destinations(tenantId: string, noms: readonly string[]): Promise<Map<string, string>>;
+  };
 }
 
 /** Persistance best-effort des indices variable->champ : un hoquet DB ne doit pas faire échouer un template
@@ -46,6 +65,83 @@ async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: stri
     // eslint-disable-next-line no-console
     console.error('saveParamHints ignoré:', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Réserve un lien tracé par bouton URL et rend le template à soumettre.
+ *
+ * Si QUOI QUE CE SOIT échoue, on rend le template D'ORIGINE : mieux vaut un template non mesuré qu'un
+ * template refusé, ou pire, approuvé avec une adresse qu'on ne saurait pas servir. Les lignes déjà réservées
+ * restent en base sans confirmation, donc invisibles des mesures, et seront réutilisées à la tentative
+ * suivante (`allocate` est un upsert sur le même bouton).
+ */
+async function preparerLiens(
+  deps: TemplateRouteDeps,
+  tenant: string,
+  input: CreateTemplateInput,
+): Promise<{ aSoumettre: CreateTemplateInput; codes: string[] }> {
+  if (!deps.tracking) return { aSoumettre: input, codes: [] };
+  const cibles = boutonsTracables(input);
+  if (cibles.length === 0) return { aSoumettre: input, codes: [] };
+  try {
+    const liens = new Map<string, string>();
+    const codes: string[] = [];
+    for (const c of cibles) {
+      const code = await deps.tracking.allocate(
+        tenant,
+        { templateName: input.name, templateLanguage: input.language, cardIndex: c.cardIndex, buttonIndex: c.buttonIndex },
+        c.url,
+      );
+      codes.push(code);
+      liens.set(cleBouton(c.cardIndex, c.buttonIndex), deps.tracking.lienDe(code));
+    }
+    return { aSoumettre: appliquerLiens(input, liens), codes };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('traçage des liens ignoré (template soumis avec les liens saisis):', err instanceof Error ? err.message : err);
+    return { aSoumettre: input, codes: [] };
+  }
+}
+
+/**
+ * Remontre à l'utilisateur les liens qu'il a SAISIS, là où Meta nous rend les nôtres.
+ *
+ * Fait ICI et pas dans `MetaTemplateClient` : ce client parle à Meta, il n'a pas à connaître nos tables. Et
+ * fait sur la LISTE plutôt que dans chaque écran, parce que les quatre surfaces qui affichent un template
+ * (page Templates, création de campagne, éditeur de scénario, inbox) passent toutes par elle. Le faire écran
+ * par écran aurait garanti d'en oublier un.
+ *
+ * Best-effort : si la table est indisponible, on rend les templates tels que Meta les donne. L'utilisateur
+ * verrait alors nos adresses de redirection, ce qui est déroutant mais pas faux ; échouer lui retirerait
+ * l'écran entier.
+ */
+async function rehabillerTemplates(
+  deps: TemplateRouteDeps,
+  tenant: string,
+  templates: TemplateSummary[],
+): Promise<TemplateSummary[]> {
+  if (!deps.tracking || templates.length === 0) return templates;
+  let parLien: Map<string, string>;
+  try {
+    parLien = await deps.tracking.destinations(tenant, templates.map((t) => t.name));
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('ré-habillage des liens tracés ignoré:', err instanceof Error ? err.message : err);
+    return templates;
+  }
+  if (parLien.size === 0) return templates;
+  return templates.map((t) => {
+    const boutons = rehabillerBoutons(t.buttons, parLien);
+    const cartes = t.carousel?.cards.map((c) => {
+      const b = rehabillerBoutons(c.buttons, parLien);
+      return b ? { ...c, buttons: b } : c;
+    });
+    return {
+      ...t,
+      ...(boutons ? { buttons: boutons } : {}),
+      ...(cartes ? { carousel: { cards: cartes } } : {}),
+    };
+  });
 }
 
 const CATEGORIES = new Set(['MARKETING', 'UTILITY']);
@@ -193,7 +289,8 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const wabaId = await deps.getWabaId(tenant);
     if (!wabaId) return reply.code(200).send({ templates: [] });
-    return reply.code(200).send({ templates: await (await deps.templatesFor(tenant)).list(wabaId) });
+    const templates = await (await deps.templatesFor(tenant)).list(wabaId);
+    return reply.code(200).send({ templates: await rehabillerTemplates(deps, tenant, templates) });
   });
 
   app.post('/tenants/:tenantId/templates', guard, async (req, reply) => {
@@ -218,7 +315,23 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     }
 
     const input: CreateTemplateInput = { name: b.name, language: b.language, ...parsed.fields };
-    const res = await (await deps.templatesFor(tenant)).create(wabaId, input);
+
+    // Substitution des liens JUSTE AVANT la soumission : l'utilisateur a saisi son adresse, Meta reçoit la
+    // nôtre. L'ordre compte — la destination est enregistrée AVANT l'appel à Meta. L'inverse (soumettre puis
+    // enregistrer) laisserait, en cas de panne entre les deux, un template approuvé pointant un code
+    // inexistant : un lien mort dans des messages déjà livrés, et rien pour le réparer.
+    const { aSoumettre, codes } = await preparerLiens(deps, tenant, input);
+    const res = await (await deps.templatesFor(tenant)).create(wabaId, aSoumettre);
+    // Meta a accepté : les liens réservés sont bien ceux que porte le template. Best-effort, comme les
+    // indices de variables : un hoquet ici dégrade la MESURE, il ne casse pas un template déjà créé.
+    if (codes.length > 0 && deps.tracking) {
+      try {
+        await deps.tracking.confirm(tenant, codes);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('confirmation des liens tracés ignorée:', err instanceof Error ? err.message : err);
+      }
+    }
     await saveHintsSafe(deps, tenant, b.name, b.language, b.paramHints);
     return reply.code(201).send(res);
   });

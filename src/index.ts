@@ -27,6 +27,10 @@ import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgAuditStore } from './audit/store.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
+import { PgTrackedLinkStore } from './links/tracked-links.pg';
+import { lienDe } from './links/rewrite';
+import { noeudsTemplate, compteursDeClics } from './links/mesures';
+import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
 import { resolveScenario, resolveNode } from './ids/resolve';
 import { enqueueCampaignRun } from './campaign/enqueue';
@@ -94,6 +98,7 @@ async function main(): Promise<void> {
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const auditStore = new PgAuditStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
+  const trackedLinkStore = new PgTrackedLinkStore(pool);
   const reportStore = new PgWorkflowReportStore(pool);
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
@@ -218,6 +223,11 @@ async function main(): Promise<void> {
       listPhoneNumbers: (tenant) => repo.listPhoneNumbers(tenant),
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
     },
+    // Redirection publique des liens tracés. Le tenant vient du code retrouvé en base, jamais de l'URL.
+    links: {
+      getByCode: (code) => trackedLinkStore.getByCode(code),
+      recordClick: (code, tenant) => trackedLinkStore.recordClick(code, tenant),
+    },
     templates: {
       templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
@@ -226,6 +236,18 @@ async function main(): Promise<void> {
       saveParamHints: (tenant, name, language, hints) => templateHintStore.save(tenant, name, language, hints),
       getParamHints: (tenant, name, language) => templateHintStore.get(tenant, name, language),
       removeParamHints: (tenant, name) => templateHintStore.removeByName(tenant, name),
+      // Traçage des liens : l'adresse publique est celle de la console (APP_URL), servie par le rewrite
+      // `/r/:code` du front vers cette API.
+      tracking: {
+        allocate: (tenant, cible, destination) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination),
+        confirm: (tenant, codes) => trackedLinkStore.confirm(tenant, codes),
+        lienDe: (code) => lienDe(config.APP_URL, code),
+        // `adresse de redirection -> destination d'origine` : c'est ce qui permet de remontrer à
+        // l'utilisateur le lien qu'il a saisi, partout où la console liste des templates.
+        destinations: async (tenant, noms) => new Map(
+          (await trackedLinkStore.listByTemplates(tenant, noms)).map((l) => [lienDe(config.APP_URL, l.code), l.destination]),
+        ),
+      },
     },
     inbox: {
       listConversations: (tenant) => inboxStore.listConversations(tenant),
@@ -353,7 +375,30 @@ async function main(): Promise<void> {
         };
         return estimateCostSeries(range.from, range.to, rows, rates);
       },
-      getWorkflowNodeCounts: (tenant, workflowId, range) => nodeEventStore.countByNode(tenant, workflowId, range),
+      /**
+       * Mesures d'un scénario : les événements de blocs, PLUS les clics sur les liens tracés des templates
+       * qu'il envoie. Les seconds ne peuvent pas vivre dans `workflow_node_events` (elle exige un `wa_id`,
+       * or un clic sur un lien statique n'identifie personne) : ils sont donc fusionnés à la LECTURE.
+       *
+       * Best-effort sur la partie liens : une panne ici retire la mesure de clic, elle ne doit pas emporter
+       * les compteurs d'envoi et de lecture qui, eux, sont disponibles.
+       */
+      getWorkflowNodeCounts: async (tenant, workflowId, range) => {
+        const evenements = await nodeEventStore.countByNode(tenant, workflowId, range);
+        try {
+          const wf = await workflowStore.getById(workflowId, tenant);
+          const noeuds = noeudsTemplate(wf?.graph);
+          if (noeuds.length === 0) return evenements;
+          const liens = await trackedLinkStore.listByTemplates(tenant, noeuds.map((n) => n.templateName));
+          if (liens.length === 0) return evenements;
+          const clics = await trackedLinkStore.countClicks(tenant, liens.map((l) => l.code), range);
+          return [...evenements, ...compteursDeClics(noeuds, liens, clics)];
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('mesures de clics ignorées:', err instanceof Error ? err.message : err);
+          return evenements;
+        }
+      },
       getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
       listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
     },

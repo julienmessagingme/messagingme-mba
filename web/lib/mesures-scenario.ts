@@ -27,7 +27,12 @@ export interface CompteurBrut {
   kind: string;
   handle: string | null;
   count: number;
-  contacts: number;
+  /**
+   * Nombre de PERSONNES distinctes. `null` quand la mesure ne sait pas les distinguer : un clic sur un lien
+   * de template arrive sans identité (le lien est le même pour tous les destinataires). Mettre 0 aurait dit
+   * « personne », et mettre `count` aurait dit « une personne par clic » : deux mensonges pour éviter un vide.
+   */
+  contacts: number | null;
 }
 
 /**
@@ -53,6 +58,12 @@ export interface BlocMesurable {
   titre: string;
   mesurable: boolean;
   choix: Choix[];
+  /**
+   * Boutons URL dont le lien est TRACÉ, donc mesurables. La liste vient des compteurs, pas du graphe : le
+   * graphe sait qu'un bouton est de type URL, mais pas si son lien passe par notre redirection. Un template
+   * approuvé avant la mise en service porte l'adresse du client en dur, et rien ne le mesurera jamais.
+   */
+  liens: Choix[];
 }
 
 /** Titre lisible d'un bloc. Volontairement court : la liste doit se parcourir des yeux. */
@@ -84,11 +95,27 @@ export function libelleHandle(handle: string, boutons: string[]): string {
   return handle;
 }
 
-/** Textes des boutons déclarés sur un bloc (message rapide ou template). */
-function boutonsDe(n: GraphNode): string[] {
+/** Un bouton déclaré sur un bloc, avec son TYPE : un bouton URL ne se mesure pas comme un bouton de choix. */
+interface BoutonDeclare {
+  texte: string;
+  type: string;
+}
+
+/**
+ * Boutons déclarés sur un bloc (message rapide ou template), DANS L'ORDRE, types compris.
+ *
+ * Le type n'est pas décoratif : Meta n'émet AUCUN événement quand on clique un bouton URL. Traiter tous les
+ * boutons pareil faisait proposer « A cliqué « Voir le site » » sur un lien, une case qui restait à zéro pour
+ * toujours. Un message rapide n'a que des boutons de choix, d'où le type par défaut.
+ */
+function boutonsDe(n: GraphNode): BoutonDeclare[] {
   const d = n.data ?? {};
   const brut = Array.isArray(d.quickReplies) ? d.quickReplies : Array.isArray(d.templateButtons) ? d.templateButtons : [];
-  return brut.map((b) => (typeof b === 'object' && b !== null && 'text' in b ? String((b as { text: unknown }).text ?? '') : ''));
+  return brut.map((b) => {
+    if (typeof b !== 'object' || b === null) return { texte: '', type: 'QUICK_REPLY' };
+    const o = b as { text?: unknown; type?: unknown };
+    return { texte: String(o.text ?? ''), type: typeof o.type === 'string' ? o.type : 'QUICK_REPLY' };
+  });
 }
 
 /**
@@ -102,7 +129,11 @@ function boutonsDe(n: GraphNode): string[] {
  * `handlesMesures` = les handles réellement vus dans les données. Ils complètent les boutons déclarés : un
  * carousel ne déclare pas ses cartes dans le graphe, donc ses choix n'apparaissent qu'une fois cliqués.
  */
-export function blocsDuScenario(graph: Graph, handlesMesures: Record<string, string[]> = {}): BlocMesurable[] {
+export function blocsDuScenario(
+  graph: Graph,
+  handlesMesures: Record<string, string[]> = {},
+  handlesLiens: Record<string, string[]> = {},
+): BlocMesurable[] {
   const parId = new Map(graph.nodes.map((n) => [n.id, n]));
   const cibles = new Set(graph.edges.map((e) => e.target));
   const entree = graph.nodes.find((n) => !cibles.has(n.id)) ?? graph.nodes[0];
@@ -122,8 +153,11 @@ export function blocsDuScenario(graph: Graph, handlesMesures: Record<string, str
   return ordre.map((id) => {
     const n = parId.get(id)!;
     const boutons = boutonsDe(n);
-    // Handles connus : ceux des boutons déclarés, ceux des arêtes du graphe, et ceux effectivement mesurés.
-    const desBoutons = boutons.map((_, i) => `btn:${i}`);
+    const libelles = boutons.map((b) => b.texte);
+    // Handles connus : ceux des boutons de CHOIX déclarés, ceux des arêtes du graphe, et ceux effectivement
+    // mesurés. Les boutons URL en sont EXCLUS : Meta n'émet rien quand on les clique, leur compteur de
+    // « choix » resterait à zéro pour toujours. Ils sont mesurés autrement, par la redirection.
+    const desBoutons = boutons.map((b, i) => ({ b, i })).filter((x) => x.b.type !== 'URL').map((x) => `btn:${x.i}`);
     const desAretes = graph.edges.filter((e) => e.source === id && e.sourceHandle).map((e) => e.sourceHandle!);
     const tous = [...new Set([...desBoutons, ...desAretes, ...(handlesMesures[id] ?? [])])]
       // Les sorties TYPÉES d'un bloc ne sont pas des choix du contact : elles décrivent une issue technique.
@@ -133,7 +167,8 @@ export function blocsDuScenario(graph: Graph, handlesMesures: Record<string, str
       type: n.type,
       titre: titreDe(n),
       mesurable: estMesurable(n.type),
-      choix: tous.map((h) => ({ handle: h, label: libelleHandle(h, boutons) })),
+      choix: tous.map((h) => ({ handle: h, label: libelleHandle(h, libelles) })),
+      liens: (handlesLiens[id] ?? []).map((h) => ({ handle: h, label: libelleHandle(h, libelles) })),
     };
   });
 }
@@ -172,9 +207,16 @@ export function mesuresDisponibles(bloc: BlocMesurable, estPremier = true): Mesu
     kind: 'reply_button',
     handle: c.handle,
   }));
+  // Clics sur un LIEN : mesurés par notre redirection, pas par Meta, qui n'émet rien sur un bouton URL.
+  const liens: MesureDispo[] = bloc.liens.map((l) => ({
+    cle: `${bloc.id}|url_click|${l.handle}`,
+    label: `A cliqué sur le lien ${l.label}`,
+    kind: 'url_click',
+    handle: l.handle,
+  }));
   // « A répondu sans cliquer » est proposé partout, et pas seulement sur les blocs à boutons : sur un bloc qui
   // n'offre aucun choix, c'est LA mesure de l'engagement.
-  return [...base, ...choix, { cle: `${bloc.id}|reply_text`, label: 'A répondu (sans cliquer)', kind: 'reply_text', handle: null }];
+  return [...base, ...choix, ...liens, { cle: `${bloc.id}|reply_text`, label: 'A répondu (sans cliquer)', kind: 'reply_text', handle: null }];
 }
 
 /** Une barre du graphe final. */
@@ -182,23 +224,41 @@ export interface Barre {
   nodeId: string;
   label: string;
   count: number;
-  contacts: number;
+  contacts: number | null;
 }
 
 /**
  * Valeur d'une mesure depuis les compteurs bruts. Absente des données = 0, et non « pas de barre » : une
  * mesure choisie qui vaut zéro est une information, la masquer laisserait croire à un oubli.
  */
-export function valeurDe(counts: CompteurBrut[], nodeId: string, kind: string, handle: string | null): { count: number; contacts: number } {
+export function valeurDe(counts: CompteurBrut[], nodeId: string, kind: string, handle: string | null): { count: number; contacts: number | null } {
   const l = counts.find((c) => c.nodeId === nodeId && c.kind === kind && (c.handle ?? null) === handle);
-  return { count: l?.count ?? 0, contacts: l?.contacts ?? 0 };
+  // Mesure ABSENTE -> 0 personne, et non « inconnu » : les natures qui comptent des personnes en comptent
+  // bien zéro quand rien n'est arrivé. Seule une ligne PRÉSENTE peut dire qu'elle ne sait pas les distinguer,
+  // ce que fait le serveur pour les clics de lien (`contacts: null`).
+  return { count: l?.count ?? 0, contacts: l ? l.contacts : 0 };
 }
 
 /** Les handles réellement mesurés, par bloc : sert à révéler les choix qu'un carousel ne déclare pas. */
 export function handlesMesuresParBloc(counts: CompteurBrut[]): Record<string, string[]> {
+  return handlesParBloc(counts, 'reply_button');
+}
+
+/**
+ * Les boutons dont le LIEN est tracé, par bloc.
+ *
+ * C'est le serveur qui fait autorité, pas le graphe : celui-ci sait qu'un bouton est de type URL, jamais si
+ * son lien passe par notre redirection. Le serveur rend une ligne même à ZÉRO clic, sinon la mesure ne
+ * pourrait pas être cochée avant le premier clic.
+ */
+export function handlesClicsLienParBloc(counts: CompteurBrut[]): Record<string, string[]> {
+  return handlesParBloc(counts, 'url_click');
+}
+
+function handlesParBloc(counts: CompteurBrut[], kind: string): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const c of counts) {
-    if (c.kind !== 'reply_button' || !c.handle) continue;
+    if (c.kind !== kind || !c.handle) continue;
     (out[c.nodeId] ??= []).push(c.handle);
   }
   for (const k of Object.keys(out)) out[k] = [...new Set(out[k]!)];
@@ -222,9 +282,13 @@ const COULEUR_PAR_NATURE: Record<string, string> = {
   reply_text: '#F59E0B',
 };
 const NUANCES_CLIC = ['#0E7490', '#14B8A6', '#5EEAD4', '#A5F3FC'];
+// Les clics sur un LIEN prennent une famille de teintes à part : dans un même bloc, « a cliqué « Oui » » et
+// « a cliqué sur le lien » sont deux gestes différents, et les nuancer dans la même teinte les confondrait.
+const NUANCES_LIEN = ['#C026D3', '#E879F9'];
 
 export function couleurDe(kind: string, indexChoix = 0): string {
   if (kind === 'reply_button') return NUANCES_CLIC[indexChoix % NUANCES_CLIC.length]!;
+  if (kind === 'url_click') return NUANCES_LIEN[indexChoix % NUANCES_LIEN.length]!;
   return COULEUR_PAR_NATURE[kind] ?? '#94A3B8';
 }
 
@@ -232,7 +296,7 @@ export interface BarreTableau {
   cle: string;
   label: string;
   count: number;
-  contacts: number;
+  contacts: number | null;
   couleur: string;
 }
 
@@ -268,7 +332,10 @@ export function groupesDuTableau(
       nodeId: b.id,
       titre: b.titre,
       barres: (parBloc.get(b.id) ?? []).map((m) => {
-        const iChoix = m.handle ? Math.max(0, b.choix.findIndex((c) => c.handle === m.handle)) : 0;
+        // L'index de nuance se prend dans la liste de SA nature : un clic de lien numéroté sur la liste des
+        // choix aurait pris la nuance d'un autre bouton, ou serait retombé sur la première faute de match.
+        const liste = m.kind === 'url_click' ? b.liens : b.choix;
+        const iChoix = m.handle ? Math.max(0, liste.findIndex((c) => c.handle === m.handle)) : 0;
         return { cle: m.cle, label: m.label, ...valeurDe(counts, b.id, m.kind, m.handle), couleur: couleurDe(m.kind, iChoix) };
       }),
     }));

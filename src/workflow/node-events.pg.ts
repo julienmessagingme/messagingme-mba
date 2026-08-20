@@ -31,8 +31,14 @@ export interface NodeEventCount {
   /** null hors `reply_button` : les autres natures n'ont pas de choix à distinguer. */
   handle: string | null;
   count: number;
-  /** Contacts DISTINCTS, qui diffère de `count` dès qu'une personne clique deux fois. */
-  contacts: number;
+  /**
+   * Contacts DISTINCTS, qui diffère de `count` dès qu'une personne clique deux fois.
+   *
+   * `null` quand la mesure ne sait pas distinguer les personnes : c'est le cas des clics sur un lien de
+   * template, qui arrivent sans identité (le lien est le même pour tous les destinataires). Mettre 0 aurait
+   * dit « personne n'a cliqué » à côté de 40 clics.
+   */
+  contacts: number | null;
 }
 
 export class PgWorkflowNodeEventStore {

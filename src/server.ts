@@ -30,6 +30,8 @@ import { registerV1Sends } from './http/v1-sends';
 import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
 import { registerHubspotInstall } from './http/hubspot-install';
+import { registerLinks } from './http/links';
+import type { LinksRouteDeps } from './http/links';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
 import { registerAuth } from './auth/routes';
@@ -139,6 +141,11 @@ export interface ServerDeps {
   mba?: MbaRouteDeps;
   /** Node « Envoi de mail » (boîtes SMTP + modèles) — réservé aux admins, comme workflows. */
   email?: EmailRoutesDeps;
+  /**
+   * Redirection PUBLIQUE des liens tracés (`GET /r/:code`). Aucune authentification : c'est un destinataire
+   * WhatsApp qui l'ouvre. Le tenant vient du code retrouvé en base, jamais de l'URL.
+   */
+  links?: LinksRouteDeps;
 }
 
 /**
@@ -216,6 +223,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // Surface /ops : autorité SÉPARÉE du JWT (secret d'env, comme le webhook). Montée dès que les deps
   // sont fournies ; le guard renvoie 401 si OPS_TOKEN est vide (désactivé) ou incorrect.
   if (deps.ops) registerOps(app, deps.ops, deps.opsToken ?? config.OPS_TOKEN);
+
+  // Redirection des liens tracés : PUBLIQUE, montée ici avec le webhook et /ops, avant les gardes d'auth.
+  // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
+  if (deps.links) registerLinks(app, deps.links);
 
   const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState) : undefined;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière

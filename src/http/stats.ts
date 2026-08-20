@@ -8,6 +8,7 @@ import type { DateRange } from '../stats/range';
 import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConversationsFilter } from '../stats/conversation-stats.pg';
 import { scopeTenant } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
+import type { CompteurClic } from '../links/mesures';
 
 // Valeurs d'enum admises pour les filtres de la liste quali (miroir de src/analysis/schema.ts). On ne passe au
 // store QUE des valeurs valides -> pas d'injection de filtre arbitraire, et le NULL = « pas de filtre ».
@@ -36,7 +37,7 @@ export interface StatsRouteDeps {
    * Mesures d'un SCÉNARIO, bloc par bloc (« Mes tableaux »). Optionnelle : absente -> 503 plutôt qu'une liste
    * vide, qui se lirait « ce scénario n'a rien produit » alors que rien n'est branché.
    */
-  getWorkflowNodeCounts?(tenantId: string, workflowId: string, range: DateRange): Promise<NodeEventCount[]>;
+  getWorkflowNodeCounts?(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
 }
 
 /** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (guard passé par server.ts). Plage de dates
