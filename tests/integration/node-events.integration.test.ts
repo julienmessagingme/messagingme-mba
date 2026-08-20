@@ -17,7 +17,22 @@ describe.skipIf(!url)('mesures par bloc — écriture et agrégat', () => {
   let tenantId = '';
   let workflowId = '';
   let store: PgWorkflowNodeEventStore;
-  const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+  /**
+   * Fenêtre de lecture VOLONTAIREMENT large (hier -> demain), et non « aujourd'hui ».
+   *
+   * 🔴 Ce test a échoué en CI le 2026-08-21 à 00 h 05 heure de Paris, sans rapport avec le code testé : il
+   * calculait « aujourd'hui » en Europe/Paris alors que `countByNode` compare `at >= $3::date` en UTC. Entre
+   * minuit et 2 h du matin l'été, les deux ne désignent pas le même jour, et le filtre excluait tous les
+   * événements qui venaient d'être insérés.
+   *
+   * Ce que ce test doit prouver, c'est l'AGRÉGATION (par bloc, par nature, par choix), pas la gestion des
+   * fuseaux aux bornes de journée. Élargir la fenêtre retire cette variable sans rien retirer à ce qui est
+   * vérifié : le tenant est jetable, donc rien d'autre ne peut se glisser dans le résultat. Que le filtre
+   * borne en UTC alors que l'écran raisonne en heure locale reste un vrai sujet, suivi dans `todo.md`.
+   */
+  const jourDe = (decalage: number): string => new Date(Date.now() + decalage * 86_400_000).toISOString().slice(0, 10);
+  const debut = jourDe(-1);
+  const fin = jourDe(1);
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
@@ -49,7 +64,7 @@ describe.skipIf(!url)('mesures par bloc — écriture et agrégat', () => {
   });
 
   const lire = async (): Promise<Record<string, number>> => {
-    const rows = await store.countByNode(tenantId, workflowId, { from: jour, to: jour });
+    const rows = await store.countByNode(tenantId, workflowId, { from: debut, to: fin });
     return Object.fromEntries(rows.map((r) => [`${r.nodeId}/${r.kind}${r.handle ? `/${r.handle}` : ''}`, r.count]));
   };
 
@@ -67,7 +82,7 @@ describe.skipIf(!url)('mesures par bloc — écriture et agrégat', () => {
   it('🔴 « combien de clics » n’est pas « combien de personnes »', async () => {
     // Un contact qui clique deux fois compte deux clics et UNE personne. Confondre les deux fait surestimer
     // l'audience d'un choix, et c'est le genre de chiffre sur lequel on prend une decision.
-    const rows = await store.countByNode(tenantId, workflowId, { from: jour, to: jour });
+    const rows = await store.countByNode(tenantId, workflowId, { from: debut, to: fin });
     const clic0 = rows.find((r) => r.nodeId === 'n1' && r.handle === 'btn:0')!;
     expect(clic0.count).toBe(2);
     expect(clic0.contacts).toBe(1);
@@ -80,7 +95,7 @@ describe.skipIf(!url)('mesures par bloc — écriture et agrégat', () => {
   it('🔴 isolation : un AUTRE espace ne voit rien de ces mesures', async () => {
     const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-mesures-autre') returning id`)).rows[0]!.id;
     try {
-      expect(await store.countByNode(autre, workflowId, { from: jour, to: jour })).toEqual([]);
+      expect(await store.countByNode(autre, workflowId, { from: debut, to: fin })).toEqual([]);
     } finally {
       await pool.query('delete from tenants where id = $1', [autre]);
     }

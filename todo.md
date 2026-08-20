@@ -37,6 +37,20 @@ dossier complet dans `.loop/mba-parametres-activation.md`.
 - ❌ Une skill = trois champs de TEXTE chez Meta. Elle ne produit aucun effet chez nous, elle ne fait
   qu'influencer le modèle. Ne jamais la vendre comme un transfert garanti.
 
+## 🔲 Bornes de journée : les mesures filtrent en UTC, l'écran raisonne en heure locale (2026-08-21)
+
+`countByNode` (`src/workflow/node-events.pg.ts`) compare `at >= $3::date and at < ($4::date + interval '1 day')`.
+Les bornes sont donc interprétées en UTC, alors que l'utilisateur choisit « aujourd'hui » dans SON fuseau.
+L'été, deux heures d'événements changent de journée : un clic de 23 h 30 à Paris est compté le lendemain.
+
+**Comment c'est apparu** : un test d'intégration a échoué en CI à 00 h 05 heure de Paris, sur un commit qui
+n'y touchait pas (vérifié en relançant la CI du commit précédent, qui a échoué au même endroit). Le test a été
+rendu insensible au fuseau ; le décalage de fond, lui, est toujours là.
+
+**À décider** : soit les bornes sont converties dans le fuseau du tenant (`tenant_settings.timezone`, déjà
+lu ailleurs), soit on assume l'UTC et on le dit à l'écran. Aujourd'hui ce n'est ni l'un ni l'autre.
+Concerne les mesures par bloc, et probablement les autres agrégats datés d'Analytics : à vérifier ensemble.
+
 ## Ouvert au 2026-08-20 (traçage des liens + statut manager)
 
 - 🔲 **Décider ce qu'un MANAGER a le droit de faire.** Le statut existe et s'attribue (migration 0065), mais
