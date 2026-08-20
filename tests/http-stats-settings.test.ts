@@ -427,3 +427,41 @@ describe('GET /tenants/:t/stats/workflow/:workflowId — mesures par bloc', () =
     await a.close();
   });
 });
+
+describe('stats route — clics sur les liens tracés', () => {
+  const LIENS = [
+    { code: 'ab12cd34ef56', templateName: 'promo', templateLanguage: 'fr', cardIndex: null, buttonIndex: 0, destination: 'https://client.fr/promo', clics: 12 },
+  ];
+
+  it('rend les liens et leurs clics sur la plage', async () => {
+    const a = app({ stats: { getTrackedLinkClicks: async () => LIENS } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/links?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ liens: typeof LIENS }>().liens).toEqual(LIENS);
+    await a.close();
+  });
+
+  it('🔴 traçage non configuré -> 503, PAS une liste vide', async () => {
+    // Une liste vide se lirait « aucun lien », alors que rien n'est branché. L'écran doit pouvoir faire la
+    // différence entre « pas de données » et « pas de fonctionnalité ».
+    const a = app();
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/links?days=30', ...h(adminTok) });
+    expect(res.statusCode).toBe(503);
+    await a.close();
+  });
+
+  it('plage invalide -> 400', async () => {
+    const a = app({ stats: { getTrackedLinkClicks: async () => LIENS } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/links?from=pas-une-date&to=2026-08-20', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('🔴 le tenant vient du JETON, jamais de l’URL', async () => {
+    const vus: string[] = [];
+    const a = app({ stats: { getTrackedLinkClicks: async (tenant) => { vus.push(tenant); return LIENS; } } });
+    await a.inject({ method: 'GET', url: '/tenants/AUTRE-TENANT/stats/links?days=30', ...h(adminTok) });
+    expect(vus).toEqual([]); // scopeTenant refuse en 403 avant d'appeler quoi que ce soit
+    await a.close();
+  });
+});

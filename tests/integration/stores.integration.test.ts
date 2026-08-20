@@ -161,6 +161,42 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
   });
 
+  it('🔴 PgTrackedLinkStore.listAvecClics : tous les liens de l’espace, y compris ceux à ZÉRO clic', async () => {
+    // Lecture « tous envois confondus » : c'est elle qui rattrape un template utilisé UNIQUEMENT en campagne,
+    // qui n'a aucun bloc de scénario où s'accrocher. Le `left join` n'est pas un détail : sans lui, un lien
+    // sans clic disparaîtrait de l'écran alors qu'il circule dans des messages livrés.
+    const store = new PgTrackedLinkStore(pool);
+    const nom = `liens.itest.${Date.now()}`;
+    const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    const plage = { from: jour, to: jour };
+
+    const avecClics = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/a');
+    const sansClic = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: 1, buttonIndex: 0 }, 'https://client.fr/b');
+    const nonConfirme = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 1 }, 'https://client.fr/c');
+    await store.confirm(tenantId, [avecClics, sansClic]);
+    await store.recordClick(avecClics, tenantId);
+    await store.recordClick(avecClics, tenantId);
+    await store.recordClick(avecClics, tenantId);
+
+    const lignes = (await store.listAvecClics(tenantId, plage)).filter((l) => l.templateName === nom);
+    expect(lignes.map((l) => [l.code, l.clics])).toEqual([[avecClics, 3], [sansClic, 0]]); // trié par clics décroissants
+    expect(lignes.some((l) => l.code === nonConfirme)).toBe(false); // non confirmé -> invisible des mesures
+    expect(lignes[1]!.cardIndex).toBe(1); // la carte de carousel est bien portée
+
+    // Une plage antérieure : le lien reste listé, son compteur retombe à zéro.
+    const hier = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+    const anciennes = (await store.listAvecClics(tenantId, { from: hier, to: hier })).filter((l) => l.templateName === nom);
+    expect(anciennes.map((l) => l.clics)).toEqual([0, 0]);
+
+    // 🔴 Isolation tenant.
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-liens-tous') returning id`)).rows[0]!.id;
+    try {
+      expect(await store.listAvecClics(autre, plage)).toEqual([]);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
+  });
+
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
     const users = new PgUserStore(pool);
     const email = `admin.itest.${Date.now()}@exemple.fr`;

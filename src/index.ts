@@ -399,6 +399,7 @@ async function main(): Promise<void> {
           return evenements;
         }
       },
+      getTrackedLinkClicks: (tenant, range) => trackedLinkStore.listAvecClics(tenant, range),
       getConversationSummary: (tenant, range) => conversationStatsStore.getSummary(tenant, range),
       listAnalyzedConversations: (tenant, range, filters) => conversationStatsStore.listAnalyzed(tenant, range, filters),
     },

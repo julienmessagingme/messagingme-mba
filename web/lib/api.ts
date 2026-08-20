@@ -679,6 +679,27 @@ export interface NodeEventCount {
   contacts: number | null;
 }
 
+/** Un lien trace d'un template, avec ses clics sur la periode (tous envois confondus). */
+export interface LienTraceApi {
+  code: string;
+  templateName: string;
+  templateLanguage: string;
+  cardIndex: number | null;
+  buttonIndex: number;
+  destination: string;
+  clics: number;
+}
+
+/**
+ * Clics sur les liens traces des templates, TOUS ENVOIS CONFONDUS (campagne, scenario, inbox).
+ *
+ * 503 si le tracage n'est pas configure sur l'instance : l'ecran masque alors la carte, plutot que d'afficher
+ * une liste vide qui se lirait « aucun lien ».
+ */
+export function getTrackedLinkClicks(tenantId: string, range?: StatsRange): Promise<{ liens: LienTraceApi[] }> {
+  return request<{ liens: LienTraceApi[] }>(`/tenants/${tenantId}/stats/links${rangeQuery(range)}`);
+}
+
 /** Mesures d'un scenario, bloc par bloc, sur la periode. Brutes : c'est l'ecran qui compose le tableau. */
 export function getWorkflowNodeCounts(tenantId: string, workflowId: string, range?: StatsRange): Promise<{ counts: NodeEventCount[] }> {
   return request<{ counts: NodeEventCount[] }>(`/tenants/${tenantId}/stats/workflow/${workflowId}${rangeQuery(range)}`);
