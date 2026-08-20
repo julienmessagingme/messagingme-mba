@@ -467,6 +467,48 @@ touchée, les uuid internes restent la source de vérité des relations.
   - `waitBeforeSessionMessage` (pur, + miroir front) détecte « attente >= 24 h puis message de session » pour
     l'afficher dans le builder ; cumul plafonné à 24 h, ce qui garantit la terminaison sur graphe cyclique.
 
+## Passage de main MBA et écran Activation (2026-08-21, migration 0067)
+
+**Le point à ne pas confondre.** L'agent de Meta décide SEUL de transférer à un humain (« je veux parler à un
+conseiller » produit `handoff_reason: customer_request`, mesuré sur le numéro de test le 2026-08-18). Le champ
+`handoff.enabled` ne décide donc PAS du transfert : il décide si l'agent **lâche le fil** après l'avoir annoncé.
+Le mettre à `false` en croyant « désactiver le transfert » livre le pire cas : le client lit « un conseiller
+arrive » et personne n'est prévenu.
+
+**Les trois champs** de `handoff` (`agent_config/settings`) : `enabled`, `message`, `message_selection`
+(`DEFAULT` / `AGENT` / `CUSTOM`). Nous n'écrivons aujourd'hui que `enabled` ; le texte lu par le client reste
+celui de Meta tant que le comportement réel des deux autres n'a pas été mesuré en conversation réelle.
+
+**Chemin d'écriture.** `PATCH /tenants/:t/settings/mba-handoff` (admin) enregistre `mba_handoff_mode` en base
+— c'est la source de vérité — puis applique `handoff.enabled` chez Meta en best-effort. Un échec côté Meta ne
+fait pas échouer l'enregistrement (le balayage rattrape) et la réponse porte `appliqueChezMeta: false`, que
+l'écran affiche. `PATCH /mba/:pn/settings` accepte par ailleurs `handoffEnabled`, `handoffMessage` et
+`handoffMessageSelection` pour piloter les trois champs directement.
+
+🔴 **`modifierSettings` fusionne `handoff` par sous-objet**, comme `rollout` et `followup`. Sans cette ligne,
+le balayage horaire — qui n'envoie que `enabled` — effacerait `message` et `message_selection` à chaque
+bascule. C'est le même piège que le remplacement complet du PUT, une couche plus bas.
+
+**Balayage horaire** (`src/mba/handoff-sweep.ts`, intervalle `CONTROL_SWEEP_INTERVAL_MS`, 5 min). Meta n'a
+aucune notion d'horaires : c'est la seule façon de faire varier ce que le client perçoit selon l'heure. Il ne
+traite QUE les tenants en mode `business_hours` (les deux autres modes sont écrits une fois, au choix), et
+n'écrit que si l'état lu diffère de l'état voulu, sinon il réécrirait la configuration toutes les 5 minutes.
+
+🔴 **`lireHandoffEnabled` rend trois états, pas deux** (`EtatHandoff`) : `true`/`false` lus chez Meta,
+`'absent'` quand les réglages sont lisibles mais que `handoff` n'a jamais été configuré (Meta : « Null if not
+configured »), et `null` quand il n'y a rien à lire. Confondre `'absent'` avec `false` empêcherait
+d'initialiser un agent neuf : le balayage croirait l'état déjà conforme.
+
+**Routage d'une réponse hors boutons** (`advance`, `src/workflow/executor.ts`). Trois cas : arête partant du
+handle du bouton tapé ; sinon arête LIBRE (`nextNodeSansHandle`, aucune `sourceHandle`) ; sinon fin du run et
+release vers l'agent. `nextNode` prenait la 1re arête venue, donc la branche du 1er bouton. Le builder expose
+la sortie libre sur les blocs à boutons, sans quoi le 2e cas serait inatteignable.
+
+⚠️ **`control_changed_at` ne se rafraîchit pas** quand un opérateur répond une 2e fois : `setControlOwner`
+porte `control_owner is distinct from $3` dans son WHERE, donc reposer le même détenteur ne met à jour aucune
+ligne. Le compte à rebours de reprise part donc de la PREMIÈRE intervention. L'ancien texte de l'Accueil
+disait « dernière » : c'était faux, et le nouvel écran le dit correctement.
+
 ## Traçage des clics sur les liens de templates (2026-08-20, migration 0066)
 
 **Le principe.** L'utilisateur saisit son lien. À la **soumission à Meta**, le serveur le remplace par

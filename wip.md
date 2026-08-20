@@ -1,5 +1,43 @@
 # WIP
 
+## EN COURS (2026-08-21) — parametres d'activation MBA : code pousse, PAS deploye
+
+Pousse sur `main` (`9893793` + `89d9a47`). **Rien n'est en prod** : la prod tourne toujours sur `139eba2`,
+migrations jusqu'a 0066.
+
+### Ce qui est fait
+- **Regle du texte libre** (`9893793`) : une reponse ECRITE a un bloc a boutons ne part plus dans la branche
+  du premier bouton. Trois cas : bouton cable -> sa branche ; sinon arete LIBRE -> on la suit ; sinon fin du
+  run et l'agent reprend la parole. Le builder gagne la sortie « toute autre reponse » sur les blocs a
+  boutons, sans quoi le 2e cas serait inatteignable.
+- **Ecran Activation** (`89d9a47`, migration **0067**) : MBA > Parametres > Activation, deux questions.
+  Ouvre `handoff` a `PATCH /mba/:pn/settings`, stocke le choix (`mba_handoff_mode`), l'applique chez Meta
+  tout de suite, et fait varier `handoff.enabled` selon les heures d'ouverture par un nouveau balayage.
+  Le delai de reprise quitte l'Accueil, et son texte est corrige (PREMIERE intervention, pas derniere).
+
+### Ce qui reste, dans l'ordre
+1. 🔴 **Appliquer la migration 0067 AVANT de deployer** ce code (additive, mais le code lit la colonne).
+2. **Provoquer un VRAI transfert** sur le numero de test, en conversation reelle : recoit-on
+   `messaging_handovers` ? sous quelle forme ? Puis corriger `ownerFromHandover`, dont la lecture est DEVINEE
+   et probablement inversee. Impossible avant le deploiement (la route handoff n'existe pas en prod).
+3. **La pastille « quelqu'un a besoin d'aide »** dans l'inbox : demande une donnee NOUVELLE (`app_human` ne
+   distingue pas « escalade, personne ne s'en occupe » de « un operateur a repondu »). A ne faire qu'apres 2.
+
+### Mesure faite (etape 0 du plan)
+`GET {WABA}/subscribed_apps` sur le WABA de test : **deux** apps abonnees, la notre (`988129420727963`) et
+**« Business Agent »** de Meta (`1143680903703001`). Cette reponse liste les APPS, pas les CHAMPS : la sonde
+`scripts/sonde-webhooks.mts` interroge desormais aussi `{app_id}/subscriptions` (jeton d'application requis),
+qui est la seule facon de savoir si `standby` et `messaging_handovers` nous arrivent.
+
+### Ce qu'on ne doit PAS promettre au client
+- Qu'un humain ne peut pas prendre la main : aucun verrou n'existe, ni chez nous ni chez Meta.
+- Que « jamais » empeche l'agent de transferer : il decide seul. `enabled` dit s'il LACHE le fil ensuite.
+- Que les heures d'ouverture pilotent autre chose que ce passage de main et la clause de scenario.
+
+Dossier complet : `.loop/mba-parametres-activation.md`.
+
+---
+
 ## TERMINE ET EN LIGNE (2026-08-19/20) — le detail est passe dans features.md / documentation.md
 
 Prod sur **`139eba2`**, migrations jusqu'a **0066**, CI verte. Trois lots livres, plus rien en cours dessus :

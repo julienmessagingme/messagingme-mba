@@ -245,6 +245,14 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Une réponse écrite ne se fait plus passer pour un bouton** (2026-08-21) : quand le contact ÉCRIT au lieu
+  de taper l'un des boutons proposés, le parcours ne part plus dans la branche du premier bouton. Concrètement,
+  quelqu'un qui répondait « non merci » à un bloc Oui/Non se retrouvait taggé « oui ». Désormais : si une sortie
+  **« toute autre réponse »** est reliée sur le bloc, c'est elle qui est suivie ; sinon le parcours s'arrête là
+  et l'agent reprend la parole. Cette sortie est un nouveau point de liaison, sous les boutons du bloc : la
+  brancher permet de prévoir un cas « le client a écrit autre chose », la laisser libre revient à dire « ce
+  scénario n'a rien prévu pour ça ».
+
 - ✅ **Bloc « Attente »** (2026-08-15) : met le parcours en pause pendant un délai choisi en minutes, heures ou
   jours (30 jours maximum), puis la suite repart toute seule. Le délai est tenu à la minute près environ. Un
   bloc dont la durée n'est pas encore choisie laisse simplement passer, il ne bloque personne.
@@ -704,6 +712,16 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   instructions), **liste d'autorisation**, **passage de main & relances**, et **tester l'agent**. Un bandeau explique
   pourquoi c'est bloqué (les conditions Meta Business AI ne sont signables qu'à l'éligibilité, ouverte par secteur)
   et renvoie au Guide.
+
+- ✅ **Onglet « Activation »** (2026-08-21) : les deux réglages qui décident **qui parle au client**, réunis au
+  même endroit, en deux questions. (1) *Quand le client demande un humain, ou que l'agent ne sait pas* : l'agent
+  passe la main et la conversation remonte dans « À traiter » ; ou seulement pendant vos heures d'ouverture (en
+  dehors, il garde la conversation au lieu d'annoncer un conseiller qui n'est pas là) ; ou jamais. (2) *Quand un
+  humain répond, il garde la main pendant* N minutes ; ce réglage était sur l'Accueil, il vit ici désormais, et
+  son texte est corrigé : le compte à rebours part de la **première** réponse de l'opérateur, pas de la dernière.
+  ⚠️ Ce que l'écran ne promet pas, parce que ce n'est pas tenable : empêcher un humain de prendre la main (aucun
+  verrou n'existe, ni chez nous ni chez Meta), et empêcher l'agent de décider un transfert (il décide seul ;
+  « jamais » le fait seulement garder la conversation au lieu de la lâcher).
 
 ## À venir / hors périmètre
 
