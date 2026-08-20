@@ -3,6 +3,46 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
+## 🔴 CHANTIER CADRÉ, PAS ENCORE CODÉ : paramètres d'activation MBA (2026-08-20)
+
+**Le dossier complet est dans `.loop/mba-parametres-activation.md`** (faits vérifiés, décisions de Julien,
+plan, pièges, inconnues). Résumé pour ne rien perdre si ce fichier disparaît :
+
+### Décisions de Julien, validées
+1. **Changer la règle produit du texte libre.** Aujourd'hui, une réponse ÉCRITE à un bloc à boutons part dans
+   la branche du PREMIER bouton (« non merci » se fait taguer « oui »). Comportement délibéré, figé par
+   `tests/workflow-executor.test.ts:191`. Nouvelle règle : bouton câblé → sa branche ; sinon flèche SANS
+   handle (chaîne linéaire ou sortie « autre réponse ») → on la suit ; sinon **fin du run et MBA prend la
+   parole**. ⚠️ Impose de changer ce test : décision produit assumée, pas un test affaibli.
+2. **Basculer `handoff.enabled` selon les heures d'ouverture**, par le balayage existant.
+3. **Page de réglages en DEUX questions** (« quand le client demande un humain… » + le délai de reprise).
+4. **Principe directeur** : la simplicité de ce paramétrage est ULTRA CRITIQUE, quitte à perdre en finesse.
+
+### L'ordre validé
+0. **Mesurer** que `messages`, `standby` et `messaging_handovers` sont bien abonnés (`scripts/sonde-webhooks.mts`).
+   Sans ça tout le reste mesure du vide.
+1. **Ouvrir `handoff` à nos routes** : `PATCH /mba/:pn/settings` n'accepte que `aiAudience`, `neverSay`,
+   `followupEnabled`. Impossible de tester sans.
+2. **Provoquer un vrai transfert** sur le numéro de test, en conversation RÉELLE, puis corriger
+   `ownerFromHandover` (lecture devinée et probablement INVERSÉE) sur le payload observé.
+3. Le correctif du texte libre (indépendant, et le plus rentable : il touche tous les scénarios).
+4. La page de réglages. 5. La pastille (demande une donnée nouvelle).
+
+### Faits à ne pas re-chercher
+- `handoff` a **trois** champs : `enabled`, `message`, `message_selection` (DEFAULT/AGENT/CUSTOM).
+  🔴 `enabled` **n'active pas** le handoff, il décide si l'agent LÂCHE le fil après avoir annoncé le transfert.
+- « Je veux parler à un conseiller » → `handoff_reason: customer_request`, **déjà mesuré** sur notre numéro
+  de test. Le déclencheur est natif, rien à câbler.
+- **Deux interrupteurs MBA** : `mba_enabled` (Accueil) ne fait PAS répondre l'agent, c'est le **rollout**
+  (MBA > Vue d'ensemble) qui le fait.
+- Les heures d'ouverture n'ont **qu'un seul lecteur** : la clause d'un bloc Condition de scénario.
+- On lit déjà les `message_echoes` du flux `standby` : c'est ce qui permettrait de détecter un transfert même
+  sans webhook, à condition d'écrire nous-mêmes le message (`message_selection: CUSTOM`).
+- 🔴 Le texte « après sa dernière intervention » de l'Accueil est **faux** : le compte à rebours court depuis
+  la PREMIÈRE (`setControlOwner` ne rafraîchit pas `control_changed_at` sur un même détenteur).
+- ❌ Une skill = trois champs de TEXTE chez Meta. Elle ne produit aucun effet chez nous, elle ne fait
+  qu'influencer le modèle. Ne jamais la vendre comme un transfert garanti.
+
 ## Ouvert au 2026-08-20 (traçage des liens + statut manager)
 
 - 🔲 **Décider ce qu'un MANAGER a le droit de faire.** Le statut existe et s'attribue (migration 0065), mais
