@@ -3,6 +3,28 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
+## Ouvert au 2026-08-20 (traçage des liens + statut manager)
+
+- 🔲 **Décider ce qu'un MANAGER a le droit de faire.** Le statut existe et s'attribue (migration 0065), mais
+  il donne exactement les mêmes accès qu'un agent : tout ce qui n'est pas admin reste fermé. Ouvrir des routes
+  à ce rôle se décide écriture par écriture, ça ne se devine pas. **En attente d'une décision de Julien.**
+- 🔲 **Premier test RÉEL du traçage des liens, de bout en bout.** La redirection est vérifiée en prod (302 +
+  clic compté) et la substitution est vérifiée en test contre un faux Meta, mais **personne n'a encore créé un
+  template avec un lien depuis la console**. Le maillon création -> approbation Meta -> envoi -> clic ->
+  compteur n'a jamais été exercé en vrai.
+- 🔲 **Nettoyer `test_lien_redir_a` et `test_lien_redir_b`** sur le WABA de test (« AuxR M le Bus MBA test »).
+  Le token sait créer un template mais **pas le supprimer** sur ce compte (« Need permission on either
+  WhatsApp Business Account or owner/shared business », par l'arête WABA comme par l'id). À retirer depuis
+  Business Manager.
+- 🔲 **Attribution par personne des clics** (reportée, pas abandonnée) : demanderait un suffixe fourni à
+  l'envoi, donc un composant de bouton sur les quatre chemins d'envoi. Le lien de base ne changerait pas, les
+  templates déjà approuvés n'auraient pas à être resoumis. **Julien n'en veut pas pour l'instant** : il veut
+  un comptage global.
+- ❌ **HORS PÉRIMÈTRE, tranché le 2026-08-20** : les liens écrits dans le **CORPS** d'un message ne sont pas
+  traçables. Seuls les **boutons** le sont. WhatsApp va chercher lui-même les liens du corps pour en afficher
+  l'aperçu, un compteur y compterait des robots plutôt que des humains. Décision de Julien, ne pas rouvrir
+  sans qu'il le demande.
+
 ## ⚠️ AUDIT DE SCALABILITÉ (2026-07-18) — LIRE EN PREMIER
 
 **`AUDIT-SCALE-2026-07-18.md`** : audit multi-agents des deux repos (10 dimensions, 117 constats,

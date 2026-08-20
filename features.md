@@ -3,11 +3,13 @@
 Statut : 🔲 pas commencé · 🚧 en cours · ✅ live
 
 `mba.messagingme.app` est **en prod LIVE** (`DRY_RUN=false`, numéro Zadarma réel). Console de gestion
-WhatsApp/Meta, 2 rôles : **admin** (tout) et **agent** (inbox seule).
+WhatsApp/Meta, 3 rôles : **admin** (tout), **manager** et **agent** (inbox seule).
+⚠️ **Manager est un STATUT, pas encore des droits** (2026-08-20) : il s'attribue, mais il donne exactement les
+mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas été décidé.
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · mini-CRM · Campagnes · Scénario · Automation · MBA (Guide / Paramètres) · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics (Quantitatif / Qualitatif) · Paramètres · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
+Admin : **Inbox · mini-CRM · Campagnes · Scénario · Automation · MBA (Guide / Paramètres) · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics (Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
 Les groupes **MBA**, **Contenu**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
@@ -21,6 +23,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
   de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »). Un jour dont
   l'heure de fin précède l'heure de début est signalé en rouge et bloque l'enregistrement.
+  La page porte aussi le **journal des actions** (ajouts, suppressions, effacements, bascules de consentement),
+  désormais **exportable en CSV** (2026-08-20) : l'export relit le journal jusqu'à 1000 lignes au lieu des 100
+  affichées, avec des dates en ISO pour qu'un tableur puisse trier. Comme à l'écran, il ne porte **aucun numéro**,
+  seulement l'identifiant interne du contact.
 
 ## Comptes & authentification
 
@@ -38,6 +44,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Session expirée : on le dit, et on propose de revenir** (2026-08-17) : quand le jeton tombe pendant
   qu'on travaille, une bannière apparaît en haut de l'écran avec un bouton **« Se reconnecter »** qui ramène à
   la connexion. Avant, l'interface restait active et les enregistrements échouaient en silence.
+- ✅ **Trois statuts de membre** (2026-08-20) : **Admin** (tout), **Manager**, **Agent** (inbox seule).
+  ⚠️ Manager et agent ont **les mêmes accès aujourd'hui** : le statut existe et s'attribue, mais aucun droit
+  propre ne lui a encore été ouvert. L'écran d'invitation le dit noir sur blanc, pour qu'on n'invite pas un
+  manager en s'attendant à ce qu'il voie tout.
 - ✅ **Crochet paiement (inerte)** : chaque espace a un statut (`trial|active|locked`) ; un espace `locked`
   serait bloqué (403). Pas de Stripe pour l'instant, le contrôle est en place mais neutre.
 
@@ -57,7 +67,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   Une action en masse (et l'import CSV) **ne déclenche aucun scénario** : poser un tag sur 5 000 contacts d'un coup
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
   **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
-- ✅ **Ajouter un contact à la main** (2026-08-17) : bouton **« + Ajouter un contact »** dans le mini-CRM
+- ✅ **UN seul geste pour ajouter des contacts** (2026-08-20) : un bouton **« + Rajouter des contacts »** ouvre
+  un menu à deux choix, **Ajouter un contact** ou **Importer un CSV**. Avant, les deux boutons se disputaient la
+  barre à poids égal, alors qu'on cherche d'abord « en ajouter », la façon venant ensuite.
+- ✅ **Ajouter un contact à la main** (2026-08-17) : dans le menu ci-dessus, formulaire du mini-CRM
   (numéro, prénom, email, tags). Jusque-là il fallait fabriquer un fichier CSV pour un seul numéro. Le serveur
   passe par le MÊME enregistrement que l'import et que l'API publique : le numéro est donc normalisé pareil, et
   un numéro DÉJÀ connu met la fiche à jour au lieu d'en créer une seconde. L'écran le dit, plutôt que d'annoncer
@@ -128,6 +141,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   toutes les cartes + 2-10 cartes image, texte de carte optionnel, boutons identiques sur toutes les cartes).
   Soumission à validation Meta, suivi du statut. En-tête texte et pied de page : 60 caractères max, sans
   variable (l'en-tête texte accepte un titre fixe uniquement).
+- ✅ **Les clics sur les boutons de lien sont comptés** (2026-08-20) : tu saisis **ton** lien normalement. Au
+  moment de la soumission à Meta, le serveur le remplace par une adresse à nous qui compte le clic puis redirige
+  vers ta page. **La console te remontre toujours TON lien**, partout où elle affiche un template, donc rien ne
+  change pour toi. Les compteurs se lisent dans Analytics > Mes tableaux.
+  ⚠️ Trois limites dites franchement : on compte des **clics, pas des personnes** (le lien est le même pour tous
+  les destinataires) ; seuls les templates **créés depuis la mise en service** sont mesurés (un template déjà
+  approuvé porte l'adresse en dur et ne le sera jamais) ; et **seuls les BOUTONS** sont tracés. Un lien écrit
+  dans le **corps** du message n'est pas traçable, décision de Julien du 2026-08-20 : WhatsApp va chercher
+  lui-même ces liens pour en afficher l'aperçu, un compteur y compterait des robots.
 - ✅ **Langue = menu déroulant** (39 langues WhatsApp, plus de champ libre) **sur le template simple** ; une
   langue hors liste est aussi refusée côté serveur. Une langue existante hors liste (ancien champ libre) reste
   affichée à l'édition. Un **carousel** ne propose ni langue ni catégorie : il est toujours créé en
@@ -500,8 +522,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Analytics (menu Analytics)
 
-- ✅ **Deux pages** (2026-07-20) : **Quantitatif** (les volumes, coûts, erreurs et funnels ci-dessous) et
-  **Qualitatif** (ce que les conversations disent). Les deux ont le **même bandeau de période** et la **même
+- ✅ **Trois pages** : **Quantitatif** (volumes, coûts, erreurs, funnels), **Qualitatif** (ce que les
+  conversations disent) et **Mes tableaux** (2026-08-19, ci-dessous). Les deux premières ont le **même bandeau
+  de période** et la **même
   période par défaut** (30 derniers jours). En revanche la plage choisie **ne suit pas** d'une page à l'autre :
   chaque page repart de son défaut, il faut donc la régler des deux côtés pour comparer un chiffre de l'une et
   une conversation de l'autre sur la même fenêtre.
@@ -521,6 +544,33 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   ou par template**, tarif Meta × volume. « Tarif indisponible » affiché si Meta ne renvoie pas de prix
   (jamais de faux coût).
 - ✅ **Coût / breakdown par template** (prix Meta par catégorie).
+- ✅ **Les coûts affichent leur DEVISE** (2026-08-20) : « ≈ 5,68 € » et non plus un nombre nu. La devise vient
+  de **Meta** (le compte WhatsApp la déclare, elle arrive avec les tarifs), elle n'est ni devinée ni écrite en
+  dur : un compte hors zone euro affichera la sienne, et si Meta ne la donne pas on rend le nombre seul plutôt
+  qu'un euro supposé.
+  ℹ️ **D'où viennent les prix** : Meta nous donne le coût facturé et le volume par catégorie, on en dérive un
+  tarif par message qu'on multiplie par nos envois. On ne reconstitue rien depuis l'indicatif téléphonique.
+- ✅ **Les messages de SERVICE sont comptés avec les templates** (2026-08-20) : le graphe « Templates envoyés »
+  devient **« Messages envoyés »** et porte une 3e série, les sortants qui ne sont pas des templates (réponse
+  d'un agent depuis l'inbox, message d'un scénario, réponse de l'assistant). Ils **n'entrent pas dans le coût
+  estimé** : Meta les facture à zéro, leur inventer un prix reviendrait à mentir sur la facture.
+- ✅ **Chaque carte s'exporte en PDF** (2026-08-20) : un bouton « PDF » sur chaque carte d'Analytics et sur les
+  tableaux. Il ouvre la boîte d'impression du navigateur avec **cette carte seule**, où « Enregistrer au format
+  PDF » existe sur tous les systèmes.
+- ✅ **Mes tableaux** (2026-08-19) : construire ses propres tableaux de mesure sur un scénario. On choisit un
+  scénario, il s'affiche **tel qu'il est dessiné** dans l'onglet Scénario (mêmes blocs, mêmes flèches), les
+  blocs qui n'envoient rien sont **grisés et inertes**, et un clic sur un bloc de message ouvre le choix de ce
+  qu'on veut compter : envoyés, échecs et délivrés (sur le 1er bloc seulement, après quoi ils ne disent plus
+  rien), lus, chaque **choix cliqué**, **le clic sur un lien**, et « a répondu sans cliquer ». Le tableau se
+  nomme, s'enregistre et se rouvre. Rendu en **histogramme** : un groupe de barres par bloc dans l'ordre du
+  parcours, barres jointives à l'intérieur d'un bloc, un espace entre les blocs, une seule ligne d'abscisse et
+  une couleur par nature de mesure.
+  ⚠️ **Les mesures démarrent à la mise en service du suivi** (2026-08-19, ~15 h 30) : une période antérieure
+  reste à zéro, l'écran le dit. Rien ne reliait auparavant un message envoyé au bloc qui l'avait envoyé.
+- ✅ **Clics sur les liens, tous envois confondus** (2026-08-20, dans Mes tableaux) : la liste de tous les liens
+  tracés de l'espace avec leurs clics sur la période, leur template, quel bouton, et **leur destination**. Elle
+  rattrape ce que la lecture par bloc ne peut pas voir : un template utilisé **uniquement en campagne** n'a
+  aucun bloc de scénario où s'accrocher. Un lien à zéro clic reste listé.
 - ✅ **Conversations (analyse)** (2026-07-17, page **Analytics > Qualitatif** depuis le 2026-07-20) : lecture de l'**analyse automatique des
   conversations** (une IA classe chaque conversation). **Quanti** : donut du **sentiment** (positif / neutre /
   négatif), barres par **intention** (demande de devis, SAV, réclamation, info, prise de RDV, autre) et par

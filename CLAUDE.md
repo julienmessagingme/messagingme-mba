@@ -44,9 +44,18 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
-`sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`). Dernière appliquée : **0058**
-(fil unique par conversation ; 0056 canal et 0057 RCS le 2026-08-17). En pratique on applique aussi via
-`npm run migrate` en local (même Supabase prod).
+`sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`). Dernière appliquée :
+**0066** (liens tracés ; 0065 rôle manager le 2026-08-20). **Prochaine = 0067.** En pratique on applique aussi
+via `npm run migrate` en local (même Supabase prod).
+
+⚠️ **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge** : les `rewrites` sont **gelés au build**
+de l'image web. Un simple `up -d` laisserait le proxy dans son état d'avant, et le chemin public `/r/:code`
+rendrait un 404 Next, donc des liens de templates morts.
+
+🔴 **Les liens tracés sont une porte à SENS UNIQUE.** Dès qu'un template portant un lien `/r/<code>` est
+approuvé et **envoyé**, son adresse circule dans des messages livrés. Retirer la route `/r/:code`, la table
+`tracked_links` ou le rewrite Next les casserait **tous**, sans recours possible. Le retour arrière n'existe
+qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 

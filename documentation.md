@@ -467,6 +467,87 @@ touchée, les uuid internes restent la source de vérité des relations.
   - `waitBeforeSessionMessage` (pur, + miroir front) détecte « attente >= 24 h puis message de session » pour
     l'afficher dans le builder ; cumul plafonné à 24 h, ce qui garantit la terminaison sur graphe cyclique.
 
+## Traçage des clics sur les liens de templates (2026-08-20, migration 0066)
+
+**Le principe.** L'utilisateur saisit son lien. À la **soumission à Meta**, le serveur le remplace par
+`https://<APP_URL>/r/<code>` et garde la destination d'origine en base. Au clic : on compte, puis on redirige
+en **302**. Personne d'autre ne garde la destination : Meta ne connaît plus que la nôtre.
+
+**La maille est le BOUTON**, pas le template : un template peut porter deux boutons URL, un carousel en porte
+par carte. Clé unique `(tenant, template_name, template_language, coalesce(card_index,-1), button_index)`.
+
+**Deux tables** (`db/migrations/0066_tracked_links.sql`) :
+- `tracked_links` : `code` (12 car. base32 minuscules, `newTrackingCode()` dans `src/ids/code.ts`), la cible,
+  la `destination`, et `confirmed_at`.
+- `tracked_link_clicks` : une LIGNE par clic (pas un compteur : l'écran filtre sur une période).
+
+🔴 **`confirmed_at` n'est pas décoratif.** Il est posé seulement quand **Meta a accepté** le template. Les
+mesures et le ré-habillage d'affichage ne lisent QUE les lignes confirmées, sans quoi une réservation suivie
+d'un refus ferait apparaître dans Analytics une case qui reste à zéro pour toujours. En revanche la
+**redirection ne filtre PAS** dessus : si Meta a accepté mais que notre confirmation a échoué, le lien circule
+déjà et doit fonctionner. Un lien qui marche sans être mesuré vaut mieux qu'un lien mort bien comptabilisé.
+
+🔴 **Ordre d'écriture imposé** : destination en base **AVANT** l'appel à Meta. L'inverse laisserait, sur une
+panne entre les deux, un template approuvé pointant un code inexistant, donc un lien mort irréparable dans des
+messages déjà livrés. Une panne du traçage soumet le template avec le lien **saisi** (`preparerLiens` dans
+`src/http/templates.ts`) : un template non mesuré vaut mieux qu'un template refusé.
+
+**Ré-habillage à la relecture** : `rehabillerTemplates` (`src/http/templates.ts`) remplace notre adresse par la
+destination d'origine **sur la route de liste**, donc pour les quatre écrans qui affichent un template (page
+Templates, création de campagne, éditeur de scénario, inbox). Appariement **sur l'URL**, jamais sur la position :
+un template édité hors console peut avoir vu ses boutons réordonnés.
+
+**Route publique** `GET /r/:code` (`src/http/links.ts`), montée avec le webhook et `/ops`, **avant** les gardes
+d'auth. Trois points non négociables :
+- `scopeTenant` est **inutilisable** ici : sans `req.auth`, elle rend le tenant de l'URL sans le vérifier. Le
+  tenant vient du **code** retrouvé en base.
+- **Open redirect** : la destination est revalidée par `isSendableButtonUrl` **à la lecture**, pas seulement à
+  l'écriture.
+- **302 et non 301** : un 301 est mis en cache par le navigateur, qui n'appellerait plus jamais la route. On
+  perdrait tous les clics suivants et on ne pourrait plus changer la destination.
+
+⚠️ **Exposition publique** : NPM ne route que `mba-web`, et `mba-api` n'a aucun port hôte publié. Le seul
+chemin est le rewrite `/r/:code` de `web/next.config.mjs`, **gelé au build de l'image web**.
+
+**Mesures.** Les clics ne peuvent PAS vivre dans `workflow_node_events` : elle exige `tenant_id`,
+`workflow_id`, `node_id` et `wa_id` tous NOT NULL, or un clic sur un lien statique n'identifie personne. Ils
+sont donc **fusionnés à la lecture** (`src/links/mesures.ts`, `getWorkflowNodeCounts` dans `src/index.ts`) sous
+une nature `url_click` qui n'existe QUE dans la réponse de l'API et dans le front. Rien n'a été ajouté au CHECK
+de 0063, ce qui évite la panne silencieuse d'un insert refusé (`record()` est best-effort partout).
+`NodeEventCount.contacts` devient `number | null` : `null` = « on ne sait pas distinguer les personnes ».
+
+**Lecture tous envois confondus** : `GET /tenants/:t/stats/links` (`listAvecClics`) rend TOUS les liens de
+l'espace avec leurs clics. C'est elle qui rattrape un template utilisé uniquement en campagne, qui n'a aucun
+bloc de scénario où s'accrocher. `left join` obligatoire : un lien à zéro clic doit rester listé.
+
+**Faits Meta MESURÉS le 2026-08-20** (deux templates d'essai, tous deux approuvés) : le domaine du bouton
+**n'a pas besoin d'appartenir à l'entreprise**, et Meta **ne vérifie pas l'accessibilité** de l'URL à la revue
+(un lien en 404 est passé). Détail : `brain/LEARNINGS.md`.
+
+## Export PDF d'une carte (2026-08-20, aucune dépendance)
+
+`web/lib/impression.ts` marque la carte visée d'une classe, marque le `body`, et appelle `window.print()`. Le
+CSS de `web/app/globals.css` masque tout le reste **sous `@media print` uniquement** : à l'écran, une zone
+restée marquée ne change rien. `visibility` et non `display`, sinon retirer les ancêtres du flux casserait la
+grille qui porte la carte. Pas de `jspdf`/`html2canvas` : quelques centaines de kilo-octets pour rendre une
+image au lieu d'un document, alors que « Enregistrer au format PDF » est dans la boîte d'impression de tous les
+systèmes. ⚠️ La zone précédente est **démarquée** avant chaque impression : `afterprint` n'est pas garanti, et
+une zone restée marquée s'imprimerait avec la suivante.
+
+## Rôle `manager` (2026-08-20, migration 0065)
+
+Troisième statut de membre. La contrainte de 0001 n'admettait que deux rôles : sans la migration, attribuer
+« manager » remonte une 23514 depuis la base.
+
+⚠️ **Un statut, pas des droits.** Tout ce qui est réservé l'est à `admin` (`makeRequireRole(['admin'])` sur les
+groupes, `forbidNonAdmin` dans les handlers) : un manager a donc les accès d'un agent. Ce qu'il aura le droit de
+faire se décidera écriture par écriture.
+
+Corrigé au passage : le prédicat de `setRole` était écrit en dur sur `role = 'agent'`, il refusait donc de
+rétrograder un manager dès qu'il ne restait qu'un seul admin. C'est `role <> 'admin'` : le compte visé n'étant
+pas admin, le changer ne peut pas faire tomber le nombre d'admins. `pageDArrivee(role)` (`web/lib/session.ts`)
+centralise la redirection après connexion : seul l'admin va sur `/accueil`, tout le reste sur `/inbox`.
+
 ## RGPD — journal d'audit et suppression (2026-08-19, migration 0061)
 
 **Une seule destruction.** Il en a existé deux : `softDeleteMany` (douce, `deleted_at`, réversible, qui gardait
