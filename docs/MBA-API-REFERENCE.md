@@ -53,9 +53,27 @@ Et la source du message devient réglable :
 > message. AGENT: the AI agent composes a handoff message for each conversation. DEFAULT: a fixed, standard
 > handoff message is used. »
 
-⚠️ **Le nom exact de ces deux champs n'est pas lisible dans le rendu extrait**, seulement leur description :
-à relever avant de coder. Reste inconnu : **sur quel webhook arrive la suite de la conversation** après
-libération. Le protocole de test décrit plus bas reste donc à jouer.
+✅ **Les noms sont relevés (2026-08-20, page Meta récupérée directement).** L'objet `handoff` a exactement
+**trois** champs :
+
+| champ | type | requis | ce qu'il fait |
+|---|---|---|---|
+| `enabled` | boolean | oui | l'agent **relâche-t-il le contrôle du fil** après avoir envoyé son message de transfert |
+| `message` | string | non | le message lu par le client au moment du transfert |
+| `message_selection` | `DEFAULT` / `AGENT` / `CUSTOM` | non | qui rédige ce message : nous, l'agent, ou un texte standard |
+
+🔴 **`enabled` ne veut PAS dire « activer le handoff ».** L'agent décide de passer la main de lui-même, quel
+que soit ce réglage : la demande explicite d'un humain produit un `handoff_reason: customer_request`, MESURÉ
+sur notre numéro de test (cf `wip.md`). `enabled` décide seulement s'il **lâche vraiment le fil** ensuite.
+Donc `false` produit le pire cas : le client lit « un conseiller arrive » et **personne n'est prévenu**, le
+fil restant à MBA.
+
+⚠️ **Aucune de nos routes ne sait écrire `handoff`** : `PATCH /mba/:pn/settings` n'accepte que `aiAudience`,
+`neverSay` et `followupEnabled` (`src/http/mba.ts`). C'est le manque le plus concret pour brancher le
+transfert vers un humain.
+
+Reste inconnu : **sur quel webhook arrive la suite de la conversation** après libération, et la forme réelle
+du payload `messaging_handovers`. Le protocole de test décrit plus bas reste donc à jouer.
 
 **Piège de conception qui en découle** : `settings` est une ressource en REMPLACEMENT COMPLET. Un modèle typé
 fermé côté console (Zod ou interface qui ne connaît que `enabled` et `message`) DÉPOUILLERAIT ces champs au
