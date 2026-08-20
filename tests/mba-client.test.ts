@@ -147,4 +147,17 @@ describe('modifierSettings : survivre à un champ que Meta ajouterait', () => {
     await modifierSettings(new MbaClient('tok', impl), 'PN1', { rollout: { enabled: true } });
     expect((appels[1]!.body as { rollout: unknown }).rollout).toEqual({ enabled: true, autre: 1 });
   });
+
+  it('🔴 fusionne handoff : basculer `enabled` seul n’efface pas le texte lu par le client', async () => {
+    // Le cas qui compte : le balayage horaire n’envoie QUE `enabled`. Sans fusion par sous-objet, il effacerait
+    // `message` et `message_selection`, et l’agent annoncerait le transfert avec une phrase qu’on ne choisit plus.
+    const actuel = { handoff: { enabled: true, message: 'Nos conseillers répondent de 9 h à 18 h.', message_selection: 'CUSTOM' } };
+    const { impl, appels } = faux([{ body: [actuel] }, { body: {} }]);
+    await modifierSettings(new MbaClient('tok', impl), 'PN1', { handoff: { enabled: false } });
+    expect((appels[1]!.body as { handoff: unknown }).handoff).toEqual({
+      enabled: false,
+      message: 'Nos conseillers répondent de 9 h à 18 h.',
+      message_selection: 'CUSTOM',
+    });
+  });
 });

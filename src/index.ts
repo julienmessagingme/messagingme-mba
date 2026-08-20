@@ -52,6 +52,7 @@ import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './http/mba';
+import { ecrireHandoffEnabled } from './mba/handoff';
 import { MetaClientFactory } from './meta/factory';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { buildWorkflowRuntime } from './workflow/wiring';
@@ -416,6 +417,14 @@ async function main(): Promise<void> {
       setHubspotListsEnabled: (tenant, enabled) => settingsStore.setHubspotListsEnabled(tenant, enabled),
       setAutoRetryEnabled: (tenant, enabled) => settingsStore.setAutoRetryEnabled(tenant, enabled),
       setControlHandbackSeconds: (tenant, seconds) => settingsStore.setControlHandbackSeconds(tenant, seconds),
+      setMbaHandoffMode: (tenant, mode) => settingsStore.setMbaHandoffMode(tenant, mode),
+      // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
+      // de choisir » et « l'heure a changé » écrivent exactement la même chose.
+      applyMbaHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(
+        { clientFor: (t) => metaFactory.mbaClientForTenant(t), phoneNumberFor: (t) => repo.getTenantPhoneNumberId(t) },
+        tenant,
+        enabled,
+      ),
       setTimezone: (tenant, tz) => settingsStore.setTimezone(tenant, tz),
       setBusinessHours: (tenant, hours) => settingsStore.setBusinessHours(tenant, hours),
     },

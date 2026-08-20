@@ -81,8 +81,23 @@ export interface AgentSettings {
   ai_audience?: 'EVERYONE' | 'ALLOWLISTED_ONLY';
   followup?: { enabled?: boolean; followup_interval_in_seconds?: number };
   never_say_phrases?: string[];
-  /** Meta le documente mais ne le renvoie pas tant qu'il n'est pas configuré (« Null if not configured »). */
-  handoff?: Record<string, unknown>;
+  /**
+   * Passage de main de l'agent vers un humain. Meta le documente mais ne le renvoie pas tant qu'il n'est pas
+   * configuré (« Null if not configured »).
+   *
+   * 🔴 `enabled` n'ACTIVE pas le passage de main : l'agent décide seul de transférer (« je veux parler à un
+   * conseiller » -> `handoff_reason: customer_request`, mesuré sur notre numéro de test le 2026-08-18).
+   * `enabled` dit s'il LÂCHE le fil après avoir annoncé le transfert. À `false`, le client lit « un conseiller
+   * arrive » et personne n'est prévenu : ne le mettre à `false` qu'avec un `message` qui ne promet personne.
+   */
+  handoff?: {
+    enabled?: boolean;
+    /** Le texte lu par le client au moment du transfert. N'a d'effet qu'avec `message_selection: 'CUSTOM'`. */
+    message?: string;
+    /** Qui rédige ce texte : Meta (`DEFAULT`), l'agent lui-même (`AGENT`), ou nous (`CUSTOM`). */
+    message_selection?: 'DEFAULT' | 'AGENT' | 'CUSTOM';
+    [autre: string]: unknown;
+  };
   /** Tout champ que Meta ajouterait : conservé tel quel par le read-modify-write. */
   [autre: string]: unknown;
 }
@@ -350,6 +365,9 @@ export async function modifierSettings(
       ...patch,
       ...(patch.rollout ? { rollout: { ...(actuel.rollout ?? {}), ...patch.rollout } } : {}),
       ...(patch.followup ? { followup: { ...(actuel.followup ?? {}), ...patch.followup } } : {}),
+      // Même fusion par sous-objet que ci-dessus, et pour la même raison : patcher `handoff.enabled` seul
+      // effacerait sinon `message` et `message_selection`, donc le texte lu par le client au transfert.
+      ...(patch.handoff ? { handoff: { ...(actuel.handoff ?? {}), ...patch.handoff } } : {}),
     },
     // Relu à l'instant : c'est la configuration qu'on vient de lire qu'on réécrit, pas « la plus récente ».
     typeof actuel.agent_id === 'string' ? actuel.agent_id : undefined,

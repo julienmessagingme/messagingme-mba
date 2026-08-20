@@ -22,6 +22,8 @@ import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgTenantSettingsStore } from './settings/store.pg';
 import { runControlSweep } from './inbox/control-sweep';
+import { runHandoffSweep } from './mba/handoff-sweep';
+import { lireHandoffEnabled, ecrireHandoffEnabled } from './mba/handoff';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
@@ -600,6 +602,33 @@ async function main(): Promise<void> {
   const controlSweeper = setInterval(() => void controlSweep(), config.CONTROL_SWEEP_INTERVAL_MS);
   controlSweeper.unref();
 
+  // Passage de main de l'agent selon les heures d'ouverture. Meta n'a AUCUNE notion d'horaires : sans ce
+  // balayage, un agent qui passe la main la passe aussi à 3 h du matin, et le client lit « un conseiller
+  // arrive » quand personne n'est là. Ne concerne que les tenants ayant choisi ce mode ; les deux autres
+  // choix sont écrits une fois, au moment du choix.
+  const cibleHandoff = {
+    clientFor: (tenant: string) => metaFactory.mbaClientForTenant(tenant),
+    phoneNumberFor: (tenant: string) => repo.getTenantPhoneNumberId(tenant),
+  };
+  const handoffSweep = async (): Promise<void> => {
+    try {
+      const bascules = await runHandoffSweep({
+        tenantsHandoffSurHoraires: () => settingsStore.tenantsHandoffSurHoraires(),
+        lireHandoffEnabled: (tenant) => lireHandoffEnabled(cibleHandoff, tenant),
+        ecrireHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(cibleHandoff, tenant, enabled),
+      });
+      // eslint-disable-next-line no-console
+      if (bascules > 0) console.log(`handoff-sweep: ${bascules} tenant(s) basculé(s) sur les heures d'ouverture`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('handoff-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:handoff', `handoff-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void handoffSweep();
+  const handoffSweeper = setInterval(() => void handoffSweep(), config.CONTROL_SWEEP_INTERVAL_MS);
+  handoffSweeper.unref();
+
   // Sweeper d'idempotence API : purge les clés Idempotency-Key plus vieilles que 24h (fenêtre de dédup).
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const idempotencySweep = async (): Promise<void> => {
@@ -666,6 +695,7 @@ async function main(): Promise<void> {
     clearInterval(scheduleSweeper);
     if (retrySweeper) clearInterval(retrySweeper);
     clearInterval(controlSweeper);
+    clearInterval(handoffSweeper);
     clearInterval(idempotencySweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     if (catchupSweeper) clearInterval(catchupSweeper);

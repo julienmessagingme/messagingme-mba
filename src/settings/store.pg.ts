@@ -39,20 +39,29 @@ export interface TenantSettings {
    */
   controlHandbackSeconds: number | null;
   /**
-   * Défaut du tenant pour la destination d'un fil après une prise en main opérateur (C.4). `resume` = rendu
-   * au scénario par le sweep de handback (comportement historique) ; `inbox` = reste à l'humain, jamais rendu
-   * automatiquement. null = pas de choix explicite -> repli usine `resume` (rien ne change en silence). Une
-   * surcharge par conversation prime sur ce défaut.
+   * Quand l'agent de Meta passe-t-il la main à un humain (écran « Activation ») ? Pilote `handoff.enabled`
+   * chez Meta. `null` = jamais réglé : on n'écrit alors RIEN chez Meta, et l'écran montre le défaut usine.
    */
+  mbaHandoffMode: MbaHandoffMode | null;
 }
+
+/**
+ * Les trois choix de l'écran « Activation ». `business_hours` est le seul qui varie dans la journée : c'est
+ * le balayage qui bascule alors `handoff.enabled` selon les heures d'ouverture du tenant, Meta n'ayant
+ * aucune notion d'horaires.
+ */
+export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
+
+/** Défaut usine tant que le client n'a rien choisi : l'agent passe la main. */
+export const DEFAULT_MBA_HANDOFF_MODE: MbaHandoffMode = 'always';
 
 /** Réglages par tenant (upsert). Toggle MBA on/off + toggle import de listes HubSpot. */
 export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null }>(
-      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours from tenant_settings where tenant_id = $1`,
+    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null }>(
+      `select mba_enabled, hubspot_lists_enabled, campaigns_paused, auto_retry_enabled, control_handback_seconds, timezone, business_hours, mba_handoff_mode from tenant_settings where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -64,7 +73,20 @@ export class PgTenantSettingsStore {
       controlHandbackSeconds: r?.control_handback_seconds ?? null,
       timezone: r?.timezone ?? DEFAULT_TIMEZONE,
       businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
+      mbaHandoffMode: r?.mba_handoff_mode ?? null,
     };
+  }
+
+  /**
+   * Enregistre le choix de l'écran « Activation ». Upsert ciblé : n'écrase aucun autre réglage. L'écriture
+   * chez Meta (`handoff.enabled`) est faite par l'appelant, pas ici : ce store ne parle qu'à la base.
+   */
+  async setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void> {
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, mba_handoff_mode, updated_at) values ($1, $2, now())
+       on conflict (tenant_id) do update set mba_handoff_mode = excluded.mba_handoff_mode, updated_at = now()`,
+      [tenantId, mode],
+    );
   }
 
   /** Règle le fuseau IANA du tenant (validé en amont par la route). Upsert ciblé : n'écrase aucun autre réglage. */
@@ -143,14 +165,23 @@ export class PgTenantSettingsStore {
   }
 
   /**
-   * Défaut du tenant pour la destination de reprise (C.4). `null` retire le choix explicite -> repli usine
-   * `resume`. Upsert ciblé : n'écrase aucun autre réglage.
+   * Les tenants qui ont choisi « seulement pendant mes heures d'ouverture ». C'est le SEUL mode qui varie
+   * dans la journée, donc le seul que le balayage a à connaître : `always` et `never` sont écrits une fois
+   * chez Meta au moment du choix et n'ont plus rien à faire ensuite.
+   *
+   * Les défauts de fuseau et d'horaires sont appliqués ICI : un tenant qui n'a jamais réglé ses horaires
+   * doit basculer sur le défaut usine (lun-ven 9h-18h), pas rester dans un état sans horaires du tout.
    */
-  /**
-   * Défaut de destination de reprise par tenant, pour les tenants donnés (C.4). Utilisé par le sweep : il
-   * traite un lot de conversations de plusieurs clients et doit appliquer à chacune le défaut de SON client.
-   * Les tenants sans choix explicite sont ABSENTS de la Map -> l'appelant retombe sur `resume`.
-   */
+  async tenantsHandoffSurHoraires(): Promise<Array<{ tenantId: string; timezone: string; businessHours: BusinessHours }>> {
+    const res = await this.pool.query<{ tenant_id: string; timezone: string | null; business_hours: BusinessHours | null }>(
+      `select tenant_id, timezone, business_hours from tenant_settings where mba_handoff_mode = 'business_hours'`,
+    );
+    return res.rows.map((r) => ({
+      tenantId: r.tenant_id,
+      timezone: r.timezone ?? DEFAULT_TIMEZONE,
+      businessHours: r.business_hours ?? DEFAULT_BUSINESS_HOURS,
+    }));
+  }
 
   /** Active/désactive l'import de listes HubSpot. N'ÉCRASE PAS mba_enabled (upsert ciblé sur la colonne). */
   async setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void> {

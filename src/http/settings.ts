@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { TenantSettings } from '../settings/store.pg';
+import type { TenantSettings, MbaHandoffMode } from '../settings/store.pg';
 import type { BusinessHours, DayHours } from '../workflow/conditions';
+import { withinBusinessHours } from '../workflow/conditions';
 import { scopeTenant } from './scope';
 
 export interface SettingsRouteDeps {
@@ -20,7 +21,14 @@ export interface SettingsRouteDeps {
   setAutoRetryEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
-  /** Défaut de destination de reprise après prise en main (C.4). null = repli usine `resume`. */
+  /** Quand l'agent de Meta passe la main à un humain (écran « Activation »). */
+  setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
+  /**
+   * Applique `handoff.enabled` chez Meta. Optionnelle : absente, le choix est enregistré en base et c'est le
+   * balayage qui l'appliquera. Best-effort : un échec ne fait PAS échouer l'enregistrement, sinon Meta
+   * injoignable empêcherait le client de régler son propre outil.
+   */
+  applyMbaHandoffEnabled?(tenantId: string, enabled: boolean): Promise<void>;
   /** Fuseau IANA du tenant. */
   setTimezone(tenantId: string, timezone: string): Promise<void>;
   /** Heures d'ouverture par jour ('0'..'6'). */
@@ -127,6 +135,48 @@ export function registerSettings(app: FastifyInstance, deps: SettingsRouteDeps, 
     }
     await deps.setControlHandbackSeconds(tenant, raw);
     return reply.code(200).send({ controlHandbackSeconds: raw });
+  });
+
+  /**
+   * Quand l'agent de Meta passe-t-il la main à un humain ? (admin-only, route dédiée comme ses voisines).
+   *
+   * Le choix est enregistré en base D'ABORD : c'est lui la source de vérité, et le balayage s'en sert pour
+   * faire varier `business_hours` au fil de la journée. L'écriture chez Meta suit, en best-effort, pour que
+   * le réglage soit vrai immédiatement plutôt qu'au prochain passage du balayage. Un échec côté Meta ne fait
+   * pas échouer l'enregistrement : le balayage rattrapera, et refuser le réglage parce que Meta hoquette
+   * empêcherait le client de piloter son propre outil.
+   *
+   * ⚠️ `enabled` ne décide PAS si l'agent transfère (il décide seul), mais s'il LÂCHE le fil ensuite. C'est
+   * pourquoi « jamais » ne coupe pas les transferts : il laisse l'agent garder la conversation.
+   */
+  app.patch('/tenants/:tenantId/settings/mba-handoff', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const mode = (req.body as { mode?: unknown } | null)?.mode;
+    if (mode !== 'always' && mode !== 'business_hours' && mode !== 'never') {
+      return reply.code(400).send({ error: "mode invalide ('always' | 'business_hours' | 'never')" });
+    }
+    await deps.setMbaHandoffMode(tenant, mode);
+    let applique = false;
+    if (deps.applyMbaHandoffEnabled) {
+      // Pour `business_hours` seulement, l'état À CET INSTANT : le client règle souvent son outil pendant ses
+      // heures d'ouverture, et verrait sinon un passage de main éteint jusqu'au balayage suivant. Les deux
+      // autres modes n'ont pas besoin de relire les horaires.
+      let voulu = mode === 'always';
+      if (mode === 'business_hours') {
+        const s = await deps.getSettings(tenant);
+        voulu = withinBusinessHours(new Date(), s.timezone, s.businessHours);
+      }
+      try {
+        await deps.applyMbaHandoffEnabled(tenant, voulu);
+        applique = true;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`mba-handoff: application chez Meta impossible pour ${tenant}:`, err instanceof Error ? err.message : err);
+      }
+    }
+    return reply.code(200).send({ mbaHandoffMode: mode, appliqueChezMeta: applique });
   });
 
 

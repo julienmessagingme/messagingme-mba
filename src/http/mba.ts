@@ -233,6 +233,30 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Gu
       if (typeof b.followupEnabled !== 'boolean') return reply.code(400).send({ error: 'followupEnabled invalide (booléen)' });
       patch.followup = { enabled: b.followupEnabled };
     }
+    // Passage de main. Les trois champs vont dans le MÊME sous-objet : `modifierSettings` fusionne `handoff`
+    // avec l'existant, donc n'envoyer qu'un champ ici ne détruit pas les deux autres.
+    const handoff: Record<string, unknown> = {};
+    if (b.handoffEnabled !== undefined) {
+      if (typeof b.handoffEnabled !== 'boolean') return reply.code(400).send({ error: 'handoffEnabled invalide (booléen)' });
+      handoff.enabled = b.handoffEnabled;
+    }
+    if (b.handoffMessage !== undefined) {
+      if (!nonEmpty(b.handoffMessage)) return reply.code(400).send({ error: 'handoffMessage invalide (texte non vide)' });
+      handoff.message = (b.handoffMessage as string).trim();
+    }
+    if (b.handoffMessageSelection !== undefined) {
+      if (b.handoffMessageSelection !== 'DEFAULT' && b.handoffMessageSelection !== 'AGENT' && b.handoffMessageSelection !== 'CUSTOM') {
+        return reply.code(400).send({ error: "handoffMessageSelection invalide ('DEFAULT' | 'AGENT' | 'CUSTOM')" });
+      }
+      // `CUSTOM` sans texte laisserait l'agent annoncer un transfert avec on ne sait quelle phrase. On exige le
+      // texte dans le MÊME appel plutôt que d'aller relire l'existant : la règle est prévisible, et l'écran
+      // envoie de toute façon les deux ensemble.
+      if (b.handoffMessageSelection === 'CUSTOM' && handoff.message === undefined) {
+        return reply.code(400).send({ error: 'handoffMessage requis avec handoffMessageSelection CUSTOM' });
+      }
+      handoff.message_selection = b.handoffMessageSelection;
+    }
+    if (Object.keys(handoff).length > 0) patch.handoff = handoff;
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'aucun réglage à modifier' });
 
     await modifierSettings(ctx.client, ctx.pn, patch);

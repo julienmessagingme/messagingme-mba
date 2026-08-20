@@ -11,6 +11,7 @@ import { MbaTabs } from '@/components/MbaTabs';
 import { MbaNotice } from '@/components/MbaNotice';
 import { MbaGateBanner } from '@/components/MbaGateBanner';
 import { MbaOverviewPanel } from '@/components/MbaOverviewPanel';
+import { MbaActivationPanel } from '@/components/MbaActivationPanel';
 import { MbaBusinessInfoPanel } from '@/components/MbaBusinessInfoPanel';
 import { MbaFaqPanel } from '@/components/MbaFaqPanel';
 import { MbaSkillsPanel } from '@/components/MbaSkillsPanel';
@@ -32,7 +33,7 @@ export default function MbaSettingsPage() {
   );
 }
 
-const ONGLETS = ['apercu', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test'] as const;
+const ONGLETS = ['apercu', 'activation', 'business', 'faq', 'competences', 'fichiers', 'sites', 'test'] as const;
 type Onglet = (typeof ONGLETS)[number];
 
 function lireOnglet(v: string | null): Onglet {
@@ -111,6 +112,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
         onSelect={choisirOnglet}
         tabs={[
           { key: 'apercu', label: t('Vue d’ensemble', 'Overview') },
+          { key: 'activation', label: t('Activation', 'Activation') },
           { key: 'business', label: t('Informations', 'Business info') },
           { key: 'faq', label: t('FAQ', 'FAQ') },
           { key: 'competences', label: t('Compétences', 'Skills') },
@@ -121,6 +123,7 @@ function MbaSettings({ tenantId }: { tenantId: string }) {
       />
 
       {onglet === 'apercu' && <MbaOverviewPanel {...props} status={status} onChange={majReglages} />}
+      {onglet === 'activation' && <MbaActivationPanel tenantId={tenantId} />}
       {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
       {onglet === 'faq' && <MbaFaqPanel {...props} />}
       {onglet === 'competences' && <MbaSkillsPanel {...props} />}

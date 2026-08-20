@@ -46,10 +46,11 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     ...over.stats,
   };
   const settings: SettingsRouteDeps = {
-    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} }),
+    getSettings: async () => ({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} }),
     setMbaEnabled: async () => {},
     setHubspotListsEnabled: async () => {},
     setAutoRetryEnabled: async () => {},
+    setMbaHandoffMode: async () => {},
     setControlHandbackSeconds: async () => {},
     setTimezone: async () => {},
     setBusinessHours: async () => {},
@@ -232,7 +233,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} }) } });
+    const a = app({ settings: { getSettings: async () => ({ mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {} }) } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
@@ -382,6 +383,84 @@ describe('PATCH /settings/control-handback', () => {
     const res = await a.inject({ method: 'PATCH', url, ...h(agentTok), payload: { seconds: 60 } });
     expect(res.statusCode).toBe(403);
     expect(poses).toEqual([]);
+    await a.close();
+  });
+});
+
+/**
+ * Quand l'agent de Meta passe la main à un humain. Le choix vit en base (c'est lui qui pilote le balayage
+ * horaire) et il est appliqué chez Meta dans la foulée, en best-effort.
+ */
+describe('PATCH /settings/mba-handoff', () => {
+  const url = '/tenants/t1/settings/mba-handoff';
+  /** Stub commun : enregistre le mode posé en base et l'état appliqué chez Meta. */
+  const espion = (over: Record<string, unknown> = {}) => {
+    const modes: string[] = [];
+    const appliques: boolean[] = [];
+    const a = app({ settings: {
+      setMbaHandoffMode: async (_t: string, m: string) => { modes.push(m); },
+      applyMbaHandoffEnabled: async (_t: string, e: boolean) => { appliques.push(e); },
+      ...over,
+    } });
+    return { a, modes, appliques };
+  };
+
+  it('« toujours » -> enregistré, et le passage de main allumé chez Meta', async () => {
+    const { a, modes, appliques } = espion();
+    const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'always' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ mbaHandoffMode: string }>().mbaHandoffMode).toBe('always');
+    expect(modes).toEqual(['always']);
+    expect(appliques).toEqual([true]);
+    await a.close();
+  });
+
+  it('« jamais » -> l’agent garde le fil', async () => {
+    const { a, modes, appliques } = espion();
+    expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'never' } })).statusCode).toBe(200);
+    expect(modes).toEqual(['never']);
+    expect(appliques).toEqual([false]);
+    await a.close();
+  });
+
+  it('« heures d’ouverture » -> applique l’état de L’INSTANT (ici : fermé)', async () => {
+    // Sinon le client règle son outil un dimanche et voit le passage de main allumé jusqu'au balayage suivant.
+    const tousFermes = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), { closed: true, open: '', close: '' }]));
+    const { a, modes, appliques } = espion({
+      getSettings: async () => ({
+        mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: tousFermes,
+      }),
+    });
+    expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'business_hours' } })).statusCode).toBe(200);
+    expect(modes).toEqual(['business_hours']);
+    expect(appliques).toEqual([false]);
+    await a.close();
+  });
+
+  it('🔴 Meta injoignable -> le choix est quand même enregistré (le balayage rattrapera)', async () => {
+    const { a, modes } = espion({ applyMbaHandoffEnabled: async () => { throw new Error('502'); } });
+    const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'always' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ appliqueChezMeta: boolean }>().appliqueChezMeta).toBe(false);
+    expect(modes).toEqual(['always']); // enregistré : refuser priverait le client de son propre réglage
+    await a.close();
+  });
+
+  it('mode inconnu -> 400, et rien n’est écrit', async () => {
+    const { a, modes, appliques } = espion();
+    for (const mode of ['parfois', '', null, undefined, true]) {
+      expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode } })).statusCode).toBe(400);
+    }
+    expect(modes).toEqual([]);
+    expect(appliques).toEqual([]);
+    await a.close();
+  });
+
+  it('un agent ne peut pas changer ce réglage (admin seulement)', async () => {
+    const { a, modes } = espion();
+    expect((await a.inject({ method: 'PATCH', url, ...h(agentTok), payload: { mode: 'never' } })).statusCode).toBe(403);
+    expect(modes).toEqual([]);
     await a.close();
   });
 });

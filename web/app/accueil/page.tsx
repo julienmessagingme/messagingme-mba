@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { Toggle } from '@/components/Toggle';
 import type { Session } from '@/lib/session';
@@ -10,7 +11,7 @@ import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
   setAutoRetryEnabled as saveAutoRetryEnabled,
-  setControlHandbackSeconds, getHubspotInstallLink,
+  getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
 } from '@/lib/api';
@@ -66,10 +67,6 @@ function AccueilInner({ session }: { session: Session }) {
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
   const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
   const [savingAutoRetry, setSavingAutoRetry] = useState(false);
-  // Durée du gel quand un opérateur prend la main. '' = valeur par défaut du serveur.
-  const [handback, setHandback] = useState('');
-  const [savingHandback, setSavingHandback] = useState(false);
-  // Destination du fil à la reprise (C.4). '' = pas de choix explicite (repli usine `resume`).
   const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,7 +112,6 @@ function AccueilInner({ session }: { session: Session }) {
       setMbaEnabled(cfg.value.mbaEnabled);
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
       setAutoRetryEnabled(cfg.value.autoRetryEnabled);
-      setHandback(cfg.value.controlHandbackSeconds === null ? '' : String(Math.round(cfg.value.controlHandbackSeconds / 60)));
     }
     if (m.status === 'rejected' || cfg.status === 'rejected') {
       const reason = (m.status === 'rejected' ? m.reason : cfg.status === 'rejected' ? cfg.reason : null) as unknown;
@@ -254,25 +250,6 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
-  /**
-   * Enregistre la durée du gel. Saisie en MINUTES (une durée en secondes n'a aucun sens pour un
-   * utilisateur), champ vide = retour au défaut du serveur, 0 = pas de reprise automatique.
-   */
-  async function saveHandback() {
-    if (!isAdmin) return;
-    const brut = handback.trim();
-    const minutes = brut === '' ? null : Number(brut);
-    if (minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) return;
-    setSavingHandback(true);
-    try {
-      await setControlHandbackSeconds(session.tenantId, minutes === null ? null : minutes * 60);
-    } catch {
-      /* l'erreur reste visible par l'absence de confirmation ; pas de rollback, la saisie est conservée */
-    } finally {
-      setSavingHandback(false);
-    }
-  }
-
   const firstName = firstNameOf(me);
   const kpiRow = useMemo(
     () => [
@@ -339,41 +316,19 @@ function AccueilInner({ session }: { session: Session }) {
               />
               <span className="text-sm font-medium text-ink-700">{mbaEnabled ? t('Activé', 'Enabled') : t('Désactivé', 'Disabled')}</span>
             </div>
-            {/* Reprise après intervention d'un opérateur, juste sous le toggle MBA. Gouverne le gel du scénario
-                quand un humain répond dans l'inbox. N'apparaît qu'avec un numéro (sinon aucune conversation). */}
+            {/* La reprise après intervention d'un opérateur vivait ICI. Elle a rejoint MBA > Paramètres >
+                Activation, avec le passage de main : ce sont les deux faces d'une même question, « qui parle
+                au client », et les séparer obligeait à comprendre deux écrans pour régler une seule chose. */}
             {account?.hasNumber && (
               <div className="mt-4 border-t border-ink-100 pt-3">
-                <div className="text-sm font-semibold text-ink-800">
-                  {t("Reprise après intervention d'un opérateur", 'Hand back after an operator steps in')}
-                </div>
+                <Link href="/mba/parametres?tab=activation" className="text-sm font-medium text-brand-600 underline" data-testid="lien-activation">
+                  {t('Régler qui répond au client', 'Set who answers the customer')}
+                </Link>
                 <p className="mt-0.5 text-xs text-ink-500">
                   {t(
-                    "Quand un humain répond dans l'inbox, il a la main : ni le scénario ni l'agent automatique n'écrivent au client. Voici combien de temps après sa dernière intervention avant que la main revienne.",
-                    'When a human replies from the inbox, they hold the thread: neither the scenario nor the automatic agent writes to the customer. This is how long after their last message before control returns.',
+                    'Le passage de main vers un humain, et combien de temps un opérateur garde la conversation.',
+                    'Handover to a human, and how long an operator keeps the conversation.',
                   )}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <input
-                    data-testid="handback-input"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={handback}
-                    onChange={(e) => setHandback(e.target.value)}
-                    onBlur={() => { void saveHandback(); }}
-                    disabled={!isAdmin || savingHandback}
-                    placeholder={t('par défaut', 'default')}
-                    className="w-28 rounded-lg border border-ink-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:opacity-60"
-                  />
-                  <span className="text-sm text-ink-600">{t('minutes', 'minutes')}</span>
-                  {savingHandback && <span className="text-xs text-ink-400">{t('enregistrement...', 'saving...')}</span>}
-                </div>
-                <p className="mt-1.5 text-xs text-ink-400">
-                  {handback.trim() === ''
-                    ? t('Vide : la valeur par défaut du service s’applique (2 heures).', 'Empty: the service default applies (2 hours).')
-                    : handback.trim() === '0'
-                      ? t('0 : la main ne revient JAMAIS tout seule. Il faut la rendre depuis la conversation.', '0: control never returns on its own. You must hand it back from the conversation.')
-                      : t('Ce délai vaut pour toutes les conversations. Un opérateur peut rendre la main plus tôt depuis la conversation.', 'This delay applies to every conversation. An operator can hand back earlier from the conversation.')}
                 </p>
               </div>
             )}

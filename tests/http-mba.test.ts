@@ -125,6 +125,33 @@ describe('routes MBA : état et réglages', () => {
     await server.close();
   });
 
+  it('PATCH settings écrit le passage de main, les trois champs dans le MÊME sous-objet', async () => {
+    const { server, appels } = app();
+    const res = await server.inject({
+      method: 'PATCH',
+      url: url('/settings'),
+      ...h(adminTok),
+      payload: { handoffEnabled: true, handoffMessage: 'Je transmets à un conseiller.', handoffMessageSelection: 'CUSTOM' },
+    });
+    expect(res.statusCode).toBe(200);
+    const put = appels.find((a) => a.m === 'putSettings');
+    expect(put?.args[1]).toMatchObject({
+      handoff: { enabled: true, message: 'Je transmets à un conseiller.', message_selection: 'CUSTOM' },
+    });
+    await server.close();
+  });
+
+  it('PATCH settings : passage de main mal formé -> 400', async () => {
+    const { server } = app();
+    const bad = async (payload: unknown) => (await server.inject({ method: 'PATCH', url: url('/settings'), ...h(adminTok), payload: payload as object })).statusCode;
+    expect(await bad({ handoffEnabled: 'oui' })).toBe(400);
+    expect(await bad({ handoffMessage: '   ' })).toBe(400);
+    expect(await bad({ handoffMessageSelection: 'MAISON' })).toBe(400);
+    // CUSTOM sans texte : l'agent annoncerait le transfert avec une phrase qu'on ne choisit pas.
+    expect(await bad({ handoffMessageSelection: 'CUSTOM' })).toBe(400);
+    await server.close();
+  });
+
   it('l’allumage a sa PROPRE route (effet asymétrique documenté par Meta)', async () => {
     const { server, appels } = app();
     const res = await server.inject({ method: 'PUT', url: url('/rollout'), ...h(adminTok), payload: { enabled: true } });

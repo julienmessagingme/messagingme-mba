@@ -24,6 +24,8 @@ export interface MbaFixtures {
   account?: Record<string, unknown>;
   /** `GET .../mba/:pn/status`. */
   status?: Record<string, unknown>;
+  /** Réglages TENANT (`GET .../settings`) : passage de main, délai de reprise, horaires. */
+  reglagesTenant?: Record<string, unknown>;
   businessInfo?: Record<string, unknown>;
   faqs?: Array<Record<string, unknown>>;
   skills?: Array<Record<string, unknown>>;
@@ -95,6 +97,11 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
     ? (f.status.settings as Record<string, unknown> | null)
     : { ...statutParDefaut.settings };
   const businessInfo: Record<string, unknown> = { ...(f.businessInfo ?? {}) };
+  const reglagesTenant: Record<string, unknown> = {
+    mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+    controlHandbackSeconds: null, mbaHandoffMode: null, timezone: 'Europe/Paris', businessHours: {},
+    ...f.reglagesTenant,
+  };
 
   /** Applique un PATCH de réglages du VOCABULAIRE DE LA CONSOLE vers celui de Meta, comme le vrai serveur. */
   const appliquerSettings = (patch: Record<string, unknown>): Record<string, unknown> => {
@@ -174,7 +181,17 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       if (url.includes('/test')) return json(f.testReply ?? { agent_response: 'Bonjour, comment puis-je aider ?', conversation_id: 'conv-1' });
     }
 
-    if (url.includes('/settings')) return json({ mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false });
+    // Réglages TENANT (hors surface MBA). L'écran Activation les lit ET les écrit : ils sont donc mutables
+    // ici aussi, sinon un écran qui n'affiche jamais ce qu'il vient d'enregistrer passerait le test.
+    if (url.includes('/settings/mba-handoff')) {
+      reglagesTenant.mbaHandoffMode = ((body ?? {}).mode ?? null) as string | null;
+      return json({ mbaHandoffMode: reglagesTenant.mbaHandoffMode, appliqueChezMeta: true });
+    }
+    if (url.includes('/settings/control-handback')) {
+      reglagesTenant.controlHandbackSeconds = ((body ?? {}).seconds ?? null) as number | null;
+      return json({ controlHandbackSeconds: reglagesTenant.controlHandbackSeconds });
+    }
+    if (url.includes('/settings')) return json(reglagesTenant);
     return json({});
   });
 

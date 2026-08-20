@@ -785,11 +785,19 @@ export interface DayHours { closed: boolean; open: string; close: string }
 /** Heures d'ouverture par jour, clés '0'..'6' (0 = dimanche). Miroir de `BusinessHours` serveur. */
 export type BusinessHours = Record<string, DayHours>;
 
+/**
+ * Quand l'agent de Meta passe la main à un humain (écran « Activation »). Miroir de `MbaHandoffMode` serveur.
+ * `business_hours` est le seul qui varie dans la journée : c'est un balayage serveur qui le fait suivre l'heure.
+ */
+export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
+/** Défaut usine tant que rien n'a été choisi : l'agent passe la main. */
+export const DEFAULT_MBA_HANDOFF_MODE: MbaHandoffMode = 'always';
+
 export interface TenantSettings {
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   controlHandbackSeconds: number | null;
-  /** Défaut : à la reprise d'un fil pris en main, `resume` (rendu au scénario) ou `inbox` (reste à l'humain).
-   *  null = pas de choix explicite -> repli usine `resume`. Surchargeable par conversation. */
+  /** Quand l'agent de Meta passe la main à un humain. null = jamais réglé (l'écran montre le défaut usine). */
+  mbaHandoffMode: MbaHandoffMode | null;
   mbaEnabled: boolean;
   /** Canal RCS exploitable : vrai dès qu'un agent RCS est rattaché au tenant. DÉRIVÉ de l'état réel du dépôt,
    *  pas un réglage à basculer. Absent (backend plus ancien que le front) = éteint. */
@@ -836,7 +844,13 @@ export function setControlHandbackSeconds(tenantId: string, seconds: number | nu
   return request(`/tenants/${tenantId}/settings/control-handback`, { method: 'PATCH', body: JSON.stringify({ seconds }) });
 }
 
-/** Défaut du tenant pour la destination de reprise (C.4). `resume` | `inbox` | null (repli usine `resume`). */
+/**
+ * Quand l'agent de Meta passe la main à un humain. Le choix est enregistré côté serveur ET appliqué chez Meta
+ * dans la foulée ; `appliqueChezMeta: false` veut dire que Meta n'a pas répondu et que le balayage rattrapera.
+ */
+export function setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<{ mbaHandoffMode: MbaHandoffMode; appliqueChezMeta: boolean }> {
+  return request(`/tenants/${tenantId}/settings/mba-handoff`, { method: 'PATCH', body: JSON.stringify({ mode }) });
+}
 
 /** Fuseau IANA du tenant (base des conditions temporelles : NOW, jour de semaine, heures d'ouverture). */
 export function setTimezone(tenantId: string, timezone: string): Promise<{ timezone: string }> {

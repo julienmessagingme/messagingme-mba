@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 import { mockAccueil } from './support/accueil';
 
 /**
- * F1 : la carte Meta Business Agent est remontée en tête, et la reprise après opérateur vit sous le toggle MBA.
+ * F1 : la carte Meta Business Agent est remontée en tête. La reprise après opérateur, elle, a quitté cet
+ * écran pour MBA > Paramètres > Activation, où elle vit avec le passage de main.
  */
 test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
   test('la carte MBA est AVANT la carte Numéro dans le DOM', async ({ page }) => {
@@ -17,11 +18,12 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
     expect(order).toEqual(['settings-card', 'numero-card']);
   });
 
-  test('le champ de reprise après opérateur est DANS la carte MBA, sous le toggle', async ({ page }) => {
+  test('la reprise après opérateur ne se règle plus ICI : l’accueil renvoie vers l’écran Activation', async ({ page }) => {
     await mockAccueil(page);
-    // Colocalisation : le handback est un descendant de la carte MBA (settings-card), plus de la carte Numéro.
-    await expect(page.locator('[data-testid="settings-card"] [data-testid="handback-input"]')).toBeVisible();
-    await expect(page.locator('[data-testid="numero-card"] [data-testid="handback-input"]')).toHaveCount(0);
+    await expect(page.getByTestId('handback-input')).toHaveCount(0);
+    const lien = page.locator('[data-testid="settings-card"] [data-testid="lien-activation"]');
+    await expect(lien).toBeVisible();
+    await expect(lien).toHaveAttribute('href', '/mba/parametres?tab=activation');
   });
 
   test('le toggle MBA bascule (optimiste) au clic', async ({ page }) => {

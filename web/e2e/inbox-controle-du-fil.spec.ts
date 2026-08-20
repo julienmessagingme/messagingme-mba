@@ -7,7 +7,7 @@ import { mockAccueil } from './support/accueil';
  * Ce fichier REMPLACE le test de la surcharge de reprise par conversation (« À la reprise : défaut du compte /
  * repart au scénario / reste à traiter »), supprimée avec la migration 0059. Il n'est pas jeté mais retourné :
  * là où il vérifiait que le sélecteur écrivait le bon réglage, il vérifie maintenant qu'il n'existe PLUS, et
- * que le seul réglage restant est le délai sur l'accueil.
+ * que le seul réglage restant, le délai, n'a qu'un unique endroit (MBA > Paramètres > Activation).
  *
  * Pourquoi c'est un test et pas une simple suppression : la simplification est la fonctionnalité. Si quelqu'un
  * réintroduit un choix par conversation, la règle « le délai décide seul » redevient fausse en silence.
@@ -20,7 +20,7 @@ const THREAD = {
 };
 const REGLAGES = { mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, timezone: 'Europe/Paris', businessHours: {} };
 
-test.describe('Contrôle du fil : un seul réglage, sur l’accueil', () => {
+test.describe('Contrôle du fil : un seul réglage, à un seul endroit', () => {
   test('🔴 l’Inbox n’offre PLUS de choix de reprise par conversation', async ({ page }) => {
     await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
     const appels: string[] = [];
@@ -43,25 +43,13 @@ test.describe('Contrôle du fil : un seul réglage, sur l’accueil', () => {
     expect(appels.filter((a) => a.includes('return-behavior'))).toEqual([]);
   });
 
-  test('le délai de reprise se règle sur l’accueil, et il parle de la main de l’humain', async ({ page }) => {
-    // Le harnais partagé de l'accueil pose le compte et les réglages ; on ajoute UNE route plus spécifique
-    // après lui (Playwright donne la priorité à la dernière enregistrée) puis on recharge pour qu'elle serve.
+  test('le délai de reprise n’a qu’UN seul endroit, et ce n’est ni l’inbox ni l’accueil', async ({ page }) => {
+    // Le délai a rejoint MBA > Paramètres > Activation. Ce que ce test protège ici, c'est son UNICITÉ : deux
+    // champs qui écrivent le même réglage à deux endroits, c'est la porte ouverte à deux valeurs affichées.
+    // La saisie elle-même (minutes à l'écran, secondes sur le fil) est vérifiée par `mba-activation.spec.ts`.
     await mockAccueil(page);
-    const patches: Array<Record<string, unknown>> = [];
-    await page.route('**/api/backend/**/settings/control-handback', async (route) => {
-      patches.push((route.request().postDataJSON() ?? {}) as Record<string, unknown>);
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ controlHandbackSeconds: 600 }) });
-    });
-    await page.reload();
-
-    const champ = page.getByTestId('handback-input');
-    await expect(champ).toBeVisible();
-    // Il n'y a plus de choix de destination à côté : le délai est le seul réglage du contrôle du fil.
+    await expect(page.getByTestId('handback-input')).toHaveCount(0);
     await expect(page.getByTestId('return-behavior-select')).toHaveCount(0);
-
-    await champ.fill('10');
-    await champ.blur();
-    await expect.poll(() => patches.length).toBeGreaterThan(0);
-    expect(patches[patches.length - 1]).toEqual({ seconds: 600 });
+    await expect(page.getByTestId('lien-activation')).toBeVisible();
   });
 });
