@@ -361,6 +361,33 @@ export interface CampaignCreated {
 export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<CampaignCreated> {
   return request(`/tenants/${tenantId}/campaigns`, { method: 'POST', body: JSON.stringify(input) });
 }
+
+/**
+ * Brouillon de COMPOSITION : une campagne en cours d'écriture, retrouvable après avoir quitté l'écran.
+ *
+ * ⚠️ Rien à voir avec une campagne de statut « brouillon », qui est une campagne COMPLÈTE (destinataires
+ * calculés) non lancée. Un brouillon de composition n'a ni destinataire ni template résolu : il ne peut
+ * donc rien envoyer, et il disparaît dès que la vraie campagne est créée.
+ */
+export interface CampaignDraft {
+  id: string;
+  name: string;
+  /** État de l'écran, forme libre : ce que le formulaire y met, il est seul à savoir le relire. */
+  state: Record<string, unknown>;
+  updatedAt: string;
+}
+export function listCampaignDrafts(tenantId: string): Promise<{ drafts: CampaignDraft[] }> {
+  return request(`/tenants/${tenantId}/campaign-drafts`);
+}
+export function createCampaignDraft(tenantId: string, name: string, state: Record<string, unknown>): Promise<{ draft: CampaignDraft }> {
+  return request(`/tenants/${tenantId}/campaign-drafts`, { method: 'POST', body: JSON.stringify({ name, state }) });
+}
+export function updateCampaignDraft(tenantId: string, draftId: string, name: string, state: Record<string, unknown>): Promise<{ updated: boolean }> {
+  return request(`/tenants/${tenantId}/campaign-drafts/${draftId}`, { method: 'PUT', body: JSON.stringify({ name, state }) });
+}
+export function deleteCampaignDraft(tenantId: string, draftId: string): Promise<{ deleted: boolean }> {
+  return request(`/tenants/${tenantId}/campaign-drafts/${draftId}`, { method: 'DELETE' });
+}
 /** Lance une campagne : maintenant (sans `scheduledAt`) ou à une date future (ISO UTC absolu -> programmée). */
 export function runCampaign(campaignId: string, scheduledAt?: string): Promise<{ enqueued?: boolean; scheduled?: boolean; scheduledAt?: string }> {
   return request(`/campaigns/${campaignId}/run`, { method: 'POST', ...(scheduledAt ? { body: JSON.stringify({ scheduledAt }) } : {}) });

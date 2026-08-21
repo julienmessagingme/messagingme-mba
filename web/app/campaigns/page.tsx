@@ -9,6 +9,9 @@ import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import {
   listCampaigns,
+  listCampaignDrafts,
+  deleteCampaignDraft,
+  type CampaignDraft,
   getCampaign,
   listPhoneNumbers,
   getSettings,
@@ -80,6 +83,30 @@ function CampaignsInner({ session }: { session: Session }) {
   const [createBusy, setCreateBusy] = useState(false);
   // Tarifs Meta chargés UNE fois au montage (hors reload() pollé 6×/2s pendant l'envoi -> pas de martèlement).
   const [pricing, setPricing] = useState<PricingSummary | null>(null);
+  /**
+   * Brouillons de COMPOSITION : des campagnes qu'on a commencé à écrire. Chargés à part de `reload()`, qui
+   * est pollé pendant un envoi : un brouillon ne bouge pas six fois en douze secondes.
+   */
+  const [brouillons, setBrouillons] = useState<CampaignDraft[]>([]);
+  /** Le brouillon qu'on vient de rouvrir, passé au formulaire. `null` = création neuve. */
+  const [brouillonRepris, setBrouillonRepris] = useState<CampaignDraft | null>(null);
+
+  const rechargerBrouillons = useCallback(async () => {
+    // Silencieux : l'absence de brouillons ne doit jamais masquer la liste des campagnes, qui est l'essentiel
+    // de l'écran. Un backend plus ancien que ce front n'a pas la route, et la section reste simplement vide.
+    //
+    // 🔴 `Array.isArray` et pas seulement le try/catch : une réponse 200 sans `drafts` (backend antérieur,
+    // proxy qui renvoie un objet vide) passerait le catch et poserait `undefined` dans un état typé tableau.
+    // Le rendu suivant lit `.length` dessus et TOUTE la page casse, pas seulement cette section.
+    try {
+      const r = await listCampaignDrafts(session.tenantId);
+      setBrouillons(Array.isArray(r?.drafts) ? r.drafts : []);
+    } catch {
+      setBrouillons([]);
+    }
+  }, [session.tenantId]);
+
+  useEffect(() => { void rechargerBrouillons(); }, [rechargerBrouillons]);
 
   useEffect(() => {
     getTemplateStats(session.tenantId).then((ts) => setPricing(ts.pricing)).catch(() => setPricing(null));
@@ -192,8 +219,9 @@ function CampaignsInner({ session }: { session: Session }) {
           tenantId={session.tenantId}
           numbers={numbers}
           onBusyChange={setCreateBusy}
-          onCreated={() => { void reload(); setMode('list'); }}
+          onCreated={() => { void reload(); void rechargerBrouillons(); setMode('list'); }}
           rcsEnabled={rcsEnabled}
+          {...(brouillonRepris ? { draft: brouillonRepris } : {})}
         />
       </div>
     );
@@ -237,7 +265,7 @@ function CampaignsInner({ session }: { session: Session }) {
             {showArchived ? t('Voir les campagnes actives', 'View active campaigns') : t('Voir les archivées', 'View archived')}
           </button>
           <button
-            onClick={() => { setDetail(null); setMode('create'); }}
+            onClick={() => { setDetail(null); setBrouillonRepris(null); setMode('create'); }}
             className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600"
           >
             + {t('Ajouter une campagne', 'Add a campaign')}
@@ -245,6 +273,45 @@ function CampaignsInner({ session }: { session: Session }) {
         </div>
       </div>
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      {/* Campagnes COMMENCÉES mais pas encore créées. Volontairement au-dessus de la liste et visuellement
+          distinctes : ce ne sont pas des campagnes, elles n'ont ni destinataire ni envoi possible. Masquées
+          dans la corbeille, qui ne parle que de campagnes archivées. */}
+      {!showArchived && brouillons.length > 0 && (
+        <section className="mb-4" data-testid="campaign-drafts">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
+            {t('Brouillons en cours', 'Drafts in progress')}
+          </h3>
+          <ul className="space-y-2">
+            {brouillons.map((d) => (
+              <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-ink-300 bg-white px-4 py-2.5">
+                <div className="min-w-0">
+                  <span className="truncate text-sm font-medium text-ink-800">{d.name}</span>
+                  <span className="ml-2 rounded bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-600">{t('brouillon', 'draft')}</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <button
+                    data-testid={`draft-resume-${d.id}`}
+                    onClick={() => { setDetail(null); setBrouillonRepris(d); setMode('create'); }}
+                    className="text-sm font-medium text-brand-600 hover:underline"
+                  >
+                    {t('Reprendre', 'Resume')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!window.confirm(t(`Supprimer le brouillon « ${d.name} » ?`, `Delete draft "${d.name}"?`))) return;
+                      void deleteCampaignDraft(session.tenantId, d.id).then(rechargerBrouillons).catch(() => {});
+                    }}
+                    className="text-sm text-ink-400 hover:text-red-600"
+                  >
+                    {t('Supprimer', 'Delete')}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>

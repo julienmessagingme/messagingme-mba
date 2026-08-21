@@ -18,6 +18,10 @@ import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import {
   createCampaign,
+  createCampaignDraft,
+  updateCampaignDraft,
+  deleteCampaignDraft,
+  type CampaignDraft,
   runCampaign,
   listTemplates,
   listWorkflows,
@@ -78,7 +82,7 @@ function selForSource(s: TemplateParam['source'], customFields: UserFieldDef[]):
   return customFields.some((f) => f.key === key) ? `field:${key}` : 'sys:name';
 }
 
-export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange, rcsEnabled = false }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void; rcsEnabled?: boolean }) {
+export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange, rcsEnabled = false, draft }: { tenantId: string; numbers: PhoneNumber[]; onCreated: () => void; onBusyChange?: (busy: boolean) => void; rcsEnabled?: boolean; draft?: CampaignDraft }) {
   const t = useT();
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [name, setName] = useState('');
@@ -151,6 +155,19 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
+
+  /**
+   * Brouillon de COMPOSITION : l'identifiant du brouillon qui porte cette campagne en cours d'écriture.
+   * `null` = rien n'est encore enregistré.
+   *
+   * 🔴 Une REF, pas un état : un état React n'est visible qu'au rendu suivant, or deux sorties du champ
+   * rapprochées liraient alors toutes les deux `null` et créeraient DEUX brouillons pour une seule campagne.
+   * La ref porte la valeur à l'instant même.
+   */
+  const draftIdRef = useRef<string | null>(draft?.id ?? null);
+  /** Sauvegarde en vol, pour enchaîner au lieu de doubler (même raison que ci-dessus). */
+  const sauvegardeEnCours = useRef<Promise<void> | null>(null);
+  const [brouillonEnregistre, setBrouillonEnregistre] = useState(false);
 
   // --- Zone Destinataires : source + filtres du mini-CRM ---
   const [source, setSource] = useState<'crm' | 'file' | 'hubspot'>('crm');
@@ -460,6 +477,97 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setLaunch({ phase: 'idle' });
   }
 
+  /**
+   * Ce qu'on garde d'un brouillon : les CHOIX de l'utilisateur, et rien d'autre. Les listes chargées
+   * (templates, workflows, contacts, agents RCS) se rechargent seules et n'ont donc rien à faire ici : les
+   * figer les rendrait périmées à la reprise, ce qui est pire que de les relire.
+   */
+  function etatDuFormulaire(): Record<string, unknown> {
+    return {
+      category, mode, source,
+      phoneNumberId, templateName, templateLanguage, vars,
+      workflowId, rcsAgentId, rcsText,
+      ratePerMinute, timing, scheduledLocal,
+    };
+  }
+
+  /**
+   * Enregistre le brouillon : création au premier nom, mise à jour ensuite. Le nom vide n'enregistre RIEN,
+   * sinon quitter le champ sans rien écrire créerait un brouillon fantôme.
+   *
+   * Best-effort et SILENCIEUX en cas d'échec : perdre un brouillon est ennuyeux, mais afficher une erreur
+   * rouge au milieu de la saisie d'un nom le serait davantage. Le formulaire reste utilisable tel quel.
+   */
+  async function enregistrerBrouillon(): Promise<void> {
+    const nom = name.trim();
+    if (nom === '') return;
+    const etat = etatDuFormulaire();
+    // Sérialisé sur la sauvegarde précédente : sans cette file, deux sorties de champ rapprochées partiraient
+    // en parallèle, toutes deux sans identifiant, et créeraient deux brouillons pour une seule campagne.
+    const suite = (sauvegardeEnCours.current ?? Promise.resolve()).then(async () => {
+      try {
+        if (draftIdRef.current === null) {
+          const { draft: cree } = await createCampaignDraft(tenantId, nom, etat);
+          draftIdRef.current = cree.id;
+        } else {
+          await updateCampaignDraft(tenantId, draftIdRef.current, nom, etat);
+        }
+        setBrouillonEnregistre(true);
+      } catch {
+        /* un brouillon qui ne s'enregistre pas ne doit pas interrompre la saisie */
+      }
+    });
+    sauvegardeEnCours.current = suite;
+    await suite;
+  }
+
+  /**
+   * Reprise d'un brouillon : on réapplique les choix, en tolérant l'absence de chaque champ. L'état vient de
+   * la base et a pu être écrit par une version antérieure du formulaire : un champ manquant garde sa valeur
+   * par défaut plutôt que de casser l'écran.
+   */
+  useEffect(() => {
+    if (!draft) return;
+    const s = draft.state ?? {};
+    const txt = (k: string): string | undefined => (typeof s[k] === 'string' ? (s[k] as string) : undefined);
+    setName(draft.name);
+    if (txt('category') === 'marketing' || txt('category') === 'utility') setCategory(txt('category') as 'marketing' | 'utility');
+    if (txt('mode') === 'template' || txt('mode') === 'workflow' || txt('mode') === 'rcs') setMode(txt('mode') as 'template' | 'workflow' | 'rcs');
+    if (txt('source') === 'crm' || txt('source') === 'file' || txt('source') === 'hubspot') setSource(txt('source') as 'crm' | 'file' | 'hubspot');
+    if (txt('phoneNumberId') !== undefined) setPhoneNumberId(txt('phoneNumberId')!);
+    if (txt('templateName') !== undefined) setTemplateName(txt('templateName')!);
+    if (txt('templateLanguage') !== undefined) setTemplateLanguage(txt('templateLanguage')!);
+    if (txt('workflowId') !== undefined) setWorkflowId(txt('workflowId')!);
+    if (txt('rcsAgentId') !== undefined) setRcsAgentId(txt('rcsAgentId')!);
+    if (txt('rcsText') !== undefined) setRcsText(txt('rcsText')!);
+    if (txt('scheduledLocal') !== undefined) setScheduledLocal(txt('scheduledLocal')!);
+    if (txt('timing') === 'now' || txt('timing') === 'later') setTiming(txt('timing') as 'now' | 'later');
+    if (typeof s.ratePerMinute === 'number') setRatePerMinute(s.ratePerMinute);
+    if (Array.isArray(s.vars)) setVars(s.vars as VarRow[]);
+    // Une seule fois, à l'ouverture : ce sont des valeurs INITIALES, pas une synchronisation continue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Le brouillon a rempli son office dès que la vraie campagne existe : on le retire pour ne pas laisser un
+   * doublon dans la liste. Best-effort : un brouillon qui survit est visible et supprimable à la main, alors
+   * qu'une erreur ici masquerait le succès de la campagne.
+   */
+  async function retirerBrouillon(): Promise<void> {
+    // On attend la sauvegarde en vol : supprimer pendant une création laisserait le brouillon derrière soi,
+    // créé juste après la suppression.
+    await (sauvegardeEnCours.current ?? Promise.resolve());
+    const id = draftIdRef.current;
+    if (id === null) return;
+    try {
+      await deleteCampaignDraft(tenantId, id);
+      draftIdRef.current = null;
+      setBrouillonEnregistre(false);
+    } catch {
+      /* voir plus haut */
+    }
+  }
+
   async function submit() {
     setBusy(true);
     setError(null);
@@ -491,6 +599,8 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       setVars([]);
       setWorkflowId('');
       setWfError(null);
+      // La campagne existe : le brouillon n'a plus lieu d'être, sinon la liste montrerait les deux.
+      await retirerBrouillon();
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Création impossible', 'Creation failed'));
@@ -612,11 +722,17 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onBlur={() => { void enregistrerBrouillon(); }}
           data-testid="campaign-name"
           autoFocus
           className={`${inputCls} max-w-md ${!nameSet ? 'border-brand-400 ring-2 ring-brand-100' : ''}`}
           placeholder={t('Promo été', 'Summer promo')}
         />
+        {brouillonEnregistre && (
+          <p className="mt-1 text-xs text-ink-400" data-testid="draft-saved">
+            {t('Brouillon enregistré : tu peux quitter cet écran et reprendre plus tard.', 'Draft saved: you can leave and come back later.')}
+          </p>
+        )}
         {!nameSet && <p className="mt-1 text-xs text-brand-600">{t('Donne un nom à ta campagne pour continuer.', 'Name your campaign to continue.')}</p>}
       </div>
 
