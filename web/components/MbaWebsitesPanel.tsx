@@ -89,7 +89,7 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
           <input
             className={inputCls}
             data-testid="mba-website-url"
-            placeholder="https://www.exemple.fr/aide"
+            placeholder={t('https://www.exemple.fr/aide', 'https://www.example.com/help')}
             value={url}
             onChange={(e) => { setUrl(e.target.value); setErr(''); }}
           />

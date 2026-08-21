@@ -486,7 +486,7 @@ function DetailPanel({ detail, pricing, tenantId, onClose, onRetried }: { detail
                   <td className="px-4 py-2 whitespace-nowrap text-xs text-ink-500">{r.sentAt ? stamp(r.sentAt) : <span className="text-ink-400">{t('non envoyé', 'not sent')}</span>}</td>
                   <td className="px-4 py-2">{r.deliveryStatus ? <Badge status={r.deliveryStatus} /> : <span className="text-xs text-ink-400">-</span>}</td>
                   <td className="px-4 py-2 text-xs text-ink-500" title={r.deliveryError ?? r.error ?? undefined}>
-                    <div>{explainMetaError(r.deliveryError ?? r.error) ?? r.messageId ?? '-'}</div>
+                    <div>{explainMetaError(r.deliveryError ?? r.error, locale) ?? r.messageId ?? '-'}</div>
                     {retryable && retryFor !== r.id && (
                       <button
                         type="button"

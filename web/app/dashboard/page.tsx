@@ -7,7 +7,7 @@ import { RangeBar } from '@/components/RangeBar';
 import type { Session } from '@/lib/session';
 import {
   getStats, getTemplateStats, getErrorBreakdown, getCampaignFunnel, getCostSeries, listCampaigns,
-  type DashboardStats, type TemplateStats, type StatsRange, type ErrorBreakdownRow, type CampaignFunnel,
+  type DashboardStats, type TemplateStats, type StatsRange, type ErrorBreakdownRow, type CampaignFunnel, type DailyPoint,
   type CostSeries, type CampaignSummary,
 } from '@/lib/api';
 import { metaCodeLabel } from '@/lib/meta-errors';
@@ -39,10 +39,19 @@ function DashboardInner({ session }: { session: Session }) {
         getErrorBreakdown(session.tenantId, range),
         listCampaigns(session.tenantId),
       ]);
-      setStats(s);
-      setTemplateStats(ts);
-      setErrors(eb.errors);
-      setCampaigns(cp.campaigns);
+      // Normalisé AVANT d'entrer dans l'état. Une réponse 200 amputée d'un champ (version d'API en retard,
+      // route qui rend `{}`) posait `undefined` dans un état typé, et un `.marketing` du rendu emportait
+      // l'ÉCRAN ENTIER, pas la carte concernée. Le `catch` n'y peut rien : il n'y a aucune erreur réseau.
+      const serie = (v: unknown): DailyPoint[] => (Array.isArray(v) ? (v as DailyPoint[]) : []);
+      setStats({
+        contacts: serie(s?.contacts),
+        templates: { marketing: serie(s?.templates?.marketing), utility: serie(s?.templates?.utility) },
+        exchanged: serie(s?.exchanged),
+        service: serie(s?.service),
+      });
+      setTemplateStats(ts ?? null);
+      setErrors(Array.isArray(eb?.errors) ? eb.errors : []);
+      setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
@@ -142,13 +151,28 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
   }, [tenantId, currentId]);
 
   const sent = funnel?.sent ?? 0;
-  const pct = (n: number) => (sent > 0 ? Math.max(2, Math.round((n / sent) * 100)) : 0);
+  // Bornée à 100 : les clics ne sont PAS bornés par le nombre d'envois (une même personne peut cliquer dix
+  // fois). Sans ce plafond, la barre déborderait de sa piste et le dessin deviendrait illisible.
+  const pct = (n: number) => (sent > 0 ? Math.min(100, Math.max(2, Math.round((n / sent) * 100))) : 0);
   const bars = funnel
     ? [
         { label: t('Envoyés', 'Sent'), value: funnel.sent, color: '#009AFE', sub: '' },
         { label: t('Délivrés', 'Delivered'), value: funnel.delivered, color: '#17C74E', sub: fmtPct(funnel.delivered, sent, locale) },
         { label: t('Lus', 'Read'), value: funnel.read, color: '#6E5AE0', sub: fmtPct(funnel.read, sent, locale) },
         { label: t('Répondus', 'Replied'), value: funnel.replied, color: '#F5A623', sub: fmtPct(funnel.replied, sent, locale) },
+        // Les deux étapes de CLIC n'apparaissent que si la donnée existe pour cette campagne. Une barre à zéro
+        // sur un template sans bouton se lirait « personne n'a cliqué » au lieu de « il n'y a rien à cliquer ».
+        //
+        // ⚠️ Elles n'ont PAS la même unité, et les libellés le disent. « Destinataires ayant tapé » compte des
+        // PERSONNES, comme les étapes au-dessus, donc un pourcentage des envois a un sens. « Clics sur le
+        // lien » compte des CLICS : la même personne peut cliquer dix fois, le total n'est pas borné par le
+        // nombre d'envois, et l'afficher en pourcentage laisserait lire « 300 % ont cliqué ».
+        ...(funnel.buttonReplies > 0
+          ? [{ label: t('Destinataires ayant tapé un bouton', 'Recipients who tapped a button'), value: funnel.buttonReplies, color: '#EC4899', sub: fmtPct(funnel.buttonReplies, sent, locale) }]
+          : []),
+        ...(funnel.urlClicks !== null
+          ? [{ label: t('Clics sur le lien (total)', 'Link clicks (total)'), value: funnel.urlClicks, color: '#C026D3', sub: '' }]
+          : []),
       ]
     : [];
 
@@ -195,6 +219,17 @@ function CampaignFunnelCard({ tenantId, campaigns }: { tenantId: string; campaig
           ))}
           {funnel.failed > 0 && (
             <p className="pt-1 text-xs text-ink-400">{t('Échecs :', 'Failures:')} <span className="font-medium text-coral">{fmtNum(funnel.failed, locale)}</span></p>
+          )}
+          {funnel.urlClicks !== null && (
+            // Dit la limite au lieu de la taire : un lien ne sait pas quel envoi l'a porté, donc deux
+            // campagnes sur le même template lisent le même compteur. Le taire ferait prendre un chiffre de
+            // template pour un chiffre de campagne.
+            <p className="pt-1 text-[11px] leading-relaxed text-ink-400">
+              {t(
+                'Les clics sur le lien sont comptés sur le lien du template, à partir du premier envoi de cette campagne. Si le même template sert ailleurs, ses clics apparaissent ici aussi.',
+                'Link clicks are counted on the template link, from this campaign’s first send. If the same template is used elsewhere, its clicks show up here too.',
+              )}
+            </p>
           )}
         </div>
       )}
@@ -300,7 +335,7 @@ function ErrorBreakdownCard({ errors }: { errors: ErrorBreakdownRow[] }) {
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-50">
                 <div className="h-full rounded-full bg-coral" style={{ width: `${max > 0 ? Math.max(4, Math.round((e.count / max) * 100)) : 0}%` }} />
               </div>
-              <p className="mt-0.5 text-[11px] text-ink-400">{metaCodeLabel(e.code)}</p>
+              <p className="mt-0.5 text-[11px] text-ink-400">{metaCodeLabel(e.code, locale)}</p>
             </div>
           ))}
           <p className="pt-1 text-xs text-ink-400">{t('Total :', 'Total:')} <span className="font-medium text-ink-700">{fmtNum(total, locale)}</span></p>

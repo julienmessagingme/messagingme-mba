@@ -9,9 +9,29 @@
  */
 
 import { getSession, clearSession } from './session';
+import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 
 /** Préfixe du proxy Next vers l'API. Exporté pour `/ops`, qui appelle sans session (autorité séparée). */
 export const BASE = '/api/backend';
+
+/**
+ * Langue de la console, lue à la SOURCE persistée plutôt que par le contexte React.
+ *
+ * `useT()` est un hook : inappelable ici, et ce module est appelé depuis des fonctions ordinaires. Or les
+ * messages jetés ici remontent partout via `err.message` et s'affichaient en français sur une console en
+ * anglais. En cas de doute on retombe sur le français, jamais sur une erreur.
+ *
+ * ⚠️ Ne traduit QUE les deux replis de ce fichier. Un message d'erreur venu du serveur (`body.error`) passe
+ * tel quel : il est rédigé en français côté API. C'est la limite connue, notée dans `todo.md`.
+ */
+function langue(): Locale {
+  if (typeof window === 'undefined') return 'fr';
+  try {
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === 'en' ? 'en' : 'fr';
+  } catch {
+    return 'fr';
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -63,11 +83,12 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
     // un message rouge dans un coin, le reste de l'interface restait actif, et l'utilisateur n'avait AUCUN
     // chemin visible vers la reconnexion. Même canal d'événement que la pastille de non-lus.
     if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-    throw new ApiError(401, 'Session expirée, reconnecte-toi.');
+    throw new ApiError(401, langue() === 'en' ? 'Session expired, sign in again.' : 'Session expirée, reconnecte-toi.');
   }
   const body = (await res.json().catch(() => null)) as unknown;
   if (!res.ok) {
-    const msg = (body as { error?: string } | null)?.error ?? `Erreur ${res.status}`;
+    const msg = (body as { error?: string } | null)?.error
+      ?? (langue() === 'en' ? `Error ${res.status}` : `Erreur ${res.status}`);
     throw new ApiError(res.status, msg);
   }
   return body as T;

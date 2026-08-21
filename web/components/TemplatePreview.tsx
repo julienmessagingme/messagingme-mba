@@ -15,16 +15,24 @@ import type { TemplateSummary } from '@/lib/api';
 export function TemplatePreview({
   template,
   examples,
+  senderName,
 }: {
   template: Pick<TemplateSummary, 'body' | 'buttons' | 'carousel'>;
   /** Valeurs des variables `{{n}}` du corps (le corps d'un carousel est son message d'introduction). */
   examples: string[];
+  /**
+   * Nom vérifié du numéro ÉMETTEUR, quand l'écran sait lequel c'est. Absent, `PhoneFrame` le résout seul.
+   * N'a d'intérêt que sur un espace multi-numéros : y montrer le nom d'un AUTRE numéro que celui qui va
+   * envoyer serait exactement le défaut qu'on corrige.
+   */
+  senderName?: string;
 }) {
   if (template.carousel) {
     return (
       <CarouselPreview
         body={template.body ?? ''}
         examples={examples}
+        {...(senderName ? { senderName } : {})}
         cards={template.carousel.cards.map((c) => ({
           ...(c.mediaUrl ? { imageUrl: c.mediaUrl } : {}),
           ...(c.mediaFormat ? { mediaFormat: c.mediaFormat } : {}),
@@ -36,5 +44,5 @@ export function TemplatePreview({
       />
     );
   }
-  return <WhatsAppPreview body={template.body ?? ''} examples={examples} buttons={template.buttons ?? []} hideNote />;
+  return <WhatsAppPreview body={template.body ?? ''} examples={examples} buttons={template.buttons ?? []} {...(senderName ? { senderName } : {})} hideNote />;
 }

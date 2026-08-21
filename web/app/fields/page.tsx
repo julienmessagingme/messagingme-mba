@@ -111,7 +111,7 @@ function FieldsInner({ session }: { session: Session }) {
             {SYSTEM_FIELDS.map((f) => (
               <tr key={f.key} className="border-b border-ink-50 last:border-0">
                 <td className="px-5 py-2.5"><code className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{f.key}</code>{tenantCode && <div className="mt-0.5 font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{systemFieldCode(tenantCode, f.key)}</div>}</td>
-                <td className="px-5 py-2.5 font-medium text-ink-800">{f.label}</td>
+                <td className="px-5 py-2.5 font-medium text-ink-800">{t(...f.label)}</td>
                 <td className="px-5 py-2.5 text-right text-xs text-ink-400">{t('non supprimable', 'not deletable')}</td>
               </tr>
             ))}

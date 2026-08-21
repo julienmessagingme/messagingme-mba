@@ -4,7 +4,26 @@
  * Tout est PUR ici : ordonner les blocs, dire lesquels sont mesurables, nommer les choix, agréger les
  * compteurs. Aucun appel réseau, donc testable sans navigateur — et c'est là que vivent les règles qui
  * décident ce que l'écran a le droit d'afficher.
+ *
+ * ⚠️ Module `.ts` PUR : `useT()` est un hook, il est inappelable ici. La langue arrive donc en paramètre
+ * `locale` REQUIS (convention du dépôt, cf. `format.ts`) : sans défaut, tsc liste tous les appelants le jour
+ * où on en ajoute un. C'est ce qui manquait, et tout cet écran s'affichait en français en mode anglais.
  */
+import type { Locale } from './locale';
+import { NODE_META } from './nodeMeta';
+import type { WorkflowNodeType } from './api';
+
+/** Libellé du TYPE de bloc, dans la langue voulue. Une seule source : `NODE_META`, déjà en paires [fr, en]. */
+function libelleType(type: string, locale: Locale): string {
+  const meta = NODE_META[type as WorkflowNodeType];
+  if (!meta) return type;
+  return locale === 'en' ? meta.label[1] : meta.label[0];
+}
+
+/** Guillemets de la langue. Même règle que `format.ts`, pour ne pas écrire « … » dans une phrase anglaise. */
+function guillemets(s: string, locale: Locale): string {
+  return locale === 'en' ? `“${s}”` : `« ${s} »`;
+}
 
 export interface GraphNode {
   id: string;
@@ -56,6 +75,8 @@ export interface BlocMesurable {
   type: string;
   /** Ce que le bloc fait, en une ligne, pour le reconnaître dans la liste. */
   titre: string;
+  /** `false` = `titre` n'est que le nom du type. La carte du scénario s'en sert pour ne pas le répéter. */
+  titrePropre: boolean;
   mesurable: boolean;
   choix: Choix[];
   /**
@@ -66,31 +87,42 @@ export interface BlocMesurable {
   liens: Choix[];
 }
 
-/** Titre lisible d'un bloc. Volontairement court : la liste doit se parcourir des yeux. */
-function titreDe(n: GraphNode): string {
+/**
+ * Titre lisible d'un bloc, et s'il lui est PROPRE.
+ *
+ * `propre = false` veut dire « je n'ai que le nom du type » : la carte du scénario s'en sert pour ne pas
+ * réafficher sous l'en-tête ce qui y est déjà écrit. Elle comparait auparavant deux chaînes, dont une
+ * traduite et l'autre non : en anglais l'égalité n'arrivait jamais et le doublon revenait sur chaque bloc.
+ */
+function titreDe(n: GraphNode, locale: Locale): { titre: string; propre: boolean } {
   const d = n.data ?? {};
   const s = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
-  if (n.type === 'template') return s(d.templateName) || 'Template (non choisi)';
-  if (n.type === 'quick_message') return s(d.body).slice(0, 60) || 'Message rapide (vide)';
-  if (n.type === 'flow') return s(d.flowName) || 'Formulaire';
-  if (n.type === 'rcs_message') return 'Message RCS';
-  if (n.type === 'condition') return 'Condition';
-  if (n.type === 'wait') return 'Attente';
-  if (n.type === 'inbox') return 'Assigner à un agent';
-  if (n.type === 'email') return 'Envoi de mail';
-  if (n.type === 'action') return 'Action';
-  return n.type;
+  const saisi = n.type === 'template' ? s(d.templateName)
+    : n.type === 'quick_message' ? s(d.body).slice(0, 60)
+    : n.type === 'flow' ? s(d.flowName)
+    : '';
+  if (saisi !== '') return { titre: saisi, propre: true };
+  // Repli : le nom du TYPE. `template` et `quick_message` précisent en plus qu'ils sont vides, sinon on ne
+  // distinguerait pas un bloc à configurer d'un bloc prêt.
+  if (n.type === 'template') return { titre: locale === 'en' ? 'Template (not chosen)' : 'Template (non choisi)', propre: false };
+  if (n.type === 'quick_message') return { titre: locale === 'en' ? 'Quick message (empty)' : 'Message rapide (vide)', propre: false };
+  return { titre: libelleType(n.type, locale), propre: false };
 }
 
 /** Libellé d'un handle de choix, pour ne pas afficher `card:1:btn:0` à un opérateur. */
-export function libelleHandle(handle: string, boutons: string[]): string {
+export function libelleHandle(handle: string, boutons: string[], locale: Locale): string {
   const carousel = /^card:(\d+):btn:(\d+)$/.exec(handle);
-  if (carousel) return `Carte ${Number(carousel[1]) + 1}, bouton ${Number(carousel[2]) + 1}`;
+  if (carousel) {
+    const c = Number(carousel[1]) + 1;
+    const b = Number(carousel[2]) + 1;
+    return locale === 'en' ? `Card ${c}, button ${b}` : `Carte ${c}, bouton ${b}`;
+  }
   const simple = /^btn:(\d+)$/.exec(handle);
   if (simple) {
     const i = Number(simple[1]);
     const texte = boutons[i]?.trim();
-    return texte ? `« ${texte} »` : `Bouton ${i + 1}`;
+    if (texte) return guillemets(texte, locale);
+    return locale === 'en' ? `Button ${i + 1}` : `Bouton ${i + 1}`;
   }
   return handle;
 }
@@ -131,6 +163,7 @@ function boutonsDe(n: GraphNode): BoutonDeclare[] {
  */
 export function blocsDuScenario(
   graph: Graph,
+  locale: Locale,
   handlesMesures: Record<string, string[]> = {},
   handlesLiens: Record<string, string[]> = {},
 ): BlocMesurable[] {
@@ -162,13 +195,15 @@ export function blocsDuScenario(
     const tous = [...new Set([...desBoutons, ...desAretes, ...(handlesMesures[id] ?? [])])]
       // Les sorties TYPÉES d'un bloc ne sont pas des choix du contact : elles décrivent une issue technique.
       .filter((h) => !['true', 'false', 'sent', 'unreachable'].includes(h));
+    const { titre, propre } = titreDe(n, locale);
     return {
       id,
       type: n.type,
-      titre: titreDe(n),
+      titre,
+      titrePropre: propre,
       mesurable: estMesurable(n.type),
-      choix: tous.map((h) => ({ handle: h, label: libelleHandle(h, libelles) })),
-      liens: (handlesLiens[id] ?? []).map((h) => ({ handle: h, label: libelleHandle(h, libelles) })),
+      choix: tous.map((h) => ({ handle: h, label: libelleHandle(h, libelles, locale) })),
+      liens: (handlesLiens[id] ?? []).map((h) => ({ handle: h, label: libelleHandle(h, libelles, locale) })),
     };
   });
 }
@@ -182,6 +217,35 @@ export interface MesureDispo {
 }
 
 /**
+ * Libellés des mesures SANS bouton, en paires `[fr, en]`.
+ *
+ * Une seule table pour les deux lectures : `mesuresDisponibles` (qui nomme ce qu'on peut cocher) et
+ * `libelleDeCle` (le repli quand la période ne porte aucun compteur). Deux copies divergeraient au premier
+ * libellé retouché, et l'écran afficherait deux noms pour la même chose.
+ */
+const LIBELLES_NATURE: Record<string, [string, string]> = {
+  sent: ['Envoyés', 'Sent'],
+  failed: ['Échecs', 'Failed'],
+  delivered: ['Délivrés', 'Delivered'],
+  read: ['Lus', 'Read'],
+  reply_text: ['A répondu (sans cliquer)', 'Replied (without tapping)'],
+};
+
+/** Libellé d'une mesure qui porte sur un BOUTON précis. `null` si la nature n'en est pas une. */
+function libelleAvecBouton(kind: string, bouton: string, locale: Locale): string | null {
+  const en = locale === 'en';
+  if (kind === 'reply_button') return en ? `Tapped ${bouton}` : `A cliqué ${bouton}`;
+  if (kind === 'url_click') return en ? `Clicked the link ${bouton}` : `A cliqué sur le lien ${bouton}`;
+  return null;
+}
+
+/** Le libellé d'une nature sans bouton, dans la langue voulue. */
+function libelleNature(kind: string, locale: Locale): string {
+  const paire = LIBELLES_NATURE[kind];
+  return paire ? (locale === 'en' ? paire[1] : paire[0]) : kind;
+}
+
+/**
  * Ce qu'on peut compter sur un bloc de message. L'ordre suit la lecture naturelle d'un entonnoir.
  *
  * `estPremier` = ce bloc est-il le PREMIER message du scénario ? Lui seul propose « Échecs » et « Délivrés ».
@@ -189,34 +253,30 @@ export interface MesureDispo {
  * Ces deux mesures y afficheraient des barres plates, l'une à zéro et l'autre collée aux « Envoyés », et
  * noieraient le signal qu'on est venu chercher. Demandé par Julien le 2026-08-19.
  */
-export function mesuresDisponibles(bloc: BlocMesurable, estPremier = true): MesureDispo[] {
+export function mesuresDisponibles(bloc: BlocMesurable, locale: Locale, estPremier = true): MesureDispo[] {
   if (!bloc.mesurable) return [];
+  const nature = (kind: string): MesureDispo => ({ cle: `${bloc.id}|${kind}`, label: libelleNature(kind, locale), kind, handle: null });
   const base: MesureDispo[] = [
-    { cle: `${bloc.id}|sent`, label: 'Envoyés', kind: 'sent', handle: null },
-    ...(estPremier
-      ? [
-        { cle: `${bloc.id}|failed`, label: 'Échecs', kind: 'failed', handle: null },
-        { cle: `${bloc.id}|delivered`, label: 'Délivrés', kind: 'delivered', handle: null },
-      ]
-      : []),
-    { cle: `${bloc.id}|read`, label: 'Lus', kind: 'read', handle: null },
+    nature('sent'),
+    ...(estPremier ? [nature('failed'), nature('delivered')] : []),
+    nature('read'),
   ];
   const choix: MesureDispo[] = bloc.choix.map((c) => ({
     cle: `${bloc.id}|reply_button|${c.handle}`,
-    label: `A cliqué ${c.label}`,
+    label: libelleAvecBouton('reply_button', c.label, locale)!,
     kind: 'reply_button',
     handle: c.handle,
   }));
   // Clics sur un LIEN : mesurés par notre redirection, pas par Meta, qui n'émet rien sur un bouton URL.
   const liens: MesureDispo[] = bloc.liens.map((l) => ({
     cle: `${bloc.id}|url_click|${l.handle}`,
-    label: `A cliqué sur le lien ${l.label}`,
+    label: libelleAvecBouton('url_click', l.label, locale)!,
     kind: 'url_click',
     handle: l.handle,
   }));
   // « A répondu sans cliquer » est proposé partout, et pas seulement sur les blocs à boutons : sur un bloc qui
   // n'offre aucun choix, c'est LA mesure de l'engagement.
-  return [...base, ...choix, ...liens, { cle: `${bloc.id}|reply_text`, label: 'A répondu (sans cliquer)', kind: 'reply_text', handle: null }];
+  return [...base, ...choix, ...liens, nature('reply_text')];
 }
 
 /** Une barre du graphe final. */
@@ -300,6 +360,21 @@ export interface BarreTableau {
   couleur: string;
 }
 
+/**
+ * Libellé d'une mesure reconstruit à partir de sa SEULE clé (`nodeId|kind[|handle]`).
+ *
+ * Filet du filet : `mesuresDisponibles` ne sait nommer un bouton que si le compteur correspondant existe sur
+ * la période choisie (`bloc.choix` et `bloc.liens` sont bâtis à partir des compteurs reçus). Sur une période
+ * sans aucun clic, la clé d'un tableau enregistré ne s'y retrouve pas, et retomber sur le libellé FIGÉ
+ * ferait ressortir du français dans une console en anglais. Ici on perd le texte du bouton, jamais la langue.
+ */
+function libelleDeCle(cle: string, locale: Locale): string {
+  const [, kind = '', handle = ''] = cle.split('|');
+  if (LIBELLES_NATURE[kind]) return libelleNature(kind, locale);
+  // Sans les compteurs de la période, on n'a plus le TEXTE du bouton : son numéro reste juste et lisible.
+  return libelleAvecBouton(kind, libelleHandle(handle, [], locale), locale) ?? cle;
+}
+
 export interface GroupeTableau {
   nodeId: string;
   titre: string;
@@ -320,6 +395,7 @@ export function groupesDuTableau(
   retenues: MesureDispo[],
   counts: CompteurBrut[],
   blocs: BlocMesurable[],
+  locale: Locale,
 ): GroupeTableau[] {
   const parBloc = new Map<string, MesureDispo[]>();
   for (const m of retenues) {
@@ -336,7 +412,12 @@ export function groupesDuTableau(
         // choix aurait pris la nuance d'un autre bouton, ou serait retombé sur la première faute de match.
         const liste = m.kind === 'url_click' ? b.liens : b.choix;
         const iChoix = m.handle ? Math.max(0, liste.findIndex((c) => c.handle === m.handle)) : 0;
-        return { cle: m.cle, label: m.label, ...valeurDe(counts, b.id, m.kind, m.handle), couleur: couleurDe(m.kind, iChoix) };
+        // Libellé RE-DÉRIVÉ dans la langue courante, jamais celui de `m`. Un tableau enregistré garde le
+        // libellé figé au moment de l'enregistrement : le relire tel quel ressortirait du français dans une
+        // console en anglais, même une fois tout le reste traduit. `label` reste dans le JSON stocké, il
+        // cesse simplement de faire autorité à l'affichage.
+        const frais = mesuresDisponibles(b, locale, true).find((x) => x.cle === m.cle)?.label ?? libelleDeCle(m.cle, locale);
+        return { cle: m.cle, label: frais, ...valeurDe(counts, b.id, m.kind, m.handle), couleur: couleurDe(m.kind, iChoix) };
       }),
     }));
 }

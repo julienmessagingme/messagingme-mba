@@ -169,7 +169,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         placeholder={t('Bonjour [Prénom], découvrez notre sélection 🎉', 'Hello [First name], discover our selection 🎉')}
         hint={t(
           "« + Variable » insère un champ du contact dans l'introduction, exactement comme sur un template classique. Le texte des CARTES, lui, est le même pour tout le monde.",
-          '« + Variable » inserts a contact field into the introduction, exactly like on a regular template. Card text, however, is the same for everyone.',
+          '“+ Variable” inserts a contact field into the introduction, exactly like on a regular template. Card text, however, is the same for everyone.',
         )}
       />
       <TemplateVariableExamples state={bodyState} />
@@ -257,7 +257,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                         value={c.buttons[j]?.url ?? ''}
                         onChange={(e) => setCardButton(i, j, { url: e.target.value })}
                         className={`${inputClsAuto} w-full ${urlKo(c, j) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
-                        placeholder="https://exemple.fr/cette-carte"
+                        placeholder={t('https://exemple.fr/cette-carte', 'https://example.com/this-card')}
                       />
                       {urlKo(c, j) && (
                         <p className="text-[11px] text-coral">{t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://')}</p>

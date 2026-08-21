@@ -201,7 +201,7 @@ export function FlowBuilder({
     const screenUid = scr.uid;
     const probe = sanitizeElems(fn(scr.elements));
     setScreens((list) => list.map((s) => (s.uid === screenUid ? { ...s, elements: sanitizeElems(fn(s.elements)).elems } : s)));
-    setNotice(probe.changed ? t('Une condition « Visible si » a été réinitialisée (champ source retiré, déplacé ou modifié).', 'A « Visible if » condition was reset (source field removed, moved or changed).') : null);
+    setNotice(probe.changed ? t('Une condition « Visible si » a été réinitialisée (champ source retiré, déplacé ou modifié).', 'A “Visible if” condition was reset (source field removed, moved or changed).') : null);
   }
 
   function patch(uid: number, p: Partial<BElem>) {

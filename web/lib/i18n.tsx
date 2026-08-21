@@ -10,9 +10,9 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
  * Usage dans un composant :  const t = useT();  ...  {t('Bonjour', 'Hello')}
  * Défaut FR ; le choix (menu compte) est mémorisé par navigateur.
  */
-import type { Locale } from './locale';
+import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 export type { Locale } from './locale';
-const STORAGE_KEY = 'mba_locale';
+const STORAGE_KEY = LOCALE_STORAGE_KEY;
 
 interface LocaleCtx {
   locale: Locale;

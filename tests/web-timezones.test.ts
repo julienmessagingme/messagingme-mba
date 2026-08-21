@@ -16,6 +16,15 @@ describe('timezones', () => {
   });
   it('timezoneLabel = « (GMT+x) Ville »', () => {
     const paris = TIMEZONES.find((o) => o.iana === 'Europe/Paris')!;
-    expect(timezoneLabel(paris)).toBe('(GMT+1) Paris');
+    expect(timezoneLabel(paris, 'fr')).toBe('(GMT+1) Paris');
+  });
+
+  it('🔴 un EXONYME suit la langue : « Londres » n a rien a faire dans une console en anglais', () => {
+    const londres = TIMEZONES.find((o) => o.iana === 'Europe/London')!;
+    expect(timezoneLabel(londres, 'fr')).toBe('(GMT+0) Londres');
+    expect(timezoneLabel(londres, 'en')).toBe('(GMT+0) London');
+    // Une ville dont le nom ne varie pas rend la meme chose des deux cotes.
+    const tokyo = TIMEZONES.find((o) => o.iana === 'Asia/Tokyo')!;
+    expect(timezoneLabel(tokyo, 'en')).toBe(timezoneLabel(tokyo, 'fr'));
   });
 });

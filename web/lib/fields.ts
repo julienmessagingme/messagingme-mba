@@ -10,19 +10,24 @@ import { FRONT_SYSTEM_FIELD_KEYS } from './codes';
  */
 export interface SystemField {
   key: string;
-  label: string;
+  /**
+   * Libellé dans les DEUX langues, `[fr, en]`. Même convention que `NODE_META` : ce fichier est un `.ts` pur,
+   * `useT()` y est inappelable, et le rendu fait `t(...f.label)`. Il n'a longtemps porté que le français, ce
+   * qui affichait « Prénom » et « Téléphone » dans une console en anglais.
+   */
+  label: [string, string];
   source: ParamSource;
 }
 
 /** Libellé + source de variable de chaque champ système. Typé en `Record` sur la liste de clés PURE : ajouter
  *  une clé à `FRONT_SYSTEM_FIELD_KEYS` sans lui donner de libellé ici ne compile pas. */
 const SYSTEM_FIELD_META: Record<(typeof FRONT_SYSTEM_FIELD_KEYS)[number], Omit<SystemField, 'key'>> = {
-  name: { label: 'Nom', source: { type: 'attribute', key: 'name' } },
-  prenom: { label: 'Prénom', source: { type: 'field', key: 'prenom' } },
-  phone: { label: 'Téléphone', source: { type: 'attribute', key: 'phone' } },
-  bsuid: { label: 'BSUID', source: { type: 'attribute', key: 'bsuid' } },
-  wa_id: { label: 'WhatsApp ID', source: { type: 'attribute', key: 'wa_id' } },
-  email: { label: 'Email', source: { type: 'field', key: 'email' } },
+  name: { label: ['Nom', 'Name'], source: { type: 'attribute', key: 'name' } },
+  prenom: { label: ['Prénom', 'First name'], source: { type: 'field', key: 'prenom' } },
+  phone: { label: ['Téléphone', 'Phone'], source: { type: 'attribute', key: 'phone' } },
+  bsuid: { label: ['BSUID', 'BSUID'], source: { type: 'attribute', key: 'bsuid' } },
+  wa_id: { label: ['WhatsApp ID', 'WhatsApp ID'], source: { type: 'attribute', key: 'wa_id' } },
+  email: { label: ['Email', 'Email'], source: { type: 'field', key: 'email' } },
 };
 
 /** CONSTRUIT à partir de la liste pure, dans son ordre. C'est ce qui rend le test de `web/lib/codes.ts`

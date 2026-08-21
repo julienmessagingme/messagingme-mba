@@ -721,6 +721,13 @@ export interface CampaignFunnel {
   read: number;
   replied: number;
   failed: number;
+  /** Taps sur un bouton de reponse rapide. Sous-ensemble de `replied`. */
+  buttonReplies: number;
+  /**
+   * Clics sur les liens traces du template, depuis le premier envoi de la campagne.
+   * `null` = ce template ne porte aucun lien trace : l etape ne doit pas etre affichee.
+   */
+  urlClicks: number | null;
 }
 export function getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
   return request<CampaignFunnel>(`/tenants/${tenantId}/stats/campaign-funnel?campaignId=${encodeURIComponent(campaignId)}`);
@@ -789,27 +796,6 @@ export interface NodeEventCount {
   count: number;
   /** Personnes distinctes. null quand la mesure ne sait pas les distinguer (un clic sur un lien de template). */
   contacts: number | null;
-}
-
-/** Un lien trace d'un template, avec ses clics sur la periode (tous envois confondus). */
-export interface LienTraceApi {
-  code: string;
-  templateName: string;
-  templateLanguage: string;
-  cardIndex: number | null;
-  buttonIndex: number;
-  destination: string;
-  clics: number;
-}
-
-/**
- * Clics sur les liens traces des templates, TOUS ENVOIS CONFONDUS (campagne, scenario, inbox).
- *
- * 503 si le tracage n'est pas configure sur l'instance : l'ecran masque alors la carte, plutot que d'afficher
- * une liste vide qui se lirait « aucun lien ».
- */
-export function getTrackedLinkClicks(tenantId: string, range?: StatsRange): Promise<{ liens: LienTraceApi[] }> {
-  return request<{ liens: LienTraceApi[] }>(`/tenants/${tenantId}/stats/links${rangeQuery(range)}`);
 }
 
 /** Mesures d'un scenario, bloc par bloc, sur la periode. Brutes : c'est l'ecran qui compose le tableau. */

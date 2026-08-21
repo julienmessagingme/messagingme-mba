@@ -2,6 +2,7 @@
 
 import { useT } from '@/lib/i18n';
 import type { UserFieldDef, UserFieldKind } from '@/lib/api';
+import { SYSTEM_FIELDS } from '@/lib/fields';
 
 // Types miroir (sous-ensemble v1) de src/workflow/conditions.ts. Le backend est défensif sur `data` opaque ;
 // on ne produit ici que des clauses bien formées. `valueType:'number'` force la comparaison numérique (eq inclus).
@@ -22,9 +23,6 @@ const BASE_FIELDS: { key: string; type: UserFieldKind }[] = [
   { key: 'name', type: 'text' }, { key: 'prenom', type: 'text' }, { key: 'email', type: 'text' },
   { key: 'phone', type: 'text' }, { key: 'bsuid', type: 'text' },
 ];
-const BASE_LABELS: Record<string, [string, string]> = {
-  name: ['Nom', 'Name'], prenom: ['Prénom', 'First name'], email: ['Email', 'Email'], phone: ['Téléphone', 'Phone'], bsuid: ['BSUID', 'BSUID'],
-};
 
 type Kind = 'field' | 'tag' | 'weekday' | 'business_hours' | 'time_of_day' | 'identity' | 'optin';
 function kindOf(c: Clause): Kind {
@@ -43,7 +41,9 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
 
   // Liste des champs adressables (base + perso), avec leur type -> détermine les opérateurs proposés.
   const allFields: { key: string; label: string; type: UserFieldKind }[] = [
-    ...BASE_FIELDS.map((f) => ({ key: f.key, label: t(...(BASE_LABELS[f.key] ?? [f.key, f.key])), type: f.type })),
+    // Libellés pris dans la source COMMUNE `SYSTEM_FIELDS` : ce composant en portait une copie, parce que
+    // `fields.ts` ne donnait que le français. Il le donne dans les deux langues, la copie n'a plus lieu d'être.
+    ...BASE_FIELDS.map((f) => ({ key: f.key, label: t(...(SYSTEM_FIELDS.find((s) => s.key === f.key)?.label ?? [f.key, f.key])), type: f.type })),
     ...fields.filter((f) => !BASE_FIELDS.some((b) => b.key === f.key)).map((f) => ({ key: f.key, label: f.label, type: f.type })),
   ];
   const typeOfKey = (key: string): UserFieldKind => allFields.find((f) => f.key === key)?.type ?? 'text';

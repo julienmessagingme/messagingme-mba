@@ -9,7 +9,6 @@ import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConv
 import { scopeTenant } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
-import type { LienTrace } from '../links/tracked-links.pg';
 
 // Valeurs d'enum admises pour les filtres de la liste quali (miroir de src/analysis/schema.ts). On ne passe au
 // store QUE des valeurs valides -> pas d'injection de filtre arbitraire, et le NULL = « pas de filtre ».
@@ -39,14 +38,6 @@ export interface StatsRouteDeps {
    * vide, qui se lirait « ce scénario n'a rien produit » alors que rien n'est branché.
    */
   getWorkflowNodeCounts?(tenantId: string, workflowId: string, range: DateRange): Promise<Array<NodeEventCount | CompteurClic>>;
-  /**
-   * TOUS les liens tracés de l'espace et leurs clics sur la plage, TOUS ENVOIS CONFONDUS.
-   *
-   * Distinct de `getWorkflowNodeCounts` qui rattache les clics à un bloc de scénario : un template utilisé
-   * uniquement en CAMPAGNE n'a aucun bloc où s'accrocher, et n'apparaîtrait donc nulle part. Optionnelle :
-   * absente -> 503 plutôt qu'une liste vide, qui se lirait « aucun lien » alors que rien n'est branché.
-   */
-  getTrackedLinkClicks?(tenantId: string, range: DateRange): Promise<Array<LienTrace & { clics: number }>>;
 }
 
 /** Stats du dashboard (séries 1 pt/jour). Groupe admin-only (guard passé par server.ts). Plage de dates
@@ -121,21 +112,6 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send({ counts: await deps.getWorkflowNodeCounts(tenant, workflowId, r.range) });
-  });
-
-  /**
-   * Clics sur les liens tracés des templates, TOUS ENVOIS CONFONDUS (campagne, scénario, inbox).
-   *
-   * Un lien ne sait pas qui l'a envoyé, et c'est ce qui rend ce compteur juste : il additionne tout ce qui a
-   * cliqué, d'où que soit parti le message.
-   */
-  app.get('/tenants/:tenantId/stats/links', guard, async (req, reply) => {
-    const tenant = scopeTenant(req);
-    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    if (!deps.getTrackedLinkClicks) return reply.code(503).send({ error: 'traçage des liens non configuré' });
-    const r = parseRange(req.query as Record<string, unknown>);
-    if ('error' in r) return reply.code(400).send({ error: r.error });
-    return reply.code(200).send({ liens: await deps.getTrackedLinkClicks(tenant, r.range) });
   });
 
   // Graphe de coût estimé/jour, filtrable ?campaignId= / ?templateName= (peut appeler Meta pour le tarif).

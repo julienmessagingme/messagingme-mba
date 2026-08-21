@@ -148,7 +148,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
             className={`${inputCls} mt-1.5 font-mono text-xs`}
             rows={8}
             data-testid="mba-import-csv"
-            placeholder={'question,réponse\nLes chiens sont-ils admis ?,Oui, tenus en laisse.'}
+            placeholder={t('question,réponse\nLes chiens sont-ils admis ?,Oui, tenus en laisse.', 'question,answer\nAre dogs allowed?,Yes, on a leash.')}
             value={csv}
             onChange={(e) => { setCsv(e.target.value); invalider(); }}
           />
@@ -199,7 +199,7 @@ export function MbaFaqImportPanel({ tenantId, phoneNumberId, onImported }: {
           <input
             className={`${inputCls} mt-1.5`}
             data-testid="mba-import-url"
-            placeholder="https://www.exemple.fr/faq"
+            placeholder={t('https://www.exemple.fr/faq', 'https://www.example.com/faq')}
             value={url}
             onChange={(e) => { setUrl(e.target.value); invalider(); }}
           />

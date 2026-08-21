@@ -213,7 +213,7 @@ function WFNode({ id, data, selected }: NodeProps) {
                 {isQR ? (
                   // Le nom de la sortie DOIT être celui que l'envoi pose en payload, sinon le tap ne retrouve
                   // pas sa branche : `handle` vient du template (carousel), sinon l'index du bouton.
-                  <Handle type="source" id={b.handle ?? `btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={`${t('Relier', 'Connect')} « ${b.text || fallback} »`} />
+                  <Handle type="source" id={b.handle ?? `btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t(`Relier « ${b.text || fallback} »`, `Connect “${b.text || fallback}”`)} />
                 ) : (
                   <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title={t('Bouton URL / formulaire : sort de WhatsApp, non reliable', 'URL / form button: leaves WhatsApp, not connectable')} />
                 )}
@@ -1039,7 +1039,7 @@ function ConfigPanel({
         <p className="text-xs leading-relaxed text-ink-500">
           {t(
             "Le fil passe à un humain : le scénario s'arrête ici et la conversation apparaît dans « À traiter » dans l'Inbox. À placer APRÈS le message qui annonce le conseiller, c'est lui qui fait taire l'agent automatique.",
-            "The thread goes to a human: the scenario stops here and the conversation shows up under « To handle » in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
+            "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
           )}
         </p>
       )}

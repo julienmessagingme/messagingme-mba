@@ -1,5 +1,77 @@
 # WIP
 
+## EN COURS (2026-08-21) — lot « 5 corrections », code ecrit, PAS deploye
+
+Cinq demandes de Julien, traitees ensemble. Tout est verifie en local (tsc racine + web propres, suites
+unitaires et d'integration vertes, E2E cibles verts), rien n'est encore en production.
+
+1. **Le nom de l'entreprise dans la miniature de template.** L'apercu affichait « Votre entreprise » sur
+   100 % des rendus : la prop existait depuis toujours mais aucun ecran ne la passait. `PhoneFrame` resout
+   desormais le nom verifie tout seul (une requete par espace, memorisee au niveau du module, car l'apercu de
+   `TemplateForm` se redessine a chaque frappe), et l'ecran de campagne passe le numero REELLEMENT choisi.
+2. **La cinematique du template cree a la volee.** Le bouton n'etait pas casse : il rechargeait une liste
+   filtree sur APPROVED, affichee ailleurs, pendant que le panneau montrait un statut fige a la creation.
+   L'ecran sonde maintenant tout seul (15 s, onglet au premier plan uniquement), selectionne le template des
+   qu'il est approuve, et annonce un refus sans en inventer le motif.
+   ⚠️ Le webhook `message_template_status_update` n'est ni souscrit chez Meta ni parse par `webhooks/parse.ts`
+   (verifie des deux cotes) : le sondage est donc la seule voie, et un abonnement seul ne suffirait pas.
+3. **Les clics dans le funnel par campagne** (Analytics > Quantitatif) et le RETRAIT de la carte « Clics sur
+   les liens » de Mes tableaux, avec toute sa chaine (route `/stats/links`, `listAvecClics`, `lib/liens-traces`).
+4. **Les faux clics.** 70 requetes mesurees sur le lien d'un template jamais envoye : 59 du robot
+   `facebookexternalhit`, 11 de relecteurs Meta arrivant de Facebook. Filtre a l'ecriture
+   (`src/links/clic-automatique.ts`, la redirection reste inconditionnelle) ET seuil « depuis le premier
+   envoi » a la lecture, qui couvre en plus tout ce qui a ete enregistre avant.
+5. **L'anglais.** 79 chaines francaises trouvees dans les modules `.ts` PURS (ou `useT()` est inappelable),
+   toutes corrigees. Plus un vrai bug d'affichage : `ScenarioCanvas` comparait une chaine traduite a une
+   chaine qui ne l'etait pas, donc en anglais le sous-titre redondant revenait sur tous les blocs.
+
+### Revue adversariale passee (2026-08-21) : 6 rouges corriges
+
+5 relecteurs sur dimensions separees, puis un refutateur par constat. 35 constats rapportes, 6 rouges
+confirmes, tous corriges dans la foulee, jaunes compris (regle zero dette).
+
+Les deux qui auraient coute cher en production :
+1. **Le panneau annoncait « il est selectionne » sans savoir si quoi que ce soit l'avait ete.** La selection
+   automatique s'abstient quand un AUTRE template a ete choisi pendant l'attente : la phrase mentait dans
+   exactement le cas pour lequel le garde-fou avait ete ecrit, et la campagne partait avec l'autre template.
+   La phrase suit desormais l'etat REEL (`templateName === submittedTemplate.name`).
+2. **Les deux effets n'etaient bornes a AUCUN mode.** Apres une bascule vers Scenario ou RCS, le sondage
+   continuait et `chooseTemplate` finissait par s'executer tout seul, ECRASANT la categorie (`marketing` au
+   lieu de `utility`) que `chooseWorkflow` ne reecrit jamais : contacts sans opt-in ecartes, facturation
+   changee. Les deux effets sortent maintenant si `mode !== 'template'`, et `chooseMode` ferme le panneau.
+
+Les quatre autres : le marqueur `bot` teste en sous-chaine libre ecartait les vrais telephones **CUBOT**
+(marque Android vendue en Europe) ; un total de contacts INVENTE a partir des lignes ramenees, plafonne par
+la limite de la requete ; et deux tests qui ne pouvaient pas echouer (l'un gardait une normalisation deja
+couverte par un `catch`, l'autre pretendait distinguer une reaction emoji sans jamais lui donner de payload).
+
+### La meme fragilite, trouvee TROIS fois
+
+Une reponse 200 amputee d'un champ pose `undefined` dans un etat type tableau, un `.length` ou un `.marketing`
+du rendu jette, et React demonte l'ECRAN ENTIER. Le `try/catch` autour de l'appel n'y peut rien : il n'y a
+aucune erreur reseau. Deja vu deux fois la veille (brouillons de campagne, fil de conversation), retrouvee ici
+sur l'ecran de creation de campagne (`/contacts`) et sur le tableau de bord (`/stats`).
+
+Les trois sont desormais NORMALISES a la frontiere reseau, avant d'entrer dans l'etat. Regle : tout champ
+tableau lu d'une reponse se traite comme optionnel, meme quand le contrat dit qu'il ne l'est pas. Le typage
+TypeScript ne couvre pas ce cas, il decrit ce que l'API PROMET.
+
+### A faire avant de deployer
+- Suite E2E COMPLETE (seuls les specs touches ont ete relances jusqu'ici).
+- Aucune migration dans ce lot : rien a appliquer avant. La derniere reste **0073**.
+
+### Trouve en chemin, corrige au passage
+- L'ecran de creation de campagne tombait ENTIEREMENT si `/contacts` rendait 200 sans le champ `contacts`
+  (`undefined.length`). Normalise a la frontiere reseau. Meme classe de defaut que les deux ecrans perdus la
+  veille.
+- Deux fois : un backtick dans un commentaire SQL ferme le gabarit JS et produit des erreurs de syntaxe qui
+  ne pointent pas la bonne ligne. Consigne dans `documentation.md`.
+- Un `count` d'agregat sans `group by` rend toujours une ligne : « aucun lien trace » devenait « 0 clic ».
+  C'est le test d'integration EXISTANT du funnel qui l'a attrape.
+
+---
+
+
 ## LIVRE ET DEPLOYE le 2026-08-21 — lot « inbox, comptes, moderation » (7/7)
 
 Prod sur **`c4d7b41`**, migrations jusqu'a **0073**, conteneurs sains. Cadrage et decisions :

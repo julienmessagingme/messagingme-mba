@@ -5,17 +5,15 @@ import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
 import {
   listWorkflows, getWorkflow, getWorkflowNodeCounts, listWorkflowReports, saveWorkflowReport, deleteWorkflowReport,
-  getTrackedLinkClicks,
-  type StatsRange, type WorkflowSummary, type TableauEnregistre, type LienTraceApi,
+  type StatsRange, type WorkflowSummary, type TableauEnregistre,
 } from '@/lib/api';
 import type { Session } from '@/lib/session';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
 import { cardCls, inputClsAuto } from '@/lib/ui';
 import { ScenarioCanvas } from '@/components/ScenarioCanvas';
 import { TableauHistogramme } from '@/components/TableauHistogramme';
 import { BoutonPdf } from '@/components/BoutonPdf';
-import { libelleLien, largeurBarre } from '@/lib/liens-traces';
 import {
   blocsDuScenario, mesuresDisponibles, handlesMesuresParBloc, handlesClicsLienParBloc, groupesDuTableau,
   type BlocMesurable, type CompteurBrut, type MesureDispo,
@@ -42,6 +40,7 @@ export default function MesTableauxPage() {
 
 function TableauxInner({ session }: { session: Session }) {
   const t = useT();
+  const { locale } = useLocale();
   const [range, setRange] = useState<StatsRange>(() => presetRange(30));
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
   const [choisi, setChoisi] = useState('');
@@ -96,8 +95,8 @@ function TableauxInner({ session }: { session: Session }) {
   }, [session.tenantId, choisi, range, t]);
 
   const blocs = useMemo<BlocMesurable[]>(
-    () => (graph ? blocsDuScenario(graph as never, handlesMesuresParBloc(counts), handlesClicsLienParBloc(counts)) : []),
-    [graph, counts],
+    () => (graph ? blocsDuScenario(graph as never, locale, handlesMesuresParBloc(counts), handlesClicsLienParBloc(counts)) : []),
+    [graph, counts, locale],
   );
   // Le PREMIER bloc de message du parcours : lui seul propose « Échecs » et « Délivrés » (cf. mesuresDisponibles).
   const premierMessage = useMemo(() => blocs.find((b) => b.mesurable)?.id ?? '', [blocs]);
@@ -113,7 +112,7 @@ function TableauxInner({ session }: { session: Session }) {
   }, [retenues]);
 
   /** Les groupes de barres, dans l'ordre du parcours. Recalcules a chaque changement de selection ou de periode. */
-  const groupes = useMemo(() => groupesDuTableau(retenues, counts, blocs), [retenues, counts, blocs]);
+  const groupes = useMemo(() => groupesDuTableau(retenues, counts, blocs, locale), [retenues, counts, blocs, locale]);
 
   const basculer = (m: MesureDispo): void => {
     setEtat(null);
@@ -177,8 +176,6 @@ function TableauxInner({ session }: { session: Session }) {
 
       <RangeBar title={t('Période', 'Period')} range={range} onChange={setRange} />
 
-      <CarteClicsLiens tenantId={session.tenantId} range={range} />
-
       {tableaux.length > 0 && (
         <section className={cardCls}>
           <label className="mb-1 block text-sm font-medium text-ink-700">{t('Ouvrir un tableau enregistré', 'Open a saved report')}</label>
@@ -240,7 +237,7 @@ function TableauxInner({ session }: { session: Session }) {
                   <div className="rounded-xl border border-brand-200 bg-brand-50/30 p-3" data-testid="bloc-mesures">
                     <p className="mb-2 truncate text-sm font-semibold text-ink-900">{blocOuvert.titre}</p>
                     <div className="space-y-1.5">
-                      {mesuresDisponibles(blocOuvert, blocOuvert.id === premierMessage).map((m) => (
+                      {mesuresDisponibles(blocOuvert, locale, blocOuvert.id === premierMessage).map((m) => (
                         <label key={m.cle} className="flex items-center gap-2 text-sm text-ink-700">
                           <input
                             type="checkbox"
@@ -325,72 +322,5 @@ function TableauxInner({ session }: { session: Session }) {
         </>
       )}
     </div>
-  );
-}
-
-/**
- * Clics sur les liens des templates, TOUS ENVOIS CONFONDUS.
- *
- * Séparée des tableaux de scénario, et c'est délibéré : un lien ne sait pas qui l'a envoyé. Un template
- * utilisé uniquement en CAMPAGNE n'a aucun bloc de scénario où s'accrocher, et n'apparaîtrait nulle part
- * dans une lecture par bloc. Ici, il est compté comme les autres.
- *
- * Silencieuse quand il n'y a rien à montrer : une carte vide sur un écran de scénarios attirerait l'oeil sur
- * une fonctionnalité que l'espace n'utilise pas encore.
- */
-function CarteClicsLiens({ tenantId, range }: { tenantId: string; range: StatsRange }) {
-  const t = useT();
-  const [liens, setLiens] = useState<LienTraceApi[] | null>(null);
-
-  useEffect(() => {
-    let vivant = true;
-    // Échec silencieux : 503 = traçage non configuré sur l'instance, et le reste de l'écran n'a pas à
-    // s'arrêter pour autant.
-    getTrackedLinkClicks(tenantId, range)
-      .then((r) => { if (vivant) setLiens(r.liens ?? []); })
-      .catch(() => { if (vivant) setLiens([]); });
-    return () => { vivant = false; };
-  }, [tenantId, range]);
-
-  if (!liens || liens.length === 0) return null;
-
-  const max = liens.reduce((m, l) => Math.max(m, l.clics), 0);
-  const total = liens.reduce((acc, l) => acc + l.clics, 0);
-
-  return (
-    <section id="tableaux-liens" className={cardCls}>
-      <div className="mb-1 flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-ink-900">{t('Clics sur les liens', 'Link clicks')}</h3>
-        <BoutonPdf zone="tableaux-liens" />
-      </div>
-      <p className="mb-3 text-xs text-ink-500">
-        {t(
-          'Tous envois confondus : campagnes, scénarios et inbox. Un lien ne sait pas d’où part le message qui le porte.',
-          'All sends combined: campaigns, scenarios and inbox. A link does not know which send carried it.',
-        )}
-      </p>
-
-      <ul className="space-y-2.5" data-testid="liens-traces">
-        {liens.map((l) => (
-          <li key={l.code} data-testid="lien-trace">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-sm font-medium text-ink-800">{libelleLien(l)}</span>
-              <span className="shrink-0 text-sm tabular-nums text-ink-700">{l.clics}</span>
-            </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-50">
-              <div className="h-full rounded-full" style={{ width: `${largeurBarre(l.clics, max)}%`, backgroundColor: '#C026D3' }} />
-            </div>
-            {/* La destination identifie le lien mieux que son numéro de bouton : c'est elle que l'opérateur
-                reconnaît. Tronquée à l'affichage, entière au survol. */}
-            <p className="mt-0.5 truncate text-[11px] text-ink-400" title={l.destination}>{l.destination}</p>
-          </li>
-        ))}
-      </ul>
-
-      <p className="mt-3 border-t border-ink-100 pt-3 text-xs text-ink-400">
-        {t(`${total} clic(s) sur la période. Seuls les templates créés depuis la mise en service du suivi sont mesurés.`,
-          `${total} click(s) over the period. Only templates created since tracking was switched on are measured.`)}
-      </p>
-    </section>
   );
 }

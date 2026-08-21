@@ -14,6 +14,22 @@ export interface CampaignFunnel {
   read: number;
   replied: number;
   failed: number;
+  /**
+   * Taps sur un bouton de RÉPONSE RAPIDE du template, attribués comme `replied` (dont ils sont un
+   * sous-ensemble : un tap de bouton EST un message entrant).
+   */
+  buttonReplies: number;
+  /**
+   * Clics sur les liens TRACÉS du template de la campagne, depuis son premier envoi.
+   *
+   * `null` = ce template ne porte aucun bouton URL tracé et confirmé : l'étape n'est pas affichable, et une
+   * barre à zéro se lirait « personne n'a cliqué » au lieu de « il n'y a rien à cliquer ».
+   *
+   * ⚠️ C'est un compteur de TEMPLATE, pas de campagne : un lien ne sait pas quel envoi l'a porté. Le seuil au
+   * premier envoi écarte l'exploration de Meta (qui clique chaque bouton URL pendant la revue, donc AVANT le
+   * premier envoi), mais deux campagnes sur le même template partagent leurs clics. L'écran doit le dire.
+   */
+  urlClicks: number | null;
 }
 
 /** Une ligne du breakdown d'erreurs : code Meta numérique + template + occurrences sur la plage. */
@@ -72,6 +88,35 @@ const TZ = STATS_TZ;
 /** Séries « 1 point par jour » pour le dashboard. Buckets jour en tz Europe/Paris.
  *  Plage `range` (from..to INCLUS, Europe/Paris) : bornes SQL calculées via bounds CTE (DST-safe),
  *  borne haute EXCLUSIVE = minuit Paris de (to+1). Params partout : [tenantId, from, to, TZ]. */
+/**
+ * Un message ENTRANT attribué à CET envoi : même numéro, après l'envoi, et aucun envoi ultérieur au même
+ * numéro entre les deux (sinon la réponse revient au dernier envoi, pas à celui-ci). C'est ce qui empêche
+ * une même réponse d'être comptée sur deux campagnes.
+ *
+ * Sorti en fragment parce que le funnel s'en sert DEUX fois, pour « répondu » et pour « a tapé un bouton ».
+ * Deux copies divergeraient à la première correction de l'attribution. Même doctrine que
+ * `RECIPIENT_FAILED_SQL` (`src/campaign/store.pg.ts`).
+ *
+ * ⚠️ S'utilise UNIQUEMENT dans une requête où `c` est `campaigns` et `r` est `campaign_recipients`.
+ * `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
+ */
+const entrantAttribue = (extra = ''): string => `r.sent_at is not null and exists (
+           select 1 from conversations cv
+             join conversation_messages m on m.conversation_id = cv.id
+           where cv.tenant_id = c.tenant_id and not cv.is_test
+             and cv.wa_id = regexp_replace(r.to_e164, '[^0-9]', '', 'g')
+             and m.direction = 'in'
+             and m.created_at > r.sent_at ${extra}
+             and not exists (
+               select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+               where c2.tenant_id = c.tenant_id
+                 and r2.to_e164 = r.to_e164
+                 and r2.sent_at is not null
+                 and r2.sent_at > r.sent_at
+                 and r2.sent_at < m.created_at
+             )
+         )`;
+
 export class PgStatsStore {
   constructor(private readonly pool: Pool) {}
 
@@ -202,28 +247,17 @@ export class PgStatsStore {
    * NB : « répondu » peut dépasser « lu » (accusés de lecture désactivés côté client) — signal indépendant.
    */
   async getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel> {
-    const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string }>(
+    const res = await this.pool.query<{ sent: string; delivered: string; read: string; replied: string; failed: string; button_replies: string }>(
       `select
          count(r.id) filter (where r.status = 'sent' and r.delivery_status is distinct from 'failed')::int as sent,
          count(r.id) filter (where r.delivery_status in ('delivered', 'read'))::int as delivered,
          count(r.id) filter (where r.delivery_status = 'read')::int as read,
          count(r.id) filter (where r.status = 'failed' or r.delivery_status = 'failed')::int as failed,
-         count(r.id) filter (where r.sent_at is not null and exists (
-           select 1 from conversations cv
-             join conversation_messages m on m.conversation_id = cv.id
-           where cv.tenant_id = c.tenant_id and not cv.is_test
-             and cv.wa_id = regexp_replace(r.to_e164, '[^0-9]', '', 'g')
-             and m.direction = 'in'
-             and m.created_at > r.sent_at
-             and not exists (
-               select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
-               where c2.tenant_id = c.tenant_id
-                 and r2.to_e164 = r.to_e164
-                 and r2.sent_at is not null
-                 and r2.sent_at > r.sent_at
-                 and r2.sent_at < m.created_at
-             )
-         ))::int as replied
+         count(r.id) filter (where ${entrantAttribue()})::int as replied,
+         -- Sous-ensemble des repondants, restreint aux taps de bouton. On teste type = 'button' et NON
+         -- button_payload is not null : ce champ est aussi rempli par un message interactive et par une
+         -- reaction (ou il porte un identifiant de message), donc un emoji serait compte comme un clic.
+         count(r.id) filter (where ${entrantAttribue("and m.type = 'button'")})::int as button_replies
        from campaign_recipients r join campaigns c on c.id = r.campaign_id
        where c.id = $1 and c.tenant_id = $2`,
       [campaignId, tenantId],
@@ -235,7 +269,49 @@ export class PgStatsStore {
       read: Number(row?.read ?? 0),
       replied: Number(row?.replied ?? 0),
       failed: Number(row?.failed ?? 0),
+      buttonReplies: Number(row?.button_replies ?? 0),
+      urlClicks: await this.clicsLiensCampagne(tenantId, campaignId),
     };
+  }
+
+  /**
+   * Clics sur les liens tracés du template de CETTE campagne, à partir de son PREMIER envoi.
+   *
+   * `null` quand le template ne porte aucun lien tracé confirmé (ou quand la campagne est un scénario, dont
+   * `template_name` est nul) : il n'y a alors rien à afficher, et une barre à zéro mentirait.
+   *
+   * Le seuil au premier envoi n'est pas cosmétique : Meta explore puis fait cliquer chaque bouton URL pendant
+   * la revue du template, donc AVANT le moindre envoi. Sans lui, une campagne démarre avec des dizaines de
+   * clics qui ne viennent de personne. Le filtre d'agent (`src/links/clic-automatique.ts`) attrape la même
+   * chose à l'écriture ; ce seuil couvre en plus tout ce qui a été enregistré avant qu'il n'existe.
+   */
+  private async clicsLiensCampagne(tenantId: string, campaignId: string): Promise<number | null> {
+    const res = await this.pool.query<{ n: string | null }>(
+      `with borne as (
+         select c.template_name, c.template_language, min(r.sent_at) as premier_envoi
+           from campaigns c join campaign_recipients r on r.campaign_id = c.id
+          where c.id = $1 and c.tenant_id = $2 and r.sent_at is not null
+          group by c.template_name, c.template_language
+       )
+       select count(k.id)::int as n
+         from borne b
+         join tracked_links l
+           on l.tenant_id = $2
+          and l.template_name = b.template_name
+          and l.template_language = b.template_language
+          and l.confirmed_at is not null
+         left join tracked_link_clicks k
+           on k.code = l.code and k.tenant_id = $2 and k.at >= b.premier_envoi
+        where b.template_name is not null
+        -- GROUP BY indispensable : un count d agregat SANS group by rend TOUJOURS une ligne (a zero),
+        -- donc 'aucun lien trace' serait devenu '0 clic', et l ecran afficherait une etape qui ment.
+        -- Avec lui, zero ligne en entree = zero ligne en sortie = null cote appelant.
+        group by b.template_name`,
+      [campaignId, tenantId],
+    );
+    // Aucune ligne = pas de lien tracé confirmé sur ce template (ou campagne jamais envoyée) -> non affichable.
+    const row = res.rows[0];
+    return row ? Number(row.n ?? 0) : null;
   }
 
   /**

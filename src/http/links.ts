@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { isSendableButtonUrl } from '../meta/button-url';
+import { estClicAutomatique } from '../links/clic-automatique';
 import type { DestinationLien } from '../links/tracked-links.pg';
 
 /**
@@ -65,10 +66,20 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
 
     // Le clic est compté AVANT la redirection mais son échec ne la bloque pas : mieux vaut un clic non
     // compté qu'un destinataire bloqué sur une erreur.
-    try {
-      await deps.recordClick(normalise, lien.tenantId);
-    } catch (err) {
-      req.log.error({ err, code: normalise }, 'clic non enregistré');
+    //
+    // ⚠️ On ne COMPTE que les clics crédibles, mais on REDIRIGE toujours. Meta explore puis fait cliquer
+    // chaque bouton URL pendant la revue du template, donc avant le moindre envoi : 70 faux clics mesurés
+    // sur le premier lien de la production le 2026-08-21. Voir `estClicAutomatique`.
+    if (!estClicAutomatique({
+      userAgent: req.headers['user-agent'],
+      referer: req.headers.referer,
+      parametres: req.query as Record<string, unknown> | null,
+    })) {
+      try {
+        await deps.recordClick(normalise, lien.tenantId);
+      } catch (err) {
+        req.log.error({ err, code: normalise }, 'clic non enregistré');
+      }
     }
 
     // 302 et non 301 : un 301 est mis en cache par le navigateur, qui n'appellerait plus jamais notre route.

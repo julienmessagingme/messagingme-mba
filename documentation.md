@@ -397,6 +397,29 @@ un `locale` **REQUIS** (pas de défaut : tsc LISTE tous les appelants, aucun oub
 `en-GB`) sont CONFINÉS à ces 2 libs : grep `fr-FR` = 0 ailleurs dans `web/`. `dayKey` (en-CA = clé ISO de tri) et
 `fmtCost` restent indépendants de la langue.
 
+**Rattrapage du 2026-08-21 : le trou était sous les composants.** Le chantier de 2026-07-16 avait traduit les
+`.tsx`, où une chaîne non enveloppée dans `t()` se repère à l'oeil. Les lots d'août ont ensuite extrait la
+logique de présentation vers des modules `.ts` PURS, testables par vitest, où `useT()` est **inappelable**
+(c'est un hook). 79 chaînes s'y sont accumulées et sortaient en français sur une console en anglais, sans que
+build, tsc ni tests ne bronchent : `i18n.tsx` retombe **silencieusement** sur le français quand l'argument
+anglais manque. Corrigés : `mesures-scenario.ts` (tout l'écran Mes tableaux), `meta-errors.ts` (22 messages
+d'erreur Meta), `fields.ts` (libellés des champs système, désormais en paires `[fr, en]`, ce qui a permis de
+supprimer la copie qu'en portait `ConditionBuilder`), `timezones.ts` (exonymes), `http.ts` (messages jetés,
+qui lit la langue directement dans `localStorage` faute de contexte React), plus les guillemets `« »` restés
+dans des phrases anglaises.
+
+🔴 **Deux pièges vérifiés à cette occasion.** (1) `ScenarioCanvas` comparait `d.titre !== t(...meta.label)`,
+soit une chaîne jamais traduite contre une chaîne traduite : en anglais l'égalité n'arrivait jamais et le
+sous-titre redondant réapparaissait sur tous les blocs. Remplacé par un booléen calculé à la source
+(`titrePropre`). C'était la seule occurrence du grep de sûreté `=== t(`. (2) Le libellé d'une mesure est
+**persisté** dans un tableau enregistré : `groupesDuTableau` le RE-DÉRIVE à l'affichage au lieu de relire
+celui du JSON, sinon un tableau enregistré en français ressort en français dans une console en anglais.
+
+⚠️ **Règle** : un module `.ts` qui produit du texte destiné à l'écran prend un paramètre `locale` **REQUIS**
+(tsc liste alors les appelants), ou porte ses libellés en paires `[fr, en]` résolues au rendu par `t(...paire)`.
+Attention, TypeScript ne protège PAS le rendu : `{f.label}` où `label` est une paire compile sans broncher et
+React affiche « NomName ».
+
 ## Identifiants publics « schéma A » (Lot 4a, 2026-07-16, migration 0031)
 
 Socle d'une future API : chaque entité porte un **code public** `<type>_<code-client>_<ULID>` (ex.
@@ -656,9 +679,21 @@ une nature `url_click` qui n'existe QUE dans la réponse de l'API et dans le fro
 de 0063, ce qui évite la panne silencieuse d'un insert refusé (`record()` est best-effort partout).
 `NodeEventCount.contacts` devient `number | null` : `null` = « on ne sait pas distinguer les personnes ».
 
-**Lecture tous envois confondus** : `GET /tenants/:t/stats/links` (`listAvecClics`) rend TOUS les liens de
-l'espace avec leurs clics. C'est elle qui rattrape un template utilisé uniquement en campagne, qui n'a aucun
-bloc de scénario où s'accrocher. `left join` obligatoire : un lien à zéro clic doit rester listé.
+**Lecture par CAMPAGNE** : `getCampaignFunnel` (`src/stats/store.pg.ts`) rend `urlClicks` (clics des liens
+tracés du template de la campagne, **depuis son premier envoi**) et `buttonReplies` (taps de réponse rapide,
+sous-ensemble de `replied`, discriminés par `conversation_messages.type = 'button'` et surtout PAS par
+`button_payload is not null`, que remplissent aussi `interactive` et `reaction`). `urlClicks` vaut **`null`**
+quand le template ne porte aucun lien tracé confirmé : l'écran masque alors l'étape au lieu d'afficher un zéro
+trompeur. La route `GET /tenants/:t/stats/links` et `listAvecClics` (lecture « tous envois confondus ») ont été
+RETIRÉES le 2026-08-21 avec la carte de Mes tableaux qu'elles alimentaient.
+
+🔴 **Ne comptez pas les clics de Meta.** Mesuré le 2026-08-21 sur le premier lien de la production : 70 requêtes
+sur le lien d'un template JAMAIS envoyé, dont 59 de l'agent `facebookexternalhit` et 11 de vrais navigateurs
+arrivant de Facebook (référent `*.facebook.com`, paramètre `fbclid`), soit l'équipe de revue de Meta. Tout
+template à bouton URL est donc exploré ET cliqué avant son premier envoi. Deux garde-fous, complémentaires :
+`estClicAutomatique` (`src/links/clic-automatique.ts`) écarte ces requêtes **à l'écriture** tout en redirigeant
+toujours, et le seuil « depuis le premier envoi » du funnel écarte **à la lecture** tout ce qui a été
+enregistré avant que ce filtre n'existe. Aucun user-agent ni IP n'est stocké pour autant (migration 0066).
 
 **Faits Meta MESURÉS le 2026-08-20** (deux templates d'essai, tous deux approuvés) : le domaine du bouton
 **n'a pas besoin d'appartenir à l'entreprise**, et Meta **ne vérifie pas l'accessibilité** de l'URL à la revue
@@ -891,6 +926,33 @@ donc être à nous (ou son répondeur, dont on n'a pas confirmé qu'il produise 
 **Gotchas Zadarma mesurés en direct** (détail et suite dans `wip.md`) : signature = base64 du HMAC-SHA1
 HEXADÉCIMAL (56 caractères) ; en écriture les paramètres vont dans le CORPS, URL nue. Les deux erreurs
 produisent le même « 401 Not authorized » qui fait accuser des clés pourtant bonnes.
+
+## Filtrage des clics automatiques (2026-08-21)
+
+`src/links/clic-automatique.ts` décide si un appel sur `/r/:code` COMPTE. Il ne décide jamais de la
+redirection, qui reste inconditionnelle : un lien déjà livré doit fonctionner pour tout le monde.
+
+🔴 **Chaque marqueur d'agent porte son délimiteur** (`googlebot`, `curl/`, `okhttp/`, `java/`). Un marqueur
+nu testé en sous-chaîne libre attrape de vrais appareils : « bot » seul écarte tous les téléphones **CUBOT**,
+une marque Android vendue en Europe dont le modèle figure dans le user-agent. Le faux positif est le défaut
+le plus grave ici, parce qu'il efface le clic d'un vrai client en silence et sans recours ; laisser passer un
+robot exotique se voit et se corrige.
+
+Un user-agent ABSENT ne disqualifie pas, pour la même raison. Trois signaux écartent : agent déclaré robot,
+référent `*.facebook.com`, paramètre `fbclid`. Les deux derniers visent la revue de template, pendant
+laquelle des humains de chez Meta ouvrent le bouton depuis Facebook avec un navigateur ordinaire.
+
+## Pièges d'écriture des requêtes SQL
+
+🔴 **Jamais de `backtick` dans un commentaire SQL.** Nos requetes vivent dans des gabarits JS delimites par
+des backticks : un seul dans un commentaire `--` FERME la chaine, et tsc rend une cascade d erreurs de syntaxe
+qui ne pointent pas sur la vraie ligne. Vu deux fois le 2026-08-21. Ecrire le mot sans le citer.
+
+🔴 **Un `count` d agregat SANS `group by` rend TOUJOURS une ligne**, meme quand aucune ligne n entre. Une
+requete censee distinguer « rien a mesurer » (aucune ligne) de « zero » rend donc zero dans les deux cas, et
+l ecran affiche une etape qui ment. Ajouter un `group by` sur une colonne de la source : zero ligne en entree
+donne alors zero ligne en sortie. C est exactement ce qui distingue `urlClicks: null` de `urlClicks: 0` dans
+le funnel par campagne.
 
 ## Modules partagés (audit anti-slop du 2026-08-18)
 

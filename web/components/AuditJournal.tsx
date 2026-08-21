@@ -64,7 +64,7 @@ export function AuditJournal({ tenantId }: { tenantId: string }) {
       const lignes = lignesJournalCsv(toutes, {
         action: libelleAction, oui: t('oui', 'yes'), non: t('non', 'no'), systeme: t('Système', 'System'),
       });
-      downloadCsv('journal-des-actions.csv', toCsv(entetes, lignes));
+      downloadCsv(t('journal-des-actions.csv', 'action-log.csv'), toCsv(entetes, lignes));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Export impossible', 'Export failed'));
     } finally {

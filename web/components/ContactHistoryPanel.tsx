@@ -41,9 +41,9 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
       const rows = sends.map((s) => [
         s.campaignName, s.status, s.deliveryStatus ?? '', s.category,
         s.templateName ? `${s.templateName}${s.templateLanguage ? ` (${s.templateLanguage})` : ''}` : (s.workflowName ?? ''),
-        s.sentAt ?? '', s.error ?? '', explainMetaError(s.error) ?? '',
+        s.sentAt ?? '', s.error ?? '', explainMetaError(s.error, locale) ?? '',
       ]);
-      downloadCsv(`historique-${contactId}.csv`, toCsv(headers, rows));
+      downloadCsv(t(`historique-${contactId}.csv`, `history-${contactId}.csv`), toCsv(headers, rows));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Export impossible', 'Export failed'));
     } finally {

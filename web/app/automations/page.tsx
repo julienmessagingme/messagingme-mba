@@ -153,7 +153,9 @@ function AutomationsInner({ session }: { session: Session }) {
     if (a.triggerKind === 'keyword') {
       const words = Array.isArray(a.triggerConfig.keywords) ? (a.triggerConfig.keywords as unknown[]).map(String) : [];
       const m = a.triggerConfig.mode === 'equals' ? t('message exactement égal à', 'message exactly equals') : t('message contenant', 'message containing');
-      return `${m} ${words.map((w) => `« ${w} »`).join(t(' ou ', ' or '))}`;
+      // Les guillemets suivent la langue eux aussi : « … » en français, “…” en anglais.
+      const cite = (w: string): string => t(`« ${w} »`, `“${w}”`);
+      return `${m} ${words.map(cite).join(t(' ou ', ' or '))}`;
     }
     if (a.triggerKind === 'new_contact') return t('1er message d’un nouveau contact', 'first message from a new contact');
     if (a.triggerKind === 'tag_added') return `${t('tag « ', 'tag "')}${String(a.triggerConfig.tag ?? '')}${t(' » ajouté', '" added')}`;

@@ -161,42 +161,6 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
   });
 
-  it('🔴 PgTrackedLinkStore.listAvecClics : tous les liens de l’espace, y compris ceux à ZÉRO clic', async () => {
-    // Lecture « tous envois confondus » : c'est elle qui rattrape un template utilisé UNIQUEMENT en campagne,
-    // qui n'a aucun bloc de scénario où s'accrocher. Le `left join` n'est pas un détail : sans lui, un lien
-    // sans clic disparaîtrait de l'écran alors qu'il circule dans des messages livrés.
-    const store = new PgTrackedLinkStore(pool);
-    const nom = `liens.itest.${Date.now()}`;
-    const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
-    const plage = { from: jour, to: jour };
-
-    const avecClics = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/a');
-    const sansClic = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: 1, buttonIndex: 0 }, 'https://client.fr/b');
-    const nonConfirme = await store.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 1 }, 'https://client.fr/c');
-    await store.confirm(tenantId, [avecClics, sansClic]);
-    await store.recordClick(avecClics, tenantId);
-    await store.recordClick(avecClics, tenantId);
-    await store.recordClick(avecClics, tenantId);
-
-    const lignes = (await store.listAvecClics(tenantId, plage)).filter((l) => l.templateName === nom);
-    expect(lignes.map((l) => [l.code, l.clics])).toEqual([[avecClics, 3], [sansClic, 0]]); // trié par clics décroissants
-    expect(lignes.some((l) => l.code === nonConfirme)).toBe(false); // non confirmé -> invisible des mesures
-    expect(lignes[1]!.cardIndex).toBe(1); // la carte de carousel est bien portée
-
-    // Une plage antérieure : le lien reste listé, son compteur retombe à zéro.
-    const hier = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
-    const anciennes = (await store.listAvecClics(tenantId, { from: hier, to: hier })).filter((l) => l.templateName === nom);
-    expect(anciennes.map((l) => l.clics)).toEqual([0, 0]);
-
-    // 🔴 Isolation tenant.
-    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-liens-tous') returning id`)).rows[0]!.id;
-    try {
-      expect(await store.listAvecClics(autre, plage)).toEqual([]);
-    } finally {
-      await pool.query('delete from tenants where id = $1', [autre]);
-    }
-  });
-
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
     const users = new PgUserStore(pool);
     const email = `admin.itest.${Date.now()}@exemple.fr`;
@@ -743,7 +707,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await pool.query(`insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'in', 'text', 'oui')`, [convId]);
 
     const funnel = await stats.getCampaignFunnel(tenantId, campaignId);
-    expect(funnel).toEqual({ sent: 2, delivered: 2, read: 1, replied: 1, failed: 1 });
+    expect(funnel).toEqual({ sent: 2, delivered: 2, read: 1, replied: 1, failed: 1, buttonReplies: 0, urlClicks: null });
 
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
     const range = { from: today, to: today };
@@ -760,6 +724,82 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // 🔴 Plusieurs valeurs -> serie COMPILEE : le template reel est pris avec un inconnu, le volume reste entier.
     const compile = await stats.getCostVolume(tenantId, range, { templateNames: ['inconnu', 'te'] });
     expect(compile.find((v) => v.category === 'marketing')?.count).toBe(2);
+  });
+
+  it('🔴 getCampaignFunnel : les clics AVANT le premier envoi ne comptent pas (revue Meta)', async () => {
+    // Mesuré en production le 2026-08-21 : Meta explore puis fait cliquer chaque bouton URL pendant la revue
+    // du template, donc avant le moindre envoi. 70 faux clics sur un template jamais envoyé. Sans ce seuil,
+    // toute campagne démarrerait avec un compteur déjà faux.
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const stats = new PgStatsStore(pool);
+    const liens = new PgTrackedLinkStore(pool);
+    const nom = `clics.itest.${Date.now()}`;
+
+    const code = await liens.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/x');
+    await liens.confirm(tenantId, [code]);
+
+    const contact = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, '+33600000160', 'opted_in') returning id`, [tenantId],
+    )).rows[0]!.id;
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: 'pn-clic', name: 'Clics', category: 'marketing', templateName: nom, templateLanguage: 'fr', paramMapping: [] },
+      [{ contactId: contact, toE164: '+33600000160', resolvedParams: [] }],
+    );
+    const rid = (await recipients.listPending(campaignId))[0]!.id;
+    const envoiA = Date.now() - 60_000;
+    await recipients.claim(rid);
+    await recipients.markResult(rid, { status: 'sent', messageId: `mc-${Date.now()}`, sentAt: envoiA });
+
+    // Un clic AVANT l'envoi (la revue Meta) et un clic APRÈS (un vrai destinataire).
+    await pool.query(
+      `insert into tracked_link_clicks (code, tenant_id, at) values ($1, $2, $3)`,
+      [code, tenantId, new Date(envoiA - 3_600_000)],
+    );
+    await liens.recordClick(code, tenantId);
+
+    const f = await stats.getCampaignFunnel(tenantId, campaignId);
+    expect(f.urlClicks).toBe(1); // le clic de la revue est écarté, pas les deux
+
+    // Un tap de BOUTON est un message entrant de type 'button' : compté à part des réponses écrites.
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, '33600000160') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, button_payload) values ($1, 'in', 'button', 'Oui', 'OUI')`,
+      [conv],
+    );
+    const f2 = await stats.getCampaignFunnel(tenantId, campaignId);
+    expect(f2.buttonReplies).toBe(1);
+    expect(f2.replied).toBe(1); // un tap de bouton EST une réponse : sous-ensemble, pas une colonne parallèle
+
+    // 🔴 Une RÉACTION emoji porte elle AUSSI un `button_payload` (l'identifiant du message réagi, cf.
+    // `src/webhooks/inbound.ts`). C'est pour ça que le SQL discrimine sur `type` et non sur la présence du
+    // payload : sinon un pouce levé serait compté comme un clic de bouton.
+    //
+    // ⚠️ Il faut un SECOND destinataire pour le prouver. Le compteur porte sur les DESTINATAIRES : ajouter
+    // une réaction au premier ne change rien, il est déjà compté pour son tap, et le test passerait aussi
+    // avec un SQL fautif. Ici, ce contact n'a JAMAIS tapé de bouton, sa seule trace est la réaction.
+    const contact2 = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, '+33600000161', 'opted_in') returning id`, [tenantId],
+    )).rows[0]!.id;
+    // Insert direct : le dépôt ne sait ajouter des destinataires qu'à la création d'une campagne, et on veut
+    // en greffer un sur une campagne déjà partie.
+    await pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, status, message_id, sent_at)
+       values ($1, $2, '+33600000161', 'sent', $3, $4)`,
+      [campaignId, contact2, `mc2-${Date.now()}`, new Date(envoiA)],
+    );
+    const conv2 = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, '33600000161') returning id`, [tenantId],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, button_payload) values ($1, 'in', 'reaction', '👍', 'wamid.TEST-message-reagi')`,
+      [conv2],
+    );
+    const f3 = await stats.getCampaignFunnel(tenantId, campaignId);
+    expect(f3.replied).toBe(2); // la réaction EST un message entrant : elle compte comme une réponse
+    expect(f3.buttonReplies).toBe(1); // mais PAS comme un tap de bouton
   });
 
   it('getCampaignFunnel : une réponse est attribuée à la DERNIÈRE campagne (pas de double-comptage)', async () => {

@@ -179,8 +179,13 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   n'a pas cliqué sur « Créer le template », et un bandeau le dit : c'est une COPIE en préparation, l'original
   n'est jamais modifié ni renvoyé en validation.
 - ✅ **En-tête média** : l'image **ou la vidéo** uploadée s'affiche pour de vrai dans l'aperçu WhatsApp (plus
-  juste une icône). L'en-tête de l'aperçu porte un libellé générique (« Votre entreprise ») : le nom vérifié du
-  compte WhatsApp n'est pas connu de cet écran, et afficher un nom en dur serait faux chez tous les clients.
+  juste une icône).
+- ✅ **L'aperçu porte le NOM DE L'ENTREPRISE** (2026-08-21) : l'en-tête de la miniature WhatsApp affiche le
+  **nom vérifié** du compte, celui que le destinataire lit en haut de sa conversation, et non plus le libellé
+  générique « Votre entreprise ». Vaut pour les six aperçus (création de template, création de carrousel,
+  liste des templates, campagne directe, campagne par scénario, envoi depuis l'inbox). Sur un espace à
+  **plusieurs numéros**, l'écran de campagne montre le nom du numéro RÉELLEMENT choisi. Le libellé générique
+  ne reste qu'en repli : aucun numéro rattaché, ou nom pas encore remonté de Meta.
 - ✅ **Envoi d'un carousel** : un template carousel s'envoie **depuis une campagne**, les images de chaque carte
   étant relues au lancement (l'opérateur n'a rien à ressaisir). Avant, tout envoi de carousel échouait pour
   100 % des destinataires, avec un message qui parlait d'une variable alors que le template n'en avait aucune.
@@ -600,10 +605,25 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   une couleur par nature de mesure.
   ⚠️ **Les mesures démarrent à la mise en service du suivi** (2026-08-19, ~15 h 30) : une période antérieure
   reste à zéro, l'écran le dit. Rien ne reliait auparavant un message envoyé au bloc qui l'avait envoyé.
-- ✅ **Clics sur les liens, tous envois confondus** (2026-08-20, dans Mes tableaux) : la liste de tous les liens
-  tracés de l'espace avec leurs clics sur la période, leur template, quel bouton, et **leur destination**. Elle
-  rattrape ce que la lecture par bloc ne peut pas voir : un template utilisé **uniquement en campagne** n'a
-  aucun bloc de scénario où s'accrocher. Un lien à zéro clic reste listé.
+- ✅ **Créer un template sans quitter la campagne, et être prévenu quand Meta l'approuve** (2026-08-21) :
+  après la soumission, l'écran **vérifie tout seul** l'avancement de la revue Meta (toutes les 15 s, et
+  seulement quand l'onglet est au premier plan). Dès que le template est approuvé, il est **sélectionné
+  automatiquement** pour la campagne en cours, sans rien à cliquer. Un bouton « Vérifier maintenant » reste
+  disponible et dit ce qu'il fait pendant qu'il travaille. Un refus est annoncé comme tel et renvoie à l'écran
+  Templates, où Meta indique le motif, sans prétendre le deviner.
+  Avant, le panneau restait figé sur « statut : PENDING » : le bouton rechargeait bien la liste, mais une liste
+  filtrée sur les templates approuvés et affichée ailleurs sur la page. Il fallait fermer le panneau pour
+  découvrir que Meta avait approuvé entre-temps.
+- ✅ **Clics dans le funnel par campagne** (2026-08-21, Analytics > Quantitatif) : deux étapes de plus après
+  « Répondus », affichées **seulement quand la donnée existe** pour cette campagne : **clics sur un bouton**
+  (les taps de réponse rapide) et **clics sur le lien** (les boutons URL tracés). Un template sans bouton
+  n'affiche pas d'étape à zéro, qui se lirait « personne n'a cliqué » au lieu de « il n'y a rien à cliquer ».
+  ⚠️ **Les clics du lien sont comptés à partir du premier envoi de la campagne** : avant, c'est Meta qui
+  clique, pendant la revue du template. Et comme un lien ne sait pas quel envoi l'a porté, deux campagnes sur
+  le même template partagent leurs clics : l'écran le dit sous le funnel.
+  L'ancienne carte « Clics sur les liens, tous envois confondus » de Mes tableaux a été RETIRÉE : cet écran
+  pilote un scénario, et un total de template n'y voulait rien dire (il y affichait les clics d'un template
+  qui n'avait jamais rien envoyé).
 - ✅ **Conversations (analyse)** (2026-07-17, page **Analytics > Qualitatif** depuis le 2026-07-20) : lecture de l'**analyse automatique des
   conversations** (une IA classe chaque conversation). **Quanti** : donut du **sentiment** (positif / neutre /
   négatif), barres par **intention** (demande de devis, SAV, réclamation, info, prise de RDV, autre) et par

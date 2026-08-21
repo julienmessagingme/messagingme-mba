@@ -56,6 +56,27 @@ test.describe('session expirée', () => {
     expect(patchs).toBeLessThanOrEqual(3);
   });
 
+  test('🔴 le message de session expirée suit la langue de la console', async ({ page }) => {
+    // `http.ts` est un module `.ts` PUR : `useT()` y est inappelable, et ses messages remontent partout via
+    // `err.message`. Il lit donc la langue directement dans le stockage. Sans test, cette voie de traduction
+    // parallèle dériverait de `i18n.tsx` sans que rien ne le signale.
+    await page.addInitScript((s) => {
+      window.localStorage.setItem('mba.session', JSON.stringify(s));
+      window.localStorage.setItem('mba_locale', 'en');
+    }, SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      // Sans `error` dans le corps : c'est le REPLI de http.ts qui parle, celui qu'on veut vérifier.
+      if (url.endsWith('/me')) return route.fulfill({ status: 401, contentType: 'application/json', body: '{}' });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
+    });
+
+    await page.goto('/accueil');
+    await expect(page.getByTestId('session-expiree')).toBeVisible();
+    // La bannière est traduite par le composant ; ce qui compte ici est que rien de français ne subsiste.
+    await expect(page.locator('body')).not.toContainText('Session expirée, reconnecte-toi.');
+  });
+
   test('le bouton Reconnecter ramène à l’écran de connexion', async ({ page }) => {
     await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
     await page.route('**/api/backend/**', async (route) => {

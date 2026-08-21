@@ -40,10 +40,11 @@ function FlowsInner({ session }: { session: Session }) {
   }, [load]);
 
   async function publish(f: FlowSummary) {
+    // Le nom est interpolé DANS la phrase traduite : la découper en morceaux concaténés laissait les
+    // guillemets français et le « ? » final dans la version anglaise.
     if (!window.confirm(
-      t('Publier le formulaire « ', 'Publish the form « ') + f.name +
-      t(" » ?\nUn formulaire publié ne peut plus être modifié (irréversible côté Meta). Pour changer les champs, il faudra « Dupliquer pour modifier ».",
-        " » ?\nA published form can no longer be edited (irreversible on the Meta side). To change the fields, you will need to « Duplicate to edit ».")
+      t(`Publier le formulaire « ${f.name} » ?\nUn formulaire publié ne peut plus être modifié (irréversible côté Meta). Pour changer les champs, il faudra « Dupliquer pour modifier ».`,
+        `Publish the form “${f.name}”?\nA published form can no longer be edited (irreversible on the Meta side). To change the fields, you will need to “Duplicate to edit”.`)
     )) return;
     setError(null);
     const prev = flows;
@@ -70,10 +71,9 @@ function FlowsInner({ session }: { session: Session }) {
 
   async function remove(f: FlowSummary) {
     const msg = f.status === 'PUBLISHED'
-      ? t('Supprimer le formulaire publié « ', 'Delete the published form « ') + f.name +
-        t(" » ?\nUn formulaire publié ne se supprime pas chez Meta : il est DÉPRÉCIÉ (retiré de l'usage). S'il est encore rattaché à un template, Meta peut refuser.",
-          " » ?\nA published form cannot be deleted on Meta: it is DEPRECATED (removed from use). If it is still attached to a template, Meta may refuse.")
-      : t('Supprimer le brouillon « ', 'Delete the draft « ') + f.name + ' » ?';
+      ? t(`Supprimer le formulaire publié « ${f.name} » ?\nUn formulaire publié ne se supprime pas chez Meta : il est DÉPRÉCIÉ (retiré de l'usage). S'il est encore rattaché à un template, Meta peut refuser.`,
+          `Delete the published form “${f.name}”?\nA published form cannot be deleted on Meta: it is DEPRECATED (removed from use). If it is still attached to a template, Meta may refuse.`)
+      : t(`Supprimer le brouillon « ${f.name} » ?`, `Delete the draft “${f.name}”?`);
     if (!window.confirm(msg)) return;
     setError(null);
     const prev = flows;
@@ -92,14 +92,14 @@ function FlowsInner({ session }: { session: Session }) {
     <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Formulaires', 'Forms')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a « Flow » button.')}</p>
+        <p className="mt-1 text-sm text-ink-500">{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a “Flow” button.')}</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {editing ? (
         <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <div className="text-sm font-semibold text-ink-900">{t('Modifier « ', 'Edit « ')}{editing.name} » <span className="ml-2 text-xs font-normal text-ink-400">({t('brouillon', 'draft')})</span></div>
+            <div className="text-sm font-semibold text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)} <span className="ml-2 text-xs font-normal text-ink-400">({t('brouillon', 'draft')})</span></div>
             <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
           </div>
           <FlowBuilder

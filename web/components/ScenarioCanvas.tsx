@@ -33,6 +33,8 @@ export interface ScenarioCanvasProps {
 
 interface DonneesCarte extends Record<string, unknown> {
   titre: string;
+  /** `false` = `titre` n'est que le nom du type de bloc, déjà lu dans l'en-tête de la carte. */
+  titrePropre: boolean;
   wfType: string;
   mesurable: boolean;
   actif: boolean;
@@ -73,8 +75,12 @@ function CarteBloc({ data }: NodeProps) {
         )}
       </div>
       {/* Le resume n'est affiche que s'il APPORTE quelque chose : sur un bloc grise, `titre` vaut souvent le
-          nom du type, deja lu juste au-dessus, et le repeter alourdit la carte pour rien. */}
-      {d.titre !== t(...meta.label) && (
+          nom du type, deja lu juste au-dessus, et le repeter alourdit la carte pour rien.
+
+          On lit un BOOLÉEN calculé à la source, jamais une comparaison de libellés : celle d'avant opposait
+          une chaîne traduite (`t(...meta.label)`) à une chaîne qui ne l'était pas, donc en anglais elle
+          n'était JAMAIS égale et le doublon revenait sur tous les blocs. */}
+      {d.titrePropre && (
         <div className={`truncate px-2 py-1.5 text-[11px] ${d.mesurable ? 'text-ink-600' : 'text-ink-400'}`}>{d.titre}</div>
       )}
       <Handle type="source" position={Position.Bottom} isConnectable={false} className="!h-2 !w-2 !border-0 !bg-ink-300" />
@@ -102,6 +108,7 @@ export function ScenarioCanvas({ graph, blocs, selectionne, onSelect, retenuesPa
         connectable: false,
         data: {
           titre: b?.titre ?? n.type ?? '',
+          titrePropre: b?.titrePropre ?? false,
           wfType: n.type ?? 'template',
           mesurable: b?.mesurable ?? false,
           actif: selectionne === n.id,

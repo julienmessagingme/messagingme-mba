@@ -50,7 +50,8 @@ function TemplatesInner({ session }: { session: Session }) {
   }, [reload]);
 
   async function remove(tpl: TemplateSummary) {
-    if (!window.confirm(`${t('Supprimer le template', 'Delete template')} « ${tpl.name} » ?\n${t("Suppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.", 'Permanent deletion at Meta (all languages). Blocked if an active campaign uses it.')}`)) return;
+    if (!window.confirm(t(`Supprimer le template « ${tpl.name} » ?\nSuppression définitive chez Meta (toutes les langues). Bloquée si une campagne active l'utilise.`,
+      `Delete template “${tpl.name}”?\nPermanent deletion at Meta (all languages). Blocked if an active campaign uses it.`))) return;
     setError(null);
     try {
       await deleteTemplate(session.tenantId, tpl.name);
@@ -65,7 +66,7 @@ function TemplatesInner({ session }: { session: Session }) {
       {dupliquer ? (
         <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Dupliquer', 'Duplicate')} « {dupliquer.name} »</h2>
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t(`Dupliquer « ${dupliquer.name} »`, `Duplicate “${dupliquer.name}”`)}</h2>
             <button onClick={() => setDupliquer(null)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
           </div>
           <TemplateForm
@@ -79,7 +80,7 @@ function TemplatesInner({ session }: { session: Session }) {
       ) : editing ? (
         <section className="rounded-2xl border border-brand-200 bg-brand-50/40 p-6 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Modifier', 'Edit')} « {editing.name} »</h2>
+            <h2 className="text-base font-semibold tracking-tight text-ink-900">{t(`Modifier « ${editing.name} »`, `Edit “${editing.name}”`)}</h2>
             <button onClick={() => setEditing(null)} className="text-xs text-ink-400 hover:text-ink-700">{t('Fermer', 'Close')}</button>
           </div>
           <p className="mb-4 rounded-lg bg-gold/10 px-3 py-2 text-xs text-gold">{t('Modifier un template le renvoie en validation Meta (statut PENDING) : il est inenvoyable le temps de la re-validation. Le nom et la langue ne sont pas modifiables.', 'Editing a template sends it back to Meta for review (PENDING status): it stays unsendable until re-approval. Name and language cannot be changed.')}</p>
@@ -124,7 +125,7 @@ function TemplatesInner({ session }: { session: Session }) {
           <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : templates.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            {t("Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d'être utilisable).", 'No templates yet. Click « + Create a template » (it goes through Meta review before it can be used).')}
+            {t("Aucun template. Clique « + Créer un template » (il passe en revue Meta avant d'être utilisable).", 'No templates yet. Click “+ Create a template” (it goes through Meta review before it can be used).')}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">

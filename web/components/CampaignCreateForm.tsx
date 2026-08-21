@@ -152,6 +152,8 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   // soumis : le formulaire se referme, mais la confirmation doit survivre pour expliquer l'attente Meta.
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [submittedTemplate, setSubmittedTemplate] = useState<CreatedTemplate | null>(null);
+  /** Une vérification de statut est en vol. Sert à ce qu'un clic produise TOUJOURS quelque chose à l'écran. */
+  const [verifEnCours, setVerifEnCours] = useState(false);
   const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
@@ -226,14 +228,94 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
 
   // Recharge la SEULE liste des templates (après une création inline, ou pour vérifier une approbation Meta).
   // Même filtre APPROVED que le chargement initial : le select ne doit jamais proposer un template inenvoyable.
-  const reloadTemplates = useCallback(async () => {
+  //
+  // Rend la liste COMPLÈTE, statuts non approuvés compris. Le filtre est bon pour le sélecteur, mais il
+  // effaçait la seule information qu'on venait chercher : sans les lignes PENDING, « toujours en revue » et
+  // « approuvé » se ressemblaient trait pour trait, et le bouton avait l'air cassé.
+  //
+  // `silencieux` : l'echec d'un SONDAGE de fond ne doit pas afficher d'erreur de formulaire. L'utilisateur
+  // n'a rien demande, il remplit sa campagne, et un message rouge qui apparait tout seul toutes les 15 s
+  // ferait croire a un probleme de SA saisie. Seul le clic explicite parle.
+  const reloadTemplates = useCallback(async (silencieux = false): Promise<TemplateSummary[]> => {
     try {
       const tpl = await listTemplates(tenantId);
-      setTemplates(tpl.templates.filter((x) => x.status === 'APPROVED'));
+      const tous = Array.isArray(tpl?.templates) ? tpl.templates : [];
+      setTemplates(tous.filter((x) => x.status === 'APPROVED'));
+      return tous;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Rafraîchissement impossible');
+      if (!silencieux) setError(err instanceof Error ? err.message : t('Rafraîchissement impossible', 'Refresh failed'));
+      return [];
     }
-  }, [tenantId]);
+  }, [tenantId, t]);
+
+  /**
+   * Redemande à Meta où en est le template qu'on vient de soumettre, et REPORTE son statut à l'écran.
+   *
+   * C'est le geste qui manquait : le statut affiché était celui figé à la création, et le bouton
+   * « Rafraîchir » ne rafraîchissait que le sélecteur fermé au-dessus. On rechargeait donc bien, mais dans
+   * une zone que l'écran n'affichait pas.
+   */
+  const verifierTemplateSoumis = useCallback(async (silencieux = false) => {
+    if (!submittedTemplate) return;
+    const soumis = submittedTemplate;
+    setVerifEnCours(true);
+    try {
+      const tous = await reloadTemplates(silencieux);
+      const ligne = tous.find((x) => x.name === soumis.name && x.language === soumis.language);
+      if (ligne && ligne.status !== soumis.status) {
+        setSubmittedTemplate({ ...soumis, status: ligne.status });
+      }
+    } finally {
+      setVerifEnCours(false);
+    }
+  }, [submittedTemplate, reloadTemplates]);
+
+  /**
+   * Sondage du statut tant que la revue Meta est en cours : on ne fait pas attendre le client devant un
+   * bouton qu'il faut penser à cliquer.
+   *
+   * 15 s, l'intervalle déjà retenu pour la liste de l'inbox, et le même garde-fou de visibilité : un onglet
+   * en arrière-plan n'appelle rien. Trois conditions d'arrêt, toutes portées par l'état existant : statut
+   * terminal atteint, panneau fermé (`submittedTemplate` repasse à null), écran quitté (nettoyage de l'effet).
+   *
+   * ⚠️ Chaque tour est un vrai appel à Meta. C'est acceptable ici parce que le panneau ne vit que le temps de
+   * la revue et se referme d'un clic, mais ce n'est pas un patron à recopier ailleurs sans y repenser.
+   */
+  useEffect(() => {
+    // BORNE AU MODE : le panneau n'existe que dans la branche « Template ». Sans cette garde, le sondage
+    // continuait de battre apres une bascule vers Scenario ou RCS, et la selection automatique finissait par
+    // s'executer sur un ecran qui ne montre plus rien de ce contexte, en ecrasant la categorie au passage.
+    if (mode !== 'template') return;
+    const statut = submittedTemplate?.status;
+    if (!statut) return;
+    // Statut DEJA terminal : rien a sonder, mais la liste des templates, elle, n'a peut-etre jamais ete
+    // rechargee (Meta approuve parfois un utilitaire sur-le-champ). Une seule relecture, silencieuse, sinon
+    // le template approuve n'apparait pas dans le selecteur et la selection automatique ne trouve rien.
+    if (statut === 'APPROVED' || statut === 'REJECTED') { void reloadTemplates(true); return; }
+    const tick = () => { if (document.visibilityState === 'visible') void verifierTemplateSoumis(true); };
+    const id = setInterval(tick, 15000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+  }, [mode, submittedTemplate?.status, verifierTemplateSoumis, reloadTemplates]);
+
+  /**
+   * Le template soumis vient d'être approuvé : on le choisit pour la campagne, ce que l'opérateur allait
+   * faire à la main.
+   *
+   * Passer par un EFFET n'est pas cosmétique : `chooseTemplate` lit l'état `templates` par fermeture.
+   * L'appeler dans la foulée de `setTemplates` lirait l'ANCIENNE liste, n'y trouverait pas le template et
+   * viderait les variables sans la moindre erreur visible.
+   */
+  useEffect(() => {
+    if (mode !== 'template') return; // meme borne que le sondage : hors de cette branche, rien a selectionner
+    if (submittedTemplate?.status !== 'APPROVED') return;
+    if (templateName !== '') return; // ne JAMAIS écraser un choix fait pendant l'attente
+    if (!templates.some((x) => x.name === submittedTemplate.name)) return;
+    void chooseTemplate(submittedTemplate.name);
+    // `chooseTemplate` est une fonction du corps du composant, redéfinie à chaque rendu : la mettre en
+    // dépendance relancerait l'effet en boucle. Les vraies entrées sont le statut et la liste.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, submittedTemplate, templates, templateName]);
 
   // Rechargement DEBOUNCÉ (350 ms) de la liste + du compteur quand les filtres changent (source 'crm' seulement).
   // Au rechargement, on re-coche tous les contacts chargés (comportement « tout ciblé » par défaut).
@@ -247,9 +329,17 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
         try {
           const [q, c] = await Promise.all([queryContacts(tenantId, f, { limit: 500 }), countContacts(tenantId, f)]);
           if (seq !== reqSeq.current || !mountedRef.current) return; // réponse périmée ou écran quitté
-          setContacts(q.contacts);
-          setTotal(c.total);
-          setSelected(new Set(q.contacts.map((x) => x.id)));
+          // Normalisé AVANT d'entrer dans l'état. Une réponse 200 sans le champ `contacts` (version d'API en
+          // retard, route qui rend `{}`) posait `undefined` dans un état typé tableau : le `.length` du rendu
+          // jetait, et React démontait TOUT l'écran de création, pas seulement la liste. Le `catch` ci-dessous
+          // n'y peut rien, il n'y a aucune erreur réseau dans ce cas.
+          const liste = Array.isArray(q?.contacts) ? q.contacts : [];
+          setContacts(liste);
+          // `null` et NON `liste.length` : `total` est deja type `number | null`, et l'ecran sait rendre
+          // l'inconnu. Deduire un total des lignes ramenees inventerait un chiffre plafonne par la limite
+          // de la requete, qu'on afficherait comme une verite.
+          setTotal(typeof c?.total === 'number' ? c.total : null);
+          setSelected(new Set(liste.map((x) => x.id)));
           setCountLoading(false);
         } catch {
           if (seq !== reqSeq.current || !mountedRef.current) return;
@@ -261,6 +351,11 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   }, [source, tenantId, filters]);
 
   const selectedTemplate = templates.find((tpl) => tpl.name === templateName);
+  // Nom vérifié du numéro courant, pour que l'aperçu porte le nom de l'entreprise qui va vraiment envoyer.
+  // Un effet au montage choisit deja le premier numero, y compris sur un espace mono-numero : la valeur est
+  // donc quasiment toujours definie ici, et `PhoneFrame` ne resout par lui-meme que sur les ecrans qui ne
+  // chargent pas les numeros (Templates, Inbox).
+  const senderName = numbers.find((n) => n.id === phoneNumberId)?.verifiedName ?? undefined;
   // Valeurs d'aperçu par variable (échantillon lisible selon le mapping) pour la miniature WhatsApp.
   const previewExamples = vars.map((v) =>
     v.sel === 'literal' ? (v.value.trim() || '…')
@@ -388,6 +483,10 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setVars([]);
     setTemplateName('');
     setWorkflowId('');
+    // Le panneau du template soumis appartient a la branche « Template » : le laisser vivre ailleurs, c'est
+    // garder un sondage et une selection automatique actifs sur un ecran qui ne les montre plus.
+    setSubmittedTemplate(null);
+    setCreatingTemplate(false);
   }
 
   // Bascule de source. Pour les sources non implémentées, on vide la sélection (donc étape 2 désactivée).
@@ -953,7 +1052,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             )}
             {selectedTemplate?.body && (
               <div className="mt-3">
-                <TemplatePreview template={selectedTemplate} examples={previewExamples} />
+                <TemplatePreview template={selectedTemplate} examples={previewExamples} {...(senderName ? { senderName } : {})} />
               </div>
             )}
 
@@ -968,20 +1067,60 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
               </button>
             )}
             {submittedTemplate && (
-              <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
-                <p className="text-sm font-medium text-ink-900">
-                  {t('Template', 'Template')} « {submittedTemplate.name} » {t('soumis', 'submitted')} ({t('statut', 'status')} : {submittedTemplate.status}).
-                </p>
-                <p className="mt-1 text-xs text-ink-600">
-                  {t(
-                    "Il passe en revue chez Meta. Il apparaîtra dans cette liste une fois approuvé : une campagne ne peut partir qu'avec un template déjà approuvé.",
-                    'It goes through Meta review. It will show up in this list once approved: a campaign can only run with an already-approved template.',
-                  )}
-                </p>
+              <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/40 p-4" data-testid="template-soumis">
+                {submittedTemplate.status === 'APPROVED' ? (
+                  <>
+                    <p className="text-sm font-medium text-ink-900">
+                      ✅ {t(`Template « ${submittedTemplate.name} » approuvé par Meta.`, `Template “${submittedTemplate.name}” approved by Meta.`)}
+                    </p>
+                    {/* La phrase suit l'état RÉEL, pas le statut. La sélection automatique s'abstient quand un
+                        autre template a été choisi pendant l'attente : dire « il est sélectionné » dans ce cas
+                        précis, c'est mentir exactement là où la garde a été écrite pour protéger le choix. */}
+                    <p className="mt-1 text-xs text-ink-600">
+                      {templateName === submittedTemplate.name
+                        ? t('Il est sélectionné pour cette campagne, vous pouvez continuer.', 'It is selected for this campaign, you can carry on.')
+                        : t('Choisissez-le dans la liste ci-dessus pour l’utiliser.', 'Pick it from the list above to use it.')}
+                    </p>
+                  </>
+                ) : submittedTemplate.status === 'REJECTED' ? (
+                  <>
+                    <p className="text-sm font-medium text-ink-900">
+                      ⛔ {t(`Template « ${submittedTemplate.name} » refusé par Meta.`, `Template “${submittedTemplate.name}” rejected by Meta.`)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink-600">
+                      {/* Le motif du refus n'est pas récupéré par la liste : ne pas prétendre l'expliquer ici. */}
+                      {t(
+                        "Le motif est indiqué par Meta dans l'écran Templates. Corrigez-le là-bas, ou créez-en un autre.",
+                        'Meta gives the reason on the Templates screen. Fix it there, or create another one.',
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-ink-900">
+                      {t(`Template « ${submittedTemplate.name} » soumis (statut : ${submittedTemplate.status}).`,
+                        `Template “${submittedTemplate.name}” submitted (status: ${submittedTemplate.status}).`)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink-600">
+                      {t(
+                        "Il passe en revue chez Meta. On vérifie automatiquement et il sera sélectionné dès qu'il est approuvé : rien à faire, vous pouvez préparer le reste de la campagne.",
+                        'It goes through Meta review. We check automatically and it gets selected as soon as it is approved: nothing to do, you can prepare the rest of the campaign.',
+                      )}
+                    </p>
+                  </>
+                )}
                 <div className="mt-2 flex items-center gap-3">
-                  <button type="button" onClick={() => { void reloadTemplates(); }} className="text-xs text-brand-600 hover:underline">
-                    {t('Rafraîchir la liste', 'Refresh the list')}
-                  </button>
+                  {submittedTemplate.status !== 'APPROVED' && submittedTemplate.status !== 'REJECTED' && (
+                    <button
+                      type="button"
+                      onClick={() => { void verifierTemplateSoumis(); }}
+                      disabled={verifEnCours}
+                      className="text-xs text-brand-600 hover:underline disabled:text-ink-400 disabled:no-underline"
+                      data-testid="verifier-statut"
+                    >
+                      {verifEnCours ? t('Vérification…', 'Checking…') : t('Vérifier maintenant', 'Check now')}
+                    </button>
+                  )}
                   <button type="button" onClick={() => setSubmittedTemplate(null)} className="text-xs text-ink-500 hover:underline">
                     {t('Fermer', 'Close')}
                   </button>
@@ -1036,7 +1175,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                 <p className="mb-1 text-xs text-ink-500">{t('1er template envoyé par le scénario :', 'First template sent by the scenario:')} <b>{templateName}</b></p>
                 {/* Le 1er bloc du scénario peut être un CAROUSEL : on montre alors ses vraies cartes, pas un
                     encadré de texte qui ne dit rien de ce que le contact recevra. */}
-                <TemplatePreview template={selectedTemplate} examples={previewExamples} />
+                <TemplatePreview template={selectedTemplate} examples={previewExamples} {...(senderName ? { senderName } : {})} />
               </div>
             )}
           </Field>
@@ -1275,7 +1414,7 @@ function VarsEditor({ vars, setVars, fields }: { vars: VarRow[]; setVars: React.
             >
               {!validIds.has(v.sel) && <option value={v.sel}>{t('⚠ champ à re-sélectionner', '⚠ field to re-select')}</option>}
               <optgroup label={t('Champs de base', 'Base fields')}>
-                {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{f.label}</option>)}
+                {SYSTEM_FIELDS.map((f) => <option key={f.key} value={`sys:${f.key}`}>{t(...f.label)}</option>)}
               </optgroup>
               {custom.length > 0 && (
                 <optgroup label={t('Mes champs', 'My fields')}>

@@ -99,6 +99,65 @@ describe('redirection publique /r/:code', () => {
     await server.close();
   });
 
+  it('🔴 le robot de Meta est REDIRIGÉ mais son clic n’est PAS compté', async () => {
+    // Meta explore chaque bouton URL à la revue du template, donc AVANT le premier envoi : 70 faux clics
+    // mesurés en production le 2026-08-21 sur un template jamais envoyé. Le rediriger reste indispensable,
+    // le compter est un mensonge.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'GET',
+      url: `/r/${CODE}`,
+      headers: { 'user-agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('https://client.fr/promo');
+    expect(cap.clics).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un relecteur de Meta est écarté par le RÉFÉRENT seul', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'GET',
+      url: `/r/${CODE}`,
+      headers: {
+        'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) Mobile/15E148 Safari/604.1',
+        referer: 'https://lm.facebook.com/',
+      },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(cap.clics).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 ... et par le `fbclid` SEUL, sans référent', async () => {
+    // Les deux signaux testés séparément : réunis dans un seul cas, le premier suffisait à faire passer le
+    // test, et rien ne prouvait que le second était branché à travers la route (le paramètre d'URL doit
+    // arriver jusqu'au filtre via `req.query`).
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'GET',
+      url: `/r/${CODE}?fbclid=IwcGRvZgRleHRuA2FlbQIxMQ`,
+      headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) Mobile/15E148 Safari/604.1' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(cap.clics).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un destinataire qui clique depuis WhatsApp est bien compté', async () => {
+    // Le garde-fou ne vaut que s'il laisse passer le seul clic qui nous intéresse.
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'GET',
+      url: `/r/${CODE}`,
+      headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/151.0.0.0 Mobile Safari/537.36' },
+    });
+    expect(res.statusCode).toBe(302);
+    expect(cap.clics).toEqual([{ code: CODE, tenantId: 't1' }]);
+    await server.close();
+  });
+
   it('la route n’existe pas si la dépendance n’est pas fournie', async () => {
     const server = buildServer({ queue: new FakeQueue() });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}` });

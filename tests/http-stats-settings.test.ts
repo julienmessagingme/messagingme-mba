@@ -26,7 +26,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     }),
     getTemplateBreakdown: async () => [{ name: 'promo', category: 'marketing', count: 4 }],
     getPricing: async () => ({ byCategory: { marketing: { category: 'marketing', cost: 0.5724, volume: 4, ratePerMessage: 0.1431 } }, totalCost: 0.5724, currency: 'EUR' }),
-    getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1 }),
+    getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 2, urlClicks: 4 }),
     getErrorBreakdown: async () => [{ code: 131049, count: 4, templateName: 'promo' }, { code: 131047, count: 2, templateName: null }],
     getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR' }),
     getConversationSummary: async () => ({
@@ -145,11 +145,19 @@ describe('stats route', () => {
     await a.close();
   });
 
-  it('GET /stats/campaign-funnel?campaignId -> {sent,delivered,read,replied,failed}', async () => {
+  it('GET /stats/campaign-funnel?campaignId -> le funnel complet, clics compris', async () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel?campaignId=c1', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1 });
+    expect(res.json()).toEqual({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 2, urlClicks: 4 });
+    await a.close();
+  });
+
+  it('🔴 un template SANS lien tracé rend urlClicks = null, pas 0', async () => {
+    // 0 se lirait « personne n'a cliqué » ; null dit « il n'y a rien à cliquer », et l'écran masque l'étape.
+    const a = app({ stats: { getCampaignFunnel: async () => ({ sent: 10, delivered: 8, read: 5, replied: 3, failed: 1, buttonReplies: 0, urlClicks: null }) } });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/campaign-funnel?campaignId=c1', ...h(adminTok) });
+    expect(res.json<{ urlClicks: number | null }>().urlClicks).toBeNull();
     await a.close();
   });
 
@@ -503,44 +511,6 @@ describe('GET /tenants/:t/stats/workflow/:workflowId — mesures par bloc', () =
   it('réservée aux admins', async () => {
     const a = app({ stats: { getWorkflowNodeCounts: async () => COUNTS } });
     expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/workflow/wf-1?days=30', ...h(agentTok) })).statusCode).toBe(403);
-    await a.close();
-  });
-});
-
-describe('stats route — clics sur les liens tracés', () => {
-  const LIENS = [
-    { code: 'ab12cd34ef56', templateName: 'promo', templateLanguage: 'fr', cardIndex: null, buttonIndex: 0, destination: 'https://client.fr/promo', clics: 12 },
-  ];
-
-  it('rend les liens et leurs clics sur la plage', async () => {
-    const a = app({ stats: { getTrackedLinkClicks: async () => LIENS } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/links?days=30', ...h(adminTok) });
-    expect(res.statusCode).toBe(200);
-    expect(res.json<{ liens: typeof LIENS }>().liens).toEqual(LIENS);
-    await a.close();
-  });
-
-  it('🔴 traçage non configuré -> 503, PAS une liste vide', async () => {
-    // Une liste vide se lirait « aucun lien », alors que rien n'est branché. L'écran doit pouvoir faire la
-    // différence entre « pas de données » et « pas de fonctionnalité ».
-    const a = app();
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/links?days=30', ...h(adminTok) });
-    expect(res.statusCode).toBe(503);
-    await a.close();
-  });
-
-  it('plage invalide -> 400', async () => {
-    const a = app({ stats: { getTrackedLinkClicks: async () => LIENS } });
-    const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/links?from=pas-une-date&to=2026-08-20', ...h(adminTok) });
-    expect(res.statusCode).toBe(400);
-    await a.close();
-  });
-
-  it('🔴 le tenant vient du JETON, jamais de l’URL', async () => {
-    const vus: string[] = [];
-    const a = app({ stats: { getTrackedLinkClicks: async (tenant) => { vus.push(tenant); return LIENS; } } });
-    await a.inject({ method: 'GET', url: '/tenants/AUTRE-TENANT/stats/links?days=30', ...h(adminTok) });
-    expect(vus).toEqual([]); // scopeTenant refuse en 403 avant d'appeler quoi que ce soit
     await a.close();
   });
 });

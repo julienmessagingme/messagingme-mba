@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
@@ -37,6 +37,7 @@ function dayValid(d: { closed: boolean; open: string; close: string }): boolean 
 
 function Parametres({ tenantId }: { tenantId: string }) {
   const t = useT();
+  const { locale } = useLocale();
   const [timezone, setTz] = useState(DEFAULT_TIMEZONE);
   const [hours, setHours] = useState<BusinessHours>(() => normalize(undefined));
   const [loading, setLoading] = useState(true);
@@ -98,7 +99,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
               <span className={`text-xs ${tzStatus === 'error' ? 'text-coral' : 'text-ink-400'}`}>{statusText(tzStatus)}</span>
             </div>
             <select data-testid="param-timezone" value={timezone} onChange={(e) => onTimezone(e.target.value)} className={`${inputClsAuto} w-full bg-white sm:w-96`}>
-              {TIMEZONES.map((o) => <option key={o.iana} value={o.iana}>{timezoneLabel(o)}</option>)}
+              {TIMEZONES.map((o) => <option key={o.iana} value={o.iana}>{timezoneLabel(o, locale)}</option>)}
             </select>
           </section>
 

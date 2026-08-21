@@ -58,7 +58,7 @@ export function labelForSource(source: ParamSource, fields: UserFieldDef[], t: (
   if (source.type === 'now') return t('Date du jour (auto)', "Today's date (auto)");
   if (source.type === 'literal') return t('Texte fixe', 'Fixed text');
   const sys = SYSTEM_FIELDS.find((f) => f.source.type === source.type && f.source.key === source.key);
-  if (sys) return sys.label;
+  if (sys) return t(...sys.label);
   return fields.find((f) => f.key === source.key)?.label ?? source.key ?? t('Champ', 'Field');
 }
 
@@ -210,7 +210,7 @@ export function useTemplateBody(tenantId: string, initial?: { body?: string; exa
  * à l'envoi et se ferait rejeter par Meta -> on refuse ici, avec la MÊME phrase partout.
  */
 export function unmappedVariablesMessage(unmapped: number[], t: (fr: string, en?: string) => string): string {
-  return `${t('Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) :', 'Each variable must be linked to a field via « + Variable ». Not linked:')} ${unmapped.map((p) => `{{${p}}}`).join(', ')}. ${t('Supprime-les puis réinsère-les avec le sélecteur.', 'Delete them then reinsert them with the picker.')}`;
+  return `${t('Chaque variable doit être rattachée à un champ via « + Variable ». Non rattachée(s) :', 'Each variable must be linked to a field via “+ Variable”. Not linked:')} ${unmapped.map((p) => `{{${p}}}`).join(', ')}. ${t('Supprime-les puis réinsère-les avec le sélecteur.', 'Delete them then reinsert them with the picker.')}`;
 }
 
 /** Éditeur du corps : chips de variables, « + Variable » (rattache un champ + remplit l'exemple), emojis. */
@@ -229,7 +229,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
   // Exactement la même liste que le sélecteur de la campagne (VarsEditor) -> cohérence de bout en bout.
   const fieldOptions: FieldOption[] = [
     { source: { type: 'now' } as ParamSource, label: t('Date du jour (auto)', "Today's date (auto)"), group: 'base' as const },
-    ...SYSTEM_FIELDS.map((f) => ({ source: f.source, label: f.label, group: 'base' as const })),
+    ...SYSTEM_FIELDS.map((f) => ({ source: f.source, label: t(...f.label), group: 'base' as const })),
     ...customFieldsOnly(state.userFields).map((f) => ({ source: { type: 'field', key: f.key } as ParamSource, label: f.label, fieldType: f.type, group: 'custom' as const })),
   ];
 
@@ -277,7 +277,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
         {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
       </div>
       <p className="mt-1 text-xs text-ink-400">
-        {hint ?? t("Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l'exemple exigé par Meta se remplit tout seul.", 'Click « + Variable » to insert a contact field (name, first name, email…): the example required by Meta fills in automatically.')}
+        {hint ?? t("Clique « + Variable » pour insérer un champ du contact (nom, prénom, email…) : l'exemple exigé par Meta se remplit tout seul.", 'Click “+ Variable” to insert a contact field (name, first name, email…): the example required by Meta fills in automatically.')}
       </p>
     </div>
   );

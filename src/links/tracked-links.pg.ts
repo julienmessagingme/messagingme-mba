@@ -120,48 +120,6 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * TOUS les liens tracés de l'espace, avec leurs clics sur la plage.
-   *
-   * C'est la lecture « tous envois confondus » : un lien ne sait pas qui l'a envoyé, et c'est justement ce
-   * qui la rend juste. Un template utilisé UNIQUEMENT en campagne n'a aucun bloc de scénario où s'accrocher,
-   * donc il n'apparaîtrait nulle part dans une lecture par scénario ; ici, il est compté comme les autres.
-   *
-   * `left join` et non `join` : un lien sans aucun clic sur la période doit apparaître à ZÉRO. Le masquer
-   * laisserait croire qu'il n'existe pas, alors qu'il est bien en circulation dans des messages.
-   */
-  async listAvecClics(tenantId: string, range: DateRange): Promise<Array<LienTrace & { clics: number }>> {
-    const res = await this.pool.query<{
-      code: string; template_name: string; template_language: string; card_index: number | null;
-      button_index: number; destination: string; n: string;
-    }>(
-      // Les bornes sont lues en SOUS-REQUÊTES et non par une jointure sur `bounds` : écrit
-      // `from tracked_links l, bounds b left join ...`, le LEFT JOIN s'accroche à `bounds` et non à `l`,
-      // et la condition ne peut plus référencer `l`.
-      `with ${BOUNDS_CTE}
-       select l.code, l.template_name, l.template_language, l.card_index, l.button_index, l.destination,
-              count(c.id)::int as n
-         from tracked_links l
-         left join tracked_link_clicks c
-           on c.code = l.code
-          and c.at >= (select start_ts from bounds)
-          and c.at < (select end_ts from bounds)
-        where l.tenant_id = $1 and l.confirmed_at is not null
-        group by l.code, l.template_name, l.template_language, l.card_index, l.button_index, l.destination
-        order by n desc, l.template_name asc, l.card_index asc nulls first, l.button_index asc`,
-      [tenantId, range.from, range.to, STATS_TZ],
-    );
-    return res.rows.map((r) => ({
-      code: r.code,
-      templateName: r.template_name,
-      templateLanguage: r.template_language,
-      cardIndex: r.card_index,
-      buttonIndex: r.button_index,
-      destination: r.destination,
-      clics: Number(r.n),
-    }));
-  }
-
-  /**
    * Clics par code sur la plage (bornes Europe/Paris, `to` inclus), pour les codes demandés.
    *
    * Rend UNIQUEMENT les codes qui ont au moins un clic : c'est l'appelant qui sait quels codes existent et

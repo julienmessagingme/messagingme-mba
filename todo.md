@@ -3,6 +3,31 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
+## Ouvert par le lot « 5 corrections » (2026-08-21)
+
+- **Le compteur de clics reste un compteur de TEMPLATE, pas de campagne.** Un lien ne sait pas quel envoi l'a
+  porté : deux campagnes sur le même template lisent le même chiffre. Le funnel le dit sous le graphe. Le
+  rendre exact demanderait un lien par destinataire (donc un template par campagne, ce que Meta ne permet
+  pas) ou un paramètre dynamique dans l'URL du bouton, à évaluer.
+- **Les compteurs déjà pollués ne sont pas purgés.** Les 70 clics de Meta sur `testurl` restent en base ; le
+  seuil « depuis le premier envoi » les écarte à la lecture. Rien à supprimer, donc rien d'irréversible, mais
+  une lecture brute de `tracked_link_clicks` reste trompeuse.
+- **Aucun envoi réel n'a encore exercé la chaîne de bout en bout** : le tap de bouton (`type = 'button'`) est
+  déduit du code du webhook, pas mesuré sur un vrai destinataire. À vérifier au premier envoi réel d'un
+  template à boutons.
+- **`buttonReplies` ne distingue pas « aucun bouton » de « zéro tap ».** `urlClicks` le fait (`null` vs `0`),
+  parce que la table des liens tracés dit si le template porte un bouton URL. Rien ne dit l'équivalent pour
+  les boutons de réponse rapide sans interroger Meta. L'étape n'apparaît donc qu'à partir d'un tap. Choix
+  assumé : mieux vaut une étape absente qu'une étape à zéro qui accuse les destinataires.
+- **Les messages d'erreur venus du SERVEUR restent en français**, dans les deux langues. `http.ts` ne traduit
+  que ses deux replis ; `body.error` est rédigé côté API et passe tel quel. Le vrai correctif serait un code
+  d'erreur stable traduit côté front, à faire si un client anglophone arrive.
+- **Le motif d'un refus Meta n'est pas récupéré** : `list()` ne demande pas le champ. L'écran renvoie donc à
+  la liste des templates au lieu de l'expliquer. À faire si le cas devient fréquent.
+- **`ENCRYPTION_KEY` manque au `.env` local** : 6 tests d'intégration de `email-account-store` échouent chez
+  moi pour cette seule raison. Sans effet sur la production, mais la suite d'intégration n'est pas verte à
+  100 % en local tant que la clé n'y est pas.
+
 ## 🔴 MBA : ce qui reste après le chantier « paramètres d'activation » (livré le 2026-08-21)
 
 **Le chantier est DÉPLOYÉ** (écran Activation, migration 0067, règle du texte libre, abonnement webhook).

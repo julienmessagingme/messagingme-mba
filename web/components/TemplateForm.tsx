@@ -358,7 +358,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique }: {
                         onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
                         className={`${inputCls} min-w-0 flex-[2] ${urlKo(b) ? 'border-coral focus:border-coral focus:ring-red-100' : ''}`}
                         title={urlKo(b) ? t('Adresse incomplète : commence par https://', 'Incomplete address: start with https://') : undefined}
-                        placeholder="https://exemple.fr/page"
+                        placeholder={t('https://exemple.fr/page', 'https://example.com/page')}
                       />
                     )}
                     <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-red-600" aria-label={t('Retirer', 'Remove')}>×</button>
