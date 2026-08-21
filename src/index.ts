@@ -256,6 +256,8 @@ async function main(): Promise<void> {
     inbox: {
       listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
       countATraiter: (tenant) => inboxStore.countATraiter(tenant),
+      getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
+      setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
       recordOutbound: (id, body, msgId, type, cat, name, sender) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender),

@@ -535,6 +535,20 @@ export interface Conversation {
   /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. Optionnel : une
    *  instance antérieure à la migration 0055 ne le rend pas, et l'inbox se comporte alors comme avant. */
   unread?: boolean;
+  /**
+   * Membre à qui la conversation est confiée. `null` ou absent = personne, donc ouverte à tous.
+   *
+   * ⚠️ Sans rapport avec `controlOwner` : celui-ci dit QU'EST-CE QUI parle (scénario, humain, agent Meta),
+   * celui-là QUEL HUMAIN s'en occupe. Une conversation peut être affectée ET tenue par le scénario.
+   */
+  assignedTo?: string | null;
+  /** Nom du membre affecté, pour l'afficher sans un second appel. */
+  assignedToName?: string | null;
+  /**
+   * Cette conversation m'est-elle affectée ? Calculé par le SERVEUR, qui seul connaît l'identifiant de
+   * l'appelant : la session du navigateur ne porte que l'email et le rôle.
+   */
+  assignedToMe?: boolean;
 }
 export interface InboxMessage {
   id: string;
@@ -560,11 +574,12 @@ export interface InboxMessage {
  */
 export function listConversations(
   tenantId: string,
-  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean } = {},
+  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune' } = {},
 ): Promise<{ conversations: Conversation[] }> {
   const p = new URLSearchParams();
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
   if (opts.aTraiter) p.set('aTraiter', '1');
+  if (opts.affectee !== undefined) p.set('affectee', opts.affectee);
   // Le curseur part ENTIER ou pas du tout : le serveur ignore une moitié, autant ne pas l'envoyer.
   if (opts.before) { p.set('beforeAt', opts.before.at); p.set('beforeId', opts.before.id); }
   const qs = p.toString();
@@ -573,6 +588,15 @@ export function listConversations(
 /** Nombre de conversations non lues (pastille du menu). Route dédiée : le menu ne rapatrie pas la liste. */
 export function countUnreadConversations(tenantId: string): Promise<{ count: number }> {
   return request<{ count: number }>(`/tenants/${tenantId}/conversations/unread-count`);
+}
+/**
+ * Affecte une conversation à un membre, ou la libère avec `null`.
+ *
+ * Réservé aux managers et aux admins. Le refus d'écrire dans une conversation affectée est appliqué par le
+ * SERVEUR : l'écran ne fait que griser, il ne protège rien.
+ */
+export function setConversationAssignee(tenantId: string, conversationId: string, assignee: string | null): Promise<{ conversationId: string; assignee: string | null }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/assignee`, { method: 'PATCH', body: JSON.stringify({ assignee }) });
 }
 /** Nombre de conversations « À traiter », compté par le serveur sur TOUTE la base (pas sur la page affichée). */
 export function countConversationsATraiter(tenantId: string): Promise<{ count: number }> {

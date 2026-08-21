@@ -15,6 +15,8 @@ import { ContactDetail } from '@/components/ContactDetail';
 import {
   listConversations,
   countConversationsATraiter,
+  listUsers,
+  setConversationAssignee,
   queryContacts,
   listUserFields,
   listTags,
@@ -393,6 +395,78 @@ function FicheContact({ session, waId, onClose }: { session: Session; waId: stri
   );
 }
 
+/**
+ * Affectation d'une conversation à un membre de l'équipe.
+ *
+ * Trois lectures possibles selon qui regarde :
+ *   - manager ou admin  -> un sélecteur, pour confier la conversation ou la libérer ;
+ *   - l'agent affecté   -> une pastille « pour moi » ;
+ *   - un autre agent    -> une pastille qui NOMME l'affectataire, pour qu'il comprenne pourquoi la zone de
+ *     réponse lui est fermée. Sans ce nom, la conversation paraîtrait cassée.
+ *
+ * ⚠️ Ce composant ne PROTÈGE rien : le refus d'écrire est appliqué par le serveur. Il rend seulement la
+ * règle lisible, pour qu'on ne rédige pas un message qu'on ne pourra pas envoyer.
+ */
+function AffectationControl({ session, conversation, onChange }: { session: Session; conversation: Conversation; onChange: () => void }) {
+  const t = useT();
+  const peutAffecter = session.role === 'admin' || session.role === 'manager';
+  const [membres, setMembres] = useState<Array<{ id: string; name: string | null; email: string }>>([]);
+  const [busy, setBusy] = useState(false);
+  const affecte = conversation.assignedTo ?? null;
+
+  useEffect(() => {
+    if (!peutAffecter) return;
+    // Silencieux, et surtout VALIDÉ : une réponse 200 sans `users` (backend antérieur, proxy) poserait
+    // `undefined` dans un état typé tableau, et le rendu suivant ferait tomber TOUT le fil de conversation,
+    // pas seulement ce sélecteur. Le try/catch ne suffit pas, il faut vérifier la forme.
+    listUsers(session.tenantId)
+      .then((r) => setMembres(Array.isArray(r?.users) ? r.users : []))
+      .catch(() => setMembres([]));
+  }, [session.tenantId, peutAffecter]);
+
+  async function choisir(valeur: string): Promise<void> {
+    setBusy(true);
+    try {
+      await setConversationAssignee(session.tenantId, conversation.id, valeur === '' ? null : valeur);
+      onChange();
+    } catch {
+      /* l'échec se voit à l'absence de changement dans la liste ; pas d'alerte au milieu d'une conversation */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!peutAffecter) {
+    if (affecte === null) return null;
+    const pourMoi = conversation.assignedToMe === true;
+    return (
+      <span
+        data-testid="assignment-badge"
+        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${pourMoi ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-600'}`}
+      >
+        {pourMoi
+          ? t('pour moi', 'assigned to me')
+          : t(`suivi par ${conversation.assignedToName ?? '…'}`, `handled by ${conversation.assignedToName ?? '…'}`)}
+      </span>
+    );
+  }
+  return (
+    <select
+      data-testid="assignment-select"
+      value={affecte ?? ''}
+      disabled={busy}
+      onChange={(e) => { void choisir(e.target.value); }}
+      className="rounded-lg border border-ink-300 px-2 py-0.5 text-[11px] text-ink-700 disabled:opacity-50"
+      title={t('Affecter cette conversation', 'Assign this conversation')}
+    >
+      <option value="">{t('Non affectée', 'Unassigned')}</option>
+      {membres.map((m) => (
+        <option key={m.id} value={m.id}>{m.name ?? m.email}</option>
+      ))}
+    </select>
+  );
+}
+
 function Thread({ session, conversation, onSent }: { session: Session; conversation: Conversation; onSent: () => void }) {
   const t = useT();
   const { locale } = useLocale();
@@ -403,6 +477,17 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   const [controlOwner, setControlOwner] = useState<ControlOwner>('app_workflow');
   const [releasing, setReleasing] = useState(false);
   const [text, setText] = useState('');
+  /**
+   * La conversation est confiée à quelqu'un d'autre, et je ne suis ni manager ni admin.
+   *
+   * Un champ ABSENT vaut « pas d'affectation » : une instance serveur antérieure à cette fonctionnalité ne
+   * doit fermer la réponse à personne. On ne ferme que sur une affectation explicitement connue.
+   */
+  const fermeeCarAffectee =
+    (conversation.assignedTo ?? null) !== null
+    && conversation.assignedToMe !== true
+    && session.role !== 'admin'
+    && session.role !== 'manager';
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
@@ -495,6 +580,13 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           <span className="ml-2 font-mono text-xs text-ink-400">+{conversation.waId}</span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Affectation : à côté du contrôle du fil, mais ce sont DEUX choses différentes. Le badge de
+              contrôle dit ce qui parle (scénario, humain, agent Meta) ; celui-ci dit qui s'en occupe. */}
+          <AffectationControl
+            session={session}
+            conversation={conversation}
+            onChange={onSent}
+          />
           <ControlBadge owner={controlOwner} />
           {/* Rendre la main : sans ce bouton, le seul retour possible serait le délai d'inactivité, donc un
               opérateur qui règle une question en deux minutes devrait attendre des heures. */}
@@ -557,7 +649,21 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
 
       {error && <p className="mx-4 mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      {windowOpen ? (
+      {/*
+        Conversation confiée à QUELQU'UN D'AUTRE : on remplace la barre de réponse par une explication, au
+        lieu de la laisser en place et de laisser rédiger un message que le serveur refusera. L'agent VOIT
+        toujours la conversation, il sait juste qu'elle n'est pas à lui, et qui la suit.
+
+        Le refus réel vient du serveur : ce bloc ne protège rien, il évite une frustration.
+      */}
+      {fermeeCarAffectee ? (
+        <div className="border-t border-ink-100 p-3 text-center text-sm text-ink-500" data-testid="assigned-elsewhere">
+          {t(
+            `Cette conversation est suivie par ${conversation.assignedToName ?? 'un autre membre'}. Un manager peut vous l’affecter.`,
+            `This conversation is handled by ${conversation.assignedToName ?? 'another member'}. A manager can assign it to you.`,
+          )}
+        </div>
+      ) : windowOpen ? (
         <div className="flex items-center gap-2 border-t border-ink-100 p-3">
           <button
             onClick={() => setShowTemplate(true)}

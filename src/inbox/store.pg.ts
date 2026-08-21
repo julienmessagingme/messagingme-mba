@@ -20,6 +20,15 @@ export interface ConversationSummary {
   controlOwner: ControlOwner;
   /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. */
   unread: boolean;
+  /**
+   * Membre à qui la conversation est confiée. `null` = personne, donc ouverte à tous.
+   *
+   * ⚠️ Indépendant de `controlOwner` : celui-ci dit QU'EST-CE QUI parle (scénario, humain, agent Meta),
+   * celui-là QUEL HUMAIN en a la charge. Une conversation peut être affectée ET tenue par le scénario.
+   */
+  assignedTo: string | null;
+  /** Nom du membre affecté, pour l'afficher sans un second aller-retour. */
+  assignedToName: string | null;
 }
 /**
  * Options de lecture de l'inbox. Toutes optionnelles : sans elles, on obtient exactement la première page
@@ -35,6 +44,11 @@ export interface ListConversationsOptions {
   before?: { at: string; id: string };
   /** N'garder que les fils dont le scénario ne s'occupe plus (onglet « À traiter »). */
   aTraiter?: boolean;
+  /**
+   * Filtrer sur l'affectation : un identifiant de membre, ou `'aucune'` pour les conversations que personne
+   * ne s'est vu confier. Absent = toutes, affectées ou non.
+   */
+  affectee?: string | 'aucune';
 }
 
 export interface ConversationMessage {
@@ -259,6 +273,12 @@ export class PgInboxStore implements InboxStore {
       // Même définition que l'écran : le scénario ne gère plus ce fil (opérateur, escalade, ou agent Meta).
       where.push(`c.control_owner <> 'app_workflow'`);
     }
+    if (opts.affectee === 'aucune') {
+      where.push('c.assigned_to is null');
+    } else if (opts.affectee !== undefined) {
+      params.push(opts.affectee);
+      where.push(`c.assigned_to = $${params.length}::uuid`);
+    }
     if (opts.before) {
       // Comparaison de TUPLE : `(a, b) < (x, y)` suit exactement l'ordre de tri, donc la page suivante
       // reprend pile où la précédente s'est arrêtée, même quand deux fils partagent le même horodatage.
@@ -269,12 +289,13 @@ export class PgInboxStore implements InboxStore {
 
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date;
-      control_owner: ControlOwner; unread: boolean;
+      control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
     }>(
       `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
-              ${UNREAD_SQL} as unread
+              ${UNREAD_SQL} as unread, c.assigned_to, u.name as assigned_name
        from conversations c
        left join contacts ct on ct.id = c.contact_id
+       left join users u on u.id = c.assigned_to
        where ${where.join(' and ')}
        order by c.last_message_at desc, c.id desc
        limit $${params.length}`,
@@ -288,6 +309,8 @@ export class PgInboxStore implements InboxStore {
       lastMessageAt: r.last_message_at.toISOString(),
       controlOwner: r.control_owner,
       unread: r.unread,
+      assignedTo: r.assigned_to,
+      assignedToName: r.assigned_name,
     }));
   }
 
@@ -315,6 +338,48 @@ export class PgInboxStore implements InboxStore {
       [tenantId],
     );
     return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Affecte une conversation à un membre, ou la libère (`assignee` à null).
+   *
+   * Scopé au tenant, et l'affectataire est VÉRIFIÉ appartenir au même espace, dans la même requête : sans
+   * cette sous-requête, un identifiant d'utilisateur d'un autre client rendrait la conversation inaccessible
+   * à tout le monde, puisque plus personne ne correspondrait à l'affectataire.
+   *
+   * Renvoie `false` si la conversation est inconnue OU si l'affectataire n'appartient pas au tenant :
+   * l'appelant en fait un 404, jamais une affectation silencieusement ignorée.
+   */
+  async setAssignee(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean> {
+    if (assignee === null) {
+      const res = await this.pool.query(
+        `update conversations set assigned_to = null, assigned_at = null, assigned_by = null
+          where id = $1 and tenant_id = $2`,
+        [conversationId, tenantId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    }
+    const res = await this.pool.query(
+      `update conversations set assigned_to = $3, assigned_at = now(), assigned_by = $4
+        where id = $1 and tenant_id = $2
+          and exists (select 1 from users u where u.id = $3 and u.tenant_id = $2 and u.disabled_at is null)`,
+      [conversationId, tenantId, assignee, parUserId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * À qui cette conversation est-elle confiée ? `undefined` = conversation inconnue pour ce tenant, ce qui
+   * n'est PAS la même chose que `null` (connue, mais confiée à personne). Les confondre laisserait écrire
+   * dans la conversation d'un autre espace, puisque « personne » vaut « ouverte à tous ».
+   */
+  async getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined> {
+    const res = await this.pool.query<{ assigned_to: string | null }>(
+      `select assigned_to from conversations where id = $1 and tenant_id = $2`,
+      [conversationId, tenantId],
+    );
+    if (res.rows.length === 0) return undefined;
+    return res.rows[0]!.assigned_to;
   }
 
   /**

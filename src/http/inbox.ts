@@ -1,8 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty } from './scope';
+import { peutEcrire, peutAffecter } from '../inbox/assignment';
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
 export interface OutboundTemplate {
@@ -24,6 +25,14 @@ export interface InboxRouteDeps {
   countUnread?(tenantId: string): Promise<number>;
   /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
   countATraiter?(tenantId: string): Promise<number>;
+  /**
+   * À qui la conversation est confiée. `undefined` = conversation inconnue, `null` = confiée à personne.
+   * Optionnelle : absente, aucune conversation n'est considérée comme affectée et tout le monde écrit,
+   * c'est-à-dire exactement le comportement d'avant l'affectation.
+   */
+  getAssignee?(tenantId: string, conversationId: string): Promise<string | null | undefined>;
+  /** Affecte (ou libère avec `null`). `false` = conversation inconnue, ou membre étranger au tenant. */
+  setAssignee?(tenantId: string, conversationId: string, assignee: string | null, parUserId: string | null): Promise<boolean>;
   /** Marque un fil comme lu (un opérateur vient de l'ouvrir). Optionnel (deps de test minimales). */
   markConversationRead?(tenantId: string, conversationId: string): Promise<void>;
   /** wa_id + état de la fenêtre de service 24 h + surcharge de reprise du fil (C.4). null si conversation absente/autre tenant. */
@@ -113,7 +122,14 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (typeof q.beforeAt === 'string' && q.beforeAt !== '' && typeof q.beforeId === 'string' && q.beforeId !== '') {
       opts.before = { at: q.beforeAt, id: q.beforeId };
     }
-    return reply.code(200).send({ conversations: await deps.listConversations(tenant, opts) });
+    const conversations = await deps.listConversations(tenant, opts);
+    // `assignedToMe` est calculé ICI plutôt que déduit à l'écran : la session du navigateur ne porte pas
+    // d'identifiant d'utilisateur, et lui en ajouter un toucherait l'authentification pour un besoin
+    // d'affichage. Le serveur, lui, sait déjà qui appelle.
+    const moi = req.auth?.userId ?? null;
+    return reply.code(200).send({
+      conversations: conversations.map((c) => ({ ...c, assignedToMe: moi !== null && c.assignedTo === moi })),
+    });
   });
 
   /**
@@ -170,6 +186,46 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     });
   });
 
+  /**
+   * Cet acteur a-t-il le droit d'écrire dans cette conversation ? Rend un message d'erreur, ou `null` si
+   * c'est permis.
+   *
+   * 🔴 Appelé par CHAQUE route qui écrit vers le client. C'est la seule barrière réelle : l'écran grise un
+   * bouton, mais rien n'empêche d'appeler l'API directement. Sans dépendance `getAssignee` câblée, tout est
+   * permis, c'est-à-dire le comportement d'avant l'affectation.
+   */
+  async function refusAffectation(req: FastifyRequest, tenant: string, conversationId: string): Promise<string | null> {
+    if (!deps.getAssignee) return null;
+    const assignee = await deps.getAssignee(tenant, conversationId);
+    // `undefined` (conversation inconnue) est laissé aux gardes existantes des routes, qui rendent un 404
+    // plus précis. On ne se prononce que sur une conversation qui existe.
+    if (assignee === undefined) return null;
+    if (peutEcrire({ userId: req.auth?.userId ?? null, role: req.auth?.role ?? null }, assignee)) return null;
+    return 'Cette conversation est affectée à un autre membre de l’équipe.';
+  }
+
+  /**
+   * Affecter une conversation à un membre, ou la libérer. Réservé aux managers et aux admins : c'est la
+   * première prérogative réelle du rôle `manager`, qui n'accordait rien depuis sa création.
+   */
+  app.patch('/tenants/:tenantId/conversations/:conversationId/assignee', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.setAssignee) return reply.code(503).send({ error: 'affectation indisponible' });
+    if (!peutAffecter({ userId: req.auth?.userId ?? null, role: req.auth?.role ?? null })) {
+      return reply.code(403).send({ error: 'réservé aux managers et aux admins' });
+    }
+    const { conversationId } = req.params as { conversationId: string };
+    const brut = (req.body as { assignee?: unknown } | null)?.assignee;
+    // `null` explicite = libérer. Toute autre forme qu'une chaîne non vide est refusée : une valeur bancale
+    // ne doit pas se traduire par une libération silencieuse, qui rouvrirait la conversation à tous.
+    if (brut !== null && !nonEmpty(brut)) return reply.code(400).send({ error: 'assignee requis (identifiant de membre, ou null pour libérer)' });
+    const assignee = brut === null ? null : (brut as string);
+    const ok = await deps.setAssignee(tenant, conversationId, assignee, req.auth?.userId ?? null);
+    if (!ok) return reply.code(404).send({ error: 'conversation inconnue, ou membre étranger à cet espace' });
+    return reply.code(200).send({ conversationId, assignee });
+  });
+
   app.post('/tenants/:tenantId/conversations/:conversationId/reply', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -179,6 +235,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    const refus = await refusAffectation(req, tenant, conversationId);
+    if (refus) return reply.code(403).send({ error: refus, code: 'assigned_to_other' });
     // Hors fenêtre 24 h : Meta refuse le texte libre. On bloque et on invite à un template.
     if (!ctx.windowOpen) {
       return reply.code(422).send({ error: 'Fenêtre de 24 h fermée : envoie un template.', code: 'window_closed' });
@@ -225,6 +283,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    const refusTpl = await refusAffectation(req, tenant, conversationId);
+    if (refusTpl) return reply.code(403).send({ error: refusTpl, code: 'assigned_to_other' });
     const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
@@ -270,6 +330,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    // Lancer un scénario ÉCRIT au client : même règle que répondre à la main.
+    const refusWf = await refusAffectation(req, tenant, conversationId);
+    if (refusWf) return reply.code(403).send({ error: refusWf, code: 'assigned_to_other' });
 
     const issue = await deps.startWorkflow(tenant, workflowId, ctx.waId, ctx.windowOpen);
     if (issue === null) return reply.code(404).send({ error: 'scénario inconnu' });

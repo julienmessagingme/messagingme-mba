@@ -16,7 +16,7 @@ const auth = () => ({ headers: { 'content-type': 'application/json', authorizati
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
     listConversations: async () => [
-      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true },
+      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null },
     ],
     getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
     getMessages: async () => [
@@ -560,6 +560,121 @@ describe('GET /conversations — pagination et filtre', () => {
     const a = app({ countATraiter: async () => 7 });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/todo-count', ...auth() });
     expect(res.json<{ count?: number }>().count).toBe(7);
+    await a.close();
+  });
+});
+
+/**
+ * Affectation d'une conversation à un membre.
+ *
+ * 🔴 Ces tests portent sur le SERVEUR, et c'est tout leur intérêt : l'écran grise un bouton, mais rien
+ * n'empêche d'appeler l'API directement. Si le refus n'est pas ici, l'affectation n'est qu'une étiquette.
+ */
+describe('affectation des conversations', () => {
+  /** Trois identités : l'agent affecté, un autre agent, un manager. */
+  const jetons = { affecte: '', autre: '', manager: '' };
+  beforeAll(async () => {
+    jetons.affecte = await signSession({ userId: 'u-affecte', tenantId: 't1', role: 'agent' }, SECRET);
+    jetons.autre = await signSession({ userId: 'u-autre', tenantId: 't1', role: 'agent' }, SECRET);
+    jetons.manager = await signSession({ userId: 'u-manager', tenantId: 't1', role: 'manager' }, SECRET);
+  });
+  const comme = (jeton: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${jeton}` } });
+
+  /** App dont la conversation `c1` est affectée à `assignee`. */
+  function appAvecAffectation(assignee: string | null) {
+    const poses: Array<{ id: string; assignee: string | null; par: string | null }> = [];
+    const a = app({
+      getAssignee: async () => assignee,
+      setAssignee: async (_t: string, id: string, who: string | null, par: string | null) => { poses.push({ id, assignee: who, par }); return true; },
+      // Câblé comme en production : sans lui la route rend 503 « indisponible sur cette instance » AVANT
+      // d'arriver à la règle d'affectation, et le test ne prouverait rien du refus.
+      startWorkflow: async () => true,
+    });
+    return { a, poses };
+  }
+
+  it('conversation NON affectée : un agent quelconque peut répondre', async () => {
+    const { a } = appAvecAffectation(null);
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...comme(jetons.autre), payload: { text: 'bonjour' } });
+    expect(res.statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('affectée : l’agent DÉSIGNÉ peut répondre', async () => {
+    const { a } = appAvecAffectation('u-affecte');
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...comme(jetons.affecte), payload: { text: 'bonjour' } });
+    expect(res.statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('🔴 affectée : un AUTRE agent est refusé par le SERVEUR (403)', async () => {
+    const { a } = appAvecAffectation('u-affecte');
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...comme(jetons.autre), payload: { text: 'coucou' } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ code: string }>().code).toBe('assigned_to_other');
+    await a.close();
+  });
+
+  it('🔴 le refus vaut aussi pour un TEMPLATE et pour un SCÉNARIO', async () => {
+    // Les trois routes écrivent au client : protéger la seule réponse texte laisserait deux portes ouvertes.
+    const { a } = appAvecAffectation('u-affecte');
+    const tpl = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...comme(jetons.autre),
+      payload: { templateName: 'promo', language: 'fr' },
+    });
+    expect(tpl.statusCode).toBe(403);
+    const wf = await a.inject({
+      method: 'POST', url: '/tenants/t1/conversations/c1/workflow', ...comme(jetons.autre),
+      payload: { workflowId: 'wf1' },
+    });
+    expect(wf.statusCode).toBe(403);
+    await a.close();
+  });
+
+  it('un MANAGER peut toujours reprendre la main sur une conversation affectée à un autre', async () => {
+    const { a } = appAvecAffectation('u-affecte');
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...comme(jetons.manager), payload: { text: 'je reprends' } });
+    expect(res.statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('un manager affecte ; un agent ne peut pas', async () => {
+    const { a, poses } = appAvecAffectation(null);
+    const ok = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.manager), payload: { assignee: 'u-affecte' } });
+    expect(ok.statusCode).toBe(200);
+    expect(poses).toEqual([{ id: 'c1', assignee: 'u-affecte', par: 'u-manager' }]);
+
+    const ko = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.autre), payload: { assignee: 'u-autre' } });
+    expect(ko.statusCode).toBe(403);
+    expect(poses).toHaveLength(1); // rien d'écrit sur le refus
+    await a.close();
+  });
+
+  it('`assignee: null` libère la conversation', async () => {
+    const { a, poses } = appAvecAffectation('u-affecte');
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.manager), payload: { assignee: null } });
+    expect(res.statusCode).toBe(200);
+    expect(poses[0]?.assignee).toBeNull();
+    await a.close();
+  });
+
+  it('🔴 une valeur bancale ne LIBÈRE pas en silence', async () => {
+    // Libérer rouvre la conversation à tout le monde : ça ne doit jamais arriver par accident, seulement sur
+    // un `null` explicite.
+    const { a, poses } = appAvecAffectation('u-affecte');
+    for (const assignee of [undefined, '', '   ', 42, {}, []]) {
+      const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.manager), payload: { assignee } });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(poses).toEqual([]);
+    await a.close();
+  });
+
+  it('🔴 sans dépendance câblée, tout le monde écrit (comportement d’avant l’affectation)', async () => {
+    // Une instance dont le store n'expose pas l'affectation ne doit pas se retrouver à tout bloquer.
+    const a = app();
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...comme(jetons.autre), payload: { text: 'bonjour' } });
+    expect(res.statusCode).toBe(200);
     await a.close();
   });
 });
