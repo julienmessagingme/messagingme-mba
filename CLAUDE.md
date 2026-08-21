@@ -45,8 +45,16 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
 `sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`). Dernière appliquée :
-**0066** (liens tracés ; 0065 rôle manager le 2026-08-20). **Prochaine = 0067.** En pratique on applique aussi
-via `npm run migrate` en local (même Supabase prod).
+**0073** (multi-espaces ; 0067 handoff MBA, 0068-0071 lot inbox/modération, 0072 identités). **Prochaine = 0074.**
+En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+
+🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
+`compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
+`compose build` AVANT. C'est pour ça que la séquence commence par le build. (Vécu le 2026-08-21.)
+
+⚠️ **`users.password_hash` est un MIROIR transitoire** de `identities.password_hash` (migration 0072), gardé
+comme chemin de retour. Ne pas le retirer tant que la confiance sur le multi-espaces n'est pas acquise, et
+ne jamais l'utiliser comme source : `findIdentity` lit l'identité, pas le compte.
 
 ⚠️ **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge** : les `rewrites` sont **gelés au build**
 de l'image web. Un simple `up -d` laisserait le proxy dans son état d'avant, et le chemin public `/r/:code`

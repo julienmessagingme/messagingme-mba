@@ -9,6 +9,11 @@ Les 7 items : brouillons de campagne (0068), entree Accueil, pagination + filtre
 fiche contact partagee, affectation (0070), moderation (0071), observation d'un espace depuis /ops,
 multi-espaces par adresse (0072/0073).
 
+**Le chantier « parametres d'activation MBA » est LIVRE lui aussi** (ecran Activation + migration 0067 +
+regle du texte libre + abonnement webhook `standby`/`messaging_handovers`). Ce qui en reste ouvert est dans
+`todo.md` : le test en conversation reelle est BLOQUE par l'absence de moyen de paiement (le bac a sable est
+le seul canal), et la pastille « quelqu'un a besoin d'aide » attend cette mesure.
+
 ### Verifie APRES deploiement, pas seulement en test
 - Reprise des comptes : 7 users, 7 identites, **0 sans identite, 0 hash perdu**.
 - `/auth/login` rend 401 (et non 500) : la nouvelle requete d'identite tourne.
@@ -26,67 +31,6 @@ multi-espaces par adresse (0072/0073).
 
 ---
 
-
-## EN COURS (2026-08-21) — parametres d'activation MBA : code pousse, PAS deploye
-
-Pousse sur `main` (`9893793` + `89d9a47`). **Rien n'est en prod** : la prod tourne toujours sur `139eba2`,
-migrations jusqu'a 0066.
-
-### Ce qui est fait
-- **Regle du texte libre** (`9893793`) : une reponse ECRITE a un bloc a boutons ne part plus dans la branche
-  du premier bouton. Trois cas : bouton cable -> sa branche ; sinon arete LIBRE -> on la suit ; sinon fin du
-  run et l'agent reprend la parole. Le builder gagne la sortie « toute autre reponse » sur les blocs a
-  boutons, sans quoi le 2e cas serait inatteignable.
-- **Ecran Activation** (`89d9a47`, migration **0067**) : MBA > Parametres > Activation, deux questions.
-  Ouvre `handoff` a `PATCH /mba/:pn/settings`, stocke le choix (`mba_handoff_mode`), l'applique chez Meta
-  tout de suite, et fait varier `handoff.enabled` selon les heures d'ouverture par un nouveau balayage.
-  Le delai de reprise quitte l'Accueil, et son texte est corrige (PREMIERE intervention, pas derniere).
-
-### DEPLOYE le 2026-08-21
-Migration 0067 appliquee, puis `docker compose up -d --build`. Les trois conteneurs sont sains.
-⚠️ Le commit `ccd2da2` (correction du libelle mensonger, voir ci-dessous) n'est PAS encore deploye.
-
-### Abonnement webhook : CORRIGE le 2026-08-21
-`POST /{app_id}/subscriptions` -> l'app est desormais abonnee a **`messages` + `standby` +
-`messaging_handovers`** (elle n'avait que `messages`). C'etait un trou majeur : la doc Meta dit que quand
-l'agent tient le fil, tout passe par `standby` et que `messages` reste VIDE. L'inbox serait donc devenue
-muette le jour de l'allumage de MBA chez un client, **sans aucune erreur nulle part**.
-Au passage, inconnue levee : Meta ACCEPTE `standby` et `messaging_handovers` sur un WABA, alors qu'ils ne
-figurent pas dans sa liste publique de champs.
-
-### Ce qui reste, dans l'ordre
-1. 🔴 **Le test en conversation REELLE est BLOQUE par l'absence de moyen de paiement.** Aucun message
-   WhatsApp n'atteint l'agent : le bac a sable (`agent_test`, onglet « Tester ») est le SEUL canal. Ce n'est
-   pas un manque de notre cote, il n'y a rien a tenter d'ici la. La forme du payload `messaging_handovers`
-   reste donc inconnue, et `ownerFromHandover` reste une lecture devinee.
-2. **La pastille « quelqu'un a besoin d'aide »** dans l'inbox : demande une donnee NOUVELLE (`app_human` ne
-   distingue pas « escalade, personne ne s'en occupe » de « un operateur a repondu »). Les mesures du
-   2026-08-21 la rendent BEAUCOUP plus urgente : un refus de l'agent produit une reponse VIDE.
-3. **Ecrire le texte lu par le client** (`message` + `message_selection: CUSTOM`), une fois son effet mesure.
-
-### Mesures au bac a sable (2026-08-21), tableau complet dans documentation.md
-- « je veux parler a un conseiller » -> `customer_request`, l'agent annonce le transfert.
-- Question hors de sa base -> `handoff_reason: null`. 🔴 **Quand il ne SAIT pas, il ne passe PAS la main**,
-  il renvoie vers les coordonnees. L'intuition inverse etait fausse.
-- Incident vecu + demande de dedommagement -> **`integrity_violation` et reponse VIDE**. Ni l'incident seul
-  ni le mot « remboursement » seul ne le declenchent : c'est la combinaison.
-- Consequence : le libelle de l'ecran Activation promettait un transfert « quand l'agent ne sait pas ».
-  Corrige dans `ccd2da2`, a deployer.
-
-### Mesure faite (etape 0 du plan)
-`GET {WABA}/subscribed_apps` sur le WABA de test : **deux** apps abonnees, la notre (`988129420727963`) et
-**« Business Agent »** de Meta (`1143680903703001`). Cette reponse liste les APPS, pas les CHAMPS : la sonde
-`scripts/sonde-webhooks.mts` interroge desormais aussi `{app_id}/subscriptions` (jeton d'application requis),
-qui est la seule facon de savoir si `standby` et `messaging_handovers` nous arrivent.
-
-### Ce qu'on ne doit PAS promettre au client
-- Qu'un humain ne peut pas prendre la main : aucun verrou n'existe, ni chez nous ni chez Meta.
-- Que « jamais » empeche l'agent de transferer : il decide seul. `enabled` dit s'il LACHE le fil ensuite.
-- Que les heures d'ouverture pilotent autre chose que ce passage de main et la clause de scenario.
-
-Dossier complet : `.loop/mba-parametres-activation.md`.
-
----
 
 ## TERMINE ET EN LIGNE (2026-08-19/20) — le detail est passe dans features.md / documentation.md
 

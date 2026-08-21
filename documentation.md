@@ -467,6 +467,75 @@ touchée, les uuid internes restent la source de vérité des relations.
   - `waitBeforeSessionMessage` (pur, + miroir front) détecte « attente >= 24 h puis message de session » pour
     l'afficher dans le builder ; cumul plafonné à 24 h, ce qui garantit la terminaison sur graphe cyclique.
 
+## Lot « inbox, comptes, modération » (2026-08-21, migrations 0068-0073)
+
+### Affectation d'une conversation (0070)
+
+🔴 **`assigned_to` et `control_owner` sont ORTHOGONAUX.** `control_owner` dit QU'EST-CE QUI parle (scénario,
+humain, agent Meta) ; `assigned_to` dit QUEL HUMAIN s'en occupe. Une conversation peut être affectée ET tenue
+par le scénario. Les mélanger casserait le gel de scénario d'août.
+
+La règle d'accès vit dans `src/inbox/assignment.ts`, fonction PURE, appelée par les TROIS routes qui écrivent
+au client (réponse, template, lancement de scénario). Elle ne reçoit même pas `control_owner` : si quelqu'un
+le lui passait, le code ne compilerait plus. Griser un bouton ne protège rien, le refus vient du serveur.
+
+`on delete set null` sur l'affectataire : supprimer un membre LIBÈRE ses conversations au lieu de les
+emporter. Une conversation que plus personne ne peut prendre serait invisible et sans réponse.
+
+### Pagination et filtres de l'inbox (0069)
+
+Le filtrage est en SQL, curseur sur `(last_message_at, id)` comparé en TUPLE. `id` départage les ex æquo :
+sans lui, la pagination saute ou répète une ligne à la frontière de deux pages. Pas de drapeau `hasMore` :
+une page pleine le dit déjà, un drapeau coûterait un décompte complet.
+
+⚠️ Avant, l'écran filtrait EN MÉMOIRE les 100 conversations chargées : au-delà, le filtre ignorait le reste
+sans rien signaler, et le compteur plafonnait à la taille de la page.
+
+### Modération (0071)
+
+Deux choses SÉPARÉES : `conversation_analysis.abusive` est un CONSTAT posé par l'analyse (qui ne déclenche
+rien), `contacts.blocked_at` est une DÉCISION humaine (qui a des effets). Les mélanger laisserait un modèle
+bloquer des clients tout seul.
+
+Bloqué = plus aucun envoi (campagnes filtrées à la SOURCE dans `campaign/store.pg.ts`, automations coupées à
+leur unique point d'entrée `runAutomations`) ET conversation masquée. 🔴 Les messages restent ENREGISTRÉS :
+filtrer à la réception ferait disparaître une résiliation ou une menace juridique sans que personne le sache.
+
+L'écran des contacts bloqués (Paramètres) est la SEULE porte de sortie : sans lui, un contact bloqué est
+introuvable, donc perdu.
+
+### Observation d'un espace depuis /ops
+
+🔴 La LECTURE SEULE est une garde GLOBALE dans `makeRequireAuth`, fondée sur la MÉTHODE HTTP : `GET`/`HEAD`
+passent, tout le reste est refusé. Une garde route par route aurait laissé passer celle qu'on oublie, et
+surtout toute route d'écriture AJOUTÉE DEMAIN est couverte sans que personne y pense. Effet heureux : le
+marquage « lu » est un POST, donc refusé — regarder une conversation ne fait pas disparaître les non-lus du
+client.
+
+La session d'emprunt (`Session.impersonated`) ne relit AUCUN état en base : son porteur n'a pas de compte
+dans l'espace visité, le loader le révoquerait. Sa légitimité vient de sa signature, émise par `/ops/observe`
+que protège le jeton d'exploitation (autorité SÉPARÉE du JWT client). `impersonated` est lu STRICTEMENT
+(`=== true`).
+
+### Une adresse, plusieurs espaces (0072/0073)
+
+Le mot de passe vit sur l'ADRESSE (`identities`), plus sur le compte. Une table plutôt qu'un hash dupliqué :
+l'invariant « une adresse = UN mot de passe » est EXPRIMÉ par la structure, pas simulé.
+
+Connexion en deux temps. Un seul espace -> session directe (aucun écran de plus, c'est le cas courant).
+Plusieurs -> le serveur rend la LISTE et un jeton de CHOIX, jamais une session.
+
+🔴 Le jeton de choix ne peut pas tenir lieu de session : pas de `tenantId`/`role` à la racine (donc
+`verifySession` le rejette), `kind` vérifié explicitement, et il PORTE la liste signée des espaces autorisés.
+Sans cette liste, présenter un jeton légitime avec l'identifiant d'un espace quelconque suffirait à y entrer.
+
+`setPassword` écrit sur l'IDENTITÉ (et en miroir sur `users.password_hash`, le temps de la transition) : une
+réinitialisation vaut donc pour TOUS les espaces de l'adresse.
+
+⚠️ **0073 est la seule migration IRRÉVERSIBLE du lot** : recréer `users_email_lower_unique` n'est possible
+que TANT QU'AUCUN doublon n'existe. `users_tenant_email_unique` reste : deux comptes de la même adresse dans
+le MÊME espace n'auraient aucun sens.
+
 ## Passage de main MBA et écran Activation (2026-08-21, migration 0067)
 
 ### Quand l'agent passe-t-il la main ? (mesuré au bac à sable le 2026-08-21)

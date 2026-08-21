@@ -3,14 +3,14 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
-## 🔴 CHANTIER EN COURS : paramètres d'activation MBA (2026-08-21)
+## 🔴 MBA : ce qui reste après le chantier « paramètres d'activation » (livré le 2026-08-21)
 
-**Le code est poussé (`9893793` + `89d9a47`), il n'est PAS déployé.** Détail de l'état dans `wip.md`,
-dossier complet dans `.loop/mba-parametres-activation.md`.
+**Le chantier est DÉPLOYÉ** (écran Activation, migration 0067, règle du texte libre, abonnement webhook).
+Dossier complet dans `.loop/mba-parametres-activation.md`. Ne restent que les deux points ci-dessous, dont
+le premier ne dépend pas de nous.
 
 ### Ce qui reste à faire, dans l'ordre
-1. 🔴 **Appliquer la migration 0067 AVANT de déployer.** Additive, mais le code lit la colonne.
-2. 🔴 **BLOQUÉ PAR LE MOYEN DE PAIEMENT** : provoquer un VRAI transfert en conversation WhatsApp réelle.
+1. 🔴 **BLOQUÉ PAR LE MOYEN DE PAIEMENT** : provoquer un VRAI transfert en conversation WhatsApp réelle.
    Sans moyen de paiement rattaché au compte, aucun message WhatsApp n'atteint l'agent : le bac à sable
    (`agent_test`, onglet « Tester ») est le SEUL canal. Rien à tenter d'ici là, ce n'est pas un manque de
    notre côté. Le jour où c'est rattaché : envoyer « je veux parler à un conseiller » au
@@ -21,13 +21,13 @@ dossier complet dans `.loop/mba-parametres-activation.md`.
    (`handover_recu`, `standby_echo`) : la trace sera là.
    ✅ L'abonnement webhook, lui, est FAIT (2026-08-21) : `messages`, `standby` et `messaging_handovers` sont
    souscrits sur l'app. Ce n'est donc plus un prérequis manquant.
-3. 🔲 **La pastille « quelqu'un a besoin d'aide »** dans l'inbox. Demande une donnée NOUVELLE : `app_human` ne
+2. 🔲 **La pastille « quelqu'un a besoin d'aide »** dans l'inbox. Demande une donnée NOUVELLE : `app_human` ne
    distingue pas « escaladé, personne ne s'en occupe » de « un opérateur a répondu », donc la pastille ne
    pourrait jamais s'éteindre. Et le balayage de reprise rebascule après le délai même si personne n'a rien
-   fait : une demande d'aide peut donc s'éteindre toute seule. À ne faire qu'APRÈS le point 2.
-4. 🔲 **Le texte lu par le client hors horaires** reste celui de Meta. Nous ne l'écrivons pas encore
+   fait : une demande d'aide peut donc s'éteindre toute seule. À ne faire qu'APRÈS le point 1.
+3. 🔲 **Le texte lu par le client hors horaires** reste celui de Meta. Nous ne l'écrivons pas encore
    (`message` + `message_selection: CUSTOM`), parce que le comportement réel de ces deux champs n'a pas été
-   mesuré. À traiter avec le point 2, sur le même test réel.
+   mesuré. À traiter avec le point 1, sur le même test réel.
 
 ### Faits à ne pas re-chercher
 - `handoff` a **trois** champs : `enabled`, `message`, `message_selection` (DEFAULT/AGENT/CUSTOM).
