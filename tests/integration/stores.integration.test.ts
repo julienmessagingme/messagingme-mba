@@ -5,7 +5,7 @@ import { ALL_QUEUES } from '../../src/queue/names';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
-import { PgUserStore, DuplicateEmailError } from '../../src/user/store.pg';
+import { PgUserStore } from '../../src/user/store.pg';
 import { PgTrackedLinkStore } from '../../src/links/tracked-links.pg';
 import { newTrackingCode } from '../../src/ids/code';
 import { PgAuthTokenStore } from '../../src/auth/token-store.pg';
@@ -207,11 +207,37 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(tRow.status).toBe('active'); // défaut du crochet paiement
       const state = await users.getAuthState(userId);
       expect(state).toMatchObject({ role: 'admin', disabled: false, tenantStatus: 'active' });
-      // email GLOBALEMENT unique : réutiliser l'email -> DuplicateEmailError (et rollback : pas de tenant orphelin).
-      const tenantsBefore = (await pool.query<{ n: string }>(`select count(*) n from tenants`)).rows[0]!.n;
-      await expect(users.createTenantWithAdmin('Doublon', { email, name: null, passwordHash: null })).rejects.toBeInstanceOf(DuplicateEmailError);
-      const tenantsAfter = (await pool.query<{ n: string }>(`select count(*) n from tenants`)).rows[0]!.n;
-      expect(tenantsAfter).toBe(tenantsBefore); // rollback -> aucun tenant créé pour rien
+      // 🔴 Ce test vérifiait l'INVERSE jusqu'au 2026-08-21 : réutiliser l'adresse rendait `DuplicateEmailError`.
+      // Les migrations 0072/0073 en ont fait une fonctionnalité — une adresse peut ouvrir plusieurs espaces —
+      // donc le test est RETOURNÉ, pas supprimé : il prouve désormais ce que la règle est devenue.
+      const second = await users.createTenantWithAdmin('Deuxième espace', { email, name: null, passwordHash: null });
+      try {
+        // Deux espaces DISTINCTS, deux comptes distincts, une seule adresse.
+        expect(second.tenantId).not.toBe(newTenant);
+        expect(second.userId).not.toBe(userId);
+
+        // 🔴 Et surtout : UNE seule identité, donc UN seul mot de passe. C'est l'invariant de la conception ;
+        // deux identités auraient donné deux mots de passe pour une même adresse, ce qui est indébogable
+        // pour l'utilisateur.
+        const identites = await pool.query<{ identity_id: string }>(
+          `select distinct identity_id from users where lower(email) = lower($1)`, [email],
+        );
+        expect(identites.rows).toHaveLength(1);
+
+        // Le mot de passe du PREMIER espace est conservé : le second n'a pas écrasé l'identité avec son
+        // `passwordHash: null`, sinon le premier compte ne pourrait plus se connecter.
+        const hash = (await pool.query<{ password_hash: string | null }>(
+          `select password_hash from identities where lower(email) = lower($1)`, [email],
+        )).rows[0]!;
+        expect(hash.password_hash).toBe('scrypt$aa$bb');
+      } finally {
+        await pool.query('delete from tenants where id = $1', [second.tenantId]);
+      }
+      // 🔴 Ce qui reste INTERDIT : deux comptes de la même adresse dans le MÊME espace. On a ouvert le
+      // multi-ESPACES, pas le multi-comptes par espace : le choix de connexion n'aurait alors aucun sens
+      // (deux lignes identiques à l'écran), et rien ne dirait laquelle ouvrir.
+      await expect(users.createPending(newTenant, email, 'agent')).rejects.toThrow();
+
       // createPending (invitation) : user sans mot de passe -> setPassword le finalise.
       const pending = await users.createPending(newTenant, `invite.itest.${Date.now()}@exemple.fr`, 'agent');
       expect(await users.setPassword(pending.id, 'scrypt$cc$dd')).toBe(true);
