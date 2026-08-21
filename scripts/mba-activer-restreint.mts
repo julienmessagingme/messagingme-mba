@@ -12,6 +12,10 @@
  * Extinction : `npx tsx scripts/mba-activer-restreint.mts <pn> --off` (repasse rollout.enabled à false,
  * sans toucher à l'allowlist).
  *
+ * ⚠️ `--tous` allume SANS restreindre : `ai_audience` est laissé tel quel, donc l'agent répond à tout le
+ * monde si le numéro était déjà en EVERYONE. À n'utiliser que sur un numéro dont on assume l'exposition.
+ * C'est un choix à faire explicitement, jamais un défaut : sans ce drapeau, le script exige des numéros.
+ *
  * Usage :
  *   sudo docker compose run --rm --no-deps \
  *     -v /home/ubuntu/mba/scripts/mba-activer-restreint.mts:/app/scripts/mba-activer-restreint.mts \
@@ -22,9 +26,10 @@ import { decryptSecret } from '../src/crypto/secretbox';
 
 const [, , PN, ...reste] = process.argv;
 const ETEINDRE = reste.includes('--off');
-const NUMEROS = reste.filter((a) => a !== '--off');
-if (!PN || (!ETEINDRE && NUMEROS.length === 0)) {
-  console.error('usage: npx tsx scripts/mba-activer-restreint.mts <phone_number_id> <+E164...> | --off');
+const SANS_RESTRICTION = reste.includes('--tous');
+const NUMEROS = reste.filter((a) => a !== '--off' && a !== '--tous');
+if (!PN || (!ETEINDRE && !SANS_RESTRICTION && NUMEROS.length === 0)) {
+  console.error('usage: npx tsx scripts/mba-activer-restreint.mts <phone_number_id> <+E164...> | --tous | --off');
   process.exit(1);
 }
 
@@ -67,7 +72,9 @@ console.log('\nreglages AVANT :', JSON.stringify(courant));
 const voulu: Record<string, unknown> = {
   ...courant, // tout le reste est repassé tel quel, y compris ce que nous ne connaissons pas
   rollout: { ...(courant.rollout as object ?? {}), enabled: !ETEINDRE },
-  ...(ETEINDRE ? {} : { ai_audience: 'ALLOWLISTED_ONLY' }),
+  // `ai_audience` n'est touché QUE dans le mode restreint : `--tous` et `--off` laissent au numéro l'audience
+  // qu'il avait, plutôt que de la changer au passage sans que personne l'ait demandé.
+  ...(ETEINDRE || SANS_RESTRICTION ? {} : { ai_audience: 'ALLOWLISTED_ONLY' }),
 };
 // ⚠️ `agent_id` et `channel` sont dans la réponse du GET mais PAS dans le schéma de requête : les renvoyer
 // tels quels expose à un 400. `agent_id` repart en query, où Meta l'attend (sinon le PUT bascule en
