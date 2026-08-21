@@ -486,6 +486,21 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Inbox
 
+- ✅ **Affecter une conversation à quelqu'un** (2026-08-21) : depuis le fil, un **manager** ou un admin choisit
+  le membre qui s'en occupe, ou la laisse libre. Tant qu'une conversation n'est affectée à personne, **tout le
+  monde peut y répondre**, agents compris. Dès qu'elle est affectée, **seul l'agent désigné** répond ; les
+  autres la voient toujours, avec le nom de celui qui la suit à la place de la zone de réponse. Un manager ou
+  un admin peuvent toujours reprendre la main. C'est la première capacité réelle du rôle manager.
+  ⚠️ À ne pas confondre avec « qui tient le fil » (le scénario, un humain, l'agent Meta) : une conversation
+  peut très bien être confiée à quelqu'un ET suivie par le scénario. L'affectation dit qui s'en occupe, pas
+  qui parle.
+- ✅ **Liste allégée et complète** (2026-08-21) : la vignette ne répète plus le début du dernier message (le
+  fil est juste à côté), et le clic sur le **nom** ouvre la fiche du contact sans quitter la conversation.
+  Surtout, la liste ne s'arrête plus à cent : un bouton « Charger plus » va chercher la suite, le filtre
+  « À traiter » porte désormais sur **toutes** les conversations et non sur celles déjà affichées, et son
+  compteur dit le vrai total.
+
+
 - ✅ **Qui répond à ce client, à cet instant** (2026-07-21). Une conversation appartient à un seul
   répondeur à la fois : le **scénario** (automatique), un **opérateur** (quelqu'un s'en occupe), ou
   demain l'**agent de Meta**. Un badge le dit dans la liste et dans le fil, et n'apparaît que quand ce

@@ -1,5 +1,39 @@
 # WIP
 
+## EN COURS (2026-08-21) — lot « inbox, comptes, moderation » : 4 items sur 7 faits
+
+Cadrage complet et decisions de Julien : `.loop/lot-inbox-comptes-moderation.md`.
+**Pousse, PAS deploye.** Migrations a appliquer AVANT le code : **0068, 0069, 0070**.
+
+### Fait
+1. **Brouillons de campagne** (0068) : le nom saisi cree un brouillon de COMPOSITION, retrouvable et
+   reprenable. Table a part : `campaigns.status = 'draft'` designe autre chose (une campagne complete non
+   lancee, qu aucune route ne sait modifier).
+2. **Entree Accueil** dans la barre laterale, au-dessus d Inbox, pas pour les agents.
+3. **Socle de volume de l inbox** (0069) : filtres et pagination en SQL, curseur sur (last_message_at, id),
+   compteur « A traiter » compte sur toute la base. Prerequis des trois autres items.
+4. **Fiche contact partagee** : `ContactDetail` extrait de la page mini-CRM, ouvert dans l inbox au clic sur
+   le NOM (la vignette continue d ouvrir la conversation).
+5. **Affectation** (0070) : manager/admin confient une conversation ; refus applique CoTE SERVEUR sur les
+   trois routes qui ecrivent. Premiere prerogative reelle du role manager.
+
+### Reste (3 items, decisions deja prises)
+- **Moderation** : reutiliser l analyse IA existante (delai de 15-20 min assume par Julien), blocage d un
+  contact = plus d envoi ET plus d affichage, avec un ECRAN DEDIE dans les parametres pour debloquer.
+  ⚠️ Cet ecran est la SEULE porte de sortie : sans lui un contact bloque est perdu. Meme lot, jamais apres.
+- **Superadmin depuis /ops** : ⚠️ casse le principe ecrit « ops = LECTURE SEULE ». Lecture seule au premier
+  lot, marquage « lu » neutralise, journalise cote ops et invisible cote client, bandeau permanent.
+- **Multi-comptes par email** : ⚠️ revient sur la migration 0010 (« un email = un compte »), et deplace le mot
+  de passe hors de `users` (un seul par ADRESSE). Migration d authentification : a faire SEULE, en dernier.
+
+### Piege trouve DEUX fois dans la meme journee, a ne pas reperdre
+Une reponse 200 sans le champ attendu (`drafts`, `users`) passe le try/catch et pose `undefined` dans un etat
+type tableau. Le rendu suivant casse TOUT l ecran, pas seulement la section concernee. `Array.isArray` sur
+toute liste venue de l API, systematiquement.
+
+---
+
+
 ## EN COURS (2026-08-21) — parametres d'activation MBA : code pousse, PAS deploye
 
 Pousse sur `main` (`9893793` + `89d9a47`). **Rien n'est en prod** : la prod tourne toujours sur `139eba2`,
