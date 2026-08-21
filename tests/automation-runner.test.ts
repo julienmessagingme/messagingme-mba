@@ -246,3 +246,32 @@ describe('plafond par automation (borne le fan-out de masse)', () => {
     expect(await runAutomations('t1', MSG, absent.deps)).toBe(1);
   });
 });
+
+/**
+ * Modération : un contact BLOQUÉ ne déclenche plus aucune automation.
+ *
+ * Son message reste enregistré et lisible dans l'historique : filtrer à la réception ferait disparaître une
+ * résiliation ou une menace juridique sans que personne ne le sache. Ce qui s'arrête, c'est ce qui PART.
+ */
+describe('runAutomations : contact bloqué', () => {
+  it('🔴 bloqué -> aucune automation ne démarre', async () => {
+    const { deps, trace } = make([auto()], { contactBloque: async () => true });
+    expect(await runAutomations('t1', MSG, deps)).toBe(0);
+    expect(trace.started).toEqual([]);
+    // Et rien n'est marqué comme déclenché : sinon l'anti-rebond bloquerait le contact après son déblocage.
+    expect(trace.fired).toEqual([]);
+  });
+
+  it('non bloqué -> l’automation démarre normalement', async () => {
+    const { deps, trace } = make([auto()], { contactBloque: async () => false });
+    expect(await runAutomations('t1', MSG, deps)).toBe(1);
+    expect(trace.started).toHaveLength(1);
+  });
+
+  it('la garde est OPTIONNELLE : sans elle, rien ne change', async () => {
+    // Une instance dont le store n'expose pas la modération ne doit pas se retrouver à tout bloquer.
+    const { deps, trace } = make([auto()]);
+    expect(await runAutomations('t1', MSG, deps)).toBe(1);
+    expect(trace.started).toHaveLength(1);
+  });
+});

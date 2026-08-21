@@ -179,6 +179,8 @@ async function main(): Promise<void> {
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
   // ci-dessus, donc hérite gratuitement de ses gardes (fil détenu par un humain/MBA, ouverture hors fenêtre 24 h).
   const automationRunnerDeps = {
+    // Contact bloqué : son message est enregistré et lisible, mais il ne déclenche plus aucun scénario.
+    contactBloque: (tenant: string, waId: string) => contactStore.isBlockedByWaId(tenant, waId),
     listEnabled: (tenant: string, kinds: readonly AutomationTriggerKind[]) => automationStore.listEnabled(tenant, kinds),
     lastFiredAt: (id: string, waId: string) => automationStore.lastFiredAt(id, waId),
     markFired: (id: string, waId: string) => automationStore.markFired(id, waId),

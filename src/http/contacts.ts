@@ -21,6 +21,12 @@ export interface ContactsRouteDeps {
       profileName?: string | null; optInStatus?: 'opted_in' | 'opted_out';
     },
   ): Promise<{ contact: ContactRow; addedTags: string[] } | null>;
+  /**
+   * MODÉRATION : bloque ou débloque un contact. Bloqué = plus aucun envoi, et sa conversation disparaît de
+   * l'inbox. Optionnelles : absentes, la modération n'est pas montée (503).
+   */
+  setBlocked?(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
+  listBlocked?(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>>;
   /** Action en masse (tags +/- et/ou poser un champ) sur une cible (ids ou filtres). Renvoie le nb touché. */
   applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<number>;
   /**
@@ -137,6 +143,36 @@ async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: s
 export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
   const journal = makeJournal(deps.audit);
+
+  /**
+   * Contacts bloqués du tenant. Cette liste est la SEULE porte de sortie d'un blocage : sans elle, un contact
+   * bloqué, invisible dans l'inbox et injoignable par campagne, serait perdu pour de bon.
+   *
+   * Déclarée AVANT `/contacts/:contactId` : `blocked` n'est pas un identifiant de contact.
+   */
+  app.get('/tenants/:tenantId/contacts/blocked', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.listBlocked) return reply.code(503).send({ error: 'modération indisponible' });
+    return reply.code(200).send({ contacts: await deps.listBlocked(tenant) });
+  });
+
+  /**
+   * Bloque ou débloque un contact. Admin seulement : c'est une décision qui coupe la relation avec un client,
+   * et qui doit rester traçable à une personne.
+   */
+  app.patch('/tenants/:tenantId/contacts/:contactId/blocked', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.setBlocked) return reply.code(503).send({ error: 'modération indisponible' });
+    const bloque = (req.body as { blocked?: unknown } | null)?.blocked;
+    if (typeof bloque !== 'boolean') return reply.code(400).send({ error: 'blocked (booléen) requis' });
+    const { contactId } = req.params as { contactId: string };
+    const ok = await deps.setBlocked(tenant, contactId, bloque, req.auth?.userId ?? null);
+    if (!ok) return reply.code(404).send({ error: 'contact inconnu' });
+    return reply.code(200).send({ contactId, blocked: bloque });
+  });
 
   app.patch('/tenants/:tenantId/contacts/:contactId', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

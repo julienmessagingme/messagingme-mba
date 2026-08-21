@@ -58,6 +58,11 @@ const SYSTEM_INSTRUCTIONS = [
   '- action_suggestion : action commerciale suggérée : "creer_devis" | "rappeler" | "relancer" | "escalader" | "aucune".',
   '- confidence : nombre entre 0 et 1 (ta confiance dans l\'analyse).',
   '- justification : une phrase courte qui justifie l\'action (ce que lirait un commercial pour décider).',
+  // Volontairement ÉTROIT : insultes et agressivité VISANT l'entreprise. Un client mécontent, même très sec,
+  // n'est pas injurieux, et le signaler noierait la liste sous des réclamations ordinaires, ce qui revient à
+  // ne plus la lire du tout.
+  '- abusive : true UNIQUEMENT si le client insulte ou agresse verbalement l\'entreprise ou ses employés',
+  '  (grossièretés dirigées, menaces, propos haineux). Un simple mécontentement, même vif, reste false.',
 ].join('\n');
 
 /** Construit le prompt (system + user) pour le LLM à partir du transcript. */

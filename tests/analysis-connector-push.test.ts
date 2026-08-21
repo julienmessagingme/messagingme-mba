@@ -17,7 +17,7 @@ class FakeTransport implements HttpTransport {
 
 const stored: StoredConversationAnalysis = {
   conversationId: 'c1', tenantId: 't1', sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true,
-  entities: {}, action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'humain', exchanges_count: 2,
+  entities: {}, action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'humain', exchanges_count: 2, abusive: false,
 };
 const enr: Enrichment = {
   contactE164: '+33600000001', profileName: 'Jean', whatsappLine: '+33525680250',
@@ -30,7 +30,7 @@ describe('buildEvent', () => {
     const ev = buildEvent(stored, enr);
     expect(ev.eventId).toBe('c1:2026-07-14 10:05:00.222+00');
     expect(ev).toMatchObject({ conversationId: 'c1', tenantId: 't1', contactE164: '+33600000001', whatsappLine: '+33525680250', lastInboundAt: enr.lastInboundAt });
-    expect(ev.analysis).toMatchObject({ intent: 'information', handled_by: 'humain', exchanges_count: 2 });
+    expect(ev.analysis).toMatchObject({ intent: 'information', handled_by: 'humain', exchanges_count: 2, abusive: false });
     expect(ev.analysis).not.toHaveProperty('conversationId');
   });
 });

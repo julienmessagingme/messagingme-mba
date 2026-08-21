@@ -95,7 +95,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const conv = await insertConv('33600100030', { status: 'queued' });
     const a: ConversationAnalysis = {
       sentiment: 'positif', intent: 'demande_devis', topic: 'devis', resolved: false, entities: { quantite: 50 },
-      action_suggestion: 'creer_devis', confidence: 0.9, justification: 'veut un devis', handled_by: 'humain', exchanges_count: 3,
+      action_suggestion: 'creer_devis', confidence: 0.9, justification: 'veut un devis', handled_by: 'humain', exchanges_count: 3, abusive: false,
     };
     await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'claude-haiku-4-5' }, new Date().toISOString());
     const row = (await pool.query<{ intent: string; handled_by: string; llm_model: string }>(`select intent, handled_by, llm_model from conversation_analysis where conversation_id = $1`, [conv])).rows[0]!;
@@ -117,7 +117,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const windowEnd = new Date(Date.now() - 60_000).toISOString(); // borne = il y a 1 min (avant l'insertion du message)
     const a: ConversationAnalysis = {
       sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true, entities: {},
-      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 0,
+      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 0, abusive: false,
     };
     await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, windowEnd);
     const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [conv])).rows[0]!.analysis_status;
@@ -135,7 +135,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(ctx!.windowEnd).not.toBeNull();
     const a: ConversationAnalysis = {
       sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true, entities: {},
-      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 1,
+      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 1, abusive: false,
     };
     await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, ctx!.windowEnd ?? null);
     const status = (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [conv])).rows[0]!.analysis_status;
@@ -147,11 +147,11 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const conv = await insertConv('33600100050', { status: 'queued' });
     const a: ConversationAnalysis = {
       sentiment: 'negatif', intent: 'reclamation', topic: 'retard', resolved: false, entities: { ref: 'X' },
-      action_suggestion: 'escalader', confidence: 0.75, justification: 'client mécontent', handled_by: 'humain', exchanges_count: 4,
+      action_suggestion: 'escalader', confidence: 0.75, justification: 'client mécontent', handled_by: 'humain', exchanges_count: 4, abusive: false,
     };
     await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
     const stored = await store.getStored(conv);
-    expect(stored).toMatchObject({ conversationId: conv, tenantId, sentiment: 'negatif', intent: 'reclamation', action_suggestion: 'escalader', handled_by: 'humain', exchanges_count: 4 });
+    expect(stored).toMatchObject({ conversationId: conv, tenantId, sentiment: 'negatif', intent: 'reclamation', action_suggestion: 'escalader', handled_by: 'humain', exchanges_count: 4, abusive: false });
     expect(stored!.confidence).toBeCloseTo(0.75);
     expect(stored!.entities).toEqual({ ref: 'X' });
     expect(await store.getStored('00000000-0000-0000-0000-000000000000')).toBeNull();
@@ -162,7 +162,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     const conv = await insertConv('33600100061', { status: 'queued' });
     const a: ConversationAnalysis = {
       sentiment: 'neutre', intent: 'information', topic: 'x', resolved: true, entities: {},
-      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 1,
+      action_suggestion: 'aucune', confidence: 0.5, justification: 'x', handled_by: 'automatise', exchanges_count: 1, abusive: false,
     };
     await store.save(conv, tenantId, a, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
     expect(await store.listConversationIdsPendingCatchup(tenantId)).not.toContain(conv);

@@ -106,17 +106,18 @@ export class PgConversationAnalysisStore {
       await client.query(
         `insert into conversation_analysis
            (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, entities,
-            action_suggestion, confidence, justification, llm_provider, llm_model)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14)
+            action_suggestion, confidence, justification, llm_provider, llm_model, abusive)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15)
          on conflict (conversation_id) do update set
            tenant_id = excluded.tenant_id, sentiment = excluded.sentiment, intent = excluded.intent,
            topic = excluded.topic, resolved = excluded.resolved, handled_by = excluded.handled_by,
            exchanges_count = excluded.exchanges_count, entities = excluded.entities,
            action_suggestion = excluded.action_suggestion, confidence = excluded.confidence,
            justification = excluded.justification, llm_provider = excluded.llm_provider, llm_model = excluded.llm_model,
-           created_at = now()`,
+           abusive = excluded.abusive, created_at = now()`,
         [conversationId, tenantId, a.sentiment, a.intent, a.topic, a.resolved, a.handled_by, a.exchanges_count,
-          JSON.stringify(a.entities), a.action_suggestion, a.confidence, a.justification, model.provider, model.model],
+          JSON.stringify(a.entities), a.action_suggestion, a.confidence, a.justification, model.provider, model.model,
+          a.abusive === true],
       );
       await client.query(
         `update conversations set
@@ -170,10 +171,10 @@ export class PgConversationAnalysisStore {
     const res = await this.pool.query<{
       conversation_id: string; tenant_id: string; sentiment: string; intent: string; topic: string;
       resolved: boolean; handled_by: string; exchanges_count: number; entities: Record<string, unknown>;
-      action_suggestion: string; confidence: number; justification: string;
+      action_suggestion: string; confidence: number; justification: string; abusive: boolean | null;
     }>(
       `select conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count,
-              entities, action_suggestion, confidence, justification
+              entities, action_suggestion, confidence, justification, abusive
        from conversation_analysis where conversation_id = $1`,
       [conversationId],
     );
@@ -186,6 +187,9 @@ export class PgConversationAnalysisStore {
       sentiment: r.sentiment as ConversationAnalysis['sentiment'],
       intent: r.intent as ConversationAnalysis['intent'],
       topic: r.topic,
+      // `?? false` : les analyses écrites avant la migration 0071 n'ont pas ce constat. Absent vaut « pas
+      // d'injure signalée », jamais « inconnu » : un doute ne doit pas faire remonter une conversation.
+      abusive: r.abusive ?? false,
       resolved: r.resolved,
       handled_by: r.handled_by as ConversationAnalysis['handled_by'],
       exchanges_count: r.exchanges_count,

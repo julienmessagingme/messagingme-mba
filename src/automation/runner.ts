@@ -13,6 +13,13 @@ import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './ma
  *   3. le `conditionGroup` éventuel est satisfait (contexte contact construit UNE fois, et seulement si besoin).
  */
 export interface AutomationRunnerDeps {
+  /**
+   * Ce contact est-il bloqué ? Un contact bloqué ne déclenche plus aucune automation : son message est
+   * enregistré et reste lisible, mais rien ne part vers lui.
+   *
+   * OPTIONNELLE : absente, aucun contact n'est bloqué, c'est-à-dire le comportement d'avant la modération.
+   */
+  contactBloque?(tenantId: string, waId: string): Promise<boolean>;
   /** Automations ACTIVES du tenant pour ces types de déclencheur (index partiel `enabled`). */
   listEnabled(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]>;
   /** Dernier déclenchement de cette automation pour ce contact. null = jamais déclenché. */
@@ -80,6 +87,10 @@ function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
  */
 export async function runAutomations(tenantId: string, ev: AutomationEvent, deps: AutomationRunnerDeps): Promise<number> {
   const now = deps.now ?? (() => Date.now());
+  // Contact BLOQUÉ : son message reste enregistré et lisible, mais il ne déclenche plus rien. C'est le seul
+  // point d'entrée des automations, donc la seule garde nécessaire pour que « bloqué » veuille dire quelque
+  // chose côté scénarios. Dépendance optionnelle : absente, rien ne change.
+  if (deps.contactBloque && (await deps.contactBloque(tenantId, ev.waId))) return 0;
   const candidates = (await deps.listEnabled(tenantId, kindsFor(ev))).filter((a) => a.enabled && matchesTrigger(a, ev));
   if (candidates.length === 0) return 0;
 

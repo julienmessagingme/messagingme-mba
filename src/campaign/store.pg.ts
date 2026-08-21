@@ -576,7 +576,9 @@ export class PgCampaignRepo {
       fields: Record<string, unknown>; opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
     }>(
       `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
-       from contacts where tenant_id = $1 and deleted_at is null and id = any($2::uuid[])`,
+       -- Un contact bloqué n'est plus un destinataire, sur AUCUN chemin. Le filtrer ici plutôt que dans le
+       -- build garantit qu'aucune campagne, présente ou future, ne l'atteindra.
+       from contacts where tenant_id = $1 and deleted_at is null and blocked_at is null and id = any($2::uuid[])`,
       [tenantId, ids],
     );
     return res.rows.map((r) => ({
@@ -595,7 +597,8 @@ export class PgCampaignRepo {
       opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
     }>(
       `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
-       from contacts where tenant_id = $1 and deleted_at is null`,
+       -- Même raison que ci-dessus : bloqué = plus jamais destinataire d'une campagne.
+       from contacts where tenant_id = $1 and deleted_at is null and blocked_at is null`,
       [tenantId],
     );
     return res.rows.map((r) => ({

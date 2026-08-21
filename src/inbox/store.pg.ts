@@ -49,6 +49,8 @@ export interface ListConversationsOptions {
    * ne s'est vu confier. Absent = toutes, affectées ou non.
    */
   affectee?: string | 'aucune';
+  /** Ne garder que les conversations SIGNALÉES par l'analyse comme injurieuses (onglet de modération). */
+  signalees?: boolean;
 }
 
 export interface ConversationMessage {
@@ -272,6 +274,13 @@ export class PgInboxStore implements InboxStore {
     if (opts.aTraiter === true) {
       // Même définition que l'écran : le scénario ne gère plus ce fil (opérateur, escalade, ou agent Meta).
       where.push(`c.control_owner <> 'app_workflow'`);
+    }
+    // 🔴 Contact BLOQUÉ : sa conversation disparaît de l'inbox, décision produit du 2026-08-21. Ses messages
+    // restent ENREGISTRÉS et le contact est retrouvable dans l'écran des contacts bloqués, qui est la seule
+    // porte de sortie : sans lui, un contact bloqué serait perdu pour de bon.
+    where.push(`(ct.blocked_at is null)`);
+    if (opts.signalees === true) {
+      where.push(`exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)`);
     }
     if (opts.affectee === 'aucune') {
       where.push('c.assigned_to is null');

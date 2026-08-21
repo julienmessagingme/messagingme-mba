@@ -20,6 +20,16 @@ export const llmOutputSchema = z.object({
   action_suggestion: z.enum(ACTIONS),
   confidence: z.number().min(0).max(1),
   justification: z.string().trim().min(1).max(2000),
+  /**
+   * Le CLIENT a-t-il été injurieux ou agressif envers l'entreprise ?
+   *
+   * `.default(false)` volontaire : le champ est arrivé après coup, et un modèle qui l'omet ne doit pas
+   * invalider toute l'analyse. Une analyse perdue coûte plus cher qu'un signalement manqué.
+   *
+   * ⚠️ Ce n'est qu'un CONSTAT : il alimente une liste à relire, il ne bloque jamais personne tout seul.
+   * Bloquer un client reste une décision humaine, prise depuis l'écran.
+   */
+  abusive: z.boolean().default(false),
 });
 export type LlmOutput = z.infer<typeof llmOutputSchema>;
 

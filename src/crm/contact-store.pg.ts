@@ -358,6 +358,56 @@ export class PgContactStore implements ContactStore {
    * avec `contactId: null` alors que la fiche existe (l'upsert d'inbound vient de tourner). null = aucune
    * fiche (rien à relier, pas une erreur).
    */
+  /**
+   * Bloque ou débloque un contact (modération).
+   *
+   * Bloqué = plus AUCUN envoi vers lui (campagnes, scénarios, automations) et sa conversation disparaît de
+   * l'inbox. Ses messages continuent d'être ENREGISTRÉS : filtrer à la réception ferait disparaître une
+   * résiliation ou une menace juridique sans que personne ne le sache.
+   *
+   * `false` = contact inconnu pour ce tenant. L'appelant en fait un 404, jamais un blocage silencieux.
+   */
+  async setBlocked(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean> {
+    const res = await this.pool.query(
+      `update contacts
+          set blocked_at = case when $3 then now() else null end,
+              blocked_by = case when $3 then $4::uuid else null end
+        where id = $1 and tenant_id = $2 and deleted_at is null`,
+      [contactId, tenantId, bloque, parUserId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Ce contact est-il bloqué ? Interrogé par `wa_id` parce que c'est ce que connaissent les automations et
+   * l'inbox, qui raisonnent par conversation et non par fiche.
+   *
+   * Contact INCONNU -> `false` : on ne bloque que ce qui a été explicitement bloqué. Répondre `true` sur un
+   * inconnu couperait des conversations de contacts jamais importés dans le mini-CRM.
+   */
+  async isBlockedByWaId(tenantId: string, waId: string): Promise<boolean> {
+    const res = await this.pool.query<{ bloque: boolean }>(
+      `select (blocked_at is not null) as bloque from contacts
+        where tenant_id = $1 and deleted_at is null
+          ${MATCH_BY_WAID_SQL}`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.bloque === true;
+  }
+
+  /** Contacts bloqués du tenant, du plus récemment bloqué au plus ancien (écran des paramètres). */
+  async listBlocked(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>> {
+    const res = await this.pool.query<{ id: string; profile_name: string | null; phone_e164: string | null; blocked_at: Date }>(
+      `select id, profile_name, phone_e164, blocked_at from contacts
+        where tenant_id = $1 and deleted_at is null and blocked_at is not null
+        order by blocked_at desc`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({
+      id: r.id, profileName: r.profile_name, phoneE164: r.phone_e164, blockedAt: r.blocked_at.toISOString(),
+    }));
+  }
+
   async findIdByWaId(tenantId: string, waId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(
       `select id from contacts where tenant_id = $1 and deleted_at is null
