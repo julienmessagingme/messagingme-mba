@@ -12,6 +12,8 @@ export interface ContactRow {
   fields: Record<string, unknown>;
   tags: string[];
   createdAt: string;
+  /** Date de blocage (modération). `null` = non bloqué. Bloqué : plus aucun envoi, conversation masquée. */
+  blockedAt: string | null;
 }
 
 /** Opérateurs de filtre sur un champ perso (jsonb, valeur STRING).
@@ -140,7 +142,7 @@ export class PgContactStore implements ContactStore {
    *  si createMissing, ré-upserté donc ressuscité. Jamais destinataire d'un envoi. */
   async findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null> {
     const res = await this.pool.query(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at
        from contacts where tenant_id = $1 and phone_e164 = $2 and deleted_at is null limit 1`,
       [tenantId, phoneE164],
     );
@@ -437,15 +439,16 @@ export class PgContactStore implements ContactStore {
 
   private static rowToContact(r: {
     id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null; opt_in_status: string;
-    fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
+    fields: Record<string, unknown>; tags: string[] | null; created_at: Date; blocked_at?: Date | null;
   }): ContactRow {
     return {
       id: r.id, phoneE164: r.phone_e164, bsuid: r.bsuid, profileName: r.profile_name, optInStatus: r.opt_in_status,
       fields: r.fields, tags: r.tags ?? [], createdAt: r.created_at.toISOString(),
+      blockedAt: r.blocked_at ? r.blocked_at.toISOString() : null,
     };
   }
   private static readonly SELECT_ONE =
-    'select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at from contacts where id = $1 and tenant_id = $2';
+    'select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at from contacts where id = $1 and tenant_id = $2';
 
   /** Un contact par id, scopé tenant. null si absent/autre tenant. */
   async getById(tenantId: string, contactId: string): Promise<ContactRow | null> {
@@ -545,7 +548,7 @@ export class PgContactStore implements ContactStore {
       id: string; phone_e164: string | null; bsuid: string | null; profile_name: string | null;
       opt_in_status: string; fields: Record<string, unknown>; tags: string[] | null; created_at: Date;
     }>(
-      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at
+      `select id, phone_e164, bsuid, profile_name, opt_in_status, fields, tags, created_at, blocked_at
        from contacts where ${where}
        order by created_at desc limit ${limitRef} offset ${offsetRef}`,
       [...params, capped, Math.max(offset, 0)],

@@ -18,6 +18,7 @@ import { formatDate } from '@/lib/day';
 import {
   updateContact,
   createUserField,
+  setContactBlocked,
   contactIdentity,
   type Contact,
   type UserFieldDef,
@@ -153,6 +154,27 @@ export function ContactDetail({
 
   const selectedDef = defByKey.get(newKey);
 
+  /**
+   * Bloque ou débloque. Confirmation demandée au BLOCAGE seulement : c'est lui qui a des conséquences
+   * (plus aucun envoi, conversation masquée). Débloquer ne fait que rendre les choses à leur état normal.
+   */
+  async function basculerBlocage(bloquer: boolean): Promise<void> {
+    if (bloquer && !window.confirm(t(
+      'Bloquer ce contact ? Plus aucun message ne lui sera envoyé et sa conversation disparaîtra de l’inbox. Ses messages continueront d’être enregistrés, et vous pourrez le débloquer depuis les paramètres.',
+      'Block this contact? No message will be sent to them and their conversation will disappear from the inbox. Their messages will still be recorded, and you can unblock them from settings.',
+    ))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await setContactBlocked(tenantId, contact.id, bloquer);
+      onUpdated({ ...contact, blockedAt: bloquer ? new Date().toISOString() : null });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Modification impossible', 'Update failed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function apply(patch: {
     fields?: Record<string, string>; removeFields?: string[]; addTags?: string[]; removeTags?: string[];
     profileName?: string | null; optInStatus?: 'opted_in' | 'opted_out';
@@ -274,6 +296,26 @@ export function ContactDetail({
               <button onClick={() => void apply({ optInStatus: 'opted_out' })} disabled={busy} data-testid="fiche-optout"
                 className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50">
                 {t('passer en opt-out', 'mark opted out')}
+              </button>
+            )}
+          </span>
+          {/* MODÉRATION, juste sous le consentement : même famille de question, « qu'a-t-on le droit
+              d'envoyer à ce contact ». Bloquer va plus loin qu'un opt-out : plus rien ne part, ET sa
+              conversation disparaît de l'inbox. C'est pour ça qu'on demande confirmation. */}
+          <span className="text-ink-400">{t('Modération', 'Moderation')}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            {contact.blockedAt ? (
+              <>
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">{t('bloqué', 'blocked')}</span>
+                <button onClick={() => void basculerBlocage(false)} disabled={busy} data-testid="fiche-debloquer"
+                  className="shrink-0 text-xs text-brand-600 underline decoration-dotted transition hover:text-brand-700 disabled:opacity-50">
+                  {t('débloquer', 'unblock')}
+                </button>
+              </>
+            ) : (
+              <button onClick={() => void basculerBlocage(true)} disabled={busy} data-testid="fiche-bloquer"
+                className="shrink-0 text-xs text-ink-400 underline decoration-dotted transition hover:text-coral disabled:opacity-50">
+                {t('bloquer ce contact', 'block this contact')}
               </button>
             )}
           </span>

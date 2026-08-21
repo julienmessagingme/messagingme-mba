@@ -50,10 +50,10 @@ function inject(contacts: ContactStore, userFields: UserFieldStore, cap?: QueryC
       contacts,
       userFields,
       listContacts: async () => [
-        { id: 'c1', phoneE164: '+33611111111', bsuid: null, profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z' },
+        { id: 'c1', phoneE164: '+33611111111', bsuid: null, profileName: 'Julie', optInStatus: 'opted_in', fields: { ville: 'Lyon' }, tags: ['salon-2026'], createdAt: '2026-07-05T00:00:00.000Z', blockedAt: null },
       ],
       queryContacts: async (_t, filters) => { cap?.queryFilters.push(filters); return [
-        { id: 'c2', phoneE164: '+33612345678', bsuid: null, profileName: 'Marc', optInStatus: 'opted_in', fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z' },
+        { id: 'c2', phoneE164: '+33612345678', bsuid: null, profileName: 'Marc', optInStatus: 'opted_in', fields: { ville: 'Paris' }, tags: ['vip'], createdAt: '2026-07-06T00:00:00.000Z', blockedAt: null },
       ]; },
       countContacts: async (_t, filters) => { cap?.countFilters.push(filters); return 3; },
       contactIdsForFilters: async (_t, filters) => { cap?.idsFilters.push(filters); return ['c2', 'c3']; },

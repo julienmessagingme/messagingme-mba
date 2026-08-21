@@ -55,6 +55,16 @@ export default function InboxPage() {
  */
 const TAILLE_PAGE = 50;
 
+/**
+ * Traduit le filtre de l'écran en paramètres de requête. Un seul endroit : la liste et « charger plus »
+ * doivent demander EXACTEMENT le même filtre, sinon la page suivante ne serait pas la suite de la première.
+ */
+function filtreEnParams(filtre: 'toutes' | 'aTraiter' | 'signalees'): { aTraiter?: boolean; signalees?: boolean } {
+  if (filtre === 'aTraiter') return { aTraiter: true };
+  if (filtre === 'signalees') return { signalees: true };
+  return {};
+}
+
 /** Réponse de formulaire Flow (nfm_reply) : le payload est un objet JSON {champ: valeur}. Renvoie les
  *  paires à afficher, ou null si ce n'est pas un objet (bouton simple, ou JSON tronqué non parsable). */
 function parseFormResponse(payload: string): Array<[string, unknown]> | null {
@@ -124,7 +134,12 @@ function InboxInner({ session }: { session: Session }) {
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [onlyTodo, setOnlyTodo] = useState(false); // filtre « À traiter » : conversations que le scénario ne gère plus (control_owner != app_workflow)
+  /**
+   * Filtre de la liste, à TROIS valeurs exclusives plutôt que deux booléens indépendants : « à traiter » et
+   * « signalées » ne se combinent pas à l'écran, et deux drapeaux auraient permis un état que rien n'affiche.
+   */
+  const [filtre, setFiltre] = useState<'toutes' | 'aTraiter' | 'signalees'>('toutes');
+  const onlyTodo = filtre === 'aTraiter';
   /** Une page de plus est peut-être disponible (la dernière était pleine). */
   const [peutCharger, setPeutCharger] = useState(false);
   const [chargementPage, setChargementPage] = useState(false);
@@ -140,7 +155,7 @@ function InboxInner({ session }: { session: Session }) {
   const reload = useCallback(async () => {
     setError(null);
     try {
-      const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...(onlyTodo ? { aTraiter: true } : {}) });
+      const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...filtreEnParams(filtre) });
       const liste = Array.isArray(r?.conversations) ? r.conversations : [];
       setConversations(liste);
       // Page pleine = il y a peut-être une suite. Pas de compteur total : il coûterait un décompte complet
@@ -151,7 +166,7 @@ function InboxInner({ session }: { session: Session }) {
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId, t, onlyTodo]);
+  }, [session.tenantId, t, filtre]);
 
   /** Page SUIVANTE, à la suite de la dernière conversation affichée. */
   const chargerPlus = useCallback(async () => {
@@ -162,7 +177,7 @@ function InboxInner({ session }: { session: Session }) {
       const r = await listConversations(session.tenantId, {
         limit: TAILLE_PAGE,
         before: { at: dernier.lastMessageAt, id: dernier.id },
-        ...(onlyTodo ? { aTraiter: true } : {}),
+        ...filtreEnParams(filtre),
       });
       const suite = Array.isArray(r?.conversations) ? r.conversations : [];
       // Dédup par identifiant : entre deux pages, un message peut arriver et faire remonter une conversation
@@ -177,7 +192,7 @@ function InboxInner({ session }: { session: Session }) {
     } finally {
       setChargementPage(false);
     }
-  }, [session.tenantId, conversations, onlyTodo, chargementPage]);
+  }, [session.tenantId, conversations, filtre, chargementPage]);
 
   /** Compteur « À traiter » : compté par le serveur sur TOUTE la base, pas sur la page affichée. */
   const rechargerCompteur = useCallback(async () => {
@@ -226,9 +241,14 @@ function InboxInner({ session }: { session: Session }) {
           <button onClick={reload} className="text-xs text-brand-600 hover:underline">{t('Rafraîchir', 'Refresh')}</button>
         </div>
         <div className="mb-3 flex gap-1 text-xs">
-          <button onClick={() => setOnlyTodo(false)} className={`rounded-md px-2 py-1 ${!onlyTodo ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>{t('Toutes', 'All')}</button>
-          <button onClick={() => setOnlyTodo(true)} data-testid="inbox-filter-todo" className={`rounded-md px-2 py-1 ${onlyTodo ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>
+          <button onClick={() => setFiltre('toutes')} className={`rounded-md px-2 py-1 ${filtre === 'toutes' ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>{t('Toutes', 'All')}</button>
+          <button onClick={() => setFiltre('aTraiter')} data-testid="inbox-filter-todo" className={`rounded-md px-2 py-1 ${filtre === 'aTraiter' ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>
             {t('À traiter', 'To handle')}{todoCount > 0 ? ` (${todoCount})` : ''}
+          </button>
+          {/* Modération : les conversations où l'analyse a relevé des injures. Le constat arrive 15 à 20 min
+              après coup, c'est donc une liste à relire, pas une alerte. */}
+          <button onClick={() => setFiltre('signalees')} data-testid="inbox-filter-flagged" className={`rounded-md px-2 py-1 ${filtre === 'signalees' ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100'}`}>
+            {t('Signalées', 'Flagged')}
           </button>
         </div>
         {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
@@ -236,9 +256,11 @@ function InboxInner({ session }: { session: Session }) {
           <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            {onlyTodo
+            {filtre === 'aTraiter'
               ? t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')
-              : t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
+              : filtre === 'signalees'
+                ? t('Aucune conversation signalée. L’analyse relève les injures environ 15 min après le dernier message.', 'No flagged conversation. The analysis spots abuse about 15 min after the last message.')
+                : t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
           </div>
         ) : (
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">

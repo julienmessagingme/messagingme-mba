@@ -113,11 +113,12 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
     // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
-    const q = (req.query ?? {}) as { limit?: unknown; beforeAt?: unknown; beforeId?: unknown; aTraiter?: unknown };
+    const q = (req.query ?? {}) as { limit?: unknown; beforeAt?: unknown; beforeId?: unknown; aTraiter?: unknown; signalees?: unknown };
     const opts: ListConversationsOptions = {};
     const limit = Number(q.limit);
     if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
     if (q.aTraiter === '1' || q.aTraiter === 'true') opts.aTraiter = true;
+    if (q.signalees === '1' || q.signalees === 'true') opts.signalees = true;
     // Le curseur n'a de sens qu'ENTIER : une moitié rendrait une page arbitraire, donc on exige les deux.
     if (typeof q.beforeAt === 'string' && q.beforeAt !== '' && typeof q.beforeId === 'string' && q.beforeId !== '') {
       opts.before = { at: q.beforeAt, id: q.beforeId };

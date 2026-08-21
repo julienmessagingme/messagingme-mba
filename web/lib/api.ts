@@ -59,6 +59,11 @@ export interface Contact {
   fields: Record<string, unknown>;
   tags: string[];
   createdAt: string;
+  /**
+   * Date de blocage, `null` ou absent = non bloqué. Bloqué : plus aucun envoi vers ce contact, et sa
+   * conversation n'apparaît plus dans l'inbox. Ses messages restent enregistrés.
+   */
+  blockedAt?: string | null;
 }
 /** Identité messageable d'un contact : le numéro s'il existe, sinon le BSUID. null si aucun. */
 export function contactIdentity(c: Pick<Contact, 'phoneE164' | 'bsuid'>): string | null {
@@ -574,12 +579,13 @@ export interface InboxMessage {
  */
 export function listConversations(
   tenantId: string,
-  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune' } = {},
+  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean; affectee?: string | 'aucune'; signalees?: boolean } = {},
 ): Promise<{ conversations: Conversation[] }> {
   const p = new URLSearchParams();
   if (opts.limit !== undefined) p.set('limit', String(opts.limit));
   if (opts.aTraiter) p.set('aTraiter', '1');
   if (opts.affectee !== undefined) p.set('affectee', opts.affectee);
+  if (opts.signalees) p.set('signalees', '1');
   // Le curseur part ENTIER ou pas du tout : le serveur ignore une moitié, autant ne pas l'envoyer.
   if (opts.before) { p.set('beforeAt', opts.before.at); p.set('beforeId', opts.before.id); }
   const qs = p.toString();
@@ -597,6 +603,20 @@ export function countUnreadConversations(tenantId: string): Promise<{ count: num
  */
 export function setConversationAssignee(tenantId: string, conversationId: string, assignee: string | null): Promise<{ conversationId: string; assignee: string | null }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/assignee`, { method: 'PATCH', body: JSON.stringify({ assignee }) });
+}
+/**
+ * MODÉRATION : bloque ou débloque un contact.
+ *
+ * Bloqué = plus aucun envoi vers lui (campagnes, scénarios, automations) ET sa conversation disparaît de
+ * l'inbox. Ses messages restent enregistrés, et il se retrouve dans les paramètres pour être débloqué.
+ */
+export function setContactBlocked(tenantId: string, contactId: string, blocked: boolean): Promise<{ contactId: string; blocked: boolean }> {
+  return request(`/tenants/${tenantId}/contacts/${contactId}/blocked`, { method: 'PATCH', body: JSON.stringify({ blocked }) });
+}
+export interface BlockedContact { id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }
+/** Contacts bloqués : la SEULE porte de sortie d'un blocage, puisqu'ils sont invisibles partout ailleurs. */
+export function listBlockedContacts(tenantId: string): Promise<{ contacts: BlockedContact[] }> {
+  return request(`/tenants/${tenantId}/contacts/blocked`);
 }
 /** Nombre de conversations « À traiter », compté par le serveur sur TOUTE la base (pas sur la page affichée). */
 export function countConversationsATraiter(tenantId: string): Promise<{ count: number }> {

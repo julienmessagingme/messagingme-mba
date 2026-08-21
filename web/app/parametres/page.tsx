@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
+import { BlockedContacts } from '@/components/BlockedContacts';
 import { AuditJournal } from '@/components/AuditJournal';
 
 export default function ParametresPage() {
@@ -145,6 +146,10 @@ function Parametres({ tenantId }: { tenantId: string }) {
               {!allValid && <span className="text-xs text-coral">{t('Corrigez les jours en rouge avant d’enregistrer.', 'Fix the days in red before saving.')}</span>}
             </div>
           </section>
+
+          {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
+              ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}
+          <BlockedContacts tenantId={tenantId} />
 
           {/* Journal d'audit : lecture seule, alimenté par les actions sur les contacts. */}
           <AuditJournal tenantId={tenantId} />
