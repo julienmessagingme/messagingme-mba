@@ -34,7 +34,7 @@ async function mock(page: import('@playwright/test').Page, unreadCount: number) 
     const url = route.request().url();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.includes('/conversations/unread-count')) return json({ count: unreadCount });
-    if (url.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
+    if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
     // Fenêtre 24 h FERMÉE : c'est l'état où l'inbox propose « Envoyer un template », et c'est le seul moyen
     // de ré-engager le contact, donc le cas qui nous intéresse pour le carousel.
     if (url.includes('/messages')) {

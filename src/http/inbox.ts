@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
-import type { ConversationSummary, ConversationMessage } from '../inbox/store.pg';
+import type { ConversationSummary, ConversationMessage, ListConversationsOptions } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty } from './scope';
 
@@ -19,9 +19,11 @@ export interface OutboundTemplate {
 }
 
 export interface InboxRouteDeps {
-  listConversations(tenantId: string): Promise<ConversationSummary[]>;
+  listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
   /** Nombre de conversations non lues (pastille du menu). Optionnel : absent -> 0, la pastille ne s'affiche pas. */
   countUnread?(tenantId: string): Promise<number>;
+  /** Nombre de conversations « À traiter ». Optionnel : absent -> le compteur n'est pas rendu. */
+  countATraiter?(tenantId: string): Promise<number>;
   /** Marque un fil comme lu (un opérateur vient de l'ouvrir). Optionnel (deps de test minimales). */
   markConversationRead?(tenantId: string, conversationId: string): Promise<void>;
   /** wa_id + état de la fenêtre de service 24 h + surcharge de reprise du fil (C.4). null si conversation absente/autre tenant. */
@@ -100,7 +102,29 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   app.get('/tenants/:tenantId/conversations', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ conversations: await deps.listConversations(tenant) });
+    // Query string = entrée NON FIABLE. Chaque paramètre est lu dans sa forme attendue et ignoré sinon : un
+    // filtre mal formé doit rendre la page normale, jamais une page vide qui se lirait « aucune conversation ».
+    const q = (req.query ?? {}) as { limit?: unknown; beforeAt?: unknown; beforeId?: unknown; aTraiter?: unknown };
+    const opts: ListConversationsOptions = {};
+    const limit = Number(q.limit);
+    if (Number.isInteger(limit) && limit > 0) opts.limit = limit;
+    if (q.aTraiter === '1' || q.aTraiter === 'true') opts.aTraiter = true;
+    // Le curseur n'a de sens qu'ENTIER : une moitié rendrait une page arbitraire, donc on exige les deux.
+    if (typeof q.beforeAt === 'string' && q.beforeAt !== '' && typeof q.beforeId === 'string' && q.beforeId !== '') {
+      opts.before = { at: q.beforeAt, id: q.beforeId };
+    }
+    return reply.code(200).send({ conversations: await deps.listConversations(tenant, opts) });
+  });
+
+  /**
+   * Compteur « À traiter ». Route dédiée, même raison que le compteur de non-lus : l'écran le calculait sur
+   * les conversations chargées, donc il plafonnait à la taille de la page et affichait moins que la réalité.
+   * Déclarée AVANT `/conversations/:conversationId` : `todo-count` n'est pas un identifiant.
+   */
+  app.get('/tenants/:tenantId/conversations/todo-count', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    return reply.code(200).send({ count: deps.countATraiter ? await deps.countATraiter(tenant) : 0 });
   });
 
   /**

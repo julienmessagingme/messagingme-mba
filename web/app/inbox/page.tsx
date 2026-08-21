@@ -13,6 +13,7 @@ import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import {
   listConversations,
+  countConversationsATraiter,
   getConversationMessages,
   releaseConversation,
   replyConversation,
@@ -39,6 +40,12 @@ export default function InboxPage() {
     </AppShell>
   );
 }
+
+/**
+ * Taille d'une page de conversations. 50 et non 100 : l'écran n'en montre qu'une dizaine à la fois, et une
+ * page plus courte rend le premier affichage plus rapide. « Charger plus » va chercher la suite.
+ */
+const TAILLE_PAGE = 50;
 
 /** Réponse de formulaire Flow (nfm_reply) : le payload est un objet JSON {champ: valeur}. Renvoie les
  *  paires à afficher, ou null si ce n'est pas un objet (bouton simple, ou JSON tronqué non parsable). */
@@ -110,17 +117,67 @@ function InboxInner({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [onlyTodo, setOnlyTodo] = useState(false); // filtre « À traiter » : conversations que le scénario ne gère plus (control_owner != app_workflow)
+  /** Une page de plus est peut-être disponible (la dernière était pleine). */
+  const [peutCharger, setPeutCharger] = useState(false);
+  const [chargementPage, setChargementPage] = useState(false);
+  /** Compté par le SERVEUR sur toute la base : l'ancien calcul portait sur les conversations chargées. */
+  const [todoCount, setTodoCount] = useState(0);
 
+  /**
+   * Recharge la PREMIÈRE page. Le filtre est passé au serveur : le faire en mémoire ne voyait que les
+   * conversations déjà chargées, donc au-delà d'une page il ignorait le reste sans le dire.
+   */
   const reload = useCallback(async () => {
     setError(null);
     try {
-      setConversations((await listConversations(session.tenantId)).conversations);
+      const r = await listConversations(session.tenantId, { limit: TAILLE_PAGE, ...(onlyTodo ? { aTraiter: true } : {}) });
+      const liste = Array.isArray(r?.conversations) ? r.conversations : [];
+      setConversations(liste);
+      // Page pleine = il y a peut-être une suite. Pas de compteur total : il coûterait un décompte complet
+      // pour dire ce que la longueur dit déjà.
+      setPeutCharger(liste.length === TAILLE_PAGE);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     } finally {
       setLoading(false);
     }
-  }, [session.tenantId, t]);
+  }, [session.tenantId, t, onlyTodo]);
+
+  /** Page SUIVANTE, à la suite de la dernière conversation affichée. */
+  const chargerPlus = useCallback(async () => {
+    const dernier = conversations[conversations.length - 1];
+    if (!dernier || chargementPage) return;
+    setChargementPage(true);
+    try {
+      const r = await listConversations(session.tenantId, {
+        limit: TAILLE_PAGE,
+        before: { at: dernier.lastMessageAt, id: dernier.id },
+        ...(onlyTodo ? { aTraiter: true } : {}),
+      });
+      const suite = Array.isArray(r?.conversations) ? r.conversations : [];
+      // Dédup par identifiant : entre deux pages, un message peut arriver et faire remonter une conversation
+      // déjà affichée. Sans cette garde, elle apparaîtrait DEUX fois dans la liste.
+      setConversations((prev) => {
+        const connus = new Set(prev.map((c) => c.id));
+        return [...prev, ...suite.filter((c) => !connus.has(c.id))];
+      });
+      setPeutCharger(suite.length === TAILLE_PAGE);
+    } catch {
+      setPeutCharger(false);
+    } finally {
+      setChargementPage(false);
+    }
+  }, [session.tenantId, conversations, onlyTodo, chargementPage]);
+
+  /** Compteur « À traiter » : compté par le serveur sur TOUTE la base, pas sur la page affichée. */
+  const rechargerCompteur = useCallback(async () => {
+    try {
+      setTodoCount((await countConversationsATraiter(session.tenantId)).count);
+    } catch {
+      /* le compteur est un confort : son absence ne doit pas masquer la liste */
+    }
+  }, [session.tenantId]);
+  useEffect(() => { void rechargerCompteur(); }, [rechargerCompteur, conversations]);
 
   useEffect(() => {
     void reload();
@@ -146,9 +203,8 @@ function InboxInner({ session }: { session: Session }) {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
   }, [reload]);
 
-  // « À traiter » = le scénario ne gère plus le fil (opérateur a pris la main, ou node inbox a escaladé, ou MBA).
-  const todoCount = conversations.filter((c) => c.controlOwner !== 'app_workflow').length;
-  const visible = onlyTodo ? conversations.filter((c) => c.controlOwner !== 'app_workflow') : conversations;
+  // Le filtre est appliqué par le SERVEUR (`reload` le passe en paramètre) : la liste reçue est déjà la bonne.
+  const visible = conversations;
 
   return (
     <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[320px_1fr]">
@@ -168,9 +224,9 @@ function InboxInner({ session }: { session: Session }) {
           <p className="text-sm text-ink-500">{t('Chargement...', 'Loading...')}</p>
         ) : visible.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">
-            {conversations.length === 0
-              ? t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')
-              : t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')}
+            {onlyTodo
+              ? t('Rien à traiter : toutes les conversations sont gérées par le scénario.', 'Nothing to handle: every conversation is handled by the scenario.')
+              : t('Aucune conversation. Elles apparaissent quand un client répond à une campagne.', 'No conversations yet. They appear when a customer replies to a campaign.')}
           </div>
         ) : (
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
@@ -200,6 +256,20 @@ function InboxInner({ session }: { session: Session }) {
                 </button>
               </li>
             ))}
+            {/* Chargement à la demande plutôt qu'au défilement : l'auto-refresh de 15 s recharge la première
+                page, et un défilement infini se battrait avec lui à chaque tour. */}
+            {peutCharger && (
+              <li className="pt-1">
+                <button
+                  onClick={() => { void chargerPlus(); }}
+                  disabled={chargementPage}
+                  data-testid="inbox-load-more"
+                  className="w-full rounded-xl border border-dashed border-ink-300 px-3 py-2 text-xs font-medium text-ink-600 transition hover:bg-ink-50 disabled:opacity-50"
+                >
+                  {chargementPage ? t('Chargement…', 'Loading…') : t('Charger plus de conversations', 'Load more conversations')}
+                </button>
+              </li>
+            )}
           </ul>
         )}
       </section>

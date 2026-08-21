@@ -29,7 +29,7 @@ test.describe('Contrôle du fil : un seul réglage, à un seul endroit', () => {
       appels.push(`${route.request().method()} ${url}`);
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       if (url.endsWith('/c1/messages')) return json(THREAD);
-      if (url.endsWith('/conversations')) return json({ conversations: [CONV] });
+      if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: [CONV] });
       if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
       return json({});
     });

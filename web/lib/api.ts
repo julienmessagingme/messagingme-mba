@@ -549,12 +549,34 @@ export interface InboxMessage {
    *  Absent (message d'avant la migration 0056) = WhatsApp. */
   channel?: 'whatsapp' | 'rcs';
 }
-export function listConversations(tenantId: string): Promise<{ conversations: Conversation[] }> {
-  return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations`);
+/**
+ * Une page de conversations, de la plus récente à la plus ancienne.
+ *
+ * Filtre et pagination sont faits par le SERVEUR : les appliquer en mémoire ne voyait que les conversations
+ * déjà chargées, donc au-delà d'une page le filtre ignorait le reste sans rien signaler.
+ *
+ * Page suivante : passer `before` avec le dernier élément reçu. Une page pleine (autant d'éléments que
+ * `limit`) signifie qu'il peut y en avoir d'autres.
+ */
+export function listConversations(
+  tenantId: string,
+  opts: { limit?: number; before?: { at: string; id: string }; aTraiter?: boolean } = {},
+): Promise<{ conversations: Conversation[] }> {
+  const p = new URLSearchParams();
+  if (opts.limit !== undefined) p.set('limit', String(opts.limit));
+  if (opts.aTraiter) p.set('aTraiter', '1');
+  // Le curseur part ENTIER ou pas du tout : le serveur ignore une moitié, autant ne pas l'envoyer.
+  if (opts.before) { p.set('beforeAt', opts.before.at); p.set('beforeId', opts.before.id); }
+  const qs = p.toString();
+  return request<{ conversations: Conversation[] }>(`/tenants/${tenantId}/conversations${qs ? `?${qs}` : ''}`);
 }
 /** Nombre de conversations non lues (pastille du menu). Route dédiée : le menu ne rapatrie pas la liste. */
 export function countUnreadConversations(tenantId: string): Promise<{ count: number }> {
   return request<{ count: number }>(`/tenants/${tenantId}/conversations/unread-count`);
+}
+/** Nombre de conversations « À traiter », compté par le serveur sur TOUTE la base (pas sur la page affichée). */
+export function countConversationsATraiter(tenantId: string): Promise<{ count: number }> {
+  return request<{ count: number }>(`/tenants/${tenantId}/conversations/todo-count`);
 }
 /**
  * Lance un SCÉNARIO sur cette conversation. Le serveur tranche sur l'état RÉEL de la fenêtre de 24 h et

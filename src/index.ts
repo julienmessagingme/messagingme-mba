@@ -254,7 +254,8 @@ async function main(): Promise<void> {
       },
     },
     inbox: {
-      listConversations: (tenant) => inboxStore.listConversations(tenant),
+      listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
+      countATraiter: (tenant) => inboxStore.countATraiter(tenant),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
       recordOutbound: (id, body, msgId, type, cat, name, sender) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender),

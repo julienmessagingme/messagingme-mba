@@ -40,7 +40,7 @@ async function mock(page: import('@playwright/test').Page, windowOpen: boolean, 
       if (refus) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: refus }) });
       return json({ ok: true });
     }
-    if (url.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
+    if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
     if (url.includes('/messages')) {
       return json({
         waId: '33600000001', windowOpen, lastInboundAt: '2026-08-15T11:00:00Z',
@@ -110,7 +110,7 @@ test.describe('Inbox : lancer un scénario', () => {
       const url = route.request().url();
       const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
       if (url.includes('/conversations/unread-count')) return json({ count: 0 });
-      if (url.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
+      if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
       if (url.includes('/messages')) {
         appels += 1;
         // Un message de plus à chaque tick : le contact continue d'écrire pendant qu'on choisit un scénario.

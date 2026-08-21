@@ -21,6 +21,22 @@ export interface ConversationSummary {
   /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. */
   unread: boolean;
 }
+/**
+ * Options de lecture de l'inbox. Toutes optionnelles : sans elles, on obtient exactement la première page
+ * telle qu'elle existait avant la pagination.
+ */
+export interface ListConversationsOptions {
+  /** Taille de page. Défaut 100, borné à 200 : la valeur vient d'une query string. */
+  limit?: number;
+  /**
+   * Curseur : reprendre STRICTEMENT après cette conversation, dans l'ordre d'affichage. On passe le dernier
+   * élément de la page précédente. `at` est l'horodatage de son dernier message, `id` départage les ex æquo.
+   */
+  before?: { at: string; id: string };
+  /** N'garder que les fils dont le scénario ne s'occupe plus (onglet « À traiter »). */
+  aTraiter?: boolean;
+}
+
 export interface ConversationMessage {
   id: string;
   direction: 'in' | 'out';
@@ -221,7 +237,36 @@ export class PgInboxStore implements InboxStore {
     );
   }
 
-  async listConversations(tenantId: string): Promise<ConversationSummary[]> {
+  /**
+   * Une page de conversations, de la plus récente à la plus ancienne.
+   *
+   * Le filtrage et la pagination sont faits en SQL, et c'est le point. L'écran filtrait auparavant en mémoire
+   * les 100 conversations chargées : passé la centième, « À traiter » ignorait le reste sans le dire. Un
+   * filtre qui ment est pire qu'un filtre absent, parce qu'on le croit.
+   *
+   * Pas de `hasMore` dans la réponse : une page pleine (autant de lignes que `limit`) veut dire qu'il peut y
+   * en avoir d'autres, et l'appelant reprend au dernier élément. Un drapeau de plus coûterait un `count`
+   * sur toute la table pour dire ce que la longueur dit déjà.
+   */
+  async listConversations(tenantId: string, opts: ListConversationsOptions = {}): Promise<ConversationSummary[]> {
+    // Borné des DEUX côtés : un `limit` venu de la query string ne doit ni vider la page (0) ni ramener la
+    // table entière. 100 reste le défaut, donc un appelant qui ne demande rien voit ce qu'il voyait avant.
+    const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 100), 1), 200);
+    const params: unknown[] = [tenantId];
+    const where: string[] = ['c.tenant_id = $1'];
+
+    if (opts.aTraiter === true) {
+      // Même définition que l'écran : le scénario ne gère plus ce fil (opérateur, escalade, ou agent Meta).
+      where.push(`c.control_owner <> 'app_workflow'`);
+    }
+    if (opts.before) {
+      // Comparaison de TUPLE : `(a, b) < (x, y)` suit exactement l'ordre de tri, donc la page suivante
+      // reprend pile où la précédente s'est arrêtée, même quand deux fils partagent le même horodatage.
+      params.push(opts.before.at, opts.before.id);
+      where.push(`(c.last_message_at, c.id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
+    }
+    params.push(limit);
+
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date;
       control_owner: ControlOwner; unread: boolean;
@@ -230,10 +275,10 @@ export class PgInboxStore implements InboxStore {
               ${UNREAD_SQL} as unread
        from conversations c
        left join contacts ct on ct.id = c.contact_id
-       where c.tenant_id = $1
-       order by c.last_message_at desc
-       limit 100`,
-      [tenantId],
+       where ${where.join(' and ')}
+       order by c.last_message_at desc, c.id desc
+       limit $${params.length}`,
+      params,
     );
     return res.rows.map((r) => ({
       id: r.id,
@@ -251,6 +296,22 @@ export class PgInboxStore implements InboxStore {
   async countUnread(tenantId: string): Promise<number> {
     const res = await this.pool.query<{ n: string }>(
       `select count(*)::text as n from conversations c where c.tenant_id = $1 and ${UNREAD_SQL}`,
+      [tenantId],
+    );
+    return Number(res.rows[0]?.n ?? 0);
+  }
+
+  /**
+   * Nombre de conversations « À traiter », pour le compteur de l'onglet.
+   *
+   * Même raison d'être que `countUnread` : l'écran le calculait sur les conversations CHARGÉES, donc il
+   * plafonnait à la taille de la page et affichait un nombre plus petit que la réalité dès qu'un client
+   * dépassait cent conversations.
+   */
+  async countATraiter(tenantId: string): Promise<number> {
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n from conversations c
+        where c.tenant_id = $1 and c.control_owner <> 'app_workflow'`,
       [tenantId],
     );
     return Number(res.rows[0]?.n ?? 0);

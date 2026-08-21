@@ -492,3 +492,74 @@ describe('inbox : lancer un scénario sur une conversation', () => {
     await a.close();
   });
 });
+
+/**
+ * Pagination et filtre de l'inbox, faits en SQL et non plus en mémoire.
+ *
+ * Ce que ces tests protègent : que les paramètres d'URL arrivent bien au store sous la forme attendue, et
+ * surtout qu'un paramètre MAL FORMÉ n'aboutisse jamais à une page vide. Une liste vide se lit « aucune
+ * conversation », ce qui est le contraire de « je n'ai pas compris votre filtre ».
+ */
+describe('GET /conversations — pagination et filtre', () => {
+  /** Capture les options reçues par le store. */
+  function espion() {
+    const recus: Array<unknown> = [];
+    const a = app({ listConversations: async (_t: string, opts?: unknown) => { recus.push(opts); return []; } });
+    return { a, recus };
+  }
+
+  it('sans paramètre : aucune option imposée (la page par défaut, comme avant)', async () => {
+    const { a, recus } = espion();
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations', ...auth() })).statusCode).toBe(200);
+    expect(recus[0]).toEqual({});
+    await a.close();
+  });
+
+  it('limit, aTraiter et curseur complet sont transmis', async () => {
+    const { a, recus } = espion();
+    await a.inject({
+      method: 'GET',
+      url: '/tenants/t1/conversations?limit=25&aTraiter=1&beforeAt=2026-08-21T10:00:00.000Z&beforeId=abc',
+      ...auth(),
+    });
+    expect(recus[0]).toEqual({ limit: 25, aTraiter: true, before: { at: '2026-08-21T10:00:00.000Z', id: 'abc' } });
+    await a.close();
+  });
+
+  it('🔴 un curseur À MOITIÉ fourni est IGNORÉ (une moitié rendrait une page arbitraire)', async () => {
+    const { a, recus } = espion();
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?beforeAt=2026-08-21T10:00:00.000Z', ...auth() });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations?beforeId=abc', ...auth() });
+    expect(recus).toEqual([{}, {}]);
+    await a.close();
+  });
+
+  it('🔴 des paramètres absurdes rendent la page NORMALE, jamais une liste vide', async () => {
+    const { a, recus } = espion();
+    for (const qs of ['limit=abc', 'limit=0', 'limit=-5', 'limit=1.5', 'aTraiter=peut-etre', 'aTraiter=0']) {
+      expect((await a.inject({ method: 'GET', url: `/tenants/t1/conversations?${qs}`, ...auth() })).statusCode).toBe(200);
+    }
+    // Aucun de ces cas ne pose de filtre : l'écran montre ce qu'il montrerait sans paramètre du tout.
+    expect(recus).toEqual([{}, {}, {}, {}, {}, {}]);
+    await a.close();
+  });
+
+  it('le compteur « À traiter » a sa propre route, et vaut 0 si la dep n’est pas câblée', async () => {
+    const avec = app({ countATraiter: async () => 42 });
+    expect((await avec.inject({ method: 'GET', url: '/tenants/t1/conversations/todo-count', ...auth() })).json<{ count: number }>().count).toBe(42);
+    await avec.close();
+
+    const sans = app();
+    expect((await sans.inject({ method: 'GET', url: '/tenants/t1/conversations/todo-count', ...auth() })).json<{ count: number }>().count).toBe(0);
+    await sans.close();
+  });
+
+  it('🔴 `todo-count` n’est pas pris pour un identifiant de conversation', async () => {
+    // La route est déclarée AVANT `/conversations/:conversationId` : dans l'ordre inverse, elle serait
+    // interceptée et on chercherait une conversation nommée « todo-count ».
+    const a = app({ countATraiter: async () => 7 });
+    const res = await a.inject({ method: 'GET', url: '/tenants/t1/conversations/todo-count', ...auth() });
+    expect(res.json<{ count?: number }>().count).toBe(7);
+    await a.close();
+  });
+});
