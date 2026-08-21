@@ -15,13 +15,36 @@ migrations jusqu'a 0066.
   tout de suite, et fait varier `handoff.enabled` selon les heures d'ouverture par un nouveau balayage.
   Le delai de reprise quitte l'Accueil, et son texte est corrige (PREMIERE intervention, pas derniere).
 
+### DEPLOYE le 2026-08-21
+Migration 0067 appliquee, puis `docker compose up -d --build`. Les trois conteneurs sont sains.
+⚠️ Le commit `ccd2da2` (correction du libelle mensonger, voir ci-dessous) n'est PAS encore deploye.
+
+### Abonnement webhook : CORRIGE le 2026-08-21
+`POST /{app_id}/subscriptions` -> l'app est desormais abonnee a **`messages` + `standby` +
+`messaging_handovers`** (elle n'avait que `messages`). C'etait un trou majeur : la doc Meta dit que quand
+l'agent tient le fil, tout passe par `standby` et que `messages` reste VIDE. L'inbox serait donc devenue
+muette le jour de l'allumage de MBA chez un client, **sans aucune erreur nulle part**.
+Au passage, inconnue levee : Meta ACCEPTE `standby` et `messaging_handovers` sur un WABA, alors qu'ils ne
+figurent pas dans sa liste publique de champs.
+
 ### Ce qui reste, dans l'ordre
-1. 🔴 **Appliquer la migration 0067 AVANT de deployer** ce code (additive, mais le code lit la colonne).
-2. **Provoquer un VRAI transfert** sur le numero de test, en conversation reelle : recoit-on
-   `messaging_handovers` ? sous quelle forme ? Puis corriger `ownerFromHandover`, dont la lecture est DEVINEE
-   et probablement inversee. Impossible avant le deploiement (la route handoff n'existe pas en prod).
-3. **La pastille « quelqu'un a besoin d'aide »** dans l'inbox : demande une donnee NOUVELLE (`app_human` ne
-   distingue pas « escalade, personne ne s'en occupe » de « un operateur a repondu »). A ne faire qu'apres 2.
+1. 🔴 **Le test en conversation REELLE est BLOQUE par l'absence de moyen de paiement.** Aucun message
+   WhatsApp n'atteint l'agent : le bac a sable (`agent_test`, onglet « Tester ») est le SEUL canal. Ce n'est
+   pas un manque de notre cote, il n'y a rien a tenter d'ici la. La forme du payload `messaging_handovers`
+   reste donc inconnue, et `ownerFromHandover` reste une lecture devinee.
+2. **La pastille « quelqu'un a besoin d'aide »** dans l'inbox : demande une donnee NOUVELLE (`app_human` ne
+   distingue pas « escalade, personne ne s'en occupe » de « un operateur a repondu »). Les mesures du
+   2026-08-21 la rendent BEAUCOUP plus urgente : un refus de l'agent produit une reponse VIDE.
+3. **Ecrire le texte lu par le client** (`message` + `message_selection: CUSTOM`), une fois son effet mesure.
+
+### Mesures au bac a sable (2026-08-21), tableau complet dans documentation.md
+- « je veux parler a un conseiller » -> `customer_request`, l'agent annonce le transfert.
+- Question hors de sa base -> `handoff_reason: null`. 🔴 **Quand il ne SAIT pas, il ne passe PAS la main**,
+  il renvoie vers les coordonnees. L'intuition inverse etait fausse.
+- Incident vecu + demande de dedommagement -> **`integrity_violation` et reponse VIDE**. Ni l'incident seul
+  ni le mot « remboursement » seul ne le declenchent : c'est la combinaison.
+- Consequence : le libelle de l'ecran Activation promettait un transfert « quand l'agent ne sait pas ».
+  Corrige dans `ccd2da2`, a deployer.
 
 ### Mesure faite (etape 0 du plan)
 `GET {WABA}/subscribed_apps` sur le WABA de test : **deux** apps abonnees, la notre (`988129420727963`) et
