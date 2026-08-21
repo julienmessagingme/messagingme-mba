@@ -5,6 +5,14 @@ export interface Session {
   email: string;
   role: string;
   tenantId: string;
+  /**
+   * Nom de l'espace OBSERVÉ depuis la surface d'exploitation. Absent = session normale.
+   *
+   * Sert au bandeau permanent : sans lui, on oublierait qu'on regarde chez quelqu'un d'autre et on prendrait
+   * ses chiffres pour les siens. La lecture seule, elle, est imposée par le SERVEUR : ce champ n'est qu'un
+   * rappel visuel, il ne protège rien.
+   */
+  observation?: string;
 }
 
 const KEY = 'mba.session';

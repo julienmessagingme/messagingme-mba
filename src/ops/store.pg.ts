@@ -55,6 +55,12 @@ export class PgOpsStore {
   }
 
   /** Un rollup par tenant. Sous-requêtes corrélées (échelle ops = quelques dizaines de tenants). */
+  /** Nom d'un espace, pour l'afficher dans le bandeau d'observation. `null` = espace inconnu. */
+  async getTenantName(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ name: string }>('select name from tenants where id = $1', [tenantId]);
+    return res.rows[0]?.name ?? null;
+  }
+
   async getTenantOverview(): Promise<TenantOverviewRow[]> {
     const res = await this.pool.query<{
       id: string; name: string; created_at: Date; mba_enabled: boolean;

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, type OpsOverview, type TenantOverviewRow, type QueueLoadRow, type WorkerHeartbeat } from '@/lib/api';
+import { getOpsOverview, observerTenant, type OpsOverview, type TenantOverviewRow, type QueueLoadRow, type WorkerHeartbeat } from '@/lib/api';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
+import { saveSession } from '@/lib/session';
 
 const KEY = 'mba.ops';
 
@@ -41,6 +42,31 @@ export default function OpsPage() {
   useEffect(() => {
     if (token) void load(token);
   }, [token, load]);
+
+  /**
+   * Ouvre une session d'OBSERVATION dans l'espace d'un client, puis y bascule.
+   *
+   * On écrit la session de la console AVEC la marque d'observation : l'AppShell la lit pour afficher un
+   * bandeau permanent. Sans lui, on oublierait qu'on regarde chez quelqu'un d'autre, et on prendrait ses
+   * chiffres pour les siens.
+   *
+   * ⚠️ La session en cours est ÉCRASÉE. C'est assumé : on entre chez un client, on n'ouvre pas deux mondes
+   * côte à côte. Se reconnecter normalement restaure la sienne.
+   */
+  async function observer(tenantId: string, nom: string): Promise<void> {
+    if (!token) return;
+    if (!window.confirm(t(
+      `Observer l'espace « ${nom} » ? Vous verrez ce que ce client voit, sans pouvoir rien modifier. Votre session actuelle sera remplacée.`,
+      `Observe the "${nom}" workspace? You will see what this customer sees, without being able to change anything. Your current session will be replaced.`,
+    ))) return;
+    try {
+      const r = await observerTenant(token, tenantId);
+      saveSession({ token: r.token, email: `observation:${nom}`, role: 'admin', tenantId: r.tenantId, observation: nom });
+      window.location.href = '/inbox';
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('Observation impossible', 'Observation failed'));
+    }
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -121,7 +147,7 @@ export default function OpsPage() {
               </div>
             )}
 
-            <TenantTable tenants={data.tenants} />
+            <TenantTable onObserver={(id, nom) => { void observer(id, nom); }} tenants={data.tenants} />
           </>
         ) : null}
       </div>
@@ -197,7 +223,7 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
   );
 }
 
-function TenantTable({ tenants }: { tenants: TenantOverviewRow[] }) {
+function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; onObserver: (id: string, nom: string) => void }) {
   const t = useT();
   const { locale } = useLocale();
   const dot = (q: string | null) => (q === 'GREEN' ? '#17C74E' : q === 'YELLOW' ? '#E8A400' : q === 'RED' ? '#FF4D4F' : '#B8BEC9');
@@ -223,6 +249,15 @@ function TenantTable({ tenants }: { tenants: TenantOverviewRow[] }) {
               <td className="px-4 py-2.5">
                 <div className="font-medium text-ink-900">{tn.name}</div>
                 <div className="text-[11px] text-ink-400">{t('créé le', 'created on')} {fmtDate(tn.createdAt)}</div>
+                {/* Entrer dans l'espace pour VOIR ce que le client voit. Session en lecture seule, d'une
+                    heure : elle ne peut rien modifier et ne marque rien comme lu. */}
+                <button
+                  onClick={() => onObserver(tn.id, tn.name)}
+                  data-testid={`observe-${tn.id}`}
+                  className="mt-1 text-[11px] font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
+                >
+                  {t('observer cet espace', 'observe this workspace')}
+                </button>
               </td>
               <td className="px-3 py-2.5">
                 <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tn.mbaEnabled ? 'bg-mint-50 text-mint-700' : 'bg-ink-100 text-ink-500'}`}>

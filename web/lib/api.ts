@@ -1101,6 +1101,26 @@ export interface OpsOverview {
  * Appel dédié à /ops : n'utilise NI getSession NI clearSession (un 401 ops ne doit pas déconnecter la
  * console admin), pose seulement `x-ops-token`. Le token est saisi par l'ops et gardé en localStorage.
  */
+/**
+ * Ouvre une session d'OBSERVATION dans l'espace d'un client (surface d'exploitation).
+ *
+ * Rend un jeton de session en LECTURE SEULE, valable une heure. Il ne peut rien écrire et ne marque rien
+ * comme lu : c'est le SERVEUR qui l'impose, pas l'écran.
+ */
+export async function observerTenant(opsToken: string, tenantId: string): Promise<{ token: string; tenantId: string; tenantName: string }> {
+  // `fetch` direct et non `request` : la surface d'exploitation a sa PROPRE autorité (`x-ops-token`), et
+  // `request` y attacherait le jeton de session du client. Même patron que `getOpsOverview` juste en dessous.
+  const res = await fetch(`${BASE}/ops/observe`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-ops-token': opsToken },
+    body: JSON.stringify({ tenantId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<{ token: string; tenantId: string; tenantName: string }>;
+}
 export async function getOpsOverview(opsToken: string): Promise<OpsOverview> {
   const res = await fetch(`${BASE}/ops/overview`, { headers: { 'x-ops-token': opsToken } });
   if (!res.ok) {

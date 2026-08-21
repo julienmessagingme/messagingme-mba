@@ -276,6 +276,29 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             </div>
           </div>
         )}
+        {/* OBSERVATION d'un espace client depuis l'exploitation. Bandeau PERMANENT et non un simple badge :
+            sans lui on oublie qu'on regarde chez quelqu'un d'autre, et on prend ses chiffres pour les siens.
+            La lecture seule est imposée par le SERVEUR ; ce bandeau ne protège rien, il informe. */}
+        {session.observation && (
+          <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-4 py-2 sm:px-6" data-testid="bandeau-observation">
+            <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-3 text-sm text-amber-900">
+              <span>
+                {t(
+                  `Observation de l’espace « ${session.observation} ». Vous voyez ce que ce client voit. Aucune modification n’est possible.`,
+                  `Observing the "${session.observation}" workspace. You see what this customer sees. No change is possible.`,
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={logout}
+                data-testid="quitter-observation"
+                className="ml-auto rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700"
+              >
+                {t('Quitter l’observation', 'Leave observation')}
+              </button>
+            </div>
+          </div>
+        )}
         <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
       </div>
     </div>

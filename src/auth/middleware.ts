@@ -90,6 +90,23 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader): Pr
       await reply.code(401).send({ error: 'token invalide ou expiré' });
       return;
     }
+    // 🔴 Session d'EMPRUNT : LECTURE SEULE, quelle que soit la route. Une garde ici plutôt que route par
+    // route, parce qu'une route oubliée serait exactement la faille : le porteur entre chez un client sans y
+    // avoir de compte, et une écriture faite par mégarde serait indiscernable d'une action du client.
+    //
+    // `GET` et `HEAD` seulement : tout le reste est refusé, y compris une route d'écriture ajoutée demain,
+    // sans que personne ait à y penser.
+    if (session.impersonated === true) {
+      const methode = req.method.toUpperCase();
+      if (methode !== 'GET' && methode !== 'HEAD') {
+        await reply.code(403).send({ error: 'session d’observation : lecture seule', code: 'impersonation_read_only' });
+        return;
+      }
+      // Pas de relecture d'état : le porteur n'a PAS de compte dans cet espace, le loader ne trouverait rien
+      // et révoquerait la session. Sa légitimité vient de sa signature, émise par la surface d'exploitation.
+      req.auth = session;
+      return;
+    }
     if (loadState) {
       const state = await loadState(session.userId, session.tenantId);
       if (!state || state.disabled) {

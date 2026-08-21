@@ -53,6 +53,7 @@ import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './http/mba';
+import { signSession } from './auth/token';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { MetaClientFactory } from './meta/factory';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
@@ -629,6 +630,23 @@ async function main(): Promise<void> {
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),
       getWorkerHeartbeat: () => heartbeatStore.get(),
+      /**
+       * Session d'OBSERVATION d'un espace client : un jeton de session en LECTURE SEULE.
+       *
+       * `userId` porte une valeur PARLANTE et non un identifiant d'utilisateur : le porteur n'a pas de
+       * compte dans cet espace, et si cette valeur se retrouvait un jour dans une trace, elle doit se lire
+       * pour ce qu'elle est. Durée courte (1 h) : une session d'observation n'a pas à survivre à la journée.
+       */
+      observerTenant: async (tenantId) => {
+        const nom = await opsStore.getTenantName(tenantId);
+        if (nom === null) return null;
+        const token = await signSession(
+          { userId: 'ops-observation', tenantId, role: 'admin', impersonated: true },
+          config.AUTH_SECRET,
+          '1h',
+        );
+        return { token, tenantName: nom };
+      },
     },
     opsToken: config.OPS_TOKEN,
     support: {
