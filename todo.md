@@ -42,6 +42,37 @@ dossier complet dans `.loop/mba-parametres-activation.md`.
 - ❌ Une skill = trois champs de TEXTE chez Meta. Elle ne produit aucun effet chez nous, elle ne fait
   qu'influencer le modèle. Ne jamais la vendre comme un transfert garanti.
 
+## 🔲 CI rouge par intermittence : `inbox-envoi-scenario` et `campaign-carousel-preview` (mesuré 2026-08-21)
+
+**Ce n'est pas une régression** : mesuré sur 5 exécutions, les échecs CHANGENT de test d'une fois sur l'autre,
+et les deux fichiers passent **25/25** et **6/6** en isolation, y compris avec 4 workers.
+
+| Exécution | Échecs |
+|---|---|
+| local (20/08 au soir) | aucun, 192/192 |
+| CI | campaign-carousel |
+| CI (rerun, même commit) | campaign-carousel + inbox-envoi-scenario |
+| local | campaign-carousel + inbox-envoi-scenario |
+| local | inbox-envoi-scenario seul, sur un AUTRE test du fichier |
+
+**Point commun constant** : le chargement de la liste des SCÉNARIOS (`wfSelect`, `scenario-select`), qui
+attend workflows ET templates puis filtre par éligibilité. Ce sont les deux écrans les plus lourds de la suite.
+
+**Cause** : contention. 4 workers partagent UN serveur Next (`playwright.config.ts`), et le budget du TEST
+(30 s par défaut) est mangé par le chargement de l'écran avant que l'assertion commence.
+`campaign-carousel-preview` a déjà reçu 90 s pour cette raison exacte ; `inbox-envoi-scenario` est resté à 30 s
+alors que son `ouvrirPanneau` réessaie déjà pendant 20 s.
+
+**Deux pistes, dans cet ordre :**
+1. Aligner le budget de `inbox-envoi-scenario` sur les 90 s de son jumeau. Ce n'est PAS affaiblir un test :
+   les assertions ne bougent pas, on rend seulement au test le temps que la contention lui prend.
+2. 🔴 Un échec reste INEXPLIQUÉ par la contention : en CI, `carousel-cards` et « Séjour à Nice » étaient
+   visibles mais « Séjour à Lyon » **absent du DOM** (`element(s) not found`, pas un timeout). Les deux cartes
+   viennent pourtant du même `.map()`. À creuser avec un trace Playwright : la CI n'uploade aucun artefact
+   aujourd'hui, l'ajouter est le prérequis pour diagnostiquer au lieu de deviner.
+
+⚠️ Ne PAS « corriger » en rallongeant encore les attentes internes : ça a déjà été fait deux fois et n'a pas tenu.
+
 ## 🔲 Bornes de journée : les mesures filtrent en UTC, l'écran raisonne en heure locale (2026-08-21)
 
 `countByNode` (`src/workflow/node-events.pg.ts`) compare `at >= $3::date and at < ($4::date + interval '1 day')`.
