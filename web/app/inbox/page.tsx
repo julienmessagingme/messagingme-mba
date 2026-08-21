@@ -11,9 +11,15 @@ import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
+import { ContactDetail } from '@/components/ContactDetail';
 import {
   listConversations,
   countConversationsATraiter,
+  queryContacts,
+  listUserFields,
+  listTags,
+  type Contact,
+  type UserFieldDef,
   getConversationMessages,
   releaseConversation,
   replyConversation,
@@ -122,6 +128,8 @@ function InboxInner({ session }: { session: Session }) {
   const [chargementPage, setChargementPage] = useState(false);
   /** Compté par le SERVEUR sur toute la base : l'ancien calcul portait sur les conversations chargées. */
   const [todoCount, setTodoCount] = useState(0);
+  /** Fiche contact ouverte, par `waId`. `null` = fermée, et la conversation reprend toute la largeur. */
+  const [ficheWaId, setFicheWaId] = useState<string | null>(null);
 
   /**
    * Recharge la PREMIÈRE page. Le filtre est passé au serveur : le faire en mémoire ne voyait que les
@@ -207,7 +215,9 @@ function InboxInner({ session }: { session: Session }) {
   const visible = conversations;
 
   return (
-    <div className="grid gap-4 p-4 lg:h-full lg:grid-cols-[320px_1fr]">
+    // Trois colonnes quand la fiche est ouverte : c'est la CONVERSATION qui rétrécit, pas la liste, parce
+    // qu'on consulte la fiche en lisant le fil, et qu'une liste qui change de largeur perd le repère visuel.
+    <div className={`grid gap-4 p-4 lg:h-full ${ficheWaId ? 'lg:grid-cols-[320px_1fr_340px]' : 'lg:grid-cols-[320px_1fr]'}`}>
       <section className="lg:flex lg:min-h-0 lg:flex-col">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Conversations', 'Conversations')} ({conversations.length})</h2>
@@ -232,28 +242,49 @@ function InboxInner({ session }: { session: Session }) {
           <ul className="space-y-1.5 lg:flex-1 lg:overflow-y-auto">
             {visible.map((c) => (
               <li key={c.id}>
-                <button
-                  onClick={() => setSelected(c)}
-                  className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
+                {/*
+                  DEUX gestes distincts sur la même vignette, donc deux boutons FRÈRES et non imbriqués (un
+                  bouton dans un bouton est du HTML invalide, et le clic intérieur devient imprévisible) :
+                  la zone ouvre la conversation, le NOM ouvre la fiche du contact.
+
+                  L'extrait du dernier message a été retiré : le fil complet est juste à côté, le répéter en
+                  minuscule ne servait qu'à faire deviner ce qu'on peut lire en entier.
+                */}
+                <div
+                  className={`relative w-full rounded-xl border px-3 py-2 transition ${
                     selected?.id === c.id ? 'border-brand-500 bg-brand-50' : 'border-ink-200 bg-white hover:bg-ink-50'
                   }`}
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className={`truncate text-sm ${c.unread ? 'font-semibold text-ink-900' : 'font-medium'}`}>
+                  <button
+                    onClick={() => setSelected(c)}
+                    aria-label={t('Ouvrir la conversation', 'Open conversation')}
+                    className="absolute inset-0 rounded-xl"
+                  />
+                  {/* `pointer-events-none` sur le contenu, `auto` sur le seul bouton du nom : sans ça le
+                      contenu recouvre le bouton de fond, et un clic au milieu de la vignette n'ouvrirait
+                      RIEN. Le geste de tous les jours doit marcher partout sur la ligne. */}
+                  <div className="pointer-events-none relative flex items-baseline justify-between gap-2">
+                    <span className={`flex min-w-0 items-baseline text-sm ${c.unread ? 'font-semibold text-ink-900' : 'font-medium'}`}>
                       {/* Point de non-lu : le compteur du menu doit pouvoir se traduire en action, sinon il dit
                           « 3 » sans dire lesquelles. */}
-                      {c.unread && <span data-testid="unread-dot" className="mr-1.5 inline-block h-2 w-2 rounded-full bg-coral align-middle" aria-label={t('non lu', 'unread')} />}
-                      {c.profileName ?? `+${c.waId}`}
+                      {c.unread && <span data-testid="unread-dot" className="mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-coral align-middle" aria-label={t('non lu', 'unread')} />}
+                      <button
+                        onClick={() => setFicheWaId(c.waId)}
+                        data-testid={`open-contact-${c.id}`}
+                        title={t('Voir la fiche du contact', 'View contact record')}
+                        className="pointer-events-auto truncate text-left hover:underline"
+                      >
+                        {c.profileName ?? `+${c.waId}`}
+                      </button>
                     </span>
-                    <span className="shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
+                    <span className="pointer-events-none shrink-0 text-[11px] text-ink-400">{hourMin(c.lastMessageAt, locale)}</span>
                   </div>
-                  <p className="truncate text-xs text-ink-500">{c.lastPreview ?? ''}</p>
                   {/* Le badge n'apparaît QUE si quelqu'un détient le fil : l'afficher sur toutes les
                       lignes noierait l'information, alors que c'est l'exception qui doit sauter aux yeux. */}
                   {c.controlOwner !== 'app_workflow' && (
-                    <span className="mt-1 inline-block"><ControlBadge owner={c.controlOwner} /></span>
+                    <span className="pointer-events-none relative mt-1 inline-block"><ControlBadge owner={c.controlOwner} /></span>
                   )}
-                </button>
+                </div>
               </li>
             ))}
             {/* Chargement à la demande plutôt qu'au défilement : l'auto-refresh de 15 s recharge la première
@@ -283,7 +314,82 @@ function InboxInner({ session }: { session: Session }) {
           </div>
         )}
       </section>
+
+      {ficheWaId && (
+        <section className="lg:min-h-0 lg:overflow-y-auto" data-testid="inbox-contact-panel">
+          <FicheContact session={session} waId={ficheWaId} onClose={() => setFicheWaId(null)} />
+        </section>
+      )}
     </div>
+  );
+}
+
+/**
+ * Fiche du contact d'une conversation, ouverte depuis l'Inbox au clic sur son nom.
+ *
+ * Réutilise `ContactDetail`, le MÊME composant que la page mini-CRM : c'est tout l'intérêt de l'avoir
+ * extrait. Une seconde fiche écrite ici aurait divergé au premier champ ajouté.
+ *
+ * Le contact est retrouvé par son numéro via la recherche existante : l'Inbox connaît le `waId`, pas
+ * l'identifiant de contact, et une route dédiée pour cette seule traduction n'aurait rien apporté.
+ */
+function FicheContact({ session, waId, onClose }: { session: Session; waId: string; onClose: () => void }) {
+  const t = useT();
+  const [contact, setContact] = useState<Contact | null>(null);
+  const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [etat, setEtat] = useState<'chargement' | 'absent' | 'ok' | 'erreur'>('chargement');
+
+  useEffect(() => {
+    let vivant = true;
+    setEtat('chargement');
+    (async () => {
+      // Les référentiels sont chargés en même temps mais indépendamment : sans eux la fiche s'affiche quand
+      // même, seulement moins complète. Les rendre bloquants ferait échouer l'ouverture pour un détail.
+      const [c, f, g] = await Promise.allSettled([
+        queryContacts(session.tenantId, { phoneContains: waId }, { limit: 1 }),
+        listUserFields(session.tenantId),
+        listTags(session.tenantId),
+      ]);
+      if (!vivant) return;
+      if (f.status === 'fulfilled') setUserFields(f.value.fields);
+      if (g.status === 'fulfilled') setTags(g.value.tags.map((x) => x.tag));
+      if (c.status !== 'fulfilled') { setEtat('erreur'); return; }
+      const trouve = c.value.contacts[0] ?? null;
+      setContact(trouve);
+      setEtat(trouve ? 'ok' : 'absent');
+    })().catch(() => { if (vivant) setEtat('erreur'); });
+    return () => { vivant = false; };
+  }, [session.tenantId, waId]);
+
+  if (etat === 'chargement') {
+    return <div className="rounded-2xl border border-ink-200 bg-white p-4 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</div>;
+  }
+  if (etat !== 'ok' || !contact) {
+    return (
+      <div className="rounded-2xl border border-ink-200 bg-white p-4 text-sm text-ink-500">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-medium text-ink-700">{`+${waId}`}</span>
+          <button onClick={onClose} className="text-xs text-ink-500 hover:text-ink-800">{t('Fermer', 'Close')}</button>
+        </div>
+        {/* Un fil peut exister sans fiche : une conversation ouverte par un numéro jamais importé dans le
+            mini-CRM. On le dit, au lieu d'afficher une fiche vide qui laisserait croire à une erreur. */}
+        {etat === 'absent'
+          ? t('Aucune fiche pour ce numéro dans le mini-CRM.', 'No contact record for this number in the mini-CRM.')
+          : t('Fiche indisponible pour le moment.', 'Contact record unavailable right now.')}
+      </div>
+    );
+  }
+  return (
+    <ContactDetail
+      contact={contact}
+      userFields={userFields}
+      tagSuggestions={tags}
+      tenantId={session.tenantId}
+      onUpdated={setContact}
+      onFieldCreated={(def) => setUserFields((prev) => [...prev, def])}
+      onClose={onClose}
+    />
   );
 }
 

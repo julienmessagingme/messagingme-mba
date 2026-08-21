@@ -58,7 +58,8 @@ async function mock(page: import('@playwright/test').Page, windowOpen: boolean, 
 /** Ouvre la conversation puis le panneau de lancement de scénario. */
 async function ouvrirPanneau(page: import('@playwright/test').Page) {
   await page.goto('/inbox');
-  await page.getByText('Alice').click();
+  // Le clic sur le NOM ouvre la fiche du contact : pour ouvrir la conversation, on clique la vignette.
+  await page.getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).first().click();
   // Deux fragilités traitées ensemble, toutes deux dues au fil qui se recharge tout seul (minuteur de 4 s) :
   // un clic tombé pile pendant le re-rendu de la barre d'actions vise un noeud détaché et se perd sans rien
   // signaler, et le panneau fraîchement monté affiche d'abord « aucun scénario » (liste vide) avant que sa

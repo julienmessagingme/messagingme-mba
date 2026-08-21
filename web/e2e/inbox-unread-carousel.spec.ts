@@ -5,6 +5,9 @@ import { test, expect } from '@playwright/test';
  *  - une pastille avec le NOMBRE de conversations non lues, dans le menu de gauche ;
  *  - les templates CAROUSEL doivent apparaître dans la liste d'envoi (ils en étaient exclus, au motif que
  *    leur envoi exigeait de relire les cartes chez Meta, ce que l'API fait désormais).
+ *
+ * ⚠️ Depuis le 2026-08-21, le clic sur le NOM ouvre la fiche du contact : la conversation s'ouvre en
+ * cliquant la vignette. Deux gestes distincts sur la même ligne.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
@@ -77,7 +80,7 @@ test.describe('Inbox : non-lus et carousels', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     });
     await page.goto('/inbox');
-    await page.getByText('Bob NonLu').click();
+    await page.locator('li', { hasText: 'Bob NonLu' }).getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).click();
     await expect.poll(() => lus.length).toBeGreaterThan(0);
     expect(lus[0]).toContain('/conversations/c2/read');
   });
@@ -85,7 +88,7 @@ test.describe('Inbox : non-lus et carousels', () => {
   test('un carousel EST proposé à l’envoi, et son aperçu montre les cartes', async ({ page }) => {
     await mock(page, 0);
     await page.goto('/inbox');
-    await page.getByText('Bob NonLu').click();
+    await page.locator('li', { hasText: 'Bob NonLu' }).getByRole('button', { name: /Ouvrir la conversation|Open conversation/ }).click();
     await page.getByRole('button', { name: /Envoyer un template/i }).click();
 
     // Le carousel figure dans la liste (il en était explicitement exclu).
