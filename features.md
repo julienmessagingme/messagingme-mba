@@ -30,6 +30,16 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Comptes & authentification
 
+- ✅ **Une adresse mail, plusieurs espaces** (2026-08-21) : la même adresse peut désormais ouvrir plusieurs
+  espaces de travail. Un seul mot de passe pour tous, comme chez Slack ou Notion. À la connexion, si l'adresse
+  n'en dessert qu'un (le cas courant), **rien ne change** : on entre directement. Si elle en dessert plusieurs,
+  un écran demande lequel ouvrir. Le rôle peut différer d'un espace à l'autre : admin ici, agent là.
+- ✅ **Observer l'espace d'un client** (2026-08-21, interne) : depuis la surface d'exploitation, on entre dans
+  un espace pour voir exactement ce que le client voit. **En lecture seule** : aucune modification n'est
+  possible, et regarder une conversation ne la marque pas comme lue chez lui. Un bandeau rappelle en
+  permanence qu'on n'est pas chez soi.
+
+
 - ✅ **Inscription libre** (`/signup`) : n'importe qui crée **son propre espace** (nom d'espace + email + mot de
   passe) et en devient l'**admin**. Redirige vers l'accueil (connecter le numéro).
 - ✅ **Se connecter avec Google** (bouton sur `/login`, `/signup`, `/invite`) : vérif du jeton côté serveur ;

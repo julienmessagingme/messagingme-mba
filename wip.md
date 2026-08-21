@@ -1,35 +1,28 @@
 # WIP
 
-## EN COURS (2026-08-21) — lot « inbox, comptes, moderation » : 4 items sur 7 faits
+## LIVRE ET DEPLOYE le 2026-08-21 — lot « inbox, comptes, moderation » (7/7)
 
-Cadrage complet et decisions de Julien : `.loop/lot-inbox-comptes-moderation.md`.
-**Pousse, PAS deploye.** Migrations a appliquer AVANT le code : **0068, 0069, 0070**.
+Prod sur **`c4d7b41`**, migrations jusqu'a **0073**, conteneurs sains. Cadrage et decisions :
+`.loop/lot-inbox-comptes-moderation.md`. Le detail fonctionnel est passe dans `features.md`.
 
-### Fait
-1. **Brouillons de campagne** (0068) : le nom saisi cree un brouillon de COMPOSITION, retrouvable et
-   reprenable. Table a part : `campaigns.status = 'draft'` designe autre chose (une campagne complete non
-   lancee, qu aucune route ne sait modifier).
-2. **Entree Accueil** dans la barre laterale, au-dessus d Inbox, pas pour les agents.
-3. **Socle de volume de l inbox** (0069) : filtres et pagination en SQL, curseur sur (last_message_at, id),
-   compteur « A traiter » compte sur toute la base. Prerequis des trois autres items.
-4. **Fiche contact partagee** : `ContactDetail` extrait de la page mini-CRM, ouvert dans l inbox au clic sur
-   le NOM (la vignette continue d ouvrir la conversation).
-5. **Affectation** (0070) : manager/admin confient une conversation ; refus applique CoTE SERVEUR sur les
-   trois routes qui ecrivent. Premiere prerogative reelle du role manager.
+Les 7 items : brouillons de campagne (0068), entree Accueil, pagination + filtres SQL de l'inbox (0069),
+fiche contact partagee, affectation (0070), moderation (0071), observation d'un espace depuis /ops,
+multi-espaces par adresse (0072/0073).
 
-### Reste (3 items, decisions deja prises)
-- **Moderation** : reutiliser l analyse IA existante (delai de 15-20 min assume par Julien), blocage d un
-  contact = plus d envoi ET plus d affichage, avec un ECRAN DEDIE dans les parametres pour debloquer.
-  ⚠️ Cet ecran est la SEULE porte de sortie : sans lui un contact bloque est perdu. Meme lot, jamais apres.
-- **Superadmin depuis /ops** : ⚠️ casse le principe ecrit « ops = LECTURE SEULE ». Lecture seule au premier
-  lot, marquage « lu » neutralise, journalise cote ops et invisible cote client, bandeau permanent.
-- **Multi-comptes par email** : ⚠️ revient sur la migration 0010 (« un email = un compte »), et deplace le mot
-  de passe hors de `users` (un seul par ADRESSE). Migration d authentification : a faire SEULE, en dernier.
+### Verifie APRES deploiement, pas seulement en test
+- Reprise des comptes : 7 users, 7 identites, **0 sans identite, 0 hash perdu**.
+- `/auth/login` rend 401 (et non 500) : la nouvelle requete d'identite tourne.
+- `/auth/choose-workspace` et `/ops/observe` refusent proprement sans jeton valide.
 
-### Piege trouve DEUX fois dans la meme journee, a ne pas reperdre
-Une reponse 200 sans le champ attendu (`drafts`, `users`) passe le try/catch et pose `undefined` dans un etat
-type tableau. Le rendu suivant casse TOUT l ecran, pas seulement la section concernee. `Array.isArray` sur
-toute liste venue de l API, systematiquement.
+### Ce qui reste ouvert
+- **L'ECRITURE en observation** : volontairement hors lot. S'ouvrira action par action si le besoin apparait.
+  Aujourd'hui une action faite par megarde chez un client serait indiscernable d'une action du client.
+- **`users.password_hash`** subsiste, tenu en MIROIR de `identities` : c'est le chemin de retour de 0072.
+  A retirer quand la confiance est acquise, jamais avant.
+- 🔴 **0073 est la seule etape irreversible du lot** : recreer l'index d'unicite n'est possible que TANT
+  QU'AUCUN doublon n'existe. Des qu'une adresse portera deux comptes, revenir en arriere voudra dire en
+  choisir un a supprimer.
+- Le **flake E2E** de `campaign-carousel-preview` (contention), quantifie dans `todo.md`.
 
 ---
 
