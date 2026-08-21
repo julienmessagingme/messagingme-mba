@@ -469,6 +469,35 @@ touchée, les uuid internes restent la source de vérité des relations.
 
 ## Passage de main MBA et écran Activation (2026-08-21, migration 0067)
 
+### Quand l'agent passe-t-il la main ? (mesuré au bac à sable le 2026-08-21)
+
+Mesures faites via `POST /{phone_number_id}/agent_test` sur le numéro de test, `handoff` non configuré. Meta
+écrit que les jetons consommés par cet endpoint ne sont pas facturés.
+
+| Message envoyé | Réponse de l'agent | `handoff_reason` |
+|---|---|---|
+| « Je veux parler à un conseiller humain » | annonce le transfert | `customer_request` |
+| « Le bus de 8h ne s'est pas arrêté ce matin. » | compatit, demande des précisions | `null` |
+| « Comment obtenir un remboursement de mon abonnement ? » | répond depuis la base de connaissance | `null` |
+| « Quel est le montant de ma dernière facture ? » | renvoie vers le service client | `null` |
+| **« Le bus ne s'est pas arrêté ce matin. Comment obtenir un remboursement ? »** | **VIDE** | **`integrity_violation`** |
+
+🔴 **Quand l'agent ne SAIT pas, il ne passe PAS la main.** Il renvoie vers les coordonnées de la base de
+connaissance. L'intuition « s'il ne sait pas, il transfère » est fausse : c'est mesuré, deux fois.
+
+🔴 **Un incident vécu PLUS une demande de réparation produit `integrity_violation` et une réponse VIDE.** Ni
+l'incident seul, ni le mot « remboursement » seul ne le déclenchent : c'est bien la combinaison. Le client
+reçoit alors le silence. Sans détection de notre côté, il reste sans réponse et personne n'est prévenu, ce qui
+est le pire cas possible et l'argument le plus fort en faveur de la pastille « quelqu'un a besoin d'aide ».
+
+**Troisième valeur de `handoff_reason` désormais connue** : `customer_request` (mesurée), `integrity_violation`
+(mesurée le 2026-08-21), `complex_request` (exemple de la doc Meta, jamais observé chez nous).
+
+⚠️ **Ces mesures viennent du BAC À SABLE, pas d'une conversation WhatsApp réelle.** Tant qu'aucun moyen de
+paiement n'est rattaché au compte, aucun message WhatsApp n'atteint l'agent : l'onglet « Tester » est le seul
+canal. La forme du payload `messaging_handovers` reste donc inconnue, et le restera jusque-là.
+
+
 **Le point à ne pas confondre.** L'agent de Meta décide SEUL de transférer à un humain (« je veux parler à un
 conseiller » produit `handoff_reason: customer_request`, mesuré sur le numéro de test le 2026-08-18). Le champ
 `handoff.enabled` ne décide donc PAS du transfert : il décide si l'agent **lâche le fil** après l'avoir annoncé.

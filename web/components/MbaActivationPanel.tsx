@@ -117,12 +117,18 @@ export function MbaActivationPanel({ tenantId }: { tenantId: string }) {
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">
-          {t('Quand le client demande un humain, ou que l’agent ne sait pas', 'When the customer asks for a human, or the agent does not know')}
+          {t('Quand l’agent décide de passer la main', 'When the agent decides to hand over')}
         </h3>
         <p className="mt-1 text-xs text-ink-500">
           {t(
-            'C’est l’agent qui décide de transférer, à partir de ce que le client écrit. Ce réglage dit ce qui se passe ensuite.',
-            'The agent decides to transfer, based on what the customer writes. This setting says what happens next.',
+            'C’est l’agent qui décide, à partir de ce que le client écrit : quand celui-ci réclame un humain, ou quand l’agent refuse de traiter la demande (une réclamation avec demande de dédommagement, par exemple, à laquelle il ne répond rien). Ce réglage dit ce qui se passe ensuite.',
+            'The agent decides, based on what the customer writes: when they ask for a human, or when the agent declines to handle the request (a complaint asking for compensation, for instance, which it answers with nothing at all). This setting says what happens next.',
+          )}
+        </p>
+        <p className="mt-1 text-xs text-ink-400">
+          {t(
+            'En revanche, quand l’agent ignore simplement la réponse, il ne passe PAS la main : il renvoie vers les coordonnées de votre base de connaissance. Mesuré le 21/08/2026.',
+            'When the agent merely does not know the answer, it does NOT hand over: it points to the contact details from your knowledge base. Measured 2026-08-21.',
           )}
         </p>
         <div className="mt-3 space-y-2" role="radiogroup" aria-label={t('Passage de main', 'Handover')}>

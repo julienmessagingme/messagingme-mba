@@ -722,6 +722,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   ⚠️ Ce que l'écran ne promet pas, parce que ce n'est pas tenable : empêcher un humain de prendre la main (aucun
   verrou n'existe, ni chez nous ni chez Meta), et empêcher l'agent de décider un transfert (il décide seul ;
   « jamais » le fait seulement garder la conversation au lieu de la lâcher).
+  ⚠️ **Quand l'agent ne sait pas répondre, il ne passe PAS la main** : il renvoie vers les coordonnées de votre
+  base de connaissance. Il transfère quand le client réclame explicitement un humain, ou quand il refuse de
+  traiter la demande. Mesuré le 21/08/2026 : une réclamation qui décrit un incident ET demande un dédommagement
+  obtient de l'agent une réponse **vide**, ce qui rend d'autant plus nécessaire de voir ces conversations
+  remonter dans « À traiter ».
 
 ## À venir / hors périmètre
 

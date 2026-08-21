@@ -10,12 +10,17 @@ dossier complet dans `.loop/mba-parametres-activation.md`.
 
 ### Ce qui reste à faire, dans l'ordre
 1. 🔴 **Appliquer la migration 0067 AVANT de déployer.** Additive, mais le code lit la colonne.
-2. 🔲 **Provoquer un VRAI transfert** sur le numéro de test (`+33 5 25 68 03 01`,
-   `phone_number_id=1305301719324792`, WABA `1067000669256166`), en conversation RÉELLE et non dans le bac à
-   sable. Regarder : reçoit-on `messaging_handovers`, sous quelle forme ? la suite bascule-t-elle de `standby`
-   vers `messages` ? reçoit-on l'écho du message de transfert ? Puis corriger `ownerFromHandover`
-   (`src/webhooks/handover.ts`), dont la lecture est DEVINÉE et probablement INVERSÉE. Le module journalise
-   déjà tout payload reçu (`handover_recu`, `standby_echo`) : la trace sera là.
+2. 🔴 **BLOQUÉ PAR LE MOYEN DE PAIEMENT** : provoquer un VRAI transfert en conversation WhatsApp réelle.
+   Sans moyen de paiement rattaché au compte, aucun message WhatsApp n'atteint l'agent : le bac à sable
+   (`agent_test`, onglet « Tester ») est le SEUL canal. Rien à tenter d'ici là, ce n'est pas un manque de
+   notre côté. Le jour où c'est rattaché : envoyer « je veux parler à un conseiller » au
+   `+33 5 25 68 03 01` (`phone_number_id=1305301719324792`, WABA `1067000669256166`) et regarder si l'on
+   reçoit `messaging_handovers`, sous quelle forme, si la suite bascule de `standby` vers `messages`, et si
+   l'écho du message de transfert arrive. Puis corriger `ownerFromHandover` (`src/webhooks/handover.ts`),
+   dont la lecture est DEVINÉE et probablement INVERSÉE. Le module journalise déjà tout payload reçu
+   (`handover_recu`, `standby_echo`) : la trace sera là.
+   ✅ L'abonnement webhook, lui, est FAIT (2026-08-21) : `messages`, `standby` et `messaging_handovers` sont
+   souscrits sur l'app. Ce n'est donc plus un prérequis manquant.
 3. 🔲 **La pastille « quelqu'un a besoin d'aide »** dans l'inbox. Demande une donnée NOUVELLE : `app_human` ne
    distingue pas « escaladé, personne ne s'en occupe » de « un opérateur a répondu », donc la pastille ne
    pourrait jamais s'éteindre. Et le balayage de reprise rebascule après le délai même si personne n'a rien
