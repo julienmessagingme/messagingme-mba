@@ -7,6 +7,7 @@ import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput, RetryReset } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import type { CampaignRouteDeps } from '../src/http/campaigns';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -68,6 +69,8 @@ interface Deps {
   archiveCalls?: Array<{ id: string; tenant: string; kind: 'archive' | 'unarchive' | 'delete' }>;
   deleteOk?: boolean; // deleteDraftCampaign renvoie ce booléen (défaut true)
   retry?: RetryReset; // résultat de resetRecipientForRetry (F7)
+  /** Brouillons de COMPOSITION. Absent -> les routes ne sont pas montées (dépendance optionnelle). */
+  drafts?: CampaignRouteDeps['drafts'];
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -76,6 +79,8 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
     campaigns: {
       repo,
       queue: d.queue ?? new FakeQueue(),
+      // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
+      ...(d.drafts ? { drafts: d.drafts } : {}),
       phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
       // Workflow non détenu -> null (comme un getById cross-tenant) ; sinon le graphe (override ou défaut).
       getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
@@ -515,6 +520,112 @@ describe('POST /campaigns/:cid/recipients/:rid/retry (F7)', () => {
     const app = appWith(new FakeRepo(contacts), { retry: { result: 'queued', campaignId: 'known' } });
     const res = await app.inject({ method: 'POST', url, ...asAgent() });
     expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+});
+
+/**
+ * Brouillons de COMPOSITION : une campagne qu'on est en train d'écrire, retrouvable après avoir quitté
+ * l'écran. Aucun rapport avec `campaigns.status = 'draft'` (une campagne complète et non lancée), et surtout
+ * aucun effet d'envoi : c'est ce qui permet de les laisser à tout membre du tenant.
+ */
+describe('brouillons de campagne', () => {
+  /** Faux store en mémoire, scopé tenant comme le vrai : c'est l'isolation qu'on veut vérifier. */
+  function fauxDrafts() {
+    const lignes: Array<{ id: string; tenantId: string; name: string; state: Record<string, unknown>; updatedAt: Date }> = [];
+    let n = 0;
+    return {
+      lignes,
+      store: {
+        list: async (t: string) => lignes.filter((l) => l.tenantId === t).map(({ tenantId: _t, ...r }) => r),
+        create: async (t: string, name: string, state: Record<string, unknown>) => {
+          n += 1;
+          const ligne = { id: `d${n}`, tenantId: t, name, state, updatedAt: new Date('2026-08-21T10:00:00Z') };
+          lignes.push(ligne);
+          const { tenantId: _t, ...rendu } = ligne;
+          return rendu;
+        },
+        update: async (t: string, id: string, name: string, state: Record<string, unknown>) => {
+          const l = lignes.find((x) => x.id === id && x.tenantId === t);
+          if (!l) return false;
+          l.name = name; l.state = state;
+          return true;
+        },
+        remove: async (t: string, id: string) => {
+          const i = lignes.findIndex((x) => x.id === id && x.tenantId === t);
+          if (i < 0) return false;
+          lignes.splice(i, 1);
+          return true;
+        },
+      },
+    };
+  }
+  const url = '/tenants/t1/campaign-drafts';
+
+  it('créer puis relire : le brouillon se retrouve', async () => {
+    const { store } = fauxDrafts();
+    const app = appWith(new FakeRepo(contacts), { drafts: store });
+    const cree = await app.inject({ method: 'POST', url, ...auth(), payload: { name: 'Promo été', state: { templateName: 'promo' } } });
+    expect(cree.statusCode).toBe(201);
+    const id = cree.json<{ draft: { id: string } }>().draft.id;
+
+    const liste = await app.inject({ method: 'GET', url, ...auth() });
+    expect(liste.json<{ drafts: Array<{ id: string; name: string }> }>().drafts).toMatchObject([{ id, name: 'Promo été' }]);
+    await app.close();
+  });
+
+  it('mettre à jour conserve UN seul brouillon (pas un par frappe)', async () => {
+    const { lignes, store } = fauxDrafts();
+    const app = appWith(new FakeRepo(contacts), { drafts: store });
+    const id = (await app.inject({ method: 'POST', url, ...auth(), payload: { name: 'Promo' } })).json<{ draft: { id: string } }>().draft.id;
+    for (const nom of ['Promo é', 'Promo ét', 'Promo été']) {
+      const r = await app.inject({ method: 'PUT', url: `${url}/${id}`, ...auth(), payload: { name: nom } });
+      expect(r.statusCode).toBe(200);
+    }
+    expect(lignes).toHaveLength(1);
+    expect(lignes[0]?.name).toBe('Promo été');
+    await app.close();
+  });
+
+  it('🔴 un brouillon d’un AUTRE tenant est invisible et intouchable', async () => {
+    const { lignes, store } = fauxDrafts();
+    lignes.push({ id: 'ailleurs', tenantId: 't2', name: 'Chez le voisin', state: {}, updatedAt: new Date() });
+    const app = appWith(new FakeRepo(contacts), { drafts: store });
+
+    expect((await app.inject({ method: 'GET', url, ...auth() })).json<{ drafts: unknown[] }>().drafts).toEqual([]);
+    // 404 et NON création : sinon on sèmerait des brouillons chez autrui en devinant des identifiants.
+    expect((await app.inject({ method: 'PUT', url: `${url}/ailleurs`, ...auth(), payload: { name: 'pirate' } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: `${url}/ailleurs`, ...auth() })).statusCode).toBe(404);
+    expect(lignes.find((l) => l.id === 'ailleurs')?.name).toBe('Chez le voisin');
+    await app.close();
+  });
+
+  it('supprimer retire le brouillon', async () => {
+    const { lignes, store } = fauxDrafts();
+    const app = appWith(new FakeRepo(contacts), { drafts: store });
+    const id = (await app.inject({ method: 'POST', url, ...auth(), payload: { name: 'Jetable' } })).json<{ draft: { id: string } }>().draft.id;
+    expect((await app.inject({ method: 'DELETE', url: `${url}/${id}`, ...auth() })).statusCode).toBe(200);
+    expect(lignes).toEqual([]);
+    await app.close();
+  });
+
+  it('nom vide ou état mal formé -> 400, et rien n’est écrit', async () => {
+    const { lignes, store } = fauxDrafts();
+    const app = appWith(new FakeRepo(contacts), { drafts: store });
+    for (const payload of [{}, { name: '   ' }, { name: 'x'.repeat(201) }, { name: 'ok', state: [1, 2] }, { name: 'ok', state: 'texte' }]) {
+      expect((await app.inject({ method: 'POST', url, ...auth(), payload })).statusCode).toBe(400);
+    }
+    expect(lignes).toEqual([]);
+    await app.close();
+  });
+
+  it('un agent ne peut pas écrire de brouillon (tout le groupe campagnes est admin-only)', async () => {
+    // Un brouillon est une campagne en devenir : il suit la même règle d'accès que la campagne elle-même.
+    // Ouvrir l'un sans l'autre serait une décision produit, pas un détail d'implémentation.
+    const { lignes, store } = fauxDrafts();
+    const app = appWith(new FakeRepo(contacts), { drafts: store });
+    expect((await app.inject({ method: 'POST', url, ...asAgent(), payload: { name: 'Idée' } })).statusCode).toBe(403);
+    expect(lignes).toEqual([]);
     await app.close();
   });
 });

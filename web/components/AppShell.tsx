@@ -17,6 +17,7 @@ const Ico = ({ d }: { d: string }) => (
   <svg viewBox="0 0 24 24" className={ICON} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
 );
 const icons = {
+  accueil: 'M3 10.5L12 3l9 7.5M5 9.5V20a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V9.5',
   inbox: 'M4 13h4l2 3h4l2-3h4M4 13V6a2 2 0 012-2h12a2 2 0 012 2v7M4 13v5a2 2 0 002 2h12a2 2 0 002-2v-5',
   contacts: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75',
   campaign: 'M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 11-5.8-1.6',
@@ -62,6 +63,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
   const NAV_ADMIN: NavItem[] = [
+    // L'accueil n'était atteignable que par le logo, ce qui ne se devine pas. Il n'apparaît PAS dans
+    // `NAV_AGENT` : `pageDArrivee` envoie un agent sur l'inbox, et cette page montre le statut du compte et
+    // ses réglages, qui ne le concernent pas.
+    { key: 'accueil', href: '/accueil', label: t('Accueil', 'Home'), d: icons.accueil },
     { key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread },
     // Libellé seulement : l'URL reste `/contacts`, pour ne casser ni les liens existants ni les deep-links.
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), d: icons.contacts },

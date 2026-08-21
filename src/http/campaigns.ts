@@ -37,6 +37,17 @@ const rcsOutboundSchema = z.discriminatedUnion('kind', [
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
   queue: Queue;
+  /**
+   * Brouillons de COMPOSITION (une campagne qu'on est en train d'écrire). Rien à voir avec
+   * `campaigns.status = 'draft'`, qui est une campagne complète et non lancée. OPTIONNEL : absent, les routes
+   * de brouillon ne sont pas montées et l'écran retombe sur son comportement d'avant.
+   */
+  drafts?: {
+    list(tenantId: string): Promise<Array<{ id: string; name: string; state: Record<string, unknown>; updatedAt: Date }>>;
+    create(tenantId: string, name: string, state: Record<string, unknown>): Promise<{ id: string; name: string; state: Record<string, unknown>; updatedAt: Date }>;
+    update(tenantId: string, id: string, name: string, state: Record<string, unknown>): Promise<boolean>;
+    remove(tenantId: string, id: string): Promise<boolean>;
+  };
   /** Le numéro appartient-il au tenant ? (empêche d'envoyer depuis le numéro d'autrui.) */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
@@ -86,6 +97,71 @@ function isCategory(v: unknown): v is CampaignCategory {
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
 export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+
+  /**
+   * Brouillons de COMPOSITION. Montés seulement si la dépendance est câblée.
+   *
+   * Ces routes n'ont AUCUN effet d'envoi : elles n'écrivent qu'un nom et l'état d'un écran. Elles restent
+   * pourtant réservées aux admins, comme tout ce groupe (`registerCampaigns` est monté avec `requireAdmin`) :
+   * un brouillon de campagne est une campagne en devenir, il n'y a pas de raison d'ouvrir l'un sans l'autre.
+   */
+  const drafts = deps.drafts;
+  if (drafts) {
+    /** Nom d'un brouillon : non vide et borné. Le nom sert d'étiquette, il n'est jamais interprété. */
+    const lireNom = (body: unknown): string | null => {
+      const n = (body as { name?: unknown } | null)?.name;
+      if (!nonEmpty(n)) return null;
+      const nom = (n as string).trim();
+      return nom.length <= 200 ? nom : null;
+    };
+    /** État de l'écran : un objet, jamais un tableau ni un scalaire. Absent -> objet vide. */
+    const lireEtat = (body: unknown): Record<string, unknown> | null => {
+      const s = (body as { state?: unknown } | null)?.state;
+      if (s === undefined || s === null) return {};
+      if (typeof s !== 'object' || Array.isArray(s)) return null;
+      return s as Record<string, unknown>;
+    };
+
+    app.get('/tenants/:tenantId/campaign-drafts', guard, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      return reply.code(200).send({ drafts: await drafts.list(tenant) });
+    });
+
+    app.post('/tenants/:tenantId/campaign-drafts', guard, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      const nom = lireNom(req.body);
+      if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 200 caractères max)' });
+      const etat = lireEtat(req.body);
+      if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
+      return reply.code(201).send({ draft: await drafts.create(tenant, nom, etat) });
+    });
+
+    app.put('/tenants/:tenantId/campaign-drafts/:draftId', guard, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      const nom = lireNom(req.body);
+      if (nom === null) return reply.code(400).send({ error: 'name requis (texte non vide, 200 caractères max)' });
+      const etat = lireEtat(req.body);
+      if (etat === null) return reply.code(400).send({ error: 'state invalide (objet)' });
+      const { draftId } = req.params as { draftId: string };
+      // 404 et non création : un identifiant inconnu vient soit d'un brouillon supprimé, soit d'un autre
+      // tenant. Créer à la volée sèmerait des brouillons chez autrui en devinant des identifiants.
+      const maj = await drafts.update(tenant, draftId, nom, etat);
+      if (!maj) return reply.code(404).send({ error: 'brouillon inconnu' });
+      return reply.code(200).send({ updated: true, draftId });
+    });
+
+    app.delete('/tenants/:tenantId/campaign-drafts/:draftId', guard, async (req, reply) => {
+      const tenant = scopeTenant(req);
+      if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+      const { draftId } = req.params as { draftId: string };
+      const supprime = await drafts.remove(tenant, draftId);
+      if (!supprime) return reply.code(404).send({ error: 'brouillon inconnu' });
+      return reply.code(200).send({ deleted: true, draftId });
+    });
+  }
 
   app.get('/tenants/:tenantId/campaigns', guard, async (req, reply) => {
     const tenant = scopeTenant(req);

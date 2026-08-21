@@ -9,6 +9,7 @@ import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
 import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
 import { PgCampaignRepo } from './campaign/store.pg';
+import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
@@ -81,6 +82,7 @@ async function main(): Promise<void> {
   await queue.start();
 
   const repo = new PgCampaignRepo(pool);
+  const campaignDraftStore = new PgCampaignDraftStore(pool);
   const contactStore = new PgContactStore(pool);
   const contactHistoryStore = new PgContactHistoryStore(pool);
   const templateHintStore = new PgTemplateHintStore(pool);
@@ -205,6 +207,7 @@ async function main(): Promise<void> {
     campaigns: {
       repo,
       queue,
+      drafts: campaignDraftStore,
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
