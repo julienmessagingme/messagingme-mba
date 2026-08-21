@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { verifyPassword, hashPassword, hashPasswordSync } from './password';
-import { signSession } from './token';
+import { signSession, signChoice, verifyChoice } from './token';
 import { RateLimiter } from './rate-limit';
 import type { UserAuthStore } from './store';
 import type { UserStateLoader, Guard } from './middleware';
@@ -104,16 +104,63 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
       return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
     }
 
-    const user = await deps.users.findByEmail(email);
-    // TOUJOURS vérifier un hash (leurre si user absent) : même temps CPU -> pas de fuite d'existence.
-    const ok = await verifyPassword(b.password, user?.passwordHash ?? DUMMY_HASH);
-    if (!user || !ok) {
+    const identite = await deps.users.findIdentity(email);
+    // TOUJOURS vérifier un hash (leurre si l'adresse est inconnue) : même temps CPU -> pas de fuite d'existence.
+    const ok = await verifyPassword(b.password, identite?.passwordHash ?? DUMMY_HASH);
+    if (!identite || !ok) {
       return reply.code(401).send({ error: 'identifiants invalides' });
     }
 
-    const token = await signSession({ userId: user.id, tenantId: user.tenantId, role: user.role }, deps.secret);
-    markLogin(deps, user.id);
-    return reply.code(200).send({ token, user: { email: user.email, role: user.role, tenantId: user.tenantId } });
+    // Une adresse peut donner accès à PLUSIEURS espaces (migration 0072). Le mot de passe est vérifié une
+    // fois, il vaut pour l'adresse ; reste à savoir dans lequel on entre.
+    //
+    // Un seul espace : on y va, exactement comme avant. C'est le cas de tout le monde aujourd'hui, et il ne
+    // doit surtout pas gagner un écran de plus.
+    const [premier, ...autres] = identite.comptes;
+    if (!premier) return reply.code(401).send({ error: 'identifiants invalides' });
+    if (autres.length === 0) {
+      const token = await signSession({ userId: premier.id, tenantId: premier.tenantId, role: premier.role }, deps.secret);
+      markLogin(deps, premier.id);
+      return reply.code(200).send({ token, user: { email: premier.email, role: premier.role, tenantId: premier.tenantId } });
+    }
+
+    // Plusieurs espaces : on DEMANDE. C'est la question que la migration 0010 avait esquivée en interdisant
+    // le cas, et y répondre au hasard (le premier trouvé) ferait entrer chez le mauvais client.
+    //
+    // 🔴 Aucun jeton n'est émis ici : un jeton par espace serait une distribution d'accès pour une seule
+    // demande. On rend un jeton de CHOIX, court, qui ne vaut que pour `/auth/choose-workspace`.
+    const choix = await signChoice(
+      { email, comptes: identite.comptes.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })) },
+      deps.secret,
+    );
+    return reply.code(200).send({
+      choiceToken: choix,
+      workspaces: identite.comptes.map((c) => ({ tenantId: c.tenantId, tenantName: c.tenantName, role: c.role })),
+    });
+  });
+
+  /**
+   * Deuxième temps d'une connexion à plusieurs espaces : on présente le jeton de choix et l'espace retenu.
+   *
+   * Le jeton de choix PORTE la liste des espaces autorisés, signée : l'espace demandé doit s'y trouver. Sans
+   * cela, il suffirait de présenter un jeton de choix légitime avec l'identifiant d'un espace quelconque.
+   */
+  app.post('/auth/choose-workspace', async (req, reply) => {
+    const b = (req.body ?? {}) as { choiceToken?: unknown; tenantId?: unknown };
+    if (typeof b.choiceToken !== 'string' || typeof b.tenantId !== 'string' || b.choiceToken === '' || b.tenantId === '') {
+      return reply.code(400).send({ error: 'choiceToken et tenantId requis' });
+    }
+    if (!limiter.take(rateKey(req, b.choiceToken))) {
+      return reply.code(429).send({ error: 'trop de tentatives, réessaie plus tard' });
+    }
+    const choix = await verifyChoice(b.choiceToken, deps.secret);
+    if (!choix) return reply.code(401).send({ error: 'choix expiré, reconnecte-toi' });
+    const compte = choix.comptes.find((c) => c.tenantId === b.tenantId);
+    if (!compte) return reply.code(403).send({ error: 'espace non autorisé pour cette adresse' });
+
+    const token = await signSession({ userId: compte.userId, tenantId: compte.tenantId, role: compte.role }, deps.secret);
+    markLogin(deps, compte.userId);
+    return reply.code(200).send({ token, user: { email: choix.email, role: compte.role, tenantId: compte.tenantId } });
   });
 
   // Config publique : le front en a besoin pour afficher (ou non) le bouton Google.
@@ -185,7 +232,12 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, requireA
     const generic = { ok: true, message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.' };
     if (EMAIL_RE.test(email) && deps.tokens && deps.sendEmail && deps.appUrl) {
       try {
-        const user = await deps.users.findByEmail(email); // null si inconnu / sans mdp (compte Google-only)
+        // Le jeton est rattaché à UN compte de l'adresse, mais `setPassword` écrit sur l'IDENTITÉ : le
+        // nouveau mot de passe vaut donc pour TOUS les espaces de cette adresse, ce qui est l'invariant
+        // voulu. Prendre un compte en particulier n'aurait aucun sens pour l'utilisateur, qui n'a qu'un
+        // mot de passe.
+        const identite = await deps.users.findIdentity(email); // null si inconnue / sans mdp (Google-only)
+        const user = identite?.comptes[0] ?? null;
         if (user) {
           const raw = await deps.tokens.create('reset', user.id, deps.resetTtlMs ?? 60 * 60 * 1000);
           // Envoi en FIRE-AND-FORGET : la réponse ne dépend pas de la latence réseau de Resend -> pas d'oracle

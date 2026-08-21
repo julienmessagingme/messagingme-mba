@@ -123,16 +123,43 @@ export class PgUserStore {
     return r ? { tenantId: r.tenant_id, role: r.role, email: r.email } : null;
   }
 
+  /**
+   * Identité d'une adresse : la trouve, ou la crée. Rend son identifiant.
+   *
+   * C'est ce qui fait qu'un DEUXIÈME espace créé avec la même adresse RÉUTILISE le mot de passe existant au
+   * lieu d'en demander un nouveau. Sans ce partage, l'utilisateur aurait deux mots de passe pour une seule
+   * adresse, ce qui est précisément ce que la conception écarte.
+   *
+   * `on conflict do nothing` puis relecture : deux inscriptions simultanées avec la même adresse ne doivent
+   * pas faire échouer la seconde, elles doivent converger vers la même identité.
+   */
+  private async ensureIdentity(
+    client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ id: string }>; rowCount: number | null }> },
+    email: string,
+    passwordHash: string | null,
+  ): Promise<string> {
+    await client.query(
+      `insert into identities (email, password_hash) values ($1, $2)
+       on conflict (lower(email)) do nothing`,
+      [email, passwordHash],
+    );
+    const res = await client.query(`select id from identities where lower(email) = lower($1)`, [email]);
+    return res.rows[0]!.id;
+  }
+
   /** Crée un compte EN ATTENTE (invitation) : sans mot de passe (login impossible tant que non finalisé via le
    *  lien). L'invité posera son mdp à l'acceptation. 409 (DuplicateEmailError) si l'email est déjà pris. */
   async createPending(tenantId: string, email: string, role: string): Promise<UserRow> {
     const code = makeCode('usr', await resolveTenantCode(this.pool, tenantId));
     try {
+      // L'identité est créée si l'adresse est nouvelle, RÉUTILISÉE sinon : un invité qui a déjà un compte
+      // ailleurs se connectera avec le mot de passe qu'il connaît déjà, sans repasser par le lien.
+      const identityId = await this.ensureIdentity(this.pool, email, null);
       const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; created_at: Date }>(
-        `insert into users (tenant_id, email, name, role, password_hash, code)
-         values ($1, $2, null, $3, null, $4)
+        `insert into users (tenant_id, email, name, role, password_hash, code, identity_id)
+         values ($1, $2, null, $3, null, $4, $5)
          returning id, email, name, role, created_at`,
-        [tenantId, email, role, code],
+        [tenantId, email, role, code, identityId],
       );
       const r = res.rows[0]!;
       return { id: r.id, email: r.email, name: r.name, role: r.role, code, disabled: false, pending: true, createdAt: r.created_at.toISOString(), lastLoginAt: null };
@@ -142,10 +169,36 @@ export class PgUserStore {
     }
   }
 
-  /** Pose (ou écrase) le hash de mot de passe d'un compte : finalisation d'invitation, reset. true si le user existe. */
+  /**
+   * Pose (ou écrase) le mot de passe : finalisation d'invitation, réinitialisation. `true` si le compte existe.
+   *
+   * 🔴 Écrit sur l'IDENTITÉ, pas sur le compte : une adresse a UN mot de passe, quel que soit le nombre
+   * d'espaces auxquels elle donne accès (migration 0072). Écrire sur le compte produirait le bug
+   * « mon mot de passe marche sur un espace et pas sur l'autre », que l'utilisateur ne peut pas comprendre.
+   *
+   * `users.password_hash` est mis à jour EN MIROIR le temps de la transition : tant que la migration 0073
+   * n'est pas appliquée, revenir en arrière ne doit priver personne de son mot de passe.
+   */
   async setPassword(userId: string, passwordHash: string): Promise<boolean> {
-    const res = await this.pool.query(`update users set password_hash = $2 where id = $1`, [userId, passwordHash]);
-    return (res.rowCount ?? 0) > 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const res = await client.query(
+        `update identities set password_hash = $2
+          where id = (select identity_id from users where id = $1)`,
+        [userId, passwordHash],
+      );
+      const miroir = await client.query(`update users set password_hash = $2 where id = $1`, [userId, passwordHash]);
+      await client.query('commit');
+      // Le compte existe si l'une OU l'autre écriture a porté : un compte sans identité (donnée antérieure à
+      // 0072 et non reprise) doit continuer à pouvoir poser son mot de passe.
+      return (res.rowCount ?? 0) > 0 || (miroir.rowCount ?? 0) > 0;
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -162,9 +215,12 @@ export class PgUserStore {
       // Racine « code client » posée à la création (déterministe depuis l'uuid, immuable) + code du 1er admin.
       const tcode = deriveTenantCode(tenantId);
       await client.query(`update tenants set public_code = $2 where id = $1`, [tenantId, tcode]);
+      // Même adresse qu'un espace existant -> on RÉUTILISE son identité, donc son mot de passe. C'est le
+      // cœur du multi-espaces : « une adresse, un mot de passe, plusieurs espaces ».
+      const identityId = await this.ensureIdentity(client, admin.email, admin.passwordHash);
       const u = await client.query<{ id: string }>(
-        `insert into users (tenant_id, email, name, role, password_hash, code) values ($1, $2, $3, 'admin', $4, $5) returning id`,
-        [tenantId, admin.email, admin.name, admin.passwordHash, makeCode('usr', tcode)],
+        `insert into users (tenant_id, email, name, role, password_hash, code, identity_id) values ($1, $2, $3, 'admin', $4, $5, $6) returning id`,
+        [tenantId, admin.email, admin.name, admin.passwordHash, makeCode('usr', tcode), identityId],
       );
       await client.query('commit');
       return { tenantId, userId: u.rows[0]!.id };

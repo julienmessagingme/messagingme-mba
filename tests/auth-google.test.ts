@@ -24,7 +24,7 @@ const fakeVerify = (idToken: string): Promise<GoogleIdentity | null> => {
 function app(over: Partial<AuthRouteDeps> = {}) {
   const cap: Cap = { created: [] };
   const deps: AuthRouteDeps = {
-    users: { findByEmail: async () => null },
+    users: { findIdentity: async () => null },
     secret: SECRET,
     getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }),
     createTenantWithAdmin: async (name, admin) => {

@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { SignJWT } from 'jose';
 import { signSession, verifySession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 
 /**
  * Session d'OBSERVATION : entrer dans l'espace d'un client depuis la surface d'exploitation, pour voir ce
@@ -16,7 +16,7 @@ import type { UserAuthStore, AuthUser } from '../src/auth/store';
  */
 const SECRET = 'test-secret';
 const OPS = 'ops-token-test';
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
 function app(over: Record<string, unknown> = {}) {
   return buildServer({

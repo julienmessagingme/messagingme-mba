@@ -9,7 +9,7 @@ import { signSession } from '../src/auth/token';
 
 /** Raccourci mono-écran des cas historiques de ce fichier : la production ne construit que du multi-écran. */
 const deriveElements = (elements: FlowElementInput[]) => deriveScreens([{ elements }])[0]!.elements;
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { FlowRouteDeps } from '../src/http/flows';
 import type { FlowRow } from '../src/flow/store.pg';
 
@@ -96,7 +96,7 @@ beforeAll(async () => {
   adminTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[]; ensuredOptin: number }

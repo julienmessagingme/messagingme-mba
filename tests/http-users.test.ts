@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import { DuplicateEmailError } from '../src/user/store.pg';
 import type { UserRow } from '../src/user/store.pg';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { UsersRouteDeps } from '../src/http/users';
 
 const SECRET = 'test-secret';
@@ -14,7 +14,7 @@ beforeAll(async () => {
   adminTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const EXISTING: UserRow = { id: 'u1', email: 'boss@demo.test', name: 'Boss', role: 'admin', disabled: false, pending: false, createdAt: '2026-07-01T00:00:00.000Z', lastLoginAt: '2026-07-17T09:30:00.000Z' };

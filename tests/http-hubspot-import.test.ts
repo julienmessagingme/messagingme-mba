@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import { ReconsentRequiredError } from '../src/crm/hubspot-service';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotImportRouteDeps } from '../src/http/hubspot-import';
 import type { HubspotList } from '../src/crm/hubspot-service';
 
@@ -16,7 +16,7 @@ beforeAll(async () => {
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
   otherTok = await signSession({ userId: 'u3', tenantId: 't2', role: 'admin' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 const LIST: HubspotList = { listId: '1', name: 'Chauds', size: 3, processingType: 'DYNAMIC' };
 

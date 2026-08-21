@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { hashPasswordSync } from '../src/auth/password';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, AuthUser, EmailIdentity } from '../src/auth/store';
 
 /**
  * Horodatage de la dernière connexion (colonne « Dernière connexion » de la page Équipe).
@@ -19,8 +19,18 @@ const ADMIN: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admi
 
 class FakeUsers implements UserAuthStore {
   constructor(private readonly rows: AuthUser[]) {}
-  async findByEmail(email: string): Promise<AuthUser | null> {
-    return this.rows.find((u) => u.email === email) ?? null;
+  /**
+   * Adapte les `AuthUser` du test à la nouvelle forme : une adresse porte UN mot de passe et un ou plusieurs
+   * espaces. Les tests existants décrivent une adresse par compte, ce qui reste le cas courant.
+   */
+  async findIdentity(email: string): Promise<EmailIdentity | null> {
+    const trouves = this.rows.filter((u) => u.email.toLowerCase() === email.toLowerCase());
+    const hash = trouves[0]?.passwordHash;
+    if (!hash) return null;
+    return {
+      passwordHash: hash,
+      comptes: trouves.map((u) => ({ id: u.id, tenantId: u.tenantId, tenantName: `Espace ${u.tenantId}`, email: u.email, role: u.role })),
+    };
   }
 }
 

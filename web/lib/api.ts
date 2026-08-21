@@ -19,8 +19,27 @@ export interface LoginResult {
   token: string;
   user: { email: string; role: string; tenantId: string };
 }
-export function login(email: string, password: string): Promise<LoginResult> {
-  return request<LoginResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+/** Un espace accessible avec l'adresse saisie, tel que l'écran de choix le présente. */
+export interface WorkspaceChoice { tenantId: string; tenantName: string; role: string }
+/**
+ * Réponse d'un login quand l'adresse donne accès à PLUSIEURS espaces : aucune session n'est émise, il faut
+ * choisir. `choiceToken` ne vaut que pour `chooseWorkspace`, et le serveur le refuse comme jeton d'API.
+ */
+export interface LoginChoice {
+  choiceToken: string;
+  workspaces: WorkspaceChoice[];
+}
+/** Le login rend SOIT une session (un seul espace, le cas courant), SOIT un choix à faire. */
+export type LoginOutcome = LoginResult | LoginChoice;
+export function isLoginChoice(r: LoginOutcome): r is LoginChoice {
+  return (r as LoginChoice).choiceToken !== undefined;
+}
+/** Deuxième temps : on présente le jeton de choix et l'espace retenu, et on obtient une vraie session. */
+export function chooseWorkspace(choiceToken: string, tenantId: string): Promise<LoginResult> {
+  return request<LoginResult>('/auth/choose-workspace', { method: 'POST', body: JSON.stringify({ choiceToken, tenantId }) });
+}
+export function login(email: string, password: string): Promise<LoginOutcome> {
+  return request<LoginOutcome>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 }
 /** Inscription libre : crée un espace + admin, renvoie une session (comme le login). */
 export function signup(input: { workspaceName: string; email: string; password: string; name?: string }): Promise<LoginResult> {

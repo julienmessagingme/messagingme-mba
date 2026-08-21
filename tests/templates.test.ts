@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { MetaTemplateClient } from '../src/meta/templates';
 import type { FetchLike } from '../src/meta/templates';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -13,7 +13,7 @@ beforeAll(async () => {
   token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
   agentToken = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
 function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown }>) {
   const calls: Array<{ url: string; init: RequestInit }> = [];

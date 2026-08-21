@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotInstallRouteDeps } from '../src/http/hubspot-install';
 
 const SECRET = 'test-secret';
@@ -17,7 +17,7 @@ beforeAll(async () => {
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
   otherAdminTok = await signSession({ userId: 'u3', tenantId: 't2', role: 'admin' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (tok: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${tok}` } });
 
 function app(over: Partial<HubspotInstallRouteDeps> = {}) {

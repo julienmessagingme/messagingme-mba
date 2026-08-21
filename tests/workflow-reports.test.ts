@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import { NomDeTableauDejaPris } from '../src/workflow/reports.pg';
 import type { WorkflowReportsRouteDeps } from '../src/http/workflow-reports';
 
@@ -19,7 +19,7 @@ beforeAll(async () => {
   adminTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 const REPORT = { id: 'rp1', workflowId: 'wf1', name: 'Entonnoir', mesures: [{ cle: 'n1|sent', label: 'Envoyés', kind: 'sent', handle: null }], updatedAt: '2026-08-19T10:00:00.000Z' };
 const url = '/tenants/t1/workflow-reports';

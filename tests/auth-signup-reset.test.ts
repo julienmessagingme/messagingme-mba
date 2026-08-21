@@ -5,7 +5,7 @@ import { signSession } from '../src/auth/token';
 import { hashPasswordSync } from '../src/auth/password';
 import { DuplicateEmailError } from '../src/user/store.pg';
 import type { AuthRouteDeps } from '../src/auth/routes';
-import type { AuthUser } from '../src/auth/store';
+import type { AuthUser, EmailIdentity } from '../src/auth/store';
 
 const SECRET = 'test-secret';
 const KNOWN_HASH = hashPasswordSync('current-pass-123');
@@ -19,7 +19,11 @@ interface Cap { created: Array<{ name: string; email: string }>; setPass: string
 function app(over: Partial<AuthRouteDeps> = {}) {
   const cap: Cap = { created: [], setPass: [], emails: [], tokens: [] };
   const deps: AuthRouteDeps = {
-    users: { findByEmail: async (email: string): Promise<AuthUser | null> => (email === 'known@x.fr' ? { id: 'u1', tenantId: 't1', role: 'admin', email, passwordHash: KNOWN_HASH } : null) },
+    users: {
+      findIdentity: async (email: string): Promise<EmailIdentity | null> => (email === 'known@x.fr'
+        ? { passwordHash: KNOWN_HASH, comptes: [{ id: 'u1', tenantId: 't1', tenantName: 'Espace 1', email, role: 'admin' }] }
+        : null),
+    },
     secret: SECRET,
     getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active' }),
     createTenantWithAdmin: async (name, admin) => { if (admin.email === 'taken@x.fr') throw new DuplicateEmailError(); cap.created.push({ name, email: admin.email }); return { tenantId: 'tNew', userId: 'uNew' }; },

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { ApiKeysRouteDeps } from '../src/http/api-keys';
 import type { ApiKeyRow } from '../src/auth/api-key-store.pg';
 
@@ -15,7 +15,7 @@ beforeAll(async () => {
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
   otherTok = await signSession({ userId: 'u3', tenantId: 't2', role: 'admin' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 function app(over: Partial<ApiKeysRouteDeps> = {}) {

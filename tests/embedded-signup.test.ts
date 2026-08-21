@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
 import { TenantConflictError } from '../src/account/es-store.pg';
 
@@ -13,7 +13,7 @@ beforeAll(async () => {
   adminTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 interface Cap {

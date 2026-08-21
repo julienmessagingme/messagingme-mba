@@ -7,13 +7,15 @@ import { PgTagStore } from '../src/crm/tag-store.pg';
 
 const CODE_RE = (type: string) => new RegExp(`^${type}_k7m2p3_[0-9A-HJKMNP-TV-Z]{26}$`);
 
-/** Fake pool : renvoie un public_code fixe pour resolveTenantCode, capture les INSERT. */
+/** Fake pool : public_code fixe pour resolveTenantCode, identité fixe pour ensureIdentity, capture les INSERT. */
 function fakePool() {
   const queries: Array<{ sql: string; params: unknown[] }> = [];
   const pool = {
     query: async (sql: string, params?: unknown[]) => {
       queries.push({ sql, params: params ?? [] });
       if (/select public_code/i.test(sql)) return { rows: [{ public_code: 'k7m2p3' }], rowCount: 1 };
+      // Identité de l'adresse (migration 0072) : créer un compte la trouve ou la crée avant l'INSERT du user.
+      if (/from identities/i.test(sql)) return { rows: [{ id: 'ident-1' }], rowCount: 1 };
       if (/returning/i.test(sql)) return { rows: [{ id: 'x1', email: 'a@b.fr', name: null, role: 'agent', created_at: new Date(0) }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },

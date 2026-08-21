@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { CampaignRepoLike } from '../src/campaign/create';
 import type { CreateCampaignInput } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
@@ -13,7 +13,7 @@ let token = '';
 beforeAll(async () => {
   token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
 class FakeRepo implements CampaignRepoLike {

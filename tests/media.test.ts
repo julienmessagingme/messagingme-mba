@@ -5,7 +5,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { FetchLike } from '../src/meta/templates';
-import type { UserAuthStore, AuthUser } from '../src/auth/store';
+import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { MediaRouteDeps } from '../src/http/media';
 
 function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown }>) {
@@ -60,7 +60,7 @@ beforeAll(async () => {
   adminTok = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
   agentTok = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
-const noUsers: UserAuthStore = { findByEmail: async (): Promise<AuthUser | null> => null };
+const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 const PNG_DATAURL = 'data:image/png;base64,' + Buffer.from([137, 80, 78, 71]).toString('base64');
 
