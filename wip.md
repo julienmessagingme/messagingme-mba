@@ -1,9 +1,9 @@
 # WIP
 
-## EN COURS (2026-08-21) — lot « 5 corrections », code ecrit, PAS deploye
+## LIVRE ET DEPLOYE le 2026-08-21 — lot « 5 corrections »
 
-Cinq demandes de Julien, traitees ensemble. Tout est verifie en local (tsc racine + web propres, suites
-unitaires et d'integration vertes, E2E cibles verts), rien n'est encore en production.
+Prod sur **`e77434d`**, migrations inchangees (**0073**), conteneurs sains. Cinq demandes de Julien,
+traitees ensemble.
 
 1. **Le nom de l'entreprise dans la miniature de template.** L'apercu affichait « Votre entreprise » sur
    100 % des rendus : la prop existait depuis toujours mais aucun ecran ne la passait. `PhoneFrame` resout
@@ -56,9 +56,21 @@ Les trois sont desormais NORMALISES a la frontiere reseau, avant d'entrer dans l
 tableau lu d'une reponse se traite comme optionnel, meme quand le contrat dit qu'il ne l'est pas. Le typage
 TypeScript ne couvre pas ce cas, il decrit ce que l'API PROMET.
 
-### A faire avant de deployer
-- Suite E2E COMPLETE (seuls les specs touches ont ete relances jusqu'ici).
-- Aucune migration dans ce lot : rien a appliquer avant. La derniere reste **0073**.
+### Verifie APRES deploiement, pas seulement en test
+- 🔴 **Le filtre des faux clics, mesure en PRODUCTION sur le vrai lien** : 3 robots
+  (`facebookexternalhit`, `curl`, `Googlebot`) + 1 relecteur Meta (vrai navigateur, referent
+  `lm.facebook.com`) -> compteur INCHANGE a 70. Puis un vrai destinataire, sur un telephone **CUBOT** (le
+  faux positif que la revue avait trouve) -> **71**. La redirection, elle, rend 302 vers la destination pour
+  TOUT LE MONDE, robots compris.
+  ⚠️ Le compteur de `testurl` est donc a 71 et non 70 : le +1 est mon clic de verification.
+- Le nouveau libelle du funnel est bien dans le bundle servi, et `tableaux-liens` n'y est plus.
+- `/api/backend/tenants/:t/stats/links` rend **404** : la route retiree a bien disparu.
+- Routes protegees en **401** (et non 500), `/health` en 200, aucune erreur dans les journaux des trois
+  conteneurs depuis le redemarrage.
+
+### Ce qui n'a PAS ete verifie en production
+- Le **nom de l'entreprise dans l'apercu** et la **cinematique du template** demandent une session connectee :
+  couverts par 8 tests E2E, pas re-joues sur la prod. A regarder au premier passage sur l'ecran.
 
 ### Trouve en chemin, corrige au passage
 - L'ecran de creation de campagne tombait ENTIEREMENT si `/contacts` rendait 200 sans le champ `contacts`
