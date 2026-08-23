@@ -73,6 +73,44 @@ export function isSystemFieldKey(key: string): boolean {
 }
 
 /**
+ * LIBELLÉS des champs de base, dans les DEUX langues. Miroir de `web/lib/fields.ts` (SYSTEM_FIELD_META),
+ * tenu par un test anti-dérive.
+ *
+ * 🔴 Pourquoi une liste EN PLUS des clés. Le garde-fou de création comparait le slug du libellé saisi aux
+ * seules CLÉS, qui sont anglaises (`name`, `phone`), alors que l'écran Champs affiche des libellés
+ * FRANÇAIS. Taper « Nom » produit le slug `nom`, absent de la liste : le doublon passait. L'espace se
+ * retrouvait avec deux entrées « Nom » indiscernables dans TOUS les sélecteurs de la console (variables de
+ * campagne, « Enregistrer dans » d'un formulaire, mapping d'un webhook), dont une qu'aucun chemin d'écriture
+ * ne peut jamais remplir : le nom et le téléphone vont dans les ATTRIBUTS du contact, pas dans le jsonb.
+ * Constaté sur un espace réel le 2026-08-23.
+ */
+export const SYSTEM_FIELD_LABELS: readonly string[] = [
+  'Nom', 'Name',
+  'Prénom', 'First name',
+  'Téléphone', 'Phone',
+  'BSUID',
+  'WhatsApp ID',
+  'Email',
+];
+
+/** Slugs interdits à la CRÉATION et au RENOMMAGE : les clés système, plus le slug de chaque libellé de base. */
+const SLUGS_RESERVES: ReadonlySet<string> = new Set([
+  ...SYSTEM_FIELD_KEYS,
+  ...SYSTEM_FIELD_LABELS.map((l) => slugify(l)),
+]);
+
+/**
+ * Ce libellé fabriquerait-il un doublon d'un champ de BASE ?
+ *
+ * ⚠️ Volontairement SÉPARÉE d'`isSystemFieldKey`, qui garde aussi la modification et la suppression.
+ * Élargir celle-là rendrait INDÉLÉBILES les doublons déjà créés (« champ système, non supprimable »),
+ * c'est-à-dire exactement les champs qu'il faut pouvoir nettoyer.
+ */
+export function isReservedFieldLabel(label: string): boolean {
+  return SLUGS_RESERVES.has(slugify(label));
+}
+
+/**
  * Champs SOCLES : les deux seuls champs système STOCKÉS dans `contacts.fields`. Les autres clés systèmes sont
  * des ATTRIBUTS (name/phone/bsuid/wa_id), résolus hors de ce jsonb. La fiche contact les propose dès l'ouverture
  * d'un espace.

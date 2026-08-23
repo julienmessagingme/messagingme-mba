@@ -139,3 +139,51 @@ describe('routes user-fields (CRUD)', () => {
     await server.close();
   });
 });
+
+/**
+ * Le libellé d'un champ perso ne doit pas fantômiser un champ de BASE.
+ *
+ * Vécu à corriger : le garde-fou comparait le slug du libellé aux seules CLÉS, qui sont anglaises
+ * (`name`, `phone`), alors que l'écran affiche des libellés FRANÇAIS. Un espace réel s'est retrouvé avec
+ * deux « Nom » et deux « Téléphone » indiscernables dans tous les sélecteurs, dont un exemplaire qu'aucun
+ * chemin d'écriture ne peut remplir.
+ */
+describe('routes user-fields : doublons d’un champ de base', () => {
+  it('🔴 POST d’un libellé de base -> 409 et rien de créé', async () => {
+    for (const label of ['Nom', 'Téléphone', 'nom', '  Nom  ', 'Name', 'Phone', 'Prénom', 'Email']) {
+      const { server, cap } = app();
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(adminTok), payload: { label, type: 'text' } });
+      expect(res.statusCode, label).toBe(409);
+      expect(res.json<{ error: string }>().error, label).toMatch(/champ de base/);
+      expect(cap.created, label).toHaveLength(0);
+      await server.close();
+    }
+  });
+
+  it('un libellé qui n’est PAS un champ de base passe toujours', async () => {
+    // Le garde-fou ne doit pas devenir un filtre à tout : ces libellés-là sont légitimes.
+    for (const label of ['Nom de la société', 'Téléphone du bureau', 'Date de livraison']) {
+      const { server, cap } = app();
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/user-fields', ...h(adminTok), payload: { label, type: 'text' } });
+      expect(res.statusCode, label).toBe(201);
+      expect(cap.created, label).toHaveLength(1);
+      await server.close();
+    }
+  });
+
+  it('🔴 RENOMMER un champ perso en « Nom » -> 409 (le doublon se crée aussi par cette porte)', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/user-fields/ville', ...h(adminTok), payload: { label: 'Nom' } });
+    expect(res.statusCode).toBe(409);
+    expect(cap.updated).toHaveLength(0);
+    await server.close();
+  });
+
+  it('renommer vers un libellé libre reste possible', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/user-fields/ville', ...h(adminTok), payload: { label: 'Commune' } });
+    expect(res.statusCode).toBe(200);
+    expect(cap.updated[0]).toMatchObject({ key: 'ville', patch: { label: 'Commune' } });
+    await server.close();
+  });
+});

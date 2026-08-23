@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { isUserFieldType, isSystemFieldKey, slugify } from '../crm/fields';
+import { isUserFieldType, isSystemFieldKey, isReservedFieldLabel, slugify } from '../crm/fields';
 import type { UserFieldDef, UserFieldType } from '../crm/types';
 import { scopeTenant, nonEmpty } from './scope';
 
@@ -37,8 +37,9 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
     if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label requis' });
     if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|datetime|boolean|url)' });
     const def: UserFieldDef = { key: slugify(b.label.trim()), label: b.label.trim(), type: b.type };
-    // La clé dérivée ne doit pas fantômiser un champ de base (ex. « BSUID » -> 'bsuid', « Prénom » -> 'prenom').
-    if (isSystemFieldKey(def.key)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
+    // Le libellé ne doit pas fantômiser un champ de base, ni par sa CLÉ dérivée (« BSUID » -> 'bsuid') ni
+    // par le libellé lui-même (« Nom », « Téléphone »), qui sont français là où les clés sont anglaises.
+    if (isReservedFieldLabel(def.label)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
     const res = await deps.createField(tenant, def);
     if (res === 'exists') return reply.code(409).send({ error: `un champ existe déjà pour cette clé (${def.key})` });
     return reply.code(201).send(def);
@@ -53,6 +54,9 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guar
     const patch: { label?: string; type?: UserFieldType } = {};
     if (b.label !== undefined) {
       if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label vide' });
+      // Même garde qu'à la création : renommer un champ perso en « Nom » fabriquerait le doublon par l'autre
+      // porte. La clé, elle, reste immuable, donc le renommage ne peut pas créer de collision de clé.
+      if (isReservedFieldLabel(b.label)) return reply.code(409).send({ error: `« ${b.label.trim()} » correspond à un champ de base déjà présent` });
       patch.label = b.label.trim();
     }
     if (b.type !== undefined) {
