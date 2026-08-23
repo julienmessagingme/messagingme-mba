@@ -11,6 +11,16 @@ import type { AutomationRow } from './match';
  * 🔴 Il PUBLIE, il ne démarre rien. Le scénario part par le chemin commun (`runAutomations`), donc avec les
  * mêmes garde-fous que tous les autres déclencheurs. Démarrer ici aurait dupliqué le contact bloqué, le
  * plafond horaire et « un seul parcours à la fois ».
+ *
+ * ⚠️ CONSÉQUENCE À CONNAÎTRE, mesurée en production le 2026-08-23. Quand le scénario ne DÉMARRE pas (fil tenu
+ * par un humain, scénario vide, bloc absent), `runAutomations` annule le tir : rien n'est parti, donc rien
+ * n'est à protéger. Le marqueur d'occurrence disparaît avec lui, et le balayage suivant REPUBLIE. L'échéance
+ * est donc retentée à chaque passage tant que la fenêtre de tolérance est ouverte, puis abandonnée.
+ *
+ * C'est le comportement voulu : un fil momentanément tenu par un opérateur doit pouvoir laisser passer le
+ * rappel une minute plus tard. Ça reste borné (la fenêtre), et aucun message ne part pendant les tentatives.
+ * En revanche un scénario structurellement cassé produit une ligne de journal par minute pendant la fenêtre :
+ * c'est bruyant, et c'est le signal qu'il y a quelque chose à corriger.
  */
 
 export interface DateSweepDeps {

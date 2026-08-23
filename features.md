@@ -712,6 +712,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   seulement qu'on a prévenu : la date change, l'occurrence est neuve. Sans ça, un report laisserait le client
   sans rien, en silence.
 - Les garde-fous habituels s'appliquent : contact bloqué, plafond horaire, un seul parcours à la fois.
+- **Si le scénario ne peut pas démarrer** (le fil est tenu par un opérateur à cet instant), le rappel est
+  retenté au passage suivant, tant que la courte fenêtre est ouverte. Rien ne part pendant les tentatives.
 
 ## Webhooks entrants (menu Tools)
 
