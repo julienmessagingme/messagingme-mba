@@ -1,4 +1,5 @@
 import type { UserFieldDef, UserFieldType } from './types';
+import { normaliserDate } from './date-iso';
 
 const COMBINING_MARKS = /[̀-ͯ]/g;
 
@@ -33,10 +34,10 @@ export function validateFieldValue(type: UserFieldType, value: string): boolean 
   if (v === '') return false;
   if (v.length > 1000) return false;
   if (type === 'number') return Number.isFinite(Number(v));
-  if (type === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
-  // datetime : date + heure ISO 8601. Accepte le format `datetime-local` (`YYYY-MM-DDTHH:MM`, heure MURALE sans
-  // fuseau, interprétée dans le fuseau tenant à l'évaluation) ET une forme absolue avec `Z`/offset (ce que pose NOW).
-  if (type === 'datetime') return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/.test(v) && !Number.isNaN(Date.parse(v));
+  // date et datetime : voir `date-iso.ts`. On accepte tout ce qui est NON AMBIGU (ISO avec `T` ou avec une
+  // espace, jour seul, epoch 10/13 chiffres) et on refuse le reste. Élargi le 2026-08-23 : un webhook tiers
+  // qui envoie `2026-08-23 15:40:00` était refusé alors que la valeur ne prête à aucune confusion.
+  if (type === 'date' || type === 'datetime') return normaliserDate(v, type).ok;
   if (type === 'boolean') return ['true', 'false', 'oui', 'non', '1', '0'].includes(v.toLowerCase());
   if (type === 'url') return /^https?:\/\/\S+$/i.test(v);
   return true; // text
@@ -54,6 +55,14 @@ const BOOLEAN_FALSE_TOKENS = new Set(['false', 'non', '0']);
  */
 export function canonicalizeFieldValue(type: UserFieldType, value: string): string {
   const v = value.trim();
+  // Une date est stockée sous sa forme INTERNATIONALE, quelle que soit celle par laquelle elle est arrivée :
+  // c'est ce qui permet de la comparer et de la trier ensuite (et, pour un futur déclencheur temporel, de
+  // savoir quand elle tombe). Défensif comme le reste : une valeur non normalisable ressort trimée telle
+  // quelle, la barrière étant `validateFieldValue` en amont.
+  if (type === 'date' || type === 'datetime') {
+    const n = normaliserDate(v, type);
+    return n.ok ? n.iso : v;
+  }
   if (type !== 'boolean') return v;
   const low = v.toLowerCase();
   if (BOOLEAN_TRUE_TOKENS.has(low)) return 'true';

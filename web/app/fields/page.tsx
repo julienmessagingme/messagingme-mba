@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listUserFields, createUserField, updateUserField, deleteUserField, type UserFieldDef, type UserFieldKind } from '@/lib/api';
+import { USER_FIELD_KINDS, USER_FIELD_KIND_LABELS } from '@/lib/field-kinds';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldCode } from '@/lib/fields';
 import { useT } from '@/lib/i18n';
 
@@ -13,14 +14,12 @@ export default function FieldsPage() {
 
 function FieldsInner({ session }: { session: Session }) {
   const t = useT();
-  const TYPES: { value: UserFieldKind; label: string }[] = [
-    { value: 'text', label: t('Texte', 'Text') },
-    { value: 'number', label: t('Nombre', 'Number') },
-    { value: 'date', label: t('Date', 'Date') },
-    { value: 'datetime', label: t('Date et heure', 'Date & time') },
-    { value: 'boolean', label: t('Oui/Non', 'Yes/No') },
-    { value: 'url', label: t('Lien', 'Link') },
-  ];
+  // Libellés partagés avec l'écran Webhooks (mapping), qui montre la nature du champ visé. Les recopier
+  // ferait diverger deux listes que l'utilisateur voit à quelques clics d'écart.
+  const TYPES: { value: UserFieldKind; label: string }[] = USER_FIELD_KINDS.map((value) => ({
+    value,
+    label: t(...USER_FIELD_KIND_LABELS[value]),
+  }));
   const [fields, setFields] = useState<UserFieldDef[]>([]);
   const [tenantCode, setTenantCode] = useState('');
   const [loading, setLoading] = useState(true);

@@ -12,6 +12,7 @@ const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', te
 const PAYLOAD = {
   client: { tel: '+33612345678', nom: 'Marie Durand', note: null },
   lignes: [{ prix: 42.5, ref: 'A-1' }],
+  envoye_le: '2026-08-23T15:40:00Z',
   'cle.avec.points': 'inadressable',
 };
 
@@ -24,10 +25,19 @@ const BASE = {
   createdAt: '2026-08-20T09:00:00.000Z',
 };
 
-interface Etat { patchs: Array<Record<string, unknown>>; crees: Array<Record<string, unknown>> }
+interface Etat {
+  patchs: Array<Record<string, unknown>>;
+  crees: Array<Record<string, unknown>>;
+  champsCrees: Array<Record<string, unknown>>;
+  /** Ce que le faux serveur rendra au prochain GET : la liste évolue quand on crée. */
+  champsEnBase: Array<{ key: string; label: string; type: string }>;
+}
 
 async function monter(page: import('@playwright/test').Page, hook: Record<string, unknown> | null): Promise<Etat> {
-  const etat: Etat = { patchs: [], crees: [] };
+  const etat: Etat = {
+    patchs: [], crees: [], champsCrees: [],
+    champsEnBase: [{ key: 'ville', label: 'Ville', type: 'text' }, { key: 'rdv', label: 'Rendez-vous', type: 'datetime' }],
+  };
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -41,7 +51,20 @@ async function monter(page: import('@playwright/test').Page, hook: Record<string
       if (method === 'DELETE') return route.fulfill({ status: 204, body: '' });
       return json({ webhooks: hook ? [hook] : [] });
     }
-    if (url.includes('/user-fields')) return json({ fields: [{ key: 'ville', label: 'Ville', type: 'text' }, { key: 'montant', label: 'Montant', type: 'text' }] });
+    if (url.includes('/user-fields')) {
+      // ⚠️ Le faux serveur porte un ÉTAT : un champ créé doit REVENIR dans la liste, sinon le menu n'a pas
+      // l'option correspondante et le `<select>` retombe silencieusement sur sa première valeur. Avec une
+      // liste figée, le test « la ligne pointe le nouveau champ » ne pouvait pas passer, et l'aurait fait
+      // accuser le code à tort.
+      if (method === 'POST') {
+        const b = JSON.parse(route.request().postData() ?? '{}') as { label: string; type: string };
+        etat.champsCrees.push(b);
+        const def = { key: 'envoye_le', label: b.label, type: b.type };
+        etat.champsEnBase.push(def);
+        return json(def, 201);
+      }
+      return json({ fields: [...etat.champsEnBase] });
+    }
     if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf1', name: 'Relance devis' }] });
     if (url.includes('/unread-count')) return json({ count: 0 });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -161,6 +184,69 @@ test.describe('Webhooks : mapper le JSON reçu', () => {
       createContact: true,
       enabled: true,
     });
+  });
+});
+
+test.describe('Webhooks : la nature du champ visé', () => {
+  const avecPayload = { ...BASE, lastPayload: PAYLOAD, lastReceivedAt: '2026-08-23T10:00:00.000Z' };
+
+  async function attacher(page: import('@playwright/test').Page, cle: string) {
+    await page.getByRole('button', { name: 'Formulaire du site' }).click();
+    await page.getByTestId('arbre-json').locator(`[data-cle="${cle}"]`).getByRole('button', { name: /Attacher|Attach/ }).click();
+  }
+
+  test('🔴 le menu des destinations montre la NATURE de chaque champ', async ({ page }) => {
+    // Sans elle, on ne sait pas si la valeur sera stockée comme une date ou comme du texte, alors que ça
+    // décide de tout ce qu'on pourra en faire ensuite.
+    await monter(page, avecPayload);
+    await attacher(page, 'envoye_le');
+    const menu = page.getByTestId('cible-0');
+    await expect(menu).toContainText(/Ville \((Texte|Text)\)/);
+    await expect(menu).toContainText(/Rendez-vous \((Date et heure|Date & time)\)/);
+  });
+
+  test('🔴 créer un champ à la volée propose « date et heure » sur une valeur qui EST une date', async ({ page }) => {
+    // C'est le coeur de la demande : une valeur comme « envoyé le » doit atterrir en date, pas en texte.
+    // En texte elle s'affiche pareil, mais on ne peut plus ni la comparer, ni déclencher un rappel dessus.
+    await monter(page, avecPayload);
+    await attacher(page, 'envoye_le');
+    await page.getByTestId('cible-0').selectOption('sys:nouveau');
+    await expect(page.getByTestId('creation-champ')).toBeVisible();
+    await expect(page.getByTestId('nouveau-champ-type')).toHaveValue('datetime');
+    // Le libellé est prérempli d'après le chemin : l'utilisateur n'a plus qu'à le corriger.
+    await expect(page.getByTestId('nouveau-champ-label')).toHaveValue('envoye_le');
+  });
+
+  test('une valeur textuelle propose « texte »', async ({ page }) => {
+    await monter(page, avecPayload);
+    await attacher(page, 'nom');
+    await page.getByTestId('cible-0').selectOption('sys:nouveau');
+    await expect(page.getByTestId('nouveau-champ-type')).toHaveValue('text');
+  });
+
+  test('🔴 le champ créé est envoyé avec son type, et la ligne le pointe AUSSITÔT', async ({ page }) => {
+    // Sans la sélection automatique, on crée un champ puis on doit le rechercher dans un menu qui vient de
+    // s'allonger.
+    const etat = await monter(page, avecPayload);
+    await attacher(page, 'envoye_le');
+    await page.getByTestId('cible-0').selectOption('sys:nouveau');
+    await page.getByTestId('nouveau-champ-label').fill('Envoyé le');
+    await page.getByTestId('creer-le-champ').click();
+    await expect.poll(() => etat.champsCrees.length).toBeGreaterThan(0);
+    expect(etat.champsCrees[0]).toEqual({ label: 'Envoyé le', type: 'datetime' });
+    await expect(page.getByTestId('creation-champ')).toHaveCount(0);
+    await expect(page.getByTestId('cible-0')).toHaveValue('field:envoye_le');
+  });
+
+  test('annuler la création laisse la ligne intacte', async ({ page }) => {
+    const etat = await monter(page, avecPayload);
+    await attacher(page, 'envoye_le');
+    const avant = await page.getByTestId('cible-0').inputValue();
+    await page.getByTestId('cible-0').selectOption('sys:nouveau');
+    await page.getByRole('button', { name: /Annuler|Cancel/ }).click();
+    await expect(page.getByTestId('creation-champ')).toHaveCount(0);
+    await expect(page.getByTestId('cible-0')).toHaveValue(avant);
+    expect(etat.champsCrees).toHaveLength(0);
   });
 });
 

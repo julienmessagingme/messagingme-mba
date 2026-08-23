@@ -1,5 +1,6 @@
 import { normalizePhone } from '../crm/phone';
 import { validateFieldValue, canonicalizeFieldValue, ensureFieldByKey } from '../crm/fields';
+import { normaliserDate, raisonDateLisible } from '../crm/date-iso';
 import { resolveFieldKey } from '../ids/resolve';
 import type { FieldLister } from '../ids/resolve';
 import type { PgContactStore } from '../crm/contact-store.pg';
@@ -66,7 +67,15 @@ export async function upsertContactsFromApi(
         defs.push({ key: resolved.key, label: resolved.key, type: 'text' } as UserFieldDef);
       }
       const val = String(rawVal);
-      if (!validateFieldValue(resolved.type, val)) { fieldError = `valeur invalide pour « ${resolved.key} » (${resolved.type})`; break; }
+      if (!validateFieldValue(resolved.type, val)) {
+        // Une date refusée dit POURQUOI : ambiguë, sans heure, ou illisible. « valeur invalide (datetime) »
+        // n'apprend rien à l'intégrateur d'un webhook, qui ne voit pas notre écran et ne peut que deviner.
+        const detail = resolved.type === 'date' || resolved.type === 'datetime'
+          ? raisonDateLisible((normaliserDate(val, resolved.type) as { raison: 'ambigu' | 'sans_heure' | 'illisible' }).raison)
+          : `valeur invalide (${resolved.type})`;
+        fieldError = `« ${resolved.key} » : ${detail}`;
+        break;
+      }
       fieldValues[resolved.key] = canonicalizeFieldValue(resolved.type, val);
     }
     if (fieldError) {

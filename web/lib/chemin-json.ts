@@ -27,6 +27,9 @@ export interface NoeudJson {
   type: 'objet' | 'tableau' | 'valeur';
   /** Aperçu court de la valeur, pour que l'utilisateur reconnaisse ce qu'il attache. */
   apercu: string;
+  /** La valeur BRUTE. Sert à proposer le bon type quand on crée un champ à la volée (`42.5` -> nombre,
+   *  `2026-08-23T15:40:00Z` -> date et heure), ce que l'aperçu, déjà mis en forme, ne permet pas. */
+  valeur: unknown;
   /** Attachable à un champ : valeur SCALAIRE, et chemin adressable. */
   attachable: boolean;
   enfants: NoeudJson[];
@@ -63,6 +66,7 @@ function noeud(cle: string, chemin: string | null, valeur: unknown, profondeur: 
     cle,
     type: typeDe(valeur),
     apercu: apercuValeur(valeur),
+    valeur,
     attachable: chemin !== null && estScalaire(valeur),
     enfants: enfantsDe(valeur, chemin, profondeur + 1),
   };
@@ -101,6 +105,22 @@ function enfantsDe(valeur: unknown, base: string | null, profondeur: number): No
 export function arbreDuPayload(payload: unknown): NoeudJson[] {
   if (payload === null || payload === undefined || typeof payload !== 'object') return [];
   return enfantsDe(payload, '', 0);
+}
+
+/**
+ * Chemin -> valeur brute, pour tous les noeuds attachables. Permet de retrouver l'échantillon d'une règle de
+ * mapping DÉJÀ enregistrée, et donc de proposer un type sans redemander quoi que ce soit.
+ */
+export function valeursParChemin(noeuds: readonly NoeudJson[]): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  const parcours = (liste: readonly NoeudJson[]): void => {
+    for (const n of liste) {
+      if (n.attachable) out.set(n.chemin, n.valeur);
+      parcours(n.enfants);
+    }
+  };
+  parcours(noeuds);
+  return out;
 }
 
 /** Tous les chemins ATTACHABLES d'un arbre, dans l'ordre d'affichage. Sert aux tests et à la recherche. */

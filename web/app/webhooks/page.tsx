@@ -7,9 +7,12 @@ import type { Session } from '@/lib/session';
 import {
   listWebhooks, createWebhook, updateWebhook, deleteWebhook,
   rotateWebhookSecret, clearWebhookSecret, forgetWebhookPayload,
-  listUserFields, listWorkflows,
-  type WebhookEntrant, type RegleMappingWebhook, type UserFieldDef, type WorkflowSummary,
+  listUserFields, createUserField, listWorkflows,
+  type WebhookEntrant, type RegleMappingWebhook, type UserFieldDef, type UserFieldKind, type WorkflowSummary,
 } from '@/lib/api';
+import { USER_FIELD_KINDS, USER_FIELD_KIND_LABELS } from '@/lib/field-kinds';
+import { arbreDuPayload, valeursParChemin } from '@/lib/chemin-json';
+import { typeSuggere } from '@/lib/type-suggere';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls, inputClsAuto, cardCls, kickerCls } from '@/lib/ui';
@@ -29,6 +32,9 @@ export default function WebhooksPage() {
 /** Destination d'une règle : le téléphone, le nom, ou un champ de contact. */
 const CIBLE_TELEPHONE = 'sys:phone';
 const CIBLE_NOM = 'sys:name';
+/** Valeur SENTINELLE du menu : « créer un champ ». Le préfixe `sys:` la met hors d'atteinte d'un vrai champ,
+ *  dont la valeur commence toujours par `field:`. */
+const CIBLE_NOUVEAU = 'sys:nouveau';
 
 function WebhooksInner({ session }: { session: Session }) {
   const t = useT();
@@ -224,16 +230,55 @@ function Detail({
   const [busy, setBusy] = useState(false);
   // Le clair du secret n'existe QUE dans la réponse de génération : il est gardé ici pour l'encart de copie.
   const [secretClair, setSecretClair] = useState<string | null>(null);
+  // Creation d'un champ a la volee, depuis la ligne de mapping qui l'a demandee.
+  const [creation, setCreation] = useState<{ index: number; label: string; type: UserFieldKind } | null>(null);
 
   const cheminsUtilises = useMemo(() => mapping.map((r) => r.chemin), [mapping]);
   const aTelephone = mapping.some((r) => r.cible === CIBLE_TELEPHONE);
 
-  /** Destinations proposées, dans l'ordre où on les cherche. */
+  /**
+   * Chemin -> valeur recue. Sert a proposer le bon type quand on cree un champ : un instant ISO propose
+   * << Date et heure >>, et c'est ce qui fait qu'une valeur comme << envoye le >> est stockee en date
+   * plutot qu'en texte, sans que personne ait a y penser.
+   */
+  const echantillons = useMemo(() => valeursParChemin(arbreDuPayload(hook.lastPayload)), [hook.lastPayload]);
+
+  /**
+   * Destinations proposees. Chaque champ porte sa NATURE : sans elle, on ne peut pas savoir si la valeur
+   * qu'on attache sera stockee comme une date ou comme du texte, alors que ca decide de tout ce qu'on
+   * pourra en faire ensuite.
+   */
   const cibles: Array<{ valeur: string; label: string }> = [
     { valeur: CIBLE_TELEPHONE, label: t('Téléphone (désigne le contact)', 'Phone (identifies the contact)') },
     { valeur: CIBLE_NOM, label: t('Nom', 'Name') },
-    ...champs.map((f) => ({ valeur: `field:${f.key}`, label: f.label })),
+    ...champs.map((f) => ({ valeur: `field:${f.key}`, label: `${f.label} (${t(...USER_FIELD_KIND_LABELS[f.type])})` })),
   ];
+
+  /** Ouvre le formulaire de creation pour cette ligne, prerempli d'apres la valeur recue. */
+  function demanderCreation(index: number) {
+    const chemin = mapping[index]?.chemin ?? '';
+    // Libelle propose : le dernier segment du chemin, que l'utilisateur corrige. Mieux qu'un champ vide.
+    const dernier = chemin.split('.').pop()?.replace(/\[\d+\]/g, '') ?? '';
+    setCreation({ index, label: dernier, type: typeSuggere(echantillons.get(chemin)) });
+  }
+
+  async function creerLeChamp() {
+    if (!creation || creation.label.trim() === '') return;
+    setBusy(true);
+    onErreur(null);
+    try {
+      const def = await createUserField(session.tenantId, { label: creation.label.trim(), type: creation.type });
+      // La ligne pointe le champ TOUT DE SUITE : sans ca, l'utilisateur cree un champ puis doit le
+      // rechercher dans un menu qui vient de s'allonger.
+      setMapping((m) => m.map((x, k) => (k === creation.index ? { ...x, cible: `field:${def.key}` } : x)));
+      setCreation(null);
+      await onChange(); // recharge la liste des champs, pour que le menu porte le nouveau
+    } catch (err) {
+      onErreur(err instanceof Error ? err.message : t('Création impossible', 'Creation failed'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function attacher(chemin: string) {
     // Le téléphone d'abord tant qu'il manque : c'est la seule destination sans laquelle rien ne peut se faire.
@@ -391,15 +436,20 @@ function Detail({
         ) : (
           <ul className="mt-2 space-y-2" data-testid="liste-mapping">
             {mapping.map((r, i) => (
-              <li key={`${r.chemin}-${i}`} className="flex items-center gap-2">
+              <li key={`${r.chemin}-${i}`} className="flex flex-wrap items-center gap-2">
                 <code className="min-w-0 flex-1 truncate rounded bg-ink-50 px-2 py-1 font-mono text-xs text-ink-700">{r.chemin}</code>
                 <span className="text-ink-400">→</span>
                 <select
                   value={r.cible}
-                  onChange={(e) => setMapping((m) => m.map((x, k) => (k === i ? { ...x, cible: e.target.value } : x)))}
+                  onChange={(e) => {
+                    if (e.target.value === CIBLE_NOUVEAU) { demanderCreation(i); return; }
+                    setMapping((m) => m.map((x, k) => (k === i ? { ...x, cible: e.target.value } : x)));
+                  }}
                   className={`${inputClsAuto} bg-white`}
+                  data-testid={`cible-${i}`}
                 >
                   {cibles.map((c) => <option key={c.valeur} value={c.valeur}>{c.label}</option>)}
+                  <option value={CIBLE_NOUVEAU}>{t('+ Créer un champ…', '+ Create a field…')}</option>
                 </select>
                 <button
                   onClick={() => setMapping((m) => m.filter((_, k) => k !== i))}
@@ -408,6 +458,36 @@ function Detail({
                 >
                   ✕
                 </button>
+                {creation?.index === i && (
+                  <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-brand-200 bg-brand-50/40 p-2" data-testid="creation-champ">
+                    <input
+                      value={creation.label}
+                      onChange={(e) => setCreation({ ...creation, label: e.target.value })}
+                      placeholder={t('Nom du champ', 'Field name')}
+                      className={`${inputClsAuto} min-w-0 flex-1 py-1`}
+                      data-testid="nouveau-champ-label"
+                    />
+                    <select
+                      value={creation.type}
+                      onChange={(e) => setCreation({ ...creation, type: e.target.value as UserFieldKind })}
+                      className={`${inputClsAuto} bg-white py-1`}
+                      data-testid="nouveau-champ-type"
+                    >
+                      {USER_FIELD_KINDS.map((k) => <option key={k} value={k}>{t(...USER_FIELD_KIND_LABELS[k])}</option>)}
+                    </select>
+                    <button
+                      onClick={() => { void creerLeChamp(); }}
+                      disabled={busy || creation.label.trim() === ''}
+                      className="rounded-lg bg-brand-500 px-3 py-1 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                      data-testid="creer-le-champ"
+                    >
+                      {t('Créer', 'Create')}
+                    </button>
+                    <button onClick={() => setCreation(null)} className="text-sm text-ink-500 hover:text-ink-800">
+                      {t('Annuler', 'Cancel')}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

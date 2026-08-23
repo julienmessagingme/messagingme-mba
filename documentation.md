@@ -896,6 +896,41 @@ description de 3000 caractères dans un champ voisin. Ce cas-là n'est pas une e
 du champ reste, elle, un refus complet avec sa raison : c'est une erreur de configuration, et la faire
 disparaître en silence empêcherait l'opérateur de la corriger.
 
+### Dates venues d'un tiers (2026-08-23, aucune migration)
+
+`src/crm/date-iso.ts` normalise vers l'ISO 8601, et sert `validateFieldValue` + `canonicalizeFieldValue`,
+donc TOUS les chemins d'écriture d'un champ (webhook, API publique, import CSV, fiche contact, formulaire).
+
+**La règle : on normalise ce qui est NON AMBIGU, on refuse le reste EN LE DISANT.**
+
+| Reçu | Résultat |
+|---|---|
+| `2026-08-23T15:40:00Z`, `...+02:00`, sans secondes | conservé tel quel |
+| `2026-08-23 15:40:00` (espace) | -> `2026-08-23T15:40:00` |
+| epoch 10 ou 13 chiffres | -> ISO UTC |
+| `2026-08-23` dans un champ `date` | conservé |
+| `2026-08-23` dans un champ `datetime` | **refusé** (`sans_heure`) |
+| `03/04/2026`, `23/08/2026`, `3.4.26` | **refusé** (`ambigu`) |
+| `2026-02-30`, `2026-08-23T25:00` | **refusé** (`illisible`) |
+
+🔴 **Pourquoi refuser plutôt que deviner.** Une date mal devinée ne ressemble pas à un bug, elle ressemble à
+une date. Elle ne se voit qu'au moment où un rappel part un mois trop tôt, chez le client. `23/08/2026` serait
+déchiffrable (23 ne peut pas être un mois), mais l'accepter pendant qu'on refuse `03/04/2026` rendrait la
+MÊME intégration tantôt bonne tantôt cassée selon le jour du mois : on refuse uniformément.
+
+🔴 **Pourquoi ne pas inventer minuit** sur un jour seul. C'était déjà le contrat (« date nue = pas datetime »,
+verrouillé par un test antérieur), et ça compte encore plus depuis qu'un déclencheur peut partir « X heures
+avant » cette valeur : un rappel réglé sur 2 h avant partirait à 22 h la VEILLE.
+
+⚠️ Une valeur SANS fuseau reste SANS fuseau : c'est une heure murale, interprétée dans le fuseau de l'espace
+à l'évaluation. Lui coller un `Z` la décalerait de plusieurs heures, silencieusement.
+
+⚠️ Une première version du motif « ambigu » acceptait 1 à 4 chiffres en tête, si bien que `2026-07-17` y
+tombait : toutes les dates ISO auraient été refusées. Attrapé par la suite existante, pas par un test neuf.
+
+Chaque refus remonte jusqu'à l'appelant (`raisonDateLisible`), donc un intégrateur de webhook lit
+« il manque l'heure » plutôt que « valeur invalide (datetime) ».
+
 ### Sécurité et RGPD
 
 - **Le tenant vient du CODE, jamais du corps.** `/hubspot/deal-stage` accepte un `tenantId` dans son payload :

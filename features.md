@@ -717,6 +717,18 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   garde-fous habituels s'appliquent tels quels : contact bloqué, anti-rebond par contact, plafond horaire, un
   seul parcours à la fois. ⚠️ Le contact n'a pas forcément écrit récemment : le scénario doit donc **commencer
   par un template approuvé**, sinon il est refusé au démarrage.
+- ✅ **On voit la NATURE de chaque champ, et on peut en créer un sans quitter l'écran** (2026-08-23). Le menu
+  des destinations affiche le type entre parenthèses (« Rendez-vous (Date et heure) ») : sans lui, on ne sait
+  pas si la valeur qu'on attache sera stockée comme une date ou comme du texte, alors que ça décide de tout
+  ce qu'on pourra en faire ensuite. Une entrée « + Créer un champ… » ouvre un mini-formulaire sur place, avec
+  le nom prérempli d'après la clé reçue et **le type deviné d'après la valeur** : une valeur comme
+  `2026-08-23T15:40:00Z` propose « Date et heure » toute seule. Le champ créé est aussitôt sélectionné.
+- ✅ **Les dates sont stockées au format international**, quelle que soit la forme reçue (2026-08-23). Un outil
+  qui envoie `2026-08-23 15:40:00` (espace au lieu du T) ou un horodatage epoch est accepté et converti. En
+  revanche `03/04/2026` est **refusé** : ça peut être le 3 avril ou le 4 mars, et deviner produirait des
+  rappels envoyés un mois à côté sans que rien ne le signale. Le refus dit quoi envoyer à la place. Une date
+  **sans heure** dans un champ date et heure est refusée pour la même raison : un rappel réglé « 2 h avant »
+  partirait à 22 h la veille.
 - ✅ **Un tableau se pointe élément par élément** : `lignes[0].prix` désigne le premier article, pas la liste.
   Une valeur qui désigne un **ensemble** (objet ou tableau) est refusée à la configuration, avec le message qui
   dit quoi faire : un ensemble écrit dans un champ rendrait la variable **vide** dans un template, sans erreur.
