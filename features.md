@@ -144,7 +144,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   stable qu'une future API utilisera. Les codes des blocs sont posés côté serveur à l'enregistrement (un code
   existant n'est jamais changé).
 
-## Templates (menu Contenu)
+## Templates WhatsApp (menu Contenu)
 
 - ✅ **Création** : template simple (**en-tête optionnel** texte / image / vidéo, corps + variables, **pied de
   page optionnel**, boutons quick-reply / URL / **Flow**) ou **carousel** (message d'introduction commun à
@@ -219,7 +219,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   éditable (seuls approuvé, refusé et suspendu le sont). Le message le dit explicitement.
 - ✅ **Suppression** : par nom (toutes langues) ; bloquée si une campagne active l'utilise.
 
-## Formulaires (WhatsApp Flows, menu Contenu)
+## Formulaires WhatsApp (WhatsApp Flows, menu Contenu)
 
 - ✅ **Constructeur visuel, tous les composants** : éléments ordonnables (monter / descendre / retirer) :
   titres (grand / sous-titre) / paragraphe / légende / **image** / saisies (texte, e-mail, téléphone, nombre,

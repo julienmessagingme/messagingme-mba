@@ -78,8 +78,8 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
     ] },
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
-      { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
-      { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
+      { key: 'templates', href: '/templates', label: t('Templates WhatsApp', 'WhatsApp templates') },
+      { key: 'flows', href: '/flows', label: t('Formulaires WhatsApp', 'WhatsApp forms') },
       { key: 'email-templates', href: '/email-templates', label: t('Modèles d’email', 'Email templates') },
       { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
