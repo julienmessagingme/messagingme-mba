@@ -107,6 +107,12 @@ export const schema = z.object({
   /** Rate limit de l'API publique /v1 : requêtes par clé et par fenêtre (en mémoire, par process). */
   API_KEY_RATE_LIMIT_MAX: z.coerce.number().default(60),
   API_KEY_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  /** Plafond de débit d'UN webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
+   *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
+  WEBHOOK_IN_RATE_LIMIT_MAX: z.coerce.number().default(120),
+  WEBHOOK_IN_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  /** Jours de conservation du dernier payload d'un webhook entrant. Voir la note RGPD de la migration 0074. */
+  WEBHOOK_PAYLOAD_RETENTION_DAYS: z.coerce.number().default(7),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

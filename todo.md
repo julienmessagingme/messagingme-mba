@@ -3,6 +3,24 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
+## Ouvert par le lot « webhooks entrants » (2026-08-23)
+
+- **Aucun appel d'un VRAI outil du marché.** L'arbre de mapping est éprouvé sur des payloads fabriqués. Ce
+  que Zapier, Make ou HubSpot envoient réellement (enveloppes, tableaux imbriqués, clés à points) n'a pas été
+  regardé. À faire au premier branchement client, en gardant le payload sous les yeux.
+- **Un type de valeur invalide fait échouer l'appel ENTIER.** `upsertContactsFromApi` refuse l'enregistrement
+  dès qu'une valeur ne passe pas la validation de son champ (du texte dans un champ nombre) : le téléphone est
+  perdu avec. Seule la LONGUEUR est filtrée en amont. Le corriger demanderait soit une écriture partielle dans
+  le chemin partagé (qui servirait aussi l'API publique et l'import), soit une validation par type dans la
+  route, donc une seconde copie des règles. À trancher si le cas se présente vraiment.
+- **Pas de journal des appels.** On garde le DERNIER payload, jamais un historique (choix RGPD). Un
+  intégrateur qui débogue « mon 3e appel n'a rien fait » n'a donc rien à regarder. Un journal des RÉSULTATS
+  sans les corps (horodatage, contact, champs, scénario) serait le bon compromis, il n'est pas fait.
+- **Le plafond de débit est en mémoire du process.** Comme celui de `/v1`. À plusieurs instances d'API, le
+  plafond réel est multiplié par leur nombre. Sans objet aujourd'hui (une seule instance).
+- **Un webhook désactivé rend 404, pas 410.** Un outil tiers ne peut donc pas distinguer « supprimé » de
+  « éteint ». C'est délibéré (ne rien révéler), mais ça complique le diagnostic côté client.
+
 ## Ouvert par le lot « 5 corrections » (2026-08-21)
 
 - **Le compteur de clics reste un compteur de TEMPLATE, pas de campagne.** Un lien ne sait pas quel envoi l'a
@@ -79,6 +97,9 @@ et les deux fichiers passent **25/25** et **6/6** en isolation, y compris avec 4
 | CI (rerun, même commit) | campaign-carousel + inbox-envoi-scenario |
 | local | campaign-carousel + inbox-envoi-scenario |
 | local | inbox-envoi-scenario seul, sur un AUTRE test du fichier |
+| local (23/08, suite complète) | inbox-envoi-scenario seul, « fenêtre FERMÉE » |
+| local (23/08, suite complète, rerun) | aucun, 246/246 |
+| local (23/08, fichier seul, 3 fois) | aucun, 5/5 à chaque fois |
 
 **Point commun constant** : le chargement de la liste des SCÉNARIOS (`wfSelect`, `scenario-select`), qui
 attend workflows ET templates puis filtre par éligibilité. Ce sont les deux écrans les plus lourds de la suite.

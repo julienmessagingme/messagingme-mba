@@ -72,6 +72,13 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     if (cfg.stageLabel !== undefined && typeof cfg.stageLabel !== 'string') return 'stageLabel (texte)';
     return null;
   }
+  if (kind === 'webhook') {
+    // 🔴 Fermé ICI, volontairement. `webhook` est un type d'automation VALIDE (le chemin chaud le lit), mais
+    // ses lignes sont POSSÉDÉES par un webhook entrant : créées, modifiées et supprimées par l'écran
+    // Tools > Webhooks, et exclues de la liste de cet écran-ci. En laisser créer une depuis ici produirait
+    // une automation active que son propre écran ne montre pas, et qu'aucun webhook ne détient.
+    return 'un déclencheur « webhook » se configure depuis l’écran Tools > Webhooks';
+  }
   return null; // new_contact : aucune config
 }
 

@@ -9,8 +9,8 @@ mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas 
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · mini-CRM · Campagnes · Scénario · Automation · MBA (Guide / Paramètres) · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Analytics (Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
-Les groupes **MBA**, **Contenu**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
+Admin : **Inbox · mini-CRM · Campagnes · Scénario · Automation · MBA (Guide / Paramètres) · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Tools (Webhooks) · Analytics (Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
+Les groupes **MBA**, **Contenu**, **Tools**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 - ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
@@ -696,6 +696,42 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Les messages d'erreur de l'embarquement sont enfin lisibles** : quand Meta refuse, on affiche SON motif
   (code expiré, compte non partagé, plusieurs numéros à départager) au lieu d'un « Erreur 502 » opaque.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
+
+## Webhooks entrants (menu Tools)
+
+- ✅ **Recevoir du JSON d'un outil tiers** (2026-08-23) : la console donne une **adresse** qu'on colle dans
+  Zapier, Make, un CRM ou le formulaire de son site. L'outil y poste du JSON quand il se passe quelque chose
+  chez lui (un formulaire soumis, une commande passée, un devis signé). C'est l'inverse de l'API publique :
+  là, c'est le tiers qui nous appelle, sans rien avoir à programmer.
+- ✅ **On choisit où va chaque valeur, en cliquant**. Le parcours est en trois temps, assumé par l'écran :
+  (1) on crée le webhook et on copie l'adresse ; (2) on déclenche un envoi de test depuis son outil ;
+  (3) le contenu reçu s'affiche **en arbre**, et chaque valeur porte un bouton « Attacher… » qui l'envoie
+  vers le **téléphone**, le **nom**, ou n'importe quel **champ de contact**. Tant qu'aucun appel n'est arrivé,
+  l'écran le dit au lieu d'afficher un formulaire vide.
+- ✅ **Le contact vient du CONTENU, pas de l'appelant.** L'outil qui appelle n'est pas le contact : c'est le
+  JSON qu'il envoie qui porte le téléphone et le nom. Une case **« créer les contacts inconnus »**, cochée par
+  défaut, décide si un appel concernant quelqu'un d'absent du mini-CRM crée sa fiche (avec un consentement
+  « inconnu », comme un import) ou se contente d'être enregistré. Le nombre de contacts créés par ce webhook
+  est affiché à côté de la case.
+- ✅ **Déclencher un scénario**, facultatif. Un webhook peut lancer un scénario à chaque appel exploitable. Les
+  garde-fous habituels s'appliquent tels quels : contact bloqué, anti-rebond par contact, plafond horaire, un
+  seul parcours à la fois. ⚠️ Le contact n'a pas forcément écrit récemment : le scénario doit donc **commencer
+  par un template approuvé**, sinon il est refusé au démarrage.
+- ✅ **Un tableau se pointe élément par élément** : `lignes[0].prix` désigne le premier article, pas la liste.
+  Une valeur qui désigne un **ensemble** (objet ou tableau) est refusée à la configuration, avec le message qui
+  dit quoi faire : un ensemble écrit dans un champ rendrait la variable **vide** dans un template, sans erreur.
+- ✅ **Secret facultatif**. On peut exiger un secret dans un en-tête ; il n'est montré qu'une fois, comme une
+  clé d'API. Facultatif parce qu'un formulaire de site ne sait souvent pas en poser, et l'exiger fermerait la
+  porte au cas le plus simple. L'adresse elle-même est déjà une clé (26 caractères tirés au sort).
+- ✅ **Le tiers ne reçoit jamais d'erreur pour un refus métier.** Un appel bien formé rend toujours un succès,
+  dont le corps dit ce qui s'est passé : contact créé / retrouvé / absent, nombre de champs écrits, scénario
+  lancé ou non, et les chemins du mapping qui n'ont rien rendu sur cet appel. Un outil tiers qui reçoit une
+  erreur réessaie en boucle, et beaucoup désactivent le webhook après quelques échecs.
+- **Ce qui est conservé** : seulement le **dernier** contenu reçu, jamais un historique, et il est effacé
+  automatiquement après 7 jours sans appel. Un bouton « oublier ce contenu » l'efface tout de suite. Le JSON
+  d'un tiers peut porter des données personnelles qu'on n'a pas demandées.
+- Réservé aux **admins** (côté serveur, pas seulement dans l'écran) : une adresse de webhook est un pouvoir
+  d'écriture sur le mini-CRM, et un pouvoir d'envoi quand un scénario y est attaché.
 
 ## API publique `/v1` (intégrateurs externes)
 

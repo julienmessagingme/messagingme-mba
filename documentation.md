@@ -63,6 +63,10 @@ Tables :
 - `workflows` (0022) — `name`, `status` ∈ draft|active, **`graph jsonb`** `{nodes[], edges[]}` (scope tenant).
 - `workflow_runs` (0023) — état d'exécution PAR contact : `workflow_id`, `contact_id`, `wa_id`, `current_node`,
   `status` ∈ waiting|inbox|done, `last_message_id` (dédup d'avance). Index partiel sur les runs `waiting`.
+- `webhooks` (0074) : webhooks ENTRANTS (menu Tools). `code` (26 car. base32, unique GLOBAL, c'est la clé
+  d'accès publique), `secret_hash` nullable, `mapping jsonb` (`[{chemin, cible}]`), `create_contact`,
+  **`automation_id`** (FK `automations` on delete set null) = la ligne compagnon qui porte le scénario,
+  `last_payload`/`last_received_at` (le DERNIER appel seulement), `contacts_created`.
 - `webhook_events` — log brut, `meta_message_id` unique (idempotence). pg-boss = schéma `pgboss` séparé.
 
 ## Flows (modèle riche, migration 0016)
@@ -284,7 +288,9 @@ Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (si
 `META_FLOW_JSON_VERSION`, `META_APP_ID` (=`988129420727963`, sert au FB.init + à l'échange de code ES),
 `AUTH_SECRET` (fail-fast en prod, >= 32 octets), `DATABASE_URL`, `DRY_RUN`, `RESEND_API_KEY` / `SUPPORT_FROM` /
 `SUPPORT_TO` (support), **`META_ES_CONFIG_ID`** (Embedded Signup ; vide → feature OFF, route 503), **`ENCRYPTION_KEY`**
-(64 hex ; chiffre les tokens business ES ; fail-fast prod si `META_ES_CONFIG_ID` posé). ⚠️ Un changement de `.env.prod`
+(64 hex ; chiffre les tokens business ES ; fail-fast prod si `META_ES_CONFIG_ID` posé),
+**`WEBHOOK_IN_RATE_LIMIT_MAX`** / **`WEBHOOK_IN_RATE_LIMIT_WINDOW_MS`** (débit d'UN webhook entrant, défaut
+120 par minute) et **`WEBHOOK_PAYLOAD_RETENTION_DAYS`** (défaut 7, purge du dernier payload). ⚠️ Un changement de `.env.prod`
 exige `docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
 
 ## Patterns
@@ -811,6 +817,97 @@ fil, ses messages, son analyse, un parcours et un déclenchement, purge, et RELI
   anti-drift : `PROFILE_NAME_SAVE_KEY` (web) === `PROFILE_NAME_TARGET` (serveur).
 - **Guide MBA** : page de CONTENU `web/app/mba/page.tsx` (nav `web/components/AppShell.tsx`, tab `mba`), aucune
   logique. Ton client, zéro mention d'infra. Config live parquée (ToS Meta Business AI + gating vertical).
+
+## Webhooks entrants (2026-08-23, migration 0074)
+
+Un outil tiers poste du JSON sur `POST /w/:code` ; on en extrait des valeurs vers la fiche contact, et on
+publie l'événement qui déclenchera le scénario configuré.
+
+### La décision structurante : le webhook POSSÈDE une automation
+
+La tentation était de poser `workflow_id` / `start_node_id` / `cooldown_seconds` sur la table `webhooks`,
+comme sur `automations`. On aurait alors DUPLIQUÉ la sémantique du déclenchement à deux endroits, avec deux
+jeux de garde-fous à maintenir.
+
+À la place, un webhook qui doit lancer un scénario possède une ligne `automations` de type `webhook`
+(`webhooks.automation_id`), et la route publique se contente de publier un événement dans la file
+`automation-event`. Le déclenchement passe donc par `runAutomations` et hérite **gratuitement** de ses six
+filtres : contact bloqué, correspondance, anti-rebond par contact, condition, plafond horaire, un seul
+parcours actif. Zéro logique de déclenchement nouvelle, une seule source de vérité.
+
+Cette ligne compagnon est POSSÉDÉE par son webhook :
+- créée, modifiée et supprimée par `PgWebhookStore`, dans une transaction (le lien est un invariant) ;
+- **exclue** de `PgAutomationStore.list`, donc invisible dans l'écran Automation (l'y montrer donnerait une
+  ligne que l'utilisateur n'a pas créée, et un second endroit pour la modifier, donc une désynchronisation) ;
+- **refusée** à la création depuis la route `/automations` (`validateTriggerConfig`), sinon on obtiendrait une
+  automation active que son propre écran ne montre pas et qu'aucun webhook ne détient.
+
+⚠️ `trigger_kind` n'a **aucune contrainte CHECK en base** (migration 0052) : ajouter le type `webhook` n'a
+demandé AUCUNE migration sur `automations`, exactement comme `hubspot_deal_stage` avant lui.
+
+### La route publique
+
+`POST /w/:code`, montée dans `buildServer` **avant** les gardes d'auth, aux côtés de `/r/:code`. Servie par le
+rewrite `/api/backend/:path*` du front, déjà en place : pas de rewrite dédié dans `next.config.mjs`, qui serait
+GELÉ au build de l'image web et casserait au premier `up -d` sans `--build`.
+
+1. Forme du code vérifiée AVANT toute requête SQL (26 car. base32).
+2. Code inconnu **ou webhook désactivé** rendent le MÊME 404. Secret exigé et absent, faux, ou d'un autre
+   webhook rendent le MÊME 401.
+3. Plafond de débit par WEBHOOK, pas par IP : l'IP d'un Zapier n'a aucune stabilité.
+4. ⚠️ **Le parseur JSON global transforme un corps invalide en `{}` sans lever** (il est écrit pour le webhook
+   Meta, où la signature tranche ensuite). On ne peut donc PAS conclure d'un objet vide qu'on a reçu du JSON
+   valide : la route relit le `rawBody` pour trancher, et rend 400.
+5. Le mapping est appliqué **en itérant sur NOTRE mapping, jamais sur les clés reçues** (même doctrine que
+   `web/lib/flow-mapping.ts`) : sinon un tiers écrirait où il veut en nommant ses clés comme nos champs.
+6. L'écriture du contact passe par `upsertContactsFromApi`, le chemin PARTAGÉ avec l'API publique et l'import.
+7. Le payload est enregistré dans `last_payload` **quoi qu'il arrive** : c'est ce qui alimente l'arbre de
+   mapping, et le seul moyen de déboguer « pourquoi rien ne se passe ».
+
+🔴 **Toujours 200 sur un appel bien formé, même si rien n'a été fait.** Un tiers qui reçoit une erreur
+réessaie en boucle, et beaucoup désactivent le webhook après quelques échecs. Le détail passe dans le corps :
+`{ ok, contact, champs, scenario, raison?, ignores? }`. Toute erreur destinée au tiers sort en **4xx**, jamais
+en 5xx (Cloudflare remplace le corps des 5xx par sa page).
+
+### Les chemins JSON, dupliqués des deux côtés
+
+`src/webhook-entrant/chemin.ts` LIT les chemins (`client.tel`, `lignes[0].prix`), `web/lib/chemin-json.ts` les
+FABRIQUE depuis l'arbre affiché. Les deux ne partagent aucun paquet (le front a son propre tsconfig), donc la
+grammaire est **dupliquée**, comme `lib/signature.ts` l'est avec mm-hubspot. Deux filets :
+- un **jeu de chemins d'or identique**, figé dans les tests des deux côtés ;
+- la route de configuration **REFUSE** un chemin qu'elle ne sait pas lire, donc une divergence sort en 4xx
+  visible au lieu de produire un mapping muet.
+
+Une clé contenant un point ou un crochet est **inadressable** : inventer une syntaxe d'échappement que
+personne ne saurait relire dans l'écran serait pire. L'arbre l'affiche mais la signale comme telle.
+
+### Deux refus qu'il faut comprendre
+
+🔴 **Une valeur non scalaire est refusée À LA CONFIGURATION.** Les valeurs de champ sont stockées en chaîne, et
+`contactVars` transforme en `null` toute valeur non primitive : un objet écrit dans un champ rendrait la
+variable **vide** dans un template, sans la moindre erreur. Le seul moment où l'utilisateur peut comprendre le
+problème, c'est quand il configure. La validation se fait contre `last_payload` ; un chemin qui ne résout pas
+est en revanche accepté, parce qu'un tiers n'envoie pas toujours ses champs facultatifs.
+
+🔴 **La LONGUEUR est filtrée en amont, le TYPE non.** `upsertContactsFromApi` refuse l'enregistrement ENTIER
+dès qu'une valeur est invalide : un téléphone parfaitement bon serait perdu parce qu'un tiers a envoyé une
+description de 3000 caractères dans un champ voisin. Ce cas-là n'est pas une erreur de mapping, donc
+`valeurTexte` écarte la seule valeur fautive et la RAPPORTE dans `ignores`. Une valeur invalide pour le TYPE
+du champ reste, elle, un refus complet avec sa raison : c'est une erreur de configuration, et la faire
+disparaître en silence empêcherait l'opérateur de la corriger.
+
+### Sécurité et RGPD
+
+- **Le tenant vient du CODE, jamais du corps.** `/hubspot/deal-stage` accepte un `tenantId` dans son payload :
+  tolérable pour un connecteur maison à secret unique, inacceptable pour une URL remise à Zapier.
+- Code de 26 caractères base32 (130 bits) : c'est une clé d'accès, pas un identifiant. `newTrackingCode` se
+  contente de 60 bits parce qu'il doit tenir dans une URL de bouton WhatsApp ; nous n'avons pas cette contrainte.
+- Secret d'en-tête **optionnel** (`X-Webhook-Secret`), stocké haché, comparé en temps constant.
+- Le CRUD de gestion est **admin only** (`requireAdmin` + `forbidNonAdmin`).
+- `last_payload` : le **dernier seulement**, jamais d'historique. Purge automatique à
+  `WEBHOOK_PAYLOAD_RETENTION_DAYS` jours sans appel (balayage du worker, toutes les 6 h) + bouton « oublier ».
+- ⚠️ `windowOpen = false` pour un événement webhook : le contact n'a pas forcément écrit, donc le scénario doit
+  ouvrir par un template approuvé, sinon la garde de l'exécuteur le refuse.
 
 ## Automation : déclencher un scénario sur un événement (Lots E / E.2, 2026-08-03, migrations 0052-0053)
 

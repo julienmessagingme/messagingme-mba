@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -30,6 +30,8 @@ const icons = {
   automation: 'M13 2L4.5 13H11l-1 9 8.5-11H12l1-9z',
   support: 'M12 22a10 10 0 100-20 10 10 0 000 20zM9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01',
   developers: 'M8 6l-5 6 5 6M16 6l5 6-5 6M13 4l-2 16',
+  // Tools : une prise. Ce menu regroupe ce qui BRANCHE la console sur l'extérieur.
+  tools: 'M9 2v6M15 2v6M7 8h10v5a5 5 0 01-10 0V8zM12 18v4',
   mba: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM6 19l.7 1.9L8.6 21l-1.9.7L6 23.6l-.7-1.9L3.4 21l1.9-.1L6 19z',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a1.65 1.65 0 00.33 1.82l.05.05a2 2 0 11-2.83 2.83l-.05-.05a1.65 1.65 0 00-2.82 1.17V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.05.05a2 2 0 11-2.83-2.83l.05-.05A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.05-.05a2 2 0 112.83-2.83l.05.05A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.05-.05a2 2 0 112.83 2.83l-.05.05A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z',
 };
@@ -84,6 +86,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
       { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
+    ] },
+    { key: 'tools', label: t('Tools', 'Tools'), d: icons.tools, children: [
+      { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
     ] },
     { key: 'analytics', label: t('Analytics', 'Analytics'), d: icons.analytics, children: [
       { key: 'dashboard', href: '/dashboard', label: t('Quantitatif', 'Quantitative') },

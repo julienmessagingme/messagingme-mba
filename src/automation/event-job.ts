@@ -56,6 +56,13 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     if (stageId === '') return null;
     return { tenantId: j.tenantId, event: { kind: 'hubspot_deal_stage', waId, pipelineId, stageId } };
   }
+  if (e.kind === 'webhook') {
+    // L'identifiant du webhook est le SEUL discriminant : sans lui, aucune automation ne peut correspondre,
+    // et un événement anonyme risquerait de déclencher les automations d'un AUTRE webhook.
+    const webhookId = typeof e.webhookId === 'string' ? e.webhookId.trim() : '';
+    if (webhookId === '') return null;
+    return { tenantId: j.tenantId, event: { kind: 'webhook', waId, webhookId } };
+  }
   // `message` n'a rien à faire dans la file : il est traité en direct dans le webhook, où le contexte
   // (isNewContact, consommation du message) n'existe que le temps du job. L'accepter ici ouvrirait un second
   // chemin de déclenchement au comportement subtilement différent.

@@ -29,6 +29,7 @@ import { PgContactStore } from './crm/contact-store.pg';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
+import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
@@ -633,6 +634,7 @@ async function main(): Promise<void> {
 
   // Sweeper d'idempotence API : purge les clés Idempotency-Key plus vieilles que 24h (fenêtre de dédup).
   const idempotencyStore = new PgApiIdempotencyStore(pool);
+  const webhookStore = new PgWebhookStore(pool);
   const idempotencySweep = async (): Promise<void> => {
     try {
       const n = await idempotencyStore.sweepOlderThan(24 * 60 * 60 * 1000);
@@ -647,6 +649,24 @@ async function main(): Promise<void> {
   void idempotencySweep();
   const idempotencySweeper = setInterval(() => void idempotencySweep(), 60 * 60 * 1000);
   idempotencySweeper.unref();
+
+  // RGPD : le dernier payload d'un webhook entrant est du JSON TIERS, donc potentiellement des données
+  // personnelles qu'on n'a pas demandées. Il n'existe que pour construire le mapping dans l'écran et pour
+  // déboguer ; passé une semaine sans appel, il n'a plus d'utilité et il est effacé.
+  const webhookPayloadSweep = async (): Promise<void> => {
+    try {
+      const n = await webhookStore.purgeStalePayloads(config.WEBHOOK_PAYLOAD_RETENTION_DAYS);
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`webhook-payload-sweep: ${n} payload(s) dormant(s) effacé(s)`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('webhook-payload-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:webhook-payload', `webhook-payload-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void webhookPayloadSweep();
+  const webhookPayloadSweeper = setInterval(() => void webhookPayloadSweep(), 6 * 60 * 60 * 1000);
+  webhookPayloadSweeper.unref();
 
   // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
   // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les
@@ -699,6 +719,7 @@ async function main(): Promise<void> {
     clearInterval(controlSweeper);
     clearInterval(handoffSweeper);
     clearInterval(idempotencySweeper);
+    clearInterval(webhookPayloadSweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     if (catchupSweeper) clearInterval(catchupSweeper);
     if (statusSweeper) clearInterval(statusSweeper);

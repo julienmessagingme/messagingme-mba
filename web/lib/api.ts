@@ -1490,6 +1490,68 @@ export function deleteAutomation(tenantId: string, id: string): Promise<void> {
   return request(`/tenants/${tenantId}/automations/${id}`, { method: 'DELETE' });
 }
 
+/* ------------------------------------------------------------------ Webhooks entrants (menu Tools) */
+
+/** Une règle de mapping : un chemin dans le JSON reçu -> une destination dans la fiche contact. */
+export interface RegleMappingWebhook { chemin: string; cible: string }
+
+export interface WebhookEntrant {
+  id: string;
+  name: string;
+  enabled: boolean;
+  code: string;
+  /** URL complète à coller chez le tiers. Calculée par le serveur : le front ne recompose jamais une URL. */
+  url: string;
+  /** Un secret est-il exigé ? Le clair n'est rendu QU'À sa génération, jamais ici. */
+  hasSecret: boolean;
+  mapping: RegleMappingWebhook[];
+  createContact: boolean;
+  workflowId: string | null;
+  startNodeId: string | null;
+  cooldownSeconds: number | null;
+  /** Le DERNIER appel reçu, jamais un historique. C'est lui qui alimente l'arbre de mapping. */
+  lastPayload: unknown;
+  lastReceivedAt: string | null;
+  contactsCreated: number;
+  createdAt: string;
+}
+
+export interface WebhookEntrantInput {
+  name?: string;
+  enabled?: boolean;
+  mapping?: RegleMappingWebhook[];
+  createContact?: boolean;
+  workflowId?: string | null;
+  startNodeId?: string | null;
+  cooldownSeconds?: number | null;
+}
+
+export function listWebhooks(tenantId: string): Promise<{ webhooks: WebhookEntrant[] }> {
+  return request(`/tenants/${tenantId}/webhooks`);
+}
+export function getWebhook(tenantId: string, id: string): Promise<{ webhook: WebhookEntrant }> {
+  return request(`/tenants/${tenantId}/webhooks/${id}`);
+}
+export function createWebhook(tenantId: string, input: WebhookEntrantInput): Promise<{ id: string; code: string; url: string }> {
+  return request(`/tenants/${tenantId}/webhooks`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function updateWebhook(tenantId: string, id: string, patch: WebhookEntrantInput): Promise<{ id: string }> {
+  return request(`/tenants/${tenantId}/webhooks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteWebhook(tenantId: string, id: string): Promise<void> {
+  return request(`/tenants/${tenantId}/webhooks/${id}`, { method: 'DELETE' });
+}
+/** Le clair n'est rendu QU'ICI, une seule fois : l'écran doit le montrer tout de suite. */
+export function rotateWebhookSecret(tenantId: string, id: string): Promise<{ secret: string; entete: string }> {
+  return request(`/tenants/${tenantId}/webhooks/${id}/secret`, { method: 'POST' });
+}
+export function clearWebhookSecret(tenantId: string, id: string): Promise<void> {
+  return request(`/tenants/${tenantId}/webhooks/${id}/secret`, { method: 'DELETE' });
+}
+export function forgetWebhookPayload(tenantId: string, id: string): Promise<void> {
+  return request(`/tenants/${tenantId}/webhooks/${id}/payload`, { method: 'DELETE' });
+}
+
 /** Lien de test d'un scénario (Lot F) : jeton stable + lien wa.me pré-rempli. `link` null = aucun numéro connecté. */
 export interface WorkflowTestLink { token: string; phone: string | null; link: string | null }
 export function createWorkflowTestLink(tenantId: string, workflowId: string): Promise<WorkflowTestLink> {

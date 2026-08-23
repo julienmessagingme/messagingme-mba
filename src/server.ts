@@ -31,6 +31,10 @@ import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
 import { registerHubspotInstall } from './http/hubspot-install';
 import { registerLinks } from './http/links';
+import { registerWebhookEntrant } from './http/webhook-entrant';
+import type { WebhookEntrantRouteDeps } from './http/webhook-entrant';
+import { registerWebhooksAdmin } from './http/webhooks-admin';
+import type { WebhooksAdminRouteDeps } from './http/webhooks-admin';
 import type { LinksRouteDeps } from './http/links';
 import { registerMba } from './http/mba';
 import { registerEmailRoutes } from './http/email';
@@ -146,6 +150,13 @@ export interface ServerDeps {
    * WhatsApp qui l'ouvre. Le tenant vient du code retrouvé en base, jamais de l'URL.
    */
   links?: LinksRouteDeps;
+  /**
+   * Réception PUBLIQUE des webhooks entrants (`POST /w/:code`). Aucune authentification : c'est un outil
+   * tiers qui poste. Le tenant vient du code retrouvé en base, jamais du corps.
+   */
+  webhookEntrant?: WebhookEntrantRouteDeps;
+  /** Gestion des webhooks entrants (écran Tools > Webhooks) — réservé aux admins. */
+  webhooksAdmin?: WebhooksAdminRouteDeps;
 }
 
 /**
@@ -154,7 +165,7 @@ export interface ServerDeps {
  * est dérivé du JWT, jamais de l'URL.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
-  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport || deps.hubspotInstall || deps.hubspotPipelines || deps.mba || deps.email) && !deps.auth) {
+  if ((deps.import || deps.campaigns || deps.admin || deps.flows || deps.templates || deps.support || deps.contacts || deps.account || deps.me || deps.workflows || deps.embeddedSignup || deps.apiKeys || deps.hubspotImport || deps.hubspotInstall || deps.hubspotPipelines || deps.mba || deps.email || deps.webhooksAdmin) && !deps.auth) {
     // Ces routes lisent req.auth (userId/tenant) ; sans auth, scopeTenant/forbidNonAdmin dégénèrent.
     throw new Error('buildServer: `auth` requis dès que les routes import/campaigns/admin/flows/templates/support/contacts sont exposées');
   }
@@ -228,6 +239,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // Aucune session n'est possible sur cette route (un destinataire clique depuis WhatsApp).
   if (deps.links) registerLinks(app, deps.links);
 
+  // Réception des webhooks entrants : PUBLIQUE elle aussi, montée ici avant les gardes d'auth. Aucune session
+  // n'est possible (l'appelant est un outil tiers, pas un humain).
+  if (deps.webhookEntrant) registerWebhookEntrant(app, deps.webhookEntrant);
+
   const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState) : undefined;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière
   // est au preHandler (source de vérité serveur) ; l'UI ne fait que masquer/rediriger en confort.
@@ -260,6 +275,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.mba) registerMba(app, deps.mba, requireAdmin);
   if (deps.email) registerEmailRoutes(app, deps.email, requireAdmin);
   if (deps.apiKeys) registerApiKeys(app, deps.apiKeys, requireAdmin);
+  if (deps.webhooksAdmin) registerWebhooksAdmin(app, deps.webhooksAdmin, requireAdmin);
   // API publique /v1 : autorité SÉPARÉE (clé d'API), montée comme /ops. Le rate limiter est un SINGLETON
   // (partagé entre requêtes). Chaque route compose [requireApiKey, requireScope('<scope>')].
   if (deps.v1) {

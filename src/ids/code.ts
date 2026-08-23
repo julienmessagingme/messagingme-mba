@@ -57,13 +57,30 @@ export function makeCode(type: EntityType, tenantCode: string): string {
  * compte puisque la route de redirection est publique par nature.
  */
 export function newTrackingCode(): string {
+  return codeAleatoire(12);
+}
+
+/**
+ * Code public d'un webhook ENTRANT : 26 caracteres base32 minuscules, soit 130 bits d'alea.
+ *
+ * Deux fois plus long que le code d'un lien trace, et c'est voulu : ce code n'est pas un identifiant, c'est
+ * la CLE D'ACCES. Il suffit a lui seul pour poster dans un espace, et il finit colle dans la configuration
+ * d'un outil tiers. `newTrackingCode` se contente de 60 bits parce qu'il doit tenir dans une URL de bouton
+ * WhatsApp ; nous n'avons pas cette contrainte, donc rien ne justifie d'economiser sur l'alea.
+ */
+export function newWebhookCode(): string {
+  return codeAleatoire(26);
+}
+
+/** Chaine base32 (Crockford) minuscule de `longueur` caracteres, tiree au sort. */
+function codeAleatoire(longueur: number): string {
   let out = '';
   let value = 0;
   let bits = 0;
-  for (const b of randomBytes(8)) {
+  for (const b of randomBytes(Math.ceil((longueur * 5) / 8))) {
     value = (value << 8) | b;
     bits += 8;
-    while (bits >= 5 && out.length < 12) {
+    while (bits >= 5 && out.length < longueur) {
       bits -= 5;
       out += CROCKFORD[(value >> bits) & 31]!;
       value &= (1 << bits) - 1;

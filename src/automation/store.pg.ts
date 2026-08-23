@@ -53,14 +53,34 @@ function toRow(r: Raw): AutomationRow | null {
 
 const COLS = 'id, tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds';
 
+/**
+ * Les automations de type `webhook` sont POSSEDEES par leur webhook entrant (migration 0074) : elles se
+ * creent, se modifient et se suppriment depuis l'ecran Tools > Webhooks, via `PgWebhookStore`, qui ecrit ses
+ * propres requetes.
+ *
+ * Ce predicat les met hors de portee de CE store, donc de l'ecran Automation : sinon un PATCH pourrait
+ * reaffecter une de ces lignes a un autre declencheur, ou un DELETE la retirer, en laissant un webhook qui
+ * croit encore declencher un scenario. L'invariant tenait jusqu'ici au seul fait que l'identifiant n'est
+ * expose nulle part ; il tient maintenant en base.
+ */
+const HORS_WEBHOOK = "and trigger_kind <> 'webhook'";
+
 /** Automations d'un tenant + garde-fou anti-rebond. Tout est scopé `tenant_id` sur CHAQUE requête. */
 export class PgAutomationStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Toutes les automations du tenant (écran Automation), les plus récentes d'abord. */
+  /**
+   * Automations du tenant (écran Automation), les plus récentes d'abord.
+   *
+   * ⚠️ Les automations de type `webhook` sont EXCLUES : elles sont possédées par leur webhook (migration
+   * 0074), créées et supprimées depuis l'écran Tools > Webhooks, et n'ont aucun sens hors de lui. Les
+   * afficher ici donnerait à l'utilisateur une ligne qu'il n'a pas créée, et un second endroit pour la
+   * modifier, donc une désynchronisation garantie. Seule `listEnabled` (chemin chaud) les voit.
+   */
   async list(tenantId: string): Promise<AutomationRow[]> {
     const res = await this.pool.query<Raw>(
-      `select ${COLS} from automations where tenant_id = $1 order by created_at desc limit 200`,
+      `select ${COLS} from automations
+        where tenant_id = $1 ${HORS_WEBHOOK} order by created_at desc limit 200`,
       [tenantId],
     );
     return res.rows.map(toRow).filter((a): a is AutomationRow => a !== null);
@@ -83,7 +103,7 @@ export class PgAutomationStore {
   /** UNE automation par id, scopée tenant. Lecture ciblée, contrairement à `list` qui est capée. */
   async getById(id: string, tenantId: string): Promise<AutomationRow | null> {
     const res = await this.pool.query<Raw>(
-      `select ${COLS} from automations where id = $1 and tenant_id = $2`,
+      `select ${COLS} from automations where id = $1 and tenant_id = $2 ${HORS_WEBHOOK}`,
       [id, tenantId],
     );
     const r = res.rows[0];
@@ -119,14 +139,15 @@ export class PgAutomationStore {
     if (patch.cooldownSeconds !== undefined) push('cooldown_seconds', patch.cooldownSeconds);
     if (sets.length === 0) return false;
     const res = await this.pool.query(
-      `update automations set ${sets.join(', ')}, updated_at = now() where id = $1 and tenant_id = $2`,
+      `update automations set ${sets.join(', ')}, updated_at = now()
+        where id = $1 and tenant_id = $2 ${HORS_WEBHOOK}`,
       vals,
     );
     return (res.rowCount ?? 0) > 0;
   }
 
   async remove(id: string, tenantId: string): Promise<boolean> {
-    const res = await this.pool.query(`delete from automations where id = $1 and tenant_id = $2`, [id, tenantId]);
+    const res = await this.pool.query(`delete from automations where id = $1 and tenant_id = $2 ${HORS_WEBHOOK}`, [id, tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
 

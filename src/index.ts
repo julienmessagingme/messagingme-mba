@@ -46,6 +46,8 @@ import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
 import { PgAutomationStore } from './automation/store.pg';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from './automation/event-job';
+import { PgWebhookStore } from './webhook-entrant/store.pg';
+import { RateLimiter } from './auth/rate-limit';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
@@ -103,6 +105,7 @@ async function main(): Promise<void> {
   const auditStore = new PgAuditStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
+  const webhookStore = new PgWebhookStore(pool);
   const reportStore = new PgWorkflowReportStore(pool);
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
@@ -232,6 +235,42 @@ async function main(): Promise<void> {
     links: {
       getByCode: (code) => trackedLinkStore.getByCode(code),
       recordClick: (code, tenant) => trackedLinkStore.recordClick(code, tenant),
+    },
+    // Réception PUBLIQUE des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
+    // l'écriture du contact passe par le MÊME chemin partagé que l'API publique et l'import CSV.
+    webhookEntrant: {
+      limiter: new RateLimiter(config.WEBHOOK_IN_RATE_LIMIT_MAX, config.WEBHOOK_IN_RATE_LIMIT_WINDOW_MS),
+      getByCode: (code) => webhookStore.getByCode(code),
+      recordCall: (tenant, id, payload, cree) => webhookStore.recordCall(tenant, id, payload, cree),
+      trouverWaId: async (tenant, waId) => ((await contactStore.findIdByWaId(tenant, waId)) ? waId : null),
+      ecrireContact: async (tenant, entree) => {
+        const [res] = await upsertContactsFromApi(
+          tenant,
+          [{ phone: entree.phone, fields: entree.fields, ...(entree.name ? { name: entree.name } : {}) }],
+          { contacts: contactStore, fields: fieldStore },
+        );
+        // Un seul item entré, donc un seul résultat. L'absence de résultat serait un bug d'`upsertContactsFromApi`,
+        // pas un cas métier : on le traite comme un refus plutôt que de laisser passer un succès imaginaire.
+        if (!res) return { statut: 'error' as const, raison: 'contact non écrit' };
+        return res.status === 'error'
+          ? { statut: 'error' as const, ...(res.reason ? { raison: res.reason } : {}) }
+          : { statut: res.status };
+      },
+      publish: async (tenantId, event) => {
+        await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId, event } satisfies AutomationEventJob);
+      },
+    },
+    webhooksAdmin: {
+      list: (tenant) => webhookStore.list(tenant),
+      get: (tenant, id) => webhookStore.get(tenant, id),
+      create: (tenant, input) => webhookStore.create(tenant, input),
+      update: (tenant, id, input) => webhookStore.update(tenant, id, input),
+      remove: (tenant, id) => webhookStore.remove(tenant, id),
+      rotateSecret: (tenant, id) => webhookStore.rotateSecret(tenant, id),
+      clearSecret: (tenant, id) => webhookStore.clearSecret(tenant, id),
+      forgetPayload: (tenant, id) => webhookStore.forgetPayload(tenant, id),
+      workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
+      baseUrl: config.APP_URL,
     },
     templates: {
       templatesFor: (tenant) => metaFactory.templateClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil

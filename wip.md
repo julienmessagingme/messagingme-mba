@@ -1,5 +1,57 @@
 # WIP
 
+## CODE, VERT, PAS ENCORE DEPLOYE (2026-08-23) : webhooks entrants (menu Tools)
+
+Prod toujours sur **`e77434d`**, migrations **0073**. Ce lot apporte la migration **0074**, qui doit etre
+appliquee AVANT le deploiement du code.
+
+Ce que ca fait : un outil tiers (Zapier, Make, un CRM, le formulaire d'un site) poste du JSON sur une adresse
+que la console fournit ; on choisit en cliquant ou va chaque valeur (telephone, nom, champs de contact) et on
+peut declencher un scenario. L'appelant n'est PAS le contact : c'est le CONTENU recu qui porte le telephone
+et le nom, precision de Julien du 2026-08-23.
+
+Decision d'architecture a retenir : un webhook qui declenche un scenario **possede** une ligne `automations`
+de type `webhook` (`webhooks.automation_id`). On n'a donc ecrit AUCUNE logique de declenchement : les six
+garde-fous de `runAutomations` s'appliquent tels quels. Cette ligne est invisible dans l'ecran Automation, et
+cet ecran refuse d'en creer une. Detail complet : `documentation.md` §Webhooks entrants.
+
+Etat des portes, mesure :
+- racine `tsc` + `vitest` : **2158 tests** verts (2091 avant le lot, donc **67 nouveaux**).
+- integration (base reelle) : **146 tests**, 141 verts + **6 nouveaux** sur l'appartenance des automations de
+  webhook. Les **5 echecs** sont l'`ENCRYPTION_KEY` absente du `.env` LOCAL, connu et sans rapport (`todo.md`).
+- web `tsc` + `vitest` : **107 tests** verts (**11 nouveaux**). `npm run build` passe, la route `/webhooks`
+  est generee. `next lint` : aucun avertissement sur les fichiers neufs.
+- E2E Playwright : **246 tests** verts (234 avant, donc **12 nouveaux**).
+- Chaque test nouveau a ete verifie DANS LES DEUX SENS (mutation du code, echec constate, restauration).
+
+Revue adversariale (agent separe, contexte isole) : **aucun rouge**. Trois points verifies un par un puis
+corriges dans la foulee :
+- Deux tests sur le secret **ne pouvaient pas echouer** : ils passaient par un faux store qui ne portait de
+  toute facon aucun secret. La vraie frontiere est `toRow`, qui SELECTIONNE `secret_hash` et n'en garde que le
+  booleen ; elle est desormais exportee et testee directement, et le faux store porte un etat.
+- L'appartenance d'une automation a son webhook ne tenait qu'a un fait de presentation (l'identifiant n'est
+  expose nulle part). Elle tient maintenant EN BASE : un predicat dans les quatre requetes de
+  `PgAutomationStore`, avec un test d'integration qui le verifie dans les deux sens.
+- Deux commentaires qui mentaient : un renvoi a une variable d'environnement inexistante, et une regle
+  << jamais de 5xx >> que le code contredit deliberement en cas de panne de la file.
+
+⚠️ En restaurant une mutation de test, un `git checkout` sur un fichier NON SUIVI par git n'a rien restaure :
+la mutation (une fuite de l'empreinte du secret) est restee en place quelques minutes. Defaire une mutation
+sur un fichier neuf demande une copie de sauvegarde, pas git.
+
+Deux tests ecrits pendant ce lot **ne pouvaient pas echouer** et ont ete corriges :
+- un test de « repli du mapping » qui passait aussi en dernier-gagne, parce qu'une regle qui ne resout pas
+  n'atteint jamais l'affectation. Refait avec deux chemins qui resolvent tous les deux.
+- deux tests E2E « pas attachable » dont le selecteur ne trouvait AUCUNE ligne : `toHaveCount(0)` sur un
+  locator vide est toujours vrai. Les lignes de l'arbre portent maintenant un `data-cle`, et le test verifie
+  d'abord que la ligne existe.
+
+Reste a faire avant de considerer le lot fini :
+- **Appliquer 0074 sur le VPS**, puis deployer (`git log <commit-deploye>..HEAD` d'abord).
+- **Le premier appel reel** depuis un vrai Zapier / Make : jamais fait. L'arbre est teste sur des payloads
+  fabriques, pas sur ce qu'un outil du marche envoie vraiment.
+- Verification a l'oeil du parcours « je cree, je copie l'URL, j'envoie un test, je mappe » (hors boucle).
+
 ## LIVRE ET DEPLOYE le 2026-08-21 — lot « 5 corrections »
 
 Prod sur **`e77434d`**, migrations inchangees (**0073**), conteneurs sains. Cinq demandes de Julien,

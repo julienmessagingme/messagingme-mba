@@ -25,7 +25,12 @@ import type { ConditionGroup } from '../workflow/conditions';
  * d'étape, jamais par libellé : un client qui renomme son étape dans HubSpot casserait sinon son
  * automation sans que rien ne le dise. Le libellé n'est stocké que pour l'affichage.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage'] as const;
+/**
+ * `webhook` : un outil tiers a posté sur l'URL d'un webhook entrant (menu Tools). Réglé par IDENTIFIANT de
+ * webhook. Ces automations sont POSSÉDÉES par leur webhook : créées et supprimées depuis l'écran
+ * Tools > Webhooks, et l'écran Automation ne les liste pas (voir migration 0074).
+ */
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook'] as const;
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);
@@ -60,7 +65,12 @@ export type AutomationEvent =
    * stables au renommage. Le contact est déjà résolu en `waId` par le connecteur : sans numéro exploitable,
    * l'événement n'atteint jamais mba (rien à joindre).
    */
-  | { kind: 'hubspot_deal_stage'; waId: string; pipelineId: string; stageId: string };
+  | { kind: 'hubspot_deal_stage'; waId: string; pipelineId: string; stageId: string }
+  /**
+   * Un webhook entrant a reçu un appel exploitable. Le contact est déjà résolu en `waId` par la route : sans
+   * téléphone exploitable, l'événement n'est jamais publié (il n'y aurait personne à joindre).
+   */
+  | { kind: 'webhook'; waId: string; webhookId: string };
 
 /** Minuscules, sans accents, espaces resserrés : même esprit que la recherche de blocs (web/lib/node-search). */
 export function normalizeText(v: string): string {
@@ -120,6 +130,14 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     // le test de bout en bout, après le même oubli un cran plus haut (analyseur de file).
     const pipeline = String(a.triggerConfig.pipelineId ?? '').trim();
     return pipeline === '' || ev.pipelineId === '' || pipeline === ev.pipelineId;
+  }
+  if (a.triggerKind === 'webhook') {
+    if (ev.kind !== 'webhook') return false;
+    // Égalité stricte sur l'identifiant : ce n'est pas un libellé saisi, il n'y a rien à normaliser. Webhook
+    // non configuré -> n'attrape RIEN, même doctrine que le tag vide (une automation inerte plutôt qu'une
+    // automation qui part sur tous les webhooks de l'espace).
+    const attendu = String(a.triggerConfig.webhookId ?? '').trim();
+    return attendu !== '' && attendu === ev.webhookId;
   }
   if (a.triggerKind === 'conversation_analyzed') {
     if (ev.kind !== 'analysis') return false;
