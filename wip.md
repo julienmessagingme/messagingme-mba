@@ -1,9 +1,11 @@
 # WIP
 
-## CODE, VERT, PAS ENCORE DEPLOYE (2026-08-23) : webhooks entrants (menu Tools)
+## LIVRE ET DEPLOYE le 2026-08-23 : webhooks entrants (menu Tools)
 
-Prod toujours sur **`e77434d`**, migrations **0073**. Ce lot apporte la migration **0074**, qui doit etre
-appliquee AVANT le deploiement du code.
+Prod sur **`c109449`**, migration **0074** appliquee AVANT le code (image rebatie d'abord, sinon `migrate`
+annonce << a jour >> depuis une image perimee). Les trois conteneurs sont sains et rattaches a
+`mcp-robot_default`. Trois commits sont partis : le lot webhooks, le renommage du menu Contenu, et la
+doc du lot precedent. Aucun n'etait le chantier d'une autre session.
 
 Ce que ca fait : un outil tiers (Zapier, Make, un CRM, le formulaire d'un site) poste du JSON sur une adresse
 que la console fournit ; on choisit en cliquant ou va chaque valeur (telephone, nom, champs de contact) et on
@@ -46,11 +48,26 @@ Deux tests ecrits pendant ce lot **ne pouvaient pas echouer** et ont ete corrige
   locator vide est toujours vrai. Les lignes de l'arbre portent maintenant un `data-cle`, et le test verifie
   d'abord que la ligne existe.
 
-Reste a faire avant de considerer le lot fini :
-- **Appliquer 0074 sur le VPS**, puis deployer (`git log <commit-deploye>..HEAD` d'abord).
-- **Le premier appel reel** depuis un vrai Zapier / Make : jamais fait. L'arbre est teste sur des payloads
+Verifie EN PRODUCTION, avec un webhook sonde cree puis supprime (mapping sans telephone, donc aucun contact
+ne pouvait etre cree ; verifie apres coup : 0 contact, 0 webhook restant) :
+- Appel bien forme -> **200** avec le corps complet, et la raison exacte (aucun champ du mapping ne vise le
+  telephone).
+- Corps non-JSON -> **400 `corps JSON invalide`**. C'est la preuve que la relecture du `rawBody` marche a
+  travers Cloudflare + le rewrite Next + Fastify, la ou le parseur global aurait rendu un `{}` muet.
+- Corps vide -> **400** explicite. Le payload est enregistre a l'identique, avec son horodatage.
+- Code inconnu et code mal forme -> **404**. CRUD admin sans jeton -> **401**. Page `/webhooks` -> **200**.
+- Non-regression : `/r/:code` rend toujours 404, le handshake Meta toujours 403, `/live` toujours 200.
+- Les corps 4xx passent INTACTS a travers Cloudflare : c'est exactement pourquoi tout refus metier sort en
+  4xx et jamais en 5xx.
+
+⚠️ Le code de la sonde avait d'abord ete choisi avec des lettres EXCLUES de l'alphabet base32 (i, l, o, u).
+La route l'aurait rejete a la verification de forme, et j'aurais conclu a une panne. Un code de test se tire
+avec le meme alphabet que `newWebhookCode`, pas a la main.
+
+Reste a faire :
+- **Le premier appel d'un VRAI outil** (Zapier, Make) : jamais fait. L'arbre est teste sur des payloads
   fabriques, pas sur ce qu'un outil du marche envoie vraiment.
-- Verification a l'oeil du parcours « je cree, je copie l'URL, j'envoie un test, je mappe » (hors boucle).
+- Verification a l'oeil du parcours de bout en bout (creer, copier l'URL, envoyer un test, mapper).
 
 ## LIVRE ET DEPLOYE le 2026-08-21 — lot « 5 corrections »
 
