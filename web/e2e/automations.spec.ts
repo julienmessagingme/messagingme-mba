@@ -139,3 +139,78 @@ test.describe('Automation : déclencheur « étape de deal HubSpot »', () => {
     await expect(page.getByTestId('automation-deal-stage')).toHaveCount(0);
   });
 });
+
+/**
+ * Déclencheur « X avant une date du contact » (2026-08-23).
+ *
+ * Ce qu'il faut protéger ici : le menu ne doit proposer QUE des champs date et heure. Un champ texte
+ * accepterait la configuration et ne partirait jamais, sans que rien ne le dise.
+ */
+test.describe('Automation : un délai avant une date', () => {
+  const SESSION_B = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
+
+  async function monter(page: import('@playwright/test').Page, champs: Array<{ key: string; label: string; type: string }>) {
+    const posted: Array<Record<string, unknown>> = [];
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION_B);
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.endsWith('/automations') && req.method() === 'POST') {
+        posted.push(req.postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'a1' }) });
+      }
+      if (url.endsWith('/automations')) return json({ automations: [] });
+      if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf1', name: 'Rappel', graph: { nodes: [], edges: [] } }] });
+      if (url.includes('/user-fields')) return json({ fields: champs });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/automations');
+    await page.getByTestId('automation-add').click();
+    await page.getByTestId('automation-trigger').selectOption('avant_date');
+    return posted;
+  }
+
+  test('🔴 seuls les champs DATE ET HEURE sont proposés', async ({ page }) => {
+    // Un champ texte accepterait la config et ne partirait jamais : l'automation aurait l'air réglée.
+    await monter(page, [
+      { key: 'rdv', label: 'Rendez-vous', type: 'datetime' },
+      { key: 'ville', label: 'Ville', type: 'text' },
+      { key: 'naissance', label: 'Naissance', type: 'date' },
+    ]);
+    const menu = page.getByTestId('avant-date-champ');
+    await expect(menu).toContainText('Rendez-vous');
+    await expect(menu).not.toContainText('Ville');
+    await expect(menu).not.toContainText('Naissance');
+  });
+
+  test('🔴 sans aucun champ date et heure, l’écran DIT quoi faire', async ({ page }) => {
+    // Un menu vide laisserait chercher ce qui manque.
+    await monter(page, [{ key: 'ville', label: 'Ville', type: 'text' }]);
+    await expect(page.getByTestId('avant-date-aucun-champ')).toContainText(/Champs|Fields/);
+  });
+
+  test('🔴 la configuration envoyée porte le champ, le délai et l’unité', async ({ page }) => {
+    const posted = await monter(page, [{ key: 'rdv', label: 'Rendez-vous', type: 'datetime' }]);
+    await page.getByTestId('automation-name').fill('Rappel 48 h avant');
+    await page.getByTestId('avant-date-delai').fill('48');
+    await page.getByTestId('avant-date-unite').selectOption('heures');
+    await page.getByTestId('avant-date-champ').selectOption('rdv');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await page.getByTestId('automation-submit').click();
+    await expect.poll(() => posted.length).toBeGreaterThan(0);
+    expect(posted[0]).toMatchObject({
+      triggerKind: 'avant_date',
+      triggerConfig: { fieldKey: 'rdv', delai: 48, unite: 'heures' },
+      enabled: false,
+    });
+  });
+
+  test('sans champ choisi, l’enregistrement reste impossible', async ({ page }) => {
+    await monter(page, [{ key: 'rdv', label: 'Rendez-vous', type: 'datetime' }]);
+    await page.getByTestId('automation-name').fill('Incomplet');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await expect(page.getByTestId('automation-submit')).toBeDisabled();
+  });
+});

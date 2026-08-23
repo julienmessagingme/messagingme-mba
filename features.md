@@ -697,6 +697,22 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   (code expiré, compte non partagé, plusieurs numéros à départager) au lieu d'un « Erreur 502 » opaque.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
+## Rappels avant une date (menu Automation)
+
+- ✅ **Lancer un scénario X minutes, heures ou jours AVANT une date du contact** (2026-08-23). On choisit un
+  champ de type « date et heure », un nombre et une unité : « 48 heures avant Rendez-vous ». C'est le seul
+  déclencheur qui ne répond pas à un événement mais au temps qui passe.
+- **Seuls les champs date et heure sont proposés.** Un champ texte accepterait la configuration et ne
+  partirait jamais : l'automation aurait l'air réglée. S'il n'y en a aucun, l'écran dit où en créer un.
+- ✅ **Une échéance déjà passée n'envoie RIEN.** Un webhook reçu en retard, ou un import de vieux
+  rendez-vous, ne déclenche pas une salve de rappels périmés : un rappel « 48 h avant » qui part 12 h avant
+  dit quelque chose de faux au client. Une courte fenêtre de rattrapage existe quand même, pour qu'un
+  redémarrage du serveur ne fasse pas perdre les échéances de la minute d'avant.
+- ✅ **Un rendez-vous REPORTÉ redonne un rappel.** On retient pour quelle date on a déjà prévenu, pas
+  seulement qu'on a prévenu : la date change, l'occurrence est neuve. Sans ça, un report laisserait le client
+  sans rien, en silence.
+- Les garde-fous habituels s'appliquent : contact bloqué, plafond horaire, un seul parcours à la fois.
+
 ## Webhooks entrants (menu Tools)
 
 - ✅ **Recevoir du JSON d'un outil tiers** (2026-08-23) : la console donne une **adresse** qu'on colle dans

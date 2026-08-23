@@ -63,6 +63,15 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     if (webhookId === '') return null;
     return { tenantId: j.tenantId, event: { kind: 'webhook', waId, webhookId } };
   }
+  if (e.kind === 'avant_date') {
+    // L'identifiant de l'automation ET la valeur sont exiges : sans le premier l'evenement partirait sur
+    // toutes les automations de date de l'espace, sans la seconde on ne saurait pas pour quelle occurrence
+    // on a tire, et un rendez-vous reporte ne redonnerait rien.
+    const automationId = typeof e.automationId === 'string' ? e.automationId.trim() : '';
+    const valeur = typeof e.valeur === 'string' ? e.valeur.trim() : '';
+    if (automationId === '' || valeur === '') return null;
+    return { tenantId: j.tenantId, event: { kind: 'avant_date', waId, automationId, valeur } };
+  }
   // `message` n'a rien à faire dans la file : il est traité en direct dans le webhook, où le contexte
   // (isNewContact, consommation du message) n'existe que le temps du job. L'accepter ici ouvrirait un second
   // chemin de déclenchement au comportement subtilement différent.

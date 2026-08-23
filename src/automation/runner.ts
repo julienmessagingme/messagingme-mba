@@ -24,8 +24,14 @@ export interface AutomationRunnerDeps {
   listEnabled(tenantId: string, kinds: readonly AutomationTriggerKind[]): Promise<AutomationRow[]>;
   /** Dernier déclenchement de cette automation pour ce contact. null = jamais déclenché. */
   lastFiredAt(automationId: string, waId: string): Promise<Date | null>;
-  /** Enregistre le déclenchement (upsert). Appelé AVANT le démarrage : voir la note anti-boucle plus bas. */
-  markFired(automationId: string, waId: string): Promise<void>;
+  /**
+   * Enregistre le déclenchement (upsert). Appelé AVANT le démarrage : voir la note anti-boucle plus bas.
+   *
+   * `marqueur` retient POUR QUELLE occurrence on a tiré. Seul `avant_date` s'en sert : une date qui change
+   * est une occurrence neuve, et le balayage a besoin de distinguer « déjà tiré » de « déjà tiré POUR CETTE
+   * date », sans quoi un rendez-vous reporté ne redonnerait aucun rappel.
+   */
+  markFired(automationId: string, waId: string, marqueur?: string): Promise<void>;
   /**
    * Annule le déclenchement enregistré. Appelé quand le scénario n'a PAS démarré (`false`) : dans ce cas rien
    * n'a été envoyé (les gardes de l'exécuteur agissent AVANT tout envoi), donc consommer l'anti-rebond
@@ -76,6 +82,7 @@ function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
   if (ev.kind === 'tag_added') return ['tag_added'];
   if (ev.kind === 'hubspot_deal_stage') return ['hubspot_deal_stage'];
   if (ev.kind === 'webhook') return ['webhook'];
+  if (ev.kind === 'avant_date') return ['avant_date'];
   return ['conversation_analyzed'];
 }
 
@@ -108,8 +115,14 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
   let started = 0;
   for (const a of candidates) {
     try {
-      const last = await deps.lastFiredAt(a.id, ev.waId);
-      if (isInCooldown(last, a.cooldownSeconds, deps.defaultCooldownSeconds, now())) continue;
+      // L'anti-rebond ne s'applique PAS à `avant_date`. Il protège d'un même événement qui se répète ;
+      // ici l'unicité est déjà garantie, et plus finement, par le marqueur d'occurrence que le balayage
+      // consulte. L'appliquer en plus empêcherait un rendez-vous reporté à l'intérieur du délai de
+      // redonner son rappel, ce qui est exactement ce qu'on veut permettre.
+      if (ev.kind !== 'avant_date') {
+        const last = await deps.lastFiredAt(a.id, ev.waId);
+        if (isInCooldown(last, a.cooldownSeconds, deps.defaultCooldownSeconds, now())) continue;
+      }
 
       if (a.conditionGroup) {
         if (!ctxLoaded) { ctx = await deps.evalContext(tenantId, ev.waId); ctxLoaded = true; }
@@ -143,7 +156,7 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
 
       // Anti-boucle : on marque AVANT de démarrer, pour qu'un scénario qui repose lui-même le déclencheur ne
       // reboucle pas même si le démarrage lève une exception à mi-chemin (un envoi a pu partir).
-      await deps.markFired(a.id, ev.waId);
+      await deps.markFired(a.id, ev.waId, ev.kind === 'avant_date' ? ev.valeur : undefined);
       const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, a.startNodeId, windowOpen);
       // `false` OU une chaîne (la raison du refus) = PAS parti. Tester la simple vérité JS comptait une
       // chaîne comme un succès : le tir restait marqué et l'anti-rebond avalait en silence la prochaine

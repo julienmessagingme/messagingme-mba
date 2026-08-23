@@ -30,7 +30,12 @@ import type { ConditionGroup } from '../workflow/conditions';
  * webhook. Ces automations sont POSSÉDÉES par leur webhook : créées et supprimées depuis l'écran
  * Tools > Webhooks, et l'écran Automation ne les liste pas (voir migration 0074).
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook'] as const;
+/**
+ * `avant_date` : un dela, avant la date stockee dans un champ du contact. Le seul declencheur qui ne repond
+ * pas a un evenement mais a l'ECOULEMENT DU TEMPS : c'est un balayage qui le leve (`automation/date-sweep`),
+ * et c'est lui qui a deja tranche l'echeance. Voir `automation/avant-date.ts`.
+ */
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date'] as const;
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);
@@ -70,7 +75,12 @@ export type AutomationEvent =
    * Un webhook entrant a reçu un appel exploitable. Le contact est déjà résolu en `waId` par la route : sans
    * téléphone exploitable, l'événement n'est jamais publié (il n'y aurait personne à joindre).
    */
-  | { kind: 'webhook'; waId: string; webhookId: string };
+  | { kind: 'webhook'; waId: string; webhookId: string }
+  /**
+   * L'echeance d'une date de champ est arrivee. `valeur` est la date TELLE QU'ELLE EST STOCKEE : elle sert
+   * de marqueur d'occurrence, pour qu'un rendez-vous reporte redonne un rappel.
+   */
+  | { kind: 'avant_date'; waId: string; automationId: string; valeur: string };
 
 /** Minuscules, sans accents, espaces resserrés : même esprit que la recherche de blocs (web/lib/node-search). */
 export function normalizeText(v: string): string {
@@ -138,6 +148,12 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     // automation qui part sur tous les webhooks de l'espace).
     const attendu = String(a.triggerConfig.webhookId ?? '').trim();
     return attendu !== '' && attendu === ev.webhookId;
+  }
+  if (a.triggerKind === 'avant_date') {
+    if (ev.kind !== 'avant_date') return false;
+    // L'echeance a deja ete calculee par le balayage, qui connaissait le fuseau de l'espace et l'etat des
+    // tirs precedents. La recalculer ici la ferait diverger : l'evenement designe donc SON automation.
+    return a.id === ev.automationId;
   }
   if (a.triggerKind === 'conversation_analyzed') {
     if (ev.kind !== 'analysis') return false;

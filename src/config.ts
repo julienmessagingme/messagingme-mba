@@ -166,6 +166,11 @@ export const schema = z.object({
    *  l'analyse de tous ses destinataires) peut produire des milliers d'événements. 200/h laisse passer tout
    *  usage normal et transforme une erreur de configuration en incident borné plutôt qu'en facture. 0 = pas de plafond. */
   AUTOMATION_MAX_FIRES_PER_HOUR: z.coerce.number().default(200),
+  /** Cadence du balayage des échéances (déclencheur « X avant la date d'un champ »). */
+  AUTOMATION_DATE_SWEEP_INTERVAL_MS: z.coerce.number().default(60_000),
+  /** Fenêtre de rattrapage APRÈS le moment prévu. Elle absorbe un redémarrage du worker, PAS un vrai retard :
+   *  au-delà, on n'envoie rien (un rappel « 48 h avant » qui part 12 h avant dit quelque chose de faux). */
+  AUTOMATION_DATE_TOLERANCE_MINUTES: z.coerce.number().default(60),
   /** Au-delà de ce délai sans avancer, un parcours en attente est considéré ABANDONNÉ et ne bloque plus le
    *  déclenchement d'une automation pour ce contact. Sans cette borne, un contact qui ne répond jamais serait
    *  définitivement injoignable par une automation. 7 jours : bien au-delà d'un aller-retour normal. */

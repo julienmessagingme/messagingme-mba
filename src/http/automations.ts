@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { isAutomationTriggerKind, keywordsOf } from '../automation/match';
+import { coerceConfigAvantDate, UNITES_DELAI, DELAI_MAX_MINUTES } from '../automation/avant-date';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
 import { scopeTenant, nonEmpty } from './scope';
@@ -70,6 +71,15 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     // rappeler HubSpot. Il n'entre JAMAIS dans le matching, sinon un renommage côté HubSpot casserait
     // l'automation en silence, ce qui est précisément ce qu'on cherche à éviter.
     if (cfg.stageLabel !== undefined && typeof cfg.stageLabel !== 'string') return 'stageLabel (texte)';
+    return null;
+  }
+  if (kind === 'avant_date') {
+    // Un champ et un délai, sinon l'automation ne saurait ni QUOI regarder ni QUAND partir. La coercition
+    // est la MÊME que celle du balayage : une config acceptée ici est forcément exploitable là-bas.
+    if (!nonEmpty(cfg.fieldKey)) return 'fieldKey requis pour un déclencheur « avant une date »';
+    if (!coerceConfigAvantDate(cfg)) {
+      return `délai invalide : un entier positif et une unité parmi ${UNITES_DELAI.join(' | ')}, sans dépasser ${DELAI_MAX_MINUTES / (24 * 60)} jours`;
+    }
     return null;
   }
   if (kind === 'webhook') {

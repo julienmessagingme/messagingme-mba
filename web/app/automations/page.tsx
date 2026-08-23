@@ -6,7 +6,8 @@ import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import {
   listAutomations, createAutomation, updateAutomation, deleteAutomation, listWorkflows, listHubspotDealStages,
-  type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline,
+  listUserFields,
+  type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline, type UserFieldDef,
 } from '@/lib/api';
 
 export default function AutomationsPage() {
@@ -40,13 +41,26 @@ function AutomationsInner({ session }: { session: Session }) {
   const [dealPipelines, setDealPipelines] = useState<HubspotDealPipeline[]>([]);
   const [etatEtapes, setEtatEtapes] = useState<'idle' | 'chargement' | 'ok' | 'non_connecte' | 'erreur'>('idle');
   const [dealStageKey, setDealStageKey] = useState('');
+  // Déclencheur « avant une date » : seuls les champs de type DATE ET HEURE peuvent porter une échéance.
+  // Proposer les autres ferait créer une automation qui ne partirait jamais, sans rien dire.
+  const [champsDate, setChampsDate] = useState<UserFieldDef[]>([]);
+  const [dateField, setDateField] = useState('');
+  const [delai, setDelai] = useState(2);
+  const [unite, setUnite] = useState<'minutes' | 'heures' | 'jours'>('heures');
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [a, w] = await Promise.all([listAutomations(session.tenantId), listWorkflows(session.tenantId)]);
+      const [a, w, f] = await Promise.all([
+        listAutomations(session.tenantId),
+        listWorkflows(session.tenantId),
+        listUserFields(session.tenantId),
+      ]);
       setItems(a.automations);
       setWorkflows(w.workflows);
+      // Normalisation au bord du réseau : une 200 sans le champ attendu poserait `undefined` dans un état
+      // typé tableau, et le premier `.map` démonterait l'écran entier.
+      setChampsDate((Array.isArray(f?.fields) ? f.fields : []).filter((x) => x.type === 'datetime'));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     } finally {
@@ -94,6 +108,7 @@ function AutomationsInner({ session }: { session: Session }) {
     if (triggerKind === 'keyword') return { keywords: keywords.split(',').map((k) => k.trim()).filter((k) => k !== ''), mode };
     if (triggerKind === 'tag_added') return { tag: tag.trim() };
     if (triggerKind === 'conversation_analyzed') return { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) };
+    if (triggerKind === 'avant_date') return { fieldKey: dateField, delai, unite };
     if (triggerKind === 'hubspot_deal_stage') {
       const [pipelineId = '', stageId = ''] = dealStageKey.split('::');
       return { pipelineId, stageId, ...(etapeChoisie ? { stageLabel: etapeChoisie.label } : {}) };
@@ -167,6 +182,11 @@ function AutomationsInner({ session }: { session: Session }) {
       ].filter((x) => x !== '');
       return parts.join(', ');
     }
+    if (a.triggerKind === 'avant_date') {
+      const c = a.triggerConfig as { fieldKey?: string; delai?: number; unite?: string };
+      const champ = champsDate.find((f) => f.key === c.fieldKey)?.label ?? String(c.fieldKey ?? '');
+      return `${String(c.delai ?? '')} ${String(c.unite ?? '')} ${t('avant', 'before')} « ${champ} »`;
+    }
     if (a.triggerKind === 'hubspot_deal_stage') {
       // Le libellé n'est qu'un souvenir de ce qui a été choisi : s'il manque (automation créée par API), on
       // le dit plutôt que d'afficher un identifiant opaque qui ne parlerait à personne.
@@ -181,7 +201,8 @@ function AutomationsInner({ session }: { session: Session }) {
   const canSubmit = name.trim() !== '' && workflowId !== ''
     && (triggerKind !== 'keyword' || keywords.trim() !== '')
     && (triggerKind !== 'tag_added' || tag.trim() !== '')
-    && (triggerKind !== 'hubspot_deal_stage' || dealStageKey !== '');
+    && (triggerKind !== 'hubspot_deal_stage' || dealStageKey !== '')
+    && (triggerKind !== 'avant_date' || (dateField !== '' && Number.isInteger(delai) && delai > 0));
 
   return (
     <div className="space-y-5 p-4">
@@ -224,8 +245,49 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="tag_added">{t('un tag est posé sur un contact', 'a tag is added to a contact')}</option>
               <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
               <option value="hubspot_deal_stage">{t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}</option>
+              <option value="avant_date">{t('un délai avant une date du contact', 'a delay before a date on the contact')}</option>
             </select>
           </div>
+          {triggerKind === 'avant_date' && (
+            <div data-testid="config-avant-date">
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Combien de temps avant', 'How long before')}</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={delai}
+                  onChange={(e) => setDelai(Number.parseInt(e.target.value, 10))}
+                  className={`${inputCls} w-24`}
+                  data-testid="avant-date-delai"
+                />
+                <select value={unite} onChange={(e) => setUnite(e.target.value as 'minutes' | 'heures' | 'jours')} className={`${inputCls} w-40`} data-testid="avant-date-unite">
+                  <option value="minutes">{t('minutes', 'minutes')}</option>
+                  <option value="heures">{t('heures', 'hours')}</option>
+                  <option value="jours">{t('jours', 'days')}</option>
+                </select>
+                <span className="text-sm text-ink-500">{t('avant', 'before')}</span>
+                <select value={dateField} onChange={(e) => setDateField(e.target.value)} className={`${inputCls} flex-1`} data-testid="avant-date-champ">
+                  <option value="">{t('choisir un champ…', 'pick a field…')}</option>
+                  {champsDate.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </div>
+              {champsDate.length === 0 ? (
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" data-testid="avant-date-aucun-champ">
+                  {t(
+                    'Aucun champ « date et heure » dans cet espace. Créez-en un dans Contenu > Champs, ou depuis le mapping d’un webhook : c’est lui qui portera l’échéance.',
+                    'No “date & time” field in this workspace. Create one in Content > Fields, or from a webhook mapping: it is what will carry the due date.',
+                  )}
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-ink-500">
+                  {t(
+                    'Une échéance déjà passée n’envoie rien : un rappel qui part en retard dit quelque chose de faux au client. Si la date change, le rappel repart sur la nouvelle.',
+                    'A due date already past sends nothing: a late reminder tells the customer something untrue. If the date changes, the reminder runs again on the new one.',
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           {triggerKind === 'hubspot_deal_stage' && (
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étape du deal', 'Deal stage')}</label>

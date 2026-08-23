@@ -1,0 +1,13 @@
+-- 0075 : retenir POUR QUELLE VALEUR une automation s'est declenchee sur un contact.
+--
+-- Sert le declencheur `avant_date` (<< X minutes / heures / jours avant la date stockee dans un champ >>).
+--
+-- Pourquoi une colonne et pas le simple fait d'avoir tire. `automation_fires` repondait jusqu'ici a une
+-- question binaire : ce contact a-t-il deja declenche cette automation ? Cela suffit a un mot-cle ou a un
+-- tag, ou l'evenement est ponctuel. Pour une date, non : un rendez-vous REPORTE doit redonner un rappel, et
+-- un booleen laisserait le client sans rien, en silence. On retient donc la VALEUR (la date, telle qu'elle
+-- est stockee) : elle change, l'occurrence est neuve.
+--
+-- ADDITIVE et nullable : les declencheurs existants ne l'ecrivent pas et ne la lisent pas. Tant que personne
+-- ne cree d'automation `avant_date`, le comportement est strictement inchange.
+alter table automation_fires add column if not exists fired_for text;

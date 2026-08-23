@@ -160,13 +160,69 @@ export class PgAutomationStore {
     return res.rows[0]?.fired_at ?? null;
   }
 
-  /** Enregistre le déclenchement (une ligne par couple automation/contact, écrasée à chaque tir). */
-  async markFired(automationId: string, waId: string): Promise<void> {
+  /**
+   * Enregistre le déclenchement (une ligne par couple automation/contact, écrasée à chaque tir).
+   *
+   * `marqueur` (migration 0075) retient POUR QUELLE VALEUR on a tiré. Il ne sert qu'au déclencheur
+   * `avant_date` : une date qui change est une occurrence NEUVE, et un simple « déjà tiré » laisserait un
+   * rendez-vous reporté sans rappel, en silence. Absent -> la colonne est remise à null, ce qui est le
+   * comportement de tous les autres déclencheurs.
+   */
+  async markFired(automationId: string, waId: string, marqueur?: string): Promise<void> {
     await this.pool.query(
-      `insert into automation_fires (automation_id, wa_id, fired_at) values ($1, $2, now())
-       on conflict (automation_id, wa_id) do update set fired_at = now()`,
-      [automationId, waId],
+      `insert into automation_fires (automation_id, wa_id, fired_at, fired_for) values ($1, $2, now(), $3)
+       on conflict (automation_id, wa_id) do update set fired_at = now(), fired_for = excluded.fired_for`,
+      [automationId, waId, marqueur ?? null],
     );
+  }
+
+  /**
+   * Contacts d'une automation `avant_date` dont la date de champ tombe dans une fenêtre GROSSIÈRE autour de
+   * l'échéance, avec la valeur pour laquelle on a déjà tiré.
+   *
+   * ⚠️ Le tri se fait sur du TEXTE. Les dates sont stockées en ISO (canonicalisées à l'écriture), donc
+   * l'ordre lexicographique suit l'ordre chronologique... à fuseau égal. Une base qui mélange `Z`, `+02:00`
+   * et des heures murales peut décaler de quelques heures : d'où une fenêtre élargie d'un JOUR de chaque
+   * côté, et la décision fine laissée à `estDu`, qui sait lire un fuseau. Filtrer serré ici ferait manquer
+   * des rappels, et ça ne se verrait pas.
+   */
+  async contactsDusPourDate(
+    tenantId: string,
+    automationId: string,
+    fieldKey: string,
+    borneBasse: string,
+    borneHaute: string,
+    cap = 500,
+  ): Promise<Array<{ waId: string; valeur: string; dejaTirePour: string | null }>> {
+    const res = await this.pool.query<{ wa_id: string; valeur: string; fired_for: string | null }>(
+      `select coalesce(regexp_replace(c.phone_e164, '[^0-9]', '', 'g'), c.bsuid) as wa_id,
+              c.fields->>$3 as valeur,
+              f.fired_for
+         from contacts c
+         left join automation_fires f
+           on f.automation_id = $2
+          and f.wa_id = coalesce(regexp_replace(c.phone_e164, '[^0-9]', '', 'g'), c.bsuid)
+        where c.tenant_id = $1
+          and c.deleted_at is null
+          and c.blocked_at is null
+          and c.fields->>$3 is not null
+          and c.fields->>$3 <> ''
+          and c.fields->>$3 >= $4
+          and c.fields->>$3 <= $5
+        limit $6`,
+      [tenantId, automationId, fieldKey, borneBasse, borneHaute, cap],
+    );
+    return res.rows
+      .filter((r) => r.wa_id !== null && r.wa_id !== '')
+      .map((r) => ({ waId: r.wa_id, valeur: r.valeur, dejaTirePour: r.fired_for }));
+  }
+
+  /** Espaces ayant au moins une automation `avant_date` ACTIVE. Évite de balayer tout le monde pour rien. */
+  async tenantsAvecDeclencheurDate(): Promise<string[]> {
+    const res = await this.pool.query<{ tenant_id: string }>(
+      `select distinct tenant_id from automations where enabled and trigger_kind = 'avant_date'`,
+    );
+    return res.rows.map((r) => r.tenant_id);
   }
 
   /**

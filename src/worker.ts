@@ -30,7 +30,8 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
-import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob } from './automation/event-job';
+import { runDateSweep } from './automation/date-sweep';
+import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgEmailAccountStore } from './email/account-store.pg';
@@ -184,7 +185,7 @@ async function main(): Promise<void> {
     contactBloque: (tenant: string, waId: string) => contactStore.isBlockedByWaId(tenant, waId),
     listEnabled: (tenant: string, kinds: readonly AutomationTriggerKind[]) => automationStore.listEnabled(tenant, kinds),
     lastFiredAt: (id: string, waId: string) => automationStore.lastFiredAt(id, waId),
-    markFired: (id: string, waId: string) => automationStore.markFired(id, waId),
+    markFired: (id: string, waId: string, marqueur?: string) => automationStore.markFired(id, waId, marqueur),
     clearFired: (id: string, waId: string) => automationStore.clearFired(id, waId),
     // Un seul parcours actif par contact : sinon un message qui répond à un scénario EN COURS et contient le
     // mot-clé enverrait deux messages, et laisserait le run précédent orphelin (l'avance n'en retrouve qu'un).
@@ -668,6 +669,33 @@ async function main(): Promise<void> {
   const webhookPayloadSweeper = setInterval(() => void webhookPayloadSweep(), 6 * 60 * 60 * 1000);
   webhookPayloadSweeper.unref();
 
+  // Déclencheur « X avant la date d'un champ » : le seul qui ne répond pas à un événement mais à
+  // l'écoulement du temps. Il PUBLIE dans la file, il ne démarre rien : le scénario part par le chemin
+  // commun, donc avec les mêmes garde-fous que les autres déclencheurs.
+  const dateSweep = async (): Promise<void> => {
+    try {
+      const n = await runDateSweep({
+        tenants: () => automationStore.tenantsAvecDeclencheurDate(),
+        automations: (tenant) => automationStore.listEnabled(tenant, ['avant_date']),
+        timeZone: async (tenant) => (await settingsStore.get(tenant)).timezone,
+        candidats: (tenant, autoId, cle, basse, haute) => automationStore.contactsDusPourDate(tenant, autoId, cle, basse, haute),
+        publish: async (tenantId, event) => { await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId, event } satisfies AutomationEventJob); },
+        toleranceMinutes: config.AUTOMATION_DATE_TOLERANCE_MINUTES,
+        // eslint-disable-next-line no-console
+        log: (m) => console.log(m),
+      });
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`date-sweep: ${n} échéance(s) publiée(s)`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('date-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:date', `date-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void dateSweep();
+  const dateSweeper = setInterval(() => void dateSweep(), config.AUTOMATION_DATE_SWEEP_INTERVAL_MS);
+  dateSweeper.unref();
+
   // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
   // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les
   // rafraîchit tous (cross-tenant, lecture Graph seule) et alerte sur jeton invalide / numéro non connecté /
@@ -720,6 +748,7 @@ async function main(): Promise<void> {
     clearInterval(handoffSweeper);
     clearInterval(idempotencySweeper);
     clearInterval(webhookPayloadSweeper);
+    clearInterval(dateSweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     if (catchupSweeper) clearInterval(catchupSweeper);
     if (statusSweeper) clearInterval(statusSweeper);
