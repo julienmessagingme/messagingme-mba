@@ -1,0 +1,187 @@
+import { z } from 'zod';
+
+/**
+ * Rapports de livraison (DLR) et messages entrants (MO) du canal RCS smsmode.
+ *
+ * Module PUR : il traduit un corps HTTP non fiable en fait métier, sans aucune IO. Écrit contre leur spec
+ * (`dev.smsmode.com/rcs/openapi/rest-rcs.yml`, lue à la source le 2026-08-24), pas de mémoire.
+ *
+ * Trois traits de leur contrat commandent tout ce fichier :
+ *
+ * 1. AUCUNE SIGNATURE. smsmode ne signe pas ses rappels : ni HMAC, ni jeton d'en-tête. Ce qui authentifie
+ *    l'appel est donc le CODE opaque de l'URL (`rcs_agents.webhook_code`), doublé du contrôle que le
+ *    `channelId` du corps est bien celui de l'agent de ce workspace. Ce fichier ne fait que LIRE ; ce sont
+ *    ces deux gardes, tenues par la route, qui autorisent.
+ * 2. REJEUX GARANTIS. Ils réessaient six fois (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) tant qu'ils n'ont pas
+ *    reçu un 2xx. Tout traitement en aval doit être idempotent, jamais « une fois exactement ».
+ * 3. ÉNUMÉRATION INCOMPLÈTE. `READ` existe en vrai et n'est PAS dans l'énumération documentée. Un statut
+ *    inconnu rend donc `null` (aucune écriture) et n'est JAMAIS traité comme un échec : croire un message
+ *    perdu parce qu'on ne connaît pas son statut ferait basculer le contact en repli WhatsApp pour rien,
+ *    et lui enverrait deux fois le même message.
+ */
+
+/**
+ * Adresse publique des rappels d'un workspace.
+ *
+ * Le `/api/backend` n'est pas un détail : l'API Fastify n'a AUCUN port publié, et la seule chose que le proxy
+ * public route est le front, qui réécrit ce préfixe vers elle. Une URL sans lui n'arrive nulle part. Même
+ * chemin d'exposition que les webhooks entrants de Tools.
+ */
+export function urlRappelRcs(appUrl: string, code: string): string {
+  return `${appUrl.replace(/\/+$/, '')}/api/backend/rcs/callback/${code}`;
+}
+
+/** Statut de livraison dans NOTRE modèle : la même échelle que les accusés Meta, une seule dans le produit. */
+export type RcsDeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
+
+export interface RcsDlr {
+  /** Identifiant smsmode du message sortant. C'est la clé qui recolle l'accusé au destinataire de campagne. */
+  messageId: string;
+  /** Canal (= agent) émetteur. Deuxième garde d'isolation : il doit être celui du workspace porté par le code. */
+  channelId: string | null;
+  /** Destinataire en chiffres nus, tel qu'ils l'envoient. */
+  to: string;
+  /** null = statut hors énumération connue -> on n'écrit rien plutôt que d'inventer. */
+  status: RcsDeliveryStatus | null;
+  /**
+   * Le message n'atteindra JAMAIS ce numéro (UNDELIVERABLE / UNDELIVERED). C'est LE signal qui alimente la
+   * sortie « non joignable » du bloc : chez smsmode la joignabilité ne se demande pas avant l'envoi, elle se
+   * constate après.
+   */
+  echecDefinitif: boolean;
+  /** Motif d'échec (`INVALID_PHONE_NUMBER`, `BLACKLISTED`, `SPAM`…), tel quel. */
+  detail: string | null;
+  /** NOTRE référence, posée à l'envoi (`refClient`). Utile au débogage, jamais à l'autorisation. */
+  refClient: string | null;
+}
+
+export interface RcsMo {
+  messageId: string;
+  channelId: string | null;
+  /** Expéditeur en chiffres nus : c'est le contact. */
+  from: string;
+  /** Message sortant auquel il répond, quand ils le fournissent. */
+  originMessageId: string | null;
+  kind: 'text' | 'suggestion' | 'location' | 'file';
+  /** Texte du message, ou libellé du bouton tapé. null pour une position ou un fichier. */
+  text: string | null;
+  /** Charge utile du bouton tapé (`kind === 'suggestion'`). C'est elle qui choisit la branche du scénario. */
+  postbackData: string | null;
+}
+
+/** Enveloppe commune aux deux rappels. `passthrough` : leur corps porte bien plus que ce qu'on lit, et une
+ *  clé inattendue ne doit pas faire échouer la lecture d'un rappel par ailleurs valide. */
+const enveloppe = z.object({
+  messageId: z.string().min(1),
+  direction: z.string().optional(),
+  channel: z.object({ channelId: z.string().optional() }).partial().passthrough().optional(),
+  recipient: z.object({ to: z.string().optional() }).partial().passthrough().optional(),
+  from: z.string().optional(),
+  refClient: z.string().optional(),
+  originMessageId: z.string().optional(),
+}).passthrough();
+
+const corpsDlr = z.object({
+  status: z.object({
+    value: z.string().optional(),
+    detail: z.string().optional(),
+  }).partial().passthrough(),
+}).passthrough();
+
+const corpsMo = z.object({
+  body: z.object({
+    type: z.string().optional(),
+    text: z.string().optional(),
+    postbackData: z.string().optional(),
+  }).partial().passthrough(),
+}).passthrough();
+
+/**
+ * Statut smsmode -> statut du produit. `SCHEDULED`/`ENROUTE` = accepté mais pas encore remis, c'est notre
+ * `sent`. Le reste est explicite. Inconnu -> null (cf. point 3 de l'en-tête).
+ */
+export function statutDepuisSmsmode(v: string): RcsDeliveryStatus | null {
+  switch (v.toUpperCase()) {
+    case 'SCHEDULED':
+    case 'ENROUTE':
+      return 'sent';
+    case 'DELIVERED':
+      return 'delivered';
+    case 'READ':
+      return 'read';
+    case 'UNDELIVERABLE':
+    case 'UNDELIVERED':
+      return 'failed';
+    default:
+      return null;
+  }
+}
+
+/** Chiffres nus d'un numéro, quelle que soit la forme reçue (`+33…`, espaces). */
+export function chiffresNus(s: string): string {
+  return s.replace(/[^0-9]/g, '');
+}
+
+/** Ce corps est-il un rapport de livraison ? `direction: 'MT'` (mobile terminated) chez eux. */
+export function estDlr(raw: unknown): boolean {
+  const r = enveloppe.safeParse(raw);
+  return r.success && (r.data.direction ?? '').toUpperCase() === 'MT';
+}
+
+/** Rapport de livraison, ou null si le corps n'en est pas un exploitable. Ne lève JAMAIS. */
+export function parseRcsDlr(raw: unknown): RcsDlr | null {
+  const e = enveloppe.safeParse(raw);
+  if (!e.success) return null;
+  const d = corpsDlr.safeParse(raw);
+  if (!d.success) return null;
+  const valeur = d.data.status.value ?? '';
+  const statut = valeur === '' ? null : statutDepuisSmsmode(valeur);
+  return {
+    messageId: e.data.messageId,
+    channelId: e.data.channel?.channelId ?? null,
+    to: chiffresNus(e.data.recipient?.to ?? ''),
+    status: statut,
+    // UNIQUEMENT sur les deux valeurs d'échec CONNUES. Un statut inconnu n'est pas un échec.
+    echecDefinitif: statut === 'failed',
+    detail: d.data.status.detail ?? null,
+    refClient: e.data.refClient ?? null,
+  };
+}
+
+/** Message entrant, ou null si le corps n'en est pas un exploitable. Ne lève JAMAIS. */
+export function parseRcsMo(raw: unknown): RcsMo | null {
+  const e = enveloppe.safeParse(raw);
+  if (!e.success) return null;
+  const m = corpsMo.safeParse(raw);
+  if (!m.success) return null;
+  const from = chiffresNus(e.data.from ?? '');
+  if (from === '') return null; // sans expéditeur, rien à rattacher : ni contact, ni parcours
+  const type = (m.data.body.type ?? '').toUpperCase();
+  const kind = type === 'SUGGESTION' ? 'suggestion'
+    : type === 'LOCATION' ? 'location'
+      : type === 'FILE' ? 'file'
+        : 'text';
+  return {
+    messageId: e.data.messageId,
+    channelId: e.data.channel?.channelId ?? null,
+    from,
+    originMessageId: e.data.originMessageId ?? null,
+    kind,
+    text: m.data.body.text ?? null,
+    postbackData: kind === 'suggestion' ? (m.data.body.postbackData ?? null) : null,
+  };
+}
+
+/**
+ * Le contact demande-t-il l'arrêt ?
+ *
+ * Obligation légale ET condition de survie de l'agent : un opérateur suspend une marque qui continue
+ * d'écrire après un STOP. On reconnaît donc le mot seul ou en tête de message, dans les deux langues, sans
+ * exiger une forme exacte. Volontairement STRICT sur la position : un message qui CONTIENT « stop » au
+ * milieu d'une phrase (« je ne peux pas stopper là ») n'est pas une demande d'arrêt, et désabonner un
+ * contact à tort est une faute symétrique.
+ */
+export function estDemandeArret(texte: string | null): boolean {
+  if (!texte) return false;
+  return /^\s*(stop|stopper|unsubscribe|desabonner|désabonner|arret|arrêt)\b/i.test(texte.trim());
+}

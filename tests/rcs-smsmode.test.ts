@@ -101,11 +101,31 @@ describe('toSmsmodeBody', () => {
     expect(toSmsmodeBody({ kind: 'text', text: 'Bonjour' })).toEqual({ type: 'TEXT', text: 'Bonjour' });
   });
 
-  it('mappe une carte et un carrousel', () => {
-    expect(toSmsmodeBody({ kind: 'card', card: { title: 'T', description: 'D', mediaUrl: 'https://x/i.png' } }))
-      .toEqual({ type: 'CARD', card: { title: 'T', description: 'D', media: { url: 'https://x/i.png' } } });
+  // 🔴 Les NOMS de ces champs sont ceux de leur spec, relue a la source le 2026-08-24, et pas ceux qu'on
+  // aurait devines : `content` (pas `card`), `contents` (pas `cards`), `media.fileUrl` (pas `media.url`).
+  // Ce test a d'abord fige la version FAUSSE : aucun envoi ne l'exercait (l'ecran ne produisait que du
+  // texte), donc la premiere image envoyee se serait fait refuser en 400 sans que rien n'ait prevenu.
+  it('mappe une carte au format exact de smsmode (content, media.fileUrl, orientation)', () => {
+    expect(toSmsmodeBody({
+      kind: 'card',
+      card: { title: 'T', description: 'D', mediaUrl: 'https://x/i.png', mediaHeight: 'TALL' },
+      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn:0' }],
+    })).toEqual({
+      type: 'CARD',
+      content: { title: 'T', description: 'D', media: { fileUrl: 'https://x/i.png', height: 'TALL' } },
+      orientation: 'VERTICAL',
+      suggestions: [{ type: 'REPLY', text: 'Oui', postbackData: 'btn:0' }],
+    });
+  });
+
+  it('n emet pas de titre ni de hauteur quand la carte n en a pas', () => {
+    expect(toSmsmodeBody({ kind: 'card', card: { description: 'D', mediaUrl: 'https://x/i.png' } }))
+      .toEqual({ type: 'CARD', content: { description: 'D', media: { fileUrl: 'https://x/i.png' } }, orientation: 'VERTICAL' });
+  });
+
+  it('mappe un carrousel sur `contents`', () => {
     expect(toSmsmodeBody({ kind: 'carousel', cards: [{ title: 'A' }, { title: 'B' }] }))
-      .toEqual({ type: 'CAROUSEL', cards: [{ title: 'A' }, { title: 'B' }] });
+      .toEqual({ type: 'CAROUSEL', contents: [{ title: 'A' }, { title: 'B' }] });
   });
 
   it('utilise la cle du WORKSPACE quand il en a une, pas celle du serveur', async () => {

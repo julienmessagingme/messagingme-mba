@@ -50,6 +50,33 @@ export class PgRcsAgentStore {
     }
   }
 
+  /**
+   * Code d'URL des rappels smsmode de ce tenant (DLR + MO). null = pas d'agent, donc aucune adresse à donner
+   * au fournisseur. Lu à CHAQUE envoi, comme la clé : une réactivation change le code, et un message parti
+   * après doit porter la nouvelle adresse.
+   */
+  async webhookCodePour(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ webhook_code: string }>(
+      'select webhook_code from rcs_agents where tenant_id = $1 order by created_at asc limit 1',
+      [tenantId],
+    );
+    return res.rows[0]?.webhook_code ?? null;
+  }
+
+  /**
+   * Workspace et agent portés par un code d'URL de rappel. C'EST la clé d'autorisation du webhook smsmode :
+   * le tenant vient du code, JAMAIS du corps de la requête (qu'un tiers peut forger). Le `agent_id` rendu
+   * sert à la deuxième garde : le canal annoncé dans le corps doit être celui-là.
+   */
+  async parWebhookCode(code: string): Promise<{ tenantId: string; agentId: string } | null> {
+    const res = await this.pool.query<{ tenant_id: string; agent_id: string }>(
+      'select tenant_id, agent_id from rcs_agents where webhook_code = $1',
+      [code],
+    );
+    const r = res.rows[0];
+    return r ? { tenantId: r.tenant_id, agentId: r.agent_id } : null;
+  }
+
   /** Le tenant a-t-il au moins un agent RCS ? C'est CE test qui allume ou éteint le canal dans l'interface :
    *  pas de drapeau à basculer à la main, l'outil suit l'état réel du dépôt d'agent. */
   async hasAgent(tenantId: string): Promise<boolean> {
@@ -131,6 +158,24 @@ export class PgRcsOptoutStore implements RcsOptoutStore {
       `select 1 from contacts
        where tenant_id = $1 and rcs_optout_at is not null and phone_e164 in ($2, $3)
        limit 1`,
+      [tenantId, `+${nu}`, nu],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Enregistre un STOP reçu en RCS. Idempotent : `rcs_optout_at is null` garde la DATE du premier refus, qui
+   * est la date qui compte si l'opérateur ou la CNIL la demande.
+   *
+   * Ne CRÉE pas le contact : un STOP venu d'un numéro qu'on n'a jamais enregistré ne peut pas être en train
+   * de recevoir nos campagnes (elles partent de la base de contacts). Rendre `false` dit exactement cela à
+   * l'appelant, qui le journalise, au lieu de fabriquer une fiche vide pour un refus.
+   */
+  async markOptedOut(tenantId: string, e164: string): Promise<boolean> {
+    const nu = e164.replace(/[^0-9]/g, '');
+    const res = await this.pool.query(
+      `update contacts set rcs_optout_at = now()
+       where tenant_id = $1 and phone_e164 in ($2, $3) and rcs_optout_at is null`,
       [tenantId, `+${nu}`, nu],
     );
     return (res.rowCount ?? 0) > 0;

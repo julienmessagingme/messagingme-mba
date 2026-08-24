@@ -15,16 +15,25 @@ export type RcsSuggestion =
   | { kind: 'openUrl'; text: string; url: string; postbackData: string }
   | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string };
 
+/**
+ * Carte : le format à VISUEL, celui qui porte une image (ou une vidéo) au-dessus du texte.
+ *
+ * `title` est optionnel : une carte de campagne est le plus souvent une image + un texte + des boutons, sans
+ * titre. Le provider exige « un titre OU un média », c'est le schéma zod qui tient cette règle.
+ */
 export interface RcsCard {
-  title: string;
+  title?: string;
   description?: string;
   mediaUrl?: string;
+  /** Hauteur du visuel : SHORT (7:3), MEDIUM (2:1, défaut), TALL (16:9, la grande image de campagne). */
+  mediaHeight?: 'SHORT' | 'MEDIUM' | 'TALL';
   suggestions?: RcsSuggestion[];
 }
 
 export type RcsOutbound =
   | { kind: 'text'; text: string; suggestions?: RcsSuggestion[] }
-  | { kind: 'card'; card: RcsCard }
+  /** `suggestions` = la rangée de boutons SOUS le message (11 max), distincte des 4 boutons de la carte. */
+  | { kind: 'card'; card: RcsCard; suggestions?: RcsSuggestion[] }
   | { kind: 'carousel'; cards: RcsCard[] };
 
 /** Ce que l'appareil du destinataire sait faire. En V1 on ne lit que la PRÉSENCE de la réponse : joignable

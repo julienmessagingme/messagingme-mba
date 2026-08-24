@@ -1,6 +1,7 @@
 import type { RcsProvider, RcsOutbound } from './types';
 import type { Reachability } from './reachability';
 import type { SendResult } from '../meta/types';
+import { normaliserPostbacks } from './schema';
 
 export interface RcsOptoutStore {
   isOptedOut(tenantId: string, e164: string): Promise<boolean>;
@@ -36,6 +37,10 @@ export class RcsSender {
     if (this.provider.canCheckReachability !== false && !(await this.reach.isReachable(tenantId, agentId, e164))) {
       return { skipped: 'not_rcs_reachable' };
     }
-    return this.provider.send(tenantId, agentId, e164, msg, messageId);
+    // Charges utiles des boutons normalisées ICI, au dernier moment et pour TOUS les appelants : c'est ce qui
+    // fait qu'un clic revient sur la bonne branche du scénario (cf. `normaliserPostbacks`). Le faire au point
+    // de passage unique évite d'avoir à y penser dans chaque appelant, ce qui est exactement le genre d'oubli
+    // qui se voit six mois plus tard, sur le clic d'un client.
+    return this.provider.send(tenantId, agentId, e164, normaliserPostbacks(msg), messageId);
   }
 }

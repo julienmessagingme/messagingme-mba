@@ -35,7 +35,7 @@ function graphe(): WorkflowGraph {
   })!;
 }
 
-function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = true) {
+function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = true, enAttenteSur?: string) {
   const provider = new FakeRcsProvider({ unreachable: new Set(nonJoignables) });
   const rcsSender = new RcsSender(provider, new Reachability(provider, new SansCache(), () => 0), {
     isOptedOut: async () => false,
@@ -65,7 +65,9 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
       setState: async (_id: string, state: RunState) => {
         etats.push({ ...state });
       },
-      findWaitingByWaId: async () => null,
+      findWaitingByWaId: async () => (enAttenteSur
+        ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null }
+        : null),
     },
     ...(avecRcs ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1' } } : {}),
   };
@@ -149,10 +151,13 @@ describe('bloc RCS a l execution', () => {
     await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
 
     expect(provider.sent).toHaveLength(1);
+    // `postbackData` REECRIT en `btn:0` a l'envoi, alors que le bloc porte 'oui' : c'est ce nom-la que le
+    // builder donne a la sortie du bouton, et c'est donc le seul qui permette au clic de retrouver sa
+    // branche quand smsmode nous le renvoie. Voir `normaliserPostbacks`.
     expect(provider.sent[0]!.msg).toEqual({
       kind: 'text',
       text: 'Bonjour',
-      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'oui' }],
+      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn:0' }],
     });
   });
 
@@ -164,5 +169,35 @@ describe('bloc RCS a l execution', () => {
     const { provider, executor } = monter(g);
     await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(provider.sent[0]!.msg).toEqual({ kind: 'text', text: 'Bonjour' });
+  });
+
+  /**
+   * La cascade RCS -> WhatsApp. Chez smsmode la joignabilite ne se demande pas AVANT l'envoi : elle se
+   * constate apres, sur un rapport de livraison. C'est donc ce rapport, et lui seul, qui allume la sortie
+   * « non joignable » d'un bloc deja parti.
+   */
+  it('un rapport UNDELIVERABLE fait repartir le parcours par la sortie « non joignable »', async () => {
+    const g = graphe();
+    const { templates, executor } = monter(g, [], true, 'r');
+    const bascule = await executor.rcsUndeliverable('t1', '33600000002', 'msg-smsmode-1');
+    expect(bascule).toBe(true);
+    expect(templates).toEqual(['relance']); // le repli WhatsApp est parti
+  });
+
+  // 🔴 La garde qui justifie une methode a part. Sur un run qui attend AUTRE CHOSE qu'un bloc RCS, un
+  // `advance(..., 'unreachable')` retomberait sur la premiere arete libre et ferait avancer le parcours d'un
+  // cran sur un accuse qui ne le concerne pas.
+  it('ne touche PAS a un parcours qui attend sur un autre bloc', async () => {
+    const g = parseGraph({
+      nodes: [
+        { id: 'tpl', type: 'template', position: pos, data: { templateName: 'accueil', language: 'fr' } },
+        { id: 'apres', type: 'action', position: pos, data: { actionKind: 'add_tag', tag: 'avance-a-tort' } },
+      ],
+      edges: [{ id: 'e1', source: 'tpl', target: 'apres' }],
+    })!;
+    const { tags, executor } = monter(g, [], true, 'tpl');
+    const bascule = await executor.rcsUndeliverable('t1', '33600000002', 'msg-smsmode-2');
+    expect(bascule).toBe(false);
+    expect(tags).toEqual([]);
   });
 });

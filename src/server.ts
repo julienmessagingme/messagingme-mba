@@ -6,6 +6,7 @@ import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
 import { registerRcsChannel } from './http/rcs-channel';
+import { registerRcsCallback } from './http/rcs-callback';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
@@ -51,6 +52,7 @@ import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
 import type { RcsMessageRouteDeps } from './http/rcs-messages';
 import type { RcsChannelRouteDeps } from './http/rcs-channel';
+import type { RcsCallbackRouteDeps } from './http/rcs-callback';
 import type { TemplateRouteDeps } from './http/templates';
 import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
@@ -98,6 +100,8 @@ export interface ServerDeps {
   rcsMessages?: RcsMessageRouteDeps;
   /** Activation du canal RCS d'un workspace (page d'accueil). Écritures admin-only. */
   rcsChannel?: RcsChannelRouteDeps;
+  /** Rappels smsmode du canal RCS (livraison + réponses). PUBLIQUE : le code d'URL porte le workspace. */
+  rcsCallback?: RcsCallbackRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
@@ -250,6 +254,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // Réception des webhooks entrants : PUBLIQUE elle aussi, montée ici avant les gardes d'auth. Aucune session
   // n'est possible (l'appelant est un outil tiers, pas un humain).
   if (deps.webhookEntrant) registerWebhookEntrant(app, deps.webhookEntrant);
+
+  // Rappels du fournisseur RCS : PUBLIQUE aussi, et pour la même raison (l'appelant est smsmode, pas un
+  // humain). Ce qui l'autorise est le code opaque de l'URL, pas une session ; voir `registerRcsCallback`.
+  if (deps.rcsCallback) registerRcsCallback(app, deps.rcsCallback);
 
   const requireAuth = deps.auth ? makeRequireAuth(deps.auth.secret, deps.auth.getUserState) : undefined;
   // RBAC : tout est réservé aux admins SAUF l'inbox (le seul périmètre de l'agent). La barrière

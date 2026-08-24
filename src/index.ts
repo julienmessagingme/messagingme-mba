@@ -8,7 +8,7 @@ import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import { PgTagStore } from './crm/tag-store.pg';
 import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
-import { PgCampaignRepo } from './campaign/store.pg';
+import { PgCampaignRepo, PgRecipientStore } from './campaign/store.pg';
 import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
@@ -65,6 +65,7 @@ import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { verifierCleRcs, fetchGet } from './rcs/channel-info';
+import { estDemandeArret } from './rcs/callback';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
@@ -88,6 +89,9 @@ async function main(): Promise<void> {
   await queue.start();
 
   const repo = new PgCampaignRepo(pool);
+  // Statuts de livraison des destinataires. Le worker en a le sien pour les accusés Meta ; l'API en a besoin
+  // parce que les rappels du fournisseur RCS arrivent SUR L'API (le worker n'expose aucune route publique).
+  const recipientStore = new PgRecipientStore(pool);
   const campaignDraftStore = new PgCampaignDraftStore(pool);
   const contactStore = new PgContactStore(pool);
   const contactHistoryStore = new PgContactHistoryStore(pool);
@@ -250,7 +254,12 @@ async function main(): Promise<void> {
       ecrireContact: async (tenant, entree) => {
         const [res] = await upsertContactsFromApi(
           tenant,
-          [{ phone: entree.phone, fields: entree.fields, ...(entree.name ? { name: entree.name } : {}) }],
+          [{
+            phone: entree.phone,
+            fields: entree.fields,
+            ...(entree.name ? { name: entree.name } : {}),
+            ...(entree.optIn ? { optIn: true, optInSource: entree.optInSource } : {}),
+          }],
           { contacts: contactStore, fields: fieldStore },
         );
         // Un seul item entré, donc un seul résultat. L'absence de résultat serait un bug d'`upsertContactsFromApi`,
@@ -661,17 +670,77 @@ async function main(): Promise<void> {
       etat: (tenant) => workflowRuntime.rcsStack.agents.etatPour(tenant),
       verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),
       activer: async (tenant, canal, apiKey) => {
-        // La clé est chiffrée ICI, jamais stockée en clair. `client_token_enc` reçoit un secret de webhook
-        // généré à l'activation : il servira à valider les rappels entrants du fournisseur.
+        // La clé est chiffrée ICI, jamais stockée en clair. `client_token_enc` reste réservé au jour où un
+        // fournisseur signera ses rappels (Google le fait) ; smsmode, lui, ne signe pas.
+        //
+        // 🔴 Le `webhook_code` EST le secret de l'adresse de rappel : c'est lui, et lui seul, qui dit à quel
+        // workspace appartient un appel non signé. Donc 128 bits, comme le code des webhooks entrants, et
+        // jamais une valeur courte « puisque ce n'est qu'un identifiant ».
         await workflowRuntime.rcsStack.agents.activer(
           tenant,
           canal,
           encryptSecret(apiKey, config.ENCRYPTION_KEY),
           encryptSecret(randomBytes(24).toString('hex'), config.ENCRYPTION_KEY),
-          `rcs-${randomBytes(6).toString('hex')}`,
+          `rcs-${randomBytes(16).toString('hex')}`,
         );
       },
       desactiver: (tenant) => workflowRuntime.rcsStack.agents.desactiver(tenant),
+    },
+    /**
+     * Rappels smsmode : rapports de livraison et réponses des contacts. C'est ce qui referme la boucle du
+     * canal RCS, qui jusqu'ici ne savait qu'émettre.
+     *
+     * Le tenant vient du CODE de l'URL (`parWebhookCode`), jamais du corps : smsmode ne signe pas ses rappels.
+     */
+    rcsCallback: {
+      parCode: (code) => workflowRuntime.rcsStack.agents.parWebhookCode(code),
+      onDlr: async (tenant, dlr) => {
+        // 1. Le destinataire de campagne, par identifiant de message. Même chemin que les accusés Meta : une
+        //    seule échelle de statuts dans le produit, donc un seul écran de résultats à lire.
+        if (dlr.status !== null) {
+          await recipientStore.updateDeliveryByMessageId(dlr.messageId, dlr.status, dlr.detail, null);
+        }
+        // 2. La cascade de repli. C'est ICI, et nulle part ailleurs, que la sortie « non joignable » d'un bloc
+        //    RCS s'allume : chez smsmode la joignabilité ne se demande pas avant l'envoi, elle se constate
+        //    APRÈS, sur un rapport. Un parcours qui attendait sur ce bloc repart donc vers son repli WhatsApp.
+        if (dlr.echecDefinitif && dlr.to !== '') {
+          await workflowRuntime.executor.rcsUndeliverable(tenant, dlr.to, dlr.messageId);
+        }
+      },
+      onMo: async (tenant, mo) => {
+        const apercu = mo.text ?? `[${mo.kind}]`;
+        // 1. STOP AVANT tout le reste. Continuer d'écrire après un refus fait suspendre l'agent par
+        //    l'opérateur, et l'enregistrement de l'opt-out ne doit dépendre d'aucune étape qui pourrait
+        //    échouer après lui.
+        if (mo.kind === 'text' && estDemandeArret(mo.text)) {
+          const marque = await workflowRuntime.rcsStack.optout.markOptedOut(tenant, mo.from);
+          if (!marque) {
+            // eslint-disable-next-line no-console
+            console.error(`STOP RCS reçu de ${mo.from} (${tenant}) sans fiche contact : rien à désabonner`);
+          }
+        }
+        // 2. Le fil d'inbox : un échange RCS se lit au même endroit qu'un échange WhatsApp, dans le fil unique
+        //    du contact. La bulle porte son canal.
+        await inboxStore.recordInbound(tenant, {
+          phoneNumberId: '',
+          waId: mo.from,
+          messageId: mo.messageId,
+          type: mo.kind === 'suggestion' ? 'button' : mo.kind,
+          body: apercu,
+          buttonPayload: mo.postbackData,
+          profileName: null,
+          field: 'messages',
+        }, 'rcs');
+        // 3. Le parcours. Un bouton tapé porte `btn:<i>` (cf. `normaliserPostbacks`) et choisit sa branche ;
+        //    une réponse écrite suit la sortie « envoyé ». Isolé : un scénario qui casse ne doit pas faire
+        //    rejouer six fois un rappel dont l'inbox et l'opt-out sont déjà enregistrés.
+        try {
+          await workflowRuntime.executor.advance(tenant, mo.from, mo.messageId, mo.postbackData);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('avance de scénario sur réponse RCS ignorée:', err instanceof Error ? err.message : err);
+        }
+      },
     },
     rcsMessages: {
       list: (tenant) => rcsMessageStore.list(tenant),

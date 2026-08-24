@@ -20,6 +20,7 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
 import { buildRcsStack } from '../rcs/factory';
+import { urlRappelRcs } from '../rcs/callback';
 import { PgRcsAgentStore } from '../rcs/store.pg';
 import { decryptSecret } from '../crypto/secretbox';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
@@ -83,6 +84,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     apiKeyFor: (tenant) => agentsRcs.apiKeyFor(tenant, (enc) => decryptSecret(enc, config.ENCRYPTION_KEY)),
     ...(config.SMSMODE_CALLBACK_STATUS_URL ? { callbackUrlStatus: config.SMSMODE_CALLBACK_STATUS_URL } : {}),
     ...(config.SMSMODE_CALLBACK_MO_URL ? { callbackUrlMo: config.SMSMODE_CALLBACK_MO_URL } : {}),
+    // Adresse de rappel PROPRE au workspace, posée sur chaque envoi. C'est elle qui fait exister les rapports
+    // de livraison (donc la sortie « non joignable » du bloc) et les réponses aux boutons : sans elle, un
+    // message part et l'on n'apprend plus jamais rien de son sort.
+    callbackUrlFor: async (tenant) => {
+      const code = await agentsRcs.webhookCodePour(tenant);
+      return code ? urlRappelRcs(config.APP_URL, code) : null;
+    },
   });
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);

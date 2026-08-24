@@ -34,6 +34,15 @@ export interface SmsmodeOptions {
   callbackUrlStatus?: string;
   /** URL publique qui recevra les réponses entrantes (MO). */
   callbackUrlMo?: string;
+  /**
+   * Adresse de rappel PROPRE au workspace : rapports de livraison ET réponses sur la MÊME URL (leur corps
+   * porte `direction`, MT ou MO, qui les distingue). C'est le cas normal, parce que smsmode ne signe pas ses
+   * rappels : l'URL porte un code opaque par workspace, et c'est ce code qui dit à qui appartient l'appel.
+   *
+   * Résolue à CHAQUE envoi, jamais mémorisée : une réactivation du canal change le code, et un message parti
+   * après doit porter la nouvelle adresse, sinon ses accusés reviennent frapper une porte fermée.
+   */
+  callbackUrlFor?: (tenantId: string) => Promise<string | null>;
   baseUrl?: string;
 }
 
@@ -54,11 +63,19 @@ function toSuggestion(s: RcsSuggestion): Record<string, unknown> {
   return { type: 'DIAL_PHONE', text: s.text, phoneNumber: s.phoneNumber, postbackData: s.postbackData };
 }
 
-function toCard(c: RcsCard): Record<string, unknown> {
+/**
+ * Carte interne -> `content` smsmode.
+ *
+ * 🔴 Les noms comptent, et ce mapping était FAUX avant d'être confronté à leur spec : on envoyait `card` au
+ * lieu de `content`, `cards` au lieu de `contents`, et `media.url` au lieu de `media.fileUrl`. Aucun envoi
+ * n'était concerné (l'écran ne produisait que du TEXTE), mais la première image envoyée se serait fait
+ * refuser en 400. Vérifié contre `dev.smsmode.com/rcs/openapi/rest-rcs.yml` le 2026-08-24.
+ */
+function toCardContent(c: RcsCard): Record<string, unknown> {
   return {
-    title: c.title,
+    ...(c.title ? { title: c.title } : {}),
     ...(c.description ? { description: c.description } : {}),
-    ...(c.mediaUrl ? { media: { url: c.mediaUrl } } : {}),
+    ...(c.mediaUrl ? { media: { fileUrl: c.mediaUrl, ...(c.mediaHeight ? { height: c.mediaHeight } : {}) } } : {}),
     ...(c.suggestions?.length ? { suggestions: c.suggestions.map(toSuggestion) } : {}),
   };
 }
@@ -72,8 +89,17 @@ export function toSmsmodeBody(msg: RcsOutbound): Record<string, unknown> {
       ...(msg.suggestions?.length ? { suggestions: msg.suggestions.map(toSuggestion) } : {}),
     };
   }
-  if (msg.kind === 'card') return { type: 'CARD', card: toCard(msg.card) };
-  return { type: 'CAROUSEL', cards: msg.cards.map(toCard) };
+  if (msg.kind === 'card') {
+    return {
+      type: 'CARD',
+      content: toCardContent(msg.card),
+      // Orientation VERTICALE : l'image au-dessus du texte, pleine largeur. C'est la mise en page que tout le
+      // monde a en tête en disant « une image en en-tête » ; HORIZONTAL colle une vignette sur le côté.
+      orientation: 'VERTICAL',
+      ...(msg.suggestions?.length ? { suggestions: msg.suggestions.map(toSuggestion) } : {}),
+    };
+  }
+  return { type: 'CAROUSEL', contents: msg.cards.map(toCardContent) };
 }
 
 export class SmsmodeRcsProvider implements RcsProvider {
@@ -102,6 +128,16 @@ export class SmsmodeRcsProvider implements RcsProvider {
     return propre && propre !== '' ? propre : this.o.apiKey;
   }
 
+  /** Adresses de rappel à poser sur CET envoi : celle du workspace si elle existe, sinon les globales. */
+  private async rappelsDe(tenantId: string): Promise<{ callbackUrlStatus?: string; callbackUrlMo?: string }> {
+    const propre = this.o.callbackUrlFor ? await this.o.callbackUrlFor(tenantId) : null;
+    if (propre && propre !== '') return { callbackUrlStatus: propre, callbackUrlMo: propre };
+    return {
+      ...(this.o.callbackUrlStatus ? { callbackUrlStatus: this.o.callbackUrlStatus } : {}),
+      ...(this.o.callbackUrlMo ? { callbackUrlMo: this.o.callbackUrlMo } : {}),
+    };
+  }
+
   async send(tenantId: string, _agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult> {
     const to = e164.replace(/[^0-9]/g, ''); // chiffres nus, sans '+' : format exigé par leur API
     const body = {
@@ -110,9 +146,10 @@ export class SmsmodeRcsProvider implements RcsProvider {
       // `refClient` = NOTRE identifiant, pour recoller le rapport de livraison au destinataire de campagne.
       // ⚠️ Ce n'est PAS une clé d'idempotence : contrairement à RBM, smsmode ne rejette pas un doublon.
       // La protection contre le double envoi reste le claim atomique de `campaign_recipients`.
-      refClient: messageId,
-      ...(this.o.callbackUrlStatus ? { callbackUrlStatus: this.o.callbackUrlStatus } : {}),
-      ...(this.o.callbackUrlMo ? { callbackUrlMo: this.o.callbackUrlMo } : {}),
+      // Tronqué à 140 : leur champ est borné là, et un dépassement ferait refuser l'ENVOI ENTIER pour une
+      // référence de débogage. Nos identifiants (uuid, uuid:bloc) tiennent largement dessous.
+      refClient: messageId.slice(0, 140),
+      ...(await this.rappelsDe(tenantId)),
     };
 
     const cle = await this.cleDe(tenantId);

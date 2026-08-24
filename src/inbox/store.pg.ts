@@ -220,14 +220,16 @@ export class PgInboxStore implements InboxStore {
     );
   }
 
-  async recordInbound(tenantId: string, m: InboundMessage): Promise<void> {
+  /** `channel` : le fil est unique par contact, c'est la BULLE qui porte le tuyau. Absent -> WhatsApp, donc
+   *  tous les appelants historiques écrivent exactement ce qu'ils écrivaient. */
+  async recordInbound(tenantId: string, m: InboundMessage, channel: 'whatsapp' | 'rcs' = 'whatsapp'): Promise<void> {
     const preview = m.body ?? m.buttonPayload ?? `[${m.type}]`;
     const conversationId = await this.upsertConversationByWaId(tenantId, m.waId, preview);
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id)
-       values ($1, 'in', $2, $3, $4, $5)
+      `insert into conversation_messages (conversation_id, direction, type, body, button_payload, meta_message_id, channel)
+       values ($1, 'in', $2, $3, $4, $5, $6)
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
-      [conversationId, m.type, m.body, m.buttonPayload, m.messageId],
+      [conversationId, m.type, m.body, m.buttonPayload, m.messageId, channel],
     );
   }
 

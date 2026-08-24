@@ -632,6 +632,29 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Le message RCS n'a PAS pu être remis (rapport de livraison UNDELIVERABLE / UNDELIVERED). Le parcours
+   * repart par la sortie « non joignable » du bloc : c'est la cascade RCS -> WhatsApp.
+   *
+   * 🔴 Pourquoi une méthode À PART plutôt qu'un `advance(..., 'unreachable')`. `advance` retombe sur la
+   * première arête libre quand aucun handle ne correspond. Sur un run qui attend AUTRE CHOSE qu'un bloc RCS
+   * (un template, par exemple), passer « unreachable » ferait donc avancer le parcours d'un cran sur un
+   * accusé qui ne le concerne pas. La garde ci-dessous est tout l'intérêt de cette porte d'entrée : on ne
+   * bascule en repli QUE si le run attend bien sur un bloc RCS.
+   *
+   * Rejeu sans effet : `advance` déduplique sur `lastMessageId`, et un rapport rejoué porte le même
+   * identifiant de message. smsmode rejoue jusqu'à six fois, ce n'est donc pas un cas théorique.
+   */
+  async rcsUndeliverable(tenantId: string, waId: string, messageId: string): Promise<boolean> {
+    const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
+    if (!run || !run.currentNode) return false;
+    const graph = await this.deps.getGraph(run.workflowId, tenantId);
+    const courant = graph?.nodes.find((n) => n.id === run.currentNode);
+    if (courant?.type !== 'rcs_message') return false;
+    await this.advance(tenantId, waId, messageId, 'unreachable');
+    return true;
+  }
+
+  /**
    * Avance le run en attente d'un contact quand il répond. No-op si aucun run / message déjà traité.
    * `buttonPayload` = bouton quick-reply tapé (`btn:<index>`). Routage en TROIS cas, dans cet ordre :
    *   1. une arête part de CE handle -> sa branche (le bouton est câblé) ;

@@ -15,6 +15,8 @@ import type { Campaign } from '../campaign/types';
 export interface RcsStack {
   sender: RcsSender;
   agents: PgRcsAgentStore;
+  /** Opt-out du canal. Exposé parce que le webhook de réponses doit ÉCRIRE dedans quand un contact dit STOP. */
+  optout: PgRcsOptoutStore;
   /** Sender de canal pour une campagne. null = campagne inexploitable (agent absent, message manquant). */
   senderForCampaign(campaign: Campaign): Promise<CampaignSender | null>;
 }
@@ -24,6 +26,8 @@ export interface SmsmodeCredentials {
   apiKey: string;
   callbackUrlStatus?: string;
   callbackUrlMo?: string;
+  /** Adresse de rappel propre au workspace (livraison + réponses). Prime sur les deux URLs globales. */
+  callbackUrlFor?: (tenantId: string) => Promise<string | null>;
   /** Clé PROPRE au tenant (déchiffrée à la demande). C'est le cas normal dès la deuxième marque. */
   apiKeyFor?: (tenantId: string) => Promise<string | null>;
 }
@@ -50,6 +54,7 @@ function providerFor(nom: 'fake' | 'smsmode' | 'google', dryRun: boolean, smsmod
       ...(smsmode.apiKeyFor ? { apiKeyFor: smsmode.apiKeyFor } : {}),
       ...(smsmode.callbackUrlStatus ? { callbackUrlStatus: smsmode.callbackUrlStatus } : {}),
       ...(smsmode.callbackUrlMo ? { callbackUrlMo: smsmode.callbackUrlMo } : {}),
+      ...(smsmode.callbackUrlFor ? { callbackUrlFor: smsmode.callbackUrlFor } : {}),
     });
   }
   throw new Error(`RCS_PROVIDER=${nom} n'est pas encore implémenté. Disponibles : 'fake', 'smsmode'.`);
@@ -63,15 +68,13 @@ export function buildRcsStack(
 ): RcsStack {
   const provider = providerFor(providerName, dryRun, smsmode);
   const agents = new PgRcsAgentStore(pool);
-  const sender = new RcsSender(
-    provider,
-    new Reachability(provider, new PgReachabilityStore(pool)),
-    new PgRcsOptoutStore(pool),
-  );
+  const optout = new PgRcsOptoutStore(pool);
+  const sender = new RcsSender(provider, new Reachability(provider, new PgReachabilityStore(pool)), optout);
 
   return {
     sender,
     agents,
+    optout,
     async senderForCampaign(campaign: Campaign): Promise<CampaignSender | null> {
       // L'agent et le message sont figés SUR la campagne à sa création (et validés là-bas). On ne va pas
       // rechercher l'agent du tenant ici : une campagne doit partir avec l'agent sous lequel elle a été
