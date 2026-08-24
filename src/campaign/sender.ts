@@ -2,6 +2,7 @@ import type { Recipient } from './types';
 import type { SendResult } from '../meta/types';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound } from '../rcs/types';
+import { appliquerVariables } from '../rcs/variables';
 
 /**
  * Seam d'envoi du moteur de campagne.
@@ -23,12 +24,26 @@ export interface RcsCampaignSenderOpts {
   agentId: string;
   message: RcsOutbound;
   rcs: RcsSender;
+  /**
+   * Table de substitution des variables `{{champ}}` de CE destinataire.
+   *
+   * Fourni SEULEMENT quand le message en porte : sinon la campagne paierait une lecture de fiche par
+   * destinataire pour un message figé. Le chemin WhatsApp, lui, résout ses variables à la CONSTRUCTION de la
+   * liste (`buildRecipients`), parce que Meta refuse un message dont une variable est vide et qu'il faut donc
+   * pouvoir écarter le destinataire AVANT d'envoyer. Le RCS n'a pas cette contrainte : une variable vide
+   * laisse un trou dans le texte, pas un rejet, donc on résout au moment de l'envoi, là où c'est le plus
+   * simple à lire.
+   */
+  varsFor?: (tenantId: string, e164: string) => Promise<Record<string, string | null>>;
 }
 
 export function makeCampaignSender(o: RcsCampaignSenderOpts): CampaignSender {
   return {
     async sendTo(recipient) {
-      return o.rcs.sendTo(o.tenantId, o.agentId, recipient.toE164, o.message, recipient.id);
+      const message = o.varsFor
+        ? appliquerVariables(o.message, await o.varsFor(o.tenantId, recipient.toE164))
+        : o.message;
+      return o.rcs.sendTo(o.tenantId, o.agentId, recipient.toE164, message, recipient.id);
     },
   };
 }

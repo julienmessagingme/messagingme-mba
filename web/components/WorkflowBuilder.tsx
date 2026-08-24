@@ -14,6 +14,7 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
+import { versBrouillonRcs, maxTexteRcs } from '@/lib/rcs';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
@@ -917,16 +918,31 @@ function ConfigPanel({
                   const m = rcsMessages.find((x) => x.id === e.target.value);
                   // COPIE, pas référence : le bloc devient autonome. Modifier la bibliothèque ensuite ne
                   // réécrit donc PAS les scénarios déjà construits, et un message supprimé ne casse rien.
-                  if (m?.content?.kind === 'text') onPatch({ text: m.content.text, suggestions: m.content.suggestions ?? [] });
+                  const b = versBrouillonRcs(m?.content ?? null);
+                  if (b) onPatch({ text: b.text, imageUrl: b.imageUrl, suggestions: b.suggestions });
                 }}
                 className={`${cls} bg-white`}
                 data-testid="rcs-node-library"
               >
                 <option value="">{rcsMessages.length === 0 ? t('Aucun message enregistré', 'No saved message') : t('Choisir…', 'Choose…')}</option>
-                {rcsMessages.filter((m) => m.content?.kind === 'text').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {rcsMessages.filter((m) => versBrouillonRcs(m.content) !== null).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
               <p className="mt-1 text-[11px] text-ink-400">
                 {t('Le message est COPIÉ dans ce bloc : le modifier ici ne touche pas la bibliothèque, et modifier la bibliothèque ne touche pas ce bloc.', 'The message is COPIED into this block: editing it here does not touch the library, and editing the library does not touch this block.')}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image d’en-tête (facultatif)', 'Header image (optional)')}</label>
+              <input
+                value={(d.imageUrl as string) ?? ''}
+                onChange={(e) => onPatch({ imageUrl: e.target.value })}
+                data-testid="rcs-node-image"
+                placeholder="https://…/visuel.jpg"
+                className={`${cls} bg-white`}
+              />
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('Une adresse publique en .jpg .png ou .gif. Avec un visuel, le texte est limité à 2000 caractères.', 'A public URL, .jpg .png or .gif. With a visual, the text is capped at 2000 characters.')}
               </p>
             </div>
 
@@ -936,10 +952,13 @@ function ConfigPanel({
                 value={(d.text as string) ?? ''}
                 onChange={(e) => onPatch({ text: e.target.value })}
                 rows={4}
-                maxLength={3072}
+                maxLength={maxTexteRcs(String(d.imageUrl ?? ''))}
                 placeholder={t('Votre message…', 'Your message…')}
                 className={`${cls} bg-white`}
               />
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('Les variables {{champ}} sont remplacées par la fiche du contact à l’envoi.', 'The {{field}} variables are filled in from the contact at send time.')}
+              </p>
             </div>
 
             <div>

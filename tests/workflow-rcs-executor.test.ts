@@ -35,7 +35,7 @@ function graphe(): WorkflowGraph {
   })!;
 }
 
-function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = true, enAttenteSur?: string) {
+function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = true, enAttenteSur?: string, vars?: Record<string, string | null>) {
   const provider = new FakeRcsProvider({ unreachable: new Set(nonJoignables) });
   const rcsSender = new RcsSender(provider, new Reachability(provider, new SansCache(), () => 0), {
     isOptedOut: async () => false,
@@ -69,7 +69,9 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
         ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null }
         : null),
     },
-    ...(avecRcs ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1' } } : {}),
+    ...(avecRcs
+      ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1', ...(vars ? { varsFor: async () => vars } : {}) } }
+      : {}),
   };
   return { provider, deps, etats, tags, templates, executor: new WorkflowExecutor(deps) };
 }
@@ -199,5 +201,55 @@ describe('bloc RCS a l execution', () => {
     const bascule = await executor.rcsUndeliverable('t1', '33600000002', 'msg-smsmode-2');
     expect(bascule).toBe(false);
     expect(tags).toEqual([]);
+  });
+
+  it('bascule en CARTE des qu un visuel est renseigne, boutons sous le message', async () => {
+    const g = parseGraph({
+      nodes: [{
+        id: 'r', type: 'rcs_message', position: pos,
+        data: {
+          text: 'Notre offre',
+          imageUrl: 'https://x/visuel.jpg',
+          suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'oui' }],
+        },
+      }],
+      edges: [],
+    })!;
+    const { provider, executor } = monter(g);
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(provider.sent[0]!.msg).toEqual({
+      kind: 'card',
+      card: { description: 'Notre offre', mediaUrl: 'https://x/visuel.jpg', mediaHeight: 'TALL' },
+      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn:0' }],
+    });
+  });
+
+  it('remplace les variables du contact dans le message', async () => {
+    const g = parseGraph({
+      nodes: [{ id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour {{prenom}}, a {{ville}} ?' } }],
+      edges: [],
+    })!;
+    const { provider, executor } = monter(g, [], true, undefined, { prenom: 'Julien', ville: null });
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    // `ville` sans valeur laisse un BLANC : un message part toujours, jamais bloque par une fiche incomplete.
+    expect(provider.sent[0]!.msg).toEqual({ kind: 'text', text: 'Bonjour Julien, a  ?' });
+  });
+
+  // Sans variable dans le message, la fiche du contact n'est PAS lue : une campagne de 5 000 numeros sur un
+  // message fige ne doit pas declencher 5 000 lectures pour rien.
+  it('ne lit PAS la fiche du contact quand le message n a aucune variable', async () => {
+    const g = parseGraph({
+      nodes: [{ id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour' } }],
+      edges: [],
+    })!;
+    let lectures = 0;
+    const { deps, provider } = monter(g);
+    const executor = new WorkflowExecutor({
+      ...deps,
+      rcs: { ...deps.rcs!, varsFor: async () => { lectures += 1; return {}; } },
+    });
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(provider.sent).toHaveLength(1);
+    expect(lectures).toBe(0);
   });
 });

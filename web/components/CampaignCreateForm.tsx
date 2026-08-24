@@ -14,6 +14,7 @@ import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
+import { versMessageRcs, versBrouillonRcs, maxTexteRcs } from '@/lib/rcs';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import {
@@ -100,6 +101,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [mode, setMode] = useState<'template' | 'workflow' | 'rcs'>('template');
   const [rcsAgentId, setRcsAgentId] = useState('');
   const [rcsText, setRcsText] = useState('');
+  const [rcsImage, setRcsImage] = useState('');
   const [rcsBoutons, setRcsBoutons] = useState<RcsSuggestion[]>([]);
   const [rcsAgents, setRcsAgents] = useState<RcsAgent[]>([]);
   const [rcsMessages, setRcsMessages] = useState<RcsMessage[]>([]);
@@ -558,15 +560,10 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       return {
         phoneNumberId: '', name, category, channel: 'rcs',
         rcsAgentId,
-        rcsMessage: {
-          kind: 'text',
-          text: rcsText.trim(),
-          // Les boutons sans libellé sont écartés ici : le serveur les refuserait et ferait échouer la
-          // création entière pour une ligne qu'un opérateur a juste oublié de remplir.
-          ...(rcsBoutons.filter((b) => b.text.trim() !== '').length
-            ? { suggestions: rcsBoutons.filter((b) => b.text.trim() !== '') }
-            : {}),
-        },
+        // MÊME constructeur que la bibliothèque (`web/lib/rcs.ts`) : c'est lui qui décide TEXTE ou CARTE
+        // selon qu'il y a un visuel, et qui écarte les boutons sans libellé (le serveur refuserait la
+        // création entière pour une ligne qu'un opérateur a juste oublié de remplir).
+        rcsMessage: versMessageRcs({ text: rcsText, imageUrl: rcsImage, suggestions: rcsBoutons }),
         contactIds: [...selected], ratePerMinute,
       };
     }
@@ -603,7 +600,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     return {
       category, mode, source,
       phoneNumberId, templateName, templateLanguage, vars,
-      workflowId, rcsAgentId, rcsText,
+      workflowId, rcsAgentId, rcsText, rcsImage,
       ratePerMinute, timing, scheduledLocal,
     };
   }
@@ -657,6 +654,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (txt('workflowId') !== undefined) setWorkflowId(txt('workflowId')!);
     if (txt('rcsAgentId') !== undefined) setRcsAgentId(txt('rcsAgentId')!);
     if (txt('rcsText') !== undefined) setRcsText(txt('rcsText')!);
+    if (txt('rcsImage') !== undefined) setRcsImage(txt('rcsImage')!);
     if (txt('scheduledLocal') !== undefined) setScheduledLocal(txt('scheduledLocal')!);
     if (txt('timing') === 'now' || txt('timing') === 'later') setTiming(txt('timing') as 'now' | 'later');
     if (typeof s.ratePerMinute === 'number') setRatePerMinute(s.ratePerMinute);
@@ -1042,18 +1040,26 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
               const m = rcsMessages.find((x) => x.id === e.target.value);
               // COPIE : la campagne garde le message tel qu'il était au moment de sa création. Modifier la
               // bibliothèque ensuite ne réécrit pas une campagne déjà partie.
-              if (m?.content?.kind === 'text') { setRcsText(m.content.text); setRcsBoutons(m.content.suggestions ?? []); }
+              const b = versBrouillonRcs(m?.content ?? null);
+              if (b) { setRcsText(b.text); setRcsImage(b.imageUrl); setRcsBoutons(b.suggestions); }
             }}
             className={`${inputCls} mb-2 max-w-xs bg-white`}
           >
             <option value="">{rcsMessages.length === 0 ? t('Aucun message enregistré', 'No saved message') : t('Partir d’un message enregistré…', 'Start from a saved message…')}</option>
-            {rcsMessages.filter((m) => m.content?.kind === 'text').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {rcsMessages.filter((m) => versBrouillonRcs(m.content) !== null).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
+          <input
+            value={rcsImage}
+            onChange={(e) => setRcsImage(e.target.value)}
+            data-testid="rcs-message-image"
+            placeholder={t('Image d’en-tête (facultatif) : https://…/visuel.jpg', 'Header image (optional): https://…/visuel.jpg')}
+            className={`${inputCls} mb-2`}
+          />
           <textarea
             value={rcsText}
             onChange={(e) => setRcsText(e.target.value)}
             rows={5}
-            maxLength={3072}
+            maxLength={maxTexteRcs(rcsImage)}
             data-testid="rcs-message"
             placeholder={t('Votre message…', 'Your message…')}
             className={inputCls}

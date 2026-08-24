@@ -8,6 +8,7 @@ import type { RunState, WorkflowRunRow } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound } from '../rcs/types';
 import { rcsSuggestionSchema } from '../rcs/schema';
+import { aDesVariables, appliquerVariables } from '../rcs/variables';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
@@ -108,6 +109,13 @@ export interface WorkflowExecutorDeps {
     sender: RcsSender;
     /** Agent RCS du tenant (`rcs_agents.agent_id`). null = tenant sans agent configuré. */
     agentIdFor(tenantId: string): Promise<string | null>;
+    /**
+     * Table de substitution des variables `{{champ}}` du contact. OPTIONNELLE : absente, un message part avec
+     * ses accolades telles quelles, ce qui est visible tout de suite et donc préférable à un envoi bloqué.
+     * Appelée SEULEMENT si le message porte au moins une variable : un bloc RCS sans variable (le cas courant)
+     * ne paie aucune requête.
+     */
+    varsFor?(tenantId: string, waId: string): Promise<Record<string, string | null>>;
   };
   /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
   now?: () => number;
@@ -189,7 +197,13 @@ function rcsOutboundOf(node: WorkflowNode | undefined): RcsOutbound | null {
   const boutons = Array.isArray(node.data.suggestions)
     ? node.data.suggestions.map((b) => rcsSuggestionSchema.safeParse(b)).filter((r) => r.success).map((r) => r.data)
     : [];
-  return boutons.length ? { kind: 'text', text, suggestions: boutons } : { kind: 'text', text };
+  const suggestions = boutons.length ? { suggestions: boutons } : {};
+  // Visuel d'en-tête -> le message devient une CARTE, exactement comme dans la bibliothèque (`web/lib/rcs.ts`
+  // fait la même bascule côté écran). Les boutons restent au niveau du message : 11 possibles, contre 4
+  // s'ils vivaient dans la carte.
+  const image = String(node.data.imageUrl ?? '').trim();
+  if (image !== '') return { kind: 'card', card: { description: text, mediaUrl: image, mediaHeight: 'TALL' }, ...suggestions };
+  return { kind: 'text', text, ...suggestions };
 }
 
 /** Anti-boucle de `walkResolved` : une chaîne de blocs RCS tous non joignables finit par s'arrêter. Le walk
@@ -481,10 +495,15 @@ export class WorkflowExecutor {
       if (r.rest.status !== 'rcs_send') return { actions, rest: r.rest };
 
       const nodeId = r.rest.nodeId;
-      const msg = rcsOutboundOf(graph.nodes.find((n) => n.id === nodeId));
+      const brut = rcsOutboundOf(graph.nodes.find((n) => n.id === nodeId));
       const agentId = this.deps.rcs ? await this.deps.rcs.agentIdFor(tenantId) : null;
       let envoye = false;
-      if (this.deps.rcs && agentId && msg) {
+      if (this.deps.rcs && agentId && brut) {
+        // Variables `{{prenom}}` du contact. La fiche n'est lue QUE si le message en porte : un bloc sans
+        // variable, qui est le cas courant, ne déclenche aucune requête supplémentaire.
+        const msg = this.deps.rcs.varsFor && aDesVariables(brut)
+          ? appliquerVariables(brut, await this.deps.rcs.varsFor(tenantId, waId))
+          : brut;
         const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`);
         envoye = !('skipped' in out);
       }

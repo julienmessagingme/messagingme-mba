@@ -7,6 +7,7 @@ import { PgReachabilityStore } from './reachability.pg';
 import { PgRcsAgentStore, PgRcsOptoutStore } from './store.pg';
 import { RcsSender } from './sender';
 import type { RcsProvider, RcsOutbound } from './types';
+import { aDesVariables } from './variables';
 import { makeCampaignSender } from '../campaign/sender';
 import type { CampaignSender } from '../campaign/sender';
 import type { Campaign } from '../campaign/types';
@@ -65,6 +66,8 @@ export function buildRcsStack(
   providerName: 'fake' | 'smsmode' | 'google',
   dryRun: boolean,
   smsmode?: SmsmodeCredentials,
+  /** Variables `{{champ}}` d'un contact, par numéro. Absente -> les messages partent avec leurs accolades. */
+  varsFor?: (tenantId: string, e164: string) => Promise<Record<string, string | null>>,
 ): RcsStack {
   const provider = providerFor(providerName, dryRun, smsmode);
   const agents = new PgRcsAgentStore(pool);
@@ -88,6 +91,9 @@ export function buildRcsStack(
         agentId,
         message,
         rcs: sender,
+        // Résolution par destinataire UNIQUEMENT si le message porte des variables : une campagne de 5 000
+        // numéros sur un message figé ne doit pas déclencher 5 000 lectures de fiche pour rien.
+        ...(varsFor && aDesVariables(message) ? { varsFor } : {}),
       });
     },
   };

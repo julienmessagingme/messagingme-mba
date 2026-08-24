@@ -21,6 +21,7 @@ import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
 import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
+import { waIdOfTarget } from '../crm/identity';
 import { PgRcsAgentStore } from '../rcs/store.pg';
 import { decryptSecret } from '../crypto/secretbox';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
@@ -91,7 +92,11 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       const code = await agentsRcs.webhookCodePour(tenant);
       return code ? urlRappelRcs(config.APP_URL, code) : null;
     },
-  });
+  },
+  // Variables `{{champ}}` d'une CAMPAGNE RCS. `waIdOfTarget` et pas le E.164 brut : un contact se résout sur
+  // son wa_id (chiffres nus), et un « + » en tête ne trouverait jamais personne.
+  async (tenant, e164) => contactVars(await contactStore.getResolvableByPhone(tenant, waIdOfTarget(e164)) ?? {}),
+  );
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
 
@@ -257,7 +262,13 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     runs: runStore,
     // Canal RCS du bloc `rcs_message`. `agentIdFor` est scopé tenant : c'est lui qui empêche un scénario
     // d'envoyer sous la marque d'un autre client. Aucun agent -> le bloc part sur sa sortie « non joignable ».
-    rcs: { sender: rcsStack.sender, agentIdFor: (tenant) => rcsStack.agents.agentIdForTenant(tenant) },
+    rcs: {
+      sender: rcsStack.sender,
+      agentIdFor: (tenant) => rcsStack.agents.agentIdForTenant(tenant),
+      // Variables `{{champ}}` d'un message RCS : MÊME table que les modèles d'email, donc mêmes noms de
+      // champs et mêmes règles. Hors base -> table vide, les variables rendent du vide au lieu de bloquer.
+      varsFor: async (tenant, waId) => contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}),
+    },
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
     mayAct: async (tenant, waId) => (await inboxStore.getControlOwner(tenant, waId)) === 'app_workflow',

@@ -356,8 +356,14 @@ export interface CreateCampaignInput {
   channel?: 'whatsapp' | 'rcs';
   /** Campagne RCS : agent de marque qui envoie. */
   rcsAgentId?: string;
-  /** Campagne RCS : message envoyé tel quel (pas de template à faire approuver). */
-  rcsMessage?: { kind: 'text'; text: string };
+  /**
+   * Campagne RCS : message envoyé tel quel (pas de template à faire approuver).
+   *
+   * Typé `RcsOutbound`, l'union COMPLÈTE, et pas la seule forme texte : une campagne à visuel envoie une
+   * CARTE. L'ancienne déclaration ne mentait qu'à moitié (les boutons passaient déjà, par un spread qui
+   * échappe au contrôle des propriétés en trop), ce qui est la pire des deux situations.
+   */
+  rcsMessage?: RcsOutbound;
 }
 
 /** Campagnes actives par défaut ; `archived: true` renvoie la corbeille (les deux ensembles sont disjoints). */
@@ -392,29 +398,10 @@ export function deactivateRcsChannel(tenantId: string): Promise<{ active: false 
   return request<{ active: false }>(`/tenants/${tenantId}/rcs/channel`, { method: 'DELETE' });
 }
 
-/** Suggestion RCS : bouton affiché sous le message. Trois formes, comme chez le provider. */
-export type RcsSuggestion =
-  | { kind: 'reply'; text: string; postbackData: string }
-  | { kind: 'openUrl'; text: string; url: string; postbackData: string }
-  | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string };
-
-/** Carte : le format à VISUEL, celui qui porte une image au-dessus du texte. Titre optionnel (le provider
- *  exige « un titre OU un média »). */
-export interface RcsCard {
-  title?: string;
-  description?: string;
-  mediaUrl?: string;
-  /** Hauteur du visuel : SHORT (7:3), MEDIUM (2:1), TALL (16:9, la grande image de campagne). */
-  mediaHeight?: 'SHORT' | 'MEDIUM' | 'TALL';
-  suggestions?: RcsSuggestion[];
-}
-
-/** Message RCS. Union fermée, identique au modèle serveur : ce qui n'est pas ici ne s'envoie pas. */
-export type RcsOutbound =
-  | { kind: 'text'; text: string; suggestions?: RcsSuggestion[] }
-  /** `suggestions` = la rangée de boutons SOUS le message (11 max), distincte des 4 boutons de la carte. */
-  | { kind: 'card'; card: RcsCard; suggestions?: RcsSuggestion[] }
-  | { kind: 'carousel'; cards: RcsCard[] };
+// Modèle du message RCS : dans `./rcs-types`, module PUR, pour que la bascule TEXTE/CARTE (`./rcs`) soit
+// testable depuis la suite racine sans tirer `window`. Ré-exporté ici : les écrans l'importent toujours d'`api`.
+export type { RcsSuggestion, RcsCard, RcsOutbound } from './rcs-types';
+import type { RcsSuggestion, RcsOutbound } from './rcs-types';
 
 export interface RcsMessage {
   id: string;
