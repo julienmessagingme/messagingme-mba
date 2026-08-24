@@ -138,6 +138,27 @@ export function chiffresNus(s: string): string {
 }
 
 /**
+ * Le NUMÉRO du contact, parmi les champs d'identité d'un rappel.
+ *
+ * 🔴 Pourquoi ce n'est pas simplement `from`. Leur documentation montre un message entrant avec
+ * `from: "33600000000"` (le contact) et `recipient.to: "RcsAgent"`. La PRODUCTION fait l'inverse : le corps
+ * réel d'un clic sur un bouton porte `from: "Messaging Me (TEST)"` (l'agent) et `recipient.to:
+ * "33633921577"` (le contact). Autrement dit ils gardent l'orientation du message SORTANT même sur un
+ * entrant, à l'opposé de leur propre exemple.
+ *
+ * Conséquence vécue le 2026-08-24 : deux clics de Julien ont été reçus, rejetés, et le scénario est resté
+ * bloqué sans que rien ne le dise. On ne se fie donc plus à la POSITION du champ mais à sa FORME : on prend
+ * le premier des deux qui ressemble à un numéro. Un nom d'agent n'a pas 7 chiffres, un numéro les a tous.
+ */
+export function numeroDuContact(...candidats: Array<string | undefined>): string | null {
+  for (const brut of candidats) {
+    const chiffres = chiffresNus(brut ?? '');
+    if (chiffres.length >= 7) return chiffres;
+  }
+  return null;
+}
+
+/**
  * Ce corps est-il un rapport de livraison ?
  *
  * 🔴 Le discriminant est la PRÉSENCE d'un `status.value`, pas `direction`. Première version : `direction ===
@@ -181,8 +202,10 @@ export function parseRcsMo(raw: unknown): RcsMo | null {
   if (!e.success) return null;
   const m = corpsMo.safeParse(raw);
   if (!m.success) return null;
-  const from = chiffresNus(e.data.from ?? '');
-  if (from === '') return null; // sans expéditeur, rien à rattacher : ni contact, ni parcours
+  // Le contact est `from` OU `recipient.to` selon l'orientation que le fournisseur donne au corps : les deux
+  // sont acceptés, c'est la FORME qui tranche (cf. `numeroDuContact`).
+  const from = numeroDuContact(e.data.from, e.data.recipient?.to);
+  if (from === null) return null; // aucun numéro : rien à rattacher, ni contact, ni parcours
   const type = (m.data.body.type ?? '').toUpperCase();
   const kind = type === 'SUGGESTION' ? 'suggestion'
     : type === 'LOCATION' ? 'location'

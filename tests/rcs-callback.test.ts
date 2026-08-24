@@ -175,6 +175,44 @@ describe('Lecture des rappels smsmode', () => {
     expect(apercuMo(mo!)).toBe('📍 position partagée');
   });
 
+  /**
+   * 🔴 LE bug qui a bloque le scenario de Julien, deux fois, le 2026-08-24. Leur DOCUMENTATION montre un
+   * entrant avec `from` = le contact et `recipient.to` = l'agent. Leur PRODUCTION fait l'INVERSE : elle garde
+   * l'orientation du sortant, `from` = l'agent, `recipient.to` = le contact.
+   *
+   * On ne se fie donc plus a la position du champ mais a sa FORME. Ce corps est le vrai, recopie de la base
+   * apres le clic.
+   */
+  it('lit un clic dont le contact est dans `recipient.to` et l agent dans `from` (corps REEL)', () => {
+    const reel = {
+      body: { text: 'Recois un whastapp', type: 'SUGGESTION', postbackData: 'btn:0' },
+      from: 'Messaging Me (TEST)',
+      type: 'RCS',
+      channel: { flow: 'MARKETING', name: 'CANAL RCS (test)', type: 'RCS', channelId: 'ch-1' },
+      sentDate: '2026-08-24T22:48:52',
+      direction: 'MO',
+      messageId: '01fb719b-a961-4709-ac09-de8c80e22e77',
+      recipient: { to: '33633921577' },
+      refClient: 'b246bebd-50f8-4d1a-bae1-6b2178ebc4e2:64b9ca84-44ca-442f-a33c-688ffbf0e7b5',
+      originMessageId: 'dbe01225-5843-43ad-b239-e1276de6322a',
+    };
+    expect(estDlr(reel)).toBe(false);
+    expect(parseRcsMo(reel)).toMatchObject({
+      from: '33633921577',
+      kind: 'suggestion',
+      postbackData: 'btn:0',
+      text: 'Recois un whastapp',
+    });
+  });
+
+  it('lit AUSSI l orientation de leur documentation (contact dans `from`)', () => {
+    expect(parseRcsMo(MO_SUGGESTION)?.from).toBe('33600000000');
+  });
+
+  it('refuse un corps ou AUCUN des deux champs n est un numero', () => {
+    expect(parseRcsMo({ ...MO_SUGGESTION, from: 'Agent', recipient: { to: 'RcsAgent' } })).toBeNull();
+  });
+
   it('lit un message ecrit, sans charge utile de bouton', () => {
     const mo = parseRcsMo({ ...MO_SUGGESTION, body: { type: 'TEXT', text: 'Hello World 🌍' } });
     expect(mo?.kind).toBe('text');
