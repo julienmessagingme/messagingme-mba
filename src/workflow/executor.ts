@@ -664,13 +664,41 @@ export class WorkflowExecutor {
    * identifiant de message. smsmode rejoue jusqu'à six fois, ce n'est donc pas un cas théorique.
    */
   async rcsUndeliverable(tenantId: string, waId: string, messageId: string): Promise<boolean> {
-    const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
-    if (!run || !run.currentNode) return false;
-    const graph = await this.deps.getGraph(run.workflowId, tenantId);
-    const courant = graph?.nodes.find((n) => n.id === run.currentNode);
-    if (courant?.type !== 'rcs_message') return false;
+    if (!(await this.blocRcsEnAttente(tenantId, waId))) return false;
     await this.advance(tenantId, waId, messageId, 'unreachable');
     return true;
+  }
+
+  /**
+   * Le message RCS a bien été remis. Le parcours repart par la sortie « envoyé »… mais SEULEMENT si le bloc
+   * n'offre aucun bouton réponse.
+   *
+   * 🔴 Toute la difficulté est là. Après un envoi, le run attend SUR le bloc RCS, et deux choses peuvent
+   * encore arriver : le contact tape un bouton, ou le rapport de livraison tombe. Avancer sur « remis »
+   * alors qu'un bouton est proposé serait une faute : l'accusé arrive en quelques secondes, le contact
+   * répond bien plus tard, et son clic ne trouverait alors plus aucun parcours en attente.
+   *
+   * Sans bouton, en revanche, il n'y a rien à attendre d'autre : sans cette reprise, un bloc RCS suivi d'une
+   * attente puis d'une relance ne repartirait JAMAIS pour un contact qui ne répond pas, c'est-à-dire pour la
+   * quasi-totalité d'entre eux.
+   */
+  async rcsDelivered(tenantId: string, waId: string, messageId: string): Promise<boolean> {
+    const bloc = await this.blocRcsEnAttente(tenantId, waId);
+    if (!bloc) return false;
+    const boutons = Array.isArray(bloc.data.suggestions) ? bloc.data.suggestions : [];
+    if (boutons.some((b) => (b as { kind?: unknown }).kind === 'reply')) return false;
+    await this.advance(tenantId, waId, messageId, 'sent');
+    return true;
+  }
+
+  /** Le bloc RCS sur lequel ce contact a un parcours en attente, ou null. Garde commune aux deux reprises
+   *  ci-dessus : c'est elle qui empêche un accusé de faire avancer un parcours qui attend autre chose. */
+  private async blocRcsEnAttente(tenantId: string, waId: string): Promise<WorkflowNode | null> {
+    const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
+    if (!run || !run.currentNode) return null;
+    const graph = await this.deps.getGraph(run.workflowId, tenantId);
+    const courant = graph?.nodes.find((n) => n.id === run.currentNode);
+    return courant?.type === 'rcs_message' ? courant : null;
   }
 
   /**

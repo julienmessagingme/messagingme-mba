@@ -252,4 +252,49 @@ describe('bloc RCS a l execution', () => {
     expect(provider.sent).toHaveLength(1);
     expect(lectures).toBe(0);
   });
+
+  /**
+   * Sans bouton, un bloc RCS n'attend rien d'autre que son accuse : c'est le rapport DELIVERED qui relance
+   * le parcours. Sans cette reprise, un scenario << RCS puis attente puis relance >> resterait bloque pour
+   * tout contact qui ne repond pas, c'est-a-dire la quasi-totalite.
+   */
+  it('un rapport DELIVERED relance le parcours par « envoye » quand le bloc n a aucun bouton', async () => {
+    const g = graphe();
+    const { tags, executor } = monter(g, [], true, 'r');
+    const repris = await executor.rcsDelivered('t1', '33600000002', 'msg-smsmode-3');
+    expect(repris).toBe(true);
+    expect(tags).toEqual(['rcs-recu']);
+  });
+
+  // 🔴 L'inverse, et c'est le cas qui casserait tout : l'accuse arrive en quelques secondes, le contact
+  // repond bien plus tard. Avancer sur << remis >> enverrait son clic dans le vide.
+  it('NE relance PAS sur DELIVERED quand le bloc propose un bouton reponse', async () => {
+    const g = parseGraph({
+      nodes: [
+        {
+          id: 'r', type: 'rcs_message', position: pos,
+          data: { text: 'Bonjour', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'oui' }] },
+        },
+        { id: 'suite', type: 'action', position: pos, data: { actionKind: 'add_tag', tag: 'rcs-recu' } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'suite', sourceHandle: 'sent' }],
+    })!;
+    const { tags, executor } = monter(g, [], true, 'r');
+    const repris = await executor.rcsDelivered('t1', '33600000002', 'msg-smsmode-4');
+    expect(repris).toBe(false);
+    expect(tags).toEqual([]);
+  });
+
+  it('un rapport DELIVERED ne touche PAS un parcours qui attend sur un autre bloc', async () => {
+    const g = parseGraph({
+      nodes: [
+        { id: 'tpl', type: 'template', position: pos, data: { templateName: 'accueil', language: 'fr' } },
+        { id: 'apres', type: 'action', position: pos, data: { actionKind: 'add_tag', tag: 'avance-a-tort' } },
+      ],
+      edges: [{ id: 'e1', source: 'tpl', target: 'apres' }],
+    })!;
+    const { tags, executor } = monter(g, [], true, 'tpl');
+    expect(await executor.rcsDelivered('t1', '33600000002', 'msg-smsmode-5')).toBe(false);
+    expect(tags).toEqual([]);
+  });
 });

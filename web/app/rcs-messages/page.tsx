@@ -63,7 +63,9 @@ function RcsMessagesInner({ session }: { session: Session }) {
   }, [session.tenantId, t]);
 
   useEffect(() => { void reload(); }, [reload]);
-  useEffect(() => { listUserFields(session.tenantId).then((r) => setFields(r.fields)).catch(() => {}); }, [session.tenantId]);
+  // `?? []` : une réponse sans `fields` (route absente, câblage de test) mettrait `undefined` dans l'état, et
+  // le rendu suivant planterait sur `.filter`. Même garde que partout ailleurs sur une liste distante.
+  useEffect(() => { listUserFields(session.tenantId).then((r) => setFields(r.fields ?? [])).catch(() => {}); }, [session.tenantId]);
 
   // Mêmes variables que les modèles d'email, et ce n'est pas une coïncidence : les deux canaux passent par la
   // MÊME table de substitution côté serveur (`contactVars`). Proposer ici une clé qu'elle ne connaît pas

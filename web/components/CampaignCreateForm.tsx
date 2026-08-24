@@ -802,7 +802,10 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   // Workflow : prêt si un workflow valide est choisi (il OUVRE par un template, donc pas de wfError) ET le mapping de ses
   // variables est complet. Le 1er template sans variable a vars=[] -> varsComplete=true.
   const contentReady = mode === 'rcs'
-    ? (rcsAgentId !== '' && rcsText.trim() !== '')
+    // Le plafond de texte CHANGE quand on ajoute un visuel (2000 au lieu de 3072, borne du champ description
+    // chez smsmode). Un texte déjà saisi ne se raccourcit pas tout seul : sans ce contrôle, ajouter une image
+    // à la fin ferait échouer la création avec un « content invalide » que personne ne saurait relier à ça.
+    ? (rcsAgentId !== '' && rcsText.trim() !== '' && rcsText.length <= maxTexteRcs(rcsImage))
     : mode === 'workflow'
       ? (workflowId !== '' && wfError === null && varsComplete)
       : (templateName !== '' && varsComplete);

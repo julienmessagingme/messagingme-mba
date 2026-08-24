@@ -700,11 +700,13 @@ async function main(): Promise<void> {
         if (dlr.status !== null) {
           await recipientStore.updateDeliveryByMessageId(dlr.messageId, dlr.status, dlr.detail, null);
         }
-        // 2. La cascade de repli. C'est ICI, et nulle part ailleurs, que la sortie « non joignable » d'un bloc
-        //    RCS s'allume : chez smsmode la joignabilité ne se demande pas avant l'envoi, elle se constate
-        //    APRÈS, sur un rapport. Un parcours qui attendait sur ce bloc repart donc vers son repli WhatsApp.
-        if (dlr.echecDefinitif && dlr.to !== '') {
-          await workflowRuntime.executor.rcsUndeliverable(tenant, dlr.to, dlr.messageId);
+        // 2. Les DEUX sorties du bloc RCS. C'est ICI, et nulle part ailleurs, qu'elles s'allument : chez
+        //    smsmode le sort d'un message ne se sait pas avant l'envoi, il se constate APRÈS, sur un rapport.
+        //    Échec définitif -> repli WhatsApp. Remis -> la suite du parcours (sauf si le bloc attend encore
+        //    un clic, cf. `rcsDelivered`).
+        if (dlr.to !== '') {
+          if (dlr.echecDefinitif) await workflowRuntime.executor.rcsUndeliverable(tenant, dlr.to, dlr.messageId);
+          else if (dlr.status === 'delivered') await workflowRuntime.executor.rcsDelivered(tenant, dlr.to, dlr.messageId);
         }
       },
       onMo: async (tenant, mo) => {
