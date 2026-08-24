@@ -19,6 +19,12 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   toggle est aussi disponible **avant connexion** (login, inscription, mot de passe oublié, invitation). Pour
   les clients internationaux (Dubaï) et le screencast d'App Review Meta.
 - ✅ **Après connexion, un admin arrive sur l'Accueil (Home)** (numéro + statut du compte), plus sur Analytics.
+- ✅ **HubSpot a son propre bloc sur l'Accueil** (2026-08-23), sous celui du Meta Business Agent. Il était
+  imbriqué dans la carte du numéro WhatsApp, où il passait inaperçu alors qu'il gouverne une intégration
+  entière. Il ne s'affiche que si un numéro est rattaché : sans numéro, il n'y a rien à synchroniser.
+- ✅ **« Relancer automatiquement les échecs » a rejoint Paramètres** (2026-08-23). Ce réglage était sur
+  l'Accueil, dans la carte du Meta Business Agent, où il n'avait rien à faire : il ne dit pas qui répond au
+  client, il règle ce qui se passe quand un envoi échoue. C'est un réglage d'espace, comme le fuseau horaire.
 - ✅ **Paramètres (menu « Paramètres », admin)** : le **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
   de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »). Un jour dont
@@ -356,6 +362,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   conversation, le scénario ne lui écrit pas : le parcours est simplement gelé et repart quand la main revient.
 
 ## Automation (menu « Automation »)
+
+- ✅ **Le déclencheur « étape de deal HubSpot » se grise quand aucun portail n'est relié** (2026-08-23), avec
+  la mention « HubSpot non connecté ». L'enregistrement était déjà impossible (pas d'étape à choisir), mais
+  l'option restait sélectionnable, et le message renvoyait vers **Paramètres** alors que la connexion se fait
+  sur l'**Accueil** : on envoyait chercher au mauvais endroit au moment précis où l'utilisateur est bloqué.
 
 - ✅ **Lancer un scénario sur un événement, sans campagne** (2026-08-03) : un écran liste les automations (nom
   interne, déclencheur écrit en clair, scénario visé, active ou non). « Ajouter une automation » ouvre le

@@ -214,3 +214,58 @@ test.describe('Automation : un délai avant une date', () => {
     await expect(page.getByTestId('automation-submit')).toBeDisabled();
   });
 });
+
+/**
+ * Garde HubSpot : quand aucun portail n'est relié, le déclencheur « étape de deal » ne doit pas pouvoir
+ * être retenu. Il l'était déjà (impossible de choisir une étape, donc impossible d'enregistrer), mais
+ * l'option restait sélectionnable et le message renvoyait vers le mauvais écran.
+ */
+test.describe('Automation : HubSpot non connecté', () => {
+  async function monter(page: import('@playwright/test').Page) {
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const url = route.request().url();
+      const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      // La route répond 200 avec `connected: false` : ce n'est PAS une erreur HTTP. Une première version du
+      // mock rendait 409, ce qui poussait l'écran dans l'état « erreur » et non « non connecté ».
+      if (url.includes('/hubspot/deal-stages')) return json({ connected: false, pipelines: [] });
+      if (url.endsWith('/automations')) return json({ automations: [] });
+      if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf1', name: 'Relance', graph: { nodes: [], edges: [] } }] });
+      if (url.includes('/user-fields')) return json({ fields: [] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/automations');
+    await page.getByTestId('automation-add').click();
+  }
+
+  test('🔴 le message renvoie vers l’ACCUEIL, là où la connexion se fait vraiment', async ({ page }) => {
+    // Il disait « Paramètres », où il n'y a rien pour connecter HubSpot : on envoyait chercher au mauvais
+    // endroit exactement au moment où l'utilisateur est bloqué.
+    //
+    // ⚠️ L'assertion est SCOPÉE au formulaire. Cherchée sur la page entière, elle matchait le lien
+    // « Accueil » de la barre latérale et passait quel que soit le message.
+    await monter(page);
+    await page.getByTestId('automation-trigger').selectOption('hubspot_deal_stage');
+    const bloc = page.getByTestId('automation-form');
+    await expect(bloc).toContainText(/Accueil|Home page/);
+    await expect(bloc).not.toContainText(/dans Paramètres|in Settings/);
+  });
+
+  test('🔴 une fois qu’on SAIT, l’option n’est plus sélectionnable', async ({ page }) => {
+    await monter(page);
+    await page.getByTestId('automation-trigger').selectOption('hubspot_deal_stage');
+    await expect(page.getByTestId('automation-form')).toContainText(/Accueil|Home page/);
+    const option = page.getByTestId('automation-trigger').locator('option[value="hubspot_deal_stage"]');
+    await expect(option).toBeDisabled();
+    await expect(option).toContainText(/non connecté|not connected/);
+  });
+
+  test('🔴 et l’enregistrement reste impossible', async ({ page }) => {
+    await monter(page);
+    await page.getByTestId('automation-name').fill('Deal gagné');
+    await page.getByTestId('automation-trigger').selectOption('hubspot_deal_stage');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await expect(page.getByTestId('automation-submit')).toBeDisabled();
+  });
+});

@@ -10,7 +10,6 @@ import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, bu
 import {
   getMe, getSettings, putSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
-  setAutoRetryEnabled as saveAutoRetryEnabled,
   getHubspotInstallLink,
   getStats, getTemplateStats, getCostSeries, getEsConfig, completeEmbeddedSignup,
   type MeResponse, type AccountStatusResponse, type AccountDot, type EsConfig,
@@ -65,8 +64,6 @@ function AccueilInner({ session }: { session: Session }) {
   // Vrai brièvement après une REPRISE de pause : les analyses accumulées sont rattrapées côté worker (F3-a).
   const [catchupNotice, setCatchupNotice] = useState(false);
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
-  const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
-  const [savingAutoRetry, setSavingAutoRetry] = useState(false);
   const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,7 +108,6 @@ function AccueilInner({ session }: { session: Session }) {
     if (cfg.status === 'fulfilled') {
       setMbaEnabled(cfg.value.mbaEnabled);
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
-      setAutoRetryEnabled(cfg.value.autoRetryEnabled);
     }
     if (m.status === 'rejected' || cfg.status === 'rejected') {
       const reason = (m.status === 'rejected' ? m.reason : cfg.status === 'rejected' ? cfg.reason : null) as unknown;
@@ -218,20 +214,6 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
-  async function toggleAutoRetry() {
-    if (!isAdmin) return;
-    const next = !autoRetryEnabled;
-    setSavingAutoRetry(true);
-    setAutoRetryEnabled(next); // optimiste
-    try {
-      await saveAutoRetryEnabled(session.tenantId, next);
-    } catch {
-      setAutoRetryEnabled(!next); // rollback
-    } finally {
-      setSavingAutoRetry(false);
-    }
-  }
-
   const [installPending, setInstallPending] = useState(false);
   /**
    * Ouvre le lien d'install/re-consentement HubSpot. Le lien est demandé au backend (route admin-only), qui y met un
@@ -332,29 +314,6 @@ function AccueilInner({ session }: { session: Session }) {
                 </p>
               </div>
             )}
-            {/* Auto-relance des échecs de livraison (F6). Effet différé/invisible : le texte explique ce que ça fait. */}
-            <div className="mt-4 border-t border-ink-100 pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-ink-800">{t('Relancer automatiquement les échecs', 'Auto-retry failed sends')}</div>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    {t(
-                      "Un envoi bloqué par une limite Meta est relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au 2e échec.",
-                      'A send capped by a Meta limit is retried the next morning; an undeliverable number is retried once, then flagged unreachable in HubSpot on the second failure.',
-                    )}
-                  </p>
-                </div>
-                {isAdmin && (
-                  <Toggle
-                    testid="auto-retry-toggle"
-                    checked={autoRetryEnabled}
-                    onChange={toggleAutoRetry}
-                    disabled={savingAutoRetry}
-                    title={t("Activer/désactiver l'auto-relance des échecs", 'Enable/disable auto-retry of failed sends')}
-                  />
-                )}
-              </div>
-            </div>
           </div>
 
           {/* Invariant de cette cascade : « Aucun numéro » ne s'affiche QUE si account est chargé ET dit qu'il
@@ -438,6 +397,16 @@ function AccueilInner({ session }: { session: Session }) {
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+
+          {/* HubSpot : carte SÉPARÉE, sous le bloc MBA. Elle vivait imbriquée dans la carte du numéro, où
+              elle passait inaperçue alors qu'elle gouverne une intégration entière. La grille fait 2 colonnes :
+              placé en 3e position, ce bloc retombe sous le MBA. */}
+          {!accountLoading && !accountError && account?.hasNumber && (
+            <div data-testid="hubspot-card" className="flex flex-col rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold tracking-tight text-ink-900">HubSpot</h3>
               {account?.hasNumber && account.hubspotPortal?.connected && (
                 // Portail relié : on affiche SUR QUEL portail, puis le toggle de synchro PAR numéro (qui gate le push).
                 <div className="mt-4 border-t border-ink-100 pt-3">
@@ -606,7 +575,6 @@ function AccueilInner({ session }: { session: Session }) {
               )}
             </div>
           )}
-
         </div>
       )}
     </div>

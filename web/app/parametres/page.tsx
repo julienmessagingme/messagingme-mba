@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT, useLocale } from '@/lib/i18n';
-import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, type BusinessHours } from '@/lib/api';
+import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, setAutoRetryEnabled as apiSetAutoRetry, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { BlockedContacts } from '@/components/BlockedContacts';
 import { AuditJournal } from '@/components/AuditJournal';
+import { Toggle } from '@/components/Toggle';
 
 export default function ParametresPage() {
   return <AppShell active="parametres">{(session) => <Parametres tenantId={session.tenantId} />}</AppShell>;
@@ -43,15 +44,36 @@ function Parametres({ tenantId }: { tenantId: string }) {
   const [loading, setLoading] = useState(true);
   const [tzStatus, setTzStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [bhStatus, setBhStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Relance automatique des échecs de livraison. Elle vivait sur l'Accueil, dans la carte du MBA, où elle
+  // n'avait rien à faire : elle ne dit pas QUI répond au client, elle règle ce qui se passe quand un envoi
+  // échoue. C'est un réglage d'espace, comme le fuseau.
+  const [autoRetry, setAutoRetry] = useState(false);
+  const [arStatus, setArStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   useEffect(() => {
     let alive = true;
     getSettings(tenantId)
-      .then((s) => { if (!alive) return; setTz(s.timezone ?? DEFAULT_TIMEZONE); setHours(normalize(s.businessHours)); })
+      .then((s) => {
+        if (!alive) return;
+        setTz(s.timezone ?? DEFAULT_TIMEZONE);
+        setHours(normalize(s.businessHours));
+        setAutoRetry(s.autoRetryEnabled === true);
+      })
       .catch(() => {})
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [tenantId]);
+
+  const onAutoRetry = useCallback(() => {
+    // Optimiste, comme le fuseau : on bascule tout de suite, et on revient en arrière si le serveur refuse.
+    // Un toggle qui attend l'aller-retour donne l'impression de ne pas répondre.
+    const next = !autoRetry;
+    setAutoRetry(next);
+    setArStatus('saving');
+    apiSetAutoRetry(tenantId, next)
+      .then(() => setArStatus('saved'))
+      .catch(() => { setAutoRetry(!next); setArStatus('error'); });
+  }, [autoRetry, tenantId]);
 
   const onTimezone = useCallback((iana: string) => {
     setTz(iana);
@@ -145,6 +167,33 @@ function Parametres({ tenantId }: { tenantId: string }) {
                 {t('Enregistrer les horaires', 'Save hours')}
               </button>
               {!allValid && <span className="text-xs text-coral">{t('Corrigez les jours en rouge avant d’enregistrer.', 'Fix the days in red before saving.')}</span>}
+            </div>
+          </section>
+
+          {/* Relance automatique des échecs de livraison. */}
+          <section className={cardCls} data-testid="param-auto-retry-card">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-ink-900">{t('Relancer automatiquement les échecs', 'Auto-retry failed sends')}</h3>
+                <p className="mt-1 text-sm text-ink-600">
+                  {t(
+                    "Un envoi bloqué par une limite Meta est relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au 2e échec.",
+                    'A send capped by a Meta limit is retried the next morning; an undeliverable number is retried once, then flagged unreachable in HubSpot on the second failure.',
+                  )}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-xs text-ink-400">{statusText(arStatus)}</span>
+                {/* Aucune garde de rôle ici : `AppShell` renvoie déjà tout non-admin hors de cet écran
+                    (`adminOnly = active !== 'inbox'`). En ajouter une serait une branche morte. */}
+                <Toggle
+                  testid="param-auto-retry-toggle"
+                  checked={autoRetry}
+                  onChange={onAutoRetry}
+                  disabled={arStatus === 'saving'}
+                  title={t("Activer/désactiver l'auto-relance des échecs", 'Enable/disable auto-retry of failed sends')}
+                />
+              </div>
             </div>
           </section>
 

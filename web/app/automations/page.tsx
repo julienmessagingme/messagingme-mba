@@ -232,7 +232,7 @@ function AutomationsInner({ session }: { session: Session }) {
           + {t('Ajouter une automation', 'Add an automation')}
         </button>
       ) : (
-        <div className="max-w-2xl space-y-3 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
+        <div data-testid="automation-form" className="max-w-2xl space-y-3 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
           <div>
             <label className="mb-1 block text-sm font-medium text-ink-700">{t('Nom (interne)', 'Name (internal)')}</label>
             <input value={name} onChange={(e) => setName(e.target.value)} data-testid="automation-name" className={inputCls} placeholder={t('Demande de RDV', 'Appointment request')} />
@@ -244,7 +244,14 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
               <option value="tag_added">{t('un tag est posé sur un contact', 'a tag is added to a contact')}</option>
               <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
-              <option value="hubspot_deal_stage">{t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}</option>
+              {/* Grisée dès qu'on SAIT qu'aucun portail n'est relié : la config serait acceptée par l'écran et
+                  ne partirait jamais. On ne le sait qu'après une première sélection (lire les étapes coûte un
+                  aller-retour jusqu'à HubSpot, qu'on ne paie pas à chaque ouverture de l'écran). */}
+              <option value="hubspot_deal_stage" disabled={etatEtapes === 'non_connecte'}>
+                {etatEtapes === 'non_connecte'
+                  ? t('un deal HubSpot atteint une étape (HubSpot non connecté)', 'a HubSpot deal reaches a stage (HubSpot not connected)')
+                  : t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}
+              </option>
               <option value="avant_date">{t('un délai avant une date du contact', 'a delay before a date on the contact')}</option>
             </select>
           </div>
@@ -296,8 +303,8 @@ function AutomationsInner({ session }: { session: Session }) {
               ) : etatEtapes === 'non_connecte' ? (
                 <p className="text-xs text-amber-700">
                   {t(
-                    'Aucun portail HubSpot n’est relié à cet espace. Connecte HubSpot dans Paramètres, puis reviens ici.',
-                    'No HubSpot portal is linked to this workspace. Connect HubSpot in Settings, then come back here.',
+                    'Aucun portail HubSpot n’est relié à cet espace. Connecte HubSpot depuis l’Accueil, puis reviens ici.',
+                    'No HubSpot portal is linked to this workspace. Connect HubSpot from the Home page, then come back here.',
                   )}
                 </p>
               ) : etatEtapes === 'erreur' ? (
