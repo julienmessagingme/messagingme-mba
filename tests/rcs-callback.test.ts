@@ -45,9 +45,52 @@ const MO_SUGGESTION = {
 };
 
 describe('Lecture des rappels smsmode', () => {
-  it('distingue un rapport de livraison (MT) d une reponse (MO)', () => {
+  /**
+   * 🔴 LE bug du 2026-08-24, en production. La premiere version discriminait sur `direction === 'MT'`. Un vrai
+   * rappel a ete rejete : il tombait alors dans le lecteur de messages ENTRANTS, qui exige un expediteur
+   * NUMERIQUE, n'en trouvait pas (l'expediteur d'un sortant est le nom de l'agent) et finissait
+   * << non exploitable >>. Le parcours du contact restait bloque, sans que rien ne le dise.
+   *
+   * Le discriminant est desormais la PRESENCE d'un statut : un rapport en porte toujours un, un message
+   * entrant jamais.
+   */
+  it('distingue un rapport de livraison d une reponse, MEME sans champ `direction`', () => {
     expect(estDlr(DLR_DELIVERED)).toBe(true);
     expect(estDlr(MO_SUGGESTION)).toBe(false);
+
+    const { direction: _sansDirection, ...sansDirection } = DLR_DELIVERED;
+    expect(estDlr(sansDirection)).toBe(true);
+    expect(parseRcsDlr(sansDirection)?.status).toBe('delivered');
+
+    const { direction: _idem, ...moSansDirection } = MO_SUGGESTION;
+    expect(estDlr(moSansDirection)).toBe(false);
+    expect(parseRcsMo(moSansDirection)?.postbackData).toBe('btn:0');
+  });
+
+  // Le corps REEL d'un envoi de production (relu chez eux le 2026-08-24) : une CARTE, avec ses boutons dans
+  // la carte et le statut READ. C'est ce corps-la que la premiere version rejetait.
+  it('lit le rapport d une CARTE telle qu elle part vraiment', () => {
+    const reel = {
+      messageId: '8bf92565-9f67-4cae-8a92-3bb25b064e38',
+      channel: { channelId: 'ch-1', name: 'CANAL RCS (test)', type: 'RCS', flow: 'MARKETING' },
+      type: 'RCS',
+      recipient: { to: '33633921577' },
+      from: 'Messaging Me (TEST)',
+      body: {
+        type: 'CARD',
+        content: {
+          description: 'Bonjour dumas',
+          media: { fileUrl: 'https://mba.messagingme.app/m/abc.png', height: 'TALL' },
+          suggestions: [{ type: 'REPLY', text: 'Recois un whastapp', postbackData: 'btn:0' }],
+        },
+        orientation: 'VERTICAL',
+      },
+      status: { deliveryDate: '2026-08-24T22:36:10', value: 'READ', lookup: { network: 'Orange' } },
+      refClient: 'd8b021f7-cbca-41bd-98a6-121c3ea146ec:64b9ca84-44ca-442f-a33c-688ffbf0e7b5',
+    };
+    expect(estDlr(reel)).toBe(true);
+    const d = parseRcsDlr(reel);
+    expect(d).toMatchObject({ status: 'read', to: '33633921577', channelId: 'ch-1', echecDefinitif: false });
   });
 
   it('lit un rapport DELIVERED', () => {

@@ -17,6 +17,11 @@ export interface RcsCallbackRouteDeps {
   onDlr(tenantId: string, dlr: RcsDlr): Promise<void>;
   /** Message entrant (texte, bouton tapé, position, fichier). */
   onMo(tenantId: string, mo: RcsMo): Promise<void>;
+  /**
+   * Garde le dernier corps reçu, AVANT toute tentative de lecture. Best-effort : une trace ratée ne doit pas
+   * faire perdre le rappel lui-même. Optionnelle (câblages de test).
+   */
+  noterRappel?(tenantId: string, corps: unknown): Promise<void>;
 }
 
 /**
@@ -51,16 +56,24 @@ export function registerRcsCallback(app: FastifyInstance, deps: RcsCallbackRoute
     if (!canal) return reply.code(404).send({ error: 'canal introuvable' });
 
     const payload = req.body;
+    // Tracé AVANT d'essayer de le comprendre : c'est ce corps-là qu'on voudra lire le jour où notre lecture
+    // se trompe, et c'est exactement ce qui a manqué le 2026-08-24. Best-effort, jamais bloquant.
+    if (deps.noterRappel) {
+      await deps.noterRappel(canal.tenantId, payload).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('trace du rappel RCS ignorée:', err instanceof Error ? err.message : err);
+      });
+    }
     const estRapport = estDlr(payload);
     const evenement = estRapport ? parseRcsDlr(payload) : parseRcsMo(payload);
     // Corps illisible : 200 (cf. en-tête). On le journalise, sinon un rappel qui n'arrive « nulle part » est
     // indébogable, et c'est exactement le symptôme qu'on cherchera si un jour leur format bouge.
     if (!evenement) {
-      // Journalisé SANS annoncer une direction : un corps qu'on n'a pas su lire n'en a pas forcément une, et
-      // une ligne de log qui affirme « MO » sur un corps marqué MT enverrait droit dans le mur le jour où
-      // c'est ce log qu'on lit pour comprendre.
+      // Le CORPS est journalisé, borné. Une ligne qui dit seulement « non exploitable » ne permet de rien
+      // comprendre : c'est la leçon du 2026-08-24. Il est aussi gardé en base (`noterRappel`), le log ne
+      // servant qu'à le voir tout de suite.
       // eslint-disable-next-line no-console
-      console.error(`rappel RCS non exploitable pour ${canal.tenantId}`);
+      console.error(`rappel RCS non exploitable pour ${canal.tenantId} : ${JSON.stringify(payload).slice(0, 1500)}`);
       return reply.code(200).send({ ok: true, ignore: 'corps non exploitable' });
     }
 

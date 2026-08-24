@@ -127,6 +127,23 @@ export class PgRcsAgentStore {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Garde le DERNIER rappel reçu du fournisseur, tel quel.
+   *
+   * 🔴 Écrit avant toute tentative de lecture, et en best-effort. Le 2026-08-24, un rappel a été rejeté par
+   * notre parseur et la seule trace était « non exploitable » SANS le corps : impossible de savoir ce que
+   * smsmode avait envoyé sans redéployer une version qui journalise, puis faire recliquer quelqu'un. Même
+   * remède que `webhooks.last_payload` pour les webhooks entrants.
+   *
+   * UN SEUL corps conservé, écrasé au suivant : c'est de la donnée tierce, potentiellement personnelle.
+   */
+  async noterRappel(tenantId: string, corps: unknown): Promise<void> {
+    await this.pool.query(
+      'update rcs_agents set last_callback = $2::jsonb, last_callback_at = now() where tenant_id = $1',
+      [tenantId, JSON.stringify(corps ?? null)],
+    );
+  }
+
   /** L'agent appartient-il au tenant ? Garde d'isolation de la création de campagne, symétrique de
    *  `phoneNumberBelongsToTenant`. */
   async belongsToTenant(agentId: string, tenantId: string): Promise<boolean> {

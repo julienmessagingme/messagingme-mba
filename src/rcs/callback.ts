@@ -137,10 +137,22 @@ export function chiffresNus(s: string): string {
   return s.replace(/[^0-9]/g, '');
 }
 
-/** Ce corps est-il un rapport de livraison ? `direction: 'MT'` (mobile terminated) chez eux. */
+/**
+ * Ce corps est-il un rapport de livraison ?
+ *
+ * 🔴 Le discriminant est la PRÉSENCE d'un `status.value`, pas `direction`. Première version : `direction ===
+ * 'MT'`. Un vrai rappel de production a été rejeté le 2026-08-24 par cette règle, et la conséquence était
+ * silencieuse : le corps tombait dans le lecteur de messages ENTRANTS, qui exige un expéditeur numérique,
+ * n'en trouvait pas (l'expéditeur d'un MT est le nom de l'agent), et le rappel finissait « non exploitable ».
+ *
+ * Un rapport de livraison porte toujours son statut ; un message entrant n'en a jamais. C'est donc ce que
+ * l'on regarde, et un `direction: 'MO'` explicite tranche en sens inverse par sécurité.
+ */
 export function estDlr(raw: unknown): boolean {
-  const r = enveloppe.safeParse(raw);
-  return r.success && (r.data.direction ?? '').toUpperCase() === 'MT';
+  const e = enveloppe.safeParse(raw);
+  if (e.success && (e.data.direction ?? '').toUpperCase() === 'MO') return false;
+  const d = corpsDlr.safeParse(raw);
+  return d.success && typeof d.data.status.value === 'string' && d.data.status.value !== '';
 }
 
 /** Rapport de livraison, ou null si le corps n'en est pas un exploitable. Ne lève JAMAIS. */

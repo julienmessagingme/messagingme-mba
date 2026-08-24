@@ -730,6 +730,7 @@ async function main(): Promise<void> {
      */
     rcsCallback: {
       parCode: (code) => workflowRuntime.rcsStack.agents.parWebhookCode(code),
+      noterRappel: (tenant, corps) => workflowRuntime.rcsStack.agents.noterRappel(tenant, corps),
       onDlr: async (tenant, dlr) => {
         // 1. Le destinataire de campagne, par identifiant de message. Même chemin que les accusés Meta : une
         //    seule échelle de statuts dans le produit, donc un seul écran de résultats à lire.
