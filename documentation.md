@@ -496,6 +496,89 @@ touchée, les uuid internes restent la source de vérité des relations.
   - `waitBeforeSessionMessage` (pur, + miroir front) détecte « attente >= 24 h puis message de session » pour
     l'afficher dans le builder ; cumul plafonné à 24 h, ce qui garantit la terminaison sur graphe cyclique.
 
+## Canal RCS (smsmode) : envoi, rappels, composeur (2026-08-24, migrations 0056-0058, 0077-0079)
+
+Deuxième canal du produit, à côté de WhatsApp. Ce qui signe les messages n'est pas un numéro mais un **agent
+de marque** déposé chez un fournisseur et approuvé par Google et les opérateurs. Fournisseur en production :
+**smsmode** (API REST RCS v1.8).
+
+### Ce qui isole les workspaces
+
+Le mapping `rcs_agents` (tenant -> agent) est le SEUL contrôle : toute résolution d'agent, toute clé, tout
+rappel passe par lui, scopé tenant. Depuis 0078 chaque workspace a **sa** clé d'API, chiffrée en base
+(`api_key_enc`, `src/crypto/secretbox.ts`) ; la variable d'environnement `SMSMODE_RCS_API_KEY` n'est plus
+qu'un repli. Le canal est **allumé par déduction** : `hasAgent(tenant)`, pas de drapeau à basculer à la main.
+
+### Ce que smsmode fait, et ne fait pas (mesuré, pas supposé)
+
+- Une clé d'API est rattachée à **UN canal**. Une clé de canal SMS s'authentifie et répond `403 Channel type
+  mismatch` sur l'API RCS. D'où la vérification à l'activation (`src/rcs/channel-info.ts`), en **422**.
+- **Aucun endpoint de joignabilité.** Leur `lookup` est l'opérateur du destinataire renvoyé AVEC le rapport de
+  livraison, donc après coup. `SmsmodeRcsProvider.canCheckReachability = false` : le sender saute la
+  vérification préalable au lieu de payer un aller-retour pour une constante.
+- **Reporting différé** : juste après un 201, la fiche du message répond 404. Rien ne se conclut d'un statut
+  lu immédiatement.
+- Le statut `READ` **existe** et n'est pas dans leur énumération documentée. Tout mapping tolère l'inconnu.
+- Destinataire en **chiffres nus**, sans `+`. `refClient` borné à 140 caractères.
+- **Aucune signature** sur les rappels : voir ci-dessous.
+
+### Rappels entrants (`POST /rcs/callback/:code`)
+
+URL publique `https://mba.messagingme.app/api/backend/rcs/callback/<code>`, posée sur CHAQUE envoi
+(`callbackUrlFor`), et non configurée à la main chez le fournisseur. Une seule adresse pour les deux flux : le
+corps porte `direction` (MT = rapport de livraison, MO = message entrant).
+
+🔴 **Ce qui autorise l'appel**, faute de signature : (1) le `webhook_code` de l'URL, 128 bits, propre au
+workspace, qui porte le tenant, jamais le corps ; (2) le `channel.channelId` du corps, qui doit être l'agent
+de ce workspace. La migration 0079 fait tourner les codes courts émis avant.
+
+Effets d'un rapport de livraison (`src/index.ts`, deps `rcsCallback`) :
+
+| Rapport | Effet |
+| --- | --- |
+| tout statut connu | statut de livraison du destinataire de campagne (même échelle que Meta) |
+| `DELIVERED` | reprend la sortie **« envoyé »** du bloc, **seulement** si le bloc n'offre aucun bouton réponse |
+| `UNDELIVERABLE` / `UNDELIVERED` | reprend la sortie **« non joignable »** : c'est la cascade RCS vers WhatsApp |
+| statut inconnu | **ignoré**, jamais traité comme un échec |
+
+Le garde-fou du `DELIVERED` est le point délicat : l'accusé arrive en quelques secondes, le contact répond bien
+plus tard. Avancer alors qu'un bouton est proposé enverrait son clic dans le vide.
+
+Effets d'un message entrant : opt-out si le texte commence par STOP (avant tout le reste), enregistrement dans
+le fil d'inbox avec `channel='rcs'`, puis avance du scénario.
+
+smsmode **rejoue** six fois (30 s, 2 min, 10 min, 1 h, 5 h, 24 h) tant qu'il n'a pas reçu un 2xx. D'où : 200
+sur un corps illisible (le rejouer ne le rendra pas lisible), 404 sur un code inconnu, et une panne interne
+qu'on LAISSE remonter en 5xx pour qu'ils rejouent.
+
+### Charge utile des boutons
+
+`normaliserPostbacks` (`src/rcs/schema.ts`) réécrit le `postbackData` de chaque bouton RÉPONSE en `btn:<i>`,
+i étant son rang **parmi les réponses**, c'est-à-dire le nom que le builder donne à la sortie correspondante.
+Appliqué au point de passage unique (`RcsSender.sendTo`), donc à l'envoi et non à l'enregistrement : les
+messages déjà en bibliothèque se réparent seuls. Sans cette réécriture, un clic ne retrouve aucune arête et le
+parcours s'arrête en silence.
+
+### Composeur : texte, visuel, variables
+
+Le format se **déduit** de la saisie, dans un seul endroit (`web/lib/rcs.ts`, miroir serveur dans
+`rcsOutboundOf`) : TEXTE sans visuel, **CARTE** dès qu'il y en a un (image au-dessus du texte, hauteur `TALL`).
+Le texte tombe alors de 3072 à 2000 caractères, borne de leur champ `description`.
+
+⚠️ Le mapping carte/carrousel a longtemps été FAUX (`card`/`cards` et `media.url` au lieu de `content`/
+`contents` et `media.fileUrl`). Aucun envoi ne l'exerçait ; la première image serait partie en 400. Corrigé
+contre leur spec le 2026-08-24, figé par un test.
+
+Variables `{{champ}}` : **même** contrat et **même** table de substitution que les modèles d'email
+(`contactVars`). Substituées dans le corps uniquement, jamais dans les libellés de boutons (25 caractères) ni
+dans les URL, où une valeur vide ou trop longue ferait refuser le message entier. La fiche du contact n'est lue
+QUE si le message porte des variables.
+
+### Reste à faire
+
+Le carrousel n'a pas de composeur. Les boutons Agenda, Position et Demande de position existent chez le
+fournisseur et ne sont pas exposés.
+
 ## Lot « inbox, comptes, modération » (2026-08-21, migrations 0068-0073)
 
 ### Affectation d'une conversation (0070)

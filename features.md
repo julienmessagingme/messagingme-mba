@@ -856,6 +856,33 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   obtient de l'agent une réponse **vide**, ce qui rend d'autant plus nécessaire de voir ces conversations
   remonter dans « À traiter ».
 
+## Canal RCS (menu Contenu > Messages RCS, et canal de campagne)
+
+Deuxième canal, à côté de WhatsApp. Les messages partent sous un **agent de marque** : le nom et le logo de
+l'entreprise s'affichent dans l'application Messages du destinataire, avec la pastille de vérification. Il n'y
+a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on écrit, on enregistre, on envoie.
+
+- **Activation** : sur la page d'accueil, sous le numéro WhatsApp. Un bouton « Activer le RCS » demande la clé
+  d'API du canal, la vérifie chez le fournisseur, et affiche ce à quoi elle donne droit (nom de l'agent, type
+  de trafic, quotas). La clé n'est jamais réaffichée. Tant que le canal est éteint, les briques RCS restent
+  visibles mais grisées.
+- **Bibliothèque (Contenu > Messages RCS)** : composer un message réutilisable. Un texte, une **image
+  d'en-tête** facultative, des **variables** `{{prenom}}` remplacées par la fiche du contact à l'envoi, des
+  **emojis**, et jusqu'à **11 boutons** (réponse, lien, appel). Aperçu en direct. Avec une image, le texte est
+  limité à 2000 caractères au lieu de 3072.
+- **En campagne** : choisir « Un message RCS » comme contenu, partir d'un message de la bibliothèque ou écrire
+  directement. Les contacts sans numéro (identifiés par BSUID seulement) sont comptés « ignorés » avec leur
+  motif : le RCS s'adresse à un numéro **mobile**, une ligne fixe ne peut pas le recevoir.
+- **En scénario** : le bloc « Message RCS » a deux sorties de livraison, **Envoyé** et **Non joignable**, plus
+  une sortie par bouton réponse. Relier « Non joignable » à un envoi de template WhatsApp donne la cascade :
+  le RCS d'abord, le WhatsApp pour ceux qu'il n'atteint pas.
+- **Réponses** : elles arrivent dans le fil du contact, au même endroit que WhatsApp, la bulle indiquant son
+  canal. Un bouton tapé fait avancer le scénario par la branche correspondante. Un contact qui répond **STOP**
+  est désabonné du RCS, sans que cela touche son consentement WhatsApp.
+- ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
+  RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
+  instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.
+
 ## À venir / hors périmètre
 
 - 🚧 **Onboarding guidé (Embedded Signup)** : bouton + popup + backend **construits et déployés** (OFF par défaut) ;
