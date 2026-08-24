@@ -46,11 +46,29 @@ message RCS. La bascule texte/carte vit dans UN endroit (`web/lib/rcs.ts`, miroi
   statut inconnu ignore. La sonde a laisse une conversation fictive sur `33600000000`, supprimee ensuite
   (1 message, 1 conversation, transaction bornee).
 
+### Ajoute dans la foulee, le 2026-08-24
+
+- **Les six formes de bouton** (Reponse, Lien, Appel, Agenda, Voir un lieu, Demander sa position). Deux
+  demandaient plus qu un champ : la position n avait pas de RETOUR (coordonnees jetees, bulle vide) et
+  l Agenda exige des date-heures absolues, donc prises dans un champ << date et heure >> du contact, avec
+  chute du BOUTON (jamais du message) quand la date ne se resout pas.
+- **Les boutons d une carte passent en LISTE.** Julien voulait les boutons larges des campagnes RCS et
+  obtenait des mini-pastilles. Verifie dans la doc RBM : accroches a la CARTE ils s affichent pleine largeur
+  et RESTENT (4 max), accroches au MESSAGE ce sont des pastilles ephemeres (11 max). Nous n en dessinons
+  aucun. Des qu il y a un visuel, les boutons partent donc dans la carte.
+- **La console heberge les visuels** (migration 0081). `POST /tenants/:id/rcs/media` rend directement l URL
+  publique, servie par `GET /m/<code>.<ext>` (rewrite dedie, comme `/r/`). La SIGNATURE du fichier decide du
+  type servi, jamais le type declare.
+- 🔴 **Mesure a retenir : Cloudflare cache ces images au bord.** Avec `immutable` sur un an, une suppression
+  restait sans effet un an (origine en 404, edge en 200, `cf-cache-status: HIT`). Ramene a 24 h, ce qui
+  couvre toute la rafale d une campagne et borne l exposition. Purge immediate = jeton Cloudflare, qu on n a pas.
+
 ### Reste ouvert sur le canal
 
 - Le **carrousel** n'a aucun composeur (le modele et le provider le supportent).
-- ✅ Les **six** formes de bouton sont exposees depuis le 2026-08-24 (Reponse, Lien, Appel, Agenda, Voir un
-  lieu, Demander sa position). Reste `webviewSize` sur un bouton lien, non expose.
+- `webviewSize` sur un bouton lien (ouvrir la page dans une vue integree) n est pas expose.
+- Il n y a pas d ecran de MEDIATHEQUE : les visuels se televersent depuis le composeur, la route de liste et
+  celle de suppression existent mais aucun ecran ne les appelle encore.
 - Les deux cles d'API smsmode qui ont circule en clair dans une conversation sont **a faire tourner**. Elles
   sont desormais stockees chiffrees par workspace : les remplacer veut dire les ressaisir dans la carte
   d'activation de l'accueil.
