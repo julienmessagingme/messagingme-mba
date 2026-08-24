@@ -10,9 +10,9 @@ import {
   type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
-  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag, listEmailAccounts, listEmailTemplates,
+  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag, listEmailAccounts, listEmailTemplates, listRcsMessages,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
-  type EmailAccount, type EmailTemplate,
+  type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
@@ -127,6 +127,12 @@ function WFNode({ id, data, selected }: NodeProps) {
     ? cards
     : wfType === 'template' && Array.isArray(data.templateButtons)
       ? (data.templateButtons as NodeButton[])
+      : wfType === 'rcs_message' && Array.isArray(data.suggestions)
+        // Seuls les boutons RÉPONSE se relient : un bouton lien ou appel sort de la conversation et ne
+        // renvoie rien au scénario. Même règle que les boutons URL d'un template WhatsApp.
+        ? (data.suggestions as Array<Record<string, unknown>>)
+          .filter((b) => b && b.kind === 'reply')
+          .map((b): NodeButton => ({ type: 'QUICK_REPLY', text: String(b.text ?? '') }))
       : wfType === 'quick_message' && Array.isArray(data.quickReplies)
         ? (data.quickReplies as unknown[]).map((q): NodeButton => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
         : [];
@@ -198,7 +204,31 @@ function WFNode({ id, data, selected }: NodeProps) {
           </div>
         </div>
       ) : null}
-      {hasQR ? (
+      {isRcs ? (
+        // Bloc RCS : les DEUX dimensions coexistent, et il ne faut pas que l'une masque l'autre.
+        // « Envoyé » et « Non joignable » qualifient la LIVRAISON du message ; les boutons qualifient la
+        // RÉPONSE du contact. Un bloc avec boutons doit donc afficher les deux séries de sorties, sinon la
+        // cascade de repli disparaîtrait de l'écran dès qu'on ajoute un bouton.
+        <div className="border-t border-ink-200">
+          {outputRows.filter((b) => b.type === 'QUICK_REPLY').map((b, i) => (
+            <div key={`qr${i}`} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700 first:border-t-0">
+              <span className="shrink-0">↩︎</span>
+              <span className="truncate">{b.text || t('Réponse', 'Reply')}</span>
+              <Handle type="source" id={`btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t(`Relier « ${b.text} »`, `Connect "${b.text}"`)} />
+            </div>
+          ))}
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-emerald-700">
+            <span className="shrink-0">✓</span>
+            <span className="truncate">{t('Envoyé', 'Sent')}</span>
+            <Handle type="source" id="sent" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-emerald-500" title={t('Le message RCS est parti', 'The RCS message was sent')} />
+          </div>
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-coral">
+            <span className="shrink-0">✕</span>
+            <span className="truncate">{t('Non joignable en RCS', 'Not reachable on RCS')}</span>
+            <Handle type="source" id="unreachable" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-coral" title={t('Le contact n’est pas joignable en RCS : brancher un repli', 'Contact not reachable on RCS: connect a fallback')} />
+          </div>
+        </div>
+      ) : hasQR ? (
         // Au moins un bouton quick-reply -> une SORTIE par bouton (QR = handle reliable à droite ; URL/flow grisé).
         <div className="border-t border-ink-200">
           {outputRows.map((b, i) => {
@@ -227,22 +257,6 @@ function WFNode({ id, data, selected }: NodeProps) {
             <span className="shrink-0">✎</span>
             <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
             <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-ink-400" title={t('Le contact écrit au lieu de taper un bouton', 'The contact writes instead of tapping a button')} />
-          </div>
-        </div>
-      ) : isRcs ? (
-        // Bloc RCS : DEUX sorties fixes, à droite. Les id 'sent'/'unreachable' sont ceux que l'exécuteur
-        // route (walkResolved). « Non joignable » est la sortie qui permet de brancher un repli WhatsApp :
-        // c'est elle qui fait la cascade RCS -> WhatsApp, visible dans le graphe au lieu d'être cachée.
-        <div className="border-t border-ink-200">
-          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-emerald-700 first:border-t-0">
-            <span className="shrink-0">✓</span>
-            <span className="truncate">{t('Envoyé', 'Sent')}</span>
-            <Handle type="source" id="sent" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-emerald-500" title={t('Le message RCS est parti', 'The RCS message was sent')} />
-          </div>
-          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-coral first:border-t-0">
-            <span className="shrink-0">✕</span>
-            <span className="truncate">{t('Non joignable en RCS', 'Not reachable on RCS')}</span>
-            <Handle type="source" id="unreachable" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-coral" title={t('Le contact n’est pas joignable en RCS : brancher un repli', 'Contact not reachable on RCS: connect a fallback')} />
           </div>
         </div>
       ) : isCondition ? (
@@ -343,6 +357,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   const [fields, setFields] = useState<UserFieldDef[]>([]);
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [rcsMessages, setRcsMessages] = useState<RcsMessage[]>([]);
   useEffect(() => {
     listTemplates(tenantId).then((r) => setTemplates(r.templates.filter((t) => t.status === 'APPROVED'))).catch(() => {});
     listFlows(tenantId).then((r) => setFlows(r.flows.filter((f) => f.status === 'PUBLISHED'))).catch(() => {});
@@ -350,6 +365,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     listUserFields(tenantId).then((r) => setFields(r.fields)).catch(() => {});
     listEmailAccounts(tenantId).then((r) => setEmailAccounts(r.accounts)).catch(() => {});
     listEmailTemplates(tenantId).then((r) => setEmailTemplates(r.templates)).catch(() => {});
+    // `Array.isArray` : une réponse sans le champ `messages` (backend plus ancien que le front, route non
+    // montée) poserait `undefined` dans l'état, et le premier `.filter` ferait tomber TOUT le builder.
+    listRcsMessages(tenantId).then((r) => { if (Array.isArray(r.messages)) setRcsMessages(r.messages); }).catch(() => {});
   }, [tenantId]);
 
   // Persiste un tag saisi inline dans un nœud « ajout de tag » (au blur) -> il apparaît tout de suite dans Contenus >
@@ -720,7 +738,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} emailAccounts={emailAccounts} emailTemplates={emailTemplates} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -807,7 +825,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 function ConfigPanel({
-  node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, emailAccounts, emailTemplates, onCommitTag,
+  node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, emailAccounts, emailTemplates, rcsMessages, onCommitTag,
 }: {
   node: RFNode;
   /** Ce bloc est-il la RACINE du scénario (sans arête entrante) ? C'est lui que la règle campagne regarde. */
@@ -816,7 +834,7 @@ function ConfigPanel({
   campaignEligible: boolean;
   onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
-  emailAccounts: EmailAccount[]; emailTemplates: EmailTemplate[];
+  emailAccounts: EmailAccount[]; emailTemplates: EmailTemplate[]; rcsMessages: RcsMessage[];
   onCommitTag: (tag: string) => void;
 }) {
   const t = useT();
@@ -885,25 +903,101 @@ function ConfigPanel({
         </div>
       )}
 
-      {wfType === 'rcs_message' && (
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message RCS', 'RCS message')}</label>
-          <textarea
-            value={(d.text as string) ?? ''}
-            onChange={(e) => onPatch({ text: e.target.value })}
-            rows={4}
-            maxLength={3072}
-            placeholder={t('Votre message…', 'Your message…')}
-            className={`${cls} bg-white`}
-          />
-          <p className="mt-1 text-[11px] text-ink-400">
-            {t("Le RCS n'a pas de fenêtre de 24 h ni de template à faire approuver : le message part tel quel, sous votre agent de marque.", 'RCS has no 24h window and no template to get approved: the message goes out as written, under your brand agent.')}
-          </p>
-          <p className="mt-1 text-[11px] text-amber-700">
-            {t("Ce bloc a deux sorties. Reliez « Non joignable en RCS » à un envoi de template WhatsApp pour rattraper les contacts que le RCS n'atteint pas : sans ce branchement, leur parcours s'arrête là.", 'This block has two outputs. Connect “Not reachable on RCS” to a WhatsApp template to catch contacts RCS cannot reach: without it, their journey stops there.')}
-          </p>
-        </div>
-      )}
+      {wfType === 'rcs_message' && (() => {
+        const boutons = Array.isArray(d.suggestions) ? (d.suggestions as Array<Record<string, unknown>>) : [];
+        const majBouton = (i: number, patch: Record<string, unknown>) =>
+          onPatch({ suggestions: boutons.map((b, j) => (j === i ? { ...b, ...patch } : b)) });
+        return (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Partir d’un message enregistré', 'Start from a saved message')}</label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const m = rcsMessages.find((x) => x.id === e.target.value);
+                  // COPIE, pas référence : le bloc devient autonome. Modifier la bibliothèque ensuite ne
+                  // réécrit donc PAS les scénarios déjà construits, et un message supprimé ne casse rien.
+                  if (m?.content?.kind === 'text') onPatch({ text: m.content.text, suggestions: m.content.suggestions ?? [] });
+                }}
+                className={`${cls} bg-white`}
+                data-testid="rcs-node-library"
+              >
+                <option value="">{rcsMessages.length === 0 ? t('Aucun message enregistré', 'No saved message') : t('Choisir…', 'Choose…')}</option>
+                {rcsMessages.filter((m) => m.content?.kind === 'text').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('Le message est COPIÉ dans ce bloc : le modifier ici ne touche pas la bibliothèque, et modifier la bibliothèque ne touche pas ce bloc.', 'The message is COPIED into this block: editing it here does not touch the library, and editing the library does not touch this block.')}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message RCS', 'RCS message')}</label>
+              <textarea
+                value={(d.text as string) ?? ''}
+                onChange={(e) => onPatch({ text: e.target.value })}
+                rows={4}
+                maxLength={3072}
+                placeholder={t('Votre message…', 'Your message…')}
+                className={`${cls} bg-white`}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Boutons', 'Buttons')}</label>
+              <div className="space-y-1.5">
+                {boutons.map((b, i) => (
+                  <div key={i} className="rounded-lg border border-ink-200 p-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={String(b.kind ?? 'reply')}
+                        onChange={(e) => {
+                          const kind = e.target.value;
+                          majBouton(i, { kind, ...(kind === 'openUrl' ? { url: '' } : {}), ...(kind === 'dial' ? { phoneNumber: '' } : {}) });
+                        }}
+                        className={`${cls} max-w-[7.5rem] bg-white`}
+                      >
+                        <option value="reply">{t('Réponse', 'Reply')}</option>
+                        <option value="openUrl">{t('Lien', 'Link')}</option>
+                        <option value="dial">{t('Appel', 'Call')}</option>
+                      </select>
+                      <input
+                        value={String(b.text ?? '')}
+                        maxLength={25}
+                        onChange={(e) => majBouton(i, { text: e.target.value, postbackData: String(b.postbackData ?? '') || `btn_${i + 1}` })}
+                        className={cls}
+                        placeholder={t('Libellé', 'Label')}
+                      />
+                      <button type="button" onClick={() => onPatch({ suggestions: boutons.filter((_, j) => j !== i) })} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+                    </div>
+                    {b.kind === 'openUrl' && (
+                      <input value={String(b.url ?? '')} onChange={(e) => majBouton(i, { url: e.target.value })} className={`${cls} mt-1.5`} placeholder="https://" />
+                    )}
+                    {b.kind === 'dial' && (
+                      <input value={String(b.phoneNumber ?? '')} onChange={(e) => majBouton(i, { phoneNumber: e.target.value })} className={`${cls} mt-1.5`} placeholder="+33…" />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {boutons.length < 11 && (
+                <button
+                  type="button"
+                  onClick={() => onPatch({ suggestions: [...boutons, { kind: 'reply', text: '', postbackData: `btn_${boutons.length + 1}` }] })}
+                  className="mt-1.5 text-xs text-brand-600 hover:underline"
+                >
+                  + {t('bouton', 'button')}
+                </button>
+              )}
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('Chaque bouton « Réponse » devient une sortie à relier. Les boutons lien et appel sortent de la conversation et ne renvoient rien.', 'Each “Reply” button becomes an output to connect. Link and call buttons leave the conversation and send nothing back.')}
+              </p>
+            </div>
+
+            <p className="text-[11px] text-amber-700">
+              {t('Ce bloc a aussi deux sorties de livraison. Reliez « Non joignable en RCS » à un envoi de template WhatsApp pour rattraper les contacts que le RCS n’atteint pas.', 'This block also has two delivery outputs. Connect “Not reachable on RCS” to a WhatsApp template to catch contacts RCS cannot reach.')}
+            </p>
+          </div>
+        );
+      })()}
 
       {wfType === 'template' && (
         <div>

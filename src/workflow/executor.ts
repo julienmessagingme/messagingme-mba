@@ -7,6 +7,7 @@ import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound } from '../rcs/types';
+import { rcsSuggestionSchema } from '../rcs/schema';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
@@ -181,7 +182,14 @@ export interface WorkflowExecutorDeps {
 function rcsOutboundOf(node: WorkflowNode | undefined): RcsOutbound | null {
   if (!node) return null;
   const text = String(node.data.text ?? '').trim();
-  return text ? { kind: 'text', text } : null;
+  if (!text) return null;
+  // Les boutons du bloc passent par le MÊME schéma que la bibliothèque et l'assistant de campagne. Un bouton
+  // malformé (lien sans URL, libellé vide) est ÉCARTÉ ici plutôt qu'envoyé au provider qui le refuserait :
+  // le message part quand même, amputé de ce bouton, au lieu de ne pas partir du tout.
+  const boutons = Array.isArray(node.data.suggestions)
+    ? node.data.suggestions.map((b) => rcsSuggestionSchema.safeParse(b)).filter((r) => r.success).map((r) => r.data)
+    : [];
+  return boutons.length ? { kind: 'text', text, suggestions: boutons } : { kind: 'text', text };
 }
 
 /** Anti-boucle de `walkResolved` : une chaîne de blocs RCS tous non joignables finit par s'arrêter. Le walk
@@ -665,7 +673,9 @@ export class WorkflowExecutor {
         aClique ? buttonPayload : undefined,
       );
     }
-    const handle = courant?.type === 'rcs_message' ? 'sent' : buttonPayload;
+    // Bloc RCS : `sent` et `unreachable` qualifient la LIVRAISON, les boutons qualifient la RÉPONSE. Un clic
+    // prime donc sur `sent` ; sans clic, on reprend par `sent`.
+    const handle = courant?.type === 'rcs_message' ? (buttonPayload ?? 'sent') : buttonPayload;
     const sortieTypee = graph && run.currentNode
       ? graph.edges.some((e) => e.source === run.currentNode && (e.sourceHandle === 'sent' || e.sourceHandle === 'unreachable'))
       : false;

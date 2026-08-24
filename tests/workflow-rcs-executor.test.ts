@@ -130,4 +130,39 @@ describe('bloc RCS a l execution', () => {
     expect(provider.sent).toHaveLength(0);
     expect(templates).toEqual(['relance']);
   });
+
+  it('envoie les BOUTONS du bloc, et ecarte ceux qui sont malformes au lieu de tout bloquer', async () => {
+    const g = parseGraph({
+      nodes: [{
+        id: 'r', type: 'rcs_message', position: pos,
+        data: {
+          text: 'Bonjour',
+          suggestions: [
+            { kind: 'reply', text: 'Oui', postbackData: 'oui' },
+            { kind: 'openUrl', text: 'Site', url: 'pas-une-url', postbackData: 'site' },
+          ],
+        },
+      }],
+      edges: [],
+    })!;
+    const { provider, executor } = monter(g);
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+
+    expect(provider.sent).toHaveLength(1);
+    expect(provider.sent[0]!.msg).toEqual({
+      kind: 'text',
+      text: 'Bonjour',
+      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'oui' }],
+    });
+  });
+
+  it('envoie un texte NU quand le bloc n a aucun bouton', async () => {
+    const g = parseGraph({
+      nodes: [{ id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour' } }],
+      edges: [],
+    })!;
+    const { provider, executor } = monter(g);
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(provider.sent[0]!.msg).toEqual({ kind: 'text', text: 'Bonjour' });
+  });
 });

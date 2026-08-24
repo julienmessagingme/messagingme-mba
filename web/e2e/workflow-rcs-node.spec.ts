@@ -32,6 +32,7 @@ async function mockBuilder(page: import('@playwright/test').Page, initial: Graph
     if (url.includes('/tags')) return json({ tags: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: true, hubspotListsEnabled: false, campaignsPaused: false });
+    if (url.includes('/rcs-messages')) return json({ messages: [] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });

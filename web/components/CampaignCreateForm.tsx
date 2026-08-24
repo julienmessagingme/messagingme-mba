@@ -28,6 +28,7 @@ import {
   listUserFields,
   listTags,
   listRcsAgents,
+  listRcsMessages,
   queryContacts,
   countContacts,
   contactIdsForFilters,
@@ -40,6 +41,8 @@ import {
   type RecipientCounts,
   type PhoneNumber,
   type RcsAgent,
+  type RcsMessage,
+  type RcsSuggestion,
   type TemplateParam,
   type TemplateSummary,
   type Contact,
@@ -97,7 +100,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [mode, setMode] = useState<'template' | 'workflow' | 'rcs'>('template');
   const [rcsAgentId, setRcsAgentId] = useState('');
   const [rcsText, setRcsText] = useState('');
+  const [rcsBoutons, setRcsBoutons] = useState<RcsSuggestion[]>([]);
   const [rcsAgents, setRcsAgents] = useState<RcsAgent[]>([]);
+  const [rcsMessages, setRcsMessages] = useState<RcsMessage[]>([]);
   const [workflowId, setWorkflowId] = useState('');
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   // Nombre TOTAL de scénarios du tenant, avant le filtre d'éligibilité campagne : sans lui, « aucun scénario »
@@ -439,7 +444,11 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   async function chargerAgentsRcs() {
     if (rcsAgentsLoaded) return;
     setRcsAgentsLoaded(true);
-    const res = await listRcsAgents(tenantId).catch(() => null);
+    const [res, msgs] = await Promise.all([
+      listRcsAgents(tenantId).catch(() => null),
+      listRcsMessages(tenantId).catch(() => null),
+    ]);
+    if (msgs && Array.isArray(msgs.messages)) setRcsMessages(msgs.messages);
     // `Array.isArray` : une réponse sans le champ `agents` (front déployé avant l'API) poserait `undefined`
     // dans l'état, et le rendu suivant planterait sur `rcsAgents.length`. Route absente = liste vide.
     if (res && Array.isArray(res.agents)) setRcsAgents(res.agents);
@@ -548,7 +557,16 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (mode === 'rcs') {
       return {
         phoneNumberId: '', name, category, channel: 'rcs',
-        rcsAgentId, rcsMessage: { kind: 'text', text: rcsText.trim() },
+        rcsAgentId,
+        rcsMessage: {
+          kind: 'text',
+          text: rcsText.trim(),
+          // Les boutons sans libellé sont écartés ici : le serveur les refuserait et ferait échouer la
+          // création entière pour une ligne qu'un opérateur a juste oublié de remplir.
+          ...(rcsBoutons.filter((b) => b.text.trim() !== '').length
+            ? { suggestions: rcsBoutons.filter((b) => b.text.trim() !== '') }
+            : {}),
+        },
         contactIds: [...selected], ratePerMinute,
       };
     }
@@ -1017,6 +1035,20 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
 
       {mode === 'rcs' ? (
         <Field label={t('Message RCS', 'RCS message')}>
+          <select
+            value=""
+            data-testid="rcs-campaign-library"
+            onChange={(e) => {
+              const m = rcsMessages.find((x) => x.id === e.target.value);
+              // COPIE : la campagne garde le message tel qu'il était au moment de sa création. Modifier la
+              // bibliothèque ensuite ne réécrit pas une campagne déjà partie.
+              if (m?.content?.kind === 'text') { setRcsText(m.content.text); setRcsBoutons(m.content.suggestions ?? []); }
+            }}
+            className={`${inputCls} mb-2 max-w-xs bg-white`}
+          >
+            <option value="">{rcsMessages.length === 0 ? t('Aucun message enregistré', 'No saved message') : t('Partir d’un message enregistré…', 'Start from a saved message…')}</option>
+            {rcsMessages.filter((m) => m.content?.kind === 'text').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
           <textarea
             value={rcsText}
             onChange={(e) => setRcsText(e.target.value)}
@@ -1026,6 +1058,46 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             placeholder={t('Votre message…', 'Your message…')}
             className={inputCls}
           />
+          <div className="mt-2 space-y-1.5">
+            {rcsBoutons.map((b, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <select
+                  value={b.kind}
+                  onChange={(e) => {
+                    const kind = e.target.value as RcsSuggestion['kind'];
+                    const base = { text: b.text, postbackData: b.postbackData };
+                    setRcsBoutons(rcsBoutons.map((x, j) => (j === i
+                      ? (kind === 'reply' ? { ...base, kind } : kind === 'openUrl' ? { ...base, kind, url: '' } : { ...base, kind, phoneNumber: '' })
+                      : x)));
+                  }}
+                  className={`${inputCls} max-w-[7.5rem] bg-white`}
+                >
+                  <option value="reply">{t('Réponse', 'Reply')}</option>
+                  <option value="openUrl">{t('Lien', 'Link')}</option>
+                  <option value="dial">{t('Appel', 'Call')}</option>
+                </select>
+                <input
+                  value={b.text}
+                  maxLength={25}
+                  onChange={(e) => setRcsBoutons(rcsBoutons.map((x, j) => (j === i ? { ...x, text: e.target.value, postbackData: x.postbackData || `btn_${i + 1}` } : x)))}
+                  className={inputCls}
+                  placeholder={t('Libellé du bouton', 'Button label')}
+                />
+                {b.kind === 'openUrl' && (
+                  <input value={b.url} onChange={(e) => setRcsBoutons(rcsBoutons.map((x, j) => (j === i && x.kind === 'openUrl' ? { ...x, url: e.target.value } : x)))} className={inputCls} placeholder="https://" />
+                )}
+                {b.kind === 'dial' && (
+                  <input value={b.phoneNumber} onChange={(e) => setRcsBoutons(rcsBoutons.map((x, j) => (j === i && x.kind === 'dial' ? { ...x, phoneNumber: e.target.value } : x)))} className={inputCls} placeholder="+33…" />
+                )}
+                <button type="button" onClick={() => setRcsBoutons(rcsBoutons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+              </div>
+            ))}
+          </div>
+          {rcsBoutons.length < 11 && (
+            <button type="button" onClick={() => setRcsBoutons([...rcsBoutons, { kind: 'reply', text: '', postbackData: `btn_${rcsBoutons.length + 1}` }])} className="mt-1.5 text-xs text-brand-600 hover:underline">
+              + {t('bouton', 'button')}
+            </button>
+          )}
           <p className="mt-1 text-[11px] text-ink-400">
             {t('Pas de template ni de variables : le message part tel quel, sous votre agent de marque.', 'No template and no variables: the message goes out as written, under your brand agent.')}
           </p>
