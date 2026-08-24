@@ -62,6 +62,7 @@ import { buildTemplateComponents, carouselSendBlocker } from './meta/template-co
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
+import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
   const emailAccounts = new PgEmailAccountStore(pool);
   const emailTemplates = new PgEmailTemplateStore(pool);
+  const rcsMessageStore = new PgRcsMessageStore(pool);
   const emailResolver = new EmailAccountResolver({
     getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
     buildTransport: buildEmailTransport,
@@ -653,6 +655,12 @@ async function main(): Promise<void> {
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
     // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
     email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
+    rcsMessages: {
+      list: (tenant) => rcsMessageStore.list(tenant),
+      create: (tenant, name, content) => rcsMessageStore.create(tenant, name, content),
+      update: (tenant, id, name, content) => rcsMessageStore.update(tenant, id, name, content),
+      remove: (tenant, id) => rcsMessageStore.remove(tenant, id),
+    },
     // Automations (Lot E) : déclencher un scénario sur un événement (mot-clé, nouveau contact, tag ajouté).
     automations: {
       list: (tenant) => automationStore.list(tenant),

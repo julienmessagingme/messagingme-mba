@@ -4,6 +4,7 @@ import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
 import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
+import { registerRcsMessages } from './http/rcs-messages';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
@@ -47,6 +48,7 @@ import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
+import type { RcsMessageRouteDeps } from './http/rcs-messages';
 import type { TemplateRouteDeps } from './http/templates';
 import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
@@ -90,6 +92,8 @@ export interface ServerDeps {
   import?: ImportRouteDeps;
   /** Routes campagnes (enregistrées seulement si fournies). */
   campaigns?: CampaignRouteDeps;
+  /** Bibliothèque de messages RCS (Contenu). Lecture ouverte au tenant, écritures admin-only. */
+  rcsMessages?: RcsMessageRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
@@ -250,6 +254,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.auth) registerAuth(app, deps.auth, requireAuth);
   if (deps.import) registerImport(app, deps.import, requireAdmin);
   if (deps.campaigns) registerCampaigns(app, deps.campaigns, requireAdmin);
+  // Bibliothèque RCS : montée avec `requireAuth` et non `requireAdmin`, car la LISTE doit être lisible par un
+  // agent (le bloc de scénario et l'assistant de campagne la proposent). Les écritures sont gardées dans les
+  // handlers par `forbidNonAdmin`, comme pour les templates.
+  if (deps.rcsMessages) registerRcsMessages(app, deps.rcsMessages, requireAuth);
   // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
   // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
   // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.

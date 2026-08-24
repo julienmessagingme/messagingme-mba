@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { rcsOutboundSchema } from '../rcs/schema';
 import type { Queue } from '../queue/queue';
 import { createCampaignWithRecipients } from '../campaign/create';
 import type { CampaignRepoLike } from '../campaign/create';
@@ -12,27 +12,6 @@ import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { scopeTenant, nonEmpty } from './scope';
-
-/**
- * Message RCS accepté à la création d'une campagne. Union FERMÉE : un `kind` inconnu est refusé en 400, il ne
- * traverse jamais jusqu'au provider. Validé en `safeParse` (jamais `parse`), comme toute entrée non fiable.
- */
-const rcsSuggestionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('reply'), text: z.string().min(1).max(25), postbackData: z.string().min(1) }),
-  z.object({ kind: z.literal('openUrl'), text: z.string().min(1).max(25), url: z.string().url(), postbackData: z.string().min(1) }),
-  z.object({ kind: z.literal('dial'), text: z.string().min(1).max(25), phoneNumber: z.string().min(1), postbackData: z.string().min(1) }),
-]);
-const rcsCardSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  mediaUrl: z.string().url().optional(),
-  suggestions: z.array(rcsSuggestionSchema).max(4).optional(),
-});
-const rcsOutboundSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('text'), text: z.string().min(1).max(3072), suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
-  z.object({ kind: z.literal('card'), card: rcsCardSchema }),
-  z.object({ kind: z.literal('carousel'), cards: z.array(rcsCardSchema).min(2).max(10) }),
-]);
 
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
