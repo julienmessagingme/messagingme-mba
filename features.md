@@ -875,6 +875,10 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   **Voir un lieu** (l'ouvre sur sa carte) et **Demander sa position**. Seul un bouton Réponse ouvre une sortie
   à relier dans un scénario : les cinq autres agissent sur le téléphone ou sortent de la conversation, et ne
   renvoient rien qui permette de choisir une branche.
+- **L'allure des boutons se choisit en ajoutant un visuel, pas dans un réglage** : avec une image, ils
+  s'affichent en **liste pleine largeur dans la carte** et y restent (4 maximum) ; sans image, en **petites
+  pastilles** sous la bulle, qui disparaissent quand la conversation avance (11 maximum). C'est l'application
+  Messages du destinataire qui décide, l'aperçu montre les deux formes telles qu'elles sortiront.
 - **Un rendez-vous propre à chaque contact** : les dates d'un bouton Agenda se prennent soit en dur, soit dans
   un champ « date et heure » de la fiche. Un contact sans date perd le bouton, et reçoit quand même le message.
 - **Une position reçue** apparaît dans le fil avec ses coordonnées, un fichier avec son adresse.

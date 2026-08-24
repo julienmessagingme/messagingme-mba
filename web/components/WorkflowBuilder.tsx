@@ -14,7 +14,7 @@ import {
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
-import { versBrouillonRcs, maxTexteRcs } from '@/lib/rcs';
+import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonsDepuisNode, ouvreUneSortie } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { useT } from '@/lib/i18n';
@@ -971,6 +971,9 @@ function ConfigPanel({
               <RcsButtonsEditor
                 boutons={boutons}
                 onChange={(suggestions) => onPatch({ suggestions })}
+                // Même règle que les deux autres écrans : un visuel fait passer les boutons DANS la carte,
+                // où ils s'affichent en liste pleine largeur, et où le protocole en accepte 4.
+                max={String(d.imageUrl ?? '').trim() !== '' ? MAX_BOUTONS_CARTE : MAX_BOUTONS_RCS}
                 dateFields={fields}
                 compact
                 testIdPrefix="rcs-node"

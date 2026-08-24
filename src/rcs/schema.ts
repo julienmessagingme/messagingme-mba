@@ -71,9 +71,11 @@ export const rcsCardSchema = z.object({
 
 export const rcsOutboundSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('text'), text: z.string().min(1).max(3072), suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
-  // Les boutons d'une CARTE existent à deux niveaux chez le provider : dans la carte (4 maximum, collés au
-  // visuel) et sous le message (11 maximum, la rangée de pastilles). On garde les deux, et l'écran n'utilise
-  // que le second : c'est celui qui laisse 11 choix et qui se relie aux sorties d'un scénario.
+  // 🔴 Les boutons d'une CARTE existent à deux niveaux chez le provider, et ce n'est pas une redondance :
+  // c'est CE CHOIX qui décide de leur apparence sur le téléphone. Dans la carte (4 maximum) ils s'affichent
+  // en boutons pleine largeur empilés et y RESTENT ; sous le message (11 maximum) ils s'affichent en petites
+  // pastilles en ligne qui disparaissent dès que la conversation avance. L'écran met les boutons DANS la
+  // carte dès qu'il y a un visuel, et laisse retomber le surplus en pastilles.
   z.object({ kind: z.literal('card'), card: rcsCardSchema, suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
   z.object({ kind: z.literal('carousel'), cards: z.array(rcsCardSchema).min(2).max(10) }),
 ]);
@@ -100,9 +102,24 @@ export function parseStoredRcsOutbound(raw: unknown): RcsOutbound | null {
  */
 export function normaliserPostbacks(msg: RcsOutbound): RcsOutbound {
   if (msg.kind === 'carousel') return msg;
-  const suggestions = msg.suggestions;
-  if (!suggestions?.length) return msg;
+  // 🔴 ORDRE : les boutons DE LA CARTE d'abord, les pastilles du message ensuite. C'est l'ordre dans lequel
+  // l'écran les écrit et celui dans lequel le builder numérote les sorties du bloc. Numéroter dans l'autre
+  // sens enverrait le clic du premier bouton sur la branche d'un autre.
   let rang = 0;
-  const reecrites: RcsSuggestion[] = suggestions.map((s) => (s.kind === 'reply' ? { ...s, postbackData: `btn:${rang++}` } : s));
-  return { ...msg, suggestions: reecrites };
+  const reecrire = (suggestions: RcsSuggestion[] | undefined): RcsSuggestion[] | undefined => {
+    if (!suggestions?.length) return suggestions;
+    return suggestions.map((s) => (s.kind === 'reply' ? { ...s, postbackData: `btn:${rang++}` } : s));
+  };
+  if (msg.kind === 'card') {
+    const dansLaCarte = reecrire(msg.card.suggestions);
+    const enPastilles = reecrire(msg.suggestions);
+    if (dansLaCarte === msg.card.suggestions && enPastilles === msg.suggestions) return msg;
+    return {
+      ...msg,
+      card: dansLaCarte ? { ...msg.card, suggestions: dansLaCarte } : msg.card,
+      ...(enPastilles ? { suggestions: enPastilles } : {}),
+    };
+  }
+  const reecrites = reecrire(msg.suggestions);
+  return reecrites ? { ...msg, suggestions: reecrites } : msg;
 }

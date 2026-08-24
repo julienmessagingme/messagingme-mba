@@ -30,30 +30,52 @@ export function maxTexteRcs(imageUrl: string): number {
 }
 
 /**
+ * Nombre de boutons affichés EN LISTE, dans la carte. Limite du protocole, pas un choix de produit.
+ * (Documentation RBM : « Rich cards support up to 4 persistent suggestions », affichées dans la carte.)
+ */
+export const MAX_BOUTONS_CARTE = 4;
+
+/**
  * Brouillon -> message envoyable.
+ *
+ * 🔴 OÙ SONT ACCROCHÉS LES BOUTONS DÉCIDE DE LEUR APPARENCE, et ce n'est pas nous qui la dessinons : c'est
+ * l'application Messages du destinataire. Vérifié dans la documentation RBM de Google le 2026-08-24 :
+ *
+ *   - accrochés au MESSAGE, ils s'affichent en petites PASTILLES posées sous la bulle, en ligne, et
+ *     disparaissent dès que la conversation avance (jusqu'à 11) ;
+ *   - accrochés à la CARTE, ils s'affichent en BOUTONS PLEINE LARGEUR empilés dans la carte, et y restent
+ *     (jusqu'à 4).
+ *
+ * C'est la deuxième forme qu'on reconnaît des grandes campagnes RCS, et la première que produisait cet écran.
+ * Dès qu'il y a un visuel, les boutons partent donc DANS la carte. Au-delà de quatre, le surplus retombe en
+ * pastilles sous la carte plutôt que d'être perdu (l'écran, lui, plafonne à quatre quand il y a une image).
  *
  * `postbackData` est dérivé du libellé quand il est vide, pour rester lisible dans un graphe ; il est de
  * toute façon RÉÉCRIT en `btn:<i>` à l'envoi côté serveur, seul nom que sait retrouver une sortie de bloc.
- *
- * Avec une image : le texte devient la DESCRIPTION d'une carte, et les boutons restent au niveau du message
- * (11 possibles, contre 4 s'ils étaient dans la carte).
  */
 export function versMessageRcs(b: BrouillonRcs): RcsOutbound {
   const suggestions = b.suggestions
     .filter((s) => s.text.trim() !== '')
     .map((s, i) => ({ ...s, text: s.text.trim(), postbackData: s.postbackData.trim() || `btn_${i + 1}` }));
-  const boutons = suggestions.length ? { suggestions } : {};
   const image = b.imageUrl.trim();
+
   if (image !== '') {
+    const dansLaCarte = suggestions.slice(0, MAX_BOUTONS_CARTE);
+    const enPastilles = suggestions.slice(MAX_BOUTONS_CARTE);
     return {
       kind: 'card',
-      // `mediaHeight: TALL` = le grand visuel 16:9 des campagnes. C'est ce que les gens ont en tête en
-      // disant « une image en en-tête » ; le défaut du provider (MEDIUM, 2:1) rogne le visuel.
-      card: { description: b.text.trim(), mediaUrl: image, mediaHeight: 'TALL' },
-      ...boutons,
+      card: {
+        description: b.text.trim(),
+        mediaUrl: image,
+        // `mediaHeight: TALL` = le grand visuel 16:9 des campagnes. C'est ce que les gens ont en tête en
+        // disant « une image en en-tête » ; le défaut du provider (MEDIUM, 2:1) rogne le visuel.
+        mediaHeight: 'TALL',
+        ...(dansLaCarte.length ? { suggestions: dansLaCarte } : {}),
+      },
+      ...(enPastilles.length ? { suggestions: enPastilles } : {}),
     };
   }
-  return { kind: 'text', text: b.text.trim(), ...boutons };
+  return { kind: 'text', text: b.text.trim(), ...(suggestions.length ? { suggestions } : {}) };
 }
 
 /**
@@ -70,7 +92,9 @@ export function versBrouillonRcs(content: RcsOutbound | null): BrouillonRcs | nu
     return {
       text: content.card.description ?? '',
       imageUrl: content.card.mediaUrl ?? '',
-      suggestions: content.suggestions ?? [],
+      // Les boutons de la CARTE d'abord, puis les pastilles : c'est l'ordre dans lequel ils sont écrits, et
+      // celui dont dépend la numérotation `btn:<i>` des sorties d'un bloc de scénario.
+      suggestions: [...(content.card.suggestions ?? []), ...(content.suggestions ?? [])],
     };
   }
   return null;

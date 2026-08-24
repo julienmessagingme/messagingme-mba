@@ -203,7 +203,7 @@ describe('bloc RCS a l execution', () => {
     expect(tags).toEqual([]);
   });
 
-  it('bascule en CARTE des qu un visuel est renseigne, boutons sous le message', async () => {
+  it('bascule en CARTE des qu un visuel est renseigne, boutons DANS la carte', async () => {
     const g = parseGraph({
       nodes: [{
         id: 'r', type: 'rcs_message', position: pos,
@@ -217,10 +217,17 @@ describe('bloc RCS a l execution', () => {
     })!;
     const { provider, executor } = monter(g);
     await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    // Dans la carte, le bouton s'affiche en pleine largeur et y reste ; sous le message il ne serait qu'une
+    // pastille ephemere. Et sa charge utile est bien renumerotee `btn:0` MEME dans la carte, sans quoi le clic
+    // ne retrouverait plus sa branche.
     expect(provider.sent[0]!.msg).toEqual({
       kind: 'card',
-      card: { description: 'Notre offre', mediaUrl: 'https://x/visuel.jpg', mediaHeight: 'TALL' },
-      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn:0' }],
+      card: {
+        description: 'Notre offre',
+        mediaUrl: 'https://x/visuel.jpg',
+        mediaHeight: 'TALL',
+        suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn:0' }],
+      },
     });
   });
 

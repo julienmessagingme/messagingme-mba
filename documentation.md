@@ -590,6 +590,25 @@ journalisé), jamais le message : sans cette garde, un contact sans rendez-vous 
 sont conservés et rendus lisibles dans le fil d'inbox par `apercuMo`. Sans cela, la réponse ne serait qu'une
 bulle vide et l'information demandée serait perdue.
 
+### 🔴 Où les boutons sont accrochés décide de leur apparence
+
+Ce n'est pas nous qui dessinons les boutons : c'est l'application Messages du destinataire. Le seul levier est
+l'endroit où on les accroche, et il change tout (documentation RBM de Google, lue le 2026-08-24) :
+
+| Accrochés à | Apparence | Nombre | Durée |
+| --- | --- | --- | --- |
+| la **carte** (`card.suggestions`) | boutons **pleine largeur empilés**, dans la carte | 4 | ils restent |
+| le **message** (`suggestions`) | petites **pastilles en ligne**, sous la bulle | 11 | elles disparaissent quand la conversation avance |
+
+C'est la première forme qu'on reconnaît des grandes campagnes RCS. L'écran met donc les boutons DANS la carte
+dès qu'il y a un visuel (et laisse retomber le surplus en pastilles plutôt que de le perdre), plafonne à 4
+dans ce cas, et son aperçu dessine les deux formes différemment : afficher des pastilles pour un message qui
+partira en liste ferait croire à un choix qu'on ne fait pas.
+
+⚠️ Conséquence pour `normaliserPostbacks` : la numérotation `btn:<i>` parcourt les boutons **de la carte
+d'abord**, les pastilles ensuite. C'est l'ordre dans lequel l'écran les écrit et celui dans lequel le builder
+numérote les sorties du bloc ; l'inverser enverrait le clic du premier bouton sur la branche d'un autre.
+
 **Non exposé** : `webviewSize` sur un bouton lien (ouvrir la page dans une vue intégrée plutôt que dans le
 navigateur), et le carrousel.
 

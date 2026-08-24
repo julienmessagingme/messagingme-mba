@@ -83,7 +83,7 @@ test.describe('Contenu : messages RCS', () => {
    * L'image d'en-tete change le FORMAT du message envoye : texte -> carte. C'est la bascule qui compte, et
    * elle doit se voir dans le corps poste, pas seulement a l'ecran.
    */
-  test('avec une image, poste une CARTE, boutons sous le message', async ({ page }) => {
+  test('avec une image, poste une CARTE avec ses boutons DEDANS', async ({ page }) => {
     const posts: Array<Record<string, unknown>> = [];
     await mock(page, posts);
     await page.goto('/rcs-messages');
@@ -97,6 +97,10 @@ test.describe('Contenu : messages RCS', () => {
 
     // L'apercu montre l'image AU-DESSUS du texte, comme sur le telephone.
     await expect(page.getByTestId('rcs-preview-image')).toHaveAttribute('src', 'https://exemple.test/visuel.jpg');
+    // 🔴 Et le bouton s'affiche EN LISTE dans la carte, pas en pastille sous la bulle : c'est ce que fait
+    // l'application Messages avec les boutons d'une carte, et c'est le rendu que les campagnes recherchent.
+    await expect(page.getByTestId('rcs-preview-card-buttons')).toContainText('Je veux voir');
+    await expect(page.getByTestId('rcs-preview-buttons')).toBeEmpty();
 
     await page.getByTestId('rcs-message-save').click();
     await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
@@ -104,10 +108,33 @@ test.describe('Contenu : messages RCS', () => {
       name: 'Offre visuelle',
       content: {
         kind: 'card',
-        card: { description: 'Notre offre du moment', mediaUrl: 'https://exemple.test/visuel.jpg', mediaHeight: 'TALL' },
-        suggestions: [{ kind: 'reply', text: 'Je veux voir', postbackData: 'btn_1' }],
+        card: {
+          description: 'Notre offre du moment',
+          mediaUrl: 'https://exemple.test/visuel.jpg',
+          mediaHeight: 'TALL',
+          suggestions: [{ kind: 'reply', text: 'Je veux voir', postbackData: 'btn_1' }],
+        },
       },
     });
+  });
+
+  // Sans visuel, le meme bouton reste une PASTILLE sous la bulle. C'est la difference que l'ecran doit
+  // montrer, sinon on croit choisir une apparence qu'on ne choisit pas.
+  test('sans image, le bouton reste une pastille sous la bulle', async ({ page }) => {
+    await mock(page, []);
+    await page.goto('/rcs-messages');
+    await page.getByTestId('rcs-message-new').click();
+    await page.getByTestId('rcs-message-text').fill('Bonjour');
+    await page.getByTestId('rcs-message-add-button').click();
+    await page.getByPlaceholder('Libellé du bouton').fill('Je veux voir');
+
+    await expect(page.getByTestId('rcs-preview-buttons')).toContainText('Je veux voir');
+    await expect(page.getByTestId('rcs-preview-card-buttons')).toHaveCount(0);
+
+    // Une image renseignee bascule le MEME bouton dans la carte, sans rien resaisir.
+    await page.getByTestId('rcs-message-image').fill('https://exemple.test/visuel.jpg');
+    await expect(page.getByTestId('rcs-preview-card-buttons')).toContainText('Je veux voir');
+    await expect(page.getByTestId('rcs-preview-buttons')).toBeEmpty();
   });
 
   test('AVERTIT sur une image dont l extension sera refusee par l operateur', async ({ page }) => {

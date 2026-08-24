@@ -8,7 +8,7 @@ import {
   type RcsMessage, type UserFieldDef,
 } from '@/lib/api';
 import {
-  versMessageRcs, versBrouillonRcs, maxTexteRcs, EMOJIS_RCS, MAX_BOUTONS_RCS,
+  versMessageRcs, versBrouillonRcs, maxTexteRcs, EMOJIS_RCS, MAX_BOUTONS_RCS, MAX_BOUTONS_CARTE,
   type BrouillonRcs,
 } from '@/lib/rcs';
 import { boutonPret, ICONE_KIND } from '@/lib/rcs-boutons';
@@ -74,6 +74,13 @@ function RcsMessagesInner({ session }: { session: Session }) {
   // afficherait du vide sur le téléphone du contact.
   const variables = emailResolvableFields(fields);
   const maxTexte = maxTexteRcs(form.imageUrl);
+  const avecImage = form.imageUrl.trim() !== '';
+  // 🔴 Où les boutons sont accrochés décide de leur APPARENCE sur le téléphone, et ce n'est pas nous qui la
+  // dessinons. Dans la CARTE : pleine largeur, empilés, persistants (4 maximum). Sous le MESSAGE : petites
+  // pastilles en ligne, éphémères (11 maximum). Même découpe que `versMessageRcs`, qui écrit le message.
+  const remplis = form.suggestions.filter((s) => s.text.trim() !== '');
+  const boutonsCarte = avecImage ? remplis.slice(0, MAX_BOUTONS_CARTE) : [];
+  const boutonsPastilles = avecImage ? remplis.slice(MAX_BOUTONS_CARTE) : remplis;
   const imageDouteuse = form.imageUrl.trim() !== '' && !IMAGE_RE.test(form.imageUrl.trim());
 
   // Un bouton lien sans URL, ou un bouton appel sans numéro, partirait chez le provider et serait refusé.
@@ -240,11 +247,16 @@ function RcsMessagesInner({ session }: { session: Session }) {
               <RcsButtonsEditor
                 boutons={form.suggestions}
                 onChange={(suggestions) => setForm((f) => ({ ...f, suggestions }))}
-                max={MAX_BOUTONS_RCS}
+                max={avecImage ? MAX_BOUTONS_CARTE : MAX_BOUTONS_RCS}
                 dateFields={fields}
               />
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Maximum 11 boutons, 25 caractères chacun (les variables ne sont pas remplacées dans un libellé). Un bouton « Réponse » est le seul qui devienne une sortie à relier dans un scénario.', 'Up to 11 buttons, 25 characters each (variables are not substituted in a label). A "Reply" button is the only one that becomes an output to connect in a scenario.')}
+                {avecImage
+                  ? t('Avec un visuel, jusqu’à 4 boutons : ils s’affichent en LISTE pleine largeur dans la carte, et y restent. 25 caractères chacun.', 'With a visual, up to 4 buttons: they show as a full-width LIST inside the card and stay there. 25 characters each.')
+                  : t('Sans visuel, jusqu’à 11 boutons : ils s’affichent en petites PASTILLES sous la bulle, et disparaissent dès que la conversation avance. Ajoutez une image pour des boutons en liste. 25 caractères chacun.', 'With no visual, up to 11 buttons: they show as small CHIPS under the bubble and vanish as the conversation moves on. Add an image to get list buttons. 25 characters each.')}
+              </p>
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('Les variables ne sont pas remplacées dans un libellé. Un bouton « Réponse » est le seul qui devienne une sortie à relier dans un scénario.', 'Variables are not substituted in a label. A "Reply" button is the only one that becomes an output to connect in a scenario.')}
               </p>
             </div>
 
@@ -253,7 +265,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Aperçu', 'Preview')}</label>
               <div className="rounded-xl bg-ink-50 p-3">
                 <div className="max-w-[85%] overflow-hidden rounded-2xl bg-mint-100">
-                  {form.imageUrl.trim() !== '' && (
+                  {avecImage && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={form.imageUrl.trim()}
@@ -266,9 +278,22 @@ function RcsMessagesInner({ session }: { session: Session }) {
                   <div data-testid="rcs-preview-text" className="whitespace-pre-wrap px-3 py-2 text-sm text-ink-800">
                     {form.text.trim() || <span className="italic text-ink-400">{t('Votre message…', 'Your message…')}</span>}
                   </div>
+                  {/* Boutons DE LA CARTE : pleine largeur, empilés, dans la bulle. C'est ainsi que
+                      l'application Messages les dessine, et c'est la raison d'être du visuel. */}
+                  {boutonsCarte.length > 0 && (
+                    <div data-testid="rcs-preview-card-buttons">
+                      {boutonsCarte.map((s, i) => (
+                        <div key={i} className="border-t border-mint-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-800">
+                          {ICONE_KIND[s.kind]}{s.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                {/* Pastilles : posées SOUS la bulle, en ligne, et elles disparaissent dès que la
+                    conversation avance. C'est le rendu d'un message sans visuel. */}
                 <div data-testid="rcs-preview-buttons" className="mt-2 flex flex-wrap gap-1.5">
-                  {form.suggestions.filter((s) => s.text.trim() !== '').map((s, i) => (
+                  {boutonsPastilles.map((s, i) => (
                     <span key={i} className="rounded-full border border-mint-500 bg-white px-3 py-1 text-xs text-mint-700">
                       {ICONE_KIND[s.kind]}{s.text}
                     </span>

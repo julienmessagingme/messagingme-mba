@@ -40,6 +40,7 @@ export interface RcsCard {
 /** Message RCS. Union fermée, identique au modèle serveur : ce qui n'est pas ici ne s'envoie pas. */
 export type RcsOutbound =
   | { kind: 'text'; text: string; suggestions?: RcsSuggestion[] }
-  /** `suggestions` = la rangée de boutons SOUS le message (11 max), distincte des 4 boutons de la carte. */
+  /** `suggestions` = les PASTILLES sous le message (11 max), éphémères, distinctes des 4 boutons pleine
+   *  largeur de la carte (`card.suggestions`), qui eux restent affichés. */
   | { kind: 'card'; card: RcsCard; suggestions?: RcsSuggestion[] }
   | { kind: 'carousel'; cards: RcsCard[] };

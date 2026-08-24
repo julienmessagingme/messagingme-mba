@@ -197,13 +197,28 @@ function rcsOutboundOf(node: WorkflowNode | undefined): RcsOutbound | null {
   const boutons = Array.isArray(node.data.suggestions)
     ? node.data.suggestions.map((b) => rcsSuggestionSchema.safeParse(b)).filter((r) => r.success).map((r) => r.data)
     : [];
-  const suggestions = boutons.length ? { suggestions: boutons } : {};
   // Visuel d'en-tête -> le message devient une CARTE, exactement comme dans la bibliothèque (`web/lib/rcs.ts`
-  // fait la même bascule côté écran). Les boutons restent au niveau du message : 11 possibles, contre 4
-  // s'ils vivaient dans la carte.
+  // fait la même bascule côté écran, `MAX_BOUTONS_CARTE` y porte la même limite de 4).
+  //
+  // 🔴 Et les boutons partent DANS la carte, ce qui décide de leur APPARENCE sur le téléphone : dans la carte
+  // ils s'affichent en boutons pleine largeur empilés, sous le message ils s'affichent en petites pastilles
+  // en ligne. Au-delà de quatre, le surplus retombe en pastilles plutôt que d'être perdu.
   const image = String(node.data.imageUrl ?? '').trim();
-  if (image !== '') return { kind: 'card', card: { description: text, mediaUrl: image, mediaHeight: 'TALL' }, ...suggestions };
-  return { kind: 'text', text, ...suggestions };
+  if (image !== '') {
+    const dansLaCarte = boutons.slice(0, 4);
+    const enPastilles = boutons.slice(4);
+    return {
+      kind: 'card',
+      card: {
+        description: text,
+        mediaUrl: image,
+        mediaHeight: 'TALL',
+        ...(dansLaCarte.length ? { suggestions: dansLaCarte } : {}),
+      },
+      ...(enPastilles.length ? { suggestions: enPastilles } : {}),
+    };
+  }
+  return { kind: 'text', text, ...(boutons.length ? { suggestions: boutons } : {}) };
 }
 
 /** Anti-boucle de `walkResolved` : une chaîne de blocs RCS tous non joignables finit par s'arrêter. Le walk

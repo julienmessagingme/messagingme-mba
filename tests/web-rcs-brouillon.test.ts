@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_TEXTE_RCS, MAX_TEXTE_RCS_AVEC_IMAGE } from '../web/lib/rcs';
+import {
+  versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_TEXTE_RCS, MAX_TEXTE_RCS_AVEC_IMAGE, MAX_BOUTONS_CARTE,
+} from '../web/lib/rcs';
 import { rcsOutboundSchema } from '../src/rcs/schema';
 
 /**
@@ -16,7 +18,16 @@ describe('Brouillon de message RCS (ecran) vers message envoyable', () => {
     expect(rcsOutboundSchema.safeParse(msg).success).toBe(true);
   });
 
-  it('avec un visuel : une CARTE, texte en description, boutons SOUS le message', () => {
+  /**
+   * 🔴 OU les boutons sont accroches decide de leur APPARENCE sur le telephone, et ce n'est pas nous qui la
+   * dessinons. Documentation RBM de Google, lue le 2026-08-24 : dans la CARTE ils s'affichent en boutons
+   * pleine largeur empiles et y RESTENT (4 maximum) ; sous le MESSAGE ils s'affichent en petites pastilles
+   * en ligne et disparaissent des que la conversation avance (11 maximum).
+   *
+   * C'est la premiere forme que tout le monde reconnait des campagnes RCS, et la seconde que cet ecran
+   * produisait. Des qu'il y a un visuel, les boutons vont donc DANS la carte.
+   */
+  it('avec un visuel : une CARTE, et les boutons DANS la carte', () => {
     const msg = versMessageRcs({
       text: 'Notre offre',
       imageUrl: ' https://x/visuel.jpg ',
@@ -24,11 +35,35 @@ describe('Brouillon de message RCS (ecran) vers message envoyable', () => {
     });
     expect(msg).toEqual({
       kind: 'card',
-      card: { description: 'Notre offre', mediaUrl: 'https://x/visuel.jpg', mediaHeight: 'TALL' },
-      suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn_1' }],
+      card: {
+        description: 'Notre offre',
+        mediaUrl: 'https://x/visuel.jpg',
+        mediaHeight: 'TALL',
+        suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'btn_1' }],
+      },
     });
-    // 🔴 Les boutons sont au niveau du MESSAGE, pas dans la carte : la carte n'en accepte que 4, le message 11.
     expect(rcsOutboundSchema.safeParse(msg).success).toBe(true);
+  });
+
+  it('au-dela de quatre, le surplus retombe en pastilles au lieu d etre perdu', () => {
+    const cinq = Array.from({ length: 5 }, (_, i) => ({ kind: 'reply' as const, text: `B${i}`, postbackData: '' }));
+    const msg = versMessageRcs({ text: 'Offre', imageUrl: 'https://x/v.png', suggestions: cinq });
+    expect(msg.kind).toBe('card');
+    if (msg.kind !== 'card') throw new Error('carte attendue');
+    expect(msg.card.suggestions).toHaveLength(MAX_BOUTONS_CARTE);
+    expect(msg.suggestions).toEqual([{ kind: 'reply', text: 'B4', postbackData: 'btn_5' }]);
+    expect(rcsOutboundSchema.safeParse(msg).success).toBe(true);
+  });
+
+  // Les boutons de la carte d'abord, les pastilles ensuite : c'est cet ordre qui aligne la numerotation
+  // `btn:<i>` des sorties d'un bloc sur ce que le contact voit.
+  it('relit une carte en remettant ses boutons dans l ordre carte puis pastilles', () => {
+    const brouillon = {
+      text: 'Offre',
+      imageUrl: 'https://x/v.png',
+      suggestions: Array.from({ length: 5 }, (_, i) => ({ kind: 'reply' as const, text: `B${i}`, postbackData: `btn_${i + 1}` })),
+    };
+    expect(versBrouillonRcs(versMessageRcs(brouillon))).toEqual(brouillon);
   });
 
   it('ecarte les boutons sans libelle', () => {

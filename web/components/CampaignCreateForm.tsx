@@ -14,7 +14,7 @@ import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
-import { versMessageRcs, versBrouillonRcs, maxTexteRcs } from '@/lib/rcs';
+import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { useT } from '@/lib/i18n';
@@ -1073,6 +1073,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             <RcsButtonsEditor
               boutons={rcsBoutons}
               onChange={setRcsBoutons}
+              // Avec un visuel, les boutons partent DANS la carte : pleine largeur, empilés, 4 au maximum.
+              // Sans visuel, ce sont des pastilles sous la bulle, 11 au maximum. Le plafond suit le format.
+              max={rcsImage.trim() !== '' ? MAX_BOUTONS_CARTE : MAX_BOUTONS_RCS}
               dateFields={userFields}
               testIdPrefix="rcs-campagne"
             />
