@@ -55,7 +55,15 @@ export const schema = z.object({
    * LÈVE au démarrage tant qu'il n'est pas implémenté : un serveur qui croit envoyer du vrai RCS et envoie dans
    * le vide est pire qu'un crash au boot.
    */
-  RCS_PROVIDER: z.enum(['fake', 'google']).default('fake'),
+  RCS_PROVIDER: z.enum(['fake', 'smsmode', 'google']).default('fake'),
+  /** Clé du CANAL RCS smsmode (pas celle du compte : une clé est rattachée à un canal, et une clé de canal
+   *  SMS répond 403 « Channel type mismatch » sur l'API RCS). Secret serveur. */
+  SMSMODE_RCS_API_KEY: z.string().default(''),
+  /** URL publique qui reçoit les rapports de livraison smsmode. Vide -> aucun rapport, donc la sortie
+   *  « non joignable » du bloc reste muette. */
+  SMSMODE_CALLBACK_STATUS_URL: z.string().default(''),
+  /** URL publique qui reçoit les réponses entrantes (MO) smsmode. */
+  SMSMODE_CALLBACK_MO_URL: z.string().default(''),
   /** Intervalle du sweeper de récupération des `sending` bloqués (ms). */
   RECLAIM_INTERVAL_MS: z.coerce.number().default(5 * 60 * 1000),
   /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */
@@ -251,6 +259,11 @@ export const schema = z.object({
     // répondrait « 401 Not authorized », qu'on mettrait sur le dos de clés pourtant valides.
     if ((c.ZADARMA_API_KEY === '') !== (c.ZADARMA_API_SECRET === '')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ZADARMA_API_SECRET'], message: 'ZADARMA_API_KEY et ZADARMA_API_SECRET se posent ensemble (ou aucun des deux)' });
+    }
+    // Provider RCS smsmode sans sa clé de canal : chaque envoi partirait en 401/403. Fail-fast au boot,
+    // comme pour META_APP_SECRET, plutôt qu'une panne silencieuse découverte au premier envoi client.
+    if (c.RCS_PROVIDER === 'smsmode' && c.SMSMODE_RCS_API_KEY === '') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['SMSMODE_RCS_API_KEY'], message: 'SMSMODE_RCS_API_KEY requis quand RCS_PROVIDER=smsmode' });
     }
     // Embedded Signup activé sans clé de chiffrement = tokens business stockables en clair OU crash au premier
     // onboarding. Fail-fast au boot : 64 hex exigés.

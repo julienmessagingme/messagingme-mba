@@ -34,6 +34,14 @@ export interface RcsCapabilities {
 }
 
 export interface RcsProvider {
+  /**
+   * Ce provider sait-il DIRE si un numéro est joignable AVANT d'envoyer ? Google le sait (`getCapabilities`),
+   * smsmode NON : son `lookup` est l'opérateur renvoyé avec le rapport de livraison, donc après coup.
+   * `false` -> l'appelant saute la vérification préalable au lieu de payer un aller-retour pour une constante,
+   * et la sortie « non joignable » du bloc est alimentée par le rapport de livraison. Absent = true
+   * (comportement historique du provider factice).
+   */
+  readonly canCheckReachability?: boolean;
   /** null = numéro NON joignable en RCS. Ce n'est PAS une erreur, c'est une information. */
   capabilities(agentId: string, e164: string): Promise<RcsCapabilities | null>;
   /**

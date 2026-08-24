@@ -56,7 +56,7 @@ export interface WorkflowRuntimeDeps {
   metaFactory: MetaClientFactory;
   /** Provider du canal RCS (`config.RCS_PROVIDER`). Passé explicitement, comme `dryRun` : ce module ne lit pas
    *  la config, ses appelants la lui donnent. */
-  rcsProvider: 'fake' | 'google';
+  rcsProvider: 'fake' | 'smsmode' | 'google';
   /** Modèles d'email (Contenu, Task 3) : chargés par id à l'envoi du bloc « Envoi de mail » (sujet + corps à
    *  rendre avec les variables du contact). */
   emailTemplates: PgEmailTemplateStore;
@@ -73,7 +73,11 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
-  const rcsStack = buildRcsStack(pool, rcsProvider, dryRun);
+  const rcsStack = buildRcsStack(pool, rcsProvider, dryRun, {
+    apiKey: config.SMSMODE_RCS_API_KEY,
+    ...(config.SMSMODE_CALLBACK_STATUS_URL ? { callbackUrlStatus: config.SMSMODE_CALLBACK_STATUS_URL } : {}),
+    ...(config.SMSMODE_CALLBACK_MO_URL ? { callbackUrlMo: config.SMSMODE_CALLBACK_MO_URL } : {}),
+  });
   const tagStore = new PgTagStore(pool);
   const hintStore = new PgTemplateHintStore(pool);
 
