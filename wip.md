@@ -1,5 +1,62 @@
 # WIP
 
+## LIVRE ET DEPLOYE le 2026-08-24 : le canal RCS ecoute (rappels smsmode) + composeur a visuel
+
+Prod sur **`694b739`**, migrations **0079** et **0080** appliquees AVANT le code (image rebatie d'abord, puis
+`ls db/migrations` dans l'image pour verifier qu'elles y sont, puis `migrate`, puis `up -d --build`). Les trois
+conteneurs sont sains, aucune erreur dans les logs, `mba-web` toujours rattache a `mcp-robot_default`.
+
+⚠️ **Ce deploiement embarque le chantier d'une AUTRE session** : `98a4438` (consentement des contacts par
+webhook, migration 0080, defaut a `true` y compris pour les webhooks deja crees). Decision de Julien du
+2026-08-24, mais elle part avec ce lot et pas separement.
+
+### Ce que le lot RCS apporte
+
+**Le canal ecoute.** Une adresse publique par workspace, `POST /rcs/callback/<code>`, posee automatiquement
+sur chaque envoi. Elle recoit les rapports de livraison ET les reponses (le corps porte `direction`). Trois
+choses n'existaient pas et existent maintenant : la sortie « non joignable » d'un bloc s'allume (cascade RCS
+vers WhatsApp), un bouton tape fait avancer le scenario, un STOP pose l'opt-out.
+
+**Deux defauts corriges au passage, qu'aucun envoi n'exercait encore :**
+- les charges utiles des boutons partaient en `btn_1` alors que le graphe attend `btn:0` : un clic ne trouvait
+  aucune arete et le parcours s'arretait en silence. Reecriture a l'envoi, donc les messages deja enregistres
+  sont repares sans ressaisie ;
+- le mapping CARTE/CARROUSEL etait faux (`card`/`cards` et `media.url` au lieu de `content`/`contents` et
+  `media.fileUrl`) : la premiere image envoyee serait partie en 400.
+
+**Un blocage de conception corrige.** Un bloc RCS sans bouton laissait le parcours en attente pour toujours :
+seuls un echec definitif ou une reponse le relancaient. Un rapport `DELIVERED` reprend desormais la sortie
+« envoye », mais UNIQUEMENT si le bloc n'offre aucun bouton reponse (l'accuse arrive en secondes, le contact
+repond bien plus tard : avancer trop tot enverrait son clic dans le vide).
+
+**Le composeur.** Image d'en-tete (le message bascule en CARTE, texte plafonne a 2000 au lieu de 3072),
+variables `{{champ}}` (meme table que les modeles d'email) et emojis, aux trois endroits ou l'on ecrit un
+message RCS. La bascule texte/carte vit dans UN endroit (`web/lib/rcs.ts`, miroir serveur dans
+`rcsOutboundOf`).
+
+### Ce qui a ete verifie, et comment
+
+- Typecheck des deux tsconfig, **2281 tests unitaires**, **274 E2E** (deux passages complets ; un echec isole
+  sur `inbox-envoi-scenario` au premier passage, revenu vert seul et sur un ecran non touche : c'est
+  l'instabilite deja documentee dans `playwright.config.ts`, serveur Next partage entre 4 workers).
+- Les deux gardes de non-regression ont ete verifiees **DANS LES DEUX SENS** : garde retiree, le test echoue.
+- **Sonde de bout en bout sur la PROD**, sans envoyer un seul message : sept corps postes sur l'URL publique
+  (donc Cloudflare, NPM, la reecriture du front, l'API). Resultats : bon canal 200, canal etranger **403**,
+  code inconnu **404**, corps illisible **200** (ne pas faire rejouer six fois ce qui ne sera jamais lisible),
+  statut inconnu ignore. La sonde a laisse une conversation fictive sur `33600000000`, supprimee ensuite
+  (1 message, 1 conversation, transaction bornee).
+
+### Reste ouvert sur le canal
+
+- Le **carrousel** n'a aucun composeur (le modele et le provider le supportent).
+- Trois types de bouton existent chez smsmode et ne sont pas exposes : **Agenda** (ajouter un rendez-vous),
+  **Afficher un lieu**, **Demander la position**.
+- Les deux cles d'API smsmode qui ont circule en clair dans une conversation sont **a faire tourner**. Elles
+  sont desormais stockees chiffrees par workspace : les remplacer veut dire les ressaisir dans la carte
+  d'activation de l'accueil.
+- Aucun envoi RCS reel n'a ete refait apres ce deploiement : la chaine complete (envoi -> rapport -> reprise
+  du parcours) n'est prouvee que par la sonde, pas encore par un vrai message.
+
 ## LIVRE ET DEPLOYE le 2026-08-23 : webhooks entrants (menu Tools)
 
 Prod sur **`c109449`**, migration **0074** appliquee AVANT le code (image rebatie d'abord, sinon `migrate`
@@ -820,7 +877,7 @@ propres des deux côtés. Déploiement du 2026-08-18 fait dans l'ordre : `git lo
 aucun travail tiers embarqué), migrations vérifiées AVANT (« à jour, rien à appliquer »), puis build et
 redémarrage. Vérifié après : API saine, worker reparti avec ses 6 files, front public en 200, zéro erreur.
 
-## Migrations : 0058 appliquée, prochaine libre = 0059
+## Migrations : 0080 appliquée, prochaine libre = 0081
 
 Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
 `conversations`/`conversation_messages`/`campaigns` (défaut `whatsapp`, tout l'existant intact), unique de
