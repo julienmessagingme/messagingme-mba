@@ -20,6 +20,8 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import { buildWorkflowTemplateComponents } from './template-send';
 import { WorkflowExecutor } from './executor';
 import { buildRcsStack } from '../rcs/factory';
+import { PgRcsAgentStore } from '../rcs/store.pg';
+import { decryptSecret } from '../crypto/secretbox';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
 import type { PgEmailTemplateStore } from '../email/template-store.pg';
 import type { EmailAccountResolver } from '../email/resolver';
@@ -73,8 +75,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const runStore = new PgWorkflowRunStore(pool);
   // Pile RCS montée ICI, et une seule fois : l'exécuteur (bloc de scénario) et le worker (campagnes) doivent
   // partager le MÊME sender, donc le même cache de joignabilité et le même provider.
+  const agentsRcs = new PgRcsAgentStore(pool);
   const rcsStack = buildRcsStack(pool, rcsProvider, dryRun, {
     apiKey: config.SMSMODE_RCS_API_KEY,
+    // Clé PROPRE au workspace, déchiffrée à la volée. C'est elle qui prime : la clé d'environnement n'est
+    // plus qu'un repli pour le workspace historique qui n'a pas encore fait son activation.
+    apiKeyFor: (tenant) => agentsRcs.apiKeyFor(tenant, (enc) => decryptSecret(enc, config.ENCRYPTION_KEY)),
     ...(config.SMSMODE_CALLBACK_STATUS_URL ? { callbackUrlStatus: config.SMSMODE_CALLBACK_STATUS_URL } : {}),
     ...(config.SMSMODE_CALLBACK_MO_URL ? { callbackUrlMo: config.SMSMODE_CALLBACK_MO_URL } : {}),
   });

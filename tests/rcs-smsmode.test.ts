@@ -22,13 +22,13 @@ function monter(reponse: { status: number; json: Record<string, unknown> } = OK,
 describe('SmsmodeRcsProvider', () => {
   it('envoie le destinataire en CHIFFRES NUS, sans le +', async () => {
     const { transport, provider } = monter();
-    await provider.send('agent-1', '+33633921577', { kind: 'text', text: 'Bonjour' }, 'r1');
+    await provider.send('t1', 'agent-1', '+33633921577', { kind: 'text', text: 'Bonjour' }, 'r1');
     expect((transport.calls[0]!.body as { recipient: { to: string } }).recipient.to).toBe('33633921577');
   });
 
   it('authentifie par X-Api-Key et rend l identifiant du SERVEUR, pas le notre', async () => {
     const { transport, provider } = monter();
-    const r = await provider.send('agent-1', '33633921577', { kind: 'text', text: 'Bonjour' }, 'r1');
+    const r = await provider.send('t1', 'agent-1', '33633921577', { kind: 'text', text: 'Bonjour' }, 'r1');
     expect(transport.calls[0]!.headers['X-Api-Key']).toBe('cle-canal-rcs');
     // C'est l'identifiant smsmode qui sert ensuite au suivi de livraison, pas notre référence.
     expect(r).toEqual({ messageId: 'srv-123' });
@@ -36,17 +36,17 @@ describe('SmsmodeRcsProvider', () => {
 
   it('passe NOTRE reference en refClient pour recoller le rapport de livraison', async () => {
     const { transport, provider } = monter();
-    await provider.send('agent-1', '33633921577', { kind: 'text', text: 'Bonjour' }, 'destinataire-42');
+    await provider.send('t1', 'agent-1', '33633921577', { kind: 'text', text: 'Bonjour' }, 'destinataire-42');
     expect((transport.calls[0]!.body as { refClient: string }).refClient).toBe('destinataire-42');
   });
 
   it('joint les URL de callback quand elles sont configurees, et rien sinon', async () => {
     const avec = monter(OK, { callbackUrlStatus: 'https://mba.example/s', callbackUrlMo: 'https://mba.example/mo' });
-    await avec.provider.send('a', '33600000000', { kind: 'text', text: 'x' }, 'r1');
+    await avec.provider.send('t1', 'a', '33600000000', { kind: 'text', text: 'x' }, 'r1');
     expect(avec.transport.calls[0]!.body).toMatchObject({ callbackUrlStatus: 'https://mba.example/s', callbackUrlMo: 'https://mba.example/mo' });
 
     const sans = monter();
-    await sans.provider.send('a', '33600000000', { kind: 'text', text: 'x' }, 'r1');
+    await sans.provider.send('t1', 'a', '33600000000', { kind: 'text', text: 'x' }, 'r1');
     expect(sans.transport.calls[0]!.body).not.toHaveProperty('callbackUrlStatus');
   });
 
@@ -55,7 +55,7 @@ describe('SmsmodeRcsProvider', () => {
       status: 403,
       json: { errorCode: '403.005', message: 'Channel type mismatch', detail: 'The type of the channel is not supported by this API' },
     });
-    await expect(provider.send('a', '33600000000', { kind: 'text', text: 'x' }, 'r1')).rejects.toMatchObject({
+    await expect(provider.send('t1', 'a', '33600000000', { kind: 'text', text: 'x' }, 'r1')).rejects.toMatchObject({
       status: 403,
       errorCode: '403.005',
     });
@@ -63,7 +63,7 @@ describe('SmsmodeRcsProvider', () => {
 
   it('refuse une reponse 2xx SANS messageId au lieu de rendre un envoi fantome', async () => {
     const { provider } = monter({ status: 201, json: { status: { value: 'ENROUTE' } } });
-    await expect(provider.send('a', '33600000000', { kind: 'text', text: 'x' }, 'r1')).rejects.toBeInstanceOf(SmsmodeApiError);
+    await expect(provider.send('t1', 'a', '33600000000', { kind: 'text', text: 'x' }, 'r1')).rejects.toBeInstanceOf(SmsmodeApiError);
   });
 
   it('declare NE PAS savoir verifier la joignabilite, et ne rend jamais null par defaut', async () => {
@@ -71,7 +71,7 @@ describe('SmsmodeRcsProvider', () => {
     // Rendre `null` signifierait « non joignable » et ecarterait le destinataire a tort : smsmode n'a
     // simplement aucun endpoint de capacite.
     expect(provider.canCheckReachability).toBe(false);
-    expect(await provider.capabilities('a', '33600000000')).not.toBeNull();
+    expect(await provider.capabilities('t1', 'a', '33600000000')).not.toBeNull();
   });
 });
 
@@ -106,5 +106,21 @@ describe('toSmsmodeBody', () => {
       .toEqual({ type: 'CARD', card: { title: 'T', description: 'D', media: { url: 'https://x/i.png' } } });
     expect(toSmsmodeBody({ kind: 'carousel', cards: [{ title: 'A' }, { title: 'B' }] }))
       .toEqual({ type: 'CAROUSEL', cards: [{ title: 'A' }, { title: 'B' }] });
+  });
+
+  it('utilise la cle du WORKSPACE quand il en a une, pas celle du serveur', async () => {
+    const transport = new FakeTransport(OK);
+    const provider = new SmsmodeRcsProvider({
+      transport,
+      apiKey: 'cle-du-serveur',
+      apiKeyFor: async (tenant) => (tenant === 't-avec-cle' ? 'cle-du-workspace' : null),
+    });
+
+    await provider.send('t-avec-cle', 'a', '33600000000', { kind: 'text', text: 'x' }, 'r1');
+    expect(transport.calls[0]!.headers['X-Api-Key']).toBe('cle-du-workspace');
+
+    // Workspace sans cle propre : repli sur celle du serveur, rien ne casse.
+    await provider.send('t-sans-cle', 'a', '33600000000', { kind: 'text', text: 'x' }, 'r2');
+    expect(transport.calls[1]!.headers['X-Api-Key']).toBe('cle-du-serveur');
   });
 });

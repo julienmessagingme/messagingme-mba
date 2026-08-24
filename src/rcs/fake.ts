@@ -26,12 +26,12 @@ export class FakeRcsProvider implements RcsProvider {
 
   constructor(private readonly opts: FakeRcsOptions = {}) {}
 
-  async capabilities(_agentId: string, e164: string): Promise<RcsCapabilities | null> {
+  async capabilities(_tenantId: string, _agentId: string, e164: string): Promise<RcsCapabilities | null> {
     if (this.opts.unreachable?.has(e164)) return null;
     return { features: ['RICHCARD_STANDALONE', 'ACTION_CREATE_CALENDAR_EVENT'] };
   }
 
-  async send(agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult> {
+  async send(_tenantId: string, agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult> {
     const cle = `${agentId}:${messageId}`;
     if (this.vus.has(cle)) return { messageId };
     this.vus.add(cle);

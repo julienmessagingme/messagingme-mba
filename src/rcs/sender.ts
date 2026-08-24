@@ -33,9 +33,9 @@ export class RcsSender {
     // Vérification préalable SEULEMENT si le provider sait la faire. Chez smsmode elle n'existe pas : la
     // demander quand même reviendrait à écrire « joignable » en cache pour tout le monde, ce qui rendrait la
     // sortie « non joignable » du bloc muette tout en payant un aller-retour en base par destinataire.
-    if (this.provider.canCheckReachability !== false && !(await this.reach.isReachable(agentId, e164))) {
+    if (this.provider.canCheckReachability !== false && !(await this.reach.isReachable(tenantId, agentId, e164))) {
       return { skipped: 'not_rcs_reachable' };
     }
-    return this.provider.send(agentId, e164, msg, messageId);
+    return this.provider.send(tenantId, agentId, e164, msg, messageId);
   }
 }

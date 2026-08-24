@@ -43,11 +43,11 @@ export interface RcsProvider {
    */
   readonly canCheckReachability?: boolean;
   /** null = numéro NON joignable en RCS. Ce n'est PAS une erreur, c'est une information. */
-  capabilities(agentId: string, e164: string): Promise<RcsCapabilities | null>;
+  capabilities(tenantId: string, agentId: string, e164: string): Promise<RcsCapabilities | null>;
   /**
    * `messageId` est fourni par l'APPELANT : la plateforme RBM ignore un identifiant déjà utilisé pour cet
    * agent, ce qui rend l'envoi idempotent malgré un rejeu de la file. C'est la même garantie que le claim
    * atomique de `campaign_recipients`, mais côté opérateur.
    */
-  send(agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult>;
+  send(tenantId: string, agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult>;
 }

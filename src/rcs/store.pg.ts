@@ -30,10 +30,73 @@ export class PgRcsAgentStore {
     return res.rows.map((r) => ({ agentId: r.agent_id, brandName: r.brand_name, status: r.status }));
   }
 
+  /**
+   * Clé d'API du canal RCS de ce tenant, DÉCHIFFRÉE. null = pas de clé propre -> l'appelant retombe sur celle
+   * du serveur. Le déchiffrement est injecté : ce store ne connaît pas la clé maîtresse.
+   */
+  async apiKeyFor(tenantId: string, decrypt: (enc: string) => string): Promise<string | null> {
+    const res = await this.pool.query<{ api_key_enc: string | null }>(
+      'select api_key_enc from rcs_agents where tenant_id = $1 and api_key_enc is not null order by created_at asc limit 1',
+      [tenantId],
+    );
+    const enc = res.rows[0]?.api_key_enc;
+    if (!enc) return null;
+    try {
+      return decrypt(enc);
+    } catch {
+      // Clé illisible (clé maîtresse changée, valeur corrompue) : on ne fait PAS semblant d'avoir une clé.
+      // L'appelant retombera sur celle du serveur, et l'écran d'activation invitera à la ressaisir.
+      return null;
+    }
+  }
+
   /** Le tenant a-t-il au moins un agent RCS ? C'est CE test qui allume ou éteint le canal dans l'interface :
    *  pas de drapeau à basculer à la main, l'outil suit l'état réel du dépôt d'agent. */
   async hasAgent(tenantId: string): Promise<boolean> {
     const res = await this.pool.query('select 1 from rcs_agents where tenant_id = $1 limit 1', [tenantId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /** État du canal RCS d'un workspace, pour l'écran d'activation. Jamais la clé, seulement ce qu'elle ouvre. */
+  async etatPour(tenantId: string): Promise<{
+    agentId: string; brandName: string; displayName: string | null; status: string; checkedAt: string | null;
+  } | null> {
+    const res = await this.pool.query<{
+      agent_id: string; brand_name: string; display_name: string | null; status: string; checked_at: Date | null;
+    }>(
+      'select agent_id, brand_name, display_name, status, checked_at from rcs_agents where tenant_id = $1 order by created_at asc limit 1',
+      [tenantId],
+    );
+    const r = res.rows[0];
+    return r ? {
+      agentId: r.agent_id,
+      brandName: r.brand_name,
+      displayName: r.display_name,
+      status: r.status,
+      checkedAt: r.checked_at ? r.checked_at.toISOString() : null,
+    } : null;
+  }
+
+  /** Active (ou réactive) le canal RCS d'un workspace avec une clé DÉJÀ vérifiée et chiffrée. */
+  async activer(
+    tenantId: string,
+    canal: { channelId: string; agentName: string },
+    apiKeyEnc: string,
+    clientTokenEnc: string,
+    webhookCode: string,
+  ): Promise<void> {
+    await this.pool.query(
+      `insert into rcs_agents (tenant_id, agent_id, brand_name, webhook_code, client_token_enc, api_key_enc, display_name, region, status, checked_at)
+       values ($1,$2,$3,$4,$5,$6,$7,'europe','testing', now())
+       on conflict (tenant_id, agent_id) do update
+         set api_key_enc = excluded.api_key_enc, display_name = excluded.display_name, brand_name = excluded.brand_name, checked_at = now()`,
+      [tenantId, canal.channelId, canal.agentName || 'Agent RCS', webhookCode, clientTokenEnc, apiKeyEnc, canal.agentName],
+    );
+  }
+
+  /** Désactive le canal : la ligne est SUPPRIMÉE, donc `hasAgent` redevient faux et l'interface s'éteint. */
+  async desactiver(tenantId: string): Promise<boolean> {
+    const res = await this.pool.query('delete from rcs_agents where tenant_id = $1', [tenantId]);
     return (res.rowCount ?? 0) > 0;
   }
 

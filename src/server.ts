@@ -5,6 +5,7 @@ import { registerReceiver } from './webhooks/receiver';
 import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
+import { registerRcsChannel } from './http/rcs-channel';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
@@ -49,6 +50,7 @@ import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
 import type { CampaignRouteDeps } from './http/campaigns';
 import type { RcsMessageRouteDeps } from './http/rcs-messages';
+import type { RcsChannelRouteDeps } from './http/rcs-channel';
 import type { TemplateRouteDeps } from './http/templates';
 import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
@@ -94,6 +96,8 @@ export interface ServerDeps {
   campaigns?: CampaignRouteDeps;
   /** Bibliothèque de messages RCS (Contenu). Lecture ouverte au tenant, écritures admin-only. */
   rcsMessages?: RcsMessageRouteDeps;
+  /** Activation du canal RCS d'un workspace (page d'accueil). Écritures admin-only. */
+  rcsChannel?: RcsChannelRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
@@ -258,6 +262,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // agent (le bloc de scénario et l'assistant de campagne la proposent). Les écritures sont gardées dans les
   // handlers par `forbidNonAdmin`, comme pour les templates.
   if (deps.rcsMessages) registerRcsMessages(app, deps.rcsMessages, requireAuth);
+  if (deps.rcsChannel) registerRcsChannel(app, deps.rcsChannel, requireAuth);
   // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
   // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
   // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.

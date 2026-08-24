@@ -23,12 +23,12 @@ export class Reachability {
     private readonly now: () => number = Date.now,
   ) {}
 
-  async isReachable(agentId: string, e164: string): Promise<boolean> {
+  async isReachable(tenantId: string, agentId: string, e164: string): Promise<boolean> {
     const at = this.now();
     const enCache = await this.store.get(agentId, e164);
     if (enCache && at - enCache.checkedAt <= TTL_MS) return enCache.reachable;
     try {
-      const caps = await this.provider.capabilities(agentId, e164);
+      const caps = await this.provider.capabilities(tenantId, agentId, e164);
       const reachable = caps !== null;
       await this.store.put(agentId, e164, reachable, at);
       return reachable;

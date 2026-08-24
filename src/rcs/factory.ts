@@ -20,9 +20,12 @@ export interface RcsStack {
 }
 
 export interface SmsmodeCredentials {
+  /** Clé du serveur, utilisée en REPLI quand le tenant n'a pas la sienne. */
   apiKey: string;
   callbackUrlStatus?: string;
   callbackUrlMo?: string;
+  /** Clé PROPRE au tenant (déchiffrée à la demande). C'est le cas normal dès la deuxième marque. */
+  apiKeyFor?: (tenantId: string) => Promise<string | null>;
 }
 
 /**
@@ -36,12 +39,15 @@ function providerFor(nom: 'fake' | 'smsmode' | 'google', dryRun: boolean, smsmod
   // l'ordre dans lequel on pense à le brancher.
   if (dryRun || nom === 'fake') return new FakeRcsProvider();
   if (nom === 'smsmode') {
-    // La clé est exigée au boot par la config (fail-fast) ; ce garde couvre les câblages qui contournent la
-    // config, pour qu'un provider sans clé ne parte pas envoyer et ne se prenne des 401 qu'à l'usage.
-    if (!smsmode?.apiKey) throw new Error("RCS_PROVIDER=smsmode exige la clé du canal RCS (SMSMODE_RCS_API_KEY)");
+    // Une clé est exigée : soit celle du serveur, soit une résolution par workspace. Sans aucune des deux, le
+    // provider partirait envoyer sans authentification et se prendrait un 401 à chaque message.
+    if (!smsmode?.apiKey && !smsmode?.apiKeyFor) {
+      throw new Error("RCS_PROVIDER=smsmode exige la clé du canal RCS (SMSMODE_RCS_API_KEY) ou une clé par workspace");
+    }
     return new SmsmodeRcsProvider({
       transport: new FetchTransport(),
       apiKey: smsmode.apiKey,
+      ...(smsmode.apiKeyFor ? { apiKeyFor: smsmode.apiKeyFor } : {}),
       ...(smsmode.callbackUrlStatus ? { callbackUrlStatus: smsmode.callbackUrlStatus } : {}),
       ...(smsmode.callbackUrlMo ? { callbackUrlMo: smsmode.callbackUrlMo } : {}),
     });

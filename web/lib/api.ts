@@ -365,6 +365,33 @@ export function listCampaigns(tenantId: string, opts?: { archived?: boolean }): 
   return request<{ campaigns: CampaignSummary[] }>(`/tenants/${tenantId}/campaigns${opts?.archived ? '?archived=1' : ''}`);
 }
 
+/** Ce qu'une clé d'API RCS ouvre : l'agent qui signe, le flux, et les quotas. Jamais la clé elle-même. */
+export interface RcsChannelInfo {
+  channelId: string;
+  name: string;
+  agentName: string;
+  flow: string;
+  dailyLimit: number | null;
+  dailyUsed: number | null;
+  monthlyLimit: number | null;
+  monthlyUsed: number | null;
+}
+
+export interface RcsChannelState {
+  active: boolean;
+  channel?: { agentId: string; brandName: string; displayName: string | null; status: string; checkedAt: string | null };
+}
+
+export function getRcsChannel(tenantId: string): Promise<RcsChannelState> {
+  return request<RcsChannelState>(`/tenants/${tenantId}/rcs/channel`);
+}
+export function activateRcsChannel(tenantId: string, apiKey: string): Promise<{ active: true; channel: RcsChannelInfo }> {
+  return request<{ active: true; channel: RcsChannelInfo }>(`/tenants/${tenantId}/rcs/channel`, { method: 'POST', body: JSON.stringify({ apiKey }) });
+}
+export function deactivateRcsChannel(tenantId: string): Promise<{ active: false }> {
+  return request<{ active: false }>(`/tenants/${tenantId}/rcs/channel`, { method: 'DELETE' });
+}
+
 /** Suggestion RCS : bouton affiché sous le message. Trois formes, comme chez le provider. */
 export type RcsSuggestion =
   | { kind: 'reply'; text: string; postbackData: string }

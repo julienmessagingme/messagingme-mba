@@ -19,8 +19,16 @@ import type { SendResult } from '../meta/types';
  */
 export interface SmsmodeOptions {
   transport: HttpTransport;
-  /** Clé du CANAL RCS (pas celle du compte ni celle d'un canal SMS). Secret : côté serveur uniquement. */
+  /**
+   * Clé du CANAL RCS de repli, celle du serveur. Utilisée quand le tenant n'a pas la sienne. Secret : côté
+   * serveur uniquement.
+   */
   apiKey: string;
+  /**
+   * Clé PROPRE au tenant, déchiffrée à la demande. C'est le cas normal dès qu'il y a plus d'une marque :
+   * chaque marque a son agent, son canal et sa clé. `null` -> repli sur la clé du serveur.
+   */
+  apiKeyFor?: (tenantId: string) => Promise<string | null>;
   /** URL publique qui recevra les rapports de livraison. Absente -> aucun rapport, la sortie
    *  « non joignable » du bloc restera donc muette. */
   callbackUrlStatus?: string;
@@ -84,11 +92,17 @@ export class SmsmodeRcsProvider implements RcsProvider {
    * VIDE mais non nulle (= on tente l'envoi) plutôt que `null`, qui signifierait « non joignable » et
    * écarterait le destinataire à tort. `canCheckReachability` dit à l'appelant de ne pas s'y fier.
    */
-  async capabilities(_agentId: string, _e164: string): Promise<RcsCapabilities | null> {
+  async capabilities(_tenantId: string, _agentId: string, _e164: string): Promise<RcsCapabilities | null> {
     return { features: [] };
   }
 
-  async send(_agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult> {
+  /** Clé à utiliser pour CE tenant. Sa propre clé si elle existe, sinon celle du serveur. */
+  private async cleDe(tenantId: string): Promise<string> {
+    const propre = this.o.apiKeyFor ? await this.o.apiKeyFor(tenantId) : null;
+    return propre && propre !== '' ? propre : this.o.apiKey;
+  }
+
+  async send(tenantId: string, _agentId: string, e164: string, msg: RcsOutbound, messageId: string): Promise<SendResult> {
     const to = e164.replace(/[^0-9]/g, ''); // chiffres nus, sans '+' : format exigé par leur API
     const body = {
       recipient: { to },
@@ -101,8 +115,10 @@ export class SmsmodeRcsProvider implements RcsProvider {
       ...(this.o.callbackUrlMo ? { callbackUrlMo: this.o.callbackUrlMo } : {}),
     };
 
+    const cle = await this.cleDe(tenantId);
+    if (!cle) throw new SmsmodeApiError(0, null, 'aucune clé RCS pour ce workspace');
     const res = await this.o.transport.post(`${this.o.baseUrl ?? BASE}/messages`, body, {
-      'X-Api-Key': this.o.apiKey,
+      'X-Api-Key': cle,
       accept: 'application/json',
     });
 

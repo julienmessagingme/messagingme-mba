@@ -52,6 +52,7 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
+import { randomBytes } from 'node:crypto';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './http/mba';
@@ -63,6 +64,7 @@ import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
+import { verifierCleRcs, fetchGet } from './rcs/channel-info';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
@@ -655,6 +657,22 @@ async function main(): Promise<void> {
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
     // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
     email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
+    rcsChannel: {
+      etat: (tenant) => workflowRuntime.rcsStack.agents.etatPour(tenant),
+      verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),
+      activer: async (tenant, canal, apiKey) => {
+        // La clé est chiffrée ICI, jamais stockée en clair. `client_token_enc` reçoit un secret de webhook
+        // généré à l'activation : il servira à valider les rappels entrants du fournisseur.
+        await workflowRuntime.rcsStack.agents.activer(
+          tenant,
+          canal,
+          encryptSecret(apiKey, config.ENCRYPTION_KEY),
+          encryptSecret(randomBytes(24).toString('hex'), config.ENCRYPTION_KEY),
+          `rcs-${randomBytes(6).toString('hex')}`,
+        );
+      },
+      desactiver: (tenant) => workflowRuntime.rcsStack.agents.desactiver(tenant),
+    },
     rcsMessages: {
       list: (tenant) => rcsMessageStore.list(tenant),
       create: (tenant, name, content) => rcsMessageStore.create(tenant, name, content),

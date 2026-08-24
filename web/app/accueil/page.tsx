@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { RcsChannelCard } from '@/components/RcsChannelCard';
 import { Toggle } from '@/components/Toggle';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
@@ -400,6 +401,11 @@ function AccueilInner({ session }: { session: Session }) {
             </div>
           )}
 
+
+          {/* Canal RCS : juste sous la carte du numéro WhatsApp, parce que c'est la même question posée à
+              l'opérateur (« par où je parle à mes clients ? »). Le RCS n'a pas de numéro, il a un AGENT :
+              l'activation demande donc la clé du canal, pas un raccordement de ligne. */}
+          <RcsChannelCard tenantId={session.tenantId} isAdmin={isAdmin} />
 
           {/* HubSpot : carte SÉPARÉE, sous le bloc MBA. Elle vivait imbriquée dans la carte du numéro, où
               elle passait inaperçue alors qu'elle gouverne une intégration entière. La grille fait 2 colonnes :
