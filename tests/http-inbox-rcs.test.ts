@@ -118,3 +118,44 @@ describe('Envoyer un RCS depuis l inbox', () => {
     await a.close();
   });
 });
+
+/**
+ * Les variables d'un template, resolues sur la fiche du contact ouvert.
+ *
+ * 🔴 Pourquoi : l'ecran d'envoi demandait `{{1}}`, `{{2}}` en texte libre, sans dire ce qu'ils attendaient.
+ * L'operateur devait se souvenir que `{{1}}` etait le prenom et le retaper, alors que la fiche le porte et
+ * que le template dit deja quel champ l'alimente.
+ */
+describe('Variables d un template resolues pour la conversation', () => {
+  const url = '/tenants/t1/conversations/c1/template-params?name=rdv&language=fr&count=2';
+
+  it('rend les valeurs DEJA remplies, et le libelle du champ qui les alimente', async () => {
+    const { a } = app({
+      resolveTemplateParams: async (_t, waId, tpl) => {
+        expect(waId).toBe('33611');
+        expect(tpl).toEqual({ name: 'rdv', language: 'fr', count: 2 });
+        return { values: ['Julien', 'Lyon'], labels: ['prenom', 'ville'] };
+      },
+    });
+    const r = await a.inject({ method: 'GET', url, ...auth() });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ values: ['Julien', 'Lyon'], labels: ['prenom', 'ville'] });
+    await a.close();
+  });
+
+  it('rend du VIDE plutot qu une erreur quand la resolution n est pas cablee', async () => {
+    const { a } = app({ resolveTemplateParams: undefined });
+    const r = await a.inject({ method: 'GET', url, ...auth() });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ values: [], labels: [] });
+    await a.close();
+  });
+
+  it('refuse une demande mal formee, et une conversation d un autre workspace', async () => {
+    const { a } = app();
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/template-params?count=2', ...auth() })).statusCode).toBe(400);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/template-params?name=rdv&language=fr&count=99', ...auth() })).statusCode).toBe(400);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/conversations/inconnue/template-params?name=rdv&language=fr&count=1', ...auth() })).statusCode).toBe(404);
+    await a.close();
+  });
+});

@@ -436,6 +436,21 @@ export function sendRcsToConversation(tenantId: string, conversationId: string, 
   });
 }
 
+/**
+ * Variables d'un template résolues sur la fiche du contact d'une conversation, avec le libellé du champ qui
+ * les alimente. Sert à PRÉ-REMPLIR l'écran d'envoi de l'Inbox au lieu de demander `{{1}}`, `{{2}}`.
+ */
+export function resolveTemplateParamsForConversation(
+  tenantId: string,
+  conversationId: string,
+  tpl: { name: string; language: string; count: number },
+): Promise<{ values: string[]; labels: string[] }> {
+  const q = new URLSearchParams({ name: tpl.name, language: tpl.language, count: String(tpl.count) });
+  return request<{ values: string[]; labels: string[] }>(
+    `/tenants/${tenantId}/conversations/${conversationId}/template-params?${q.toString()}`,
+  );
+}
+
 /** Un visuel hébergé pour les messages RCS. `url` est l'adresse PUBLIQUE, celle que l'opérateur ira chercher. */
 export interface RcsMedia {
   id: string;
@@ -551,6 +566,13 @@ export interface TemplateSummary {
   body?: string;
   /** Format du header : TEXT | IMAGE | VIDEO | DOCUMENT, ou null si pas de header. */
   headerFormat?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null;
+  /**
+   * Média d'en-tête DÉJÀ défini sur le template (lu chez Meta dans `example.header_handle`). C'est lui qu'on
+   * renvoie à l'envoi : Meta exige le média à CHAQUE envoi, mais il n'y a aucune raison de le redemander à
+   * quelqu'un qui l'a déjà choisi en créant le template. ⚠️ Porte une expiration : à consommer, jamais à
+   * mettre en cache.
+   */
+  headerMediaUrl?: string;
   /** Texte du header TEXT (pré-remplissage édition). */
   headerText?: string;
   /** Pied de page (pré-remplissage édition). */

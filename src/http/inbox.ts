@@ -73,6 +73,17 @@ export interface InboxRouteDeps {
   /** Numéro du tenant depuis lequel répondre. */
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
   /**
+   * Variables d'un template DÉJÀ résolues sur la fiche de ce contact, avec le libellé du champ qui les
+   * alimente. C'est ce que l'écran d'envoi affiche : l'opérateur voit les vraies valeurs, pas `{{1}}`.
+   *
+   * OPTIONNELLE : absente, l'écran retombe sur des champs vides à remplir à la main (comportement d'avant).
+   */
+  resolveTemplateParams?(
+    tenantId: string,
+    waId: string,
+    template: { name: string; language: string; count: number },
+  ): Promise<{ values: string[]; labels: string[] }>;
+  /**
    * Envoie un message de la bibliothèque RCS à ce contact, variables résolues sur sa fiche.
    *
    * Rend `{ messageId, apercu }` quand c'est parti, ou `{ refus }` avec une raison DESTINÉE À L'OPÉRATEUR
@@ -301,6 +312,32 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
     return reply.code(200).send({ messageId: issue.messageId });
+  });
+
+  /**
+   * Variables d'un template, résolues pour CE contact.
+   *
+   * 🔴 Pourquoi cette route existe. L'écran d'envoi de l'Inbox demandait les variables une par une, en texte
+   * libre, sans dire ce qu'elles attendaient : l'opérateur devait se souvenir que `{{1}}` était le prénom et
+   * le retaper, alors que la fiche du contact le porte et que le template dit déjà quel champ l'alimente
+   * (`template_param_hints`, posés à la création). On rend donc les valeurs DÉJÀ remplies, avec le libellé du
+   * champ à côté, et elles restent modifiables.
+   */
+  app.get('/tenants/:tenantId/conversations/:conversationId/template-params', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const q = req.query as { name?: string; language?: string; count?: string };
+    if (!nonEmpty(q.name) || !nonEmpty(q.language)) return reply.code(400).send({ error: 'name et language requis' });
+    const count = Number(q.count ?? 0);
+    if (!Number.isInteger(count) || count < 0 || count > 20) return reply.code(400).send({ error: 'count invalide' });
+
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!deps.resolveTemplateParams || count === 0) return reply.code(200).send({ values: [], labels: [] });
+
+    const r = await deps.resolveTemplateParams(tenant, ctx.waId, { name: q.name as string, language: q.language as string, count });
+    return reply.code(200).send(r);
   });
 
   // Envoi d'un template dans une conversation (le seul moyen de ré-engager hors fenêtre 24 h).

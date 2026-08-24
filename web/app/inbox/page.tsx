@@ -29,6 +29,7 @@ import {
   replyConversation,
   listTemplates,
   sendTemplateToConversation,
+  resolveTemplateParamsForConversation,
   markConversationRead,
   listWorkflows,
   startWorkflowInConversation,
@@ -928,6 +929,8 @@ function TemplateSendPanel({
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [sel, setSel] = useState<TemplateSummary | null>(null);
   const [vars, setVars] = useState<string[]>([]);
+  /** Libellé du champ qui alimente chaque variable ('' si aucun indice) : dit D'OÙ vient la valeur. */
+  const [labels, setLabels] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -949,16 +952,30 @@ function TemplateSendPanel({
 
   const varCount = varCountOf(sel?.body);
   const needsMedia = sel?.headerFormat === 'IMAGE' || sel?.headerFormat === 'VIDEO' || sel?.headerFormat === 'DOCUMENT';
+  // 🔴 L'image du TEMPLATE d'abord. Meta exige le média à chaque envoi, mais il est déjà choisi depuis la
+  // création : le redemander à l'opérateur était une corvée sans raison, et il n'a aucun moyen de retrouver
+  // cette URL. On ne demande donc que si le template n'en porte aucune (vieux template, handle expiré).
+  const mediaDuTemplate = sel?.headerMediaUrl ?? '';
+  const mediaAFournir = needsMedia && mediaDuTemplate === '';
   const previewExamples = Array.from({ length: varCount }, (_, i) => vars[i] || `{{${i + 1}}}`);
   const varsFilled = Array.from({ length: varCount }).every((_, i) => (vars[i] ?? '').trim() !== '');
-  const canSend = !!sel && !busy && varsFilled && (!needsMedia || imageUrl.trim() !== '');
+  const canSend = !!sel && !busy && varsFilled && (!mediaAFournir || imageUrl.trim() !== '');
 
   function pick(value: string) {
     const found = templates.find((x) => `${x.name}::${x.language}` === value) ?? null;
     setSel(found);
     setVars([]);
+    setLabels([]);
     setImageUrl('');
     setError(null);
+    // Variables PRÉ-REMPLIES depuis la fiche du contact, via les indices posés à la création du template.
+    // L'opérateur voit les vraies valeurs et peut les corriger, au lieu de deviner ce qu'attend `{{1}}`.
+    const n = varCountOf(found?.body);
+    if (found && n > 0) {
+      void resolveTemplateParamsForConversation(session.tenantId, conversationId, { name: found.name, language: found.language, count: n })
+        .then((r) => { setVars(r.values); setLabels(r.labels); })
+        .catch(() => { /* résolution indisponible : les champs restent à remplir à la main */ });
+    }
   }
 
   async function send() {
@@ -971,8 +988,13 @@ function TemplateSendPanel({
         language: sel.language,
         bodyParams: Array.from({ length: varCount }, (_, i) => vars[i] ?? ''),
         ...(sel.category ? { templateCategory: sel.category } : {}),
-        ...(needsMedia && imageUrl.trim()
-          ? { headerMediaUrl: imageUrl.trim(), headerFormat: sel.headerFormat as 'IMAGE' | 'VIDEO' | 'DOCUMENT' }
+        // Le média du TEMPLATE d'abord, celui saisi à la main seulement en secours : Meta exige le fichier à
+        // chaque envoi, mais l'opérateur n'a aucun moyen de retrouver l'URL de ce qu'il a choisi à la création.
+        ...(needsMedia && (mediaDuTemplate || imageUrl.trim())
+          ? {
+            headerMediaUrl: mediaDuTemplate || imageUrl.trim(),
+            headerFormat: sel.headerFormat as 'IMAGE' | 'VIDEO' | 'DOCUMENT',
+          }
           : {}),
       });
       await onSent();
@@ -1016,7 +1038,10 @@ function TemplateSendPanel({
                 <div className="space-y-2">
                   {Array.from({ length: varCount }).map((_, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <span className="w-8 text-xs text-ink-400">{`{{${i + 1}}}`}</span>
+                      <span className="flex w-28 shrink-0 items-center gap-1 text-xs text-ink-400">
+                        {`{{${i + 1}}}`}
+                        {labels[i] ? <span className="truncate rounded bg-brand-50 px-1 text-brand-600">{labels[i]}</span> : null}
+                      </span>
                       <input
                         value={vars[i] ?? ''}
                         onChange={(e) => setVars((x) => { const c = [...x]; c[i] = e.target.value; return c; })}
@@ -1029,7 +1054,21 @@ function TemplateSendPanel({
               </div>
             )}
 
-            {needsMedia && (
+            {needsMedia && !mediaAFournir && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg bg-ink-50 px-3 py-2">
+                {sel.headerFormat === 'IMAGE' ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={mediaDuTemplate} alt="" referrerPolicy="no-referrer" className="h-10 w-16 shrink-0 rounded border border-ink-200 object-cover" />
+                ) : (
+                  <span className="text-lg">{sel.headerFormat === 'VIDEO' ? '🎬' : '📄'}</span>
+                )}
+                <p className="text-xs text-ink-500" data-testid="template-media-repris">
+                  {t('L’en-tête défini sur le template part avec le message. Rien à fournir.', 'The header defined on the template goes out with the message. Nothing to provide.')}
+                </p>
+              </div>
+            )}
+
+            {mediaAFournir && (
               <div className="mt-3">
                 <label className="mb-1 block text-sm font-medium text-ink-700">
                   {t(
@@ -1038,7 +1077,9 @@ function TemplateSendPanel({
                   )}
                 </label>
                 <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://..." className={inputCls} />
-                <p className="mt-1 text-[11px] text-ink-400">{t("Lien public (https). L'upload de fichier direct arrive bientôt.", 'Public link (https). Direct file upload is coming soon.')}</p>
+                <p className="mt-1 text-[11px] text-amber-700">
+                  {t('Ce template a un en-tête média, mais son fichier n’est plus lisible chez Meta (lien expiré). Collez-en un pour cet envoi.', 'This template has a media header, but its file is no longer readable at Meta (expired link). Paste one for this send.')}
+                </p>
               </div>
             )}
 

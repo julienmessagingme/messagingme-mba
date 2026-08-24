@@ -894,6 +894,9 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
 - **Réponses** : elles arrivent dans le fil du contact, au même endroit que WhatsApp, la bulle indiquant son
   canal. Un bouton tapé fait avancer le scénario par la branche correspondante. Un contact qui répond **STOP**
   est désabonné du RCS, sans que cela touche son consentement WhatsApp.
+- **Envoyer un template depuis l'Inbox ne demande plus rien d'inutile** : les variables arrivent déjà
+  remplies avec les infos du contact (et le nom du champ à côté), et l'image d'en-tête définie sur le template
+  part toute seule. On ne la redemande que si Meta ne la retrouve plus.
 - **Depuis l'Inbox** : le bouton 📱 envoie un message RCS de la bibliothèque au contact ouvert. Il est proposé
   même quand la fenêtre WhatsApp de 24 h est fermée, puisque le RCS n'a pas de fenêtre : c'est souvent le
   moyen le plus simple de reprendre contact. L'aperçu montre le message tel que le contact le verra, et un

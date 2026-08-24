@@ -72,6 +72,7 @@ import { estDemandeArret, apercuMo } from './rcs/callback';
 import { apercuRcsSortant } from './rcs/schema';
 import { aDesVariables, appliquerVariables } from './rcs/variables';
 import { contactVars } from './crm/render';
+import { resolveHintParams } from './crm/template';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
@@ -321,6 +322,27 @@ async function main(): Promise<void> {
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
       recordOutbound: (id, body, msgId, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender, canal),
+      /**
+       * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les
+       * alimente. MÊME résolution que l'envoi réel (`resolveHintParams` + les indices posés à la création du
+       * template) : l'écran montre donc exactement ce qui partira, pas une approximation.
+       */
+      resolveTemplateParams: async (tenant, waId, tpl) => {
+        const hints = await templateHintStore.get(tenant, tpl.name, tpl.language);
+        const contact = await contactStore.getResolvableByPhone(tenant, waId);
+        const { values } = resolveHintParams(hints, tpl.count, contact ?? {}, { now: new Date() });
+        // Le libellé dit D'OÙ vient la valeur. Sans lui, une variable pré-remplie « Julien » ne se distingue
+        // pas d'une valeur tapée à la main, et l'opérateur ne sait pas ce qui changera pour le contact suivant.
+        const parPosition = new Map(hints.map((h) => [h.position, h.source]));
+        const labels = Array.from({ length: tpl.count }, (_, i) => {
+          const src = parPosition.get(i + 1);
+          if (!src) return '';
+          if (src.type === 'now') return 'date du jour';
+          if (src.type === 'literal') return 'texte fixe';
+          return src.key ?? '';
+        });
+        return { values, labels };
+      },
       /**
        * Envoi d'un message RCS depuis l'inbox. Le message vient de la bibliothèque et ses variables sont
        * résolues sur la fiche du contact, exactement comme dans une campagne : c'est le MÊME chemin d'envoi

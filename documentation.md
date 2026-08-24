@@ -643,6 +643,20 @@ un message rapide suit désormais le canal du parcours au lieu de partir en What
 formulaire, lui, n'a pas d'équivalent RCS : le parcours ne fait pas semblant, il clôt le run et remonte la
 conversation à un humain, avec la raison en journal, et le builder signale le montage sans l'interdire.
 
+### L'écran d'envoi de template de l'Inbox
+
+Deux corvées supprimées le 2026-08-24, toutes deux du même genre : redemander ce que le produit sait déjà.
+
+- **Les variables sont PRÉ-REMPLIES** sur la fiche du contact ouvert, via les indices posés à la création du
+  template (`template_param_hints`), et le libellé du champ s'affiche à côté. L'écran demandait `{{1}}`,
+  `{{2}}` en texte libre, sans dire ce qu'ils attendaient. Route :
+  `GET /tenants/:id/conversations/:cid/template-params?name=&language=&count=`, MÊME résolution que l'envoi
+  réel, donc l'écran montre exactement ce qui partira. Les valeurs restent modifiables.
+- **L'en-tête média du template est repris automatiquement** (`headerMediaUrl`, lu chez Meta dans
+  `example.header_handle`). Meta exige le fichier à CHAQUE envoi, mais l'opérateur n'a aucun moyen de
+  retrouver l'URL de ce qu'il a choisi en créant le template. Le champ de saisie ne réapparaît que si le
+  template n'en porte aucune (lien expiré chez Meta), et il le DIT alors.
+
 ### Envoyer un RCS depuis l'Inbox
 
 `POST /tenants/:id/conversations/:cid/send-rcs`, avec l'identifiant d'un message de la bibliothèque.
