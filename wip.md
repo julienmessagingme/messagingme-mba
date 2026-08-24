@@ -90,6 +90,29 @@ RCS saute ne bascule rien, sinon le repli partirait en RCS chez un injoignable.
 Seul le FORMULAIRE (WhatsApp Flow) reste impossible derriere un RCS, faute d equivalent : le builder le
 signale.
 
+### 🔴 EN COURS : le clic sur un bouton RCS ne revient pas (2026-08-24, soir)
+
+Symptome : le bouton << Recois un whatsapp >> du scenario de Julien ne declenche pas le template.
+
+Etabli par mesure sur la PRODUCTION :
+- le parcours `a6d096a3` est bien en attente sur le bloc RCS, canal `rcs`, `updated_at == created_at` : il n a
+  JAMAIS avance ;
+- le message est parti correctement (carte, image hebergee, boutons `btn:0`/`btn:1` DANS la carte) et il a ete
+  **LU** a 22:36 ;
+- un rappel smsmode est arrive 24 s apres l envoi, et **notre lecture l a rejete** (discrimination sur
+  `direction`, corrigee : c est la presence d un `status` qui tranche) ;
+- **aucun message ENTRANT n existe chez smsmode** sur 10 jours (`GET /rcs/v1/messages`, 4 items, tous MT).
+
+Donc le rappel rejete etait un RAPPORT, pas le clic : le clic n a jamais produit d entrant, meme chez eux.
+
+Deux causes possibles, une seule facon de trancher, un tap :
+1. le tap n a pas ete fait / n a rien envoye ;
+2. **l agent est depose en NON conversationnel** : il afficherait les boutons sans pouvoir recevoir de reponse.
+   ⚠️ Ce choix est fait au depot et n est PAS modifiable (cf. `brain` RCS). Ce serait alors un redepot.
+
+Tout est pret pour le prochain tap : parseur corrige, dernier rappel GARDE en base
+(`rcs_agents.last_callback`, migration 0083), fil sous controle `app_workflow`, numero WhatsApp CONNECTED.
+
 ### Reste ouvert sur le canal
 
 - Le **carrousel** n'a aucun composeur (le modele et le provider le supportent).
@@ -922,7 +945,7 @@ propres des deux côtés. Déploiement du 2026-08-18 fait dans l'ordre : `git lo
 aucun travail tiers embarqué), migrations vérifiées AVANT (« à jour, rien à appliquer »), puis build et
 redémarrage. Vérifié après : API saine, worker reparti avec ses 6 files, front public en 200, zéro erreur.
 
-## Migrations : 0082 appliquée, prochaine libre = 0083
+## Migrations : 0083 appliquée, prochaine libre = 0084
 
 Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
 `conversations`/`conversation_messages`/`campaigns` (défaut `whatsapp`, tout l'existant intact), unique de
