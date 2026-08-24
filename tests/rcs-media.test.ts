@@ -151,7 +151,10 @@ describe('Servir un visuel RCS (route PUBLIQUE)', () => {
     expect(r.statusCode).toBe(200);
     expect(r.headers['content-type']).toBe('image/png');
     expect(r.headers['x-content-type-options']).toBe('nosniff');
-    expect(r.headers['cache-control']).toContain('immutable');
+    // 🔴 Un JOUR, pas un an, et surtout pas `immutable` : mesure du 2026-08-24, Cloudflare met ces images en
+    // cache au bord et continuait de servir un visuel SUPPRIME pendant que l'origine repondait 404.
+    expect(r.headers['cache-control']).toBe('public, max-age=86400');
+    expect(r.headers['cache-control']).not.toContain('immutable');
     expect(r.rawPayload.equals(PNG)).toBe(true);
   });
 

@@ -101,10 +101,17 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
       // `nosniff` : même avec un type juste, on interdit au navigateur de deviner autre chose.
       .header('x-content-type-options', 'nosniff')
       .header('content-disposition', `inline; filename="${code}"`)
-      // Le contenu d'un code ne change JAMAIS (un autre fichier reçoit un autre code) : l'opérateur et les
-      // caches peuvent le garder indéfiniment, ce qui évite de repayer la lecture à chaque destinataire d'une
-      // campagne de plusieurs milliers de messages.
-      .header('cache-control', 'public, max-age=31536000, immutable')
+      /**
+       * 🔴 UN JOUR, et pas un an. Le contenu d'un code ne change jamais, donc `immutable` sur un an semblait
+       * évident. MESURÉ le 2026-08-24 sur la production : Cloudflare met ces images en cache au bord
+       * (`cf-cache-status: HIT`), et continuait donc de servir un visuel SUPPRIMÉ alors que l'origine
+       * répondait déjà 404. Une suppression qui ne supprime pas est exactement le genre de promesse qu'on ne
+       * peut pas tenir.
+       *
+       * Un jour couvre entièrement la rafale de lectures d'une campagne (elle part en quelques minutes, et
+       * chaque destinataire déclenche un téléchargement), et borne l'exposition après suppression.
+       */
+      .header('cache-control', 'public, max-age=86400')
       .send(fichierStocke.bytes);
   });
 }

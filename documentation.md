@@ -612,8 +612,15 @@ la fonctionnalité inutilisable pour celui à qui elle sert. La console héberge
 (`src/rcs/image.ts`). Servir un fichier pour ce qu'il prétend être est la façon classique de transformer un
 hébergeur d'images en hébergeur de pages ; un PDF renommé en `.png` est refusé en **415**. Trois formats
 seulement (JPEG, PNG, GIF, ceux que l'opérateur accepte), pas de SVG (XML exécutable). La réponse porte
-`nosniff`, le type réel, et un cache immuable d'un an : le contenu d'un code ne change jamais, et une campagne
-de 5 000 messages ne doit pas faire relire l'image 5 000 fois.
+`nosniff` et le type réel.
+
+⚠️ **Cache d'UN JOUR, pas d'un an.** Le contenu d'un code ne changeant jamais, `immutable` sur un an semblait
+évident. Mesuré sur la production le 2026-08-24 : Cloudflare met ces images en cache au bord
+(`cf-cache-status: HIT`) et continuait de servir un visuel **supprimé** alors que l'origine répondait déjà
+404. Une suppression qui ne supprime pas est une promesse intenable. Un jour couvre entièrement la rafale de
+lectures d'une campagne (elle part en quelques minutes, et chaque destinataire déclenche un téléchargement) et
+borne l'exposition après suppression. Pour rendre une suppression immédiate, il faudrait purger le cache
+Cloudflare par API, ce qui suppose un jeton que ce projet n'a pas.
 
 ⚠️ L'extension de l'URL n'est pas décorative : le fournisseur exige une adresse qui finit par `.jpg`, `.jpeg`,
 `.png` ou `.gif`. Elle doit CORRESPONDRE au fichier stocké, sinon on servirait un PNG sous une adresse en
