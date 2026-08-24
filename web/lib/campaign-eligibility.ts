@@ -164,17 +164,18 @@ export function isCampaignEligible(graph: GraphLike): boolean {
 }
 
 /**
- * Un message de SESSION branché derrière un bloc RCS.
+ * Un FORMULAIRE WhatsApp branché derrière un bloc RCS.
  *
- * 🔴 Ce montage ne part QUE si le contact a écrit sur WhatsApp dans les 24 h. Or un contact qui vient de
- * cliquer un bouton RCS n'a rien écrit sur WhatsApp : la fenêtre est fermée, Meta refuse (131047), le
- * parcours s'arrête et la conversation remonte à un humain. Mesuré le 2026-08-24.
+ * 🔴 Le seul montage qui reste impossible depuis le multicanal. Un « message rapide » n'est plus concerné : il
+ * part désormais SUR LE CANAL DU PARCOURS, donc en RCS derrière un bloc RCS (un texte avec des réponses en un
+ * tap existe des deux côtés). Un formulaire, lui, est un WhatsApp Flow : aucun équivalent RCS, il part donc
+ * forcément par WhatsApp, et un contact qui vient de cliquer un bouton RCS n'y a jamais écrit. Meta refuse
+ * (fenêtre de 24 h, 131047), le parcours clôt et remonte la conversation à un humain.
  *
- * Ce n'est pas un défaut de notre code, c'est la règle de WhatsApp, et le montage reste légitime quand le
- * contact vient d'écrire. On le SIGNALE donc au lieu de l'interdire : c'est exactement le traitement réservé
- * à « attente >= 24 h puis message de session ».
+ * On le SIGNALE au lieu de l'interdire : le montage reste légitime quand le contact vient d'écrire sur
+ * WhatsApp. Même traitement que « attente >= 24 h puis message de session ».
  *
- * Rendu : les identifiants du bloc RCS et du message concernés, ou null.
+ * Rendu : les identifiants du bloc RCS et du formulaire concernés, ou null.
  */
 export function sessionMessageAfterRcs(graph: GraphLike): { rcsNodeId: string; messageNodeId: string } | null {
   const byId = new Map(graph.nodes.map((nd) => [nd.id, nd]));
@@ -183,7 +184,7 @@ export function sessionMessageAfterRcs(graph: GraphLike): { rcsNodeId: string; m
     // signaler trop large ferait ignorer l'alerte.
     for (const arete of graph.edges.filter((ed) => ed.source === rcs.id)) {
       const suivant = byId.get(arete.target);
-      if (suivant && (suivant.type === 'quick_message' || suivant.type === 'flow') && envoieVraiment(suivant)) {
+      if (suivant && suivant.type === 'flow' && envoieVraiment(suivant)) {
         return { rcsNodeId: rcs.id, messageNodeId: suivant.id };
       }
     }

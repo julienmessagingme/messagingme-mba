@@ -1,0 +1,13 @@
+-- 0082 : le canal courant d'un parcours (multicanal).
+--
+-- 🔴 Le canal n'est pas une propriete du BLOC, c'est l'etat du PARCOURS. Un << message rapide >> est un texte
+-- avec des reponses en un tap : WhatsApp sait le faire, le RCS aussi. En le fixant au bloc, un message rapide
+-- branche derriere un bloc RCS partait en WhatsApp vers un contact qui n'avait jamais ecrit sur WhatsApp :
+-- Meta le refusait (fenetre de 24 h) et le parcours mourait la. Constate par Julien le 2026-08-24.
+--
+-- La regle portee par cette colonne : un envoi RCS met le parcours sur `rcs`, un envoi de TEMPLATE le remet
+-- sur `whatsapp` (un template est WhatsApp par nature, et c'est ainsi qu'on bascule volontairement de canal).
+-- Tout le reste suit le canal courant. Le repli << non joignable en RCS >> reste WhatsApp, evidemment.
+--
+-- Defaut `whatsapp` : tous les parcours existants gardent exactement leur comportement.
+alter table workflow_runs add column if not exists channel text not null default 'whatsapp';

@@ -591,9 +591,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   // Montage qui ne partira JAMAIS : attente >= 24 h puis message hors template. Nommé au constructeur plutôt
   // que découvert par le silence en production. N'empêche PAS l'enregistrement (le builder sauve en continu).
   const montageImpossible = useMemo(() => waitBeforeSessionMessage(graphe), [graphe]);
-  // Message de session derrière un bloc RCS : il ne partira que si le contact a écrit sur WhatsApp dans les
-  // 24 h, ce qu'un clic sur un bouton RCS ne fait pas. Signalé, jamais interdit : le montage est légitime
-  // quand le contact vient d'écrire.
+  // FORMULAIRE derrière un bloc RCS : un WhatsApp Flow n'a pas d'équivalent RCS, il part donc forcément par
+  // WhatsApp, où la fenêtre est fermée si l'échange s'est fait en RCS. (Un message rapide, lui, suit le canal
+  // du parcours : il n'est plus concerné.) Signalé, jamais interdit.
   const sessionApresRcs = useMemo(() => sessionMessageAfterRcs(graphe), [graphe]);
   const nomDuBloc = (id: string): string => {
     const n = nodes.find((x) => x.id === id);
@@ -694,8 +694,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="alerte-session-apres-rcs">
           <b>{t('Ce montage ne partira pas toujours.', 'This setup will not always be sent.')}</b>{' '}
           {t(
-            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » est un message WhatsApp de session, branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». WhatsApp ne l'accepte que si le contact a écrit SUR WHATSAPP dans les 24 h : répondre à un message RCS ne rouvre pas cette fenêtre. Pour enchaîner à coup sûr, utilise un envoi de template, ou un autre message RCS.`,
-            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” is a WhatsApp session message, wired after the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”. WhatsApp only accepts it if the contact wrote ON WHATSAPP within 24h: replying to an RCS message does not reopen that window. To chain reliably, use a template, or another RCS message.`,
+            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » est un FORMULAIRE WhatsApp, branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». Un formulaire n'existe pas en RCS : il part forcément par WhatsApp, qui ne l'accepte que si le contact y a écrit dans les 24 h. Répondre en RCS ne rouvre pas cette fenêtre. Un message rapide, lui, suivrait le canal du parcours.`,
+            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” is a WhatsApp FORM, wired after the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”. Forms do not exist on RCS: it can only go out over WhatsApp, which accepts it only if the contact wrote there within 24h. Replying on RCS does not reopen that window. A quick message would follow the run channel.`,
           )}
         </div>
       )}

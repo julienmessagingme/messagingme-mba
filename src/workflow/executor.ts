@@ -4,9 +4,9 @@ import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction } from './engine';
 import type { WorkflowGraph, WorkflowNode } from './graph';
 import type { EvalContext } from './conditions';
-import type { RunState, WorkflowRunRow } from './run-store.pg';
+import type { RunState, WorkflowRunRow, RunChannel } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
-import type { RcsOutbound } from '../rcs/types';
+import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
 
@@ -283,6 +283,42 @@ export class WorkflowExecutor {
    * `walk` depuis un seul point d'entrée s'arrête au 1er bloc template/flow (bloquant) -> il produit AU PLUS une
    * action `sendTemplate`, donc ces params ne s'appliquent qu'à ce 1er envoi (jamais à un template ultérieur).
    */
+  /**
+   * Un « message rapide » envoyé SUR LE CANAL RCS.
+   *
+   * 🔴 C'est le cœur du multicanal. Un message rapide est un texte avec des réponses en un tap : WhatsApp sait
+   * le faire, le RCS aussi. Le bloc ne dit donc PAS le canal, il dit l'intention ; c'est le parcours qui porte
+   * le canal. Sans ça, un message rapide branché derrière un bloc RCS partait en WhatsApp vers un contact qui
+   * n'y avait jamais écrit, et Meta le refusait (fenêtre de 24 h).
+   *
+   * Les libellés deviennent des boutons RÉPONSE, dans le même ordre : c'est ce qui fait que le clic revient sur
+   * la bonne sortie du bloc (`btn:<i>`, comme côté WhatsApp).
+   */
+  private async envoyerQuickEnRcs(
+    tenantId: string,
+    waId: string,
+    a: { body: string; buttons: WorkflowButton[] },
+  ): Promise<SendRefusal> {
+    const rcs = this.deps.rcs;
+    if (!rcs) return 'canal RCS non câblé sur ce serveur';
+    const agentId = await rcs.agentIdFor(tenantId);
+    if (!agentId) return "le canal RCS n'est pas activé sur cet espace";
+    const suggestions: RcsSuggestion[] = a.buttons
+      .filter((b) => b.type === 'QUICK_REPLY' && b.text.trim() !== '')
+      .slice(0, 11)
+      .map((b, i) => ({ kind: 'reply' as const, text: b.text.trim(), postbackData: `btn:${i}` }));
+    const brut: RcsOutbound = { kind: 'text', text: a.body, ...(suggestions.length ? { suggestions } : {}) };
+    // Variables résolues comme pour un bloc RCS : le contact doit lire son prénom, pas des accolades.
+    const msg = rcs.varsFor && aDesVariables(brut) ? appliquerVariables(brut, await rcs.varsFor(tenantId, waId)) : brut;
+    const out = await rcs.sender.sendTo(tenantId, agentId, waId, msg, randomUUID());
+    if ('skipped' in out) {
+      return out.skipped === 'rcs_optout'
+        ? 'le contact s’est désabonné du RCS'
+        : "le contact n'est pas joignable en RCS";
+    }
+    return { messageId: out.messageId };
+  }
+
   private async apply(
     tenantId: string,
     waId: string,
@@ -290,7 +326,10 @@ export class WorkflowExecutor {
     firstTemplateParams?: string[],
     emitEvents = false,
     workflowId?: string,
-  ): Promise<{ refus: string | null; partis: number }> {
+    /** Canal courant du parcours. Décide où part un message rapide, et évolue avec les envois. */
+    canalEntrant: RunChannel = 'whatsapp',
+  ): Promise<{ refus: string | null; partis: number; canal: RunChannel }> {
+    let canal: RunChannel = canalEntrant;
     const posedTags: string[] = [];
     // Un walk peut produire PLUSIEURS envois depuis qu'un message rapide sans bouton ne bloque plus (« message,
     // message, template »). On retient donc la PREMIÈRE raison de refus, et on compte ce qui est réellement
@@ -324,11 +363,17 @@ export class WorkflowExecutor {
         // ⚠️ Jamais `refus ??= await …` : `??=` n'évalue pas sa droite quand la gauche est déjà remplie, donc
         // l'envoi lui-même serait SAUTÉ. On envoie toujours, on ne garde que la 1re raison.
         const dit = a.kind === 'sendQuickMessage'
-          ? await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons)
+          // Le canal du PARCOURS décide, pas le type du bloc. Voir `envoyerQuickEnRcs`.
+          ? (canal === 'rcs'
+            ? await this.envoyerQuickEnRcs(tenantId, waId, a)
+            : await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons))
           : a.kind === 'sendFlow'
             ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
             : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
         const rate = typeof dit === 'string' && dit !== '';
+        // Un TEMPLATE (comme un formulaire) est WhatsApp par nature : le poser ramène volontairement le
+        // parcours sur WhatsApp. C'est ainsi qu'on BASCULE de canal, en branchant un template après un RCS.
+        if (!rate && (a.kind === 'sendTemplate' || a.kind === 'sendFlow')) canal = 'whatsapp';
         if (rate) {
           if (refus === null) refus = dit;
         } else {
@@ -347,7 +392,7 @@ export class WorkflowExecutor {
         try { await this.deps.emitTagAdded(tenantId, waId, tag); } catch { /* best-effort */ }
       }
     }
-    return { refus, partis };
+    return { refus, partis, canal };
   }
 
   /**
@@ -394,7 +439,12 @@ export class WorkflowExecutor {
    * Rendu : true si le parcours a repris, false s'il a été arrêté (le run est alors clos ou remonté en inbox,
    * jamais laissé dormant, sinon il serait repris à chaque balayage).
    */
-  async resume(run: { id: string; workflowId: string; tenantId: string; waId: string; contactId?: string | null; currentNode: string | null }): Promise<boolean> {
+  async resume(run: {
+    id: string; workflowId: string; tenantId: string; waId: string;
+    contactId?: string | null; currentNode: string | null;
+    /** Canal courant du parcours. Absent -> WhatsApp (runs d'avant la migration 0082). */
+    channel?: RunChannel;
+  }): Promise<boolean> {
     const { tenantId, waId } = run;
     if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
       // eslint-disable-next-line no-console
@@ -414,7 +464,7 @@ export class WorkflowExecutor {
       return false;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest } = await this.walkResolved(tenantId, waId, graph, suite, ctx, run.id);
+    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, suite, ctx, run.id, run.channel ?? 'whatsapp');
 
     // Fenêtre de service fermée : on écarte les SEULS messages de session (Meta les refuserait, 131047) et on
     // applique le reste. Un walk peut désormais mêler un message rapide sans bouton, des actions et un
@@ -435,7 +485,7 @@ export class WorkflowExecutor {
     // `emitEvents` VRAI : un réveil est unitaire par nature (un contact, ici et maintenant), comme `advance`.
     // Sans ça, « attendre 1 jour puis poser le tag relance » ne déclencherait pas l'automation branchée sur ce
     // tag, alors que le MÊME tag posé après une réponse la déclenche. Les campagnes, elles, n'émettent pas.
-    const { refus, partis } = await this.apply(tenantId, waId, aExecuter, undefined, true, run.workflowId);
+    const { refus, partis, canal } = await this.apply(tenantId, waId, aExecuter, undefined, true, run.workflowId, apresWalk);
     // Un message du parcours n'a pas pu atteindre le contact : on ne fait pas semblant de continuer, on clôt
     // et on remonte à un humain. Ce qui POUVAIT partir (template, tags) est déjà parti juste au-dessus.
     if (fenetreFermee) {
@@ -455,7 +505,7 @@ export class WorkflowExecutor {
         return false;
       }
     }
-    await this.deps.runs.setState(run.id, restToState(rest, this.now()));
+    await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), channel: canal });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
     return true;
@@ -501,13 +551,16 @@ export class WorkflowExecutor {
     startNodeId: string,
     ctx: EvalContext | undefined,
     sendKey: string,
-  ): Promise<{ actions: WalkStep[]; rest: WalkRest }> {
+    /** Canal courant à l'entrée. Un envoi RCS réussi bascule le parcours sur `rcs` pour la suite. */
+    canalEntrant: RunChannel = 'whatsapp',
+  ): Promise<{ actions: WalkStep[]; rest: WalkRest; canal: RunChannel }> {
     const actions: WalkStep[] = [];
+    let canal: RunChannel = canalEntrant;
     let depart = startNodeId;
     for (let i = 0; i < MAX_RCS_ENCHAINES; i++) {
       const r = walk(graph, depart, ctx, { mbaActif: await this.mbaActif(tenantId) });
       actions.push(...r.actions);
-      if (r.rest.status !== 'rcs_send') return { actions, rest: r.rest };
+      if (r.rest.status !== 'rcs_send') return { actions, rest: r.rest, canal };
 
       const nodeId = r.rest.nodeId;
       const brut = rcsOutboundOf(graph.nodes.find((n) => n.id === nodeId));
@@ -522,13 +575,19 @@ export class WorkflowExecutor {
         const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`);
         envoye = !('skipped' in out);
       }
-      if (envoye) return { actions, rest: { status: 'waiting', nodeId } };
+      // 🔴 Le parcours bascule sur le canal RCS UNIQUEMENT si le message est vraiment parti. Un envoi sauté
+      // (contact désabonné, agent absent) part au repli, qui est WhatsApp : le canal ne doit pas suivre une
+      // intention, il suit ce que le contact a REÇU.
+      if (envoye) {
+        canal = 'rcs';
+        return { actions, rest: { status: 'waiting', nodeId }, canal };
+      }
 
       const repli = nextNodeByHandle(graph, nodeId, 'unreachable');
-      if (!repli) return { actions, rest: { status: 'done' } };
+      if (!repli) return { actions, rest: { status: 'done' }, canal };
       depart = repli;
     }
-    return { actions, rest: { status: 'done' } };
+    return { actions, rest: { status: 'done' }, canal };
   }
 
   /**
@@ -579,7 +638,7 @@ export class WorkflowExecutor {
     // `sendKey` aléatoire : à ce stade le run n'existe pas encore en base (runs.start vient plus bas), donc
     // aucun identifiant stable n'est disponible. Ce qui protège d'un double envoi ici, c'est le claim atomique
     // du destinataire côté campagne, pas l'idempotence RBM.
-    const { actions, rest } = await this.walkResolved(tenantId, contact.waId, graph, startNodeId, ctx, randomUUID());
+    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, contact.waId, graph, startNodeId, ctx, randomUUID());
     // Garde fenêtre 24 h : `start` est appelé par une CAMPAGNE (hors fenêtre de service), un message de
     // session (flow/quick_message) en ouverture serait rejeté par Meta (131047). Depuis le Lot D, le SAVE
     // n'interdit plus cette forme (un scénario peut ouvrir sur un message de session, il est alors réservé aux
@@ -590,7 +649,7 @@ export class WorkflowExecutor {
       console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
       return "le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h";
     }
-    const { refus, partis } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId);
+    const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId, apresWalk);
     // Refus alors que RIEN n'est parti : le contact n'a rien reçu. On ne persiste PAS de run en attente, pour
     // deux raisons. D'abord il attendrait une réponse à un message jamais reçu. Ensuite il serait ressuscité
     // par n'importe quel message ultérieur du contact, qui recevrait alors le bloc SUIVANT, sorti de nulle
@@ -601,7 +660,9 @@ export class WorkflowExecutor {
       console.error(`workflow ${workflowId}: envoi refusé pour ${contact.waId} : ${refus}`);
       if (partis === 0) return refus;
     }
-    const state = restToState(rest, this.now());
+    // Le canal du parcours est PERSISTÉ dès sa naissance : un scénario qui ouvre par un bloc RCS naît sur le
+    // canal RCS, et son message rapide suivant partira donc en RCS, pas en WhatsApp.
+    const state = { ...restToState(rest, this.now()), channel: canal };
     if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
@@ -777,9 +838,9 @@ export class WorkflowExecutor {
       return;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
-    const { actions, rest } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id);
+    const { actions, rest, canal: apresWalk } = await this.walkResolved(tenantId, waId, graph, next, ctx, run.id, run.channel ?? 'whatsapp');
     // Un contact qui répond est unitaire par nature : ses tags publient.
-    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId);
+    const { refus, partis, canal } = await this.apply(tenantId, waId, actions, undefined, true, run.workflowId, apresWalk);
     // Même règle qu'au réveil : un envoi refusé n'attend aucune réponse. On clôt le run (en gardant
     // `lastMessageId`, sinon le même message serait re-traité) et on remonte la conversation à un humain.
     if (refus !== null) {
@@ -791,7 +852,7 @@ export class WorkflowExecutor {
         return;
       }
     }
-    await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), lastMessageId: messageId });
+    await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
     // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.

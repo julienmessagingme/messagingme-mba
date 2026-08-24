@@ -3,6 +3,19 @@ import type { Pool } from 'pg';
 /** `sleeping` = le run attend que le TEMPS passe (bloc Attente), `waiting` qu'un CONTACT réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
 
+/**
+ * Canal sur lequel la conversation se poursuit, PORTÉ PAR LE RUN (migration 0082).
+ *
+ * 🔴 Le canal n'est pas une propriété du bloc, c'est l'état du parcours. Un « message rapide » est un texte
+ * avec des réponses en un tap : WhatsApp sait le faire, le RCS aussi. Le fixer au bloc obligeait à envoyer en
+ * WhatsApp un message qui suit un échange RCS, alors que le contact n'a jamais écrit sur WhatsApp : Meta le
+ * refuse (fenêtre de 24 h), et le parcours mourait là.
+ *
+ * La règle : un envoi RCS met le parcours sur `rcs`, un envoi de template le remet sur `whatsapp` (un template
+ * est WhatsApp par nature, et c'est ainsi qu'on BASCULE volontairement de canal). Tout le reste suit.
+ */
+export type RunChannel = 'whatsapp' | 'rcs';
+
 export interface WorkflowRunRow {
   id: string;
   workflowId: string;
@@ -12,12 +25,16 @@ export interface WorkflowRunRow {
   currentNode: string | null;
   status: RunStatus;
   lastMessageId: string | null;
+  /** Canal courant. Absent (ligne d'avant la migration) -> WhatsApp, le comportement historique. */
+  channel?: RunChannel;
 }
 
 export interface RunState {
   currentNode: string | null;
   status: RunStatus;
   lastMessageId?: string | null;
+  /** Canal sur lequel la suite du parcours doit partir. Absent -> inchangé en base. */
+  channel?: RunChannel;
   /** Échéance de reprise (statut `sleeping`). Absente -> la colonne est remise à NULL. */
   resumeAt?: Date | null;
 }
@@ -31,9 +48,9 @@ export class PgWorkflowRunStore {
     // Attente naît directement en sommeil. L'omettre laissait un run `sleeping` SANS échéance, que le balayage
     // (qui exige `resume_at <= now()`) n'aurait jamais réveillé : parcours mort en silence.
     const res = await this.pool.query<{ id: string }>(
-      `insert into workflow_runs (workflow_id, tenant_id, contact_id, wa_id, current_node, status, resume_at)
-       values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-      [workflowId, tenantId, contactId, waId, state.currentNode, state.status, state.resumeAt ?? null],
+      `insert into workflow_runs (workflow_id, tenant_id, contact_id, wa_id, current_node, status, resume_at, channel)
+       values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+      [workflowId, tenantId, contactId, waId, state.currentNode, state.status, state.resumeAt ?? null, state.channel ?? 'whatsapp'],
     );
     return { id: res.rows[0]!.id };
   }
@@ -64,14 +81,19 @@ export class PgWorkflowRunStore {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string;
       current_node: string | null; status: 'waiting' | 'inbox' | 'done'; last_message_id: string | null;
+      channel: RunChannel | null;
     }>(
-      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id
+      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel
        from workflow_runs where tenant_id = $1 and wa_id = $2 and status = 'waiting'
        order by created_at desc limit 1`,
       [tenantId, waId],
     );
     const r = res.rows[0];
-    return r ? { id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id } : null;
+    return r ? {
+      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
+      currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
+      channel: r.channel ?? 'whatsapp',
+    } : null;
   }
 
   /**
@@ -97,10 +119,12 @@ export class PgWorkflowRunStore {
     // `resume_at` est écrit SANS coalesce : quitter le sommeil doit effacer l'échéance, sinon un run réveillé
     // resterait éligible au balayage suivant.
     await this.pool.query(
+      // `channel` avec coalesce, à l'inverse de `resume_at` : un état écrit SANS canal (une clôture, une
+      // remontée en inbox) ne doit pas ramener le parcours sur WhatsApp par omission.
       `update workflow_runs set current_node = $2, status = $3, last_message_id = coalesce($4, last_message_id),
-              resume_at = $5, updated_at = now()
+              resume_at = $5, channel = coalesce($6, channel), updated_at = now()
        where id = $1`,
-      [id, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null],
+      [id, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null],
     );
   }
 
@@ -117,7 +141,7 @@ export class PgWorkflowRunStore {
   async claimDueSleeping(limit: number): Promise<WorkflowRunRow[]> {
     const res = await this.pool.query<{
       id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
-      current_node: string | null; last_message_id: string | null;
+      current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
     }>(
       // BAIL, pas changement de statut : on repousse l'échéance en RESTANT `sleeping` (durée fixée plus bas).
       //  - passer à `waiting` mettrait le run à portée de `findWaitingByWaId`, donc de `advance` : un message
@@ -143,12 +167,12 @@ export class PgWorkflowRunStore {
          limit $1
        ) due
        where r.id = due.id
-       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id`,
+       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel`,
       [limit],
     );
     return res.rows.map((r) => ({
       id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id,
+      currentNode: r.current_node, status: 'sleeping' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp',
     }));
   }
 

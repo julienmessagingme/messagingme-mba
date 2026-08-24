@@ -35,7 +35,7 @@ function graphe(): WorkflowGraph {
   })!;
 }
 
-function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = true, enAttenteSur?: string, vars?: Record<string, string | null>) {
+function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = true, enAttenteSur?: string, vars?: Record<string, string | null>, canal: 'whatsapp' | 'rcs' = 'whatsapp') {
   const provider = new FakeRcsProvider({ unreachable: new Set(nonJoignables) });
   const rcsSender = new RcsSender(provider, new Reachability(provider, new SansCache(), () => 0), {
     isOptedOut: async () => false,
@@ -43,6 +43,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
   const etats: Array<Record<string, unknown>> = [];
   const tags: string[] = [];
   const templates: string[] = [];
+  const quickWhatsApp: string[] = [];
   const deps: WorkflowExecutorDeps = {
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => {
@@ -54,7 +55,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
     sendTemplate: async (_t, _w, name) => {
       templates.push(name);
     },
-    sendQuickMessage: async () => {},
+    sendQuickMessage: async (_t, _w, body) => { quickWhatsApp.push(body); },
     sendFlow: async () => {},
     now: () => 1_000,
     runs: {
@@ -66,14 +67,14 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
         etats.push({ ...state });
       },
       findWaitingByWaId: async () => (enAttenteSur
-        ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null }
+        ? { id: 'run-1', tenantId: 't1', workflowId: 'w1', waId: '33600000002', currentNode: enAttenteSur, status: 'waiting' as const, lastMessageId: null, channel: canal }
         : null),
     },
     ...(avecRcs
       ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1', ...(vars ? { varsFor: async () => vars } : {}) } }
       : {}),
   };
-  return { provider, deps, etats, tags, templates, executor: new WorkflowExecutor(deps) };
+  return { provider, deps, etats, tags, templates, quickWhatsApp, executor: new WorkflowExecutor(deps) };
 }
 
 describe('bloc RCS a l execution', () => {
@@ -345,28 +346,99 @@ describe('bloc RCS a l execution', () => {
   });
 
   /**
-   * 🔴 Le piege a connaitre. Un message rapide est un message de SESSION WhatsApp : Meta le refuse hors de la
-   * fenetre de 24 h (131047), et cette fenetre court depuis le dernier message du contact SUR WHATSAPP. Un
-   * contact qui vient de cliquer un bouton RCS n'a rien ecrit sur WhatsApp : la fenetre est donc fermee.
+   * 🔴 LE MULTICANAL, tel que Julien l'a demande le 2026-08-24.
    *
-   * Le parcours ne fait pas semblant : l'envoi est refuse, le run est clos et la conversation remonte a un
-   * humain. Ce test fige ce comportement pour qu'il ne devienne pas silencieux.
+   * Un << message rapide >> est un texte avec des reponses en un tap : WhatsApp sait le faire, le RCS aussi.
+   * Le bloc dit donc l'INTENTION, pas le canal ; c'est le PARCOURS qui porte le canal. Un contact qui vient de
+   * cliquer un bouton RCS n'a jamais ecrit sur WhatsApp : envoyer la suite en WhatsApp la ferait refuser par
+   * Meta (fenetre de 24 h) et tuerait le parcours.
    */
-  it('un MESSAGE RAPIDE branche derriere un bloc RCS est refuse par Meta, et la conversation remonte', async () => {
+  it('un MESSAGE RAPIDE derriere un bloc RCS part EN RCS, avec ses boutons', async () => {
+    const g = parseGraph({
+      nodes: [
+        {
+          id: 'r', type: 'rcs_message', position: pos,
+          data: { text: 'Bonjour', suggestions: [{ kind: 'reply', text: 'Clique 2', postbackData: 'c2' }] },
+        },
+        { id: 'qm', type: 'quick_message', position: pos, data: { body: 'Ca vous va ?', quickReplies: ['Oui', 'Non'] } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'qm', sourceHandle: 'btn:0' }],
+    })!;
+    const { provider, quickWhatsApp, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0');
+
+    // Parti sur le RESEAU RCS, pas par WhatsApp.
+    expect(quickWhatsApp).toEqual([]);
+    expect(provider.sent).toHaveLength(1);
+    expect(provider.sent[0]!.msg).toEqual({
+      kind: 'text',
+      text: 'Ca vous va ?',
+      // Les libelles deviennent des boutons REPONSE, dans le meme ordre : c'est ce qui fait revenir le clic
+      // sur la bonne sortie du bloc.
+      suggestions: [
+        { kind: 'reply', text: 'Oui', postbackData: 'btn:0' },
+        { kind: 'reply', text: 'Non', postbackData: 'btn:1' },
+      ],
+    });
+  });
+
+  /**
+   * L'AUTRE branche du meme montage : un template Meta derriere le bloc RCS. La, on BASCULE volontairement sur
+   * WhatsApp, et le parcours doit s'en souvenir pour la suite.
+   */
+  it('un TEMPLATE derriere un bloc RCS bascule le parcours sur WhatsApp', async () => {
+    const g = parseGraph({
+      nodes: [
+        {
+          id: 'r', type: 'rcs_message', position: pos,
+          data: { text: 'Bonjour', suggestions: [{ kind: 'reply', text: 'Recois un whatsapp', postbackData: 'w' }] },
+        },
+        { id: 'tpl', type: 'template', position: pos, data: { templateName: 'rdv_randstad', language: 'fr' } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'tpl', sourceHandle: 'btn:0' }],
+    })!;
+    const { provider, templates, etats, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+
+    await executor.advance('t1', '33600000002', 'mo-2', 'btn:0');
+
+    expect(templates).toEqual(['rdv_randstad']);
+    expect(provider.sent).toHaveLength(0);
+    expect(etats.at(-1)).toMatchObject({ channel: 'whatsapp' });
+  });
+
+  // Le canal ne suit pas une INTENTION, il suit ce que le contact a RECU : un envoi RCS saute (desabonne, agent
+  // absent) part au repli WhatsApp, et le parcours doit rester sur WhatsApp.
+  it('le parcours passe sur le canal RCS SEULEMENT si le message est parti', async () => {
+    const g = graphe();
+    const { etats, executor } = monter(g);
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(etats.at(-1)).toMatchObject({ channel: 'rcs' });
+
+    const { etats: etats2, executor: executor2 } = monter(g, ['+33600000002']);
+    await executor2.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(etats2.at(-1)).toMatchObject({ channel: 'whatsapp' });
+  });
+
+  /**
+   * Le seul montage qui reste impossible : un FORMULAIRE WhatsApp (Flow) derriere un RCS. Il n'a pas
+   * d'equivalent RCS, donc il part forcement en WhatsApp, et Meta le refuse hors fenetre. Le parcours ne fait
+   * pas semblant : il clot et remonte la conversation a un humain.
+   */
+  it('un FORMULAIRE derriere un bloc RCS est refuse, et la conversation remonte', async () => {
     const g = parseGraph({
       nodes: [
         { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour' } },
-        { id: 'qm', type: 'quick_message', position: pos, data: { body: 'Ca vous va ?', quickReplies: ['Oui', 'Non'] } },
+        { id: 'f', type: 'flow', position: pos, data: { flowId: 'fl1', body: 'Formulaire', cta: 'Ouvrir' } },
       ],
-      edges: [{ id: 'e1', source: 'r', target: 'qm', sourceHandle: 'sent' }],
+      edges: [{ id: 'e1', source: 'r', target: 'f', sourceHandle: 'sent' }],
     })!;
-    const { deps, executor: _ignore } = monter(g, [], true, 'r');
+    const { deps } = monter(g, [], true, 'r', undefined, 'rcs');
     const remontees: string[] = [];
     const etats: Array<Record<string, unknown>> = [];
     const executor = new WorkflowExecutor({
       ...deps,
-      // Le refus de Meta hors fenetre, tel que le worker le remonte : une CHAINE portant la raison.
-      sendQuickMessage: async () => 'fenêtre de 24 h fermée (131047)',
+      sendFlow: async () => 'fenêtre de 24 h fermée (131047)',
       escalateToHuman: async (_t, waId) => { remontees.push(waId); },
       runs: { ...deps.runs, setState: async (_id, state) => { etats.push({ ...state }); } },
     });

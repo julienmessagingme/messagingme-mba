@@ -160,15 +160,19 @@ describe('éligibilité : on juge sur ce qui OUVRE, pas sur le bloc d’entrée'
  * SIGNALE dans le builder au lieu de l'interdire : il reste legitime quand le contact vient d'ecrire.
  */
 describe('sessionMessageAfterRcs', () => {
-  it('message rapide juste apres un bloc RCS -> signale', () => {
+  /**
+   * 🔴 Un MESSAGE RAPIDE n'est plus signale depuis le multicanal : il part sur le canal du PARCOURS, donc en
+   * RCS derriere un bloc RCS. Un texte avec des reponses en un tap existe des deux cotes.
+   */
+  it('message rapide juste apres un bloc RCS -> rien a signaler (il partira en RCS)', () => {
     const graph = g(
       [n('r', 'rcs_message', { text: 'Bonjour' }), n('q', 'quick_message', { body: 'Ca vous va ?', quickReplies: ['Oui'] })],
       [{ id: 'e', source: 'r', target: 'q', sourceHandle: 'sent' }],
     );
-    expect(sessionMessageAfterRcs(graph)).toEqual({ rcsNodeId: 'r', messageNodeId: 'q' });
+    expect(sessionMessageAfterRcs(graph)).toBeNull();
   });
 
-  it('formulaire juste apres un bloc RCS -> signale aussi', () => {
+  it('formulaire juste apres un bloc RCS -> signale (un Flow n existe pas en RCS)', () => {
     const graph = g(
       [n('r', 'rcs_message', { text: 'Bonjour' }), n('f', 'flow', { flowId: 'fl1' })],
       [{ id: 'e', source: 'r', target: 'f', sourceHandle: 'btn:0' }],
@@ -184,18 +188,18 @@ describe('sessionMessageAfterRcs', () => {
     expect(sessionMessageAfterRcs(graph)).toBeNull();
   });
 
-  it('message rapide NON configure -> rien a signaler (il n envoie rien)', () => {
+  it('formulaire NON configure -> rien a signaler (il n envoie rien)', () => {
     const graph = g(
-      [n('r', 'rcs_message', { text: 'Bonjour' }), n('q', 'quick_message', {})],
-      [{ id: 'e', source: 'r', target: 'q', sourceHandle: 'sent' }],
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('f', 'flow', {})],
+      [{ id: 'e', source: 'r', target: 'f', sourceHandle: 'sent' }],
     );
     expect(sessionMessageAfterRcs(graph)).toBeNull();
   });
 
-  it('message rapide LOIN derriere (apres un template) -> rien a signaler', () => {
+  it('formulaire LOIN derriere (apres un template) -> rien a signaler', () => {
     const graph = g(
-      [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'suite' }), n('q', 'quick_message', { body: 'Alors ?' })],
-      [{ id: 'e1', source: 'r', target: 't', sourceHandle: 'sent' }, { id: 'e2', source: 't', target: 'q' }],
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'suite' }), n('f', 'flow', { flowId: 'fl1' })],
+      [{ id: 'e1', source: 'r', target: 't', sourceHandle: 'sent' }, { id: 'e2', source: 't', target: 'f' }],
     );
     expect(sessionMessageAfterRcs(graph)).toBeNull();
   });

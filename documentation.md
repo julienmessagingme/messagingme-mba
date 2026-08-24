@@ -590,6 +590,31 @@ journalisé), jamais le message : sans cette garde, un contact sans rendez-vous 
 sont conservés et rendus lisibles dans le fil d'inbox par `apercuMo`. Sans cela, la réponse ne serait qu'une
 bulle vide et l'information demandée serait perdue.
 
+### 🔴 Le canal est porté par le PARCOURS, pas par le bloc (migration 0082)
+
+Le multicanal, tel que Julien l'a formulé le 2026-08-24 : « le RCS part en premier, l'utilisateur clique, la
+suite doit partir en RCS ; s'il clique l'autre bouton, on bascule sur WhatsApp ».
+
+Un « message rapide » est un texte avec des réponses en un tap : WhatsApp sait le faire, le RCS aussi. Le bloc
+dit donc l'INTENTION, pas le tuyau. `workflow_runs.channel` porte le canal courant, et les envois le font
+évoluer :
+
+| Ce qui part | Effet sur le canal du parcours |
+| --- | --- |
+| bloc RCS **réellement envoyé** | passe à `rcs` |
+| **template** WhatsApp | revient à `whatsapp` (c'est ainsi qu'on bascule volontairement) |
+| **message rapide** | suit le canal courant, ne le change pas |
+| bloc RCS **sauté** (opt-out, agent absent) | inchangé : le repli « non joignable » est WhatsApp |
+
+Un message rapide envoyé en RCS devient un TEXTE + boutons `reply`, dans le même ordre : le clic revient donc
+sur la même sortie `btn:<i>` que côté WhatsApp, et le reste du moteur ne voit aucune différence.
+
+⚠️ Le canal suit ce que le contact a REÇU, jamais une intention : un bloc RCS sauté ne bascule rien, sinon la
+branche de repli partirait elle aussi en RCS, chez un contact qu'on vient justement de constater injoignable.
+
+⚠️ Seul le **formulaire** (WhatsApp Flow) reste impossible derrière un RCS : il n'a aucun équivalent RCS, part
+donc forcément par WhatsApp, et se fait refuser hors fenêtre. Le builder le signale (`sessionMessageAfterRcs`).
+
 ### 🔴 Ce qui peut OUVRIR un scénario, et ce qui peut le SUIVRE
 
 Deux règles distinctes, longtemps confondues parce que WhatsApp était le seul canal.
@@ -610,12 +635,13 @@ graphes RCS.
 | --- | --- |
 | **template** WhatsApp | part (aucune fenêtre requise) |
 | **autre bloc RCS** | part |
-| **message rapide / formulaire** | **refusé par Meta** si le contact n'a pas écrit SUR WHATSAPP depuis 24 h |
+| **message rapide** | part **en RCS** : le canal est porté par le parcours (voir la section ci-dessus) |
+| **formulaire** (WhatsApp Flow) | **refusé par Meta** si le contact n'a pas écrit SUR WHATSAPP depuis 24 h |
 
-Répondre à un message RCS ne rouvre pas la fenêtre WhatsApp : ce sont deux tuyaux distincts. Le parcours ne
-fait pas semblant, il clôt le run et remonte la conversation à un humain, avec la raison en journal. Le
-builder SIGNALE ce montage (`sessionMessageAfterRcs`) sans l'interdire, puisqu'il reste légitime quand le
-contact vient d'écrire, exactement comme « attente >= 24 h puis message de session ».
+Répondre à un message RCS ne rouvre pas la fenêtre WhatsApp : ce sont deux tuyaux distincts. C'est pourquoi
+un message rapide suit désormais le canal du parcours au lieu de partir en WhatsApp par principe. Le
+formulaire, lui, n'a pas d'équivalent RCS : le parcours ne fait pas semblant, il clôt le run et remonte la
+conversation à un humain, avec la raison en journal, et le builder signale le montage sans l'interdire.
 
 ### Envoyer un RCS depuis l'Inbox
 
