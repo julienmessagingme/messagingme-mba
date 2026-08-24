@@ -18,6 +18,7 @@ import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } fro
 import { boutonsDepuisNode, ouvreUneSortie } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
+import { RcsBodyField } from '@/components/RcsBodyField';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
@@ -955,17 +956,17 @@ function ConfigPanel({
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message RCS', 'RCS message')}</label>
-              <textarea
-                value={(d.text as string) ?? ''}
-                onChange={(e) => onPatch({ text: e.target.value })}
-                rows={4}
-                maxLength={maxTexteRcs(String(d.imageUrl ?? ''))}
-                placeholder={t('Votre message…', 'Your message…')}
-                className={`${cls} bg-white`}
+              <RcsBodyField
+                valeur={(d.text as string) ?? ''}
+                onChange={(text) => onPatch({ text })}
+                fields={fields}
+                label={t('Message RCS', 'RCS message')}
+                testId="rcs-node-text"
+                max={maxTexteRcs(String(d.imageUrl ?? ''))}
+                compact
               />
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Les variables {{champ}} sont remplacées par la fiche du contact à l’envoi.', 'The {{field}} variables are filled in from the contact at send time.')}
+                {t('« + Variable » insère un champ du contact, remplacé à l’envoi par sa fiche.', '“+ Variable” inserts a contact field, filled in from their record at send time.')}
               </p>
             </div>
 

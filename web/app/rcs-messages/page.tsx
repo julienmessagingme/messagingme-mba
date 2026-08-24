@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import {
@@ -8,13 +8,14 @@ import {
   type RcsMessage, type UserFieldDef,
 } from '@/lib/api';
 import {
-  versMessageRcs, versBrouillonRcs, maxTexteRcs, EMOJIS_RCS, MAX_BOUTONS_RCS, MAX_BOUTONS_CARTE,
+  versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_RCS, MAX_BOUTONS_CARTE,
   type BrouillonRcs,
 } from '@/lib/rcs';
-import { boutonPret, ICONE_KIND } from '@/lib/rcs-boutons';
+import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
-import { emailResolvableFields } from '@/lib/fields';
+import { RcsPreview } from '@/components/RcsPreview';
+import { RcsBodyField } from '@/components/RcsBodyField';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
@@ -47,8 +48,6 @@ function RcsMessagesInner({ session }: { session: Session }) {
   const [form, setForm] = useState<Brouillon>(VIDE);
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [busy, setBusy] = useState(false);
-  const [emojisOuverts, setEmojisOuverts] = useState(false);
-  const texteRef = useRef<HTMLTextAreaElement>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -66,18 +65,12 @@ function RcsMessagesInner({ session }: { session: Session }) {
   // le rendu suivant planterait sur `.filter`. Même garde que partout ailleurs sur une liste distante.
   useEffect(() => { listUserFields(session.tenantId).then((r) => setFields(r.fields ?? [])).catch(() => {}); }, [session.tenantId]);
 
-  // Mêmes variables que les modèles d'email, et ce n'est pas une coïncidence : les deux canaux passent par la
-  // MÊME table de substitution côté serveur (`contactVars`). Proposer ici une clé qu'elle ne connaît pas
-  // afficherait du vide sur le téléphone du contact.
-  const variables = emailResolvableFields(fields);
   const maxTexte = maxTexteRcs(form.imageUrl);
-  const avecImage = form.imageUrl.trim() !== '';
   // 🔴 Où les boutons sont accrochés décide de leur APPARENCE sur le téléphone, et ce n'est pas nous qui la
   // dessinons. Dans la CARTE : pleine largeur, empilés, persistants (4 maximum). Sous le MESSAGE : petites
-  // pastilles en ligne, éphémères (11 maximum). Même découpe que `versMessageRcs`, qui écrit le message.
-  const remplis = form.suggestions.filter((s) => s.text.trim() !== '');
-  const boutonsCarte = avecImage ? remplis.slice(0, MAX_BOUTONS_CARTE) : [];
-  const boutonsPastilles = avecImage ? remplis.slice(MAX_BOUTONS_CARTE) : remplis;
+  // pastilles en ligne, éphémères (11 maximum). `RcsPreview` dessine cette différence, `versMessageRcs`
+  // l'écrit ; ici on n'a besoin que de savoir s'il y a un visuel.
+  const avecImage = form.imageUrl.trim() !== '';
 
   // Un bouton lien sans URL, ou un bouton appel sans numéro, partirait chez le provider et serait refusé.
   // On bloque l'enregistrement plutôt que de laisser découvrir l'erreur au moment de l'envoi.
@@ -85,18 +78,6 @@ function RcsMessagesInner({ session }: { session: Session }) {
   // refus ferait échouer l'enregistrement du message ENTIER. Même règle sur les trois écrans qui composent.
   const pret = form.name.trim() !== '' && form.text.trim() !== '' && form.text.length <= maxTexte
     && form.suggestions.every(boutonPret);
-
-  /** Insère du texte à la position du curseur du champ Message, et y garde le focus juste après. */
-  function inserer(jeton: string) {
-    const zone = texteRef.current;
-    if (!zone) return;
-    const debut = zone.selectionStart ?? zone.value.length;
-    const fin = zone.selectionEnd ?? zone.value.length;
-    const suite = zone.value.slice(0, debut) + jeton + zone.value.slice(fin);
-    setForm((f) => ({ ...f, text: suite }));
-    const curseur = debut + jeton.length;
-    requestAnimationFrame(() => { zone.focus(); zone.setSelectionRange(curseur, curseur); });
-  }
 
   async function enregistrer() {
     if (!pret || editing === null) return;
@@ -174,62 +155,17 @@ function RcsMessagesInner({ session }: { session: Session }) {
                 {t('JPEG, PNG ou GIF, 2 Mo maximum. Avec un visuel, le message devient une carte : l’image s’affiche au-dessus du texte et les boutons passent en liste.', 'JPEG, PNG or GIF, 2 MB maximum. With a visual, the message becomes a card: the image shows above the text and the buttons switch to a list.')}
               </p>
 
-              <div className="mb-1 mt-3 flex items-center justify-between gap-2">
-                <label className="block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
-                <span className={`text-[11px] ${form.text.length > maxTexte ? 'font-medium text-coral' : 'text-ink-400'}`}>
-                  {form.text.length} / {maxTexte}
-                </span>
+              <div className="mt-3">
+                <RcsBodyField
+                  valeur={form.text}
+                  onChange={(text) => setForm((f) => ({ ...f, text }))}
+                  fields={fields}
+                  label={t('Message', 'Message')}
+                  max={maxTexte}
+                />
               </div>
-              <textarea
-                ref={texteRef}
-                value={form.text}
-                onChange={(e) => setForm({ ...form, text: e.target.value })}
-                rows={5}
-                data-testid="rcs-message-text"
-                className={inputCls}
-                placeholder={t('Votre message…', 'Your message…')}
-              />
-
-              {/* Insertions au curseur : variables du contact, puis emojis. Même geste que les modèles d'email. */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {variables.map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    data-testid={`rcs-message-var-${f.key}`}
-                    onClick={() => inserer(`{{${f.key}}}`)}
-                    title={f.label}
-                    className="rounded-full border border-ink-200 bg-ink-50 px-2 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700"
-                  >
-                    {`{{${f.key}}}`}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  data-testid="rcs-message-emoji-toggle"
-                  onClick={() => setEmojisOuverts((v) => !v)}
-                  className="rounded-full border border-ink-200 bg-ink-50 px-2 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-brand-50"
-                >
-                  🙂 {t('Emoji', 'Emoji')}
-                </button>
-              </div>
-              {emojisOuverts && (
-                <div className="mt-1.5 flex flex-wrap gap-0.5 rounded-lg border border-ink-200 bg-white p-1.5" data-testid="rcs-message-emojis">
-                  {EMOJIS_RCS.map((e) => (
-                    <button
-                      key={e}
-                      type="button"
-                      onClick={() => inserer(e)}
-                      className="rounded px-1.5 py-0.5 text-base leading-none hover:bg-ink-100"
-                      aria-label={e}
-                    >
-                      {e}
-                    </button>
-                  ))}
-                </div>
-              )}
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Les variables sont remplacées par la fiche du contact à l’envoi. Sans valeur, elles laissent un blanc.', 'Variables are filled in from the contact at send time. With no value, they leave a blank.')}
+                {t('« + Variable » insère un champ du contact : il s’affiche comme une étiquette et sera remplacé à l’envoi. Sans valeur sur la fiche, il laisse un blanc.', '“+ Variable” inserts a contact field: it shows as a tag and is filled in at send time. With no value on the record, it leaves a blank.')}
               </p>
 
               <label className="mb-1 mt-3 block text-xs font-medium text-ink-600">{t('Boutons', 'Buttons')}</label>
@@ -252,43 +188,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
             {/* Aperçu : la bulle telle que le contact la verra. Mint, comme le canal RCS dans l'inbox. */}
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Aperçu', 'Preview')}</label>
-              <div className="rounded-xl bg-ink-50 p-3">
-                <div className="max-w-[85%] overflow-hidden rounded-2xl bg-mint-100">
-                  {avecImage && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={form.imageUrl.trim()}
-                      alt={t('Aperçu de l’image', 'Image preview')}
-                      referrerPolicy="no-referrer"
-                      data-testid="rcs-preview-image"
-                      className="aspect-video w-full bg-ink-100 object-cover"
-                    />
-                  )}
-                  <div data-testid="rcs-preview-text" className="whitespace-pre-wrap px-3 py-2 text-sm text-ink-800">
-                    {form.text.trim() || <span className="italic text-ink-400">{t('Votre message…', 'Your message…')}</span>}
-                  </div>
-                  {/* Boutons DE LA CARTE : pleine largeur, empilés, dans la bulle. C'est ainsi que
-                      l'application Messages les dessine, et c'est la raison d'être du visuel. */}
-                  {boutonsCarte.length > 0 && (
-                    <div data-testid="rcs-preview-card-buttons">
-                      {boutonsCarte.map((s, i) => (
-                        <div key={i} className="border-t border-mint-200 bg-white px-3 py-2 text-center text-sm font-medium text-ink-800">
-                          {ICONE_KIND[s.kind]}{s.text}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {/* Pastilles : posées SOUS la bulle, en ligne, et elles disparaissent dès que la
-                    conversation avance. C'est le rendu d'un message sans visuel. */}
-                <div data-testid="rcs-preview-buttons" className="mt-2 flex flex-wrap gap-1.5">
-                  {boutonsPastilles.map((s, i) => (
-                    <span key={i} className="rounded-full border border-mint-500 bg-white px-3 py-1 text-xs text-mint-700">
-                      {ICONE_KIND[s.kind]}{s.text}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <RcsPreview brouillon={form} />
             </div>
           </div>
 

@@ -71,6 +71,23 @@ async function ouvrirPanneau(page: import('@playwright/test').Page) {
   }).toPass({ timeout: 20_000 });
 }
 
+/**
+ * Choisit un scenario dans le panneau, en RESISTANT au rechargement du fil.
+ *
+ * Le fil se recharge tout seul toutes les 4 s : un `selectOption` tombe pile pendant le re-rendu vise un noeud
+ * detache et se perd SANS RIEN SIGNALER, et l'echec apparait deux lignes plus loin sur une assertion pourtant
+ * juste. Mesure du 2026-08-24 : environ un echec sur six executions de ce fichier, sur des tests differents.
+ *
+ * On reessaie donc jusqu'a ce que la valeur soit REELLEMENT posee. `selectOption` est idempotent, contrairement
+ * au clic d'envoi qui poste : celui-la reste unique, et c'est pourquoi il n'est pas dans la boucle.
+ */
+async function choisirScenario(page: import('@playwright/test').Page, id: string) {
+  await expect(async () => {
+    await page.getByTestId('scenario-select').selectOption(id);
+    await expect(page.getByTestId('scenario-select')).toHaveValue(id, { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 test.describe('Inbox : lancer un scénario', () => {
   test('fenêtre OUVERTE -> tous les scénarios sont proposés', async ({ page }) => {
     await mock(page, true, []);
@@ -93,7 +110,7 @@ test.describe('Inbox : lancer un scénario', () => {
     const lances: string[] = [];
     await mock(page, true, lances);
     await ouvrirPanneau(page);
-    await page.getByTestId('scenario-select').selectOption('wf-qm');
+    await choisirScenario(page, 'wf-qm');
     await page.getByTestId('scenario-send').click();
     await expect.poll(() => lances).toEqual(['wf-qm']);
   });
@@ -127,7 +144,7 @@ test.describe('Inbox : lancer un scénario', () => {
     });
 
     await ouvrirPanneau(page);
-    await page.getByTestId('scenario-select').selectOption('wf-qm');
+    await choisirScenario(page, 'wf-qm');
     const avant = appels;
     // Le rechargement est déclenché à la demande : le fil écoute `visibilitychange` en plus de son minuteur
     // de 4 s, et les deux passent par le même `load()`. Attendre le minuteur réel immobiliserait un worker
@@ -141,7 +158,7 @@ test.describe('Inbox : lancer un scénario', () => {
     const lances: string[] = [];
     await mock(page, false, lances, 'le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h');
     await ouvrirPanneau(page);
-    await page.getByTestId('scenario-select').selectOption('wf-tpl');
+    await choisirScenario(page, 'wf-tpl');
     await page.getByTestId('scenario-send').click();
     await expect(page.getByTestId('scenario-error')).toContainText('fenêtre de 24 h');
   });

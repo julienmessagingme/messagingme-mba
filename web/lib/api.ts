@@ -425,6 +425,17 @@ export function deleteRcsMessage(tenantId: string, id: string): Promise<{ ok: tr
   return request<{ ok: true }>(`/tenants/${tenantId}/rcs-messages/${id}`, { method: 'DELETE' });
 }
 
+/**
+ * Envoie un message de la bibliothèque RCS dans une conversation. Ses variables sont résolues côté serveur sur
+ * la fiche du contact. Pas de fenêtre de 24 h à respecter : c'est une règle de WhatsApp, pas du RCS.
+ */
+export function sendRcsToConversation(tenantId: string, conversationId: string, rcsMessageId: string): Promise<{ messageId: string }> {
+  return request<{ messageId: string }>(`/tenants/${tenantId}/conversations/${conversationId}/send-rcs`, {
+    method: 'POST',
+    body: JSON.stringify({ rcsMessageId }),
+  });
+}
+
 /** Un visuel hébergé pour les messages RCS. `url` est l'adresse PUBLIQUE, celle que l'opérateur ira chercher. */
 export interface RcsMedia {
   id: string;

@@ -481,6 +481,8 @@ export class PgInboxStore implements InboxStore {
   /** Journalise une réponse sortante de l'agent (texte libre ou template). Pour un template,
    *  `templateCategory` (marketing|utility) + `templateName` alimentent les stats du dashboard.
    *  `senderUserId` (EN FIN de signature) = auteur -> pastille dans l'inbox ; null pour les réponses auto. */
+  /** `channel` : le fil est unique par contact, c'est la BULLE qui porte le tuyau. Absent -> WhatsApp, donc
+   *  tous les appelants historiques écrivent exactement ce qu'ils écrivaient. */
   async recordOutbound(
     conversationId: string,
     body: string,
@@ -489,6 +491,7 @@ export class PgInboxStore implements InboxStore {
     templateCategory: string | null = null,
     templateName: string | null = null,
     senderUserId: string | null = null,
+    channel: 'whatsapp' | 'rcs' = 'whatsapp',
   ): Promise<void> {
     await this.pool.query(
       `update conversations set last_message_at = now(), last_preview = $2,
@@ -497,9 +500,9 @@ export class PgInboxStore implements InboxStore {
       [conversationId, body],
     );
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id)
-       values ($1, 'out', $4, $2, $3, $5, $6, $7)`,
-      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId],
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel)
+       values ($1, 'out', $4, $2, $3, $5, $6, $7, $8)`,
+      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel],
     );
   }
 }

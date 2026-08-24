@@ -18,6 +18,7 @@ import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_B
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
+import { RcsBodyField } from '@/components/RcsBodyField';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import {
@@ -1057,14 +1058,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           <div className="mb-2">
             <RcsImageField tenantId={tenantId} valeur={rcsImage} onChange={setRcsImage} testIdPrefix="rcs-campagne" />
           </div>
-          <textarea
-            value={rcsText}
-            onChange={(e) => setRcsText(e.target.value)}
-            rows={5}
-            maxLength={maxTexteRcs(rcsImage)}
-            data-testid="rcs-message"
-            placeholder={t('Votre message…', 'Your message…')}
-            className={inputCls}
+          <RcsBodyField
+            valeur={rcsText}
+            onChange={setRcsText}
+            fields={userFields}
+            testId="rcs-message"
+            max={maxTexteRcs(rcsImage)}
           />
           <div className="mt-2">
             <RcsButtonsEditor

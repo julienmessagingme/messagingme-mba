@@ -88,6 +88,18 @@ export function parseStoredRcsOutbound(raw: unknown): RcsOutbound | null {
 }
 
 /**
+ * Ce qui s'affiche dans le fil d'inbox pour un message RCS SORTANT.
+ *
+ * Une carte n'a pas de `text` : sans cette mise en forme, la bulle d'un message à visuel serait vide dans
+ * l'historique de la conversation, alors que c'est justement le message le plus riche qu'on ait envoyé.
+ */
+export function apercuRcsSortant(msg: RcsOutbound): string {
+  if (msg.kind === 'text') return msg.text;
+  if (msg.kind === 'card') return msg.card.description ?? msg.card.title ?? '[carte]';
+  return msg.cards[0]?.description ?? msg.cards[0]?.title ?? '[carrousel]';
+}
+
+/**
  * Réécrit le `postbackData` des boutons RÉPONSE en `btn:<i>`, i étant l'index du bouton PARMI LES RÉPONSES.
  *
  * 🔴 C'est ce qui relie un clic à une branche de scénario, et ce n'est pas cosmétique. Le builder nomme les

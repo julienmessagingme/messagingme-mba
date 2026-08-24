@@ -99,15 +99,3 @@ export function versBrouillonRcs(content: RcsOutbound | null): BrouillonRcs | nu
   }
   return null;
 }
-
-/**
- * Emojis proposés par le sélecteur. Liste COURTE et choisie : ce sont ceux qui servent vraiment dans un
- * message commercial. Un sélecteur complet demanderait une bibliothèque externe et des milliers de
- * caractères pour un usage qui tient en deux rangées ; le clavier du système reste disponible pour le reste.
- */
-export const EMOJIS_RCS: readonly string[] = [
-  '👋', '😊', '🙂', '😉', '🎉', '🚀', '✨', '🔥',
-  '✅', '❌', '⚠️', '👉', '📅', '⏰', '📍', '📞',
-  '💬', '📧', '🎁', '💰', '💡', '⭐', '❤️', '🙏',
-  '🛒', '📦', '🚗', '🏠', '🍽️', '☀️', '🌙', '🎯',
-];

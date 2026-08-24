@@ -590,6 +590,36 @@ journalisé), jamais le message : sans cette garde, un contact sans rendez-vous 
 sont conservés et rendus lisibles dans le fil d'inbox par `apercuMo`. Sans cela, la réponse ne serait qu'une
 bulle vide et l'information demandée serait perdue.
 
+### Envoyer un RCS depuis l'Inbox
+
+`POST /tenants/:id/conversations/:cid/send-rcs`, avec l'identifiant d'un message de la bibliothèque.
+
+🔴 **Volontairement SANS garde de fenêtre 24 h**, à la différence de `reply`. Cette fenêtre est une règle de
+WhatsApp, pas une règle du monde : le RCS n'en a pas, et c'est précisément quand la fenêtre WhatsApp est
+fermée qu'il devient le moyen de reprendre contact sans template à faire approuver. L'écran propose donc le
+bouton dans les DEUX états de la barre de réponse.
+
+Le message vient de la bibliothèque (comme un template vient de Meta) : un opérateur d'inbox n'a pas à
+composer une carte, un visuel et des boutons dans une barre de réponse. Ses variables sont résolues sur la
+fiche du contact par le MÊME chemin d'envoi que les campagnes (`rcsStack.sender`), donc avec les mêmes
+garde-fous (opt-out, élagage des boutons, normalisation des charges utiles) sans en réécrire un seul.
+
+Chaque refus porte sa RAISON, en **422** : « le canal n'est pas activé » et « ce contact s'est désabonné »
+demandent deux gestes différents, et un 5xx verrait son corps remplacé par la page d'erreur de Cloudflare.
+Comme la réponse texte, l'envoi fait PRENDRE le fil à l'opérateur, et la bulle est enregistrée avec
+`channel = 'rcs'`.
+
+### Le champ variable, comme un template Meta
+
+`RcsBodyField` : on écrit, on clique « + Variable », on choisit un champ du contact, et un chip `[Prénom]`
+s'insère au curseur. La chaîne stockée reste `Bonjour {{prenom}}` ; c'est l'AFFICHAGE qui change.
+
+L'éditeur à chips (`VariableBodyEditor`) est désormais partagé avec le corps d'un template Meta. Il prend un
+`varPattern` (positions `{{1}}` par défaut, motif NOMMÉ pour le RCS) et un `labelOf(nom)`. Les deux contrats
+restent distincts, et c'est voulu : les variables Meta sont POSITIONNELLES (exemple obligatoire,
+renumérotation à l'envoi, parce que Meta valide un gabarit), celles du RCS sont NOMMÉES et résolues sur la
+fiche. Un seul éditeur en dessous, deux vocabulaires au-dessus.
+
 ### Héberger le visuel (migration 0081)
 
 Un message RCS ne transporte pas l'image, il transporte son **adresse**, que l'opérateur télécom va chercher

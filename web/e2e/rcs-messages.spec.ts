@@ -161,7 +161,11 @@ test.describe('Contenu : messages RCS', () => {
     await expect(page.getByTestId('rcs-message-image-warn')).toHaveCount(0);
   });
 
-  test('insere une variable et un emoji AU CURSEUR, et poste le texte tel quel', async ({ page }) => {
+  /**
+   * Le champ variable, comme sur un template Meta : on clique « + Variable », on choisit un champ, et un CHIP
+   * lisible s'insere au curseur. La chaine stockee, elle, reste `{{prenom}}` : c'est l'AFFICHAGE qui change.
+   */
+  test('insere une variable en CHIP et un emoji AU CURSEUR, et poste le texte avec ses accolades', async ({ page }) => {
     const posts: Array<Record<string, unknown>> = [];
     await mock(page, posts);
     await page.goto('/rcs-messages');
@@ -170,14 +174,19 @@ test.describe('Contenu : messages RCS', () => {
     await page.getByTestId('rcs-message-name').fill('Avec variables');
     const zone = page.getByTestId('rcs-message-text');
     await zone.fill('Bonjour ');
-    await page.getByTestId('rcs-message-var-prenom').click();
+    await page.getByTestId('rcs-message-text-variable').click();
+    await page.getByTestId('rcs-message-text-variable-prenom').click();
     await zone.pressSequentially(' !');
-    await page.getByTestId('rcs-message-emoji-toggle').click();
+    await page.getByTestId('rcs-message-text-emoji').click();
     await page.getByRole('button', { name: '🎉', exact: true }).click();
 
-    await expect(zone).toHaveValue('Bonjour {{prenom}} !🎉');
+    // A l'ecran : le LIBELLE du champ, pas le litteral.
+    await expect(zone).toContainText('Prénom');
+    await expect(zone).not.toContainText('{{prenom}}');
+
     await page.getByTestId('rcs-message-save').click();
     await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
+    // A l'envoi : la chaine reelle, avec ses accolades, que le serveur saura resoudre.
     expect(posts[0]).toMatchObject({ content: { kind: 'text', text: 'Bonjour {{prenom}} !🎉' } });
   });
 
@@ -187,9 +196,10 @@ test.describe('Contenu : messages RCS', () => {
     await mock(page, []);
     await page.goto('/rcs-messages');
     await page.getByTestId('rcs-message-new').click();
-    await expect(page.getByTestId('rcs-message-var-prenom')).toBeVisible();
-    await expect(page.getByTestId('rcs-message-var-ville')).toBeVisible();
-    await expect(page.getByTestId('rcs-message-var-wa_id')).toHaveCount(0);
+    await page.getByTestId('rcs-message-text-variable').click();
+    await expect(page.getByTestId('rcs-message-text-variable-prenom')).toBeVisible();
+    await expect(page.getByTestId('rcs-message-text-variable-ville')).toBeVisible();
+    await expect(page.getByTestId('rcs-message-text-variable-wa_id')).toHaveCount(0);
   });
 
   test('compose un bouton Agenda a date fixe et poste ses champs', async ({ page }) => {

@@ -894,6 +894,12 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
 - **Réponses** : elles arrivent dans le fil du contact, au même endroit que WhatsApp, la bulle indiquant son
   canal. Un bouton tapé fait avancer le scénario par la branche correspondante. Un contact qui répond **STOP**
   est désabonné du RCS, sans que cela touche son consentement WhatsApp.
+- **Depuis l'Inbox** : le bouton 📱 envoie un message RCS de la bibliothèque au contact ouvert. Il est proposé
+  même quand la fenêtre WhatsApp de 24 h est fermée, puisque le RCS n'a pas de fenêtre : c'est souvent le
+  moyen le plus simple de reprendre contact. L'aperçu montre le message tel que le contact le verra, et un
+  refus (canal éteint, contact désabonné) s'affiche avec sa raison.
+- **Les variables s'insèrent comme dans un template WhatsApp** : bouton « + Variable », on choisit le champ,
+  et il apparaît comme une étiquette lisible dans le texte, pas comme des accolades.
 - ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.

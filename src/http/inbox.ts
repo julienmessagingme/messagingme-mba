@@ -67,9 +67,23 @@ export interface InboxRouteDeps {
     templateCategory?: string | null,
     templateName?: string | null,
     senderUserId?: string | null,
+    /** Canal de la bulle. Absent -> WhatsApp. */
+    channel?: 'whatsapp' | 'rcs',
   ): Promise<void>;
   /** Numéro du tenant depuis lequel répondre. */
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+  /**
+   * Envoie un message de la bibliothèque RCS à ce contact, variables résolues sur sa fiche.
+   *
+   * Rend `{ messageId, apercu }` quand c'est parti, ou `{ refus }` avec une raison DESTINÉE À L'OPÉRATEUR
+   * (canal éteint, message supprimé depuis, contact désabonné du RCS). Optionnelle : absente, la route
+   * répond 422 « canal RCS non disponible » au lieu de 500 sur des deps de test minimales.
+   */
+  sendRcsFromLibrary?(
+    tenantId: string,
+    waId: string,
+    rcsMessageId: string,
+  ): Promise<{ messageId: string; apercu: string } | { refus: string }>;
   /** Envoie une réponse texte (fenêtre de service 24 h). `tenantId` -> token Meta PAR TENANT (B1). Retourne le message_id. */
   sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
   /** Envoie un template (autorisé hors fenêtre). `tenantId` -> token Meta PAR TENANT. Retourne le message_id. */
@@ -251,6 +265,42 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     await deps.recordOutbound(conversationId, text, messageId, 'text', null, null, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
+  });
+
+  /**
+   * Envoi d'un message RCS depuis une conversation.
+   *
+   * 🔴 Volontairement SANS garde de fenêtre 24 h, à la différence de `reply` : cette fenêtre est une règle de
+   * WhatsApp, pas une règle du monde. Le RCS n'en a pas, et c'est précisément quand la fenêtre WhatsApp est
+   * fermée qu'il devient le moyen de reprendre contact sans template à faire approuver.
+   *
+   * Le message vient de la BIBLIOTHÈQUE (comme un template vient de Meta) : un opérateur d'inbox n'a pas à
+   * composer une carte, un visuel et des boutons dans une barre de réponse. Ses variables sont résolues sur la
+   * fiche du contact, exactement comme dans une campagne.
+   */
+  app.post('/tenants/:tenantId/conversations/:conversationId/send-rcs', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    const rcsMessageId = (req.body as { rcsMessageId?: unknown } | null)?.rcsMessageId;
+    if (!nonEmpty(rcsMessageId)) return reply.code(400).send({ error: 'rcsMessageId requis' });
+
+    const ctx = await deps.getConversationContext(conversationId, tenant);
+    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    const refusAff = await refusAffectation(req, tenant, conversationId);
+    if (refusAff) return reply.code(403).send({ error: refusAff, code: 'assigned_to_other' });
+    if (!deps.sendRcsFromLibrary) return reply.code(422).send({ error: 'canal RCS non disponible' });
+
+    const issue = await deps.sendRcsFromLibrary(tenant, ctx.waId, rcsMessageId as string);
+    // 422 et non 5xx : c'est une situation à corriger par l'opérateur (canal éteint, contact désabonné), et
+    // Cloudflare remplacerait le corps d'un 5xx par sa page d'erreur, donc la raison n'arriverait jamais.
+    if ('refus' in issue) return reply.code(422).send({ error: issue.refus });
+
+    // L'opérateur prend le fil, comme sur une réponse texte. Best-effort et APRÈS l'envoi réussi : un échec
+    // d'état ne doit pas faire croire à un message perdu.
+    await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
+    await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
+    return reply.code(200).send({ messageId: issue.messageId });
   });
 
   // Envoi d'un template dans une conversation (le seul moyen de ré-engager hors fenêtre 24 h).

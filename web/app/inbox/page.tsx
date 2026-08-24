@@ -12,9 +12,11 @@ import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import { ContactDetail } from '@/components/ContactDetail';
+import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import {
   listConversations,
   countConversationsATraiter,
+  getSettings,
   listUsers,
   setConversationAssignee,
   queryContacts,
@@ -514,6 +516,13 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   const [busy, setBusy] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showScenario, setShowScenario] = useState(false);
+  const [showRcs, setShowRcs] = useState(false);
+  // Canal RCS allumé pour cet espace ? Déduit du dépôt d'agent côté serveur, comme dans les campagnes et le
+  // builder. Éteint -> aucun bouton RCS : proposer un envoi qui finira en 422 n'aide personne.
+  const [rcsEnabled, setRcsEnabled] = useState(false);
+  useEffect(() => {
+    void getSettings(session.tenantId).then((s) => setRcsEnabled(s.rcsEnabled === true)).catch(() => {});
+  }, [session.tenantId]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Dernier message DÉJÀ vu dans ce fil : sert à ne marquer « lu » qu'au vrai changement, et pas à chacun
@@ -702,6 +711,16 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           >
             🧩
           </button>
+          {rcsEnabled && (
+            <button
+              onClick={() => setShowRcs(true)}
+              title={t('Envoyer un message RCS', 'Send an RCS message')}
+              data-testid="inbox-open-rcs"
+              className="shrink-0 rounded-lg border border-ink-300 px-2.5 py-2 text-sm text-ink-600 hover:bg-ink-50"
+            >
+              📱
+            </button>
+          )}
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -728,6 +747,15 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           >
             {t('Envoyer un template', 'Send a template')}
           </button>
+          {rcsEnabled && (
+            <button
+              onClick={() => setShowRcs(true)}
+              data-testid="inbox-open-rcs"
+              className="mt-2 w-full rounded-lg border border-mint-500 px-3 py-2 text-sm font-medium text-mint-700 hover:bg-mint-50"
+            >
+              {t('…ou envoyer un message RCS (pas de fenêtre de 24 h)', '…or send an RCS message (no 24h window)')}
+            </button>
+          )}
           <button
             onClick={() => setShowScenario(true)}
             data-testid="inbox-open-scenario"
@@ -744,6 +772,15 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           conversationId={conversation.id}
           onClose={() => setShowTemplate(false)}
           onSent={async () => { setShowTemplate(false); await load(); onSent(); }}
+        />
+      )}
+
+      {showRcs && (
+        <InboxRcsPanel
+          tenantId={session.tenantId}
+          conversationId={conversation.id}
+          onClose={() => setShowRcs(false)}
+          onSent={async () => { setShowRcs(false); await load(); onSent(); }}
         />
       )}
 

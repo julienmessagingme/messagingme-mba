@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/VariableBodyEditor';
 import { listUserFields, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
+import { EMOJIS_MESSAGE } from '@/lib/emojis';
 import { useT } from '@/lib/i18n';
 import { SYSTEM_FIELDS, customFieldsOnly, systemFieldExample } from '@/lib/fields';
 import { inputCls } from '@/lib/ui';
@@ -15,15 +16,6 @@ import { inputCls } from '@/lib/ui';
  * corps de template comme un autre (même composant Meta BODY, mêmes `example.body_text`, mêmes hints, même
  * résolution à l'envoi). Deux implémentations auraient divergé au premier correctif.
  */
-
-// Emojis courants pour messages business (insérés au curseur dans le corps).
-const EMOJIS = [
-  '😀','😊','😉','😍','🥳','🤩','😎','🙌','👋','👍','🙏','🤝','💪','👏','🔥','✨',
-  '⭐','🌟','💯','✅','✔️','☑️','❌','⚡','🎉','🎊','🎁','🎈','🥂','🍾','❤️','🧡',
-  '💛','💚','💙','💜','💖','💥','💡','📣','📢','🔔','📅','⏰','🕐','⌛','📍','📌',
-  '🏷️','🛍️','🛒','💳','💰','🤑','📦','🚚','🚀','🎯','📈','📊','💬','💭','📞','📲',
-  '✉️','📧','📝','🔗','➡️','👉','👀','🤗',
-];
 
 /** Une variable {{n}} rattachée à un champ (via le sélecteur) : source (pour l'indice) + libellé (chip). */
 export interface VarSource { source: ParamSource; label: string }
@@ -70,7 +62,7 @@ function EmojiPicker({ onPick, onClose }: { onPick: (e: string) => void; onClose
       <button type="button" aria-label={t('Fermer', 'Close')} className="fixed inset-0 z-40 cursor-default" onClick={onClose} />
       <div className="absolute bottom-11 right-0 z-50 w-64 rounded-xl border border-ink-200 bg-white p-2 shadow-lg">
         <div className="grid grid-cols-8 gap-0.5">
-          {EMOJIS.map((e) => (
+          {EMOJIS_MESSAGE.map((e) => (
             <button type="button" key={e} onClick={() => onPick(e)} className="rounded p-1 text-lg leading-none hover:bg-ink-100" aria-label={e}>
               {e}
             </button>
@@ -250,7 +242,9 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
         <VariableBodyEditor
           ref={state.editorRef}
           value={state.body}
-          varLabels={state.varLabels}
+          // Variables POSITIONNELLES de Meta : le nom d'une variable est son numéro, son libellé est celui du
+          // champ auquel elle a été rattachée. (Le motif par défaut de l'éditeur est déjà `{{n}}`.)
+          labelOf={(nom) => state.varLabels[Number(nom) - 1]}
           onChange={state.setBody}
           placeholder={placeholder}
           className={`${inputCls} pr-28`}

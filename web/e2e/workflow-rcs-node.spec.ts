@@ -51,8 +51,10 @@ test.describe('Builder : bloc RCS', () => {
     await expect(page.getByText('Envoyé').first()).toBeVisible();
     await expect(page.getByText('Non joignable en RCS').first()).toBeVisible();
 
-    // Le panneau de configuration expose le texte du message.
-    const zone = page.getByPlaceholder('Votre message…');
+    // Le panneau de configuration expose le texte du message. C'est un editeur A CHIPS (les variables du
+    // contact s'y affichent comme des etiquettes), donc une zone editable et non un textarea : on la vise par
+    // son testid, pas par un attribut `placeholder` qui n'existe plus.
+    const zone = page.getByTestId('rcs-node-text');
     await expect(zone).toBeVisible();
     await zone.fill('Bonjour, offre du jour');
 

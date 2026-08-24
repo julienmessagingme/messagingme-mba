@@ -52,7 +52,7 @@ import { PgWorkflowStore } from './workflow/store.pg';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { fetchUrlBorne } from './http/mba';
@@ -69,6 +69,9 @@ import { urlImageRcs } from './rcs/image';
 import { newMediaCode } from './ids/code';
 import { verifierCleRcs, fetchGet } from './rcs/channel-info';
 import { estDemandeArret, apercuMo } from './rcs/callback';
+import { apercuRcsSortant } from './rcs/schema';
+import { aDesVariables, appliquerVariables } from './rcs/variables';
+import { contactVars } from './crm/render';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
@@ -317,7 +320,36 @@ async function main(): Promise<void> {
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
-      recordOutbound: (id, body, msgId, type, cat, name, sender) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender),
+      recordOutbound: (id, body, msgId, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender, canal),
+      /**
+       * Envoi d'un message RCS depuis l'inbox. Le message vient de la bibliothèque et ses variables sont
+       * résolues sur la fiche du contact, exactement comme dans une campagne : c'est le MÊME chemin d'envoi
+       * (`rcsStack.sender`), donc les mêmes garde-fous (opt-out, élagage des boutons, normalisation des
+       * charges utiles) sans en réécrire un seul.
+       *
+       * Chaque refus porte sa RAISON, destinée à l'opérateur qui a le doigt sur le bouton : « le canal RCS
+       * n'est pas activé » et « ce contact s'est désabonné » demandent deux gestes différents.
+       */
+      sendRcsFromLibrary: async (tenant, waId, rcsMessageId) => {
+        const agentId = await workflowRuntime.rcsStack.agents.agentIdForTenant(tenant);
+        if (!agentId) return { refus: "Le canal RCS n'est pas activé sur cet espace (page d'accueil, sous le numéro WhatsApp)." };
+        const enregistre = await rcsMessageStore.getById(tenant, rcsMessageId);
+        if (!enregistre?.content) return { refus: 'Ce message RCS n’existe plus, ou son format n’est plus reconnu.' };
+
+        const brut = enregistre.content;
+        const message = aDesVariables(brut)
+          ? appliquerVariables(brut, contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}))
+          : brut;
+        const issue = await workflowRuntime.rcsStack.sender.sendTo(tenant, agentId, waId, message, randomUUID());
+        if ('skipped' in issue) {
+          return {
+            refus: issue.skipped === 'rcs_optout'
+              ? 'Ce contact s’est désabonné du RCS (il a répondu STOP). Passez par WhatsApp.'
+              : 'Ce contact n’est pas joignable en RCS.',
+          };
+        }
+        return { messageId: issue.messageId, apercu: apercuRcsSortant(message) };
+      },
       // Un opérateur qui écrit prend le fil : le scénario se gèle sur ce contact, les campagnes le sautent.
       takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
       getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
