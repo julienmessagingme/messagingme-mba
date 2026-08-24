@@ -72,6 +72,24 @@ message RCS. La bascule texte/carte vit dans UN endroit (`web/lib/rcs.ts`, miroi
   se recharge toutes les 4 s, un `selectOption` pendant le re-rendu vise un noeud detache sans rien signaler.
   Selection reessayee jusqu a etre posee ; le clic d envoi reste unique puisqu il poste.
 
+### 🔴 Le canal est porte par le PARCOURS (2026-08-24, migration 0082)
+
+Deux bugs trouves en testant le scenario reel de Julien, tous deux dus a la meme cause de fond : les regles du
+moteur avaient ete ecrites quand WhatsApp etait le seul canal.
+
+1. **Un scenario qui OUVRE par un bloc RCS n apparaissait pas** dans le selecteur de l Inbox fenetre fermee,
+   c est-a-dire quand il servait le plus. `scanOpening` porte desormais `rcsOpen` dans les DEUX miroirs.
+2. **Un << message rapide >> derriere un bloc RCS partait en WhatsApp**, chez un contact qui n y avait jamais
+   ecrit : refus Meta 131047, parcours mort. Or un message rapide est un texte + reponses en un tap, que le
+   RCS sait faire. Le bloc dit l INTENTION, le PARCOURS porte le canal (`workflow_runs.channel`).
+
+Regle : un envoi RCS met le parcours sur `rcs`, un TEMPLATE le remet sur `whatsapp` (c est la bascule
+volontaire), un message rapide suit. Le canal suit ce que le contact a RECU, jamais une intention : un bloc
+RCS saute ne bascule rien, sinon le repli partirait en RCS chez un injoignable.
+
+Seul le FORMULAIRE (WhatsApp Flow) reste impossible derriere un RCS, faute d equivalent : le builder le
+signale.
+
 ### Reste ouvert sur le canal
 
 - Le **carrousel** n'a aucun composeur (le modele et le provider le supportent).
@@ -904,7 +922,7 @@ propres des deux côtés. Déploiement du 2026-08-18 fait dans l'ordre : `git lo
 aucun travail tiers embarqué), migrations vérifiées AVANT (« à jour, rien à appliquer »), puis build et
 redémarrage. Vérifié après : API saine, worker reparti avec ses 6 files, front public en 200, zéro erreur.
 
-## Migrations : 0081 appliquée, prochaine libre = 0082
+## Migrations : 0082 appliquée, prochaine libre = 0083
 
 Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
 `conversations`/`conversation_messages`/`campaigns` (défaut `whatsapp`, tout l'existant intact), unique de
