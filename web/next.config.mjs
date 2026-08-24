@@ -25,6 +25,11 @@ const nextConfig = {
       // publié : ce rewrite est le SEUL chemin qui les relie. Le modifier casse des liens DÉJÀ LIVRÉS dans
       // des messages, qu'on ne peut plus corriger.
       { source: '/r/:code', destination: `${backend}/r/:code` },
+      // Visuels des messages RCS. Chemin COURT et sans `/api` pour la même raison que `/r/` : c'est une
+      // adresse que l'OPÉRATEUR TÉLÉCOM va chercher, et qui doit finir par `.jpg`/`.png`/`.gif` pour qu'il
+      // accepte l'envoi. ⚠️ Servi par le backend, qui n'a aucun port hôte publié : ce rewrite est le SEUL
+      // chemin qui les relie. Le modifier casse les visuels de messages DÉJÀ ENVOYÉS.
+      { source: '/m/:fichier', destination: `${backend}/m/:fichier` },
     ];
   },
 };

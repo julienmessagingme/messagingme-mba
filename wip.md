@@ -877,7 +877,7 @@ propres des deux côtés. Déploiement du 2026-08-18 fait dans l'ordre : `git lo
 aucun travail tiers embarqué), migrations vérifiées AVANT (« à jour, rien à appliquer »), puis build et
 redémarrage. Vérifié après : API saine, worker reparti avec ses 6 files, front public en 200, zéro erreur.
 
-## Migrations : 0080 appliquée, prochaine libre = 0081
+## Migrations : 0081 appliquée, prochaine libre = 0082
 
 Le chantier RCS (canal comme dimension de premier ordre) a ses migrations en base : `channel` sur
 `conversations`/`conversation_messages`/`campaigns` (défaut `whatsapp`, tout l'existant intact), unique de

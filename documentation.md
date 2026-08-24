@@ -590,6 +590,35 @@ journalisé), jamais le message : sans cette garde, un contact sans rendez-vous 
 sont conservés et rendus lisibles dans le fil d'inbox par `apercuMo`. Sans cela, la réponse ne serait qu'une
 bulle vide et l'information demandée serait perdue.
 
+### Héberger le visuel (migration 0081)
+
+Un message RCS ne transporte pas l'image, il transporte son **adresse**, que l'opérateur télécom va chercher
+lui-même. Sans hébergement, un client doit poser son visuel ailleurs et coller un lien, ce qui suffit à rendre
+la fonctionnalité inutilisable pour celui à qui elle sert. La console héberge donc les visuels.
+
+- **Téléversement** : `POST /tenants/:id/rcs/media` (admin), data URL base64, et rend directement l'URL
+  publique. `GET` liste la médiathèque, `DELETE` retire un visuel (suppression DURE : ce qui compte est qu'il
+  cesse d'être servi, ce qu'une suppression douce ne ferait pas).
+- **Lecture** : `GET /m/<code>.<ext>`, **publique et non authentifiée**, exposée par un rewrite dédié du front
+  (`/m/:fichier`), comme `/r/:code` pour les liens tracés. C'est l'opérateur qui télécharge, il n'a aucune
+  session ; le `code` (130 bits) tient donc l'accès à lui seul.
+- **Stockage** : les octets en base (`rcs_media.bytes`). Un volume Docker ne survit pas à une recréation de
+  conteneur sans déclaration explicite et n'est sauvegardé nulle part ; un bucket ajoute un service, des clés
+  et un mode de panne. Le volume est minuscule (2 Mo maximum par visuel, quelques visuels par client) et suit
+  la base dans toute restauration. Déplacer le stockage un jour ne changerait que `media-store.pg.ts` :
+  l'URL publique, elle, ne bougerait pas.
+
+🔴 **Ce qui est servi est décidé par la SIGNATURE du fichier**, jamais par le type déclaré au téléversement
+(`src/rcs/image.ts`). Servir un fichier pour ce qu'il prétend être est la façon classique de transformer un
+hébergeur d'images en hébergeur de pages ; un PDF renommé en `.png` est refusé en **415**. Trois formats
+seulement (JPEG, PNG, GIF, ceux que l'opérateur accepte), pas de SVG (XML exécutable). La réponse porte
+`nosniff`, le type réel, et un cache immuable d'un an : le contenu d'un code ne change jamais, et une campagne
+de 5 000 messages ne doit pas faire relire l'image 5 000 fois.
+
+⚠️ L'extension de l'URL n'est pas décorative : le fournisseur exige une adresse qui finit par `.jpg`, `.jpeg`,
+`.png` ou `.gif`. Elle doit CORRESPONDRE au fichier stocké, sinon on servirait un PNG sous une adresse en
+`.jpg` (404 dans ce cas).
+
 ### 🔴 Où les boutons sont accrochés décide de leur apparence
 
 Ce n'est pas nous qui dessinons les boutons : c'est l'application Messages du destinataire. Le seul levier est

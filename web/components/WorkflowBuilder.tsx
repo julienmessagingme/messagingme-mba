@@ -17,6 +17,7 @@ import {
 import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonsDepuisNode, ouvreUneSortie } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
+import { RcsImageField } from '@/components/RcsImageField';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
@@ -743,7 +744,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -830,9 +831,11 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 function ConfigPanel({
-  node, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, emailAccounts, emailTemplates, rcsMessages, onCommitTag,
+  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, emailAccounts, emailTemplates, rcsMessages, onCommitTag,
 }: {
   node: RFNode;
+  /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
+  tenantId: string;
   /** Ce bloc est-il la RACINE du scénario (sans arête entrante) ? C'est lui que la règle campagne regarde. */
   isRoot: boolean;
   /** Le scénario est-il lançable en campagne broadcast (ce qui OUVRE doit être un template configuré) ? */
@@ -939,15 +942,15 @@ function ConfigPanel({
 
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image d’en-tête (facultatif)', 'Header image (optional)')}</label>
-              <input
-                value={(d.imageUrl as string) ?? ''}
-                onChange={(e) => onPatch({ imageUrl: e.target.value })}
-                data-testid="rcs-node-image"
-                placeholder="https://…/visuel.jpg"
-                className={`${cls} bg-white`}
+              <RcsImageField
+                tenantId={tenantId}
+                valeur={(d.imageUrl as string) ?? ''}
+                onChange={(imageUrl) => onPatch({ imageUrl })}
+                testIdPrefix="rcs-node"
+                compact
               />
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Une adresse publique en .jpg .png ou .gif. Avec un visuel, le texte est limité à 2000 caractères.', 'A public URL, .jpg .png or .gif. With a visual, the text is capped at 2000 characters.')}
+                {t('JPEG, PNG ou GIF, 2 Mo maximum. Avec un visuel, le texte est limité à 2000 caractères et les boutons passent en liste.', 'JPEG, PNG or GIF, 2 MB maximum. With a visual, the text is capped at 2000 characters and the buttons switch to a list.')}
               </p>
             </div>
 

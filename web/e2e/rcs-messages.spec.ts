@@ -18,6 +18,20 @@ async function mock(page: import('@playwright/test').Page, posts: Array<Record<s
       posts.push((req.postDataJSON() ?? {}) as Record<string, unknown>);
       return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ message: { id: 'm1', name: 'x', content: null, createdAt: '', updatedAt: '' } }) });
     }
+    if (req.method() === 'POST' && url.includes('/rcs/media')) {
+      const corps = (req.postDataJSON() ?? {}) as { dataUrl?: string; nom?: string };
+      // On verifie que le NAVIGATEUR a bien encode le fichier choisi : c'est la moitie de la chaine que ce
+      // test protege (l'autre moitie, la lecture de la signature, est couverte cote serveur).
+      expect(String(corps.dataUrl ?? '')).toMatch(/^data:image\/png;base64,/);
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          media: { id: 'm1', code: 'abcdefghjkmnpqrstvwxyz0123', mime: 'image/png', taille: 70, nom: corps.nom ?? null, createdAt: '' },
+          url: 'https://mba.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png',
+        }),
+      });
+    }
     if (url.includes('/rcs-messages')) return json({ messages: [] });
     if (url.includes('/user-fields')) {
       return json({ fields: [
@@ -277,5 +291,48 @@ test.describe('Contenu : messages RCS', () => {
         ],
       },
     });
+  });
+
+  /**
+   * Le chainon qui manquait : personne ne doit avoir a trouver ou heberger son visuel. On choisit un fichier,
+   * la console l'heberge, et l'adresse publique se remplit toute seule.
+   */
+  test('televerse une image et remplit l adresse tout seul', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mock(page, posts);
+    await page.goto('/rcs-messages');
+
+    await page.getByTestId('rcs-message-new').click();
+    await page.getByTestId('rcs-message-name').fill('Avec visuel televerse');
+    await page.getByTestId('rcs-message-text').fill('Notre offre');
+
+    // Un vrai PNG minimal (1x1 transparent), pas un fichier au hasard renomme.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    await page.getByTestId('rcs-message-image-file').setInputFiles({ name: 'visuel.png', mimeType: 'image/png', buffer: png });
+
+    await expect(page.getByTestId('rcs-message-image')).toHaveValue('https://mba.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png');
+    // L'adresse rendue finit par .png, donc AUCUN avertissement d'extension.
+    await expect(page.getByTestId('rcs-message-image-warn')).toHaveCount(0);
+    // Et le message est bien devenu une CARTE dans l'apercu.
+    await expect(page.getByTestId('rcs-preview-image')).toHaveAttribute('src', 'https://mba.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png');
+
+    await page.getByTestId('rcs-message-save').click();
+    await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
+    expect(posts[0]).toMatchObject({
+      content: { kind: 'card', card: { mediaUrl: 'https://mba.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.png' } },
+    });
+  });
+
+  test('retirer le visuel ramene le message en TEXTE', async ({ page }) => {
+    await mock(page, []);
+    await page.goto('/rcs-messages');
+    await page.getByTestId('rcs-message-new').click();
+    await page.getByTestId('rcs-message-image').fill('https://exemple.test/visuel.jpg');
+    await expect(page.getByTestId('rcs-preview-image')).toBeVisible();
+    await page.getByTestId('rcs-message-image-clear').click();
+    await expect(page.getByTestId('rcs-preview-image')).toHaveCount(0);
   });
 });

@@ -17,6 +17,7 @@ import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
+import { RcsImageField } from '@/components/RcsImageField';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import {
@@ -1053,13 +1054,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             <option value="">{rcsMessages.length === 0 ? t('Aucun message enregistré', 'No saved message') : t('Partir d’un message enregistré…', 'Start from a saved message…')}</option>
             {rcsMessages.filter((m) => versBrouillonRcs(m.content) !== null).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <input
-            value={rcsImage}
-            onChange={(e) => setRcsImage(e.target.value)}
-            data-testid="rcs-message-image"
-            placeholder={t('Image d’en-tête (facultatif) : https://…/visuel.jpg', 'Header image (optional): https://…/visuel.jpg')}
-            className={`${inputCls} mb-2`}
-          />
+          <div className="mb-2">
+            <RcsImageField tenantId={tenantId} valeur={rcsImage} onChange={setRcsImage} testIdPrefix="rcs-campagne" />
+          </div>
           <textarea
             value={rcsText}
             onChange={(e) => setRcsText(e.target.value)}

@@ -875,6 +875,9 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   **Voir un lieu** (l'ouvre sur sa carte) et **Demander sa position**. Seul un bouton Réponse ouvre une sortie
   à relier dans un scénario : les cinq autres agissent sur le téléphone ou sortent de la conversation, et ne
   renvoient rien qui permette de choisir une branche.
+- **Le visuel se téléverse depuis la console** : on choisit une image sur son ordinateur (JPEG, PNG ou GIF,
+  2 Mo maximum) et l'adresse se remplit toute seule. Rien à héberger ailleurs, aucun lien à fabriquer. Le
+  champ accepte quand même une adresse collée, pour ceux qui hébergent déjà leurs visuels sur leur propre site.
 - **L'allure des boutons se choisit en ajoutant un visuel, pas dans un réglage** : avec une image, ils
   s'affichent en **liste pleine largeur dans la carte** et y restent (4 maximum) ; sans image, en **petites
   pastilles** sous la bulle, qui disparaissent quand la conversation avance (11 maximum). C'est l'application

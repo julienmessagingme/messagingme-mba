@@ -72,6 +72,16 @@ export function newWebhookCode(): string {
   return codeAleatoire(26);
 }
 
+/**
+ * Code public d'un VISUEL de message RCS : 26 caracteres base32, comme un webhook entrant, et pour la meme
+ * raison. La route qui sert l'image est publique et non authentifiee (c'est l'operateur telecom qui la
+ * telecharge, il n'a aucune session) : ce code n'est donc pas un identifiant, c'est ce qui donne acces au
+ * fichier. Rien ne justifie d'economiser sur l'alea, l'URL etant posee par la machine et jamais tapee.
+ */
+export function newMediaCode(): string {
+  return codeAleatoire(26);
+}
+
 /** Chaine base32 (Crockford) minuscule de `longueur` caracteres, tiree au sort. */
 function codeAleatoire(longueur: number): string {
   let out = '';

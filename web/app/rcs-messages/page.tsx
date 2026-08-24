@@ -13,6 +13,7 @@ import {
 } from '@/lib/rcs';
 import { boutonPret, ICONE_KIND } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
+import { RcsImageField } from '@/components/RcsImageField';
 import { emailResolvableFields } from '@/lib/fields';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -36,10 +37,6 @@ export default function RcsMessagesPage() {
 
 type Brouillon = BrouillonRcs & { name: string };
 const VIDE: Brouillon = { name: '', text: '', imageUrl: '', suggestions: [] };
-
-/** Extensions acceptées par le provider pour l'image d'une carte. Contrôlé ICI parce qu'un `.webp` ou un
- *  `.svg` passe la validation d'URL et se fait refuser à l'ENVOI, c'est-à-dire devant un client. */
-const IMAGE_RE = /\.(jpe?g|png|gif)(\?.*)?$/i;
 
 function RcsMessagesInner({ session }: { session: Session }) {
   const t = useT();
@@ -81,7 +78,6 @@ function RcsMessagesInner({ session }: { session: Session }) {
   const remplis = form.suggestions.filter((s) => s.text.trim() !== '');
   const boutonsCarte = avecImage ? remplis.slice(0, MAX_BOUTONS_CARTE) : [];
   const boutonsPastilles = avecImage ? remplis.slice(MAX_BOUTONS_CARTE) : remplis;
-  const imageDouteuse = form.imageUrl.trim() !== '' && !IMAGE_RE.test(form.imageUrl.trim());
 
   // Un bouton lien sans URL, ou un bouton appel sans numéro, partirait chez le provider et serait refusé.
   // On bloque l'enregistrement plutôt que de laisser découvrir l'erreur au moment de l'envoi.
@@ -169,21 +165,14 @@ function RcsMessagesInner({ session }: { session: Session }) {
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image d’en-tête (facultatif)', 'Header image (optional)')}</label>
-              <input
-                value={form.imageUrl}
-                onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                data-testid="rcs-message-image"
-                className={inputCls}
-                placeholder="https://…/visuel.jpg"
+              <RcsImageField
+                tenantId={session.tenantId}
+                valeur={form.imageUrl}
+                onChange={(imageUrl) => setForm((f) => ({ ...f, imageUrl }))}
               />
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Une adresse publique, en .jpg .png ou .gif. Le message devient une carte : l’image s’affiche au-dessus du texte.', 'A public URL, .jpg .png or .gif. The message becomes a card: the image shows above the text.')}
+                {t('JPEG, PNG ou GIF, 2 Mo maximum. Avec un visuel, le message devient une carte : l’image s’affiche au-dessus du texte et les boutons passent en liste.', 'JPEG, PNG or GIF, 2 MB maximum. With a visual, the message becomes a card: the image shows above the text and the buttons switch to a list.')}
               </p>
-              {imageDouteuse && (
-                <p className="mt-1 text-[11px] text-amber-700" data-testid="rcs-message-image-warn">
-                  {t('Cette adresse ne finit pas par .jpg, .png ou .gif : l’opérateur refusera l’envoi.', 'This URL does not end in .jpg, .png or .gif: the carrier will refuse the send.')}
-                </p>
-              )}
 
               <div className="mb-1 mt-3 flex items-center justify-between gap-2">
                 <label className="block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>

@@ -425,6 +425,35 @@ export function deleteRcsMessage(tenantId: string, id: string): Promise<{ ok: tr
   return request<{ ok: true }>(`/tenants/${tenantId}/rcs-messages/${id}`, { method: 'DELETE' });
 }
 
+/** Un visuel hébergé pour les messages RCS. `url` est l'adresse PUBLIQUE, celle que l'opérateur ira chercher. */
+export interface RcsMedia {
+  id: string;
+  code: string;
+  mime: 'image/jpeg' | 'image/png' | 'image/gif';
+  taille: number;
+  nom: string | null;
+  createdAt: string;
+}
+
+export function listRcsMedia(tenantId: string): Promise<{ media: RcsMedia[] }> {
+  return request<{ media: RcsMedia[] }>(`/tenants/${tenantId}/rcs/media`);
+}
+
+/**
+ * Téléverse un visuel et rend son adresse publique. Le serveur relit la SIGNATURE du fichier : un fichier
+ * renommé en `.png` est refusé, et c'est le type réel qui décide de l'extension de l'URL.
+ */
+export function uploadRcsMedia(tenantId: string, dataUrl: string, nom: string | null): Promise<{ media: RcsMedia; url: string }> {
+  return request<{ media: RcsMedia; url: string }>(`/tenants/${tenantId}/rcs/media`, {
+    method: 'POST',
+    body: JSON.stringify({ dataUrl, nom }),
+  });
+}
+
+export function deleteRcsMedia(tenantId: string, id: string): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`/tenants/${tenantId}/rcs/media/${id}`, { method: 'DELETE' });
+}
+
 /** Agents RCS du tenant (sélecteur de l'assistant de campagne). Liste vide = canal RCS non configuré. */
 export function listRcsAgents(tenantId: string): Promise<{ agents: RcsAgent[] }> {
   return request<{ agents: RcsAgent[] }>(`/tenants/${tenantId}/rcs-agents`);

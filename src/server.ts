@@ -7,6 +7,7 @@ import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
 import { registerRcsChannel } from './http/rcs-channel';
 import { registerRcsCallback } from './http/rcs-callback';
+import { registerRcsMedia } from './http/rcs-media';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
@@ -53,6 +54,7 @@ import type { CampaignRouteDeps } from './http/campaigns';
 import type { RcsMessageRouteDeps } from './http/rcs-messages';
 import type { RcsChannelRouteDeps } from './http/rcs-channel';
 import type { RcsCallbackRouteDeps } from './http/rcs-callback';
+import type { RcsMediaRouteDeps } from './http/rcs-media';
 import type { TemplateRouteDeps } from './http/templates';
 import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
@@ -102,6 +104,8 @@ export interface ServerDeps {
   rcsChannel?: RcsChannelRouteDeps;
   /** Rappels smsmode du canal RCS (livraison + réponses). PUBLIQUE : le code d'URL porte le workspace. */
   rcsCallback?: RcsCallbackRouteDeps;
+  /** Visuels des messages RCS : téléversement admin, et service PUBLIC du fichier (`/m/<code>.jpg`). */
+  rcsMedia?: RcsMediaRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
   templates?: TemplateRouteDeps;
   /** Routes inbox (conversations + réponse). */
@@ -271,6 +275,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // handlers par `forbidNonAdmin`, comme pour les templates.
   if (deps.rcsMessages) registerRcsMessages(app, deps.rcsMessages, requireAuth);
   if (deps.rcsChannel) registerRcsChannel(app, deps.rcsChannel, requireAuth);
+  // Visuels RCS. Monté ICI (avec `requireAuth`) alors qu'il porte AUSSI une route publique `/m/<code>.<ext>` :
+  // les gardes de ce projet sont posées par route (`preHandler`), pas par groupe, donc la route de lecture
+  // reste ouverte comme elle doit l'être. C'est l'opérateur télécom qui télécharge l'image, sans session.
+  if (deps.rcsMedia) registerRcsMedia(app, deps.rcsMedia, requireAuth);
   // Templates : la LISTE (GET) doit rester lisible par l'agent — l'inbox en a besoin pour envoyer
   // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
   // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.

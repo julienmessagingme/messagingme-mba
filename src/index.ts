@@ -64,6 +64,9 @@ import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
+import { PgRcsMediaStore } from './rcs/media-store.pg';
+import { urlImageRcs } from './rcs/image';
+import { newMediaCode } from './ids/code';
 import { verifierCleRcs, fetchGet } from './rcs/channel-info';
 import { estDemandeArret, apercuMo } from './rcs/callback';
 import { EmailAccountResolver } from './email/resolver';
@@ -130,6 +133,7 @@ async function main(): Promise<void> {
   const emailAccounts = new PgEmailAccountStore(pool);
   const emailTemplates = new PgEmailTemplateStore(pool);
   const rcsMessageStore = new PgRcsMessageStore(pool);
+  const rcsMediaStore = new PgRcsMediaStore(pool);
   const emailResolver = new EmailAccountResolver({
     getDecrypted: (t, id) => emailAccounts.getDecrypted(t, id),
     buildTransport: buildEmailTransport,
@@ -745,6 +749,20 @@ async function main(): Promise<void> {
           console.error('avance de scénario sur réponse RCS ignorée:', err instanceof Error ? err.message : err);
         }
       },
+    },
+    /**
+     * Visuels des messages RCS. Le téléversement rend directement l'URL PUBLIQUE : c'est tout l'intérêt,
+     * l'opérateur télécom va chercher l'image lui-même et personne n'a à trouver où l'héberger.
+     */
+    rcsMedia: {
+      list: (tenant) => rcsMediaStore.list(tenant),
+      create: async (tenant, input) => {
+        const code = newMediaCode();
+        const media = await rcsMediaStore.create(tenant, { ...input, code });
+        return { media, url: urlImageRcs(config.APP_URL, code, input.mime) };
+      },
+      remove: (tenant, id) => rcsMediaStore.remove(tenant, id),
+      getByCode: (code) => rcsMediaStore.getByCode(code),
     },
     rcsMessages: {
       list: (tenant) => rcsMessageStore.list(tenant),
