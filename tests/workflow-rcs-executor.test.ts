@@ -304,4 +304,74 @@ describe('bloc RCS a l execution', () => {
     expect(await executor.rcsDelivered('t1', '33600000002', 'msg-smsmode-5')).toBe(false);
     expect(tags).toEqual([]);
   });
+
+  /**
+   * CE QUI SE PASSE APRÈS UN PREMIER BLOC RCS. Question de Julien du 2026-08-24, verifiee ici plutot
+   * qu'affirmee : brancher un envoi derriere un bloc RCS, est-ce que ca part ?
+   *
+   * Reponse mesuree : un TEMPLATE part (il n'a besoin d'aucune fenetre), un message de SESSION ne part pas si
+   * le contact n'a pas ecrit sur WhatsApp depuis 24 h, ce qui est le cas normal quand l'echange a eu lieu en
+   * RCS. Ce n'est pas un defaut de notre code, c'est la regle de WhatsApp ; ce qui compte est que le parcours
+   * ne fasse pas SEMBLANT d'avoir envoye.
+   */
+  it('un TEMPLATE branche derriere « envoye » part bien quand le rapport de livraison arrive', async () => {
+    const g = parseGraph({
+      nodes: [
+        { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour en RCS' } },
+        { id: 'tpl', type: 'template', position: pos, data: { templateName: 'suite', language: 'fr' } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'tpl', sourceHandle: 'sent' }],
+    })!;
+    const { templates, executor } = monter(g, [], true, 'r');
+    expect(await executor.rcsDelivered('t1', '33600000002', 'msg-1')).toBe(true);
+    expect(templates).toEqual(['suite']);
+  });
+
+  it('un TEMPLATE branche derriere un BOUTON part quand le contact tape ce bouton', async () => {
+    const g = parseGraph({
+      nodes: [
+        {
+          id: 'r', type: 'rcs_message', position: pos,
+          data: { text: 'Bonjour', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'oui' }] },
+        },
+        { id: 'tpl', type: 'template', position: pos, data: { templateName: 'apres-clic', language: 'fr' } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'tpl', sourceHandle: 'btn:0' }],
+    })!;
+    const { templates, executor } = monter(g, [], true, 'r');
+    // C'est exactement ce que le webhook de reponses appelle quand smsmode renvoie le clic.
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0');
+    expect(templates).toEqual(['apres-clic']);
+  });
+
+  /**
+   * 🔴 Le piege a connaitre. Un message rapide est un message de SESSION WhatsApp : Meta le refuse hors de la
+   * fenetre de 24 h (131047), et cette fenetre court depuis le dernier message du contact SUR WHATSAPP. Un
+   * contact qui vient de cliquer un bouton RCS n'a rien ecrit sur WhatsApp : la fenetre est donc fermee.
+   *
+   * Le parcours ne fait pas semblant : l'envoi est refuse, le run est clos et la conversation remonte a un
+   * humain. Ce test fige ce comportement pour qu'il ne devienne pas silencieux.
+   */
+  it('un MESSAGE RAPIDE branche derriere un bloc RCS est refuse par Meta, et la conversation remonte', async () => {
+    const g = parseGraph({
+      nodes: [
+        { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour' } },
+        { id: 'qm', type: 'quick_message', position: pos, data: { body: 'Ca vous va ?', quickReplies: ['Oui', 'Non'] } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'qm', sourceHandle: 'sent' }],
+    })!;
+    const { deps, executor: _ignore } = monter(g, [], true, 'r');
+    const remontees: string[] = [];
+    const etats: Array<Record<string, unknown>> = [];
+    const executor = new WorkflowExecutor({
+      ...deps,
+      // Le refus de Meta hors fenetre, tel que le worker le remonte : une CHAINE portant la raison.
+      sendQuickMessage: async () => 'fenêtre de 24 h fermée (131047)',
+      escalateToHuman: async (_t, waId) => { remontees.push(waId); },
+      runs: { ...deps.runs, setState: async (_id, state) => { etats.push({ ...state }); } },
+    });
+    await executor.rcsDelivered('t1', '33600000002', 'msg-2');
+    expect(remontees).toEqual(['33600000002']);
+    expect(etats.at(-1)).toMatchObject({ status: 'inbox', currentNode: null });
+  });
 });

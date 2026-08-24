@@ -66,6 +66,16 @@ function messageNonBloquant(node: GraphNodeLike): boolean {
 export interface OpeningScan {
   /** Un message de SESSION part-il avant tout template ? */
   sessionOpen: boolean;
+  /**
+   * Un bloc RCS CONFIGURÉ ouvre-t-il le scénario ? C'est une ouverture LÉGALE À FROID, au même titre qu'un
+   * template et à la différence d'un message de session : la fenêtre de 24 h est une contrainte de WhatsApp,
+   * et le RCS ne passe pas par WhatsApp.
+   *
+   * 🔴 Vécu le 2026-08-24 : un scénario commençant par un bloc RCS n'apparaissait PAS dans le sélecteur de
+   * l'Inbox quand la fenêtre était fermée, c'est-à-dire précisément là où il était le plus utile. La règle
+   * « seul un template peut ouvrir à froid » avait été écrite quand WhatsApp était le seul canal.
+   */
+  rcsOpen: boolean;
   /** Le 1er template atteignable (parcours en largeur depuis l'entrée). */
   firstTemplate: GraphNodeLike | null;
   /** Plusieurs templates DIFFÉRENTS peuvent ouvrir -> aucune ouverture unique à paramétrer. */
@@ -79,7 +89,7 @@ export interface OpeningScan {
 /** Miroir exact de `scanOpening` côté serveur. Parcours en LARGEUR : « le premier template » doit être le plus
  *  proche de l'entrée, pas le premier inséré dans le tableau de blocs. */
 export function scanOpening(graph: GraphLike): OpeningScan {
-  const out: OpeningScan = { sessionOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
+  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
   const entry = entryNodeOf(graph);
   if (!entry) return out;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -103,6 +113,16 @@ export function scanOpening(graph: GraphLike): OpeningScan {
     }
     if (node.type === 'flow' || node.type === 'quick_message') {
       if (envoieVraiment(node)) out.sessionOpen = true;
+      continue;
+    }
+    if (node.type === 'rcs_message') {
+      // Miroir exact du serveur : ouverture à froid légale, et on explore au-delà pour retrouver le template
+      // de repli branché sur « non joignable ».
+      if (String(node.data.text ?? '').trim() !== '' && !out.waitBeforeTemplate) out.rcsOpen = true;
+      for (const h of ['sent', 'unreachable']) {
+        const c = cibleParSortie(graph, id, h);
+        if (c) queue.push(c);
+      }
       continue;
     }
     if (node.type === 'wait') out.waitBeforeTemplate = true;
@@ -136,8 +156,39 @@ export function firstTemplateOf(graph: GraphLike): GraphNodeLike | null {
 export function isCampaignEligible(graph: GraphLike): boolean {
   const scan = scanOpening(graph);
   if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return false;
+  // Un bloc RCS configuré ouvre à froid : il ne dépend d'aucune fenêtre de 24 h. Testé APRÈS les refus
+  // ci-dessus, qui restent des refus (une attente avant l'ouverture, une ouverture ambiguë).
+  if (scan.rcsOpen) return true;
   if (!scan.firstTemplate) return false;
   return String(scan.firstTemplate.data.templateName ?? '').trim() !== '';
+}
+
+/**
+ * Un message de SESSION branché derrière un bloc RCS.
+ *
+ * 🔴 Ce montage ne part QUE si le contact a écrit sur WhatsApp dans les 24 h. Or un contact qui vient de
+ * cliquer un bouton RCS n'a rien écrit sur WhatsApp : la fenêtre est fermée, Meta refuse (131047), le
+ * parcours s'arrête et la conversation remonte à un humain. Mesuré le 2026-08-24.
+ *
+ * Ce n'est pas un défaut de notre code, c'est la règle de WhatsApp, et le montage reste légitime quand le
+ * contact vient d'écrire. On le SIGNALE donc au lieu de l'interdire : c'est exactement le traitement réservé
+ * à « attente >= 24 h puis message de session ».
+ *
+ * Rendu : les identifiants du bloc RCS et du message concernés, ou null.
+ */
+export function sessionMessageAfterRcs(graph: GraphLike): { rcsNodeId: string; messageNodeId: string } | null {
+  const byId = new Map(graph.nodes.map((nd) => [nd.id, nd]));
+  for (const rcs of graph.nodes.filter((nd) => nd.type === 'rcs_message')) {
+    // On ne regarde QUE les successeurs directs : au-delà, un template ou une attente change la donne, et
+    // signaler trop large ferait ignorer l'alerte.
+    for (const arete of graph.edges.filter((ed) => ed.source === rcs.id)) {
+      const suivant = byId.get(arete.target);
+      if (suivant && (suivant.type === 'quick_message' || suivant.type === 'flow') && envoieVraiment(suivant)) {
+        return { rcsNodeId: rcs.id, messageNodeId: suivant.id };
+      }
+    }
+  }
+  return null;
 }
 
 /** Un montage impossible : attente qui ferme forcément la fenêtre, puis message de session. */

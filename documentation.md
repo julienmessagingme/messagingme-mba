@@ -590,6 +590,33 @@ journalisé), jamais le message : sans cette garde, un contact sans rendez-vous 
 sont conservés et rendus lisibles dans le fil d'inbox par `apercuMo`. Sans cela, la réponse ne serait qu'une
 bulle vide et l'information demandée serait perdue.
 
+### 🔴 Ce qui peut OUVRIR un scénario, et ce qui peut le SUIVRE
+
+Deux règles distinctes, longtemps confondues parce que WhatsApp était le seul canal.
+
+**Ouvrir.** Une campagne, comme un lancement depuis l'Inbox hors fenêtre, part sur un contact qui n'a rien
+écrit récemment. Peuvent donc ouvrir : un **template** WhatsApp configuré, ou un **bloc RCS** configuré
+(`scanOpening.rcsOpen`). Le RCS n'a aucune fenêtre : la contrainte des 24 h appartient à WhatsApp.
+
+⚠️ Vécu le 2026-08-24 : un scénario commençant par un bloc RCS n'apparaissait PAS dans le sélecteur de
+l'Inbox quand la fenêtre était fermée, c'est-à-dire précisément quand il servait. La règle « seul un template
+peut ouvrir à froid » datait d'avant le canal RCS. Les DEUX miroirs (`src/workflow/engine.ts` et
+`web/lib/campaign-eligibility.ts`) portent maintenant `rcsOpen`, et le test de parité compare les deux sur des
+graphes RCS.
+
+**Suivre.** Après un bloc RCS, mesuré :
+
+| Bloc branché derrière | Résultat |
+| --- | --- |
+| **template** WhatsApp | part (aucune fenêtre requise) |
+| **autre bloc RCS** | part |
+| **message rapide / formulaire** | **refusé par Meta** si le contact n'a pas écrit SUR WHATSAPP depuis 24 h |
+
+Répondre à un message RCS ne rouvre pas la fenêtre WhatsApp : ce sont deux tuyaux distincts. Le parcours ne
+fait pas semblant, il clôt le run et remonte la conversation à un humain, avec la raison en journal. Le
+builder SIGNALE ce montage (`sessionMessageAfterRcs`) sans l'interdire, puisqu'il reste légitime quand le
+contact vient d'écrire, exactement comme « attente >= 24 h puis message de session ».
+
 ### Envoyer un RCS depuis l'Inbox
 
 `POST /tenants/:id/conversations/:cid/send-rcs`, avec l'identifiant d'un message de la bibliothèque.

@@ -900,6 +900,11 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   refus (canal éteint, contact désabonné) s'affiche avec sa raison.
 - **Les variables s'insèrent comme dans un template WhatsApp** : bouton « + Variable », on choisit le champ,
   et il apparaît comme une étiquette lisible dans le texte, pas comme des accolades.
+- **Un scénario peut COMMENCER par un message RCS**, et se lancer même quand la fenêtre WhatsApp de 24 h est
+  fermée : le RCS n'a pas de fenêtre. Ce qui suit le bloc RCS part aussi, à une exception près que l'éditeur
+  signale : un **message rapide** ou un **formulaire** WhatsApp placé juste derrière ne partira que si le
+  contact a écrit **sur WhatsApp** dans les 24 h, car répondre en RCS ne rouvre pas cette fenêtre. Pour
+  enchaîner à coup sûr : un template, ou un autre message RCS.
 - ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.

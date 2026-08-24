@@ -213,10 +213,30 @@ describe('POST /tenants/:tenantId/campaigns', () => {
   const nd = (id: string, type: string, data: Record<string, unknown> = {}) => ({ id, type: type as WorkflowGraph['nodes'][number]['type'], position: { x: 0, y: 0 }, data });
   const ed = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
 
-  it('workflow SANS aucun envoi de template -> 400, rien inséré', async () => {
+  it('workflow SANS aucun envoi en ouverture -> 400, rien inséré', async () => {
     const { res, repo } = await postAvecGraphe({ nodes: [nd('n1', 'tag', { tag: 'vip' })], edges: [] });
     expect(res.statusCode).toBe(400);
-    expect(res.json<{ error: string }>().error).toMatch(/template en ouverture/);
+    expect(res.json<{ error: string }>().error).toMatch(/doit ouvrir par un envoi/);
+    expect(repo.created).toHaveLength(0);
+  });
+
+  /**
+   * 🔴 Un scénario qui OUVRE PAR UN BLOC RCS est lançable à froid. La fenêtre de 24 h est une contrainte de
+   * WhatsApp, et le RCS ne passe pas par WhatsApp : exiger un template en ouverture fermait la porte à toute
+   * campagne RCS par scénario, alors que c'est exactement l'usage du canal.
+   */
+  it('workflow qui ouvre par un bloc RCS -> ACCEPTÉ, sans template à paramétrer', async () => {
+    const { res, repo } = await postAvecGraphe({
+      nodes: [nd('r', 'rcs_message', { text: 'Bonjour, notre offre' })],
+      edges: [],
+    });
+    expect(res.statusCode).toBe(201);
+    expect(repo.created).toHaveLength(1);
+  });
+
+  it('workflow qui ouvre par un bloc RCS VIDE -> 400 (rien ne partirait)', async () => {
+    const { res, repo } = await postAvecGraphe({ nodes: [nd('r', 'rcs_message', { text: '  ' })], edges: [] });
+    expect(res.statusCode).toBe(400);
     expect(repo.created).toHaveLength(0);
   });
 

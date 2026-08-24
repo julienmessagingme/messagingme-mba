@@ -874,7 +874,7 @@ function ScenarioSendPanel({
         <p className="mt-1 text-xs text-ink-500">
           {windowOpen
             ? t('Le contact a écrit il y a moins de 24 h : tous tes scénarios peuvent partir.', 'The contact wrote less than 24h ago: any of your scenarios can run.')
-            : t('Fenêtre de 24 h fermée : seuls les scénarios qui commencent par un template peuvent partir.', '24-hour window closed: only scenarios starting with a template can run.')}
+            : t('Fenêtre de 24 h fermée : seuls les scénarios qui ouvrent par un template ou par un message RCS peuvent partir.', '24-hour window closed: only scenarios opening with a template or an RCS message can run.')}
         </p>
 
         <div className="mt-3">
@@ -883,7 +883,7 @@ function ScenarioSendPanel({
             <p className="text-xs text-amber-700" data-testid="scenario-none">
               {total === 0
                 ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario yet. Create one from the "Scenario" menu on the left.')
-                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il commence par l'envoi d'un template (un tag, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to start by sending a template (a tag, an action or a condition before it is fine).')}
+                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il ouvre par l'envoi d'un template, ou par un message RCS, qui lui n'a pas de fenêtre (un tag, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to open by sending a template, or an RCS message, which has no window (a tag, an action or a condition before it is fine).')}
             </p>
           ) : (
             <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">

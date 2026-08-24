@@ -45,6 +45,16 @@ export type WorkflowAction =
 export interface OpeningScan {
   /** Un message de SESSION (message rapide / formulaire) part-il avant tout template ? */
   sessionOpen: boolean;
+  /**
+   * Un bloc RCS CONFIGURÉ ouvre-t-il le scénario ? C'est une ouverture LÉGALE À FROID, au même titre qu'un
+   * template et à la différence d'un message de session : la fenêtre de 24 h est une contrainte de WhatsApp,
+   * et le RCS ne passe pas par WhatsApp.
+   *
+   * 🔴 Vécu le 2026-08-24 : un scénario commençant par un bloc RCS n'apparaissait PAS dans le sélecteur de
+   * l'Inbox quand la fenêtre était fermée, c'est-à-dire précisément là où il était le plus utile. La règle
+   * « seul un template peut ouvrir à froid » avait été écrite quand WhatsApp était le seul canal.
+   */
+  rcsOpen: boolean;
   /** Le 1er template atteignable (parcours en LARGEUR : l'ordre reflète la proximité de l'entrée). */
   firstTemplate: WorkflowNode | null;
   /** Plusieurs templates DIFFÉRENTS peuvent ouvrir (branches d'une condition) -> aucune ouverture unique. */
@@ -65,7 +75,7 @@ export interface OpeningScan {
  * de variables d'une campagne viserait un template arbitraire selon l'ordre d'insertion des blocs.
  */
 export function scanOpening(graph: WorkflowGraph): OpeningScan {
-  const out: OpeningScan = { sessionOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
+  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false };
   const entry = entryNode(graph);
   if (!entry) return out;
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -93,6 +103,18 @@ export function scanOpening(graph: WorkflowGraph): OpeningScan {
       const a = actionOf(node);
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) out.sessionOpen = true;
       continue; // bloc bloquant NON configuré (pas d'action) : pas une ouverture, et on ne va pas au-delà
+    }
+    if (node.type === 'rcs_message') {
+      // Ouverture à froid LÉGALE. `waitBeforeTemplate` est consulté ici parce que le parcours est en LARGEUR :
+      // une attente placée AVANT ce bloc a donc déjà été vue, et dans ce cas rien ne part au lancement.
+      if (String(node.data.text ?? '').trim() !== '' && !out.waitBeforeTemplate) out.rcsOpen = true;
+      // On explore AU-DELÀ : la sortie « non joignable » mène souvent au template de repli, et c'est CE
+      // template que la campagne doit savoir paramétrer.
+      for (const h of ['sent', 'unreachable']) {
+        const c = nextNodeByHandle(graph, id, h);
+        if (c) queue.push(c);
+      }
+      continue;
     }
     if (node.type === 'wait') out.waitBeforeTemplate = true; // traversé, mais rien ne partira au lancement
     if (node.type === 'condition') {

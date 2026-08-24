@@ -253,16 +253,25 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (scan.waitBeforeTemplate) {
         return reply.code(400).send({ error: "Ce scénario attend avant son premier envoi : rien ne partirait au lancement. Pour différer une campagne, utilise « Plus tard » au moment de la lancer." });
       }
-      if (!scan.firstTemplate) {
-        return reply.code(400).send({ error: 'Le scénario doit envoyer un template en ouverture.' });
+      // Un bloc RCS configuré ouvre à froid : il ne passe pas par WhatsApp, donc aucune fenêtre de 24 h ne
+      // s'y applique. Exiger un template en ouverture fermait la porte à toute campagne RCS par scénario.
+      if (!scan.firstTemplate && !scan.rcsOpen) {
+        return reply.code(400).send({ error: 'Le scénario doit ouvrir par un envoi : un template WhatsApp, ou un message RCS.' });
       }
-      if (scan.ambiguousTemplate) {
-        return reply.code(400).send({ error: "Ce scénario peut ouvrir sur plusieurs templates différents : impossible de savoir lequel paramétrer pour la campagne." });
-      }
-      // `unnamedOpeningTemplate` couvre AUSSI les branches : une condition dont une sortie mène à un template
-      // sans nom laisserait ces destinataires sans message, tout en les comptant « envoyés ».
-      if (scan.unnamedOpeningTemplate || String(scan.firstTemplate.data.templateName ?? '').trim() === '') {
-        return reply.code(400).send({ error: "Un template d'ouverture du scénario n'est pas encore choisi." });
+      // Les trois contrôles suivants portent sur le TEMPLATE d'ouverture : ils n'ont de sens que s'il y en a
+      // un. Un scénario qui ouvre en RCS n'a aucun template à paramétrer.
+      //
+      // ⚠️ Surtout PAS un `return` nu ici : on est dans un handler Fastify, sortir sans répondre laisserait la
+      // requête pendante jusqu'au timeout.
+      if (scan.firstTemplate) {
+        if (scan.ambiguousTemplate) {
+          return reply.code(400).send({ error: "Ce scénario peut ouvrir sur plusieurs templates différents : impossible de savoir lequel paramétrer pour la campagne." });
+        }
+        // `unnamedOpeningTemplate` couvre AUSSI les branches : une condition dont une sortie mène à un template
+        // sans nom laisserait ces destinataires sans message, tout en les comptant « envoyés ».
+        if (scan.unnamedOpeningTemplate || String(scan.firstTemplate.data.templateName ?? '').trim() === '') {
+          return reply.code(400).send({ error: "Un template d'ouverture du scénario n'est pas encore choisi." });
+        }
       }
     } else if (!isRcs) {
       if (!nonEmpty(b.templateName)) return reply.code(400).send({ error: 'templateName ou workflowId requis' });

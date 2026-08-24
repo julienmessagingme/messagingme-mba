@@ -22,7 +22,7 @@ import { RcsBodyField } from '@/components/RcsBodyField';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
-import { isCampaignEligible, waitBeforeSessionMessage, entryNodeOf } from '@/lib/campaign-eligibility';
+import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
@@ -591,6 +591,10 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   // Montage qui ne partira JAMAIS : attente >= 24 h puis message hors template. Nommé au constructeur plutôt
   // que découvert par le silence en production. N'empêche PAS l'enregistrement (le builder sauve en continu).
   const montageImpossible = useMemo(() => waitBeforeSessionMessage(graphe), [graphe]);
+  // Message de session derrière un bloc RCS : il ne partira que si le contact a écrit sur WhatsApp dans les
+  // 24 h, ce qu'un clic sur un bouton RCS ne fait pas. Signalé, jamais interdit : le montage est légitime
+  // quand le contact vient d'écrire.
+  const sessionApresRcs = useMemo(() => sessionMessageAfterRcs(graphe), [graphe]);
   const nomDuBloc = (id: string): string => {
     const n = nodes.find((x) => x.id === id);
     const propre = String(n?.data?.name ?? '').trim();
@@ -682,6 +686,16 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {t(
             `Le bloc « ${nomDuBloc(montageImpossible.waitNodeId)} » attend 24 h ou plus, puis « ${nomDuBloc(montageImpossible.messageNodeId)} » envoie un message hors template. Passé 24 h sans nouveau message du contact, WhatsApp n'accepte plus qu'un template. Remplace ce bloc par un envoi de template, ou raccourcis l'attente.`,
             `Block “${nomDuBloc(montageImpossible.waitNodeId)}” waits 24h or more, then “${nomDuBloc(montageImpossible.messageNodeId)}” sends a non-template message. After 24h without a new message from the contact, WhatsApp only accepts templates. Replace that block with a template, or shorten the wait.`,
+          )}
+        </div>
+      )}
+
+      {sessionApresRcs && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="alerte-session-apres-rcs">
+          <b>{t('Ce montage ne partira pas toujours.', 'This setup will not always be sent.')}</b>{' '}
+          {t(
+            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » est un message WhatsApp de session, branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». WhatsApp ne l'accepte que si le contact a écrit SUR WHATSAPP dans les 24 h : répondre à un message RCS ne rouvre pas cette fenêtre. Pour enchaîner à coup sûr, utilise un envoi de template, ou un autre message RCS.`,
+            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” is a WhatsApp session message, wired after the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”. WhatsApp only accepts it if the contact wrote ON WHATSAPP within 24h: replying to an RCS message does not reopen that window. To chain reliably, use a template, or another RCS message.`,
           )}
         </div>
       )}

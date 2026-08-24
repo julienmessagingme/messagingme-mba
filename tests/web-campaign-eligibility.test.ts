@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { entryNodeOf, isCampaignEligible, firstTemplateOf, scanOpening, waitBeforeSessionMessage } from '../web/lib/campaign-eligibility';
+import {
+  entryNodeOf, isCampaignEligible, firstTemplateOf, scanOpening, waitBeforeSessionMessage, sessionMessageAfterRcs,
+} from '../web/lib/campaign-eligibility';
 import { scanOpening as scanServeur, waitBeforeSessionMessage as waitBeforeSessionMessageServeur } from '../src/workflow/engine';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { GraphLike, GraphNodeLike } from '../web/lib/campaign-eligibility';
@@ -40,6 +42,40 @@ describe('isCampaignEligible', () => {
   it('entrée template NON configurée (nom vide ou absent) -> NON éligible (échouerait au lancement)', () => {
     expect(isCampaignEligible(g([n('a', 'template', { templateName: '   ' })]))).toBe(false);
     expect(isCampaignEligible(g([n('a', 'template')]))).toBe(false);
+  });
+
+  /**
+   * 🔴 LE bug du 2026-08-24. Un scénario qui commence par un bloc RCS n'apparaissait pas dans le selecteur de
+   * l'Inbox quand la fenetre WhatsApp etait fermee, c'est-a-dire precisement quand il servait. La fenetre de
+   * 24 h est une contrainte de WhatsApp ; le RCS ne passe pas par WhatsApp.
+   */
+  it('entrée bloc RCS CONFIGURÉ -> éligible, sans aucun template', () => {
+    expect(isCampaignEligible(g([n('r', 'rcs_message', { text: 'Bonjour' })]))).toBe(true);
+    expect(firstTemplateOf(g([n('r', 'rcs_message', { text: 'Bonjour' })]))).toBeNull();
+  });
+
+  it('entrée bloc RCS VIDE -> NON éligible (rien ne partirait)', () => {
+    expect(isCampaignEligible(g([n('r', 'rcs_message', { text: '  ' })]))).toBe(false);
+    expect(isCampaignEligible(g([n('r', 'rcs_message')]))).toBe(false);
+  });
+
+  // La cascade : le RCS ouvre, et « non joignable » mène au template de repli. Le scénario reste éligible ET
+  // la campagne retrouve le template dont elle doit mapper les variables.
+  it('RCS puis repli WhatsApp -> éligible, et le template de repli reste identifié', () => {
+    const cascade = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'repli' })],
+      [{ id: 'e', source: 'r', target: 't', sourceHandle: 'unreachable' }],
+    );
+    expect(isCampaignEligible(cascade)).toBe(true);
+    expect(firstTemplateOf(cascade)?.id).toBe('t');
+  });
+
+  it('une ATTENTE avant le bloc RCS -> NON éligible (rien ne part au lancement)', () => {
+    const attente = g(
+      [n('w', 'wait', { delay: 2, unit: 'hours' }), n('r', 'rcs_message', { text: 'Bonjour' })],
+      [{ id: 'e', source: 'w', target: 'r' }],
+    );
+    expect(isCampaignEligible(attente)).toBe(false);
   });
 
   it('entrée formulaire / message rapide -> NON éligible (une campagne part hors fenêtre 24 h)', () => {
@@ -118,6 +154,53 @@ describe('éligibilité : on juge sur ce qui OUVRE, pas sur le bloc d’entrée'
   });
 });
 
+/**
+ * Un message de SESSION branche derriere un bloc RCS. Mesure du 2026-08-24 : ce montage ne part QUE si le
+ * contact a ecrit sur WHATSAPP dans les 24 h, et repondre a un RCS ne rouvre pas cette fenetre. On le
+ * SIGNALE dans le builder au lieu de l'interdire : il reste legitime quand le contact vient d'ecrire.
+ */
+describe('sessionMessageAfterRcs', () => {
+  it('message rapide juste apres un bloc RCS -> signale', () => {
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('q', 'quick_message', { body: 'Ca vous va ?', quickReplies: ['Oui'] })],
+      [{ id: 'e', source: 'r', target: 'q', sourceHandle: 'sent' }],
+    );
+    expect(sessionMessageAfterRcs(graph)).toEqual({ rcsNodeId: 'r', messageNodeId: 'q' });
+  });
+
+  it('formulaire juste apres un bloc RCS -> signale aussi', () => {
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('f', 'flow', { flowId: 'fl1' })],
+      [{ id: 'e', source: 'r', target: 'f', sourceHandle: 'btn:0' }],
+    );
+    expect(sessionMessageAfterRcs(graph)?.messageNodeId).toBe('f');
+  });
+
+  it('TEMPLATE apres un bloc RCS -> rien a signaler (un template n a pas besoin de la fenetre)', () => {
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'suite' })],
+      [{ id: 'e', source: 'r', target: 't', sourceHandle: 'sent' }],
+    );
+    expect(sessionMessageAfterRcs(graph)).toBeNull();
+  });
+
+  it('message rapide NON configure -> rien a signaler (il n envoie rien)', () => {
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('q', 'quick_message', {})],
+      [{ id: 'e', source: 'r', target: 'q', sourceHandle: 'sent' }],
+    );
+    expect(sessionMessageAfterRcs(graph)).toBeNull();
+  });
+
+  it('message rapide LOIN derriere (apres un template) -> rien a signaler', () => {
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'suite' }), n('q', 'quick_message', { body: 'Alors ?' })],
+      [{ id: 'e1', source: 'r', target: 't', sourceHandle: 'sent' }, { id: 'e2', source: 't', target: 'q' }],
+    );
+    expect(sessionMessageAfterRcs(graph)).toBeNull();
+  });
+});
+
 describe('parité front / serveur du parcours d’ouverture', () => {
   // Les deux implémentations vivent de part et d'autre d'une frontière de build (Next / API) et ne partagent
   // aucun module. Si elles divergent, le sélecteur propose un scénario que le serveur refuse au clic, ou cache
@@ -143,6 +226,14 @@ describe('parité front / serveur du parcours d’ouverture', () => {
     ['template d ouverture SANS nom', g([n('t', 'template', {})])],
     ['condition -> template nommé / template sans nom', g([n('c', 'condition', {}), TPL('t1', 'promo'), n('t2', 'template', {})], [e('c', 't1', 'true'), e('c', 't2', 'false')])],
     ['deux attentes en cycle', g([n('w1', 'wait', { delay: 1, unit: 'hours' }), n('w2', 'wait', { delay: 1, unit: 'hours' })], [e('w1', 'w2'), e('w2', 'w1')])],
+    // Ouverture RCS : le canal n'a pas de fenetre de 24 h, donc un bloc RCS configure ouvre a froid. Les deux
+    // cotes doivent le voir pareil, y compris la CASCADE dont le template de repli reste a parametrer.
+    ['bloc RCS seul', g([n('r', 'rcs_message', { text: 'Bonjour' })])],
+    ['bloc RCS vide', g([n('r', 'rcs_message', { text: '  ' })])],
+    ['RCS puis repli template sur « non joignable »', g([n('r', 'rcs_message', { text: 'Bonjour' }), TPL('t')], [e('r', 't', 'unreachable')])],
+    ['RCS puis suite sur « envoye »', g([n('r', 'rcs_message', { text: 'Bonjour' }), n('a', 'tag', { tag: 'v' })], [e('r', 'a', 'sent')])],
+    ['attente puis RCS', g([n('w', 'wait', { delay: 2, unit: 'hours' }), n('r', 'rcs_message', { text: 'Bonjour' })], [e('w', 'r')])],
+    ['condition -> RCS / template', g([n('c', 'condition', {}), n('r', 'rcs_message', { text: 'Bonjour' }), TPL('t')], [e('c', 'r', 'true'), e('c', 't', 'false')])],
   ];
 
   it('même verdict des deux côtés sur chaque graphe', () => {
@@ -150,6 +241,7 @@ describe('parité front / serveur du parcours d’ouverture', () => {
       const web = scanOpening(graph);
       const api = scanServeur(graph as unknown as WorkflowGraph);
       expect(web.sessionOpen, `sessionOpen sur « ${nom} »`).toBe(api.sessionOpen);
+      expect(web.rcsOpen, `rcsOpen sur « ${nom} »`).toBe(api.rcsOpen);
       expect(web.ambiguousTemplate, `ambiguousTemplate sur « ${nom} »`).toBe(api.ambiguousTemplate);
       expect(web.waitBeforeTemplate, `waitBeforeTemplate sur « ${nom} »`).toBe(api.waitBeforeTemplate);
       expect(web.unnamedOpeningTemplate, `unnamedOpeningTemplate sur « ${nom} »`).toBe(api.unnamedOpeningTemplate);
