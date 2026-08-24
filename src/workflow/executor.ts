@@ -7,7 +7,7 @@ import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow, RunChannel } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
-import { rcsSuggestionSchema } from '../rcs/schema';
+import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
 
 /**
@@ -116,6 +116,14 @@ export interface WorkflowExecutorDeps {
      * ne paie aucune requête.
      */
     varsFor?(tenantId: string, waId: string): Promise<Record<string, string | null>>;
+    /**
+     * Journalise l'envoi RCS dans le FIL de conversation, comme le font déjà les envois WhatsApp d'un
+     * scénario (`wiring.ts`). Sans elle, un message RCS parti par un scénario n'apparaissait nulle part dans
+     * l'Inbox : l'opérateur voyait la réponse du contact sans jamais voir la question.
+     *
+     * Best-effort chez l'appelant : un échec de journal ne doit jamais faire échouer un envoi déjà parti.
+     */
+    recordOutbound?(tenantId: string, waId: string, msg: { body: string; messageId: string }): Promise<void>;
   };
   /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
   now?: () => number;
@@ -311,12 +319,28 @@ export class WorkflowExecutor {
     // Variables résolues comme pour un bloc RCS : le contact doit lire son prénom, pas des accolades.
     const msg = rcs.varsFor && aDesVariables(brut) ? appliquerVariables(brut, await rcs.varsFor(tenantId, waId)) : brut;
     const out = await rcs.sender.sendTo(tenantId, agentId, waId, msg, randomUUID());
+    if (!('skipped' in out)) await this.journaliserRcs(tenantId, waId, msg, out.messageId);
     if ('skipped' in out) {
       return out.skipped === 'rcs_optout'
         ? 'le contact s’est désabonné du RCS'
         : "le contact n'est pas joignable en RCS";
     }
     return { messageId: out.messageId };
+  }
+
+  /**
+   * Écrit l'envoi RCS dans le fil de conversation. Best-effort STRICT : le message est DÉJÀ parti chez
+   * l'opérateur télécom quand on arrive ici, un incident de journal ne doit donc jamais le faire passer pour
+   * un échec.
+   */
+  private async journaliserRcs(tenantId: string, waId: string, msg: RcsOutbound, messageId: string): Promise<void> {
+    if (!this.deps.rcs?.recordOutbound) return;
+    try {
+      await this.deps.rcs.recordOutbound(tenantId, waId, { body: apercuRcsSortant(msg), messageId });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`journal du message RCS ignoré pour ${waId}:`, err instanceof Error ? err.message : err);
+    }
   }
 
   private async apply(
@@ -574,6 +598,7 @@ export class WorkflowExecutor {
           : brut;
         const out = await this.deps.rcs.sender.sendTo(tenantId, agentId, waId, msg, `${sendKey}:${nodeId}`);
         envoye = !('skipped' in out);
+        if (!('skipped' in out)) await this.journaliserRcs(tenantId, waId, msg, out.messageId);
       }
       // 🔴 Le parcours bascule sur le canal RCS UNIQUEMENT si le message est vraiment parti. Un envoi sauté
       // (contact désabonné, agent absent) part au repli, qui est WhatsApp : le canal ne doit pas suivre une

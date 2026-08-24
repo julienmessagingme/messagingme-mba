@@ -268,6 +268,10 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // Variables `{{champ}}` d'un message RCS : MÊME table que les modèles d'email, donc mêmes noms de
       // champs et mêmes règles. Hors base -> table vide, les variables rendent du vide au lieu de bloquer.
       varsFor: async (tenant, waId) => contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}),
+      // Le message RCS d'un scénario apparaît dans le FIL, comme un template ou un message rapide. La bulle
+      // porte son canal (`channel: 'rcs'`), c'est ce que l'Inbox dessine en vert RCS.
+      recordOutbound: (tenant, waId, msg) =>
+        inboxStore.recordOutboundByWaId(tenant, waId, { ...msg, type: 'rcs', channel: 'rcs' }),
     },
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).

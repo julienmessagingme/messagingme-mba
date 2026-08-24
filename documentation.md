@@ -657,6 +657,23 @@ Deux corvées supprimées le 2026-08-24, toutes deux du même genre : redemander
   retrouver l'URL de ce qu'il a choisi en créant le template. Le champ de saisie ne réapparaît que si le
   template n'en porte aucune (lien expiré chez Meta), et il le DIT alors.
 
+### Un envoi RCS apparaît dans le fil, quel que soit son déclencheur
+
+Les trois chemins écrivent la bulle dans la conversation, avec `channel = 'rcs'` (l'Inbox la dessine alors
+aux couleurs du canal) :
+
+| Déclencheur | Qui journalise |
+| --- | --- |
+| campagne RCS | `campaign/engine.ts` (`recordOutboundByWaId`) |
+| Inbox (bouton 📱) | la route `send-rcs` |
+| **bloc de scénario** | `rcs.recordOutbound`, câblé dans `wiring.ts` |
+
+⚠️ Le troisième manquait jusqu'au 2026-08-24 : un message RCS parti par un scénario n'apparaissait NULLE PART
+dans l'Inbox. L'opérateur voyait la réponse du contact sans jamais voir la question, ce qui rend une
+conversation illisible pour qui la reprend. Best-effort strict : le message est déjà parti chez l'opérateur
+télécom quand on journalise, un incident de journal ne doit pas le faire passer pour un échec. Un envoi SAUTÉ
+(opt-out, agent absent) n'écrit rien : il n'a rien montré au contact.
+
 ### Envoyer un RCS depuis l'Inbox
 
 `POST /tenants/:id/conversations/:cid/send-rcs`, avec l'identifiant d'un message de la bibliothèque.

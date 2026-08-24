@@ -44,6 +44,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
   const tags: string[] = [];
   const templates: string[] = [];
   const quickWhatsApp: string[] = [];
+  const fil: Array<{ body: string; messageId: string }> = [];
   const deps: WorkflowExecutorDeps = {
     getGraph: async () => graph,
     applyTag: async (_t, _w, tag) => {
@@ -71,10 +72,10 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
         : null),
     },
     ...(avecRcs
-      ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1', ...(vars ? { varsFor: async () => vars } : {}) } }
+      ? { rcs: { sender: rcsSender, agentIdFor: async () => 'agent-1', recordOutbound: async (_t: string, _w: string, m: { body: string; messageId: string }) => { fil.push(m); }, ...(vars ? { varsFor: async () => vars } : {}) } }
       : {}),
   };
-  return { provider, deps, etats, tags, templates, quickWhatsApp, executor: new WorkflowExecutor(deps) };
+  return { provider, deps, etats, tags, templates, quickWhatsApp, fil, executor: new WorkflowExecutor(deps) };
 }
 
 describe('bloc RCS a l execution', () => {
@@ -445,5 +446,40 @@ describe('bloc RCS a l execution', () => {
     await executor.rcsDelivered('t1', '33600000002', 'msg-2');
     expect(remontees).toEqual(['33600000002']);
     expect(etats.at(-1)).toMatchObject({ status: 'inbox', currentNode: null });
+  });
+
+  /**
+   * 🔴 Un message RCS parti par un SCENARIO doit apparaitre dans le fil, comme un template ou un message
+   * rapide. Signale par Julien le 2026-08-24 : il voyait la reponse du contact sans jamais voir la question,
+   * ce qui rend une conversation illisible pour l'operateur qui la reprend.
+   */
+  it('journalise le message RCS d un bloc dans le FIL de conversation', async () => {
+    const g = graphe();
+    const { fil, executor } = monter(g);
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(fil).toHaveLength(1);
+    expect(fil[0]!.body).toBe('Bonjour en RCS');
+    expect(fil[0]!.messageId).not.toBe('');
+  });
+
+  it('journalise aussi un message rapide parti EN RCS', async () => {
+    const g = parseGraph({
+      nodes: [
+        { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour', suggestions: [{ kind: 'reply', text: 'Oui', postbackData: 'o' }] } },
+        { id: 'qm', type: 'quick_message', position: pos, data: { body: 'Ca vous va ?', quickReplies: ['Oui', 'Non'] } },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'qm', sourceHandle: 'btn:0' }],
+    })!;
+    const { fil, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0');
+    expect(fil.map((m) => m.body)).toEqual(['Ca vous va ?']);
+  });
+
+  // Un envoi SAUTE n'a rien montre au contact : il n'a rien a faire dans le fil non plus.
+  it('n ecrit RIEN dans le fil quand l envoi est saute', async () => {
+    const g = graphe();
+    const { fil, executor } = monter(g, ['+33600000002']);
+    await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
+    expect(fil).toEqual([]);
   });
 });
