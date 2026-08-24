@@ -21,6 +21,7 @@ const BASE = {
   url: 'https://mba.messagingme.app/api/backend/w/ab12cd34ef56gh78jk90mn12pq',
   hasSecret: false, mapping: [] as Array<{ chemin: string; cible: string }>, createContact: true,
   workflowId: null as string | null, startNodeId: null, cooldownSeconds: null,
+  optIn: true,
   lastPayload: null as unknown, lastReceivedAt: null as string | null, contactsCreated: 0,
   createdAt: '2026-08-20T09:00:00.000Z',
 };
@@ -257,5 +258,39 @@ test.describe('Webhooks : le secret', () => {
     await page.getByRole('button', { name: /Générer un secret|Generate a secret/ }).click();
     await expect(page.getByTestId('webhook-secret')).toHaveText('whk_le_clair_du_secret');
     await expect(page.getByText(/il ne sera plus jamais affiché|it will never be shown again/i)).toBeVisible();
+  });
+});
+
+/**
+ * Consentement des contacts nés d'un webhook. C'est l'OPÉRATEUR qui l'affirme : nous ne pouvons pas le
+ * déduire du contenu reçu, et un consentement affirmé à tort ne se découvre qu'au moment d'une plainte.
+ */
+test.describe('Webhooks : le consentement', () => {
+  test('🔴 la case est COCHÉE par défaut sur un webhook neuf', async ({ page }) => {
+    await monter(page, BASE);
+    await page.getByRole('button', { name: 'Formulaire du site' }).click();
+    await expect(page.getByTestId('webhook-optin')).toBeChecked();
+  });
+
+  test('🔴 l’écran dit que c’est une AFFIRMATION, pas une déduction', async ({ page }) => {
+    // Sans ça, la case se lit comme un réglage anodin alors qu'elle engage sur le consentement.
+    await monter(page, BASE);
+    await page.getByRole('button', { name: 'Formulaire du site' }).click();
+    await expect(page.getByTestId('webhook-optin').locator('xpath=..')).toContainText(/vous qui l’affirmez|you are the one asserting/i);
+  });
+
+  test('🔴 décocher est ENVOYÉ au serveur', async ({ page }) => {
+    const etat = await monter(page, BASE);
+    await page.getByRole('button', { name: 'Formulaire du site' }).click();
+    await page.getByTestId('webhook-optin').uncheck();
+    await page.getByTestId('enregistrer-webhook').click();
+    await expect.poll(() => etat.patchs.length).toBeGreaterThan(0);
+    expect(etat.patchs[0]).toMatchObject({ optIn: false });
+  });
+
+  test('un webhook déjà réglé sur « non » revient décoché', async ({ page }) => {
+    await monter(page, { ...BASE, optIn: false });
+    await page.getByRole('button', { name: 'Formulaire du site' }).click();
+    await expect(page.getByTestId('webhook-optin')).not.toBeChecked();
   });
 });

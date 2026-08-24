@@ -737,6 +737,12 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   (3) le contenu reçu s'affiche **en arbre**, et chaque valeur porte un bouton « Attacher… » qui l'envoie
   vers le **téléphone**, le **nom**, ou n'importe quel **champ de contact**. Tant qu'aucun appel n'est arrivé,
   l'écran le dit au lieu d'afficher un formulaire vide.
+- ✅ **Le consentement se règle par webhook** (2026-08-24). Une case « Si vous créez des contacts via
+  webhook, sont-ils opt-in ? », **cochée par défaut**, décide si les contacts créés partent en consentement
+  donné ou « inconnu ». C'est vous qui l'affirmez : nous ne pouvons pas déduire un consentement du contenu
+  reçu, exactement comme pour l'import CSV. Décochée, les contacts restent « inconnus », ce qui les exclut
+  des campagnes marketing. La trace conserve **par quel webhook** le consentement est entré, ce qui permet
+  de le justifier. Et un contact déjà opt-in ne perd jamais son consentement, même case décochée.
 - ✅ **Le contact vient du CONTENU, pas de l'appelant.** L'outil qui appelle n'est pas le contact : c'est le
   JSON qu'il envoie qui porte le téléphone et le nom. Une case **« créer les contacts inconnus »**, cochée par
   défaut, décide si un appel concernant quelqu'un d'absent du mini-CRM crée sa fiche (avec un consentement

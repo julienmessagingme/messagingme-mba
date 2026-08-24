@@ -15,6 +15,12 @@ export interface ApiContactInput {
   fields?: Record<string, string>;
   tags?: string[];
   optIn?: boolean;
+  /**
+   * D'où vient le consentement, quand `optIn` est vrai. Tracé dans `contacts.opt_in_source`, comme
+   * `csv_import` pour l'import et `hubspot_list` pour une liste : c'est ce qui permet de savoir PAR OÙ un
+   * consentement est entré, et donc de le justifier. Absent -> `api`, le comportement d'origine.
+   */
+  optInSource?: string;
   /** Identifiant WhatsApp d'un client sans numéro partagé. Optionnel ; unique par espace côté base. */
   bsuid?: string;
 }
@@ -92,7 +98,7 @@ export async function upsertContactsFromApi(
         profileName: name,
         fields: fieldValues,
         optInStatus: item.optIn === true ? 'opted_in' : 'unknown',
-        ...(item.optIn === true ? { optInSource: 'api' } : {}),
+        ...(item.optIn === true ? { optInSource: item.optInSource ?? 'api' } : {}),
         ...(normalizeTags(item.tags).length > 0 ? { tags: normalizeTags(item.tags) } : {}),
         ...(bsuid !== null ? { bsuid } : {}),
       });

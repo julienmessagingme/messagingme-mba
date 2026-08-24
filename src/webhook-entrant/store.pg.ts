@@ -24,6 +24,15 @@ export interface WebhookPublic {
   secretHash: string | null;
   mapping: RegleMapping[];
   createContact: boolean;
+  /**
+   * Les contacts nés de ce webhook sont-ils considérés comme CONSENTANTS ?
+   *
+   * C'est l'opérateur qui l'affirme, jamais nous qui le déduisons : même doctrine que l'import CSV et l'API
+   * publique. Faux -> consentement « inconnu », ce qui ferme le marketing pour ce contact.
+   */
+  optIn: boolean;
+  /** Nom du webhook, tracé dans `contacts.opt_in_source` : c'est ce qui dit PAR OÙ un consentement est entré. */
+  name: string;
   /** null = ce webhook n'écrit que des champs, il n'y a aucun scénario à déclencher. */
   automationId: string | null;
 }
@@ -37,6 +46,7 @@ export interface WebhookRow {
   hasSecret: boolean;
   mapping: RegleMapping[];
   createContact: boolean;
+  optIn: boolean;
   workflowId: string | null;
   startNodeId: string | null;
   cooldownSeconds: number | null;
@@ -52,6 +62,7 @@ export interface WebhookInput {
   enabled: boolean;
   mapping: RegleMapping[];
   createContact: boolean;
+  optIn: boolean;
   /** null = aucun scénario -> la ligne compagnon est supprimée. */
   workflowId: string | null;
   startNodeId: string | null;
@@ -60,7 +71,7 @@ export interface WebhookInput {
 
 export interface RawAdmin {
   id: string; name: string; enabled: boolean; code: string; secret_hash: string | null;
-  mapping: unknown; create_contact: boolean; last_payload: unknown; last_received_at: Date | null;
+  mapping: unknown; create_contact: boolean; opt_in: boolean; last_payload: unknown; last_received_at: Date | null;
   contacts_created: number; created_at: Date;
   workflow_id: string | null; start_node_id: string | null; cooldown_seconds: number | null;
 }
@@ -70,7 +81,7 @@ export interface RawAdmin {
  * scénario vient d'être supprimé (cascade `automations` -> `webhooks.automation_id` mis à null), reste
  * listable avec son URL et son mapping.
  */
-const COLS_ADMIN = `w.id, w.name, w.enabled, w.code, w.secret_hash, w.mapping, w.create_contact,
+const COLS_ADMIN = `w.id, w.name, w.enabled, w.code, w.secret_hash, w.mapping, w.create_contact, w.opt_in,
        w.last_payload, w.last_received_at, w.contacts_created, w.created_at,
        a.workflow_id, a.start_node_id, a.cooldown_seconds`;
 
@@ -89,6 +100,7 @@ export function toRow(r: RawAdmin): WebhookRow {
     hasSecret: r.secret_hash !== null,
     mapping: coerceMapping(r.mapping),
     createContact: r.create_contact,
+    optIn: r.opt_in,
     workflowId: r.workflow_id,
     startNodeId: r.start_node_id,
     cooldownSeconds: r.cooldown_seconds,
@@ -109,8 +121,8 @@ export class PgWebhookStore {
    * testable sans base (`server.inject` avec un faux store).
    */
   async getByCode(code: string): Promise<WebhookPublic | null> {
-    const res = await this.pool.query<{ id: string; tenant_id: string; enabled: boolean; secret_hash: string | null; mapping: unknown; create_contact: boolean; automation_id: string | null }>(
-      `select id, tenant_id, enabled, secret_hash, mapping, create_contact, automation_id
+    const res = await this.pool.query<{ id: string; tenant_id: string; name: string; enabled: boolean; secret_hash: string | null; mapping: unknown; create_contact: boolean; opt_in: boolean; automation_id: string | null }>(
+      `select id, tenant_id, name, enabled, secret_hash, mapping, create_contact, opt_in, automation_id
          from webhooks where code = $1 limit 1`,
       [code],
     );
@@ -123,6 +135,8 @@ export class PgWebhookStore {
       secretHash: r.secret_hash,
       mapping: coerceMapping(r.mapping),
       createContact: r.create_contact,
+      optIn: r.opt_in,
+      name: r.name,
       automationId: r.automation_id,
     };
   }
@@ -173,9 +187,9 @@ export class PgWebhookStore {
       await client.query('begin');
       const code = newWebhookCode();
       const res = await client.query<{ id: string }>(
-        `insert into webhooks (tenant_id, name, enabled, code, mapping, create_contact)
-         values ($1, $2, $3, $4, $5::jsonb, $6) returning id`,
-        [tenantId, input.name, input.enabled, code, JSON.stringify(input.mapping), input.createContact],
+        `insert into webhooks (tenant_id, name, enabled, code, mapping, create_contact, opt_in)
+         values ($1, $2, $3, $4, $5::jsonb, $6, $7) returning id`,
+        [tenantId, input.name, input.enabled, code, JSON.stringify(input.mapping), input.createContact, input.optIn],
       );
       const id = res.rows[0]!.id;
       await this.syncAutomation(client, tenantId, id, null, input);
@@ -201,9 +215,9 @@ export class PgWebhookStore {
       const ligne = actuel.rows[0];
       if (!ligne) { await client.query('rollback'); return false; }
       await client.query(
-        `update webhooks set name = $3, enabled = $4, mapping = $5::jsonb, create_contact = $6, updated_at = now()
+        `update webhooks set name = $3, enabled = $4, mapping = $5::jsonb, create_contact = $6, opt_in = $7, updated_at = now()
           where tenant_id = $1 and id = $2`,
-        [tenantId, id, input.name, input.enabled, JSON.stringify(input.mapping), input.createContact],
+        [tenantId, id, input.name, input.enabled, JSON.stringify(input.mapping), input.createContact, input.optIn],
       );
       await this.syncAutomation(client, tenantId, id, ligne.automation_id, input);
       await client.query('commit');

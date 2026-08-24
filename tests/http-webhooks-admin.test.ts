@@ -29,7 +29,7 @@ const PAYLOAD = {
 
 const EXISTANT: WebhookRow = {
   id: 'wh1', name: 'Formulaire du site', enabled: true, code: 'ab12cd34ef56gh78jk90mn12pq',
-  hasSecret: false, mapping: [{ chemin: 'client.tel', cible: 'sys:phone' }], createContact: true,
+  hasSecret: false, mapping: [{ chemin: 'client.tel', cible: 'sys:phone' }], createContact: true, optIn: true,
   workflowId: null, startNodeId: null, cooldownSeconds: null,
   lastPayload: PAYLOAD, lastReceivedAt: '2026-08-23T10:00:00.000Z', contactsCreated: 3,
   createdAt: '2026-08-20T09:00:00.000Z',
@@ -109,7 +109,7 @@ describe('webhooks : lecture', () => {
     const brut: RawAdmin = {
       id: 'wh1', name: 'x', enabled: true, code: 'ab12cd34ef56gh78jk90mn12pq',
       secret_hash: empreinte,
-      mapping: [], create_contact: true, last_payload: null, last_received_at: null,
+      mapping: [], create_contact: true, opt_in: true, last_payload: null, last_received_at: null,
       contacts_created: 0, created_at: new Date('2026-08-20T09:00:00.000Z'),
       workflow_id: null, start_node_id: null, cooldown_seconds: null,
     };
@@ -276,7 +276,7 @@ describe('webhooks : modification partielle', () => {
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/webhooks/wh1', ...h(adminTok), payload: { name: 'Nouveau nom' } });
     expect(res.statusCode).toBe(200);
     expect(cap.majs[0]?.input).toEqual({
-      name: 'Nouveau nom', enabled: true, createContact: true,
+      name: 'Nouveau nom', enabled: true, createContact: true, optIn: true,
       mapping: [{ chemin: 'client.tel', cible: 'sys:phone' }],
       workflowId: null, startNodeId: null, cooldownSeconds: null,
     });

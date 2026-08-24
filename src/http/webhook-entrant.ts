@@ -56,7 +56,15 @@ export interface WebhookEntrantRouteDeps {
    */
   ecrireContact(
     tenantId: string,
-    entree: { phone: string; name: string | null; fields: Record<string, string> },
+    entree: {
+      phone: string;
+      name: string | null;
+      fields: Record<string, string>;
+      /** Le contact est-il considéré comme consentant ? Affirmé par l'opérateur, webhook par webhook. */
+      optIn: boolean;
+      /** D'où vient ce consentement, pour la trace : `webhook:<nom>`. */
+      optInSource: string;
+    },
   ): Promise<{ statut: 'created' | 'updated' | 'error'; raison?: string }>;
   /** Publie l'événement d'automation (file). C'est le worker qui décide ensuite quoi déclencher. */
   publish(tenantId: string, ev: { kind: 'webhook'; waId: string; webhookId: string }): Promise<void>;
@@ -162,7 +170,15 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
       return reply.code(200).send(await fini(false));
     }
 
-    const res = await deps.ecrireContact(hook.tenantId, { phone: e164, name: ex.nom, fields: ex.champs });
+    const res = await deps.ecrireContact(hook.tenantId, {
+      phone: e164,
+      name: ex.nom,
+      fields: ex.champs,
+      optIn: hook.optIn,
+      // La trace dit PAR OÙ le consentement est entré, pas seulement qu'il existe : c'est ce qui permet de
+      // le justifier ensuite. Tronquée, la colonne n'ayant pas vocation à recevoir un nom sans limite.
+      optInSource: `webhook:${hook.name}`.slice(0, 100),
+    });
     if (res.statut === 'error') {
       // Une valeur refusée par la validation de champ n'est PAS une panne : le tiers doit la voir, et ne doit
       // pas réessayer en boucle. D'où 200 avec la raison, comme pour les autres refus métier.

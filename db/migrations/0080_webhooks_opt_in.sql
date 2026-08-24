@@ -1,0 +1,19 @@
+-- 0080 : le consentement des contacts crees par un webhook entrant.
+--
+-- Jusqu'ici un contact ne dans un webhook naissait en consentement << inconnu >>, ce qui ferme le marketing
+-- pour lui. C'est le bon defaut quand on ne sait pas, mais c'est faux quand le webhook vient d'un formulaire
+-- ou la personne a coche une case : dans ce cas elle A consenti, et le systeme doit pouvoir le dire.
+--
+-- Cette colonne laisse donc l'OPERATEUR affirmer le consentement, webhook par webhook. C'est exactement ce
+-- que font deja l'import CSV (`optIn` + `optInSource: 'csv_import'`) et l'API publique (`'api'`) : le
+-- consentement est toujours affirme par celui qui integre, jamais deduit par nous.
+--
+-- ⚠️ DEFAUT A `true`, decision de Julien du 2026-08-24. A savoir : ce defaut s'applique aussi aux webhooks
+-- DEJA crees, dont le comportement change donc au deploiement. Et un consentement affirme a tort ne se voit
+-- pas : il ne se decouvre qu'au moment d'une plainte, alors qu'une case oubliee se voit tout de suite.
+-- La trace, elle, est conservee : `contacts.opt_in_source` recoit `webhook:<nom du webhook>`, ce qui permet
+-- de savoir PAR OU un consentement est entre.
+--
+-- ⚠️ Le consentement ne REGRESSE jamais (`upsertByPhoneReturningId` ne fait que unknown -> opted_in) : un
+-- webhook dont la case est decochee ne retire donc rien a un contact deja opt-in.
+alter table webhooks add column if not exists opt_in boolean not null default true;

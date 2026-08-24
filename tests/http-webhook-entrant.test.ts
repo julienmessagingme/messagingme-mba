@@ -12,7 +12,9 @@ const SECRET = 'whk_secret_du_client';
 const HOOK: WebhookPublic = {
   id: 'wh1',
   tenantId: 't1',
+  name: 'Formulaire du site',
   enabled: true,
+  optIn: false,
   secretHash: null,
   mapping: [
     { chemin: 'client.tel', cible: 'sys:phone' },
@@ -31,7 +33,7 @@ const CORPS = {
 interface Capture {
   lus: string[];
   appels: Array<{ tenantId: string; id: string; payload: unknown; cree: boolean }>;
-  ecrits: Array<{ tenantId: string; phone: string; name: string | null; fields: Record<string, string> }>;
+  ecrits: Array<{ tenantId: string; phone: string; name: string | null; fields: Record<string, string>; optIn: boolean; optInSource: string }>;
   publies: Array<{ tenantId: string; ev: { kind: 'webhook'; waId: string; webhookId: string } }>;
 }
 
@@ -183,6 +185,8 @@ describe('webhook entrant : ce qu’il écrit', () => {
       phone: '+33612345678', // normalisé par le MÊME chemin que l'import CSV
       name: 'Marie Durand',
       fields: { reference: 'A-1' },
+      optIn: false,
+      optInSource: 'webhook:Formulaire du site',
     }]);
     expect(JSON.parse(res.body)).toMatchObject({ ok: true, contact: 'cree', champs: 1, scenario: 'aucun' });
     await server.close();
@@ -252,6 +256,33 @@ describe('webhook entrant : ce qu’il écrit', () => {
     const res = await post(server, CORPS);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).contact).toBe('cree');
+    await server.close();
+  });
+});
+
+describe('webhook entrant : le consentement', () => {
+  it('🔴 case DÉCOCHÉE -> le contact naît en consentement « inconnu »', async () => {
+    // C'est le défaut sûr : on ne peut pas déduire un consentement du contenu reçu.
+    const { server, cap } = app();
+    await post(server, CORPS);
+    expect(cap.ecrits[0]?.optIn).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 case COCHÉE -> le contact est opt-in, et la trace dit PAR OÙ', async () => {
+    // `opt_in_source` est ce qui permet de justifier un consentement ensuite : « webhook » seul ne dirait
+    // pas LEQUEL, et un espace peut en avoir plusieurs, alimentés par des formulaires différents.
+    const { server, cap } = app({ ...HOOK, optIn: true });
+    await post(server, CORPS);
+    expect(cap.ecrits[0]?.optIn).toBe(true);
+    expect(cap.ecrits[0]?.optInSource).toBe('webhook:Formulaire du site');
+    await server.close();
+  });
+
+  it('la trace est bornée : un nom à rallonge ne déborde pas', async () => {
+    const { server, cap } = app({ ...HOOK, optIn: true, name: 'x'.repeat(300) });
+    await post(server, CORPS);
+    expect(cap.ecrits[0]?.optInSource.length).toBeLessThanOrEqual(100);
     await server.close();
   });
 });

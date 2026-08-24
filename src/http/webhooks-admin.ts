@@ -92,6 +92,14 @@ function parseBody(body: unknown, actuel: WebhookRow | null, payload: unknown): 
     createContact = b.createContact;
   }
 
+  // Le consentement des contacts nés de ce webhook. Vrai par défaut (décision de Julien du 2026-08-24) :
+  // c'est l'opérateur qui AFFIRME que sa source recueille bien un consentement, comme pour l'import CSV.
+  let optIn = actuel?.optIn ?? true;
+  if (b.optIn !== undefined) {
+    if (typeof b.optIn !== 'boolean') return { error: 'optIn (booléen)' };
+    optIn = b.optIn;
+  }
+
   let mapping = actuel?.mapping ?? [];
   if (b.mapping !== undefined) {
     const m = validerMapping(b.mapping, payload);
@@ -126,7 +134,7 @@ function parseBody(body: unknown, actuel: WebhookRow | null, payload: unknown): 
     return { error: 'startNodeId n’a de sens qu’avec un scénario' };
   }
 
-  return { input: { name, enabled, mapping, createContact, workflowId, startNodeId, cooldownSeconds } };
+  return { input: { name, enabled, mapping, createContact, optIn, workflowId, startNodeId, cooldownSeconds } };
 }
 
 /** URL publique complète à coller chez le tiers. */

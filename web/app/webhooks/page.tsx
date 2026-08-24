@@ -226,6 +226,7 @@ function Detail({
   const [mapping, setMapping] = useState<RegleMappingWebhook[]>(hook.mapping);
   const [enabled, setEnabled] = useState(hook.enabled);
   const [createContact, setCreateContact] = useState(hook.createContact);
+  const [optIn, setOptIn] = useState(hook.optIn);
   const [workflowId, setWorkflowId] = useState<string | null>(hook.workflowId);
   const [busy, setBusy] = useState(false);
   // Le clair du secret n'existe QUE dans la réponse de génération : il est gardé ici pour l'encart de copie.
@@ -295,7 +296,7 @@ function Detail({
     setBusy(true);
     onErreur(null);
     try {
-      await updateWebhook(session.tenantId, hook.id, { mapping, enabled, createContact, workflowId });
+      await updateWebhook(session.tenantId, hook.id, { mapping, enabled, createContact, optIn, workflowId });
       await onChange();
     } catch (err) {
       onErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Save failed'));
@@ -508,6 +509,37 @@ function Detail({
               )}
             </span>
             <span className="block text-ink-400">{t('Créés par ce webhook jusqu’ici', 'Created by this webhook so far')} : {hook.contactsCreated}</span>
+          </span>
+        </label>
+
+        <label className="mt-3 flex items-start gap-2 border-t border-ink-100 pt-3 text-sm text-ink-700">
+          <input
+            type="checkbox"
+            checked={optIn}
+            onChange={(e) => setOptIn(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-ink-300"
+            data-testid="webhook-optin"
+          />
+          <span>
+            {t('Si vous créez des contacts via webhook, sont-ils opt-in ?', 'If you create contacts via webhook, are they opted in?')}
+            <span className="block text-ink-500">
+              {t(
+                'Cochez seulement si votre source recueille bien un consentement (une case cochée sur votre formulaire, par exemple). C’est vous qui l’affirmez : nous ne pouvons pas le déduire du contenu reçu.',
+                'Tick only if your source genuinely collects consent (a checkbox on your form, for example). You are the one asserting it: we cannot infer it from the received content.',
+              )}
+            </span>
+            <span className="block text-ink-500">
+              {t(
+                'Décoché, les contacts créés restent en consentement « inconnu », ce qui les exclut des campagnes marketing.',
+                'Unchecked, contacts are created with “unknown” consent, which excludes them from marketing campaigns.',
+              )}
+            </span>
+            <span className="block text-ink-400">
+              {t(
+                'Un contact DÉJÀ opt-in ne perd jamais son consentement, même si cette case est décochée.',
+                'A contact who is ALREADY opted in never loses consent, even if this box is unticked.',
+              )}
+            </span>
           </span>
         </label>
       </div>
