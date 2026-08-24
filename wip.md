@@ -63,6 +63,15 @@ message RCS. La bascule texte/carte vit dans UN endroit (`web/lib/rcs.ts`, miroi
   restait sans effet un an (origine en 404, edge en 200, `cf-cache-status: HIT`). Ramene a 24 h, ce qui
   couvre toute la rafale d une campagne et borne l exposition. Purge immediate = jeton Cloudflare, qu on n a pas.
 
+- **Envoi RCS depuis l Inbox** (bouton 📱). Sans garde de fenetre 24 h : cette fenetre est une regle de
+  WhatsApp, pas du RCS, et c est justement quand elle est fermee que le RCS sert. Message pris dans la
+  bibliotheque, variables resolues sur la fiche, refus en 422 avec sa raison.
+- **Champ variable facon template Meta** : bouton << + Variable >>, chip [Prenom] au curseur, chaine stockee
+  inchangee. L editeur a chips est partage avec le corps d un template (motif + resolveur de libelle).
+- **`inbox-envoi-scenario` etait instable AVANT ce lot** (un echec sur six executions, mesure). Cause : le fil
+  se recharge toutes les 4 s, un `selectOption` pendant le re-rendu vise un noeud detache sans rien signaler.
+  Selection reessayee jusqu a etre posee ; le clic d envoi reste unique puisqu il poste.
+
 ### Reste ouvert sur le canal
 
 - Le **carrousel** n'a aucun composeur (le modele et le provider le supportent).
