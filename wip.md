@@ -90,7 +90,22 @@ RCS saute ne bascule rien, sinon le repli partirait en RCS chez un injoignable.
 Seul le FORMULAIRE (WhatsApp Flow) reste impossible derriere un RCS, faute d equivalent : le builder le
 signale.
 
-### 🔴 EN COURS : le clic sur un bouton RCS ne revient pas (2026-08-24, soir)
+### ✅ RESOLU : le clic sur un bouton RCS (2026-08-24, soir)
+
+**Cause finale, trouvee en gardant le corps recu en base** : leur DOCUMENTATION montre un entrant avec
+`from` = le contact et `recipient.to` = l agent ; leur PRODUCTION fait l INVERSE (elle garde l orientation du
+sortant). On lisait `from`, on n y trouvait aucun chiffre, et on jetait le clic. Deux clics de Julien perdus.
+On se fie desormais a la FORME (le premier des deux qui ressemble a un numero), pas a la position.
+
+⚠️ **A retenir au-dela de smsmode** : l exemple d une doc d API n est pas la verite de sa production.
+
+Corriges dans la foulee, tous signales en testant :
+- le premier RCS d un scenario n apparaissait pas dans le fil d Inbox (seul chemin d envoi qui ne
+  journalisait pas sa bulle) ;
+- l ecran d envoi de template de l Inbox redemandait les variables en texte libre (desormais pre-remplies
+  depuis la fiche, avec le libelle du champ) et l URL de l image d en-tete (desormais reprise du template).
+
+### Trace du diagnostic (a garder, la methode a paye)
 
 Symptome : le bouton << Recois un whatsapp >> du scenario de Julien ne declenche pas le template.
 
