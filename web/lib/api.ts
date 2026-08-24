@@ -365,6 +365,47 @@ export function listCampaigns(tenantId: string, opts?: { archived?: boolean }): 
   return request<{ campaigns: CampaignSummary[] }>(`/tenants/${tenantId}/campaigns${opts?.archived ? '?archived=1' : ''}`);
 }
 
+/** Suggestion RCS : bouton affiché sous le message. Trois formes, comme chez le provider. */
+export type RcsSuggestion =
+  | { kind: 'reply'; text: string; postbackData: string }
+  | { kind: 'openUrl'; text: string; url: string; postbackData: string }
+  | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string };
+
+export interface RcsCard {
+  title: string;
+  description?: string;
+  mediaUrl?: string;
+  suggestions?: RcsSuggestion[];
+}
+
+/** Message RCS. Union fermée, identique au modèle serveur : ce qui n'est pas ici ne s'envoie pas. */
+export type RcsOutbound =
+  | { kind: 'text'; text: string; suggestions?: RcsSuggestion[] }
+  | { kind: 'card'; card: RcsCard }
+  | { kind: 'carousel'; cards: RcsCard[] };
+
+export interface RcsMessage {
+  id: string;
+  name: string;
+  /** null = contenu stocké devenu illisible pour le schéma courant. L'écran le SIGNALE au lieu de le proposer. */
+  content: RcsOutbound | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function listRcsMessages(tenantId: string): Promise<{ messages: RcsMessage[] }> {
+  return request<{ messages: RcsMessage[] }>(`/tenants/${tenantId}/rcs-messages`);
+}
+export function createRcsMessage(tenantId: string, name: string, content: RcsOutbound): Promise<{ message: RcsMessage }> {
+  return request<{ message: RcsMessage }>(`/tenants/${tenantId}/rcs-messages`, { method: 'POST', body: JSON.stringify({ name, content }) });
+}
+export function updateRcsMessage(tenantId: string, id: string, name: string, content: RcsOutbound): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`/tenants/${tenantId}/rcs-messages/${id}`, { method: 'PATCH', body: JSON.stringify({ name, content }) });
+}
+export function deleteRcsMessage(tenantId: string, id: string): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`/tenants/${tenantId}/rcs-messages/${id}`, { method: 'DELETE' });
+}
+
 /** Agents RCS du tenant (sélecteur de l'assistant de campagne). Liste vide = canal RCS non configuré. */
 export function listRcsAgents(tenantId: string): Promise<{ agents: RcsAgent[] }> {
   return request<{ agents: RcsAgent[] }>(`/tenants/${tenantId}/rcs-agents`);

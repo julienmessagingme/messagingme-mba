@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -83,6 +83,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'templates', href: '/templates', label: t('Templates WhatsApp', 'WhatsApp templates') },
       { key: 'flows', href: '/flows', label: t('Formulaires WhatsApp', 'WhatsApp forms') },
       { key: 'email-templates', href: '/email-templates', label: t('Modèles d’email', 'Email templates') },
+      { key: 'rcs-messages', href: '/rcs-messages', label: t('Messages RCS', 'RCS messages') },
       { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
       { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
