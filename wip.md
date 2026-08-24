@@ -49,8 +49,8 @@ message RCS. La bascule texte/carte vit dans UN endroit (`web/lib/rcs.ts`, miroi
 ### Reste ouvert sur le canal
 
 - Le **carrousel** n'a aucun composeur (le modele et le provider le supportent).
-- Trois types de bouton existent chez smsmode et ne sont pas exposes : **Agenda** (ajouter un rendez-vous),
-  **Afficher un lieu**, **Demander la position**.
+- ✅ Les **six** formes de bouton sont exposees depuis le 2026-08-24 (Reponse, Lien, Appel, Agenda, Voir un
+  lieu, Demander sa position). Reste `webviewSize` sur un bouton lien, non expose.
 - Les deux cles d'API smsmode qui ont circule en clair dans une conversation sont **a faire tourner**. Elles
   sont desormais stockees chiffrees par workspace : les remplacer veut dire les ressaisir dans la carte
   d'activation de l'accueil.

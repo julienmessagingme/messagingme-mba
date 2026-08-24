@@ -10,10 +10,31 @@
  */
 import type { SendResult } from '../meta/types';
 
+/**
+ * Bouton affiché sous un message. Les SIX formes du provider, aucune de plus.
+ *
+ * Trois d'entre elles ramènent le contact dans la conversation ou l'en sortent (`reply`, `openUrl`, `dial`) ;
+ * les trois autres agissent sur son téléphone : ajouter un rendez-vous à son agenda, ouvrir un lieu sur sa
+ * carte, ou partager sa position. Seul `reply` produit une sortie reliable dans un scénario : les cinq autres
+ * ne renvoient rien qui permette de choisir une branche (une position partagée revient SANS `postbackData`,
+ * mesuré sur leur spec).
+ */
 export type RcsSuggestion =
   | { kind: 'reply'; text: string; postbackData: string }
   | { kind: 'openUrl'; text: string; url: string; postbackData: string }
-  | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string };
+  | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string }
+  /**
+   * Ajouter un rendez-vous à l'agenda. `startAt`/`endAt` sont des date-heures ISO locales
+   * (`2026-09-01T10:00:00`) OU une variable `{{champ}}` résolue par contact : un message de bibliothèque est
+   * réutilisable, une date en dur y serait vraie une fois et fausse ensuite. Une date qui ne se résout pas
+   * fait TOMBER LE BOUTON, jamais le message.
+   */
+  | { kind: 'calendar'; text: string; postbackData: string; title: string; description?: string; startAt: string; endAt: string }
+  /** Ouvrir un lieu sur la carte du contact. */
+  | { kind: 'showLocation'; text: string; postbackData: string; latitude: number; longitude: number; label?: string }
+  /** Demander sa position au contact. Sa réponse arrive dans l'inbox avec ses coordonnées, PAS sur une
+   *  branche de scénario : le provider ne renvoie aucune charge utile avec une position. */
+  | { kind: 'requestLocation'; text: string; postbackData: string };
 
 /**
  * Carte : le format à VISUEL, celui qui porte une image (ou une vidéo) au-dessus du texte.

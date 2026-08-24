@@ -8,11 +8,23 @@
  * `web/lib/flow-mapping.ts`. `api.ts` les RÉ-EXPORTE, donc tous les écrans continuent de les importer de là.
  */
 
-/** Suggestion RCS : bouton affiché sous le message. Trois formes, comme chez le provider. */
+/**
+ * Bouton affiché sous le message. Les SIX formes du provider, aucune de plus. Miroir exact de
+ * `src/rcs/types.ts` : c'est le schéma serveur qui tranche à l'enregistrement.
+ *
+ * Seul `reply` produit une sortie reliable dans un scénario. Les cinq autres ne renvoient rien qui permette
+ * de choisir une branche : un lien et un appel sortent de la conversation, un ajout d'agenda et l'ouverture
+ * d'un lieu se passent sur le téléphone, et une position partagée revient SANS charge utile.
+ */
 export type RcsSuggestion =
   | { kind: 'reply'; text: string; postbackData: string }
   | { kind: 'openUrl'; text: string; url: string; postbackData: string }
-  | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string };
+  | { kind: 'dial'; text: string; phoneNumber: string; postbackData: string }
+  /** Ajouter un rendez-vous à l'agenda. `startAt`/`endAt` : `2026-09-01T10:00` ou `{{champ}}` (résolu par
+   *  contact à l'envoi ; une date qui ne se résout pas fait tomber le BOUTON, pas le message). */
+  | { kind: 'calendar'; text: string; postbackData: string; title: string; description?: string; startAt: string; endAt: string }
+  | { kind: 'showLocation'; text: string; postbackData: string; latitude: number; longitude: number; label?: string }
+  | { kind: 'requestLocation'; text: string; postbackData: string };
 
 /** Carte : le format à VISUEL, celui qui porte une image au-dessus du texte. Titre optionnel (le provider
  *  exige « un titre OU un média »). */

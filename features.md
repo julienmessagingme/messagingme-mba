@@ -870,6 +870,14 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   d'en-tête** facultative, des **variables** `{{prenom}}` remplacées par la fiche du contact à l'envoi, des
   **emojis**, et jusqu'à **11 boutons** (réponse, lien, appel). Aperçu en direct. Avec une image, le texte est
   limité à 2000 caractères au lieu de 3072.
+- **Six formes de bouton**, les mêmes dans la bibliothèque, la campagne et le scénario : **Réponse** (le
+  contact répond en un tap), **Lien**, **Appel**, **Agenda** (ajoute le rendez-vous à l'agenda du téléphone),
+  **Voir un lieu** (l'ouvre sur sa carte) et **Demander sa position**. Seul un bouton Réponse ouvre une sortie
+  à relier dans un scénario : les cinq autres agissent sur le téléphone ou sortent de la conversation, et ne
+  renvoient rien qui permette de choisir une branche.
+- **Un rendez-vous propre à chaque contact** : les dates d'un bouton Agenda se prennent soit en dur, soit dans
+  un champ « date et heure » de la fiche. Un contact sans date perd le bouton, et reçoit quand même le message.
+- **Une position reçue** apparaît dans le fil avec ses coordonnées, un fichier avec son adresse.
 - **En campagne** : choisir « Un message RCS » comme contenu, partir d'un message de la bibliothèque ou écrire
   directement. Les contacts sans numéro (identifiés par BSUID seulement) sont comptés « ignorés » avec leur
   motif : le RCS s'adresse à un numéro **mobile**, une ligne fixe ne peut pas le recevoir.

@@ -56,11 +56,31 @@ export class SmsmodeApiError extends Error {
   }
 }
 
-/** Suggestion interne -> suggestion smsmode. Leurs trois types correspondent un pour un aux nôtres. */
+/** Suggestion interne -> suggestion smsmode. Leurs SIX types correspondent un pour un aux nôtres. */
 function toSuggestion(s: RcsSuggestion): Record<string, unknown> {
-  if (s.kind === 'reply') return { type: 'REPLY', text: s.text, postbackData: s.postbackData };
-  if (s.kind === 'openUrl') return { type: 'OPEN_URL', text: s.text, url: s.url, postbackData: s.postbackData };
-  return { type: 'DIAL_PHONE', text: s.text, phoneNumber: s.phoneNumber, postbackData: s.postbackData };
+  const base = { text: s.text, postbackData: s.postbackData };
+  switch (s.kind) {
+    case 'reply':
+      return { type: 'REPLY', ...base };
+    case 'openUrl':
+      return { type: 'OPEN_URL', ...base, url: s.url };
+    case 'dial':
+      return { type: 'DIAL_PHONE', ...base, phoneNumber: s.phoneNumber };
+    case 'calendar':
+      return {
+        type: 'CREATE_CALENDAR_EVENT', ...base,
+        startTime: s.startAt, endTime: s.endAt, title: s.title,
+        ...(s.description ? { description: s.description } : {}),
+      };
+    case 'showLocation':
+      return {
+        type: 'SHOW_LOCATION', ...base,
+        latitude: s.latitude, longitude: s.longitude,
+        ...(s.label ? { label: s.label } : {}),
+      };
+    default:
+      return { type: 'REQUEST_LOCATION', ...base };
+  }
 }
 
 /**

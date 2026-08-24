@@ -2,6 +2,7 @@ import type { RcsProvider, RcsOutbound } from './types';
 import type { Reachability } from './reachability';
 import type { SendResult } from '../meta/types';
 import { normaliserPostbacks } from './schema';
+import { elaguerBoutonsInvalides } from './variables';
 
 export interface RcsOptoutStore {
   isOptedOut(tenantId: string, e164: string): Promise<boolean>;
@@ -37,10 +38,19 @@ export class RcsSender {
     if (this.provider.canCheckReachability !== false && !(await this.reach.isReachable(tenantId, agentId, e164))) {
       return { skipped: 'not_rcs_reachable' };
     }
-    // Charges utiles des boutons normalisées ICI, au dernier moment et pour TOUS les appelants : c'est ce qui
-    // fait qu'un clic revient sur la bonne branche du scénario (cf. `normaliserPostbacks`). Le faire au point
-    // de passage unique évite d'avoir à y penser dans chaque appelant, ce qui est exactement le genre d'oubli
-    // qui se voit six mois plus tard, sur le clic d'un client.
-    return this.provider.send(tenantId, agentId, e164, normaliserPostbacks(msg), messageId);
+    // Deux mises en forme ICI, au dernier moment et pour TOUS les appelants, parce que c'est le point de
+    // passage unique : y penser dans chaque appelant serait exactement le genre d'oubli qui se voit six mois
+    // plus tard, sur le clic d'un client.
+    //   - `elaguerBoutonsInvalides` retire un bouton Agenda dont la date ne s'est pas résolue. Le message
+    //     part amputé de ce bouton plutôt que d'être refusé en entier par le provider.
+    //   - `normaliserPostbacks` fait qu'un clic revient sur la bonne branche du scénario.
+    const elague = elaguerBoutonsInvalides(msg);
+    if (elague !== msg) {
+      // Un bouton qui disparaît sans un mot est indébogable : l'opérateur voit un message « parti » et un
+      // client qui n'a jamais eu son bouton Agenda. On NOMME la cause, sans jamais bloquer l'envoi.
+      // eslint-disable-next-line no-console
+      console.error(`RCS ${tenantId}: bouton Agenda retiré pour ${e164}, sa date ne s'est pas résolue`);
+    }
+    return this.provider.send(tenantId, agentId, e164, normaliserPostbacks(elague), messageId);
   }
 }

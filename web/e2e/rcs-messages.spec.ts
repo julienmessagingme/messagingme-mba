@@ -23,6 +23,8 @@ async function mock(page: import('@playwright/test').Page, posts: Array<Record<s
       return json({ fields: [
         { key: 'prenom', label: 'Prénom', type: 'text' },
         { key: 'ville', label: 'Ville', type: 'text' },
+        { key: 'date_rdv', label: 'Date du RDV', type: 'datetime' },
+        { key: 'jour_visite', label: 'Jour de visite', type: 'date' },
       ] });
     }
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -147,5 +149,106 @@ test.describe('Contenu : messages RCS', () => {
     await expect(page.getByTestId('rcs-message-var-prenom')).toBeVisible();
     await expect(page.getByTestId('rcs-message-var-ville')).toBeVisible();
     await expect(page.getByTestId('rcs-message-var-wa_id')).toHaveCount(0);
+  });
+
+  test('compose un bouton Agenda a date fixe et poste ses champs', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mock(page, posts);
+    await page.goto('/rcs-messages');
+
+    await page.getByTestId('rcs-message-new').click();
+    await page.getByTestId('rcs-message-name').fill('Rappel de RDV');
+    await page.getByTestId('rcs-message-text').fill('Votre rendez-vous approche.');
+    await page.getByTestId('rcs-message-add-button').click();
+    await page.getByTestId('rcs-bouton-kind-0').selectOption('calendar');
+    await page.getByPlaceholder('Libellé du bouton').fill('Ajouter a mon agenda');
+    await page.getByTestId('rcs-bouton-titre-0').fill('Rendez-vous conseiller');
+
+    // Tant que les dates manquent, le bouton est incomplet : le serveur refuserait le message ENTIER, donc
+    // l'ecran bloque l'enregistrement plutot que de laisser decouvrir l'erreur a l'envoi.
+    await expect(page.getByTestId('rcs-message-save')).toBeDisabled();
+
+    await page.getByTestId('rcs-bouton-debut-0-mode').selectOption('fixe');
+    await page.getByTestId('rcs-bouton-debut-0').fill('2026-09-01T10:00');
+    await page.getByTestId('rcs-bouton-fin-0-mode').selectOption('fixe');
+    await page.getByTestId('rcs-bouton-fin-0').fill('2026-09-01T11:00');
+
+    await page.getByTestId('rcs-message-save').click();
+    await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
+    expect(posts[0]).toMatchObject({
+      content: {
+        kind: 'text',
+        suggestions: [{
+          kind: 'calendar',
+          text: 'Ajouter a mon agenda',
+          title: 'Rendez-vous conseiller',
+          startAt: '2026-09-01T10:00',
+          endAt: '2026-09-01T11:00',
+        }],
+      },
+    });
+  });
+
+  /**
+   * Le rendez-vous de CHAQUE contact. Un message de bibliotheque est reutilisable : une date en dur y serait
+   * vraie une fois et fausse ensuite. Seuls les champs << date et heure >> sont proposes, parce qu'un champ
+   * << date >> seule ne porte pas d'heure et produirait une valeur que le fournisseur refuse.
+   */
+  test('un bouton Agenda peut prendre sa date dans la fiche du contact', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mock(page, posts);
+    await page.goto('/rcs-messages');
+
+    await page.getByTestId('rcs-message-new').click();
+    await page.getByTestId('rcs-message-name').fill('RDV par contact');
+    await page.getByTestId('rcs-message-text').fill('A demain.');
+    await page.getByTestId('rcs-message-add-button').click();
+    await page.getByTestId('rcs-bouton-kind-0').selectOption('calendar');
+    await page.getByPlaceholder('Libellé du bouton').fill('Mon rendez-vous');
+    await page.getByTestId('rcs-bouton-titre-0').fill('Visite');
+    await page.getByTestId('rcs-bouton-debut-0-mode').selectOption('champ');
+    await page.getByTestId('rcs-bouton-fin-0-mode').selectOption('champ');
+
+    // Le selecteur ne propose QUE le champ date-heure, jamais le champ date seule.
+    const options = await page.getByTestId('rcs-bouton-debut-0').locator('option').allTextContents();
+    expect(options).toEqual(['Date du RDV']);
+
+    await page.getByTestId('rcs-message-save').click();
+    await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
+    expect(posts[0]).toMatchObject({
+      content: { suggestions: [{ kind: 'calendar', startAt: '{{date_rdv}}', endAt: '{{date_rdv}}' }] },
+    });
+  });
+
+  test('compose un bouton Voir un lieu et un bouton Demander sa position', async ({ page }) => {
+    const posts: Array<Record<string, unknown>> = [];
+    await mock(page, posts);
+    await page.goto('/rcs-messages');
+
+    await page.getByTestId('rcs-message-new').click();
+    await page.getByTestId('rcs-message-name').fill('Notre agence');
+    await page.getByTestId('rcs-message-text').fill('Passez nous voir.');
+
+    await page.getByTestId('rcs-message-add-button').click();
+    await page.getByTestId('rcs-bouton-kind-0').selectOption('showLocation');
+    await page.getByPlaceholder('Libellé du bouton').first().fill('Voir l agence');
+    await page.getByPlaceholder('Latitude (48.8566)').fill('48.8566');
+    await page.getByPlaceholder('Longitude (2.3522)').fill('2.3522');
+    await page.getByPlaceholder('Nom du lieu').fill('Agence Paris');
+
+    await page.getByTestId('rcs-message-add-button').click();
+    await page.getByTestId('rcs-bouton-kind-1').selectOption('requestLocation');
+    await page.getByPlaceholder('Libellé du bouton').nth(1).fill('Envoyer ma position');
+
+    await page.getByTestId('rcs-message-save').click();
+    await expect.poll(() => posts.length, { timeout: 10_000 }).toBe(1);
+    expect(posts[0]).toMatchObject({
+      content: {
+        suggestions: [
+          { kind: 'showLocation', text: 'Voir l agence', latitude: 48.8566, longitude: 2.3522, label: 'Agence Paris' },
+          { kind: 'requestLocation', text: 'Envoyer ma position' },
+        ],
+      },
+    });
   });
 });

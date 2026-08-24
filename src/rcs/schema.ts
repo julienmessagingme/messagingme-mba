@@ -15,10 +15,37 @@ import type { RcsOutbound, RcsSuggestion } from './types';
  * Union FERMÉE : un `kind` inconnu est refusé, il ne traverse jamais jusqu'au provider. Toujours en
  * `safeParse` chez l'appelant, jamais `parse`.
  */
+/** Libellé d'un bouton : 25 caractères chez eux, sur les six formes. */
+const libelle = z.string().min(1).max(25);
+const postback = z.string().min(1);
+
+/**
+ * Une date-heure de bouton Agenda : soit une date ISO LOCALE (`2026-09-01T10:00:00`, la forme de leurs
+ * exemples, sans fuseau), soit une variable `{{champ}}` résolue par contact à l'envoi. Les deux sont acceptées
+ * à la saisie ; c'est `resoudreBoutons` qui tranche au moment d'envoyer, et qui retire le bouton si la valeur
+ * résolue n'est pas une date.
+ */
+export const DATE_BOUTON_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+const dateBouton = z.string().min(1).refine(
+  (v) => DATE_BOUTON_RE.test(v) || /\{\{\s*[\w.-]+\s*\}\}/.test(v),
+  { message: 'date au format 2026-09-01T10:00:00, ou variable {{champ}}' },
+);
+
 export const rcsSuggestionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('reply'), text: z.string().min(1).max(25), postbackData: z.string().min(1) }),
-  z.object({ kind: z.literal('openUrl'), text: z.string().min(1).max(25), url: z.string().url(), postbackData: z.string().min(1) }),
-  z.object({ kind: z.literal('dial'), text: z.string().min(1).max(25), phoneNumber: z.string().min(1), postbackData: z.string().min(1) }),
+  z.object({ kind: z.literal('reply'), text: libelle, postbackData: postback }),
+  z.object({ kind: z.literal('openUrl'), text: libelle, url: z.string().url(), postbackData: postback }),
+  z.object({ kind: z.literal('dial'), text: libelle, phoneNumber: z.string().min(1), postbackData: postback }),
+  z.object({
+    kind: z.literal('calendar'), text: libelle, postbackData: postback,
+    title: z.string().min(1).max(100), description: z.string().max(500).optional(),
+    startAt: dateBouton, endAt: dateBouton,
+  }),
+  z.object({
+    kind: z.literal('showLocation'), text: libelle, postbackData: postback,
+    latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180),
+    label: z.string().max(100).optional(),
+  }),
+  z.object({ kind: z.literal('requestLocation'), text: libelle, postbackData: postback }),
 ]);
 
 /**

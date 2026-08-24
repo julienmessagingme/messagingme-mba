@@ -15,6 +15,8 @@ import {
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
 import { versBrouillonRcs, maxTexteRcs } from '@/lib/rcs';
+import { boutonsDepuisNode, ouvreUneSortie } from '@/lib/rcs-boutons';
+import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
@@ -129,10 +131,12 @@ function WFNode({ id, data, selected }: NodeProps) {
     : wfType === 'template' && Array.isArray(data.templateButtons)
       ? (data.templateButtons as NodeButton[])
       : wfType === 'rcs_message' && Array.isArray(data.suggestions)
-        // Seuls les boutons RÉPONSE se relient : un bouton lien ou appel sort de la conversation et ne
-        // renvoie rien au scénario. Même règle que les boutons URL d'un template WhatsApp.
+        // Seuls les boutons RÉPONSE se relient : les cinq autres formes sortent de la conversation ou agissent
+        // sur le téléphone, et ne renvoient rien au scénario. `ouvreUneSortie` est la MÊME règle que celle du
+        // panneau de configuration : une seule définition, sinon un bouton afficherait une sortie qu'il
+        // n'alimente jamais.
         ? (data.suggestions as Array<Record<string, unknown>>)
-          .filter((b) => b && b.kind === 'reply')
+          .filter((b) => b && ouvreUneSortie(b as { kind: string }))
           .map((b): NodeButton => ({ type: 'QUICK_REPLY', text: String(b.text ?? '') }))
       : wfType === 'quick_message' && Array.isArray(data.quickReplies)
         ? (data.quickReplies as unknown[]).map((q): NodeButton => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
@@ -905,9 +909,10 @@ function ConfigPanel({
       )}
 
       {wfType === 'rcs_message' && (() => {
-        const boutons = Array.isArray(d.suggestions) ? (d.suggestions as Array<Record<string, unknown>>) : [];
-        const majBouton = (i: number, patch: Record<string, unknown>) =>
-          onPatch({ suggestions: boutons.map((b, j) => (j === i ? { ...b, ...patch } : b)) });
+        // Les boutons d'un bloc sont du JSON libre dans `node.data` : `boutonsDepuisNode` les relit de façon
+        // DÉFENSIVE (une forme inconnue redevient un bouton « Réponse » réparable en un clic) et rend la même
+        // structure typée que les deux autres écrans, qui partagent l'éditeur ci-dessous.
+        const boutons = boutonsDepuisNode(d.suggestions);
         return (
           <div className="space-y-3">
             <div>
@@ -963,51 +968,15 @@ function ConfigPanel({
 
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Boutons', 'Buttons')}</label>
-              <div className="space-y-1.5">
-                {boutons.map((b, i) => (
-                  <div key={i} className="rounded-lg border border-ink-200 p-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <select
-                        value={String(b.kind ?? 'reply')}
-                        onChange={(e) => {
-                          const kind = e.target.value;
-                          majBouton(i, { kind, ...(kind === 'openUrl' ? { url: '' } : {}), ...(kind === 'dial' ? { phoneNumber: '' } : {}) });
-                        }}
-                        className={`${cls} max-w-[7.5rem] bg-white`}
-                      >
-                        <option value="reply">{t('Réponse', 'Reply')}</option>
-                        <option value="openUrl">{t('Lien', 'Link')}</option>
-                        <option value="dial">{t('Appel', 'Call')}</option>
-                      </select>
-                      <input
-                        value={String(b.text ?? '')}
-                        maxLength={25}
-                        onChange={(e) => majBouton(i, { text: e.target.value, postbackData: String(b.postbackData ?? '') || `btn_${i + 1}` })}
-                        className={cls}
-                        placeholder={t('Libellé', 'Label')}
-                      />
-                      <button type="button" onClick={() => onPatch({ suggestions: boutons.filter((_, j) => j !== i) })} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
-                    </div>
-                    {b.kind === 'openUrl' && (
-                      <input value={String(b.url ?? '')} onChange={(e) => majBouton(i, { url: e.target.value })} className={`${cls} mt-1.5`} placeholder="https://" />
-                    )}
-                    {b.kind === 'dial' && (
-                      <input value={String(b.phoneNumber ?? '')} onChange={(e) => majBouton(i, { phoneNumber: e.target.value })} className={`${cls} mt-1.5`} placeholder="+33…" />
-                    )}
-                  </div>
-                ))}
-              </div>
-              {boutons.length < 11 && (
-                <button
-                  type="button"
-                  onClick={() => onPatch({ suggestions: [...boutons, { kind: 'reply', text: '', postbackData: `btn_${boutons.length + 1}` }] })}
-                  className="mt-1.5 text-xs text-brand-600 hover:underline"
-                >
-                  + {t('bouton', 'button')}
-                </button>
-              )}
+              <RcsButtonsEditor
+                boutons={boutons}
+                onChange={(suggestions) => onPatch({ suggestions })}
+                dateFields={fields}
+                compact
+                testIdPrefix="rcs-node"
+              />
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Chaque bouton « Réponse » devient une sortie à relier. Les boutons lien et appel sortent de la conversation et ne renvoient rien.', 'Each “Reply” button becomes an output to connect. Link and call buttons leave the conversation and send nothing back.')}
+                {t('Seul un bouton « Réponse » devient une sortie à relier. Les cinq autres formes agissent sur le téléphone du contact et ne renvoient rien au scénario.', 'Only a “Reply” button becomes an output to connect. The other five act on the contact’s phone and send nothing back to the scenario.')}
               </p>
             </div>
 

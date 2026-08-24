@@ -559,6 +559,40 @@ Appliqué au point de passage unique (`RcsSender.sendTo`), donc à l'envoi et no
 messages déjà en bibliothèque se réparent seuls. Sans cette réécriture, un clic ne retrouve aucune arête et le
 parcours s'arrête en silence.
 
+### Les six formes de bouton
+
+Les six du provider sont exposées, aucune de plus. Trois ramènent le contact dans la conversation ou l'en
+sortent, trois agissent sur son téléphone :
+
+| Forme | Ce qu'elle fait | Sortie de scénario |
+| --- | --- | --- |
+| `reply` | réponse en un tap | **oui**, `btn:<i>` |
+| `openUrl` | ouvre une page web | non |
+| `dial` | compose un numéro | non |
+| `calendar` | ajoute un rendez-vous à l'agenda | non |
+| `showLocation` | ouvre un lieu sur la carte | non |
+| `requestLocation` | demande sa position au contact | non |
+
+🔴 **Pourquoi une seule ouvre une branche.** Seul un `reply` renvoie une charge utile (`postbackData`) que
+l'exécuteur puisse relier à une arête. Une position partagée revient dans un corps `LOCATION` **sans texte et
+sans `postbackData`** (vérifié sur leur spec) : impossible d'en déduire quel bouton l'a déclenchée. Le builder
+n'affiche donc de sortie reliable que pour les boutons réponse, règle tenue par `ouvreUneSortie` et partagée
+entre le rendu du bloc et son panneau de configuration.
+
+**Le bouton Agenda et la date de CHAQUE contact.** `startAt`/`endAt` acceptent une date-heure locale
+(`2026-09-01T10:00`) ou une variable `{{champ}}`. Un message de bibliothèque étant réutilisable, une date en
+dur y serait vraie une fois et fausse ensuite ; l'écran ne propose que les champs de type **date et heure**
+(un champ `date` seul ne porte pas d'heure et produirait une valeur refusée). Une date qui ne se résout pas
+fait tomber **le bouton** (`elaguerBoutonsInvalides`, appliqué au point de passage unique de l'envoi et
+journalisé), jamais le message : sans cette garde, un contact sans rendez-vous ne recevrait plus rien du tout.
+
+**Ce que le contact renvoie.** Une position (`latitude`/`longitude`) et un fichier (`fileUrl`, `filename`)
+sont conservés et rendus lisibles dans le fil d'inbox par `apercuMo`. Sans cela, la réponse ne serait qu'une
+bulle vide et l'information demandée serait perdue.
+
+**Non exposé** : `webviewSize` sur un bouton lien (ouvrir la page dans une vue intégrée plutôt que dans le
+navigateur), et le carrousel.
+
 ### Composeur : texte, visuel, variables
 
 Le format se **déduit** de la saisie, dans un seul endroit (`web/lib/rcs.ts`, miroir serveur dans
@@ -576,8 +610,8 @@ QUE si le message porte des variables.
 
 ### Reste à faire
 
-Le carrousel n'a pas de composeur. Les boutons Agenda, Position et Demande de position existent chez le
-fournisseur et ne sont pas exposés.
+Le carrousel n'a pas de composeur, et `webviewSize` (ouvrir un lien dans une vue intégrée plutôt que dans le
+navigateur du téléphone) n'est pas exposé.
 
 ## Lot « inbox, comptes, modération » (2026-08-21, migrations 0068-0073)
 

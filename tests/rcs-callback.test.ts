@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import {
-  parseRcsDlr, parseRcsMo, estDlr, statutDepuisSmsmode, estDemandeArret, urlRappelRcs,
+  parseRcsDlr, parseRcsMo, estDlr, statutDepuisSmsmode, estDemandeArret, urlRappelRcs, apercuMo,
 } from '../src/rcs/callback';
 import type { RcsDlr, RcsMo } from '../src/rcs/callback';
 
@@ -96,7 +96,40 @@ describe('Lecture des rappels smsmode', () => {
       kind: 'suggestion',
       text: 'Oui, je veux découvrir 📅',
       postbackData: 'btn:0',
+      latitude: null,
+      longitude: null,
+      fileUrl: null,
+      filename: null,
     });
+  });
+
+  /**
+   * 🔴 Une position et un fichier arrivent SANS texte et SANS charge utile. C'est la raison pour laquelle un
+   * bouton « Demander la position » ne peut pas ouvrir une branche de scenario, et la raison pour laquelle il
+   * faut garder ces valeurs : sans elles, la reponse ne serait qu'une bulle vide dans l'inbox, et ce que
+   * l'operateur a demande au contact serait perdu.
+   */
+  it('garde les coordonnees d une position partagee, et en fait un apercu lisible', () => {
+    const mo = parseRcsMo({
+      ...MO_SUGGESTION,
+      body: { type: 'LOCATION', latitude: 48.8566, longitude: 2.3522 },
+    });
+    expect(mo).toMatchObject({ kind: 'location', latitude: 48.8566, longitude: 2.3522, text: null, postbackData: null });
+    expect(apercuMo(mo!)).toBe('📍 48.8566, 2.3522');
+  });
+
+  it('garde l adresse d un fichier recu', () => {
+    const mo = parseRcsMo({
+      ...MO_SUGGESTION,
+      body: { type: 'FILE', fileUrl: 'https://x.test/video.mp4', filename: 'video.mp4', contentType: 'video/mp4' },
+    });
+    expect(mo).toMatchObject({ kind: 'file', fileUrl: 'https://x.test/video.mp4', filename: 'video.mp4' });
+    expect(apercuMo(mo!)).toBe('video.mp4 https://x.test/video.mp4');
+  });
+
+  it('rend un apercu meme quand la position arrive sans coordonnees', () => {
+    const mo = parseRcsMo({ ...MO_SUGGESTION, body: { type: 'LOCATION' } });
+    expect(apercuMo(mo!)).toBe('📍 position partagée');
   });
 
   it('lit un message ecrit, sans charge utile de bouton', () => {

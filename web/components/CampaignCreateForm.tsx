@@ -15,6 +15,8 @@ import { HubspotListImport } from '@/components/HubspotListImport';
 import { TemplateForm, type CreatedTemplate } from '@/components/TemplateForm';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { versMessageRcs, versBrouillonRcs, maxTexteRcs } from '@/lib/rcs';
+import { boutonPret } from '@/lib/rcs-boutons';
+import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import {
@@ -805,7 +807,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     // Le plafond de texte CHANGE quand on ajoute un visuel (2000 au lieu de 3072, borne du champ description
     // chez smsmode). Un texte déjà saisi ne se raccourcit pas tout seul : sans ce contrôle, ajouter une image
     // à la fin ferait échouer la création avec un « content invalide » que personne ne saurait relier à ça.
-    ? (rcsAgentId !== '' && rcsText.trim() !== '' && rcsText.length <= maxTexteRcs(rcsImage))
+    ? (rcsAgentId !== '' && rcsText.trim() !== '' && rcsText.length <= maxTexteRcs(rcsImage) && rcsBoutons.every(boutonPret))
     : mode === 'workflow'
       ? (workflowId !== '' && wfError === null && varsComplete)
       : (templateName !== '' && varsComplete);
@@ -1067,48 +1069,16 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             placeholder={t('Votre message…', 'Your message…')}
             className={inputCls}
           />
-          <div className="mt-2 space-y-1.5">
-            {rcsBoutons.map((b, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <select
-                  value={b.kind}
-                  onChange={(e) => {
-                    const kind = e.target.value as RcsSuggestion['kind'];
-                    const base = { text: b.text, postbackData: b.postbackData };
-                    setRcsBoutons(rcsBoutons.map((x, j) => (j === i
-                      ? (kind === 'reply' ? { ...base, kind } : kind === 'openUrl' ? { ...base, kind, url: '' } : { ...base, kind, phoneNumber: '' })
-                      : x)));
-                  }}
-                  className={`${inputCls} max-w-[7.5rem] bg-white`}
-                >
-                  <option value="reply">{t('Réponse', 'Reply')}</option>
-                  <option value="openUrl">{t('Lien', 'Link')}</option>
-                  <option value="dial">{t('Appel', 'Call')}</option>
-                </select>
-                <input
-                  value={b.text}
-                  maxLength={25}
-                  onChange={(e) => setRcsBoutons(rcsBoutons.map((x, j) => (j === i ? { ...x, text: e.target.value, postbackData: x.postbackData || `btn_${i + 1}` } : x)))}
-                  className={inputCls}
-                  placeholder={t('Libellé du bouton', 'Button label')}
-                />
-                {b.kind === 'openUrl' && (
-                  <input value={b.url} onChange={(e) => setRcsBoutons(rcsBoutons.map((x, j) => (j === i && x.kind === 'openUrl' ? { ...x, url: e.target.value } : x)))} className={inputCls} placeholder="https://" />
-                )}
-                {b.kind === 'dial' && (
-                  <input value={b.phoneNumber} onChange={(e) => setRcsBoutons(rcsBoutons.map((x, j) => (j === i && x.kind === 'dial' ? { ...x, phoneNumber: e.target.value } : x)))} className={inputCls} placeholder="+33…" />
-                )}
-                <button type="button" onClick={() => setRcsBoutons(rcsBoutons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
-              </div>
-            ))}
+          <div className="mt-2">
+            <RcsButtonsEditor
+              boutons={rcsBoutons}
+              onChange={setRcsBoutons}
+              dateFields={userFields}
+              testIdPrefix="rcs-campagne"
+            />
           </div>
-          {rcsBoutons.length < 11 && (
-            <button type="button" onClick={() => setRcsBoutons([...rcsBoutons, { kind: 'reply', text: '', postbackData: `btn_${rcsBoutons.length + 1}` }])} className="mt-1.5 text-xs text-brand-600 hover:underline">
-              + {t('bouton', 'button')}
-            </button>
-          )}
           <p className="mt-1 text-[11px] text-ink-400">
-            {t('Pas de template ni de variables : le message part tel quel, sous votre agent de marque.', 'No template and no variables: the message goes out as written, under your brand agent.')}
+            {t('Aucun template à faire approuver : le message part tel qu’il est écrit, sous votre agent de marque. Les variables {{champ}} du texte sont remplacées par la fiche de chaque contact.', 'No template to get approved: the message goes out as written, under your brand agent. The {{field}} variables in the text are filled in from each contact.')}
           </p>
           <p className="mt-1 text-[11px] text-amber-700">
             {t('Les contacts non joignables en RCS ne reçoivent RIEN et sont comptés « ignorés » dans le rapport. Pour les rattraper, passez par un scénario avec un bloc RCS et sa sortie « Non joignable ».', 'Contacts not reachable on RCS receive NOTHING and are counted as skipped in the report. To catch them, use a scenario with an RCS block and its “Not reachable” output.')}

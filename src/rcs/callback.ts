@@ -67,6 +67,17 @@ export interface RcsMo {
   text: string | null;
   /** Charge utile du bouton tapé (`kind === 'suggestion'`). C'est elle qui choisit la branche du scénario. */
   postbackData: string | null;
+  /**
+   * Position partagée par le contact (`kind === 'location'`). Elle arrive SANS texte et SANS charge utile :
+   * c'est la raison pour laquelle un bouton « Demander la position » ne peut pas ouvrir une branche de
+   * scénario, et pour laquelle il faut garder ces coordonnées ici, sinon la réponse ne serait qu'une bulle
+   * vide dans l'inbox.
+   */
+  latitude: number | null;
+  longitude: number | null;
+  /** Fichier envoyé par le contact (`kind === 'file'`). Même raison : sans l'adresse, la pièce est perdue. */
+  fileUrl: string | null;
+  filename: string | null;
 }
 
 /** Enveloppe commune aux deux rappels. `passthrough` : leur corps porte bien plus que ce qu'on lit, et une
@@ -93,6 +104,10 @@ const corpsMo = z.object({
     type: z.string().optional(),
     text: z.string().optional(),
     postbackData: z.string().optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    fileUrl: z.string().optional(),
+    filename: z.string().optional(),
   }).partial().passthrough(),
 }).passthrough();
 
@@ -169,6 +184,10 @@ export function parseRcsMo(raw: unknown): RcsMo | null {
     kind,
     text: m.data.body.text ?? null,
     postbackData: kind === 'suggestion' ? (m.data.body.postbackData ?? null) : null,
+    latitude: kind === 'location' ? (m.data.body.latitude ?? null) : null,
+    longitude: kind === 'location' ? (m.data.body.longitude ?? null) : null,
+    fileUrl: kind === 'file' ? (m.data.body.fileUrl ?? null) : null,
+    filename: kind === 'file' ? (m.data.body.filename ?? null) : null,
   };
 }
 
@@ -181,6 +200,25 @@ export function parseRcsMo(raw: unknown): RcsMo | null {
  * milieu d'une phrase (« je ne peux pas stopper là ») n'est pas une demande d'arrêt, et désabonner un
  * contact à tort est une faute symétrique.
  */
+/**
+ * Ce qui s'affiche dans le fil d'inbox pour un message entrant.
+ *
+ * Une position et un fichier n'ont pas de texte : sans cette mise en forme, leur bulle serait vide et
+ * l'information (les coordonnées, l'adresse du fichier) serait définitivement perdue, alors que c'est
+ * exactement ce que l'opérateur a demandé au contact en posant le bouton.
+ */
+export function apercuMo(mo: RcsMo): string {
+  if (mo.kind === 'location') {
+    return mo.latitude !== null && mo.longitude !== null
+      ? `📍 ${mo.latitude}, ${mo.longitude}`
+      : '📍 position partagée';
+  }
+  if (mo.kind === 'file') {
+    return [mo.filename, mo.fileUrl].filter((x) => x !== null && x !== '').join(' ') || '📎 fichier reçu';
+  }
+  return mo.text ?? `[${mo.kind}]`;
+}
+
 export function estDemandeArret(texte: string | null): boolean {
   if (!texte) return false;
   return /^\s*(stop|stopper|unsubscribe|desabonner|désabonner|arret|arrêt)\b/i.test(texte.trim());

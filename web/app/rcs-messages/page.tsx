@@ -5,12 +5,14 @@ import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import {
   listRcsMessages, createRcsMessage, updateRcsMessage, deleteRcsMessage, listUserFields,
-  type RcsMessage, type RcsSuggestion, type UserFieldDef,
+  type RcsMessage, type UserFieldDef,
 } from '@/lib/api';
 import {
   versMessageRcs, versBrouillonRcs, maxTexteRcs, EMOJIS_RCS, MAX_BOUTONS_RCS,
   type BrouillonRcs,
 } from '@/lib/rcs';
+import { boutonPret, ICONE_KIND } from '@/lib/rcs-boutons';
+import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { emailResolvableFields } from '@/lib/fields';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -76,10 +78,10 @@ function RcsMessagesInner({ session }: { session: Session }) {
 
   // Un bouton lien sans URL, ou un bouton appel sans numéro, partirait chez le provider et serait refusé.
   // On bloque l'enregistrement plutôt que de laisser découvrir l'erreur au moment de l'envoi.
+  // `boutonPret` : un bouton incomplet (lien sans URL, agenda sans date) serait refusé par le serveur, et son
+  // refus ferait échouer l'enregistrement du message ENTIER. Même règle sur les trois écrans qui composent.
   const pret = form.name.trim() !== '' && form.text.trim() !== '' && form.text.length <= maxTexte
-    && form.suggestions.every((s) => s.text.trim() !== ''
-      && (s.kind !== 'openUrl' || s.url.trim() !== '')
-      && (s.kind !== 'dial' || s.phoneNumber.trim() !== ''));
+    && form.suggestions.every(boutonPret);
 
   /** Insère du texte à la position du curseur du champ Message, et y garde le focus juste après. */
   function inserer(jeton: string) {
@@ -121,13 +123,6 @@ function RcsMessagesInner({ session }: { session: Session }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : t('Suppression impossible', 'Delete failed'));
     }
-  }
-
-  function majBouton(i: number, patch: Partial<RcsSuggestion>) {
-    setForm((f) => ({
-      ...f,
-      suggestions: f.suggestions.map((s, j) => (j === i ? ({ ...s, ...patch } as RcsSuggestion) : s)),
-    }));
   }
 
   return (
@@ -242,62 +237,14 @@ function RcsMessagesInner({ session }: { session: Session }) {
               </p>
 
               <label className="mb-1 mt-3 block text-xs font-medium text-ink-600">{t('Boutons', 'Buttons')}</label>
-              <div className="space-y-2">
-                {form.suggestions.map((s, i) => (
-                  <div key={i} className="rounded-lg border border-ink-200 p-2">
-                    <div className="flex items-center gap-1.5">
-                      <select
-                        value={s.kind}
-                        onChange={(e) => {
-                          const kind = e.target.value as RcsSuggestion['kind'];
-                          const base = { text: s.text, postbackData: s.postbackData };
-                          majBouton(i, kind === 'reply' ? { ...base, kind }
-                            : kind === 'openUrl' ? { ...base, kind, url: '' }
-                              : { ...base, kind, phoneNumber: '' });
-                        }}
-                        className={`${inputCls} max-w-[9rem] bg-white`}
-                      >
-                        <option value="reply">{t('Réponse', 'Reply')}</option>
-                        <option value="openUrl">{t('Lien', 'Link')}</option>
-                        <option value="dial">{t('Appel', 'Call')}</option>
-                      </select>
-                      <input
-                        value={s.text}
-                        maxLength={25}
-                        onChange={(e) => majBouton(i, { text: e.target.value })}
-                        className={inputCls}
-                        placeholder={t('Libellé du bouton', 'Button label')}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setForm({ ...form, suggestions: form.suggestions.filter((_, j) => j !== i) })}
-                        className="shrink-0 text-ink-400 hover:text-coral"
-                        aria-label={t('Retirer', 'Remove')}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    {s.kind === 'openUrl' && (
-                      <input value={s.url} onChange={(e) => majBouton(i, { url: e.target.value })} className={`${inputCls} mt-1.5`} placeholder="https://" />
-                    )}
-                    {s.kind === 'dial' && (
-                      <input value={s.phoneNumber} onChange={(e) => majBouton(i, { phoneNumber: e.target.value })} className={`${inputCls} mt-1.5`} placeholder="+33…" />
-                    )}
-                  </div>
-                ))}
-              </div>
-              {form.suggestions.length < MAX_BOUTONS_RCS && (
-                <button
-                  type="button"
-                  data-testid="rcs-message-add-button"
-                  onClick={() => setForm({ ...form, suggestions: [...form.suggestions, { kind: 'reply', text: '', postbackData: '' }] })}
-                  className="mt-1.5 text-xs text-brand-600 hover:underline"
-                >
-                  + {t('bouton', 'button')}
-                </button>
-              )}
+              <RcsButtonsEditor
+                boutons={form.suggestions}
+                onChange={(suggestions) => setForm((f) => ({ ...f, suggestions }))}
+                max={MAX_BOUTONS_RCS}
+                dateFields={fields}
+              />
               <p className="mt-1 text-[11px] text-ink-400">
-                {t('Maximum 11 boutons, 25 caractères chacun (les variables n’y sont pas remplacées). Un bouton « Réponse » devient une sortie à relier dans un scénario ; les boutons lien et appel sortent de la conversation.', 'Up to 11 buttons, 25 characters each (variables are not substituted there). A "Reply" button becomes an output to connect in a scenario; link and call buttons leave the conversation.')}
+                {t('Maximum 11 boutons, 25 caractères chacun (les variables ne sont pas remplacées dans un libellé). Un bouton « Réponse » est le seul qui devienne une sortie à relier dans un scénario.', 'Up to 11 buttons, 25 characters each (variables are not substituted in a label). A "Reply" button is the only one that becomes an output to connect in a scenario.')}
               </p>
             </div>
 
@@ -323,7 +270,7 @@ function RcsMessagesInner({ session }: { session: Session }) {
                 <div data-testid="rcs-preview-buttons" className="mt-2 flex flex-wrap gap-1.5">
                   {form.suggestions.filter((s) => s.text.trim() !== '').map((s, i) => (
                     <span key={i} className="rounded-full border border-mint-500 bg-white px-3 py-1 text-xs text-mint-700">
-                      {s.kind === 'openUrl' ? '🔗 ' : s.kind === 'dial' ? '📞 ' : ''}{s.text}
+                      {ICONE_KIND[s.kind]}{s.text}
                     </span>
                   ))}
                 </div>

@@ -65,7 +65,7 @@ import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { verifierCleRcs, fetchGet } from './rcs/channel-info';
-import { estDemandeArret } from './rcs/callback';
+import { estDemandeArret, apercuMo } from './rcs/callback';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
@@ -710,7 +710,9 @@ async function main(): Promise<void> {
         }
       },
       onMo: async (tenant, mo) => {
-        const apercu = mo.text ?? `[${mo.kind}]`;
+        // Une position ou un fichier n'ont pas de texte : `apercuMo` en fabrique un LISIBLE plutôt que de
+        // laisser une bulle vide et de jeter les coordonnées.
+        const apercu = apercuMo(mo);
         // 1. STOP AVANT tout le reste. Continuer d'écrire après un refus fait suspendre l'agent par
         //    l'opérateur, et l'enregistrement de l'opt-out ne doit dépendre d'aucune étape qui pourrait
         //    échouer après lui.
