@@ -50,6 +50,7 @@ import { PgPhoneStatusStore } from './account/store.pg';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
+import { creerDlqSweep } from './ops/dlq-sweep';
 import { MetaClientFactory } from './meta/factory';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
@@ -703,6 +704,34 @@ async function main(): Promise<void> {
   const dateSweeper = setInterval(() => void dateSweep(), config.AUTOMATION_DATE_SWEEP_INTERVAL_MS);
   dateSweeper.unref();
 
+  // Sorti de la garde META_ACCESS_TOKEN ci-dessous : la surveillance des files ne touche pas Meta, et un
+  // déploiement sans token Meta ne doit pas devenir aveugle aux messages perdus.
+  const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
+
+  // Surveillance des DEAD LETTER QUEUES. Un job qui épuise ses rejeux y atterrit, et RIEN ne les consomme :
+  // sans cette alerte, la perte est totalement silencieuse. Constaté le 2026-08-25 : un message client entrant
+  // dormait dans `webhook-dlq` depuis le 2026-08-17, jamais signalé. Cadence 5 min, alignée sur le throttle
+  // d'alerte ; le balayage n'alerte QUE sur une hausse (cf. `dlq-sweep.ts`), sinon la condition étant permanente
+  // il enverrait un Telegram toutes les 5 minutes à vie.
+  const dlqSweep = creerDlqSweep({
+    queueLoad: () => opsStore.getQueueLoad(),
+    // Clé d'alerte PAR FILE : deux DLQ qui se remplissent en même temps doivent produire deux messages, sinon
+    // le throttle de 5 min en masquerait une. La dédup sur la répétition est faite par le balayage lui-même.
+    alert: (m) => alert(`dlq:${m.split(' ')[0]}`, m),
+  });
+  const dlqSweepGarde = async (): Promise<void> => {
+    try {
+      await dlqSweep();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('dlq-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:dlq', `dlq-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void dlqSweepGarde();
+  const dlqSweeper = setInterval(() => void dlqSweepGarde(), 5 * 60_000);
+  dlqSweeper.unref();
+
   // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
   // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les
   // rafraîchit tous (cross-tenant, lecture Graph seule) et alerte sur jeton invalide / numéro non connecté /
@@ -711,7 +740,6 @@ async function main(): Promise<void> {
   // (évite un faux « AUTH » sur un client vide en dev/test). alertedPhones dédup par TRANSITION (perdu au restart).
   let statusSweeper: NodeJS.Timeout | null = null;
   if (config.META_ACCESS_TOKEN) {
-    const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
     const alertedPhones = new Map<string, PhoneProblem>();
     const statusSweep = async (): Promise<void> => {
       try {
