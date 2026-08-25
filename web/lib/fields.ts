@@ -44,6 +44,31 @@ export function isSystemFieldKey(key: string): boolean {
  *  suite racine) et ré-exportée ici pour rester au même endroit que les autres helpers de champs. */
 export { WHATSAPP_OPTIN_FIELD_KEY } from './flow-mapping';
 
+/**
+ * Champs SOCLE : des champs de base stockés dans `contacts.fields`, que le serveur MATÉRIALISE à la première
+ * écriture (miroir de `SOCLE_FIELDS`, src/crm/fields.ts). Ils n'existent donc pas dans `user_fields` tant que
+ * personne ne les a remplis, ce qui les rendait invisibles ET non ajoutables sur une fiche contact vierge :
+ * un contact sans email était impossible à compléter depuis sa fiche (signalé par Julien le 2026-08-25).
+ * Ils ont désormais leur ligne dédiée sur la fiche, toujours affichée, même vide.
+ *
+ * `tests/web-socle-fields-parity.test.ts` casse si les deux listes divergent.
+ */
+export const SOCLE_CLES: readonly string[] = ['prenom', 'email'];
+
+/**
+ * Identifiant WhatsApp d'un contact. Il n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la
+ * résolution serveur (`MATCH_BY_WAID_SQL`, src/crm/contact-store.pg.ts) : les chiffres du numéro, ou le BSUID
+ * à défaut. C'est la clé qui relie un contact à sa conversation, à ses parcours et à ses automations.
+ *
+ * Le dériver ici plutôt que de l'inventer côté écran garantit qu'on montre bien la MÊME valeur que celle sur
+ * laquelle le serveur fait ses jointures : un « identifiant » affiché qui ne servirait à rien à la recherche
+ * serait pire que pas d'identifiant du tout.
+ */
+export function waIdDuContact(c: { phoneE164?: string | null; bsuid?: string | null }): string | null {
+  const chiffres = (c.phoneE164 ?? '').replace(/[^0-9]/g, '');
+  return chiffres !== '' ? chiffres : (c.bsuid ?? null);
+}
+
 /** Champs perso à afficher/proposer = les user fields HORS clés système (évite le doublon avec Prénom/Email système). */
 export function customFieldsOnly(fields: UserFieldDef[]): UserFieldDef[] {
   return fields.filter((f) => !isSystemFieldKey(f.key));

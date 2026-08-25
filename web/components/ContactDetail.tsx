@@ -13,7 +13,7 @@ import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { MbaTabs } from '@/components/MbaTabs';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
-import { fieldValue } from '@/lib/fields';
+import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
 import { formatDate } from '@/lib/day';
 import {
   updateContact,
@@ -131,9 +131,11 @@ export function ContactDetail({
   const { locale } = useLocale();
   const badge = OPT_IN_LABEL[contact.optInStatus] ?? OPT_IN_LABEL.unknown!;
   const defByKey = new Map(userFields.map((d) => [d.key, d]));
-  // 'prenom' est déjà affiché dans le bloc fixe ci-dessus -> l'exclure de la section Champs (pas de doublon).
-  const fieldEntries = Object.entries(contact.fields ?? {}).filter(([k, v]) => k !== 'prenom' && v != null && String(v).trim() !== '');
-  const filledKeys = new Set([...fieldEntries.map(([k]) => k), 'prenom']);
+  // Les champs SOCLE ont leur ligne DÉDIÉE dans le bloc fixe ci-dessus (toujours visible, même vide) : les
+  // exclure d'ici, sinon ils s'afficheraient deux fois dès qu'ils sont remplis, et seraient re-proposés à
+  // l'ajout alors qu'ils sont déjà là. Source unique : `SOCLE_CLES`, miroir de `SOCLE_FIELDS` côté serveur.
+  const fieldEntries = Object.entries(contact.fields ?? {}).filter(([k, v]) => !SOCLE_CLES.includes(k) && v != null && String(v).trim() !== '');
+  const filledKeys = new Set([...fieldEntries.map(([k]) => k), ...SOCLE_CLES]);
   const addable = userFields.filter((d) => !filledKeys.has(d.key));
 
   const [busy, setBusy] = useState(false);
@@ -266,19 +268,37 @@ export function ContactDetail({
           <ContactHistoryPanel tenantId={tenantId} contactId={contact.id} />
         ) : (
         <>
-        <div className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
+        {/* Les champs de BASE de la fiche : toujours rendus, même vides. Le testid sert à les cibler sans
+            ambiguïté (« Prénom » existe aussi en en-tête de la liste des contacts). */}
+        <div data-testid="fiche-champs-base" className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
           <span className="text-ink-400">{t('Nom', 'Name')}</span>
           <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
           <span className="text-ink-400">{t('Prénom', 'First name')}</span>
           <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('prenom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
+          {/* Email : champ SOCLE au même titre que Prénom (cf. `SOCLE_FIELDS`, src/crm/fields.ts), donc TOUJOURS
+              présent sur la fiche, même vide. Il n'apparaissait qu'une fois rempli, et il n'était même pas
+              proposé à l'ajout : la liste des champs ajoutables vient de `user_fields`, où un champ socle
+              n'existe pas tant que personne ne l'a écrit. Un contact sans email était donc impossible à
+              compléter depuis sa fiche. Signalé par Julien le 2026-08-25. */}
+          <span className="text-ink-400">{t('Email', 'Email')}</span>
+          <EditableField value={fieldValue(contact, 'email') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('email', v)} onDelete={() => apply({ removeFields: ['email'] })} />
           <span className="text-ink-400">{t('Téléphone', 'Phone')}</span>
           <span className="font-mono text-ink-900" title={t("Le numéro (identité/routage WhatsApp) n'est pas modifiable", "The number (WhatsApp identity/routing) can't be changed")}>{contact.phoneE164 ?? '-'}</span>
-          {contact.bsuid && (
-            <>
-              <span className="text-ink-400">{t('Compte WhatsApp', 'WhatsApp account')}</span>
-              <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro (non modifiable)", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number (not editable)")}>{contact.bsuid}</span>
-            </>
-          )}
+          {/* BSUID et identifiant WhatsApp : TOUJOURS affichés, même absents. Ils ne se remplissent pas à la
+              main (ce sont des identités de routage, pas des données de fiche), mais les masquer quand ils
+              sont vides empêchait de comprendre POURQUOI un contact ne reçoit rien, ou de les recopier pour
+              un diagnostic. Demandé par Julien le 2026-08-25. */}
+          <span className="text-ink-400">{t('Compte WhatsApp', 'WhatsApp account')}</span>
+          <span className="font-mono text-ink-900" title={t("BSUID : identifiant WhatsApp unique d'un client qui n'a pas partagé son numéro. Non modifiable, et absent tant que le client a partagé son numéro.", "BSUID: unique WhatsApp identifier for a customer who hasn't shared their number. Not editable, and absent as long as the customer shared their number.")}>
+            {contact.bsuid ?? <span className="font-sans text-ink-300">{t('aucun', 'none')}</span>}
+          </span>
+          {/* L'identifiant WhatsApp n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la résolution
+              serveur (`MATCH_BY_WAID_SQL`) : les chiffres du numéro, ou le BSUID à défaut. Le montrer évite de
+              le recalculer de tête quand on cherche une conversation ou un parcours. */}
+          <span className="text-ink-400">{t('Identifiant WhatsApp', 'WhatsApp ID')}</span>
+          <span className="font-mono text-ink-900" title={t("Dérivé du numéro (chiffres seuls) ou du BSUID. C'est la clé qui relie ce contact à sa conversation et à ses parcours. Non modifiable.", "Derived from the number (digits only) or the BSUID. It is the key linking this contact to its conversation and journeys. Not editable.")}>
+            {waIdDuContact(contact) ?? <span className="font-sans text-ink-300">{t('aucun', 'none')}</span>}
+          </span>
           <span className="text-ink-400">{t('Consentement', 'Consent')}</span>
           {/* Modifiable À LA MAIN, et ce n'est pas du confort : le garde-fou de campagne exige un opt-in
               EXPLICITE pour le marketing, donc un contact « inconnu » est écarté des envois en silence. Sans ce

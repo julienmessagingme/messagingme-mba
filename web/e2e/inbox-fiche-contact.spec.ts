@@ -35,6 +35,45 @@ async function mock(page: import('@playwright/test').Page, contacts: unknown[] =
 }
 
 test.describe('Inbox : fiche contact', () => {
+  test('🔴 les champs de BASE sont visibles même VIDES, pour pouvoir les remplir', async ({ page }) => {
+    // Défaut signalé par Julien le 2026-08-25 : Email n'apparaissait qu'une fois rempli, et il n'était même
+    // pas proposé à l'ajout (la liste des champs ajoutables vient de `user_fields`, où un champ SOCLE n'existe
+    // pas tant que personne ne l'a écrit). Un contact sans email était donc impossible à compléter depuis sa
+    // fiche. Même chose pour le BSUID et l'identifiant WhatsApp, masqués quand ils sont absents.
+    const nu = {
+      id: 'ct2', profileName: 'Bob Vide', phoneE164: '+33600000002', bsuid: null,
+      optInStatus: 'unknown', tags: [], fields: {}, createdAt: '2026-01-01T00:00:00Z',
+    };
+    await mock(page, [nu]);
+    await page.goto('/contacts');
+    await page.getByText('Bob Vide').first().click();
+
+    const fiche = page.getByTestId('fiche-champs-base');
+    // Les quatre lignes de base sont là, alors que le contact n'a AUCUN champ rempli.
+    await expect(fiche.getByText('Prénom', { exact: true })).toBeVisible();
+    await expect(fiche.getByText('Email', { exact: true })).toBeVisible();
+    await expect(fiche.getByText('Compte WhatsApp', { exact: true })).toBeVisible();
+    await expect(fiche.getByText('Identifiant WhatsApp', { exact: true })).toBeVisible();
+
+    // L'identifiant WhatsApp est DÉRIVÉ du numéro (chiffres seuls), comme le fait la résolution serveur.
+    await expect(fiche.getByText('33600000002', { exact: true })).toBeVisible();
+  });
+
+  test('un contact SANS numéro montre son BSUID comme identifiant WhatsApp', async ({ page }) => {
+    const sansNumero = {
+      id: 'ct3', profileName: 'Carla BSUID', phoneE164: null, bsuid: 'BSU_ab12cd34',
+      optInStatus: 'unknown', tags: [], fields: {}, createdAt: '2026-01-01T00:00:00Z',
+    };
+    await mock(page, [sansNumero]);
+    await page.goto('/contacts');
+    await page.getByText('Carla BSUID').first().click();
+
+    // Le BSUID apparaît DEUX fois : comme compte WhatsApp, et comme identifiant dérivé (il fait office des
+    // deux quand le contact n'a pas partagé son numéro).
+    await expect(page.getByText('BSU_ab12cd34').first()).toBeVisible();
+    await expect(page.getByText('Identifiant WhatsApp', { exact: true })).toBeVisible();
+  });
+
   test('la vignette ne montre PLUS l’extrait du message', async ({ page }) => {
     // Le fil complet est juste à côté : répéter son début en minuscule ne servait qu'à faire deviner ce
     // qu'on peut lire en entier.
