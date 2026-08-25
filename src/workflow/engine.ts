@@ -45,7 +45,9 @@ export type WorkflowAction =
   /** Consentement marketing posé par un scénario. Les deux sens, comme depuis la fiche et l'action en masse. */
   | { kind: 'optIn'; value: 'opted_in' | 'opted_out' }
   | { kind: 'sendTemplate'; templateName: string; language: string; buttons: WorkflowButton[] }
-  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[] }
+  /** `mediaUrl` = visuel du bloc, hébergé chez nous (`/m/<code>.<ext>`), le MÊME champ que le bloc RCS.
+   *  Absent = message texte, comportement historique. */
+  | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[]; mediaUrl?: string }
   | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string }
   | SendEmailAction;
 
@@ -455,7 +457,10 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     // message simple). Avant, il ne faisait rien du tout, en silence : on croyait avoir programmé un message,
     // le contact ne recevait jamais rien et aucune erreur n'apparaissait nulle part.
     if (!body) return null;
-    return { kind: 'sendQuickMessage', body, buttons };
+    // Visuel facultatif. Même nom de champ que le bloc RCS (`imageUrl`) : un seul composant d'écran, une
+    // seule convention de stockage, et le même visuel sert aux DEUX canaux (en-tête WhatsApp, carte RCS).
+    const mediaUrl = String(node.data.imageUrl ?? '').trim();
+    return { kind: 'sendQuickMessage', body, buttons, ...(mediaUrl ? { mediaUrl } : {}) };
   }
   if (node.type === 'email') {
     // Lecture défensive comme les autres blocs de config : `data` est opaque (parseGraph ne le valide pas pour

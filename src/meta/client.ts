@@ -97,8 +97,16 @@ export class MetaClient {
    * Message interactif à boutons de réponse (hors template). `to` = E.164 OU BSUID (routé par messagingTarget).
    * Les titres vides sont filtrés en PRÉSERVANT l'index d'origine dans `reply.id` (`btn:<i>`), pour que la branche
    * par bouton (sourceHandle) reste stable même si une réponse du milieu est vide. Cap Meta : 3 boutons, titre 20 car.
+   *
+   * `mediaId` = visuel d'EN-TÊTE (identifiant Meta, pas une URL). Un message interactif accepte un en-tête
+   * image/vidéo/document ; on n'expose que l'image, seul format que l'éditeur sait téléverser.
+   *
+   * ⚠️ Un identifiant, et pas un lien, alors que Meta accepte les deux : c'est le chemin déjà éprouvé en
+   * production par l'en-tête des templates (`TemplateMedia.prepareOne`, qui téléverse et met en cache).
+   * Passer un lien ferait dépendre la livraison de l'accessibilité de notre hébergement au moment où Meta
+   * va le chercher.
    */
-  async sendInteractive(to: string, body: string, buttons: { text: string }[]): Promise<SendResult> {
+  async sendInteractive(to: string, body: string, buttons: { text: string }[], mediaId?: string): Promise<SendResult> {
     const replyButtons = buttons
       .map((b, i) => ({ type: 'reply' as const, reply: { id: `btn:${i}`, title: b.text.trim().slice(0, 20) } }))
       .filter((b) => b.reply.title !== '')
@@ -109,9 +117,25 @@ export class MetaClient {
       type: 'interactive',
       interactive: {
         type: 'button',
+        ...(mediaId ? { header: { type: 'image', image: { id: mediaId } } } : {}),
         body: { text: body },
         action: { buttons: replyButtons },
       },
+    });
+    return { messageId: this.messageId(json) };
+  }
+
+  /**
+   * Image seule, légende facultative. Nécessaire parce qu'un message INTERACTIF exige au moins un bouton :
+   * un bloc « message rapide » qui porte un visuel mais aucune réponse rapide n'a donc pas d'autre chemin.
+   * Sans ça, ce montage partirait en texte nu et le visuel disparaîtrait sans que personne ne le sache.
+   */
+  async sendImage(to: string, mediaId: string, caption?: string): Promise<SendResult> {
+    const json = await this.call('messages', {
+      messaging_product: 'whatsapp',
+      ...messagingTarget(to),
+      type: 'image',
+      image: { id: mediaId, ...(caption && caption.trim() !== '' ? { caption } : {}) },
     });
     return { messageId: this.messageId(json) };
   }

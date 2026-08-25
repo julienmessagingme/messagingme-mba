@@ -541,3 +541,43 @@ describe('etancheite des canaux : advance refuse un retour du mauvais tuyau', ()
     expect(tags).toEqual(['avance']);
   });
 });
+
+/**
+ * 🔴 Un visuel sur un bloc « message rapide » doit survivre AUX DEUX canaux. En WhatsApp il devient
+ * l'en-tête du message interactif ; en RCS un texte nu ne porte pas d'image, il faut une carte. Sans ça,
+ * l'image disparaîtrait en silence dès que le parcours est en RCS.
+ */
+describe('message rapide à visuel sur un parcours RCS', () => {
+  /** Le montage réel : un message rapide DERRIÈRE un bloc RCS. Le parcours attend sur le bloc RCS, le
+   *  contact tape une suggestion, et la suite part sur le canal du PARCOURS, donc en RCS. */
+  function grapheQuick(data: Record<string, unknown>): WorkflowGraph {
+    return parseGraph({
+      nodes: [
+        { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour' } },
+        { id: 'q', type: 'quick_message', position: pos, data },
+      ],
+      edges: [{ id: 'e1', source: 'r', target: 'q', sourceHandle: 'btn:0' }],
+    })!;
+  }
+
+  it('avec un visuel -> une CARTE porteuse de l image, les boutons restant sous le message', async () => {
+    const g = grapheQuick({ body: 'Regarde ça', quickReplies: ['Oui', 'Non'], imageUrl: 'https://mba.messagingme.app/m/abc.png' });
+    const { provider, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0', 'rcs');
+
+    expect(provider.sent).toHaveLength(1);
+    const msg = provider.sent[0]!.msg as { kind: string; card?: { description?: string; mediaUrl?: string }; suggestions?: unknown[] };
+    expect(msg.kind).toBe('card');
+    expect(msg.card).toMatchObject({ description: 'Regarde ça', mediaUrl: 'https://mba.messagingme.app/m/abc.png' });
+    expect(msg.suggestions).toHaveLength(2); // les boutons restent SOUS le message, comme avant
+  });
+
+  it('sans visuel -> texte, exactement comme avant (aucun changement pour les montages existants)', async () => {
+    const g = grapheQuick({ body: 'Ca vous va ?', quickReplies: ['Oui'] });
+    const { provider, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+    await executor.advance('t1', '33600000002', 'mo-2', 'btn:0', 'rcs');
+
+    const msg = provider.sent[0]!.msg as { kind: string };
+    expect(msg.kind).toBe('text');
+  });
+});

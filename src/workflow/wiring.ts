@@ -436,7 +436,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Message rapide (node quick_message) : texte + 2-3 réponses rapides, hors template. Deux chemins d'accès,
     // tous deux EN fenêtre 24 h : `advance` (le contact vient de répondre) et `startFromNode` (cible node de
     // /v1/sends, qui a écarté les hors-fenêtre en amont). Texte littéral en V1 (pas de variables).
-    sendQuickMessage: async (tenant, waId, body, buttons) => {
+    sendQuickMessage: async (tenant, waId, body, buttons, mediaUrl) => {
       if (dryRun) return; // DRY_RUN : aucun appel Meta
       if (body.trim() === '') return 'le bloc « message rapide » n\'a pas de texte';
       const pn = await repo.getTenantPhoneNumberId(tenant);
@@ -453,8 +453,26 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // les titres vides EN PRÉSERVANT l'index d'origine dans `btn:<i>`. Filtrer ici renumérotait les boutons
       // restants à partir de 0, donc une réponse rapide placée après une case vide renvoyait un payload qui
       // ne correspondait à aucune branche du scénario, et le contact partait sur la sortie par défaut.
+      // Visuel : téléversé chez Meta et posé en EN-TÊTE. On réutilise le préparateur des visuels de template,
+      // qui tourne en production et met l'identifiant en cache par (numéro, URL).
+      //
+      // 🔴 Préparation ratée -> REFUS EXPLICITE, jamais un envoi sans l'image. Laisser partir le texte seul
+      // ferait croire à un message correct alors que l'opérateur a demandé un visuel, et personne ne le
+      // saurait : c'est exactement le silence qu'on a passé la journée à fermer.
+      let mediaId: string | undefined;
+      if (mediaUrl && mediaUrl.trim() !== '') {
+        const prepare = await prepareHeaderMedia(tenant, mediaUrl.trim());
+        if (!prepare) return 'le visuel du bloc « message rapide » n’a pas pu être préparé pour l’envoi';
+        mediaId = prepare;
+      }
       const utilisables = buttons.some((b) => b.text.trim() !== '');
-      const res = utilisables ? await client.sendInteractive(waId, body, buttons) : await client.sendText(waId, body);
+      // Un message interactif EXIGE au moins un bouton : avec un visuel et aucun bouton, c'est une image
+      // légendée. Sans visuel ni bouton, un texte simple, comme avant.
+      const res = utilisables
+        ? await client.sendInteractive(waId, body, buttons, mediaId)
+        : mediaId
+          ? await client.sendImage(waId, mediaId, body)
+          : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };

@@ -103,6 +103,18 @@ describe('walk : quick_message', () => {
     expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'sendQuickMessage', body: 'Ça te va ?', buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'QUICK_REPLY', text: 'Non' }] }]);
     expect(r.rest).toEqual({ status: 'waiting', nodeId: 'qm' });
   });
+  it('🔴 un visuel est PORTÉ par l action (il doit survivre jusqu à la couche d envoi)', () => {
+    // Le champ s appelle `imageUrl`, comme sur le bloc RCS : un seul composant d écran, une seule convention,
+    // et le même visuel sert aux deux canaux (en-tête WhatsApp, carte RCS).
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Regarde', quickReplies: ['Oui'], imageUrl: 'https://mba.messagingme.app/m/abc.png' })], edges: [] };
+    expect(walk(g, 'qm').actions[0]!.action).toMatchObject({ kind: 'sendQuickMessage', mediaUrl: 'https://mba.messagingme.app/m/abc.png' });
+  });
+
+  it('sans visuel, la clé mediaUrl est ABSENTE (aucun changement de forme pour les blocs existants)', () => {
+    const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: 'Regarde', quickReplies: ['Oui'] })], edges: [] };
+    expect(walk(g, 'qm').actions[0]!.action).not.toHaveProperty('mediaUrl');
+  });
+
   it('sans corps -> pas d\'action mais attend quand même (bloc bloquant)', () => {
     const g: WorkflowGraph = { nodes: [n('qm', 'quick_message', { body: '', quickReplies: ['Oui'] })], edges: [] };
     const r = walk(g, 'qm');

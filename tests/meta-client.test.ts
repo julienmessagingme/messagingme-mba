@@ -89,6 +89,24 @@ describe('MetaClient.sendInteractive', () => {
     ]);
   });
 
+  it('🔴 un visuel devient un EN-TÊTE image, par identifiant de média', async () => {
+    // Meta accepte l'en-tête par lien OU par identifiant. On pose un IDENTIFIANT, comme l'en-tête des
+    // templates qui tourne déjà en production : un lien ferait dépendre la livraison de l'accessibilité de
+    // notre hébergement au moment où Meta va le chercher.
+    const t = new FakeTransport([okBody('wamid.h')]);
+    await client(t).sendInteractive('33600000000', 'Regarde ça', [{ text: 'Oui' }], 'MEDIA_42');
+    const body = t.requests[0]!.body as { interactive: Record<string, unknown> };
+    expect(body.interactive.header).toEqual({ type: 'image', image: { id: 'MEDIA_42' } });
+    expect(body.interactive.body).toEqual({ text: 'Regarde ça' });
+  });
+
+  it('sans visuel, AUCUN en-tête n est posé (les montages existants ne changent pas)', async () => {
+    const t = new FakeTransport([okBody('wamid.h2')]);
+    await client(t).sendInteractive('33600000000', 'x', [{ text: 'Oui' }]);
+    const body = t.requests[0]!.body as { interactive: Record<string, unknown> };
+    expect(body.interactive).not.toHaveProperty('header');
+  });
+
   it('BSUID -> champ recipient (jamais to)', async () => {
     const t = new FakeTransport([okBody('wamid.i3')]);
     await client(t).sendInteractive('BSUID_abc', 'x', [{ text: 'Oui' }]);
@@ -220,5 +238,28 @@ describe('MetaClient throttling', () => {
     expect(res.messageId).toBe('wamid.ok');
     expect(limiter.count).toBe(3);
     expect(t.requests).toHaveLength(3);
+  });
+});
+
+describe('MetaClient.sendImage', () => {
+  it('🔴 image légendée : le seul chemin quand il y a un visuel mais AUCUN bouton', async () => {
+    // Un message interactif exige au moins un bouton. Sans ce chemin, un bloc « message rapide » portant un
+    // visuel et aucune réponse rapide serait parti en texte nu, et l'image aurait disparu sans un mot.
+    const t = new FakeTransport([okBody('wamid.img')]);
+    const res = await client(t).sendImage('33600000000', 'MEDIA_7', 'Notre nouvelle offre');
+    expect(res.messageId).toBe('wamid.img');
+    expect(t.requests[0]!.body).toMatchObject({
+      messaging_product: 'whatsapp',
+      to: '33600000000',
+      type: 'image',
+      image: { id: 'MEDIA_7', caption: 'Notre nouvelle offre' },
+    });
+  });
+
+  it('légende vide -> champ caption ABSENT (Meta refuse une légende vide)', async () => {
+    const t = new FakeTransport([okBody('wamid.img2')]);
+    await client(t).sendImage('33600000000', 'MEDIA_8', '   ');
+    const body = t.requests[0]!.body as { image: Record<string, unknown> };
+    expect(body.image).toEqual({ id: 'MEDIA_8' });
   });
 });

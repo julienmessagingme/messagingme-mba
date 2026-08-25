@@ -1088,6 +1088,22 @@ function ConfigPanel({
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Message', 'Message')}</label>
               <textarea value={(d.body as string) ?? ''} onChange={(e) => onPatch({ body: e.target.value })} rows={3} className={cls} placeholder={t('Ton message…', 'Your message…')} />
             </div>
+            {/* MÊME composant et MÊME champ (`imageUrl`) que le bloc RCS : un seul téléversement, un seul
+                format de stockage, et le visuel sert aux DEUX canaux. En WhatsApp il devient l'en-tête du
+                message interactif ; sur un parcours RCS, la carte du message. */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image (facultatif)', 'Image (optional)')}</label>
+              <RcsImageField
+                tenantId={tenantId}
+                valeur={(d.imageUrl as string) ?? ''}
+                onChange={(imageUrl) => onPatch({ imageUrl })}
+                testIdPrefix="quick-node"
+                compact
+              />
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('JPEG, PNG ou GIF, 2 Mo maximum. Le message part alors avec le visuel en en-tête. Sans aucune réponse rapide, il part en image légendée.', 'JPEG, PNG or GIF, 2 MB maximum. The message then goes out with the visual as its header. With no quick reply at all, it goes out as a captioned image.')}
+              </p>
+            </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Réponses rapides', 'Quick replies')}</label>
               <div className="space-y-1.5">

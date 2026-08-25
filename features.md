@@ -275,6 +275,12 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Le bloc « message rapide » accepte une image** (2026-08-25). Même champ et même téléversement que le
+  bloc RCS : un seul visuel, qui sert aux DEUX canaux. En WhatsApp il part en en-tête du message, au-dessus du
+  texte et des boutons ; sur un parcours RCS, le message devient une carte qui porte l'image. Sans aucune
+  réponse rapide, il part en image légendée. Si le visuel ne peut pas être préparé pour l'envoi, le bloc
+  REFUSE au lieu d'envoyer le texte tout seul : un message ampute de son image sans que personne ne le sache
+  serait pire que pas de message. Le visuel reste soumis à la fenêtre de 24 h, comme le bloc lui-même.
 - ✅ **Un scénario ne rate plus en silence** (2026-08-25). Trois trous fermés d'un coup, après un test de
   Julien où rien n'est parti et où rien ne l'a dit :
   - **Un bouton qui ne mène nulle part est signalé dans l'éditeur**, sur sa propre ligne, avec un point rouge

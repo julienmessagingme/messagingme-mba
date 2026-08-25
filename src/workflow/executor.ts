@@ -81,7 +81,9 @@ export interface WorkflowExecutorDeps {
   sendTemplate(tenantId: string, waId: string, templateName: string, language: string, buttons: WorkflowButton[], explicitParams?: string[]): Promise<SendRefusal>;
   /** Envoie un message interactif (texte + 2-3 réponses rapides) hors template. Atteint via `advance` (après
    *  réponse du contact) ou `startFromNode` (fenêtre vérifiée par l'appelant) : toujours EN fenêtre 24 h. */
-  sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[]): Promise<SendRefusal>;
+  /** `mediaUrl` = visuel du bloc, hébergé chez nous. Le câblage le téléverse chez Meta et le pose en
+   *  EN-TÊTE du message interactif (ou envoie une image légendée s'il n'y a aucun bouton). */
+  sendQuickMessage(tenantId: string, waId: string, body: string, buttons: WorkflowButton[], mediaUrl?: string): Promise<SendRefusal>;
   /** Envoie un formulaire (message interactif type flow) hors template. Même contrainte de fenêtre 24 h que
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
@@ -308,7 +310,7 @@ export class WorkflowExecutor {
   private async envoyerQuickEnRcs(
     tenantId: string,
     waId: string,
-    a: { body: string; buttons: WorkflowButton[] },
+    a: { body: string; buttons: WorkflowButton[]; mediaUrl?: string },
   ): Promise<SendRefusal> {
     const rcs = this.deps.rcs;
     if (!rcs) return 'canal RCS non câblé sur ce serveur';
@@ -318,7 +320,13 @@ export class WorkflowExecutor {
       .filter((b) => b.type === 'QUICK_REPLY' && b.text.trim() !== '')
       .slice(0, 11)
       .map((b, i) => ({ kind: 'reply' as const, text: b.text.trim(), postbackData: `btn:${i}` }));
-    const brut: RcsOutbound = { kind: 'text', text: a.body, ...(suggestions.length ? { suggestions } : {}) };
+    // 🔴 Un visuel change la FORME du message RCS : le texte nu n'en porte pas, il faut une carte. Sans
+    // ça, un bloc à visuel partirait en texte sur un parcours RCS et l'image disparaîtrait en silence, ce qui
+    // est exactement le défaut qu'on vient de fermer ailleurs. Les boutons restent SOUS le message (11 max,
+    // comme aujourd'hui) plutôt que dans la carte (4 max) : même rendu qu'avant pour les montages existants.
+    const brut: RcsOutbound = a.mediaUrl
+      ? { kind: 'card', card: { description: a.body, mediaUrl: a.mediaUrl }, ...(suggestions.length ? { suggestions } : {}) }
+      : { kind: 'text', text: a.body, ...(suggestions.length ? { suggestions } : {}) };
     // Variables résolues comme pour un bloc RCS : le contact doit lire son prénom, pas des accolades.
     const msg = rcs.varsFor && aDesVariables(brut) ? appliquerVariables(brut, await rcs.varsFor(tenantId, waId)) : brut;
     const out = await rcs.sender.sendTo(tenantId, agentId, waId, msg, randomUUID());
@@ -405,7 +413,7 @@ export class WorkflowExecutor {
           // Le canal du PARCOURS décide, pas le type du bloc. Voir `envoyerQuickEnRcs`.
           ? (canal === 'rcs'
             ? await this.envoyerQuickEnRcs(tenantId, waId, a)
-            : await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons))
+            : await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons, a.mediaUrl))
           : a.kind === 'sendFlow'
             ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
             : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
