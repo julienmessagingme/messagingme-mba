@@ -497,6 +497,13 @@ async function main(): Promise<void> {
         enqueueRun: (id, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { singletonKey: id, expireInSeconds }),
         markRunning: (id) => repo.markScheduledRunning(id),
         defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+        onError: (m, err) => {
+          // eslint-disable-next-line no-console
+          console.error(`${m}:`, err instanceof Error ? err.message : err);
+          // MÊME clé que l'échec global ci-dessous : le throttle de 5 min est alors partagé, donc dix
+          // campagnes qui échouent d'un coup font UNE alerte, pas dix. Le détail par campagne reste au log.
+          alert('sweeper:schedule', `${m} : ${err instanceof Error ? err.message : err}`);
+        },
       });
       // eslint-disable-next-line no-console
       if (n > 0) console.log(`schedule-sweep: ${n} campagne(s) programmée(s) lancée(s)`);

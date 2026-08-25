@@ -14,10 +14,24 @@ describe('campaignJobExpireSeconds', () => {
   });
 
   it('grosse liste à débit BAS -> timeout largement au-dessus de 15 min (couvre le run entier)', () => {
-    // 1000 à 1/min : durée ~1000 min = 60000 s ; 1.5x + 600 = 90600 s (~25 h).
-    expect(campaignJobExpireSeconds(1000, 1)).toBe(90_600);
+    // 1000 à 1/min : durée ~1000 min = 60000 s ; 1.5x + 600 = 90600 s, soit ~25 h -> PLAFONNÉ à 23 h.
+    // La valeur brute était celle que pg-boss REFUSE (assert strict < 24 h) : la campagne ne partait jamais.
+    expect(campaignJobExpireSeconds(1000, 1)).toBe(82_800);
     // 500 à 5/min : durée = 500/5*60 = 6000 s ; 1.5x + 600 = 9600 s (2h40, > la constante fixe 7200 s abandonnée).
     expect(campaignJobExpireSeconds(500, 5)).toBe(9600);
+  });
+
+  it('JAMAIS une valeur que pg-boss refuse : strictement sous 24 h sur tout le domaine autorisé', () => {
+    // pg-boss/dist/attorney.js:403 : `expireInSeconds / 60 / 60 < 24`, comparaison STRICTE (86400 échoue).
+    // Le débit est borné 1..80 en base et aux deux routes ; on balaie le domaine réel, pas deux cas choisis.
+    for (const rate of [1, 5, 15, 30, 80]) {
+      for (const n of [1, 1000, 10_000, 100_000, 1_000_000]) {
+        const v = campaignJobExpireSeconds(n, rate);
+        expect(v, `${n} destinataires à ${rate}/min`).toBeLessThan(86_400);
+      }
+    }
+    // Et le cas opt-out (rate null -> plancher d'estimation 30/min), qui passe par le même chemin.
+    expect(campaignJobExpireSeconds(1_000_000, null)).toBeLessThan(86_400);
   });
 
   it('débit au plafond (80/min) : timeout raisonnable proportionnel', () => {

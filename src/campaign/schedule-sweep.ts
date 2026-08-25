@@ -11,6 +11,10 @@ export interface ScheduleSweepDeps {
    *  la route campagnes, pour que l'estimation d'expiration voie le débit réel qu'appliquera run-job. Absent
    *  (tests) -> 0 = opt-out. */
   defaultRatePerMinute?: number;
+  /** Échec sur UNE campagne. Le balayage, lui, RÉUSSIT (il continue), donc le catch du worker ne le voit
+   *  jamais : sans cette remontée, la campagne reste `scheduled` et se retente toutes les 60 s à vie, sans
+   *  qu'aucune alerte ne parte. Même signature que `AnalysisSweepDeps.onError`. Absent (tests) -> silencieux. */
+  onError?: (msg: string, err: unknown) => void;
 }
 
 /**
@@ -34,8 +38,7 @@ export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise
       await deps.markRunning(c.id);
       launched += 1;
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`schedule-sweep: échec sur la campagne ${c.id}`, err);
+      deps.onError?.(`schedule-sweep: échec sur la campagne ${c.id}`, err);
     }
   }
   return launched;

@@ -355,8 +355,9 @@ describe('POST /campaigns/:campaignId/run', () => {
     const app = appWith(new FakeRepo(contacts), { queue: q, runSizing: { ratePerMinute: 1, pendingCount: 1000 } });
     const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
     expect(res.statusCode).toBe(202);
-    // campaignJobExpireSeconds(1000, 1) = max(900, ceil(1000/1*60*1.5)+600) = 90600 s (>> 15 min et >> 2 h).
-    expect(q.enqueued[0]?.opts?.expireInSeconds).toBe(90_600);
+    // campaignJobExpireSeconds(1000, 1) = max(900, ceil(1000/1*60*1.5)+600) = 90600 s brut, plafonné à
+    // 82800 (23 h) : au-delà, pg-boss REFUSE l'enfilement et la campagne ne partirait jamais.
+    expect(q.enqueued[0]?.opts?.expireInSeconds).toBe(82_800);
     await app.close();
   });
 

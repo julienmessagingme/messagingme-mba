@@ -12,6 +12,24 @@ export function resolveRatePerMinute(stored: number | null, serverDefault: numbe
 }
 
 /**
+ * Plafond DUR de l'expiration d'un job. pg-boss refuse toute expiration ATTEIGNANT 24 h, et l'assert est
+ * STRICT (`expireInSeconds / 60 / 60 < 24`, pg-boss/dist/attorney.js:403) : 86400 pile échoue aussi. Sans ce
+ * plafond, l'enfilement LÈVE et la campagne ne part JAMAIS. En lancement immédiat c'est un 500 que Cloudflare
+ * remplace par sa page d'erreur ; en programmé, le balayage attrape par campagne et se contente d'un log, donc
+ * la campagne reste `scheduled` et se retente toutes les 60 s À VIE. Seuils réels : 954 destinataires à 1/min,
+ * 4767 à 5/min, 28600 à 30/min. 23 h et non 86399 s : une valeur ronde, une heure de marge sous l'assert, et
+ * le plafond reste vrai si une version de pg-boss rendait la comparaison inclusive.
+ *
+ * CONTREPARTIE ASSUMÉE : un run dont la durée RÉELLE dépasse 23 h (au-delà d'environ 1380 x débit
+ * destinataires) expire pendant qu'il envoie encore, et pg-boss le rejoue en parallèle du run vivant. Le claim
+ * atomique par destinataire (store.pg.ts:761) empêche le double envoi, mais chaque run a son propre limiteur
+ * (run-job.ts:84) : le débit réel double pendant le chevauchement. On préfère ce risque, borné aux très
+ * grosses campagnes à débit très bas, à une campagne qui ne part jamais. Le vrai remède est le découpage du
+ * run en tranches, c'est un autre chantier.
+ */
+const MAX_EXPIRE_SEC = 23 * 3600;
+
+/**
  * Dimensionnement du timeout (expireInSeconds) d'un job `campaign-run`.
  *
  * Un run de campagne throttlé (débit ajustable) tourne EN LIGNE, séquentiellement, dans un seul job pg-boss.
@@ -32,6 +50,6 @@ export function campaignJobExpireSeconds(recipientCount: number, resolvedRatePer
   // plancher ne s'applique QU'À l'opt-out, jamais par-dessus un débit positif < 30 (qui, lui, est plus lent).
   const effectiveRate = resolvedRatePerMinute && resolvedRatePerMinute > 0 ? resolvedRatePerMinute : 30;
   const durationSec = Math.ceil((n / effectiveRate) * 60);
-  // Plancher 15 min (petites campagnes) ; sinon 1,5x la durée estimée + 10 min de marge.
-  return Math.max(900, Math.ceil(durationSec * 1.5) + 600);
+  // Plancher 15 min (petites campagnes) ; sinon 1,5x la durée estimée + 10 min de marge, plafonné à 23 h.
+  return Math.min(MAX_EXPIRE_SEC, Math.max(900, Math.ceil(durationSec * 1.5) + 600));
 }

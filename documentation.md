@@ -206,6 +206,11 @@ le lancement est RAPATRIÉ (createCampaign -> runCampaign + polling inline, gard
   DIMENSIONNÉ** (`src/campaign/pacing.ts` `campaignJobExpireSeconds(n, rate)`) passé PAR JOB à l'enqueue (`/run`
   via `getRunSizing`) : un timeout FIXE ne couvre pas un run throttlé long -> pg-boss le rejoue en parallèle
   (débit x2). `Queue.enqueue` accepte `expireInSeconds`. Cf `brain/LEARNINGS.md` 2026-07-17.
+  ⚠️ **Plafonné à 23 h** depuis le 2026-08-25 : pg-boss REFUSE toute expiration atteignant 24 h (assert strict),
+  donc au-delà d'environ 954 destinataires à 1/min ou 4767 à 5/min l'enfilement levait et la campagne ne partait
+  JAMAIS (500 opaque en immédiat, blocage silencieux et perpétuel en programmé). Contrepartie : au-delà d'environ
+  1380 x débit destinataires, le run expire en cours d'envoi et est rejoué en parallèle ; le claim atomique par
+  destinataire empêche le double envoi, mais le débit double pendant le chevauchement.
 - **Planification** (mig **0034** `scheduled_at` + statut `scheduled` + index partiel ; Path B) : route `/run`
   accepte `scheduledAt` FUTUR (409 non programmable, 400 passé) -> statut `scheduled` ; `/cancel-schedule`.
   Sweeper `src/campaign/schedule-sweep.ts` (worker, 60s) : `listDueScheduled` -> enqueue (expire dimensionné) PUIS
