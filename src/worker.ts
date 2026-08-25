@@ -717,7 +717,7 @@ async function main(): Promise<void> {
     queueLoad: () => opsStore.getQueueLoad(),
     // Clé d'alerte PAR FILE : deux DLQ qui se remplissent en même temps doivent produire deux messages, sinon
     // le throttle de 5 min en masquerait une. La dédup sur la répétition est faite par le balayage lui-même.
-    alert: (m) => alert(`dlq:${m.split(' ')[0]}`, m),
+    alert: (queue, m) => alert(`dlq:${queue}`, m),
   });
   const dlqSweepGarde = async (): Promise<void> => {
     try {

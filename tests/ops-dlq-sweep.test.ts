@@ -10,22 +10,25 @@ const ligne = (queue: string, backlog: number, active = 0, failed = 0): QueueLoa
  */
 describe('dlq-sweep', () => {
   it('alerte quand une DLQ se remplit, en nommant la file et le nombre', async () => {
-    const alertes: string[] = [];
+    const alertes: Array<{ queue: string; msg: string }> = [];
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('webhook', 12), ligne('webhook-dlq', 1)],
-      alert: (m) => alertes.push(m),
+      alert: (queue, msg) => alertes.push({ queue, msg }),
     });
     expect(await sweep()).toBe(1);
     expect(alertes).toHaveLength(1);
-    expect(alertes[0]).toContain('webhook-dlq');
-    expect(alertes[0]).toContain('1 job');
+    expect(alertes[0]?.msg).toContain('webhook-dlq');
+    expect(alertes[0]?.msg).toContain('1 job');
+    // La file est passée À PART : c'est la clé de throttle côté worker. Deux DLQ qui se remplissent
+    // ensemble doivent donner deux clés distinctes, sinon le throttle de 5 min en masquerait une.
+    expect(alertes[0]?.queue).toBe('webhook-dlq');
   });
 
   it('silence quand toutes les DLQ sont vides', async () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('webhook-dlq', 0), ligne('campaign-run-dlq', 0)],
-      alert: (m) => alertes.push(m),
+      alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(0);
     expect(alertes).toEqual([]);
@@ -37,7 +40,7 @@ describe('dlq-sweep', () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('webhook', 500), ligne('campaign-run', 30, 1), ligne('webhook-dlq', 0)],
-      alert: (m) => alertes.push(m),
+      alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(0);
     expect(alertes).toEqual([]);
@@ -49,7 +52,7 @@ describe('dlq-sweep', () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('webhook-dlq', 1)],
-      alert: (m) => alertes.push(m),
+      alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(1);
     expect(await sweep()).toBe(0);
@@ -62,7 +65,7 @@ describe('dlq-sweep', () => {
     let profondeur = 1;
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('webhook-dlq', profondeur)],
-      alert: (m) => alertes.push(m),
+      alert: (_q, m) => alertes.push(m),
     });
     await sweep();
     profondeur = 3;
@@ -76,7 +79,7 @@ describe('dlq-sweep', () => {
     let profondeur = 2;
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('webhook-dlq', profondeur)],
-      alert: (m) => alertes.push(m),
+      alert: (_q, m) => alertes.push(m),
     });
     await sweep();
     profondeur = 0;
@@ -90,7 +93,7 @@ describe('dlq-sweep', () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
       queueLoad: async () => [ligne('campaign-run-dlq', 0, 1, 2)],
-      alert: (m) => alertes.push(m),
+      alert: (_q, m) => alertes.push(m),
     });
     expect(await sweep()).toBe(1);
     expect(alertes[0]).toContain('3 job');

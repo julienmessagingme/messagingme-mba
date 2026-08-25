@@ -5,8 +5,9 @@ export interface DlqSweepDeps {
   /** Charge de TOUTES les files (PgOpsStore.getQueueLoad). Les DLQ y sont déjà : `ALL_QUEUES` les inclut, et
    *  un job mis en DLQ y est en état `created`, donc compté dans `backlog`. Aucune requête nouvelle. */
   queueLoad: () => Promise<QueueLoadRow[]>;
-  /** Émet l'alerte (Telegram côté worker). */
-  alert: (msg: string) => void;
+  /** Émet l'alerte (Telegram côté worker). `queue` est passé À PART pour servir de clé de throttle : le
+   *  redécouper depuis `msg` casserait à la première reformulation du message. */
+  alert: (queue: string, msg: string) => void;
 }
 
 /** Noms des DLQ, dérivés de la source unique des files : jamais un `-dlq` réécrit à la main ici. */
@@ -43,7 +44,7 @@ export function creerDlqSweep(deps: DlqSweepDeps): () => Promise<number> {
       if (profondeur > vu) {
         dejaAlerte.set(ligne.queue, profondeur);
         enHausse += 1;
-        deps.alert(`${ligne.queue} : ${profondeur} job(s) en échec définitif, non rejoués (voir /ops)`);
+        deps.alert(ligne.queue, `${ligne.queue} : ${profondeur} job(s) en échec définitif, non rejoués (voir /ops)`);
       } else if (profondeur < vu) {
         // Redescente (purge de rétention pg-boss, ou rejeu manuel) : on réarme, sinon une nouvelle vague au
         // même niveau resterait muette pour toujours.
