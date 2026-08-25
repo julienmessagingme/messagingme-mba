@@ -408,13 +408,21 @@ export class PgInboxStore implements InboxStore {
    * Contexte pour répondre : wa_id + état de la fenêtre de service 24 h. La fenêtre est ouverte
    * si le DERNIER message ENTRANT (du client) a moins de 24 h. Hors fenêtre -> texte libre
    * interdit par Meta (131047), il faut un template. null si conversation absente/autre tenant.
+   *
+   * 🔴 `channel = 'whatsapp'` est INDISPENSABLE, et son absence était un vrai bug (signalé par Julien le
+   * 2026-08-25). Depuis la migration 0058, le fil est UNIQUE par contact : les bulles RCS et WhatsApp y
+   * cohabitent. Or la fenêtre de 24 h est une règle de MESSAGERIE META, et Meta ne sait rien d'une réponse
+   * RCS. Sans ce filtre, un contact qui tapait une suggestion RCS ouvrait la fenêtre WhatsApp à l'écran :
+   * l'opérateur lisait « ouvert », envoyait du texte libre, et Meta le refusait en 131047.
+   * Mesuré sur la conversation de Julien : dernier entrant tous canaux à 15 h (fenêtre annoncée ouverte),
+   * dernier entrant WhatsApp à 50 h (fenêtre réellement fermée).
    */
   async getConversationContext(
     conversationId: string,
     tenantId: string,
   ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null> {
     const res = await this.pool.query<{ wa_id: string; last_in: Date | null }>(
-      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in') as last_in
+      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in' and m.channel = 'whatsapp') as last_in
        from conversations c
        left join conversation_messages m on m.conversation_id = c.id
        where c.id = $1 and c.tenant_id = $2
@@ -438,7 +446,7 @@ export class PgInboxStore implements InboxStore {
     const out = new Map<string, boolean>();
     if (waIds.length === 0) return out;
     const res = await this.pool.query<{ wa_id: string; last_in: Date | null }>(
-      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in') as last_in
+      `select c.wa_id, max(m.created_at) filter (where m.direction = 'in' and m.channel = 'whatsapp') as last_in
        from conversations c
        left join conversation_messages m on m.conversation_id = c.id
        where c.tenant_id = $1 and c.wa_id = any($2::text[])
