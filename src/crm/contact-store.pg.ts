@@ -556,6 +556,39 @@ export class PgContactStore implements ContactStore {
     return res.rows.map(PgContactStore.rowToContact);
   }
 
+  /**
+   * Combien de fiches ont chaque champ REMPLI, et combien de fiches existent en tout.
+   *
+   * 🔴 Pourquoi ça existe : le 2026-08-25, un bloc « Envoi de mail » a été branché sur le champ « Mail »
+   * alors que les fiches portaient leur adresse dans « Email ». Deux champs voisins, l'un rempli, l'autre
+   * vide, et le sélecteur les présentait à l'identique. Rien n'est parti, et rien ne l'a dit.
+   *
+   * UNE seule passe sur les contacts de l'espace, en dépliant les clés réellement présentes dans chaque
+   * fiche (`jsonb_each_text`). Une requête par champ aurait relu toute la table autant de fois qu'il y a de
+   * champs, pour un compteur qui n'orne qu'un sélecteur.
+   *
+   * Même population que le reste du CRM : `deleted_at is null` (cf. `buildContactWhere`). Une valeur vide
+   * compte comme absente : c'est ce que voit le résolveur de variables à l'envoi.
+   */
+  async fieldUsage(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }> {
+    const [remplis, total] = await Promise.all([
+      this.pool.query<{ cle: string; n: string }>(
+        `select e.k as cle, count(*)::text as n
+           from contacts c, lateral jsonb_each_text(coalesce(c.fields, '{}'::jsonb)) as e(k, v)
+          where c.tenant_id = $1 and c.deleted_at is null and btrim(e.v) <> ''
+          group by e.k`,
+        [tenantId],
+      ),
+      this.pool.query<{ n: string }>(
+        `select count(*)::text as n from contacts where tenant_id = $1 and deleted_at is null`,
+        [tenantId],
+      ),
+    ]);
+    const parChamp: Record<string, number> = {};
+    for (const r of remplis.rows) parChamp[r.cle] = Number(r.n);
+    return { total: Number(total.rows[0]?.n ?? 0), parChamp };
+  }
+
   /** Nombre de contacts correspondant aux filtres (pour afficher « N contacts » AVANT de fixer le débit). */
   async count(tenantId: string, filters: ContactFilters): Promise<number> {
     const { where, params } = buildContactWhere(tenantId, filters);

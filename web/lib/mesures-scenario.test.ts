@@ -12,10 +12,22 @@ import type { Graph, CompteurBrut } from './mesures-scenario';
 const n = (id: string, type: string, data: Record<string, unknown> = {}) => ({ id, type, data });
 
 describe('quels blocs sont mesurables', () => {
-  it('🔴 seuls les blocs qui ENVOIENT un message le sont', () => {
+  it('🔴 seuls les blocs qui ENVOIENT quelque chose le sont, mail COMPRIS', () => {
     // Proposer un tag ou une condition ferait miroiter des compteurs qui resteraient à zéro pour toujours.
-    for (const t of ['template', 'quick_message', 'flow', 'rcs_message']) expect(estMesurable(t)).toBe(true);
-    for (const t of ['tag', 'field', 'action', 'condition', 'wait', 'inbox', 'email']) expect(estMesurable(t)).toBe(false);
+    // Le bloc mail, lui, envoie vraiment : il a rejoint la liste le 2026-08-25. Il n'écrivait aucune mesure,
+    // donc un mail non parti (champ destinataire vide sur la fiche) était indiscernable d'un mail parti.
+    for (const t of ['template', 'quick_message', 'flow', 'rcs_message', 'email']) expect(estMesurable(t)).toBe(true);
+    for (const t of ['tag', 'field', 'action', 'condition', 'wait', 'inbox']) expect(estMesurable(t)).toBe(false);
+  });
+
+  it('🔴 le bloc mail ne propose QUE « envoyé » et « échec », et « échec » même quand il n est pas le premier', () => {
+    // SMTP ne renvoie ni accusé de livraison ni accusé de lecture, et un mail n'a aucun bouton à cliquer :
+    // proposer « délivré » ou « lu » sur ce bloc afficherait des barres à zéro pour toujours.
+    // Et « échec » doit rester dispo hors premier bloc, contrairement aux blocs WhatsApp : c'est LA mesure
+    // qu'on vient chercher ici, un mail échouant pour des raisons très ordinaires.
+    const bloc = { id: 'n1', type: 'email', titre: 'Envoi de mail', titrePropre: false, mesurable: true, choix: [], liens: [] };
+    const dispos = mesuresDisponibles(bloc, 'fr', false).map((m) => m.kind);
+    expect(dispos).toEqual(['sent', 'failed']);
   });
 });
 

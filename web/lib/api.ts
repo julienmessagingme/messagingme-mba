@@ -1555,6 +1555,13 @@ export interface UserFieldDef {
   /** Code public « fld_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
   code?: string | null;
 }
+/**
+ * Combien de fiches ont chaque champ REMPLI (`parChamp`), sur `total` fiches. Sert au sélecteur de
+ * destinataire du bloc « Envoi de mail » : un champ vide partout, c'est un bloc qui n'enverra jamais rien.
+ */
+export function listUserFieldUsage(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }> {
+  return request<{ total: number; parChamp: Record<string, number> }>(`/tenants/${tenantId}/user-fields/usage`);
+}
 export function listUserFields(tenantId: string): Promise<{ fields: UserFieldDef[]; tenantCode?: string }> {
   return request<{ fields: UserFieldDef[]; tenantCode?: string }>(`/tenants/${tenantId}/user-fields`);
 }

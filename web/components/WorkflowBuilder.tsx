@@ -5,12 +5,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   ReactFlow, Background, Controls, Handle, Position, MarkerType,
   BaseEdge, EdgeLabelRenderer, getBezierPath,
-  useNodesState, useEdgesState, addEdge, useUpdateNodeInternals,
+  useNodesState, useEdgesState, useEdges, addEdge, useUpdateNodeInternals,
   type Node, type Edge, type Connection, type NodeProps, type EdgeProps, type NodeTypes, type EdgeTypes,
   type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
-  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, createTag, listEmailAccounts, listEmailTemplates, listRcsMessages,
+  updateWorkflow, listTemplates, listFlows, listTags, listUserFields, listUserFieldUsage, createTag, listEmailAccounts, listEmailTemplates, listRcsMessages,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
@@ -155,6 +155,21 @@ function WFNode({ id, data, selected }: NodeProps) {
         ? (data.quickReplies as unknown[]).map((q): NodeButton => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
         : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
+  // 🔴 Sorties RELIÉES de ce bloc. Un bouton proposé au contact mais branché sur rien est un TROU DE
+  // MONTAGE : il tape, et il ne reçoit rien. Vécu par Julien le 2026-08-25, invisible à l'écran comme à
+  // l'exécution. On le signale ICI, sur la ligne du bouton, là où la flèche se tire.
+  //
+  // On lit les arêtes plutôt que de recalculer les handles : le nom d'une sortie est déjà établi quelques
+  // lignes plus bas, au moment de dessiner sa poignée. Une seconde définition finirait par diverger et
+  // signalerait des boutons parfaitement branchés.
+  const reliees = new Set(useEdges().filter((e) => e.source === id).map((e) => e.sourceHandle ?? ''));
+  // La sortie LIBRE (« toute autre réponse ») n'est volontairement pas concernée : la laisser non reliée est
+  // un choix documenté (le parcours s'arrête et l'agent reprend), pas un oubli.
+  const orpheline = (h: string): boolean => !reliees.has(h);
+  const TITRE_ORPHELINE = t(
+    'Ce bouton ne mène nulle part : le contact peut le taper et ne rien recevoir. Tire une flèche depuis ce point.',
+    'This button leads nowhere: the contact can tap it and get nothing back. Drag an arrow from this dot.',
+  );
   const isCondition = wfType === 'condition';
   const isRcs = wfType === 'rcs_message';
   // Sous un aperçu de carousel, on ne liste QUE ce qui se relie : les boutons lien sont déjà visibles dans
@@ -232,7 +247,8 @@ function WFNode({ id, data, selected }: NodeProps) {
             <div key={`qr${i}`} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700 first:border-t-0">
               <span className="shrink-0">↩︎</span>
               <span className="truncate">{b.text || t('Réponse', 'Reply')}</span>
-              <Handle type="source" id={`btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t(`Relier « ${b.text} »`, `Connect "${b.text}"`)} />
+              {orpheline(`btn:${i}`) && <span data-testid={`sortie-orpheline-btn:${i}`} className="shrink-0 text-coral" title={TITRE_ORPHELINE}>⚠</span>}
+              <Handle type="source" id={`btn:${i}`} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(`btn:${i}`) ? '!bg-coral' : '!bg-brand-500'}`} title={orpheline(`btn:${i}`) ? TITRE_ORPHELINE : t(`Relier « ${b.text} »`, `Connect "${b.text}"`)} />
             </div>
           ))}
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-emerald-700">
@@ -261,7 +277,10 @@ function WFNode({ id, data, selected }: NodeProps) {
                 {isQR ? (
                   // Le nom de la sortie DOIT être celui que l'envoi pose en payload, sinon le tap ne retrouve
                   // pas sa branche : `handle` vient du template (carousel), sinon l'index du bouton.
-                  <Handle type="source" id={b.handle ?? `btn:${i}`} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t(`Relier « ${b.text || fallback} »`, `Connect “${b.text || fallback}”`)} />
+                  <>
+                    {orpheline(b.handle ?? `btn:${i}`) && <span data-testid={`sortie-orpheline-${b.handle ?? `btn:${i}`}`} className="shrink-0 text-coral" title={TITRE_ORPHELINE}>⚠</span>}
+                    <Handle type="source" id={b.handle ?? `btn:${i}`} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(b.handle ?? `btn:${i}`) ? '!bg-coral' : '!bg-brand-500'}`} title={orpheline(b.handle ?? `btn:${i}`) ? TITRE_ORPHELINE : t(`Relier « ${b.text || fallback} »`, `Connect “${b.text || fallback}”`)} />
+                  </>
                 ) : (
                   <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title={t('Bouton URL / formulaire : sort de WhatsApp, non reliable', 'URL / form button: leaves WhatsApp, not connectable')} />
                 )}
@@ -373,6 +392,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [tags, setTags] = useState<TagCount[]>([]);
   const [fields, setFields] = useState<UserFieldDef[]>([]);
+  /** Combien de fiches ont chaque champ rempli, sur combien en tout. Vide = relévé indisponible. */
+  const [usageChamps, setUsageChamps] = useState<{ total: number; parChamp: Record<string, number> } | null>(null);
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [rcsMessages, setRcsMessages] = useState<RcsMessage[]>([]);
@@ -381,6 +402,14 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     listFlows(tenantId).then((r) => setFlows(r.flows.filter((f) => f.status === 'PUBLISHED'))).catch(() => {});
     listTags(tenantId).then((r) => setTags(r.tags)).catch(() => {});
     listUserFields(tenantId).then((r) => setFields(r.fields)).catch(() => {});
+    // Combien de fiches ont chaque champ rempli. Best-effort : en cas d'échec, le sélecteur affiche les
+    // champs sans compteur, comme avant. Un relevé manquant ne doit pas empêcher de configurer un bloc.
+    // Forme VÉRIFIÉE avant d'être posée dans l'état : une réponse inattendue (backend plus ancien, route non
+    // montée, repli d'un mock) afficherait « 0/undefined fiches » dans le sélecteur. Même défense que pour
+    // `listRcsMessages` juste en dessous.
+    listUserFieldUsage(tenantId)
+      .then((r) => { if (r && typeof r.total === 'number' && r.parChamp && typeof r.parChamp === 'object') setUsageChamps(r); })
+      .catch(() => {});
     listEmailAccounts(tenantId).then((r) => setEmailAccounts(r.accounts)).catch(() => {});
     listEmailTemplates(tenantId).then((r) => setEmailTemplates(r.templates)).catch(() => {});
     // `Array.isArray` : une réponse sans le champ `messages` (backend plus ancien que le front, route non
@@ -786,7 +815,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -873,7 +902,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 function ConfigPanel({
-  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, emailAccounts, emailTemplates, rcsMessages, onCommitTag,
+  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, onCommitTag,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
@@ -884,6 +913,8 @@ function ConfigPanel({
   campaignEligible: boolean;
   onPatch: (p: Record<string, unknown>) => void; onDelete: () => void;
   templates: TemplateSummary[]; flows: FlowSummary[]; tags: TagCount[]; fields: UserFieldDef[];
+  /** Relévé « champ rempli sur N fiches ». null = indisponible -> le sélecteur s'affiche sans compteur. */
+  usageChamps: { total: number; parChamp: Record<string, number> } | null;
   emailAccounts: EmailAccount[]; emailTemplates: EmailTemplate[]; rcsMessages: RcsMessage[];
   onCommitTag: (tag: string) => void;
 }) {
@@ -1266,7 +1297,15 @@ function ConfigPanel({
                       className={`${cls} bg-white`}
                     >
                       <option value="">{t('Choisir un champ…', 'Choose a field…')}</option>
-                      {recipientFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                      {/* 🔴 Le compteur, et pas seulement le libellé. Le 2026-08-25, deux champs voisins
+                          (« Email » rempli, « Mail » vide) étaient présentés à l'identique : le bloc a été
+                          branché sur le vide, et aucun mail n'est parti. Le nombre de fiches concernées est
+                          ce qui distingue les deux d'un coup d'œil. */}
+                      {recipientFields.map((f) => (
+                        <option key={f.key} value={f.key}>
+                          {f.label}{usageChamps ? ` (${usageChamps.parChamp[f.key] ?? 0}/${usageChamps.total} ${t('fiches', 'records')})` : ''}
+                        </option>
+                      ))}
                     </select>
                   ) : (
                     <input

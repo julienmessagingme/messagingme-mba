@@ -62,7 +62,17 @@ export interface CompteurBrut {
  */
 const BLOCS_MESSAGE = new Set(['template', 'quick_message', 'flow', 'rcs_message']);
 
-export const estMesurable = (type: string): boolean => BLOCS_MESSAGE.has(type);
+/**
+ * Le bloc « Envoi de mail » est mesurable LUI AUSSI, mais il ne connaît que deux issues : parti, ou pas.
+ * Pas d'accusé de livraison ni de lecture en SMTP, et aucun bouton à cliquer.
+ *
+ * 🔴 Il ne l'était pas du tout jusqu'au 2026-08-25, et c'est ce qui a coûté une soirée : un bloc mail qui
+ * n'envoyait rien (champ destinataire vide sur la fiche) ne laissait AUCUNE trace, pas plus qu'un bloc mail
+ * qui réussissait. Impossible de savoir lequel des deux s'était produit.
+ */
+const BLOC_MAIL = 'email';
+
+export const estMesurable = (type: string): boolean => BLOCS_MESSAGE.has(type) || type === BLOC_MAIL;
 
 export interface Choix {
   /** Le handle tel qu'il arrive dans les mesures (`btn:0`, `card:1:btn:0`). */
@@ -256,6 +266,11 @@ function libelleNature(kind: string, locale: Locale): string {
 export function mesuresDisponibles(bloc: BlocMesurable, locale: Locale, estPremier = true): MesureDispo[] {
   if (!bloc.mesurable) return [];
   const nature = (kind: string): MesureDispo => ({ cle: `${bloc.id}|${kind}`, label: libelleNature(kind, locale), kind, handle: null });
+  // Bloc mail : « envoyé » et « échec », rien d'autre. Et « échec » TOUJOURS, même quand le bloc n'est pas le
+  // premier : contrairement à un message envoyé à quelqu'un qui vient de répondre, un mail échoue pour des
+  // raisons ordinaires (champ destinataire vide sur la fiche, boîte ou modèle supprimé, SMTP qui refuse).
+  // C'est précisément la mesure qu'on vient chercher sur ce bloc.
+  if (bloc.type === BLOC_MAIL) return [nature('sent'), nature('failed')];
   const base: MesureDispo[] = [
     nature('sent'),
     ...(estPremier ? [nature('failed'), nature('delivered')] : []),

@@ -100,7 +100,10 @@ export interface WorkflowExecutorDeps {
    * Nécessaire pour ne pas casser les suites de tests à deps minimales (dont l'intégration Postgres) qui ne la
    * fournissent pas.
    */
-  sendEmail?(tenantId: string, waId: string, action: SendEmailAction): Promise<void>;
+  /** Rend la RAISON de l'échec (chaîne non vide) ou rien si le mail est parti. Le parcours n'en est jamais
+   *  interrompu (best-effort strict), mais l'issue est MESURÉE : un bloc muet dans les deux cas laissait
+   *  l'opérateur sans aucun moyen de savoir pourquoi il n'avait rien reçu (vécu le 2026-08-25). */
+  sendEmail?(tenantId: string, waId: string, action: SendEmailAction): Promise<string | void>;
   /**
    * Canal RCS. ABSENT = un bloc `rcs_message` n'envoie rien et part TOUJOURS sur sa sortie « non joignable ».
    * Jamais d'envoi muet, jamais de parcours bloqué sur un canal non câblé.
@@ -376,11 +379,23 @@ export class WorkflowExecutor {
       // dont l'intégration Postgres) -> no-op silencieux via l'optional chaining, même contrat qu'une dep
       // optionnelle non câblée ailleurs dans ce fichier (ex. `setOptIn` ci-dessus).
       else if (a.kind === 'sendEmail') {
-        try {
-          await this.deps.sendEmail?.(tenantId, waId, a);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error(`workflow sendEmail: envoi mail échoué pour ${waId}, on continue le parcours :`, err instanceof Error ? err.message : err);
+        // Dep absente (suites à deps minimales) : no-op TOTAL, on ne mesure rien non plus. Mesurer ici
+        // inventerait un « envoyé » pour un câblage qui n'existe pas.
+        if (this.deps.sendEmail) {
+          let echec: string | null = null;
+          try {
+            const dit = await this.deps.sendEmail(tenantId, waId, a);
+            if (typeof dit === 'string' && dit !== '') echec = dit;
+          } catch (err) {
+            echec = err instanceof Error ? err.message : String(err);
+          }
+          if (echec !== null) {
+            // eslint-disable-next-line no-console
+            console.error(`workflow sendEmail: ${echec} (${waId}), on continue le parcours`);
+          }
+          // Best-effort STRICT conservé : un mail raté ne devient JAMAIS un refus du parcours. Mais il ne
+          // disparaît plus : il se MESURE comme tout autre bloc de message, « envoyé » ou « échec ».
+          await this.mesurer(tenantId, workflowId, nodeId, waId, echec === null ? 'sent' : 'failed');
         }
       }
       else {
@@ -905,11 +920,31 @@ export class WorkflowExecutor {
         ?? (sortieTypee ? null : nextNodeSansHandle(graph, run.currentNode)))
       : null;
     if (!graph || !next) {
-      // Le contact a répondu À CÔTÉ des boutons attendus (aucune arête ne correspond), ou le scénario n'a plus
-      // de suite. Plus personne n'attend une réponse précise : l'agent de Meta reprend la parole. Le message
-      // reste visible dans l'Inbox, « non lu » étant dérivé d'un entrant plus récent que la dernière ouverture.
+      // 🔴 DEUX situations très différentes arrivaient ici, et ce chemin les traitait pareil, en silence.
+      //
+      // (a) Le contact a ÉCRIT au lieu de taper un bouton : le scénario n'avait rien prévu pour ça, plus
+      //     personne n'attend une réponse précise, l'agent de Meta reprend la parole. Cas nominal, inchangé.
+      //
+      // (b) Le contact a TAPÉ un bouton qui ne mène nulle part. Ce n'est pas lui qui est sorti du script,
+      //     c'est le scénario qui a un TROU : on lui a proposé un choix, il l'a fait, et il n'a rien reçu.
+      //     Vécu par Julien le 2026-08-25 : bouton tapé, parcours terminé sur-le-champ, aucune trace nulle part.
+      //     On remonte donc la conversation à un humain (« À traiter »), au lieu de la rendre à l'agent.
+      //
+      // ⚠️ Conséquence assumée du (b) : chez un client où MBA est allumé, l'agent ne répondra pas à ce
+      // message-là. C'est voulu : un bouton non branché est un défaut de montage, quelqu'un doit le voir.
+      // Le payload doit être un HANDLE que l'éditeur sait relier (`btn:<i>`, ou `card:<i>:btn:<j>` pour un
+      // carousel). Tout le reste (texte libre, payload d'un vieux template qui porte le libellé du bouton,
+      // accusé `sent`/`unreachable` d'un bloc RCS dont la sortie n'est volontairement pas branchée) suit le
+      // chemin historique : ce ne sont pas des trous de montage.
+      const boutonSansSuite = typeof buttonPayload === 'string' && /^(btn:|card:)/.test(buttonPayload);
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
-      await this.rendreLaMainAMba(tenantId, waId);
+      if (boutonSansSuite) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+      } else {
+        await this.rendreLaMainAMba(tenantId, waId);
+      }
       return;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);

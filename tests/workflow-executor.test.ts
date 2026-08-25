@@ -205,13 +205,37 @@ describe('WorkflowExecutor', () => {
     expect(releases).toEqual(['33600']); // l'agent reprend la parole
   });
 
-  it('advance HORS boutons : bouton non câblé (btn:9) -> aucune branche, run clos', async () => {
-    const { ex, runs, calls } = make(branched);
+  it('🔴 advance HORS boutons : un bouton TAPÉ qui ne mène nulle part remonte à un humain', async () => {
+    // Ce n'est pas le contact qui sort du script : on lui a proposé un choix, il l'a fait, et il n'a rien reçu.
+    // C'est un TROU DE MONTAGE du scénario. Vécu par Julien le 2026-08-25 : bouton tapé, parcours terminé
+    // sur-le-champ, aucune trace, aucun signal. Le run se clot toujours, mais la conversation part en
+    // « À traiter » au lieu d'être rendue à l'agent : quelqu'un doit voir que ce bouton ne mène nulle part.
+    const releases: string[] = [];
+    const { ex, runs, calls, escalations } = make(branched, {
+      mbaActifPour: async () => true,
+      releaseToMba: async (_t, w) => { releases.push(w); },
+    });
     await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
     await ex.advance('t1', '33600', 'm3', 'btn:9');
     expect(calls).not.toContain('tag:oui');
     expect(calls).not.toContain('tag:non');
     expect(runs.run).toMatchObject({ status: 'done', currentNode: null });
+    expect(escalations).toEqual(['33600']);
+    // ... et l'agent NE reprend PAS la parole sur ce cas : sinon le défaut de montage resterait invisible.
+    expect(releases).toEqual([]);
+  });
+
+  it('advance HORS boutons : une réponse ÉCRITE n escalade PAS (c est le cas nominal, l agent reprend)', async () => {
+    // La distinction est tout l'intérêt du correctif : écrire au lieu de cliquer n'est pas un défaut du
+    // scénario. Escalader là aussi noierait le signal sous des conversations parfaitement normales.
+    const { ex, escalations } = make(branched);
+    await ex.start('t1', 'wf1', branched, { waId: '33600', contactId: 'c1' });
+    await ex.advance('t1', '33600', 'm3', null);
+    expect(escalations).toEqual([]);
+    // Et un payload qui n est PAS un handle reliable (vieux template dont le payload porte le libelle du
+    // bouton) suit le meme chemin : on n escalade que sur ce que l editeur sait relier.
+    await ex.advance('t1', '33600', 'm4', 'Autre chose');
+    expect(escalations).toEqual([]);
   });
 
   // Même bloc à boutons, plus une arête LIBRE tirée depuis le corps du bloc : c'est la sortie « toute autre

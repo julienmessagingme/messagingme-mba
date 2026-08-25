@@ -224,18 +224,18 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * ici on se contente de journaliser et sortir SANS LEVER sur un cas attendu (modèle ou boîte supprimé depuis
    * la sauvegarde du scénario, tables en suppression douce ; destinataire vide).
    */
-  const sendEmail = async (tenant: string, waId: string, action: SendEmailAction): Promise<void> => {
+  const sendEmail = async (tenant: string, waId: string, action: SendEmailAction): Promise<string | void> => {
     const template = await emailTemplates.getById(tenant, action.templateId);
     if (!template) {
       // eslint-disable-next-line no-console
       console.error(`workflow sendEmail: modèle ${action.templateId} introuvable pour ${tenant}, envoi ignoré`);
-      return;
+      return 'le modèle de mail de ce bloc n’existe plus';
     }
     const resolved = await emailResolver.getTransport(tenant, action.emailAccountId);
     if (!resolved) {
       // eslint-disable-next-line no-console
       console.error(`workflow sendEmail: boîte ${action.emailAccountId} introuvable pour ${tenant}, envoi ignoré`);
-      return;
+      return 'la boîte d’envoi de ce bloc n’existe plus, ou n’est pas choisie';
     }
     // Contact résolu ICI, comme `sendTemplate` le fait pour ses propres variables (contactVars a besoin des
     // champs du contact pour {{prenom}} etc., que le destinataire soit littéral ou une variable). `apply` ne
@@ -246,7 +246,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     if (adresses.length === 0) {
       // eslint-disable-next-line no-console
       console.error(`workflow sendEmail: aucun destinataire résolu pour ${waId} (${tenant}), envoi ignoré`);
-      return;
+      // Cas vécu le 2026-08-25 : le bloc visait le champ « mail », vide, alors que le contact avait « email ».
+      return 'aucune adresse : le champ choisi est vide sur cette fiche contact';
     }
     const html = template.format === 'html';
     // Le 1er en « À », les suivants en COPIE CACHÉE : les destinataires peuvent être des clients et ne doivent

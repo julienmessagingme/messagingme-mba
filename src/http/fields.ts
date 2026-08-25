@@ -12,6 +12,9 @@ export interface FieldsRouteDeps {
   createField(tenantId: string, def: UserFieldDef): Promise<'created' | 'exists'>;
   updateField(tenantId: string, key: string, patch: { label?: string; type?: UserFieldType }): Promise<boolean>;
   deleteField(tenantId: string, key: string): Promise<boolean>;
+  /** Combien de fiches ont chaque champ rempli. Optionnelle : absente, la route répond un relevé vide
+   *  plutôt qu'une erreur, et le sélecteur se contente de ne rien afficher. */
+  fieldUsage?(tenantId: string): Promise<{ total: number; parChamp: Record<string, number> }>;
 }
 
 /**
@@ -20,6 +23,19 @@ export interface FieldsRouteDeps {
  */
 export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
+
+  /**
+   * Combien de fiches ont chaque champ rempli. Sert au sélecteur de destinataire du bloc « Envoi de mail » :
+   * choisir un champ vide sur toutes les fiches, c'est n'envoyer aucun mail, et rien ne le disait.
+   *
+   * DÉCLARÉE AVANT `/user-fields/:key` : « usage » n'est pas une clé de champ.
+   */
+  app.get('/tenants/:tenantId/user-fields/usage', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.fieldUsage) return reply.code(200).send({ total: 0, parChamp: {} });
+    return reply.code(200).send(await deps.fieldUsage(tenant));
+  });
 
   app.get('/tenants/:tenantId/user-fields', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

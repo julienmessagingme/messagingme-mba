@@ -36,7 +36,10 @@ async function mockBuilder(
     if (url.includes('/templates')) return json({ templates: [] });
     if (url.includes('/flows')) return json({ flows: [] });
     if (url.includes('/tags')) return json({ tags: [] });
-    if (url.includes('/user-fields')) return json({ fields: [{ key: 'email', label: 'Email', type: 'text' }] });
+    // ⚠️ AVANT le mock générique : `/user-fields/usage` contient `/user-fields`. Sans cet ordre, le relévé
+    // recevrait `{ fields: [] }` et le sélecteur afficherait « 0/undefined ».
+    if (url.includes('/user-fields/usage')) return json({ total: 40, parChamp: { email: 12, mail: 0 } });
+    if (url.includes('/user-fields')) return json({ fields: [{ key: 'email', label: 'Email', type: 'text' }, { key: 'mail', label: 'Mail', type: 'text' }] });
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: false, hubspotListsEnabled: false, campaignsPaused: false });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
@@ -206,5 +209,32 @@ test.describe('Builder : bloc Envoi de mail', () => {
     await page.getByTestId('add-node-email').click();
 
     await expect(page.locator('.react-flow__node').getByText(/configurer l.envoi/i)).toBeVisible();
+  });
+});
+
+/**
+ * 🔴 Le sélecteur de destinataire dit COMBIEN de fiches ont ce champ rempli.
+ *
+ * Le 2026-08-25, un bloc mail a été branché sur « Mail » (vide sur toutes les fiches) alors que l'adresse
+ * vivait dans « Email ». Deux champs voisins, présentés à l'identique. Aucun mail n'est parti, et rien ne
+ * l'a dit. Le nombre de fiches concernées est ce qui distingue les deux d'un coup d'œil.
+ */
+test.describe('Bloc mail : le sélecteur de destinataire montre les fiches remplies', () => {
+  test('chaque champ affiche « rempli / total », et un champ vide partout affiche 0', async ({ page }) => {
+    await mockBuilder(
+      page,
+      { nodes: [{ id: 'e', type: 'email', position: { x: 0, y: 0 }, data: { emailAccountId: 'a1', templateId: 'tpl1', to: { kind: 'literal', value: '' } } }], edges: [] },
+      [],
+      { accounts: [ACCOUNT], templates: [TEMPLATE] },
+    );
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+
+    await page.getByTestId('email-recipient-kind-field-0').click();
+    const options = page.getByTestId('email-recipient-field-0').locator('option');
+    // ⚠️ Motifs ANCRÉS : « Mail » est contenu dans « Email », un filtre par sous-chaîne attrape les deux et
+    // le test passerait en ne regardant jamais la bonne option.
+    await expect(options.filter({ hasText: /^Email /u }).first()).toHaveText(/12\/40/);
+    await expect(options.filter({ hasText: /^Mail /u }).first()).toHaveText(/0\/40/);
   });
 });

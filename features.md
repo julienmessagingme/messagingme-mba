@@ -275,6 +275,22 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Un scénario ne rate plus en silence** (2026-08-25). Trois trous fermés d'un coup, après un test de
+  Julien où rien n'est parti et où rien ne l'a dit :
+  - **Un bouton qui ne mène nulle part est signalé dans l'éditeur**, sur sa propre ligne, avec un point rouge
+    et l'explication au survol. Avant, on pouvait proposer un choix au contact sans rien brancher derrière :
+    il tapait, et il ne recevait rien. La sortie « toute autre réponse » n'est pas concernée, la laisser
+    libre reste un choix normal.
+  - **Si le cas se produit quand même**, la conversation remonte en « À traiter » dans l'Inbox au lieu de se
+    terminer sans bruit. Une réponse ÉCRITE hors des boutons, elle, reste traitée comme avant.
+  - **Le bloc « Envoi de mail » se mesure** dans Analytics > Mes tableaux : « envoyés » et « échecs ». Il
+    n'écrivait rien du tout, ni en cas de réussite ni en cas d'échec : impossible de savoir lequel des deux
+    s'était produit. Un mail échoue pour des raisons ordinaires (champ destinataire vide sur la fiche, boîte
+    ou modèle supprimé, SMTP qui refuse), et un échec n'interrompt toujours JAMAIS le parcours.
+- ✅ **Le sélecteur de destinataire d'un mail dit combien de fiches ont ce champ rempli** (2026-08-25),
+  par exemple « Email (12/40 fiches) ». C'est ce qui manquait pour distinguer deux champs voisins dont l'un
+  est vide partout : brancher un bloc mail sur un champ vide, c'est n'envoyer aucun mail.
+
 - ✅ **Une réponse écrite ne se fait plus passer pour un bouton** (2026-08-21) : quand le contact ÉCRIT au lieu
   de taper l'un des boutons proposés, le parcours ne part plus dans la branche du premier bouton. Concrètement,
   quelqu'un qui répondait « non merci » à un bloc Oui/Non se retrouvait taggé « oui ». Désormais : si une sortie

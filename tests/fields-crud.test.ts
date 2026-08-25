@@ -187,3 +187,42 @@ describe('routes user-fields : doublons d’un champ de base', () => {
     await server.close();
   });
 });
+
+/**
+ * 🔴 « Combien de fiches ont ce champ rempli ». Né le 2026-08-25 : un bloc « Envoi de mail » avait été
+ * branché sur le champ « Mail » alors que les fiches portaient leur adresse dans « Email ». Deux champs
+ * voisins, l'un rempli l'autre vide, présentés à l'identique par le sélecteur. Aucun mail n'est parti.
+ */
+describe('GET /user-fields/usage', () => {
+  it('rend le relévé par champ et le total', async () => {
+    const { server } = app({ fieldUsage: async () => ({ total: 40, parChamp: { email: 12, mail: 0 } }) });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ total: 40, parChamp: { email: 12, mail: 0 } });
+    await server.close();
+  });
+
+  it('« usage » n est PAS pris pour une clé de champ (ordre de déclaration des routes)', async () => {
+    // La route vit à côté de PATCH/DELETE `/user-fields/:key` : déclarée après, un GET tomberait dans le
+    // paramètre. Le contrôle tient dans la réponse : un relévé, pas une erreur de champ inconnu.
+    const { server } = app({ fieldUsage: async () => ({ total: 1, parChamp: {} }) });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
+    expect(res.json<{ total: number }>().total).toBe(1);
+    await server.close();
+  });
+
+  it('dep absente -> relévé vide, jamais une erreur (le sélecteur doit rester utilisable)', async () => {
+    const { server } = app({ fieldUsage: undefined });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ total: 0, parChamp: {} });
+    await server.close();
+  });
+
+  it('agent -> 403, et un autre espace -> 403', async () => {
+    const { server } = app({ fieldUsage: async () => ({ total: 40, parChamp: {} }) });
+    expect((await server.inject({ method: 'GET', url: '/tenants/t1/user-fields/usage', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await server.inject({ method: 'GET', url: '/tenants/t2/user-fields/usage', ...h(adminTok) })).statusCode).toBe(403);
+    await server.close();
+  });
+});

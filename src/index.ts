@@ -632,6 +632,7 @@ async function main(): Promise<void> {
       createField: (tenant, def) => fieldStore.create(tenant, def),
       updateField: (tenant, key, patch) => fieldStore.updateField(tenant, key, patch),
       deleteField: (tenant, key) => fieldStore.deleteField(tenant, key),
+      fieldUsage: (tenant) => contactStore.fieldUsage(tenant),
     },
     contacts: {
       applyEdits: (tenant, id, edits) => contactStore.applyEdits(tenant, id, edits),

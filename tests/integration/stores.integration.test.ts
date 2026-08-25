@@ -359,6 +359,39 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('🔴 PgContactStore.fieldUsage : compte les fiches où le champ est VRAIMENT rempli', async () => {
+    // Un champ vide sur toutes les fiches, c'est un bloc mail qui n'enverra jamais rien. Le sélecteur affiche
+    // désormais ce nombre : il doit compter la même population que le reste du CRM, et traiter une valeur
+    // vide comme absente (c'est ce que voit le résolveur de variables à l'envoi).
+    const store = new PgContactStore(pool);
+    const marque = `usage-${Date.now()}`;
+    const ids: string[] = [];
+    try {
+      const mk = async (fields: Record<string, string>): Promise<string> => {
+        const r = await pool.query<{ id: string }>(
+          `insert into contacts (tenant_id, phone_e164, opt_in_status, fields) values ($1, $2, 'opted_in', $3::jsonb) returning id`,
+          [tenantId, `+3360000${String(700 + ids.length).padStart(4, '0')}`, JSON.stringify({ ...fields, [marque]: 'x' })],
+        );
+        ids.push(r.rows[0]!.id);
+        return r.rows[0]!.id;
+      };
+      await mk({ email: 'a@b.fr' });
+      await mk({ email: 'c@d.fr', mail: '   ' }); // « mail » PRÉSENT mais vide après trim : ne compte pas
+      const supprime = await mk({ email: 'e@f.fr' });
+      await pool.query(`update contacts set deleted_at = now() where id = $1`, [supprime]);
+
+      const usage = await store.fieldUsage(tenantId);
+      // Les trois fiches portent `marque`, mais la supprimée ne compte pas : même population que le CRM.
+      expect(usage.parChamp[marque]).toBe(2);
+      expect(usage.parChamp.mail ?? 0).toBe(0); // présent mais vide -> non rempli
+      expect(usage.total).toBeGreaterThanOrEqual(2);
+      // Un champ que personne ne porte n'apparaît pas : le front retombe sur 0.
+      expect(usage.parChamp['champ-jamais-vu']).toBeUndefined();
+    } finally {
+      if (ids.length > 0) await pool.query(`delete from contacts where id = any($1::uuid[])`, [ids]);
+    }
+  });
+
   it('PgContactStore.mergeFieldsByPhone / addTagsByPhoneReturningNew : atteignent un contact identifié par BSUID', async () => {
     const store = new PgContactStore(pool);
     const bsuid = '9876543210987654321';
