@@ -46,8 +46,10 @@ test.describe('Contenu : modèles d’email', () => {
 
     await page.getByTestId('email-template-name').fill('Confirmation');
     await page.getByTestId('email-template-subject').fill('Bonjour');
-    // Insère {{prenom}} au curseur du sujet (dernier champ actif après le .fill ci-dessus).
-    await page.getByTestId('email-template-var-prenom').click();
+    // Insère {{prenom}} au curseur du SUJET, par le sélecteur propre à ce champ. Le menu montre le LIBELLÉ
+    // (« Prénom ») et pas `{{prenom}}` : c'est tout l'objet du changement.
+    await page.getByTestId('email-template-subject-variable').click();
+    await page.getByTestId('email-template-subject-variable-prenom').click();
     await page.getByTestId('email-template-body').fill('Merci de votre message.');
     await page.getByTestId('email-template-save').click();
 
@@ -63,9 +65,14 @@ test.describe('Contenu : modèles d’email', () => {
     await page.goto('/email-templates');
     await page.getByRole('button', { name: /Nouveau modèle/i }).click();
 
-    await expect(page.getByTestId('email-template-var-prenom')).toBeVisible();
-    await expect(page.getByTestId('email-template-var-email')).toBeVisible();
-    await expect(page.getByTestId('email-template-var-name')).toHaveCount(0);
+    await page.getByTestId('email-template-subject-variable').click();
+    await expect(page.getByTestId('email-template-subject-variable-prenom')).toBeVisible();
+    await expect(page.getByTestId('email-template-subject-variable-email')).toBeVisible();
+    // `name` n'est pas résoluble côté serveur : le proposer produirait un blanc dans le mail envoyé.
+    await expect(page.getByTestId('email-template-subject-variable-name')).toHaveCount(0);
+    // Renforcement : le menu liste des LIBELLÉS, il ne fait plus recopier la syntaxe à la main.
+    await expect(page.getByTestId('email-template-subject-variable-prenom')).toHaveText('Prénom');
+    await expect(page.getByText('{{prenom}}')).toHaveCount(0);
   });
 
   test('bascule HTML : le corps devient une zone de HTML brut (police mono)', async ({ page }) => {
@@ -77,6 +84,52 @@ test.describe('Contenu : modèles d’email', () => {
     await page.getByTestId('email-template-format-html').click();
 
     await expect(page.getByTestId('email-template-body')).toHaveClass(/font-mono/);
+  });
+
+  test('corps en format Texte : éditeur à chips, la variable s’affiche en étiquette lisible', async ({ page }) => {
+    const templates: Array<Record<string, unknown>> = [];
+    const { created } = await mockPage(page, templates);
+
+    await page.goto('/email-templates');
+    await page.getByRole('button', { name: /Nouveau modèle/i }).click();
+    await page.getByTestId('email-template-name').fill('Texte');
+    await page.getByTestId('email-template-subject').fill('S');
+
+    // Le corps est un éditeur à chips (contenteditable), pas un textarea : on tape puis on insère.
+    const corps = page.getByTestId('email-template-body');
+    await corps.click();
+    await corps.pressSequentially('Bonjour ');
+    await page.getByTestId('email-template-body-variable').click();
+    await page.getByTestId('email-template-body-variable-prenom').click();
+
+    // À l'écran : une étiquette lisible. En base : la chaîne `{{prenom}}`.
+    await expect(corps).toContainText('Prénom');
+    await page.getByTestId('email-template-save').click();
+    await expect.poll(() => created.length).toBe(1);
+    expect((created[0] as { body: string }).body).toContain('{{prenom}}');
+  });
+
+  test('corps en format HTML : zone de code intacte, et le MÊME sélecteur de variables', async ({ page }) => {
+    const templates: Array<Record<string, unknown>> = [];
+    const { created } = await mockPage(page, templates);
+
+    await page.goto('/email-templates');
+    await page.getByRole('button', { name: /Nouveau modèle/i }).click();
+    await page.getByTestId('email-template-name').fill('HTML');
+    await page.getByTestId('email-template-subject').fill('S');
+    await page.getByTestId('email-template-format-html').click();
+
+    // Le HTML colle reste INTACT : c'est pour ça que cette surface n'est pas un contenteditable.
+    const html = '<table><tr><td style="padding:0">Bonjour</td></tr></table>';
+    await page.getByTestId('email-template-body').fill(html);
+    await page.getByTestId('email-template-body-variable').click();
+    await page.getByTestId('email-template-body-variable-prenom').click();
+
+    await page.getByTestId('email-template-save').click();
+    await expect.poll(() => created.length).toBe(1);
+    const corps = (created[0] as { body: string }).body;
+    expect(corps).toContain(html);          // rien n'a été réécrit
+    expect(corps).toContain('{{prenom}}');  // et la variable est bien posée
   });
 
   test('modifier un modèle existant pré-remplit le formulaire', async ({ page }) => {

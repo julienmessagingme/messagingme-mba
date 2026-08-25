@@ -15,7 +15,7 @@ import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
 import { RcsPreview } from '@/components/RcsPreview';
-import { RcsBodyField } from '@/components/RcsBodyField';
+import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
@@ -156,11 +156,12 @@ function RcsMessagesInner({ session }: { session: Session }) {
               </p>
 
               <div className="mt-3">
-                <RcsBodyField
+                <ChampCorpsVariables
                   valeur={form.text}
                   onChange={(text) => setForm((f) => ({ ...f, text }))}
                   fields={fields}
                   label={t('Message', 'Message')}
+                  testId="rcs-message-text"
                   max={maxTexte}
                 />
               </div>

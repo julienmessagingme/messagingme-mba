@@ -7,16 +7,25 @@ import {
   listEmailTemplates, createEmailTemplate, updateEmailTemplate, deleteEmailTemplate, listUserFields,
   type EmailTemplate, type EmailTemplateInput, type UserFieldDef,
 } from '@/lib/api';
-import { emailResolvableFields } from '@/lib/fields';
+import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
+import { SelecteurVariable } from '@/components/SelecteurVariable';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
 /**
- * Contenu > Modèles d'email : les modèles utilisés par le node « Envoi de mail » des scénarios. Deux formats
- * (texte simple / HTML brut), sujet et corps acceptant des variables `{{champ}}` substituées à l'envoi
- * (`src/crm/render.ts`). Les chips « insérer une variable » écrivent au curseur du dernier champ actif (sujet
- * ou corps) : pas de composant chip dédié comme `VariableBodyEditor` (qui porte les variables POSITIONNELLES
- * `{{n}}` des templates Meta, un contrat différent des variables NOMMÉES `{{champ}}` de l'email).
+ * Contenu > Modeles d'email : les modeles utilises par le node « Envoi de mail » des scenarios. Deux formats
+ * (texte simple / HTML brut), sujet et corps acceptant des variables `{{champ}}` substituees a l'envoi
+ * (`src/crm/render.ts`).
+ *
+ * Les variables s'inserent par LE selecteur partage (`SelecteurVariable`), jamais en faisant recopier
+ * `{{prenom}}` a la main. L'en-tete de ce fichier affirmait le contraire jusqu'au 2026-08-25 (« pas de
+ * composant chip dedie comme VariableBodyEditor, qui porte les variables POSITIONNELLES ») : c'etait vrai le
+ * 19 aout, et faux depuis le 24, date a laquelle cet editeur a ete rendu parametrable par `varPattern` et a
+ * exporte `NAMED_VAR_RE` en citant explicitement le modele d'email. La page n'avait jamais ete repassee.
+ *
+ * Trois surfaces, UN seul selecteur : le sujet (champ d'une ligne) et le corps HTML (zone de code) recoivent
+ * le jeton au curseur ; le corps en format Texte passe par l'editeur a chips. Le HTML n'y passe PAS
+ * volontairement : un `contenteditable` resérialise le DOM et abimerait un mail colle depuis un outil externe.
  */
 export default function EmailTemplatesPage() {
   return <AppShell active="email-templates">{(session) => <EmailTemplatesInner session={session} />}</AppShell>;
@@ -35,8 +44,6 @@ function EmailTemplatesInner({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false);
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  // Dernier champ ayant reçu le focus : c'est là qu'une variable cliquée s'insère.
-  const lastFocused = useRef<'subject' | 'body'>('body');
 
   const load = useCallback(async () => {
     setError(null);
@@ -52,7 +59,6 @@ function EmailTemplatesInner({ session }: { session: Session }) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { listUserFields(session.tenantId).then((r) => setFields(r.fields)).catch(() => {}); }, [session.tenantId]);
 
-  const variables = emailResolvableFields(fields);
 
   function startCreate() { setEditing('new'); setForm(EMPTY); }
   function startEdit(m: EmailTemplate) { setEditing(m.id); setForm({ name: m.name, format: m.format, subject: m.subject, body: m.body }); }
@@ -85,18 +91,23 @@ function EmailTemplatesInner({ session }: { session: Session }) {
     }
   }
 
-  /** Insère `{{clé}}` à la position du curseur du dernier champ actif (sujet ou corps), garde le focus. */
-  function insertVar(key: string) {
-    const token = `{{${key}}}`;
-    const target = lastFocused.current === 'subject' ? subjectRef.current : bodyRef.current;
-    if (!target) return;
-    const start = target.selectionStart ?? target.value.length;
-    const end = target.selectionEnd ?? target.value.length;
-    const next = target.value.slice(0, start) + token + target.value.slice(end);
-    if (lastFocused.current === 'subject') setForm((f) => ({ ...f, subject: next }));
-    else setForm((f) => ({ ...f, body: next }));
+  /**
+   * Insere `{{cle}}` a la position du curseur d'une surface TEXTE (le sujet, ou le corps en format HTML).
+   * Le corps en format Texte n'passe pas par ici : il a son propre editeur a chips.
+   *
+   * Chaque surface porte son PROPRE bouton, donc plus de « dernier champ actif » a deviner : ce mecanisme
+   * inserait dans le sujet quand on croyait ecrire dans le corps.
+   */
+  function insererDans(surface: 'subject' | 'body', cle: string) {
+    const token = `{{${cle}}}`;
+    const cible = surface === 'subject' ? subjectRef.current : bodyRef.current;
+    if (!cible) return;
+    const start = cible.selectionStart ?? cible.value.length;
+    const end = cible.selectionEnd ?? cible.value.length;
+    const suite = cible.value.slice(0, start) + token + cible.value.slice(end);
+    setForm((f) => (surface === 'subject' ? { ...f, subject: suite } : { ...f, body: suite }));
     const caret = start + token.length;
-    requestAnimationFrame(() => { target.focus(); target.setSelectionRange(caret, caret); });
+    requestAnimationFrame(() => { cible.focus(); cible.setSelectionRange(caret, caret); });
   }
 
   return (
@@ -129,50 +140,58 @@ function EmailTemplatesInner({ session }: { session: Session }) {
               </button>
             </div>
           </div>
-          {variables.length > 0 && (
-            <div>
-              <span className="mb-1 block text-xs font-medium text-ink-600">{t('Insérer une variable (dans le champ actif)', 'Insert a variable (into the active field)')}</span>
-              <div className="flex flex-wrap gap-1.5">
-                {variables.map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    data-testid={`email-template-var-${f.key}`}
-                    onClick={() => insertVar(f.key)}
-                    title={f.label}
-                    className="rounded-full border border-ink-200 bg-ink-50 px-2 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700"
-                  >
-                    {`{{${f.key}}}`}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{t('Sujet', 'Subject')}</label>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="block text-xs font-medium text-ink-600">{t('Sujet', 'Subject')}</label>
+              <SelecteurVariable
+                fields={fields}
+                testId="email-template-subject-variable"
+                ancrage="haut"
+                onInsert={(cle) => insererDans('subject', cle)}
+              />
+            </div>
             <input
               data-testid="email-template-subject"
               ref={subjectRef}
               value={form.subject}
-              onFocus={() => { lastFocused.current = 'subject'; }}
               onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
               className={inputCls}
-              placeholder={t('Bonjour {{prenom}}…', 'Hello {{prenom}}…')}
+              placeholder={t('Bonjour Camille…', 'Hello Camille…')}
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-600">{form.format === 'html' ? t('Corps (HTML brut)', 'Body (raw HTML)') : t('Corps', 'Body')}</label>
-            <textarea
-              data-testid="email-template-body"
-              ref={bodyRef}
-              value={form.body}
-              onFocus={() => { lastFocused.current = 'body'; }}
-              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-              rows={form.format === 'html' ? 10 : 6}
-              className={`${inputCls} ${form.format === 'html' ? 'font-mono text-xs' : ''}`}
-              placeholder={form.format === 'html' ? '<p>Bonjour {{prenom}},</p>' : t('Le corps du message…', 'The message body…')}
+          {form.format === 'html' ? (
+            <div>
+              {/* Zone de CODE, pas d'editeur a chips : un contenteditable resérialise le DOM et abimerait un
+                  HTML colle depuis un outil externe. Le selecteur, lui, est le meme qu'ailleurs. */}
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label className="block text-xs font-medium text-ink-600">{t('Corps (HTML brut)', 'Body (raw HTML)')}</label>
+                <SelecteurVariable
+                  fields={fields}
+                  testId="email-template-body-variable"
+                  ancrage="haut"
+                  onInsert={(cle) => insererDans('body', cle)}
+                />
+              </div>
+              <textarea
+                data-testid="email-template-body"
+                ref={bodyRef}
+                value={form.body}
+                onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+                rows={10}
+                className={`${inputCls} font-mono text-xs`}
+                placeholder={'<p>Bonjour ,</p>'}
+              />
+            </div>
+          ) : (
+            <ChampCorpsVariables
+              valeur={form.body}
+              onChange={(body) => setForm((f) => ({ ...f, body }))}
+              fields={fields}
+              label={t('Corps', 'Body')}
+              testId="email-template-body"
+              placeholder={t('Le corps du message…', 'The message body…')}
             />
-          </div>
+          )}
           <div className="flex justify-end gap-2">
             <button onClick={cancelEdit} className="rounded-lg px-3 py-2 text-sm text-ink-500 hover:text-ink-800">{t('Annuler', 'Cancel')}</button>
             <button

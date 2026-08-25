@@ -18,7 +18,7 @@ import { versMessageRcs, versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_B
 import { boutonPret } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
-import { RcsBodyField } from '@/components/RcsBodyField';
+import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import {
@@ -1058,7 +1058,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           <div className="mb-2">
             <RcsImageField tenantId={tenantId} valeur={rcsImage} onChange={setRcsImage} testIdPrefix="rcs-campagne" />
           </div>
-          <RcsBodyField
+          <ChampCorpsVariables
             valeur={rcsText}
             onChange={setRcsText}
             fields={userFields}

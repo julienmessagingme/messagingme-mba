@@ -18,7 +18,7 @@ import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } fro
 import { boutonsDepuisNode, ouvreUneSortie } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
-import { RcsBodyField } from '@/components/RcsBodyField';
+import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
@@ -997,7 +997,7 @@ function ConfigPanel({
             </div>
 
             <div>
-              <RcsBodyField
+              <ChampCorpsVariables
                 valeur={(d.text as string) ?? ''}
                 onChange={(text) => onPatch({ text })}
                 fields={fields}
