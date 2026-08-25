@@ -323,6 +323,42 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('PgFlowStore.insertExternal / alignFromMeta : réconciliation avec WhatsApp Manager (statut jamais dégradé)', async () => {
+    const store = new PgFlowStore(pool);
+    const id = `flow-ext-itest-${Date.now()}`;
+    try {
+      // Un formulaire vu chez Meta et inconnu chez nous : ni structure, ni ref, ni mapping (Meta ne les
+      // renvoie pas). La colonne `status` porte une contrainte DRAFT|PUBLISHED, d'où l'insert minimal.
+      expect(await store.insertExternal({ id, tenantId, name: 'Importé', status: 'DRAFT' })).toBe(true);
+      // Deuxième passage de la réconciliation, ou WABA partagé par deux espaces : aucune 500, aucun vol.
+      expect(await store.insertExternal({ id, tenantId, name: 'Importé bis', status: 'PUBLISHED' })).toBe(false);
+      expect((await store.getById(id, tenantId))!.name).toBe('Importé'); // la ligne d'origine est intacte
+
+      // Renommage fait dans WhatsApp Manager -> aligné ici.
+      expect(await store.alignFromMeta(id, tenantId, { name: 'Devis express', status: 'DRAFT' })).toBe(true);
+      // Rien n'a bougé chez Meta -> aucune écriture à blanc (sinon le compteur de l'écran mentirait).
+      expect(await store.alignFromMeta(id, tenantId, { name: 'Devis express', status: 'DRAFT' })).toBe(false);
+      // Publication faite hors de la console -> reprise ici.
+      expect(await store.alignFromMeta(id, tenantId, { name: 'Devis express', status: 'PUBLISHED' })).toBe(true);
+      expect((await store.getById(id, tenantId))!.status).toBe('PUBLISHED');
+      // 🔴 Le statut ne redescend JAMAIS : Meta ne repasse pas un flow publié en brouillon, et le faire
+      // rouvrirait chez nous l'édition d'un flow devenu immuable chez eux.
+      expect(await store.alignFromMeta(id, tenantId, { name: 'Devis express', status: 'DRAFT' })).toBe(false);
+      expect((await store.getById(id, tenantId))!.status).toBe('PUBLISHED');
+      // ⚠️ Le cas qui compte vraiment : un renommage QUI ACCOMPAGNE un statut plus bas. Là, la ligne est bien
+      // touchée (le nom change), donc le `where` ne protège plus rien : seul le `case` du `set` empêche le
+      // retour à DRAFT. Sans cette assertion, le garde-fou pouvait sauter sans qu'aucun test ne bronche.
+      expect(await store.alignFromMeta(id, tenantId, { name: 'Devis express v2', status: 'DRAFT' })).toBe(true);
+      expect((await store.getById(id, tenantId))!.status).toBe('PUBLISHED');
+      expect((await store.getById(id, tenantId))!.name).toBe('Devis express v2');
+      // Isolation : un autre espace ne touche pas cette ligne.
+      expect(await store.alignFromMeta(id, '00000000-0000-0000-0000-000000000000', { name: 'Pirate', status: 'PUBLISHED' })).toBe(false);
+      expect((await store.getById(id, tenantId))!.name).toBe('Devis express v2');
+    } finally {
+      await pool.query('delete from flows where id = $1', [id]);
+    }
+  });
+
   it('PgContactStore.mergeFieldsByPhone / addTagsByPhoneReturningNew : atteignent un contact identifié par BSUID', async () => {
     const store = new PgContactStore(pool);
     const bsuid = '9876543210987654321';

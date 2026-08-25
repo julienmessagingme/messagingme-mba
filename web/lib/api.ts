@@ -1394,6 +1394,21 @@ export function publishFlow(tenantId: string, flowId: string): Promise<{ id: str
 export function deleteFlow(tenantId: string, flowId: string): Promise<{ id: string; deleted: boolean }> {
   return request(`/tenants/${tenantId}/flows/${flowId}`, { method: 'DELETE' });
 }
+/** Compte-rendu de la réconciliation avec le compte WhatsApp Manager (voir POST /flows/refresh). */
+export interface FlowRefreshReport {
+  /** Formulaires vus chez Meta et créés chez nous (structure inconnue : Meta ne la renvoie pas). */
+  importes: number;
+  /** Formulaires déjà connus dont le nom ou le passage à « publié » a été aligné sur Meta. */
+  majs: number;
+  /** Formulaires laissés de côté : statut hors de notre modèle (déprécié, bloqué), ou id d'un autre espace. */
+  ignores: number;
+  /** Formulaires que nous connaissons et que Meta ne liste plus. Comptés, jamais supprimés d'office. */
+  absents: number;
+}
+/** « Rafraîchir » : va chercher les formulaires du compte WhatsApp Manager et met la liste locale à jour. */
+export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
+  return request(`/tenants/${tenantId}/flows/refresh`, { method: 'POST' });
+}
 
 // --- Workflows (bot builder : graphe de blocs) ---
 

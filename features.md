@@ -263,6 +263,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   aussitôt en édition.
 - ✅ **Suppression** : un brouillon est supprimé, un formulaire publié est déprécié (Meta ne permet pas de le
   supprimer). Si le formulaire est encore rattaché à un template, Meta refuse et le message est affiché.
+- ✅ **Bouton « Rafraîchir »** (2026-08-25) : va chercher les formulaires du **compte WhatsApp Manager** et met
+  la liste à jour. Sert à deux choses : faire apparaître ici un formulaire **construit ailleurs que dans la
+  console**, et reprendre un **renommage ou une publication faits dans WhatsApp Manager**. Un compte-rendu
+  s'affiche (importés / mis à jour / ignorés / présents ici mais plus chez Meta). **Ce qu'un formulaire importé
+  sait faire, et ce qu'il ne sait pas** : il s'attache à un template et s'envoie dans un scénario comme les
+  autres, mais **ses réponses n'alimentent pas les fiches contact** et son aperçu reste indisponible, parce que
+  Meta ne renvoie pas la structure d'un formulaire (l'écran le dit au moment de l'import). Pour un formulaire
+  qui remplit les fiches, il faut le construire ici. Rien n'est supprimé automatiquement : un formulaire que
+  Meta ne liste plus est signalé, la suppression reste une décision manuelle.
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 

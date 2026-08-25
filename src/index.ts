@@ -607,6 +607,8 @@ async function main(): Promise<void> {
       getFlow: (flowId, tenant) => flowStore.getById(flowId, tenant),
       updateFlowRow: (tenant, id, name, screens, ref, mapping, cta) => flowStore.update(id, tenant, { name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
       removeFlowRow: (flowId, tenant) => flowStore.remove(flowId, tenant),
+      insertExternalFlow: (tenant, f) => flowStore.insertExternal({ ...f, tenantId: tenant }),
+      alignFlowFromMeta: (flowId, tenant, patch) => flowStore.alignFromMeta(flowId, tenant, patch),
     },
     media: { uploadImage: (bytes, mime) => mediaClient.uploadImage(bytes, mime) },
     tags: {

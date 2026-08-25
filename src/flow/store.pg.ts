@@ -107,6 +107,42 @@ export class PgFlowStore {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Insère un flow VU CHEZ META mais absent de notre base (créé directement dans WhatsApp Manager).
+   * On ne connaît que id/nom/statut : `elements`, `ref` et `mapping` restent NULS, Meta ne renvoie pas la
+   * structure d'un flow (cf. 0015). Conséquence assumée : le formulaire devient utilisable (bouton de
+   * template, bloc de scénario) mais ses réponses n'alimentent aucune fiche contact, faute de `ref` pour les
+   * rattacher au retour (findByRef).
+   *
+   * `on conflict do nothing` : l'id est la clé primaire GLOBALE. Deux tenants qui partagent un WABA voient le
+   * même flow chez Meta, et le second ne doit ni provoquer une 500 ni voler la ligne du premier.
+   * true si une ligne a bien été créée.
+   */
+  async insertExternal(input: { id: string; tenantId: string; name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean> {
+    const res = await this.pool.query(
+      `insert into flows (id, tenant_id, name, status) values ($1, $2, $3, $4) on conflict (id) do nothing`,
+      [input.id, input.tenantId, input.name, input.status],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Aligne un flow local sur ce que Meta annonce : renommage effectué dans WhatsApp Manager, publication
+   * effectuée hors de la console. Le statut ne redescend JAMAIS de PUBLISHED à DRAFT : Meta ne le permet pas,
+   * et le faire rouvrirait chez nous l'édition d'un flow devenu immuable chez eux.
+   * Le `where` ne retient que les lignes qui CHANGENT vraiment, pour que le compteur de la réconciliation
+   * compte des mises à jour réelles et non des écritures à blanc.
+   */
+  async alignFromMeta(id: string, tenantId: string, patch: { name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean> {
+    const res = await this.pool.query(
+      `update flows set name = $3, status = case when $4 = 'PUBLISHED' then 'PUBLISHED' else status end, updated_at = now()
+       where id = $1 and tenant_id = $2
+         and (name is distinct from $3 or ($4 = 'PUBLISHED' and status <> 'PUBLISHED'))`,
+      [id, tenantId, patch.name, patch.status],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Retrouve le tenant + le mapping + les types de champ d'un flow par son `ref` (retour nfm_reply). null si
    *  inconnu. `fields` (déjà stocké, dérivé) donne le type de chaque champ (canonicalisation) et repère les
    *  champs OptIn (gate marketing). Un `select` de plus sur une requête déjà indexée par `ref` unique. */

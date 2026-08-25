@@ -29,6 +29,10 @@ export interface FlowRouteDeps {
   updateFlowRow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
   /** Retire le flow du store local (après suppression/dépréciation Meta). true si supprimé. */
   removeFlowRow(flowId: string, tenantId: string): Promise<boolean>;
+  /** Réconciliation : enregistre un flow vu chez Meta et absent en local (structure inconnue). true si créé. */
+  insertExternalFlow(tenantId: string, flow: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
+  /** Réconciliation : aligne nom + statut d'un flow local sur Meta. true si la ligne a vraiment changé. */
+  alignFlowFromMeta(flowId: string, tenantId: string, patch: { name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
 }
 
 const IMG_MAX = 400 * 1024; // base64 borné (~300KB binaire) — l'image Flow s'embarque dans le flow_json
@@ -276,6 +280,59 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, guard?:
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     return reply.code(200).send({ flows: await deps.listFlows(tenant) });
+  });
+
+  /**
+   * « Rafraîchir » : réconcilie la liste locale avec les formulaires du compte WhatsApp Manager.
+   *
+   * La liste servie par GET vient de NOTRE base, pas de Meta : Meta ne renvoie pas la structure d'un flow
+   * (id/nom/statut seulement), donc un formulaire construit ailleurs que dans la console était invisible ici,
+   * et une publication ou un renommage faits dans WhatsApp Manager n'arrivaient jamais jusqu'à nous.
+   *
+   * Ce que la route fait, et ce qu'elle NE fait pas :
+   *  - importe les flows connus de Meta et absents en local (structure inconnue : utilisables dans un template
+   *    ou un scénario, mais leurs réponses n'alimenteront pas les fiches contact) ;
+   *  - aligne nom et passage à PUBLISHED des flows déjà connus ;
+   *  - `ignores` : les statuts hors de notre modèle (DEPRECATED / BLOCKED / THROTTLED, cf. la contrainte de
+   *    0015) et les id déjà pris par un autre tenant. On ne les invente pas en base ;
+   *  - `absents` : compte les flows locaux que Meta ne liste plus, SANS rien supprimer. Effacer ici perdrait
+   *    le mapping qui rattache un retour de formulaire encore en vol à une fiche contact ; la suppression
+   *    reste une décision explicite, bouton « Supprimer ».
+   */
+  app.post('/tenants/:tenantId/flows/refresh', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+
+    const wabaId = await deps.getWabaId(tenant);
+    if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
+
+    const distants = await (await deps.flowsFor(tenant)).list(wabaId);
+    const locaux = new Set((await deps.listFlows(tenant)).map((f) => f.id));
+    const vus = new Set<string>();
+    let importes = 0;
+    let majs = 0;
+    let ignores = 0;
+
+    for (const d of distants) {
+      if (!d.id) continue; // ligne Meta inexploitable : rien à rattacher
+      vus.add(d.id);
+      const statut = d.status === 'DRAFT' || d.status === 'PUBLISHED' ? d.status : null;
+      if (statut === null) {
+        ignores += 1;
+        continue;
+      }
+      const nom = d.name.trim() || d.id; // un nom vide rendrait la carte inidentifiable
+      if (locaux.has(d.id)) {
+        if (await deps.alignFlowFromMeta(d.id, tenant, { name: nom, status: statut })) majs += 1;
+      } else if (await deps.insertExternalFlow(tenant, { id: d.id, name: nom, status: statut })) {
+        importes += 1;
+      } else {
+        ignores += 1; // id déjà pris par un autre tenant (WABA partagé) : surtout ne pas le lui prendre
+      }
+    }
+
+    const absents = [...locaux].filter((id) => !vus.has(id)).length;
+    return reply.code(200).send({ importes, majs, ignores, absents });
   });
 
   app.post('/tenants/:tenantId/flows/:flowId/publish', opts, async (req, reply) => {

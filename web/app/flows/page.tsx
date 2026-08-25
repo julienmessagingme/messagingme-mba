@@ -5,7 +5,8 @@ import { AppShell } from '@/components/AppShell';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import { FlowScreen, fromFlowElements } from '@/components/FlowScreen';
 import type { Session } from '@/lib/session';
-import { listFlows, publishFlow, duplicateFlow, deleteFlow, type FlowSummary } from '@/lib/api';
+import { listFlows, publishFlow, duplicateFlow, deleteFlow, refreshFlows, type FlowSummary } from '@/lib/api';
+import { messageRafraichissement } from '@/lib/flows-refresh';
 import { useT } from '@/lib/i18n';
 
 export default function FlowsPage() {
@@ -19,6 +20,8 @@ function FlowsInner({ session }: { session: Session }) {
   const [editing, setEditing] = useState<FlowSummary | null>(null);
   const [creating, setCreating] = useState(false);
   const [preview, setPreview] = useState<FlowSummary | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const t = useT();
 
   const load = useCallback(async (): Promise<FlowSummary[]> => {
@@ -38,6 +41,22 @@ function FlowsInner({ session }: { session: Session }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Va chercher chez Meta les formulaires du compte WhatsApp Manager, puis recharge la liste locale. */
+  async function refresh() {
+    setError(null);
+    setNote(null);
+    setRefreshing(true);
+    try {
+      const rapport = await refreshFlows(session.tenantId);
+      await load();
+      setNote(messageRafraichissement(rapport, t));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Rafraîchissement impossible', 'Refresh failed'));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function publish(f: FlowSummary) {
     // Le nom est interpolé DANS la phrase traduite : la découper en morceaux concaténés laissait les
@@ -95,6 +114,7 @@ function FlowsInner({ session }: { session: Session }) {
         <p className="mt-1 text-sm text-ink-500">{t("Formulaires WhatsApp riches (titres, images, tous types de champs : saisie, choix, date, consentement) avec bouton final personnalisable : le client remplit dans WhatsApp, chaque champ se range dans une fiche contact, la réponse arrive dans l'inbox. Attache un formulaire publié à un template via un bouton « Flow ».", 'Rich WhatsApp forms (titles, images, all field types: text input, choice, date, consent) with a customizable final button: the customer fills it in inside WhatsApp, each field is saved to a contact record, and the response lands in the inbox. Attach a published form to a template through a “Flow” button.')}</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {note && <p data-testid="flows-note-rafraichissement" className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-ink-700">{note}</p>}
 
       {editing ? (
         <div className="rounded-2xl border border-brand-200 bg-brand-50/40 p-5 shadow-sm">
@@ -132,7 +152,21 @@ function FlowsInner({ session }: { session: Session }) {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-semibold text-ink-900">{t('Formulaires', 'Forms')} ({flows.length})</span>
-            <button onClick={() => setCreating(true)} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">{t('+ Créer un formulaire', '+ Create a form')}</button>
+            <div className="flex items-center gap-2">
+              {/* La liste vient de NOTRE base : un formulaire créé dans WhatsApp Manager, ou publié là-bas,
+                  n'arrive ici que par cette réconciliation. */}
+              <button
+                onClick={() => void refresh()}
+                disabled={refreshing}
+                title={t('Va chercher les formulaires du compte WhatsApp Manager et met la liste à jour', 'Fetches the forms from the WhatsApp Manager account and updates the list')}
+                className="rounded-lg border border-ink-200 px-3 py-1.5 text-sm font-medium text-ink-700 transition hover:border-brand-300 hover:text-brand-600 disabled:opacity-50"
+              >
+                {refreshing ? t('Rafraîchissement…', 'Refreshing…') : t('Rafraîchir', 'Refresh')}
+              </button>
+              {/* Le compte-rendu du rafraîchissement parle de la LISTE : le laisser au-dessus du constructeur
+                  en ferait un message sans objet. */}
+              <button onClick={() => { setNote(null); setCreating(true); }} className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-brand-600">{t('+ Créer un formulaire', '+ Create a form')}</button>
+            </div>
           </div>
           {loading ? (
             <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -140,7 +174,7 @@ function FlowsInner({ session }: { session: Session }) {
             <p className="rounded-2xl border border-dashed border-ink-300 bg-white px-4 py-10 text-center text-sm text-ink-500">{t("Aucun formulaire pour l'instant.", 'No forms yet.')}</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => setEditing(f)} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
+              {flows.map((f) => <FlowCard key={f.id} flow={f} onPreview={() => setPreview(f)} onEdit={() => { setNote(null); setEditing(f); }} onPublish={() => publish(f)} onDuplicate={() => duplicate(f)} onDelete={() => remove(f)} />)}
             </div>
           )}
         </div>
@@ -164,7 +198,7 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
         <div className="pointer-events-none h-44 overflow-hidden">
           {first
             ? <FlowScreen elements={fromFlowElements(first.elements)} cta={f.cta} title={first.title || f.name} />
-            : <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-ink-400">{t('Aperçu indisponible (formulaire ancien)', 'Preview unavailable (legacy form)')}</div>}
+            : <div className="flex h-full items-center justify-center px-3 text-center text-[11px] text-ink-400">{t('Structure inconnue : aperçu indisponible', 'Unknown structure: preview unavailable')}</div>}
         </div>
       </button>
       <div className="flex items-center gap-2">
@@ -178,7 +212,7 @@ function FlowCard({ flow: f, onPreview, onEdit, onPublish, onDuplicate, onDelete
           <>
             {first
               ? <button onClick={onEdit} className="font-medium text-brand-600 hover:text-brand-700">{t('Éditer', 'Edit')}</button>
-              : <span className="text-ink-300" title={t('Formulaire antérieur au modèle riche : à recréer', 'Form predates the rich model: must be recreated')}>{t('Éditer', 'Edit')}</span>}
+              : <span className="text-ink-300" title={t("Formulaire non construit dans la console (importé de WhatsApp Manager, ou antérieur au modèle riche) : Meta n'en renvoie pas la structure. À recréer ici pour l'éditer.", 'Form not built in the console (imported from WhatsApp Manager, or predating the rich model): Meta does not return its structure. Recreate it here to edit it.')}>{t('Éditer', 'Edit')}</span>}
             <button onClick={onPublish} className="font-medium text-brand-600 hover:text-brand-700">{t('Publier', 'Publish')}</button>
           </>
         ) : (
@@ -210,7 +244,7 @@ function FlowPreviewModal({ flow, onClose }: { flow: FlowSummary; onClose: () =>
           <button onClick={onClose} className="text-2xl leading-none text-ink-400 hover:text-ink-700">×</button>
         </div>
         {!scr ? (
-          <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t('Formulaire antérieur au modèle riche (aperçu détaillé indisponible).', 'Form predates the rich model (detailed preview unavailable).')}</p>
+          <p className="text-sm text-ink-500">{flow.fields.length > 0 ? flow.fields.map((f) => f.label).join(', ') : t("Formulaire non construit dans la console : Meta n'en renvoie pas la structure, l'aperçu détaillé est donc indisponible.", 'Form not built in the console: Meta does not return its structure, so the detailed preview is unavailable.')}</p>
         ) : (
           <>
             {n > 1 && (

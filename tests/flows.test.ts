@@ -99,17 +99,21 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[]; ensuredOptin: number }
+interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[]; ensuredOptin: number; externals: Array<{ id: string; name: string; status: string }>; aligned: Array<{ id: string; name: string; status: string }> }
 
 function app(
   over: Partial<FlowRouteDeps> = {},
-  opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null } = {},
+  opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null; metaFlows?: Array<{ id?: string; name?: string; status?: string }> } = {},
 ) {
-  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [], ensuredOptin: 0 };
+  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [], ensuredOptin: 0, externals: [], aligned: [] };
   const fakeFetch: FetchLike = async (url, init) => {
     cap.metaCalls.push(String(url));
     cap.metaBodies.push(init?.body ?? null);
     const ok = opts.metaOk !== false;
+    // GET /{waba}/flows?fields=... : la réconciliation lit `data`, pas la réponse générique de création.
+    if (ok && opts.metaFlows && String(url).includes('fields=id,name,status')) {
+      return { ok: true, status: 200, json: async () => ({ data: opts.metaFlows }) } as Response;
+    }
     return { ok, status: ok ? 200 : 400, json: async () => (ok ? { id: 'flowNew', success: true, validation_errors: [] } : { error: { message: 'x', code: 100 } }) } as Response;
   };
   const deps: FlowRouteDeps = {
@@ -129,6 +133,8 @@ function app(
     getFlow: async () => (opts.flow === undefined ? null : opts.flow),
     updateFlowRow: async (_t, id, name, _elements, ref) => { cap.updated.push({ id, name, ref }); return true; },
     removeFlowRow: async (id) => { cap.removed.push(id); return true; },
+    insertExternalFlow: async (_t, f) => { cap.externals.push(f); return true; },
+    alignFlowFromMeta: async (id, _t, patch) => { cap.aligned.push({ id, ...patch }); return true; },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, flows: deps }), cap };
@@ -527,6 +533,78 @@ describe('routes flows — duplication (D10)', () => {
     const { server } = app({}, { flow: draftFlow({ screens: null }) });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/fsrc/duplicate', ...h(adminTok) });
     expect(res.statusCode).toBe(422);
+    await server.close();
+  });
+});
+
+/** « Rafraîchir » : la liste servie par GET vient de NOTRE base (Meta ne renvoie pas la structure d'un flow),
+ *  donc un formulaire construit dans WhatsApp Manager, ou publié là-bas, n'arrive ici que par cette route. */
+describe('POST /flows/refresh — réconciliation avec le compte WhatsApp Manager', () => {
+  it('importe l\'inconnu, aligne le connu, laisse de côté un statut hors modèle, compte l\'absent SANS rien supprimer', async () => {
+    const { server, cap } = app(
+      { listFlows: async () => [draftFlow({ id: 'f1', name: 'Contact', status: 'PUBLISHED' }), draftFlow({ id: 'fold', name: 'Retiré chez Meta' })] },
+      {
+        metaFlows: [
+          { id: 'f1', name: 'Contact 2026', status: 'PUBLISHED' }, // renommé dans WhatsApp Manager
+          { id: 'fnew', name: 'Devis express', status: 'DRAFT' }, // construit hors de la console
+          { id: 'fdep', name: 'Ancien', status: 'DEPRECATED' }, // hors du modèle (contrainte de 0015)
+        ],
+      },
+    );
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ importes: 1, majs: 1, ignores: 1, absents: 1 });
+    expect(cap.externals).toEqual([{ id: 'fnew', name: 'Devis express', status: 'DRAFT' }]);
+    expect(cap.aligned).toEqual([{ id: 'f1', name: 'Contact 2026', status: 'PUBLISHED' }]);
+    // Un statut DEPRECATED violerait la contrainte de statut : il ne doit jamais partir en écriture.
+    expect(cap.externals.some((f) => f.id === 'fdep')).toBe(false);
+    // `fold` n'existe plus chez Meta : signalé, JAMAIS supprimé (son mapping rattache encore un retour en vol).
+    expect(cap.removed).toEqual([]);
+    await server.close();
+  });
+
+  it('un flow déjà identique chez Meta ne compte pas comme mis à jour', async () => {
+    const { server } = app(
+      { listFlows: async () => [draftFlow({ id: 'f1', name: 'Contact', status: 'PUBLISHED' })], alignFlowFromMeta: async () => false },
+      { metaFlows: [{ id: 'f1', name: 'Contact', status: 'PUBLISHED' }] },
+    );
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
+    expect(res.json()).toEqual({ importes: 0, majs: 0, ignores: 0, absents: 0 });
+    await server.close();
+  });
+
+  it('id déjà pris par un autre espace (WABA partagé) : compté en ignoré, jamais volé', async () => {
+    const { server } = app(
+      { listFlows: async () => [], insertExternalFlow: async () => false },
+      { metaFlows: [{ id: 'fx', name: 'Partagé', status: 'PUBLISHED' }] },
+    );
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
+    expect(res.json()).toEqual({ importes: 0, majs: 0, ignores: 1, absents: 0 });
+    await server.close();
+  });
+
+  it('nom vide chez Meta -> repli sur l\'id (une carte sans nom serait inidentifiable)', async () => {
+    const { server, cap } = app({ listFlows: async () => [] }, { metaFlows: [{ id: 'fvide', name: '   ', status: 'DRAFT' }] });
+    await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
+    expect(cap.externals).toEqual([{ id: 'fvide', name: 'fvide', status: 'DRAFT' }]);
+    await server.close();
+  });
+
+  it('sans WABA -> 400, AUCUN appel Meta', async () => {
+    const { server, cap } = app({}, { wabaId: null });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(adminTok) });
+    expect(res.statusCode).toBe(400);
+    expect(cap.metaCalls).toEqual([]);
+    await server.close();
+  });
+
+  it('agent -> 403, et tenant mismatch -> 403 : aucun appel Meta dans les deux cas', async () => {
+    const { server, cap } = app({}, { metaFlows: [{ id: 'fnew', name: 'X', status: 'DRAFT' }] });
+    const agent = await server.inject({ method: 'POST', url: '/tenants/t1/flows/refresh', ...h(agentTok) });
+    expect(agent.statusCode).toBe(403);
+    const autre = await server.inject({ method: 'POST', url: '/tenants/t2/flows/refresh', ...h(adminTok) });
+    expect(autre.statusCode).toBe(403);
+    expect(cap.metaCalls).toEqual([]);
     await server.close();
   });
 });
