@@ -122,4 +122,24 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
     // Le template, lui, est allé dans SA série.
     expect(duJour(apres.templates.marketing) - duJour(avant.templates.marketing)).toBe(1);
   });
+
+  it('🔴 stats getDashboard : un envoi RCS n entre PAS dans la série service, mais reste dans les échangés', async () => {
+    // La série « Service » affirme à l'écran que Meta ne facture pas ces messages au message. C'est vrai d'un
+    // sortant WhatsApp hors template, faux d'un envoi RCS : celui-là part chez smsmode, qui le facture. Un
+    // client lisait donc une partie de son volume payant comme gratuit, sur l'écran où il décide son budget.
+    // Les ÉCHANGÉS, eux, restent tous canaux : c'est un volume, les deux tuyaux comptent légitimement.
+    const store = new PgInboxStore(pool);
+    const stats = new PgStatsStore(pool);
+    const d = (o: number): string => new Date(Date.now() + o * 86_400_000).toISOString().slice(0, 10);
+    const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    const duJour = (pts: Array<{ date: string; count: number }>): number => pts.find((p) => p.date === jour)?.count ?? 0;
+
+    const avant = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
+    const waId = '33600033333';
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Carte RCS', messageId: 'rcs-SVC-OUT', type: 'rcs', channel: 'rcs' });
+    const apres = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
+
+    expect(duJour(apres.service) - duJour(avant.service)).toBe(0); // pas dans « Service »
+    expect(duJour(apres.exchanged) - duJour(avant.exchanged)).toBe(1); // mais bien dans « Échangés »
+  });
 });

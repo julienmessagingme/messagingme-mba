@@ -10,7 +10,7 @@ export interface Enrichment {
   contactE164: string; // wa_id : numéro client (ou BSUID à terme)
   profileName: string | null;
   whatsappLine: string; // numéro d'affichage de la ligne du tenant (routage HubSpot plus tard)
-  lastInboundAt: string | null; // dernier message ENTRANT : pilote la fenêtre 24h Meta
+  lastInboundAt: string | null; // dernier entrant WHATSAPP : pilote la fenêtre 24h Meta (voir la requête)
   analyzedAt: string | null;
 }
 
@@ -26,6 +26,11 @@ interface Row {
  * Construit l'enrichissement d'une conversation. `whatsappLine` = 1er numéro du tenant (OK pilote mono-numéro ;
  * migration `conversations.phone_number_id` quand un tenant devient multi-numéros). null si la conversation n'existe plus.
  */
+// 🔴 `last_inbound_at` est restreint au canal WHATSAPP. Ce champ est présenté au connecteur comme celui
+// qui pilote la fenêtre 24 h de Meta : un tap de suggestion RCS le rafraîchissait, et le commercial dans
+// HubSpot croyait pouvoir répondre en texte libre alors que Meta refuse en 131047. C'est le jumeau du
+// correctif bf0408d, côté connecteur. Si un jour il faut savoir que le contact est vivant sur un AUTRE
+// tuyau, ce sera un champ DISTINCT, jamais celui-ci élargi.
 export async function getEnrichment(pool: Pool, conversationId: string): Promise<Enrichment | null> {
   const res = await pool.query<Row>(
     `select
@@ -33,7 +38,7 @@ export async function getEnrichment(pool: Pool, conversationId: string): Promise
        ct.profile_name as profile_name,
        c.analyzed_at::text as analyzed_at,
        (select max(m.created_at)::text from conversation_messages m
-          where m.conversation_id = c.id and m.direction = 'in') as last_inbound_at,
+          where m.conversation_id = c.id and m.direction = 'in' and m.channel = 'whatsapp') as last_inbound_at,
        (select pn.display_phone_number from phone_numbers pn
           where pn.tenant_id = c.tenant_id order by pn.created_at asc limit 1) as whatsapp_line
      from conversations c

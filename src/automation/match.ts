@@ -61,7 +61,9 @@ export interface AutomationRow {
 
 /** L'événement observé, forme normalisée par l'appelant (webhook, file d'événements, hook d'analyse). */
 export type AutomationEvent =
-  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean }
+  /** `channel` = le tuyau du message reçu. Il décide notamment si la fenêtre de service WhatsApp est
+   *  prouvée ouverte : un message RCS ne prouve RIEN côté Meta (cf. `runAutomations`). */
+  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs' }
   | { kind: 'tag_added'; waId: string; tag: string }
   /** Une conversation vient d'être analysée : `sentiment` catégoriel (pas de score numérique) + `resolved`. */
   | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean }

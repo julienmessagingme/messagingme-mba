@@ -3,6 +3,7 @@ import type { PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty } from './scope';
+import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
@@ -90,10 +91,10 @@ export interface InboxRouteDeps {
    * (canal éteint, message supprimé depuis, contact désabonné du RCS). Optionnelle : absente, la route
    * répond 422 « canal RCS non disponible » au lieu de 500 sur des deps de test minimales.
    */
-  sendRcsFromLibrary?(
+  sendRcsFromInbox?(
     tenantId: string,
     waId: string,
-    rcsMessageId: string,
+    contenu: { rcsMessageId: string } | { text: string },
   ): Promise<{ messageId: string; apercu: string } | { refus: string }>;
   /** Envoie une réponse texte (fenêtre de service 24 h). `tenantId` -> token Meta PAR TENANT (B1). Retourne le message_id. */
   sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
@@ -263,9 +264,12 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
     const refus = await refusAffectation(req, tenant, conversationId);
     if (refus) return reply.code(403).send({ error: refus, code: 'assigned_to_other' });
-    // Hors fenêtre 24 h : Meta refuse le texte libre. On bloque et on invite à un template.
+    // Hors fenêtre 24 h : Meta refuse le texte libre. On bloque et on dit les DEUX chemins qui restent.
+    // Le message ne parlait que du template, alors que le même écran propose le RCS juste en dessous : un
+    // opérateur croyait devoir faire approuver un template alors qu'il avait un chemin immédiat.
+    // Le code `window_closed` ne bouge pas, l'écran s'en sert.
     if (!ctx.windowOpen) {
-      return reply.code(422).send({ error: 'Fenêtre de 24 h fermée : envoie un template.', code: 'window_closed' });
+      return reply.code(422).send({ error: 'Fenêtre de 24 h fermée : envoie un template, ou un message RCS si le contact y est joignable.', code: 'window_closed' });
     }
     const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
     if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
@@ -293,16 +297,26 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { conversationId } = req.params as { conversationId: string };
-    const rcsMessageId = (req.body as { rcsMessageId?: unknown } | null)?.rcsMessageId;
-    if (!nonEmpty(rcsMessageId)) return reply.code(400).send({ error: 'rcsMessageId requis' });
+    // Deux formes, EXCLUSIVES : un message de la bibliothèque, ou une réponse écrite à la main. La seconde
+    // existe parce qu'un contact joignable SEULEMENT en RCS n'était atteignable qu'à travers la bibliothèque :
+    // l'opérateur ne pouvait pas répondre une phrase sur le canal où le client venait de lui parler.
+    const corps = (req.body ?? {}) as { rcsMessageId?: unknown; text?: unknown };
+    const aId = nonEmpty(corps.rcsMessageId);
+    const aTexte = nonEmpty(corps.text);
+    if (aId === aTexte) return reply.code(400).send({ error: 'rcsMessageId OU text requis, pas les deux' });
+    // Même borne que le schéma RCS : refuser ici plutôt que d'aller se faire refuser par le fournisseur.
+    if (aTexte && (corps.text as string).trim().length > RCS_TEXTE_MAX) {
+      return reply.code(400).send({ error: `texte trop long (${RCS_TEXTE_MAX} caractères maximum)` });
+    }
+    const contenu = aId ? { rcsMessageId: (corps.rcsMessageId as string).trim() } : { text: (corps.text as string).trim() };
 
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
     const refusAff = await refusAffectation(req, tenant, conversationId);
     if (refusAff) return reply.code(403).send({ error: refusAff, code: 'assigned_to_other' });
-    if (!deps.sendRcsFromLibrary) return reply.code(422).send({ error: 'canal RCS non disponible' });
+    if (!deps.sendRcsFromInbox) return reply.code(422).send({ error: 'canal RCS non disponible' });
 
-    const issue = await deps.sendRcsFromLibrary(tenant, ctx.waId, rcsMessageId as string);
+    const issue = await deps.sendRcsFromInbox(tenant, ctx.waId, contenu);
     // 422 et non 5xx : c'est une situation à corriger par l'opérateur (canal éteint, contact désabonné), et
     // Cloudflare remplacerait le corps d'un 5xx par sa page d'erreur, donc la raison n'arriverait jamais.
     if ('refus' in issue) return reply.code(422).send({ error: issue.refus });

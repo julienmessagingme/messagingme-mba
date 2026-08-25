@@ -72,8 +72,19 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     if (automationId === '' || valeur === '') return null;
     return { tenantId: j.tenantId, event: { kind: 'avant_date', waId, automationId, valeur } };
   }
-  // `message` n'a rien à faire dans la file : il est traité en direct dans le webhook, où le contexte
-  // (isNewContact, consommation du message) n'existe que le temps du job. L'accepter ici ouvrirait un second
-  // chemin de déclenchement au comportement subtilement différent.
-  return null;
+  if (e.kind === 'message') {
+    // 🔴 `message` transitait AUTREFOIS uniquement en direct dans le webhook Meta, et cet analyseur le
+    // refusait. Le RCS a changé la donne : ses messages entrants arrivent dans le processus API, qui n'a pas
+    // les dépendances du runner. La file est exactement faite pour ça.
+    //
+    // Le CANAL est exigé et n'a PAS de valeur par défaut : le supposer WhatsApp ferait croire au runner que
+    // la fenêtre de service est ouverte sur un message RCS, et le scénario déclenché partirait en 131047.
+    const channel = e.channel === 'rcs' || e.channel === 'whatsapp' ? e.channel : null;
+    if (channel === null) return null;
+    return {
+      tenantId: j.tenantId,
+      event: { kind: 'message', waId, body: typeof e.body === 'string' ? e.body : null, isNewContact: e.isNewContact === true, channel },
+    };
+  }
+  return null; // genre inconnu : la file l ignore proprement plutot que de planter
 }

@@ -429,10 +429,19 @@ export function deleteRcsMessage(tenantId: string, id: string): Promise<{ ok: tr
  * Envoie un message de la bibliothèque RCS dans une conversation. Ses variables sont résolues côté serveur sur
  * la fiche du contact. Pas de fenêtre de 24 h à respecter : c'est une règle de WhatsApp, pas du RCS.
  */
-export function sendRcsToConversation(tenantId: string, conversationId: string, rcsMessageId: string): Promise<{ messageId: string }> {
+/**
+ * Envoie un RCS dans une conversation. Deux formes EXCLUSIVES : un message de la bibliothèque, ou une
+ * réponse écrite à la main. La seconde existe parce qu'un contact joignable seulement en RCS n'était
+ * atteignable qu'à travers la bibliothèque, sur le canal où il venait pourtant d'écrire.
+ */
+export function sendRcsToConversation(
+  tenantId: string,
+  conversationId: string,
+  contenu: { rcsMessageId: string } | { text: string },
+): Promise<{ messageId: string }> {
   return request<{ messageId: string }>(`/tenants/${tenantId}/conversations/${conversationId}/send-rcs`, {
     method: 'POST',
-    body: JSON.stringify({ rcsMessageId }),
+    body: JSON.stringify(contenu),
   });
 }
 

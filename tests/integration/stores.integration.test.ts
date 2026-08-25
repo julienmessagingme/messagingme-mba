@@ -762,6 +762,76 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(compile.find((v) => v.category === 'marketing')?.count).toBe(2);
   });
 
+  it('🔴 etancheite : un entrant RCS ne compte NI en reponse NI en clic d une campagne WhatsApp', async () => {
+    // Vecu en production le 2026-08-25 sur la fenetre 24 h, meme cause ici : une suggestion RCS est
+    // enregistree avec type='button', et le funnel joignait les entrants par NUMERO sans regarder le canal.
+    // Un contact qui ignorait le template mais tapait une suggestion RCS recue par ailleurs etait compte
+    // « a repondu » ET « a tape un bouton » du template. C est le chiffre sur lequel on juge un template.
+    // Les deux colonnes sont `not null default 'whatsapp'` (verifie sur la base reelle) : egalite simple.
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const stats = new PgStatsStore(pool);
+    const phone = '+33600000062';
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, phone],
+    )).rows[0]!.id;
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: 'pn-canal', name: 'Canal', category: 'marketing', templateName: 'te_canal', templateLanguage: 'fr', paramMapping: [] },
+      [{ contactId, toE164: phone, resolvedParams: [] }],
+    );
+    const rid = (await recipients.listPending(campaignId))[0]!.id;
+    await recipients.claim(rid);
+    await recipients.markResult(rid, { status: 'sent', messageId: 'ms-canal', sentAt: Date.now() - 5000 });
+
+    const convId = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id) values ($1, '33600000062') returning id`, [tenantId],
+    )).rows[0]!.id;
+    // Le contact tape une SUGGESTION RCS : meme numero, meme fil, autre tuyau.
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel) values ($1, 'in', 'button', 'btn:0', 'rcs')`, [convId],
+    );
+
+    const apresRcs = await stats.getCampaignFunnel(tenantId, campaignId);
+    expect(apresRcs.replied).toBe(0); // il n a pas repondu au template
+    expect(apresRcs.buttonReplies).toBe(0); // et il n a touche aucun de ses boutons
+
+    // Le meme geste sur le BON tuyau compte, lui : la garde ne rend pas le funnel aveugle.
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel) values ($1, 'in', 'button', 'btn:0', 'whatsapp')`, [convId],
+    );
+    const apresWhatsApp = await stats.getCampaignFunnel(tenantId, campaignId);
+    expect(apresWhatsApp.replied).toBe(1);
+    expect(apresWhatsApp.buttonReplies).toBe(1);
+  });
+
+  it('🔴 etancheite : une campagne RCS ne rentre ni dans le cout estime ni dans le detail par template', async () => {
+    // Le cout estime est calcule au tarif de Meta, qui ne facture rien sur un envoi parti chez smsmode.
+    // Et une campagne RCS stocke la CHAINE VIDE comme template_name, pas null : elle traversait donc tous
+    // les filtres ecrits pour null et s affichait en ligne au nom vide.
+    const repo = new PgCampaignRepo(pool);
+    const recipients = new PgRecipientStore(pool);
+    const stats = new PgStatsStore(pool);
+    const phone = '+33600000063';
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, phone],
+    )).rows[0]!.id;
+    const { campaignId } = await repo.createWithRecipients(
+      { tenantId, phoneNumberId: '', name: 'Carte RCS', category: 'marketing', templateName: '', templateLanguage: '', paramMapping: [], channel: 'rcs' },
+      [{ contactId, toE164: phone, resolvedParams: [] }],
+    );
+    const rid = (await recipients.listPending(campaignId))[0]!.id;
+    await recipients.claim(rid);
+    await recipients.markResult(rid, { status: 'sent', messageId: 'ms-rcs-cout', sentAt: Date.now() - 5000 });
+
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
+    const range = { from: today, to: today };
+    const vol = await stats.getCostVolume(tenantId, range, { campaignIds: [campaignId] });
+    expect(vol).toHaveLength(0); // aucun cout Meta pour un envoi qui n est pas parti chez Meta
+
+    const parTemplate = await stats.getTemplateBreakdown(tenantId, range);
+    expect(parTemplate.some((t) => t.name === '' || t.name === null)).toBe(false);
+  });
+
   it('🔴 getCampaignFunnel : les clics AVANT le premier envoi ne comptent pas (revue Meta)', async () => {
     // Mesuré en production le 2026-08-21 : Meta explore puis fait cliquer chaque bouton URL pendant la revue
     // du template, donc avant le moindre envoi. 70 faux clics sur un template jamais envoyé. Sans ce seuil,

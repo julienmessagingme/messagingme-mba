@@ -16,6 +16,11 @@ import type { RcsOutbound, RcsSuggestion } from './types';
  * `safeParse` chez l'appelant, jamais `parse`.
  */
 /** Libellé d'un bouton : 25 caractères chez eux, sur les six formes. */
+/** Longueur maximale d'un message RCS texte. Exportée pour que la route d'envoi de l'inbox borne la
+ *  réponse libre AVEC LA MÊME valeur : deux bornes séparées divergeraient au premier ajustement, et
+ *  l'opérateur verrait son message accepté par l'écran puis refusé par le fournisseur. */
+export const RCS_TEXTE_MAX = 3072;
+
 const libelle = z.string().min(1).max(25);
 const postback = z.string().min(1);
 
@@ -70,7 +75,7 @@ export const rcsCardSchema = z.object({
 });
 
 export const rcsOutboundSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('text'), text: z.string().min(1).max(3072), suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
+  z.object({ kind: z.literal('text'), text: z.string().min(1).max(RCS_TEXTE_MAX), suggestions: z.array(rcsSuggestionSchema).max(11).optional() }),
   // 🔴 Les boutons d'une CARTE existent à deux niveaux chez le provider, et ce n'est pas une redondance :
   // c'est CE CHOIX qui décide de leur apparence sur le téléphone. Dans la carte (4 maximum) ils s'affichent
   // en boutons pleine largeur empilés et y RESTENT ; sous le message (11 maximum) ils s'affichent en petites

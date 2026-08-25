@@ -789,7 +789,7 @@ export class WorkflowExecutor {
    */
   async rcsUndeliverable(tenantId: string, waId: string, messageId: string): Promise<boolean> {
     if (!(await this.blocRcsEnAttente(tenantId, waId))) return false;
-    await this.advance(tenantId, waId, messageId, 'unreachable');
+    await this.advance(tenantId, waId, messageId, 'unreachable', 'rcs');
     return true;
   }
 
@@ -811,7 +811,7 @@ export class WorkflowExecutor {
     if (!bloc) return false;
     const boutons = Array.isArray(bloc.data.suggestions) ? bloc.data.suggestions : [];
     if (boutons.some((b) => (b as { kind?: unknown }).kind === 'reply')) return false;
-    await this.advance(tenantId, waId, messageId, 'sent');
+    await this.advance(tenantId, waId, messageId, 'sent', 'rcs');
     return true;
   }
 
@@ -835,8 +835,13 @@ export class WorkflowExecutor {
    *      clôt le run et l'agent reprend la parole.
    * Le cas 3 remplace l'ancien repli sur la 1re arête sortante, qui envoyait « non merci » dans la branche
    * du bouton « Oui ». Décision produit du 2026-08-20.
+   *
+   * `canalRetour` = le tuyau d'où vient le retour. Défaut `whatsapp`, sur le modèle de `recordInbound` : la porte
+   * Meta (webhooks/workflow-advance.ts) ne peut recevoir QUE du WhatsApp, son interface n'expose donc pas le
+   * paramètre, ce qui rend l'omission non ambiguë plutôt que silencieuse. Les portes RCS, elles, le passent
+   * explicitement.
    */
-  async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null): Promise<void> {
+  async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null, canalRetour: RunChannel = 'whatsapp'): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
     // Le fil est-il encore à nous ? Placé APRÈS la recherche du run pour ne pas payer une requête sur les
@@ -849,6 +854,28 @@ export class WorkflowExecutor {
     // bouton. Et le repli conditionnel suit la règle du bloc Condition : tant qu'une sortie TYPÉE existe, on
     // ne prend JAMAIS la 1re arête venue, sinon « non joignable » volerait la suite d'un envoi réussi.
     const courant = graph && run.currentNode ? graph.nodes.find((n) => n.id === run.currentNode) : undefined;
+
+    // 🔴 ÉTANCHÉITÉ DES CANAUX. Le retour doit venir du tuyau sur lequel le parcours attend. Sans cette garde,
+    // un tap de suggestion RCS (`btn:0`) choisissait une branche d'une question posée en WhatsApp, et un
+    // message écrit sur WhatsApp reprenait la sortie « envoyé » d'un bloc RCS : les deux canaux partagent le
+    // MÊME espace de handles `btn:<i>` (rcs/schema.ts et meta/client.ts), donc rien ne les distinguait.
+    //
+    // Canal ATTENDU : un bloc RCS attend une réponse RCS ; pour tout AUTRE bloc c'est le canal du PARCOURS qui
+    // fait foi. ⚠️ Ne pas écrire « bloc non-RCS = whatsapp » : un message rapide derrière un bloc RCS part EN
+    // RCS (executor.ts, apply) et attend donc une réponse RCS. C'est exactement ce que la migration 0082 est
+    // venue corriger, et l'écrire à l'envers le réintroduirait.
+    //
+    // Discordance -> on ne fait RIEN : le run reste `waiting` (le clore ferait d'un retour sur le mauvais
+    // canal un tueur de parcours), on ne mesure pas, et on n'écrit pas `lastMessageId` (le message
+    // n'appartient pas à ce parcours ; le marquer consommé masquerait un rejeu légitime). Le message reste
+    // visible et NON LU dans l'inbox (UNREAD_SQL ne regarde que l'antériorité, tous canaux confondus), c'est
+    // ce qui le porte à l'attention d'un opérateur.
+    const canalAttendu: RunChannel = courant?.type === 'rcs_message' ? 'rcs' : (run.channel ?? 'whatsapp');
+    if (canalRetour !== canalAttendu) {
+      // eslint-disable-next-line no-console
+      console.warn(`workflow ${run.workflowId}: retour ${canalRetour} ignoré pour ${waId}, le parcours attend du ${canalAttendu}`);
+      return;
+    }
 
     // Mesure de la RÉPONSE, rattachée au bloc qui l'attendait (Analytics > Mes tableaux). Enregistrée ICI,
     // avant toute décision de routage : ce qui compte est ce que le contact a FAIT, pas ce que le graphe en a

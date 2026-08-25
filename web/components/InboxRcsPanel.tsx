@@ -6,6 +6,7 @@ import { versBrouillonRcs } from '@/lib/rcs';
 import { RcsPreview } from '@/components/RcsPreview';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { RCS_TEXTE_MAX } from '@/lib/rcs-limits';
 
 /**
  * Envoyer un message RCS depuis une conversation.
@@ -15,9 +16,15 @@ import { inputCls } from '@/lib/ui';
  * reprendre contact sans template à faire approuver. Il est donc proposé dans les deux états de la barre de
  * réponse, fenêtre ouverte comme fermée.
  *
- * Le message vient de la BIBLIOTHÈQUE, comme un template vient de Meta : on ne compose pas une carte, un
- * visuel et des boutons dans une barre de réponse. Ses variables sont résolues côté serveur sur la fiche du
- * contact, donc l'aperçu ci-dessous montre les `{{champ}}` tels quels, pas leur valeur.
+ * Deux modes. Un message de la BIBLIOTHÈQUE, comme un template vient de Meta : on ne compose pas une carte,
+ * un visuel et des boutons dans une barre de réponse. Ses variables sont résolues côté serveur sur la fiche
+ * du contact, donc l'aperçu ci-dessous montre les `{{champ}}` tels quels, pas leur valeur.
+ *
+ * Ou une RÉPONSE LIBRE, ajoutée le 2026-08-25 : un contact joignable seulement en RCS n'était atteignable
+ * qu'à travers la bibliothèque, alors que c'est le canal sur lequel il venait d'écrire. L'opérateur devait
+ * créer une entrée de bibliothèque, ou faire approuver un template WhatsApp, pour répondre une phrase.
+ * Le texte libre part TEL QUEL : on n'y cherche pas de `{{champ}}`, sinon une accolade tapée par erreur
+ * deviendrait un trou dans le message.
  */
 export function InboxRcsPanel({
   tenantId, conversationId, onClose, onSent,
@@ -30,6 +37,8 @@ export function InboxRcsPanel({
   const t = useT();
   const [messages, setMessages] = useState<RcsMessage[]>([]);
   const [selId, setSelId] = useState('');
+  const [mode, setMode] = useState<'bibliotheque' | 'libre'>('bibliotheque');
+  const [texte, setTexte] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,12 +51,15 @@ export function InboxRcsPanel({
   const sel = messages.find((m) => m.id === selId);
   const brouillon = sel ? versBrouillonRcs(sel.content) : null;
 
+  const libre = mode === 'libre';
+  const pretAEnvoyer = libre ? texte.trim() !== '' && texte.trim().length <= RCS_TEXTE_MAX : selId !== '';
+
   async function envoyer() {
-    if (!selId) return;
+    if (!pretAEnvoyer) return;
     setBusy(true);
     setError(null);
     try {
-      await sendRcsToConversation(tenantId, conversationId, selId);
+      await sendRcsToConversation(tenantId, conversationId, libre ? { text: texte.trim() } : { rcsMessageId: selId });
       await onSent();
     } catch (e) {
       // Le message vient du serveur et NOMME la cause (canal éteint, contact désabonné) : ces deux-là
@@ -69,6 +81,36 @@ export function InboxRcsPanel({
           {t('Sous votre agent de marque, sans template à faire approuver et sans fenêtre de 24 h.', 'Under your brand agent, with no template to get approved and no 24h window.')}
         </p>
 
+        <div className="mt-3 flex gap-1 rounded-lg bg-ink-50 p-1" role="group">
+          {([['bibliotheque', t('Message enregistré', 'Saved message')], ['libre', t('Réponse libre', 'Free-form reply')]] as const).map(([v, libelle]) => (
+            <button
+              key={v}
+              onClick={() => setMode(v)}
+              data-testid={`inbox-rcs-mode-${v}`}
+              className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${mode === v ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:text-ink-700'}`}
+            >
+              {libelle}
+            </button>
+          ))}
+        </div>
+
+        {libre ? (
+          <div className="mt-3">
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Votre réponse', 'Your reply')}</label>
+            <textarea
+              value={texte}
+              onChange={(e) => setTexte(e.target.value)}
+              rows={4}
+              data-testid="inbox-rcs-texte"
+              placeholder={t('Écrivez votre réponse…', 'Write your reply…')}
+              className={inputCls}
+            />
+            <p className="mt-1 text-[11px] text-ink-400">
+              {t('Part tel quel sous votre agent de marque. ', 'Sent as-is under your brand agent. ')}
+              {texte.trim().length}/{RCS_TEXTE_MAX}
+            </p>
+          </div>
+        ) : (
         <div className="mt-3">
           <label className="mb-1 block text-sm font-medium text-ink-700">{t('Message enregistré', 'Saved message')}</label>
           {messages.length === 0 ? (
@@ -83,7 +125,9 @@ export function InboxRcsPanel({
           )}
         </div>
 
-        {sel && (
+        )}
+
+        {sel && !libre && (
           <div className="mt-3">
             {brouillon ? (
               <>
@@ -108,7 +152,7 @@ export function InboxRcsPanel({
           </button>
           <button
             onClick={() => void envoyer()}
-            disabled={busy || selId === ''}
+            disabled={busy || !pretAEnvoyer}
             data-testid="inbox-rcs-send"
             className="flex-1 rounded-lg bg-brand-500 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
           >

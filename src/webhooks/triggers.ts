@@ -31,7 +31,7 @@ export async function processTriggers(payload: unknown, deps: TriggerDeps, consu
       const tenantId = await deps.phoneNumberTenant(m.phoneNumberId);
       if (!tenantId) continue;
       const isNewContact = await deps.isNewContact(tenantId, m.waId);
-      await deps.run(tenantId, { kind: 'message', waId: m.waId, body: m.body, isNewContact });
+      await deps.run(tenantId, { kind: 'message', waId: m.waId, body: m.body, isNewContact, channel: 'whatsapp' });
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('processTriggers: message ignoré:', err instanceof Error ? err.message : err);

@@ -45,6 +45,25 @@ describe.skipIf(!url)('getEnrichment (Supabase)', () => {
     expect(e!.lastInboundAt).toBe(lastIn);
   });
 
+  it('🔴 un entrant RCS ne rafraîchit PAS lastInboundAt (il ne rouvre aucune fenêtre Meta)', async () => {
+    // Ce champ est présenté au connecteur comme celui qui pilote la fenêtre 24 h de Meta. Un tap de suggestion
+    // RCS le rafraîchissait, donc le commercial dans HubSpot croyait pouvoir répondre en texte libre, et
+    // l'envoi partait en 131047. Jumeau du correctif bf0408d, côté connecteur.
+    const avant = (await getEnrichment(pool, convId))!.lastInboundAt;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel, created_at) values ($1,'in','button','btn:0','rcs', now())`,
+      [convId],
+    );
+    expect((await getEnrichment(pool, convId))!.lastInboundAt).toBe(avant); // inchangé
+
+    // Un vrai entrant WhatsApp, lui, le fait bien avancer : la garde ne gèle pas le champ.
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, channel, created_at) values ($1,'in','text','d','whatsapp', now())`,
+      [convId],
+    );
+    expect((await getEnrichment(pool, convId))!.lastInboundAt).not.toBe(avant);
+  });
+
   it('conversation inexistante -> null', async () => {
     expect(await getEnrichment(pool, '00000000-0000-0000-0000-000000000000')).toBeNull();
   });

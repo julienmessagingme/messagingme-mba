@@ -10,6 +10,7 @@ import type { CampaignCategory } from '../campaign/types';
 import type { TemplateParam } from '../crm/template';
 import { validateParamMapping } from '../crm/template';
 import type { ResolveResult } from '../ids/resolve';
+import type { WorkflowNodeType } from '../workflow/graph';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
 
 export interface V1SendCreateInput {
@@ -25,10 +26,26 @@ export interface V1SendCreateInput {
   startNodeId?: string;
 }
 
+/**
+ * La fenêtre de service de 24 h est une règle de la messagerie de Meta : elle ne concerne QUE les blocs qui
+ * envoient un message de session Meta. Un bloc RCS passe par smsmode, un template s'envoie hors fenêtre par
+ * définition, un mail n'a aucun rapport. Leur imposer la fenêtre écartait tous les destinataires en
+ * `out_of_window`, un motif faux pour ces canaux, et l'envoi ne partait jamais.
+ *
+ * Liste explicite plutôt qu'une règle dérivée : elle est courte, elle se lit, et le jour où un type de bloc
+ * s'ajoute, le compilateur ne dira rien mais ce commentaire si. Type inconnu (null) -> on garde la fenêtre :
+ * on ne relâche pas une garde sur un bloc qu'on n'a pas su relire.
+ */
+export function exigeFenetre24h(type: WorkflowNodeType | null): boolean {
+  return type === null || type === 'quick_message' || type === 'flow';
+}
+
 export interface V1SendsRouteDeps {
   resolveScenario(tenantId: string, ref: string): Promise<ResolveResult<{ id: string; name: string }>>;
   /** Résout un code `nod_...` en (scénario, bloc). Absent -> la cible node reste refusée (422). */
-  resolveNode?(tenantId: string, code: string): Promise<ResolveResult<{ workflowId: string; nodeId: string; label: string }>>;
+  /** `type` = le type du bloc visé : c'est lui qui dit si la fenêtre de service WhatsApp s'applique.
+   *  null quand le bloc n'a pas pu être relu (on retombe alors du côté prudent, cf. `exigeFenetre24h`). */
+  resolveNode?(tenantId: string, code: string): Promise<ResolveResult<{ workflowId: string; nodeId: string; label: string; type: WorkflowNodeType | null }>>;
   /** Fenêtre de service 24 h par wa_id (cible node uniquement). Absent de la map -> fermée. */
   getWindowOpenByWaIds?(tenantId: string, waIds: string[]): Promise<Map<string, boolean>>;
   getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
@@ -89,6 +106,8 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     const t = b.target as Record<string, unknown>;
     let workflowId: string | undefined;
     let startNodeId: string | undefined;
+    // Vrai seulement sur une cible node dont le bloc envoie un message de SESSION Meta (cf. exigeFenetre24h).
+    let fenetreExigee = false;
     let templateName = '';
     let templateLanguage = '';
     let label = '';
@@ -113,14 +132,18 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       workflowId = r.value.workflowId;
       startNodeId = r.value.nodeId;
       label = r.value.label;
+      fenetreExigee = exigeFenetre24h(r.value.type);
     } else {
       return reply.code(400).send({ error: 'target invalide : {scenario} | {template:{name,language}} | {node}' });
     }
 
-    // Upsert-then-send (D-3), SAUF sur une cible node : un contact inconnu n'a par construction aucune
-    // conversation, donc il serait créé puis immédiatement écarté `out_of_window`. On ne pollue pas le CRM
-    // pour rien, et `unknown_contact` dit la vérité à l'appelant (« ce numéro ne t'a jamais écrit »).
-    const createMissing = startNodeId ? false : b.createMissing !== false;
+    // Upsert-then-send (D-3), SAUF sur une cible node SOUMISE À LA FENÊTRE : un contact inconnu n'a par
+    // construction aucune conversation, donc il serait créé puis immédiatement écarté `out_of_window`. On ne
+    // pollue pas le CRM pour rien, et `unknown_contact` dit la vérité à l'appelant.
+    // ⚠️ Cette justification TOMBE pour un bloc RCS, un template ou un mail : le destinataire y est joignable
+    // sans avoir jamais écrit. Garder `false` pour eux remplaçait juste un rapport 100 % `out_of_window` par
+    // un rapport 100 % `unknown_contact`. Même trou, autre étiquette.
+    const createMissing = startNodeId && fenetreExigee ? false : b.createMissing !== false;
 
     // Numéro expéditeur : fourni (vérifié tenant) ou défaut du tenant.
     let phoneNumberId: string;
@@ -158,11 +181,13 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       }
 
       const contacts = await deps.listContactsForBuildByIds(tenantId, ids);
-      // Cible NODE (D-1) : un bloc n'est envoyable QUE dans la fenêtre de service 24 h (Meta 131047). On
-      // interroge la fenêtre pour tout le lot en UNE requête, puis buildApiRecipients écarte les fermés en
-      // `out_of_window` AVANT toute création de destinataire -> ils ne partent jamais.
+      // Cible NODE (D-1) : un bloc de SESSION (message rapide, formulaire) n'est envoyable que dans la
+      // fenêtre de service 24 h (Meta 131047). On interroge la fenêtre pour tout le lot en UNE requête, puis
+      // buildApiRecipients écarte les fermés en `out_of_window` AVANT toute création de destinataire -> ils ne
+      // partent jamais. Un bloc RCS, template ou mail ne passe pas par là : aucune fenêtre à respecter, donc
+      // aucune requête et aucun destinataire écarté (cf. `exigeFenetre24h`).
       let windowOpenById: Map<string, boolean> | undefined;
-      if (startNodeId && deps.getWindowOpenByWaIds) {
+      if (startNodeId && fenetreExigee && deps.getWindowOpenByWaIds) {
         const waIdByContact = new Map<string, string>();
         for (const c of contacts) {
           const w = waIdOf(c.phone_e164, c.bsuid);

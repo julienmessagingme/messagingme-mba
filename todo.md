@@ -1,24 +1,40 @@
 # todo.md — backlog
 
+## Étanchéité des canaux : ce que le lot du 2026-08-25 a volontairement laissé
+
+Le lot est livré (voir `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md` et `.loop/etancheite-canaux.md`). Trois points
+ont été écartés sciemment, pas oubliés :
+
+- **Exiger le `channelId` sur le rappel smsmode.** La garde d'isolation n'arrête pas un corps FORGÉ qui omet
+  l'objet `channel` ; le code de l'URL reste la seule authentification réelle. Les corps sans `channelId`
+  sont désormais JOURNALISÉS. Quand les journaux montreront que ça n'arrive jamais, exiger le champ (403 sinon).
+  Un seul corps réel est capturé à ce jour : trop peu pour trancher aujourd'hui sur un canal LIVE.
+- **Plafond de requêtes sur `/rcs/callback/:code`**, seule écriture non signée du produit. Le `RateLimiter`
+  maison (`src/auth/rate-limit.ts`) suffit, aucune dépendance nouvelle.
+- **Une série RCS au tableau de bord.** Les envois RCS sont sortis de la série « Service » (qui les annonçait
+  comme non facturés) mais ne sont affichés nulle part ailleurs. Leur donner leur propre série, avec le coût
+  smsmode en face, est le vrai correctif.
+
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
-## 🔴 PROCHAIN LOT : étanchéité des canaux RCS / WhatsApp (audit fait le 2026-08-25)
+## ✅ LOT LIVRÉ : étanchéité des canaux RCS / WhatsApp (2026-08-25)
 
-**Tout est dans `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md`** : 6 rouges, 9 jaunes, et surtout **41 partages de
-canal qui sont VOULUS et qu'il ne faut pas « corriger »**. L'audit a été demandé par Julien après l'incident
-de la fenêtre 24 h, et il a déjà servi : il a trouvé une régression que j'avais introduite (corrigée en
-`76756c3`). Ne PAS refaire ce travail, le lire.
+**L'audit reste la référence** : `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md`, 6 rouges, 9 jaunes, et surtout
+**41 partages de canal qui sont VOULUS et qu'il ne faut pas « corriger »**. Cette dernière liste se relit
+avant toute intervention dans cette zone. Le plan exécuté est dans `.loop/etancheite-canaux.md`.
 
-Le fond du sujet, en une phrase : `workflow_runs.channel` existe, il est correctement ÉCRIT à l'envoi, mais il
-n'est **jamais relu** au moment de décider si un message entrant concerne ce parcours. Conséquence : un tap
-RCS fait avancer une branche d'une question posée en WhatsApp, et l'inverse.
+Le fond du sujet, en une phrase : `workflow_runs.channel` existait, il était correctement ÉCRIT à l'envoi,
+mais **jamais relu** au moment de décider si un message entrant concernait ce parcours. Un tap RCS faisait
+donc avancer une branche d'une question posée en WhatsApp, et l'inverse. `advance` reçoit désormais le canal
+du retour et refuse ce qui ne vient pas du bon tuyau.
 
-Deux points demandent une **décision produit** avant de coder, pas seulement du code :
-- un contact purement RCS n'est joignable depuis l'inbox qu'à travers la bibliothèque, sans réponse libre ;
-- `lastInboundAt` poussé à HubSpot a DEUX consommateurs de sens opposé (la fenêtre 24 h, qui veut WhatsApp
-  seul ; le « dernier contact », où le tous-canaux est correct). Le corriger d'un bloc introduirait un
-  second bug.
+Les deux décisions produit ont été tranchées par Julien le 2026-08-25 : réponse RCS libre depuis l'inbox
+→ **oui, livrée** ; automations sur un message RCS → **câblées**. Le troisième point (`lastInboundAt` poussé à
+HubSpot) est résolu sans arbitrage : le champ est restreint à WhatsApp, puisque sa raison d'être écrite est
+de piloter la fenêtre 24 h de Meta ; un besoin « dernier contact tous canaux » prendra un champ DISTINCT.
+
+Ce qui reste ouvert est plus bas, section « Étanchéité des canaux : ce que le lot a volontairement laissé ».
 
 ## Laissé ouvert par le lot « Journée 1 » de l'audit de scalabilité (2026-08-25)
 

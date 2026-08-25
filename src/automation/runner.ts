@@ -107,10 +107,16 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
   let ctx: EvalContext | null = null;
   let ctxLoaded = false;
 
-  // La fenêtre de service 24 h est PROUVÉE ouverte quand l'événement est un message entrant : le contact vient
-  // d'écrire. Le scénario déclenché peut donc légitimement ouvrir par un message rapide ou un formulaire (usage
-  // ouvert par le Lot D). Un événement qui ne prouve pas la fenêtre (tag posé depuis le CRM) garde la protection.
-  const windowOpen = ev.kind === 'message';
+  // La fenêtre de service 24 h est PROUVÉE ouverte quand l'événement est un message entrant WHATSAPP : le
+  // contact vient d'écrire À META. Le scénario déclenché peut donc légitimement ouvrir par un message rapide ou
+  // un formulaire (usage ouvert par le Lot D). Un événement qui ne prouve pas la fenêtre (tag posé depuis le
+  // CRM) garde la protection.
+  //
+  // 🔴 Le test du CANAL n'est pas un détail : un message reçu en RCS ne passe pas par Meta et ne rouvre
+  // aucune fenêtre. Sans lui, brancher les automations sur le RCS aurait fait partir un message rapide
+  // WhatsApp chez un contact hors fenêtre, refusé en 131047. C'est mot pour mot le défaut que bf0408d a
+  // corrigé ailleurs, réintroduit par une autre porte.
+  const windowOpen = ev.kind === 'message' && ev.channel === 'whatsapp';
 
   let started = 0;
   for (const a of candidates) {

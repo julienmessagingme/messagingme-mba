@@ -42,10 +42,15 @@ describe('parseAutomationEventJob', () => {
     for (const raw of bad) expect(parseAutomationEventJob(raw), JSON.stringify(raw)).toBeNull();
   });
 
-  it('REFUSE un événement `message` : il n’a de sens que dans le webhook', () => {
-    // Le contexte d'un message (nouveau contact ? message déjà consommé par un jeton de test ?) n'existe que
-    // le temps du job webhook. L'accepter ici ouvrirait un second chemin au comportement subtilement différent.
+  it('accepte un `message` AVEC son canal, et le refuse sans (2026-08-25)', () => {
+    // La règle a changé : un message entrant RCS arrive dans le processus API, qui n'a pas les dépendances du
+    // runner. La file est le seul chemin dont il dispose. Elle accepte donc `message`, mais elle EXIGE le
+    // canal : le supposer WhatsApp ferait croire au runner que la fenêtre de service est ouverte, et le
+    // scénario déclenché partirait se faire refuser par Meta en 131047.
     expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: false } })).toBeNull();
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: false, channel: 'sms' } })).toBeNull();
+    expect(parseAutomationEventJob({ tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: true, channel: 'rcs' } }))
+      .toEqual({ tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: true, channel: 'rcs' } });
   });
 
   it('le nom de file est stable (API et worker doivent parler de la même)', () => {

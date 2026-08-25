@@ -64,6 +64,7 @@ import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
+import type { RcsOutbound } from './rcs/types';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { urlImageRcs } from './rcs/image';
 import { newMediaCode } from './ids/code';
@@ -352,16 +353,24 @@ async function main(): Promise<void> {
        * Chaque refus porte sa RAISON, destinée à l'opérateur qui a le doigt sur le bouton : « le canal RCS
        * n'est pas activé » et « ce contact s'est désabonné » demandent deux gestes différents.
        */
-      sendRcsFromLibrary: async (tenant, waId, rcsMessageId) => {
+      sendRcsFromInbox: async (tenant, waId, contenu) => {
         const agentId = await workflowRuntime.rcsStack.agents.agentIdForTenant(tenant);
         if (!agentId) return { refus: "Le canal RCS n'est pas activé sur cet espace (page d'accueil, sous le numéro WhatsApp)." };
-        const enregistre = await rcsMessageStore.getById(tenant, rcsMessageId);
-        if (!enregistre?.content) return { refus: 'Ce message RCS n’existe plus, ou son format n’est plus reconnu.' };
-
-        const brut = enregistre.content;
-        const message = aDesVariables(brut)
-          ? appliquerVariables(brut, contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}))
-          : brut;
+        // Réponse LIBRE : rien à relire en bibliothèque, et rien à substituer non plus. L'opérateur a écrit ce
+        // qu'il voulait dire ; y chercher des {{champ}} transformerait une accolade tapée par erreur en trou.
+        let brut: RcsOutbound;
+        if ('text' in contenu) {
+          brut = { kind: 'text', text: contenu.text };
+        } else {
+          const enregistre = await rcsMessageStore.getById(tenant, contenu.rcsMessageId);
+          if (!enregistre?.content) return { refus: 'Ce message RCS n’existe plus, ou son format n’est plus reconnu.' };
+          brut = enregistre.content;
+        }
+        const message = 'text' in contenu
+          ? brut
+          : aDesVariables(brut)
+            ? appliquerVariables(brut, contactVars(await contactStore.getResolvableByPhone(tenant, waId) ?? {}))
+            : brut;
         const issue = await workflowRuntime.rcsStack.sender.sendTo(tenant, agentId, waId, message, randomUUID());
         if ('skipped' in issue) {
           return {
@@ -760,6 +769,19 @@ async function main(): Promise<void> {
         //    seule échelle de statuts dans le produit, donc un seul écran de résultats à lire.
         if (dlr.status !== null) {
           await recipientStore.updateDeliveryByMessageId(dlr.messageId, dlr.status, dlr.detail, null);
+          // 1 bis. La MESURE PAR BLOC (Analytics > Mes tableaux). Le chemin Meta le fait depuis toujours
+          //    (webhooks/delivery.ts), pas celui-ci : un bloc RCS n'affichait donc jamais « délivré » ni
+          //    « lu », alors que smsmode remonte bien DELIVERED et READ et que l'envoi RCS écrit bien son
+          //    identifiant dans workflow_node_events. Best-effort, comme côté Meta : une mesure ne doit pas
+          //    faire échouer le traitement d'un rapport de livraison.
+          if (dlr.status !== 'sent') {
+            try {
+              await nodeEventStore.recordStatusForMessage(dlr.messageId, dlr.status);
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.error('mesure de bloc RCS (statut) ignorée:', err instanceof Error ? err.message : err);
+            }
+          }
         }
         // 2. Les DEUX sorties du bloc RCS. C'est ICI, et nulle part ailleurs, qu'elles s'allument : chez
         //    smsmode le sort d'un message ne se sait pas avant l'envoi, il se constate APRÈS, sur un rapport.
@@ -796,11 +818,31 @@ async function main(): Promise<void> {
           profileName: null,
           field: 'messages',
         }, 'rcs');
+        // 2 bis. La FICHE CONTACT et les AUTOMATIONS, que le chemin Meta branche depuis toujours et pas
+        //    celui-ci. Un client qui écrivait DEVIS en RCS ne déclenchait rien, sans le moindre journal :
+        //    l'opérateur croyait son automation cassée. C'est aussi ce qui produisait le « STOP RCS sans
+        //    fiche contact » ci-dessus, faute de fiche créée à la première prise de contact.
+        //
+        //    ⚠️ Le canal part DANS l'événement. Sans lui, le runner conclurait que la fenêtre de service
+        //    WhatsApp est ouverte (un entrant vaut preuve, côté Meta) et le scénario déclenché ouvrirait par un
+        //    message rapide chez un contact hors fenêtre : refus Meta 131047.
+        //
+        //    Isolé : ni la fiche ni l'automation ne doivent faire échouer la réception d'un message.
+        try {
+          const issue = await contactStore.upsertFromInbound(tenant, mo.from, null);
+          await queue.enqueue(AUTOMATION_EVENT_QUEUE, {
+            tenantId: tenant,
+            event: { kind: 'message', waId: mo.from, body: mo.kind === 'text' ? mo.text : null, isNewContact: issue === 'created', channel: 'rcs' },
+          } satisfies AutomationEventJob);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('automations RCS ignorées:', err instanceof Error ? err.message : err);
+        }
         // 3. Le parcours. Un bouton tapé porte `btn:<i>` (cf. `normaliserPostbacks`) et choisit sa branche ;
         //    une réponse écrite suit la sortie « envoyé ». Isolé : un scénario qui casse ne doit pas faire
         //    rejouer six fois un rappel dont l'inbox et l'opt-out sont déjà enregistrés.
         try {
-          await workflowRuntime.executor.advance(tenant, mo.from, mo.messageId, mo.postbackData);
+          await workflowRuntime.executor.advance(tenant, mo.from, mo.messageId, mo.postbackData, 'rcs');
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('avance de scénario sur réponse RCS ignorée:', err instanceof Error ? err.message : err);
@@ -906,7 +948,8 @@ async function main(): Promise<void> {
           if (!r.ok) return { ok: false, reason: 'not_found' };
           const node = r.value.graph.nodes.find((n) => n.id === r.value.nodeId);
           const label = String(node?.data.label ?? '').trim() || code;
-          return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label } };
+          // Le TYPE décide si la fenêtre de service WhatsApp s'applique à cette cible (cf. exigeFenetre24h).
+          return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label, type: node?.type ?? null } };
         },
         getWindowOpenByWaIds: (tenant, waIds) => inboxStore.getWindowOpenByWaIds(tenant, waIds),
         getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),

@@ -47,7 +47,13 @@ function app(over: Partial<V1SendsRouteDeps> = {}) {
     getSendDetail: async (id, _t) => (id === 'camp1' ? { sendId: 'camp1', status: 'running' } : null),
     // Cible node : seul `nod_ok` existe. Par défaut la fenêtre 24 h est OUVERTE pour tous les wa_id du lot
     // (les tests qui veulent tester le hors-fenêtre surchargent getWindowOpenByWaIds).
-    resolveNode: async (_t, code) => (code === 'nod_ok' ? { ok: true, value: { workflowId: 'wf1', nodeId: 'n5', label: 'Relance' } } : { ok: false, reason: 'not_found' }),
+    // `nod_ok` = un bloc de session (message rapide) : la fenêtre s'applique. `nod_rcs` = un bloc RCS, qui
+    // n'a aucune fenêtre à respecter.
+    resolveNode: async (_t, code) => (code === 'nod_ok'
+      ? { ok: true, value: { workflowId: 'wf1', nodeId: 'n5', label: 'Relance', type: 'quick_message' as const } }
+      : code === 'nod_rcs'
+        ? { ok: true, value: { workflowId: 'wf1', nodeId: 'n9', label: 'Carte RCS', type: 'rcs_message' as const } }
+        : { ok: false, reason: 'not_found' }),
     getWindowOpenByWaIds: async (_t, waIds) => new Map(waIds.map((w) => [w, true])),
     sleep: async () => {}, // pas de temporisation réelle dans les tests de retry
     ...over,
@@ -239,6 +245,43 @@ describe('POST /v1/sends', () => {
     expect(body.recipientCount).toBe(1);
     expect(body.skipped).toEqual([{ phone: '+33698765432', reason: 'out_of_window' }]);
     expect(cap.sends[0]!.recipients.map((r) => r.toE164)).toEqual(['+33612345671']);
+    await server.close();
+  });
+
+  // 🔴 Étanchéité des canaux (2026-08-25). La fenêtre de service de 24 h est une règle de MESSAGERIE META :
+  // l'appliquer à un bloc qui n'envoie pas par Meta écartait TOUS les destinataires avec un motif faux, et
+  // l'envoi ne partait jamais. Le trou est plus large que le RCS : il touche aussi template et mail.
+  it('cible node RCS : la fenêtre 24 h ne s applique PAS, et elle n est même pas interrogée', async () => {
+    let interrogee = 0;
+    const { server, cap } = app({
+      getWindowOpenByWaIds: async () => { interrogee += 1; return new Map(); }, // tout fermé, si on demandait
+    });
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-rcs'), payload: { target: { node: 'nod_rcs' }, category: 'utility', recipients: ['+33612345671'] } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ recipientCount: number; skipped: Array<{ phone: string; reason: string }> }>();
+    expect(body.skipped).toEqual([]); // aucun `out_of_window` : ce bloc n'a pas de fenêtre
+    expect(body.recipientCount).toBe(1);
+    expect(cap.sends[0]!.recipients.map((r) => r.toE164)).toEqual(['+33612345671']);
+    expect(interrogee).toBe(0); // ni requête inutile, ni décision prise dessus
+    await server.close();
+  });
+
+  it('cible node RCS : un numéro inconnu peut être CRÉÉ (il est joignable sans avoir jamais écrit)', async () => {
+    // La justification écrite du `createMissing = false` sur une cible node était « il serait créé puis
+    // aussitôt écarté out_of_window ». Elle tombe pour un bloc RCS. Le garder à false remplaçait juste un
+    // rapport 100 % out_of_window par un rapport 100 % unknown_contact : même trou, autre étiquette.
+    let creations = 0;
+    const { server, cap } = app({
+      findContactByPhone: async () => null,
+      createContactByPhone: async (_t, phone) => { creations += 1; return { id: `new-${phone}` }; },
+    });
+    const res = await server.inject({ method: 'POST', url: '/v1/sends', ...H(SEND_KEY, 'idem-node-rcs-new'), payload: { target: { node: 'nod_rcs' }, category: 'utility', recipients: ['+33698765432'], createMissing: true } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ created: number; skipped: Array<{ phone: string; reason: string }> }>();
+    expect(creations).toBe(1);
+    expect(body.created).toBe(1);
+    expect(body.skipped).toEqual([]);
+    expect(cap.sends[0]!.recipients.map((r) => r.toE164)).toEqual(['+33698765432']);
     await server.close();
   });
 

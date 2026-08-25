@@ -34,9 +34,17 @@ export interface RcsCallbackRouteDeps {
  * comparer, et deux gardes remplacent la signature :
  *   1. le CODE de l'URL, opaque et propre à un workspace, qui porte le tenant (jamais le corps, jamais un
  *      identifiant deviné dans le JSON) ;
- *   2. le `channelId` du corps, qui doit être l'agent de CE workspace. Un corps forgé avec le canal d'un
- *      autre client est refusé même si le code fuitait.
- * Cette deuxième garde est ce qui empêche un rappel d'écrire dans les données d'un autre tenant.
+ *   2. le `channelId` du corps, qui doit être l'agent de CE workspace, QUAND il est présent.
+ *
+ * ⚠️ Ne pas se tromper sur la portée de la deuxième garde. Elle arrête un corps HONNÊTE destiné à un autre
+ * client. Elle n'arrête PAS un corps FORGÉ : il suffit d'omettre l'objet `channel` pour qu'elle ne se
+ * déclenche pas. Le code de l'URL est donc la SEULE authentification réelle de cette route, qui reste la
+ * seule écriture non signée du produit : il se traite comme un secret (jamais journalisé, rotation possible).
+ *
+ * Exiger `channelId` rendrait la garde vraie, mais un seul corps réel est capturé en production à ce jour
+ * (`rcs_agents.last_callback`, un rapport de livraison, qui le porte bien) : trop peu pour risquer de jeter
+ * de vraies réponses clientes sur un canal LIVE. On JOURNALISE donc les corps sans `channelId`, et le
+ * passage en exigence stricte se décidera sur ces journaux, pas sur une intuition.
  *
  * 🔴 CODES DE RETOUR. smsmode réessaie six fois sur tout ce qui n'est pas 2xx (30 s, 2 min, 10 min, 1 h, 5 h,
  * 24 h), puis abandonne. On répond donc :
@@ -77,9 +85,13 @@ export function registerRcsCallback(app: FastifyInstance, deps: RcsCallbackRoute
       return reply.code(200).send({ ok: true, ignore: 'corps non exploitable' });
     }
 
-    // Garde d'isolation : le canal du corps doit être celui de l'agent du workspace. Absent -> on accepte
-    // (leur corps ne le porte pas toujours) ; PRÉSENT et différent -> refus net.
-    if (evenement.channelId !== null && evenement.channelId !== canal.agentId) {
+    // Garde d'isolation : le canal du corps doit être celui de l'agent du workspace. PRÉSENT et différent
+    // -> refus net. ABSENT -> on accepte, mais on le DIT : c'est ce compteur qui dira si l'on peut un jour
+    // exiger le champ (et fermer la porte au corps forgé) sans jeter de vraies réponses clientes.
+    if (evenement.channelId === null) {
+      // eslint-disable-next-line no-console
+      console.warn(`rappel RCS sans channelId (workspace ${canal.tenantId}) : garde d'isolation inopérante sur ce corps`);
+    } else if (evenement.channelId !== canal.agentId) {
       return reply.code(403).send({ error: 'canal étranger à ce workspace' });
     }
 

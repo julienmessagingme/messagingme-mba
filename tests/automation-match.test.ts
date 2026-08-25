@@ -18,7 +18,7 @@ const auto = (over: Partial<AutomationRow> = {}): AutomationRow => ({
   triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, conditionGroup: null,
   workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, ...over,
 });
-const msg = (body: string | null, isNewContact = false): AutomationEvent => ({ kind: 'message', waId: '33611', body, isNewContact });
+const msg = (body: string | null, isNewContact = false): AutomationEvent => ({ kind: 'message', waId: '33611', body, isNewContact, channel: 'whatsapp' });
 
 describe('normalizeText', () => {
   it('minuscules, sans accents, espaces resserrés', () => {

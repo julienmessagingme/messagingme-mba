@@ -342,7 +342,7 @@ describe('bloc RCS a l execution', () => {
     })!;
     const { templates, executor } = monter(g, [], true, 'r');
     // C'est exactement ce que le webhook de reponses appelle quand smsmode renvoie le clic.
-    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0');
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0', 'rcs');
     expect(templates).toEqual(['apres-clic']);
   });
 
@@ -367,7 +367,7 @@ describe('bloc RCS a l execution', () => {
     })!;
     const { provider, quickWhatsApp, executor } = monter(g, [], true, 'r', undefined, 'rcs');
 
-    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0');
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0', 'rcs');
 
     // Parti sur le RESEAU RCS, pas par WhatsApp.
     expect(quickWhatsApp).toEqual([]);
@@ -401,7 +401,7 @@ describe('bloc RCS a l execution', () => {
     })!;
     const { provider, templates, etats, executor } = monter(g, [], true, 'r', undefined, 'rcs');
 
-    await executor.advance('t1', '33600000002', 'mo-2', 'btn:0');
+    await executor.advance('t1', '33600000002', 'mo-2', 'btn:0', 'rcs');
 
     expect(templates).toEqual(['rdv_randstad']);
     expect(provider.sent).toHaveLength(0);
@@ -471,7 +471,7 @@ describe('bloc RCS a l execution', () => {
       edges: [{ id: 'e1', source: 'r', target: 'qm', sourceHandle: 'btn:0' }],
     })!;
     const { fil, executor } = monter(g, [], true, 'r', undefined, 'rcs');
-    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0');
+    await executor.advance('t1', '33600000002', 'mo-1', 'btn:0', 'rcs');
     expect(fil.map((m) => m.body)).toEqual(['Ca vous va ?']);
   });
 
@@ -481,5 +481,63 @@ describe('bloc RCS a l execution', () => {
     const { fil, executor } = monter(g, ['+33600000002']);
     await executor.start('t1', 'w1', g, { waId: '+33600000002', contactId: 'c1' });
     expect(fil).toEqual([]);
+  });
+});
+
+/**
+ * Etancheite des canaux au RETOUR (lot 2026-08-25). Les deux tuyaux partagent le MEME espace de handles
+ * `btn:<i>` (src/rcs/schema.ts et src/meta/client.ts) : sans le canal, rien ne distingue un tap de suggestion
+ * RCS d'un tap de bouton WhatsApp, et `advance` faisait avancer le parcours d'un cran sur un retour qui ne le
+ * concernait pas. Le client recevait alors la suite d'un parcours auquel il n'avait pas repondu.
+ */
+describe('etancheite des canaux : advance refuse un retour du mauvais tuyau', () => {
+  /** Bloc `type` en attente, une seule sortie `btn:0` vers un tag : le tag est le temoin d'avancement. */
+  function grapheEnAttente(type: 'template' | 'quick_message' | 'rcs_message'): WorkflowGraph {
+    const data = type === 'template' ? { templateName: 'question', language: 'fr' } : { body: 'Ca vous va ?', text: 'Ca vous va ?' };
+    return parseGraph({
+      nodes: [
+        { id: 'n', type, position: pos, data },
+        { id: 'suite', type: 'action', position: pos, data: { actionKind: 'add_tag', tag: 'avance' } },
+      ],
+      edges: [{ id: 'e1', source: 'n', target: 'suite', sourceHandle: 'btn:0' }],
+    })!;
+  }
+
+  it('un tap de suggestion RCS n avance PAS un parcours qui attend une reponse WhatsApp', async () => {
+    const g = grapheEnAttente('template');
+    const { tags, etats, executor } = monter(g, [], true, 'n', undefined, 'whatsapp');
+
+    await executor.advance('t1', '33600000002', 'mo-rcs', 'btn:0', 'rcs');
+    expect(tags).toEqual([]); // le parcours n a pas bouge
+    expect(etats).toEqual([]); // ni avance, ni clos : le run reste `waiting`, et lastMessageId n est PAS ecrit
+
+    // Et le retour du BON tuyau avance bien : la garde ne casse pas le chemin nominal.
+    await executor.advance('t1', '33600000002', 'wamid.1', 'btn:0', 'whatsapp');
+    expect(tags).toEqual(['avance']);
+  });
+
+  it('un message WhatsApp n avance PAS un parcours qui attend sur un bloc RCS', async () => {
+    // Sans la garde, `handle` valait 'sent' par defaut sur un bloc RCS : un simple message WhatsApp
+    // (« c est quoi ce message ? ») reprenait la sortie « envoye » alors qu aucun rapport n etait arrive.
+    const g = graphe();
+    const { tags, etats, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+
+    await executor.advance('t1', '33600000002', 'wamid.2', null, 'whatsapp');
+    expect(tags).toEqual([]);
+    expect(etats).toEqual([]);
+  });
+
+  it('le canal attendu vient du PARCOURS, pas du type du bloc : un message rapide en RCS attend du RCS', async () => {
+    // 🔴 Le piege de ce lot. Ecrire « bloc non-RCS = whatsapp » serait faux : un message rapide derriere un
+    // bloc RCS est ENVOYE en RCS (apply suit le canal du parcours) et attend donc une reponse RCS. C est
+    // exactement ce que la migration 0082 est venue corriger. Ce test echoue si on l ecrit a l envers.
+    const g = grapheEnAttente('quick_message');
+    const { tags, executor } = monter(g, [], true, 'n', undefined, 'rcs');
+
+    await executor.advance('t1', '33600000002', 'wamid.3', 'btn:0', 'whatsapp');
+    expect(tags).toEqual([]); // le bloc n est pas RCS, mais le PARCOURS l est
+
+    await executor.advance('t1', '33600000002', 'mo-rcs', 'btn:0', 'rcs');
+    expect(tags).toEqual(['avance']);
   });
 });

@@ -46,7 +46,7 @@ describe('déclencheur webhook : correspondance', () => {
   });
 
   it('ne correspond à aucun autre type d’événement', () => {
-    expect(matchesTrigger(auto(), { kind: 'message', waId: '33611', body: 'wh1', isNewContact: false })).toBe(false);
+    expect(matchesTrigger(auto(), { kind: 'message', waId: '33611', body: 'wh1', isNewContact: false, channel: 'whatsapp' })).toBe(false);
     expect(matchesTrigger(auto(), { kind: 'tag_added', waId: '33611', tag: 'wh1' })).toBe(false);
   });
 

@@ -99,6 +99,12 @@ const TZ = STATS_TZ;
  *
  * ⚠️ S'utilise UNIQUEMENT dans une requête où `c` est `campaigns` et `r` est `campaign_recipients`.
  * `extra` restreint la nature du message entrant (ex. `and m.type = 'button'`).
+ *
+ * 🔴 `m.channel = c.channel` : l'entrant doit venir du MÊME tuyau que la campagne. Sans ça, un contact qui
+ * ignorait le template mais tapait une suggestion RCS reçue par ailleurs était compté « a répondu » ET « a
+ * tapé un bouton » de la campagne WhatsApp (une suggestion RCS est enregistrée avec `type='button'`).
+ * L'opérateur jugeait son template sur le taux de clic d'un autre canal. Les deux colonnes sont
+ * `not null default 'whatsapp'` depuis la migration 0056 : l'égalité simple suffit, pas de coalesce.
  */
 const entrantAttribue = (extra = ''): string => `r.sent_at is not null and exists (
            select 1 from conversations cv
@@ -106,6 +112,7 @@ const entrantAttribue = (extra = ''): string => `r.sent_at is not null and exist
            where cv.tenant_id = c.tenant_id and not cv.is_test
              and cv.wa_id = regexp_replace(r.to_e164, '[^0-9]', '', 'g')
              and m.direction = 'in'
+             and m.channel = c.channel
              and m.created_at > r.sent_at ${extra}
              and not exists (
                select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
@@ -150,12 +157,15 @@ export class PgStatsStore {
 
     // 2) Templates envoyés / jour, par catégorie : campagnes (campaign_recipients + campaigns.category)
     //    + envois template depuis l'inbox (conversation_messages.template_category).
+    //    🔴 `c.channel = 'whatsapp'` : une campagne RCS n'envoie AUCUN template. Sans ce filtre, 5 000 envois
+    //    RCS grossissaient la série « templates » d'un écran qui parle de Meta.
     const templates = await this.pool.query<{ d: string; category: string | null; count: string }>(
       `with ${BOUNDS_CTE}
        select d, category, sum(cnt)::int as count from (
          select to_char(date_trunc('day', r.sent_at at time zone $4), 'YYYY-MM-DD') d, c.category, count(*) cnt
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
          where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
+           and c.channel = 'whatsapp'
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by d, c.category
          union all
@@ -178,11 +188,15 @@ export class PgStatsStore {
     // 3) Messages hors template / jour. UNE requête pour deux lectures : les ÉCHANGÉS (entrants + sortants)
     //    et, dans le même passage, les seuls SORTANTS, qui sont les messages de service. Un second balayage de
     //    la même table pour un sous-ensemble ne serait qu'un coût de plus.
+    //    🔴 Les ÉCHANGÉS restent tous canaux (c'est un volume, les deux tuyaux comptent), mais les SORTANTS
+    //    de service sont restreints à WhatsApp : cette série affirme à l'écran que Meta ne les facture pas au
+    //    message, or smsmode facture bien les envois RCS. Le RCS n'a pas encore de série à lui, il vaut donc
+    //    mieux ne pas le montrer que le montrer comme gratuit.
     const exchanged = await this.pool.query<{ d: string; count: string; sortants: string }>(
       `with ${BOUNDS_CTE}
        select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') as d,
               count(*)::int as count,
-              count(*) filter (where m.direction = 'out')::int as sortants
+              count(*) filter (where m.direction = 'out' and m.channel = 'whatsapp')::int as sortants
        from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
        where cv.tenant_id = $1 and not cv.is_test and m.created_at >= b.start_ts and m.created_at < b.end_ts
          and (m.direction = 'in' or (m.direction = 'out' and m.type is distinct from 'template'))
@@ -209,6 +223,10 @@ export class PgStatsStore {
   /**
    * Volume par template envoyé sur la période (campagnes + envois inbox), pour le dropdown du
    * dashboard et le prix estimé. Exclut les livraisons en échec (delivery_status='failed').
+   *
+   * 🔴 `c.channel = 'whatsapp'` et `nullif(c.template_name, '')` : une campagne RCS n'a pas de template, et
+   * elle stocke la CHAÎNE VIDE et non null (http/campaigns.ts), donc elle traversait tous les filtres écrits
+   * pour null. Elle apparaissait ici en ligne au nom vide, et son volume était facturé au tarif Meta.
    */
   async getTemplateBreakdown(tenantId: string, range: DateRange): Promise<TemplateBreakdownRow[]> {
     const { from, to } = range;
@@ -217,7 +235,8 @@ export class PgStatsStore {
        select name, category, sum(cnt)::int as count from (
          select c.template_name as name, c.category as category, count(*) cnt
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
-         where c.tenant_id = $1 and c.template_name is not null and r.status = 'sent'
+         where c.tenant_id = $1 and nullif(c.template_name, '') is not null and r.status = 'sent'
+           and c.channel = 'whatsapp'
            and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by c.template_name, c.category
@@ -341,6 +360,9 @@ export class PgStatsStore {
    * template. Base du graphe de coût estimé (multiplié ensuite par le tarif Meta de la catégorie).
    * N'inclut que les envois réussis (status='sent', livraison non 'failed'), ancrés sur sent_at.
    */
+  // 🔴 `c.channel = 'whatsapp'` : le coût estimé est calculé au tarif de Meta. Une campagne RCS part chez
+  // smsmode et Meta ne facture rien : l'y compter affichait au client un coût WhatsApp qui n'existe pas,
+  // sur l'écran même où il décide de son budget.
   async getCostVolume(tenantId: string, range: DateRange, filter: CostFilter): Promise<CostVolumeRow[]> {
     const { from, to } = range;
     const res = await this.pool.query<{ date: string; category: string; count: string }>(
@@ -348,6 +370,7 @@ export class PgStatsStore {
        select to_char(r.sent_at at time zone $4, 'YYYY-MM-DD') as date, c.category as category, count(*)::int as count
        from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
        where c.tenant_id = $1
+         and c.channel = 'whatsapp'
          and r.status = 'sent' and r.delivery_status is distinct from 'failed'
          and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
          and ($5::uuid[] is null or c.id = any($5::uuid[]))

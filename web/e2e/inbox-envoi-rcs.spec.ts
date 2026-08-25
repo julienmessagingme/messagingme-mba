@@ -27,7 +27,7 @@ const MESSAGES_RCS = [
 
 async function mock(
   page: import('@playwright/test').Page,
-  opts: { windowOpen: boolean; rcsEnabled?: boolean; envois: string[]; refus?: string },
+  opts: { windowOpen: boolean; rcsEnabled?: boolean; envois: string[]; corps?: Array<Record<string, unknown>>; refus?: string },
 ) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -35,7 +35,9 @@ async function mock(
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.includes('/conversations/unread-count')) return json({ count: 0 });
     if (/\/conversations\/[^/]+\/send-rcs$/.test(url) && route.request().method() === 'POST') {
-      opts.envois.push(String((route.request().postDataJSON() as { rcsMessageId?: string } | null)?.rcsMessageId));
+      const corps = (route.request().postDataJSON() ?? {}) as { rcsMessageId?: string };
+      opts.corps?.push(corps);
+      opts.envois.push(String(corps.rcsMessageId));
       if (opts.refus) {
         return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: opts.refus }) });
       }
@@ -82,6 +84,33 @@ test.describe('Inbox : envoyer un RCS', () => {
     await page.getByTestId('inbox-rcs-send').click();
     await expect.poll(() => envois.length, { timeout: 10_000 }).toBe(1);
     expect(envois[0]).toBe('lib-1');
+  });
+
+  test('🔴 réponse LIBRE : l opérateur écrit une phrase et elle part en RCS', async ({ page }) => {
+    // Un contact joignable seulement en RCS n'était atteignable qu'à travers la bibliothèque : pour répondre
+    // une phrase, il fallait créer une entrée de bibliothèque ou faire approuver un template WhatsApp.
+    const envois: string[] = [];
+    const corps: Array<Record<string, unknown>> = [];
+    await mock(page, { windowOpen: false, envois, corps });
+    await ouvrirPanneau(page);
+
+    await page.getByTestId('inbox-rcs-mode-libre').click();
+    // Le sélecteur de bibliothèque cède la place : deux champs ouverts en même temps rendraient l'envoi ambigu.
+    await expect(page.getByTestId('inbox-rcs-select')).toHaveCount(0);
+
+    await page.getByTestId('inbox-rcs-texte').fill('Je regarde et je reviens vers vous.');
+    await page.getByTestId('inbox-rcs-send').click();
+
+    await expect.poll(() => corps.length, { timeout: 10_000 }).toBe(1);
+    expect(corps[0]).toEqual({ text: 'Je regarde et je reviens vers vous.' });
+  });
+
+  test('réponse libre vide : le bouton d envoi reste inerte', async ({ page }) => {
+    const envois: string[] = [];
+    await mock(page, { windowOpen: false, envois });
+    await ouvrirPanneau(page);
+    await page.getByTestId('inbox-rcs-mode-libre').click();
+    await expect(page.getByTestId('inbox-rcs-send')).toBeDisabled();
   });
 
   test('fenêtre OUVERTE : le RCS reste proposé à côté de la réponse texte', async ({ page }) => {

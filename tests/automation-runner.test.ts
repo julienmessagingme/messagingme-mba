@@ -27,7 +27,7 @@ const ctx = (over: Partial<EvalContext> = {}): EvalContext => ({
   fields: {}, tags: [], optIn: 'unknown', name: null, phone: null, bsuid: null,
   now: new Date(T), timeZone: 'Europe/Paris', businessHours: {}, ...over,
 });
-const MSG: AutomationEvent = { kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: false };
+const MSG: AutomationEvent = { kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: false, channel: 'whatsapp' };
 
 interface Trace {
   started: Array<{ workflowId: string; startNodeId: string | null; windowOpen: boolean }>;
@@ -167,6 +167,17 @@ describe('runAutomations', () => {
       const { deps, trace } = make([auto()]);
       await runAutomations('t1', MSG, deps);
       expect(trace.started[0]?.windowOpen).toBe(true);
+    });
+
+    it('🔴 déclenché par un message RCS -> fenêtre NON prouvée (le RCS ne passe pas par Meta)', async () => {
+      // Un message reçu en RCS ne rouvre aucune fenêtre de service WhatsApp : il n est jamais passé par Meta.
+      // Sans ce test, brancher les automations sur le RCS aurait fait ouvrir un scénario par un message rapide
+      // chez un contact hors fenêtre, refusé en 131047. C est mot pour mot le défaut corrigé par bf0408d,
+      // réintroduit par une autre porte.
+      const { deps, trace } = make([auto()]);
+      await runAutomations('t1', { ...MSG, channel: 'rcs' }, deps);
+      expect(trace.started).toHaveLength(1); // l automation part BIEN : c est le but du branchement
+      expect(trace.started[0]?.windowOpen).toBe(false); // mais sans prétendre que Meta est ouvert
     });
 
     it('déclenché par un TAG (fenêtre non prouvée) -> garde normale conservée', async () => {

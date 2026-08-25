@@ -910,6 +910,18 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   même quand la fenêtre WhatsApp de 24 h est fermée, puisque le RCS n'a pas de fenêtre : c'est souvent le
   moyen le plus simple de reprendre contact. L'aperçu montre le message tel que le contact le verra, et un
   refus (canal éteint, contact désabonné) s'affiche avec sa raison.
+- ✅ **Répondre en RCS avec ses propres mots** (2026-08-25) : dans le panneau RCS de l'Inbox, un onglet
+  « Réponse libre » à côté de « Message enregistré ». On écrit sa phrase, elle part sous l'agent de marque.
+  Avant, un contact joignable **seulement** en RCS n'était atteignable qu'à travers la bibliothèque : pour lui
+  répondre, il fallait créer une entrée de bibliothèque, ou faire approuver un template WhatsApp. Le texte
+  libre part tel quel, sans substitution de variables.
+- ✅ **Les automations se déclenchent aussi sur un message reçu en RCS** (2026-08-25) : un contact qui écrit
+  DEVIS dans le fil RCS déclenche l'automation « mot-clé », et un premier contact en RCS crée sa fiche et
+  déclenche « nouveau contact ». Avant, ces déclencheurs étaient muets sur ce canal, sans que rien ne le dise :
+  l'opérateur croyait son automation cassée. ⚠️ Un scénario déclenché par un message RCS ne peut pas ouvrir par
+  un message rapide WhatsApp : répondre en RCS ne rouvre pas la fenêtre de 24 h de Meta.
+- ✅ **Un bloc RCS affiche enfin « délivré » et « lu »** (2026-08-25) dans Analytics > Mes tableaux. Les
+  rapports de livraison du fournisseur alimentaient les résultats de campagne mais pas la mesure par bloc.
 - **Les variables s'insèrent comme dans un template WhatsApp** : bouton « + Variable », on choisit le champ,
   et il apparaît comme une étiquette lisible dans le texte, pas comme des accolades.
 - **Le canal suit la conversation, pas le bloc.** Un scénario qui commence en RCS continue en RCS : si le
@@ -920,6 +932,12 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   fermée : le RCS n'a pas de fenêtre. Ce qui suit le bloc RCS part aussi, à une exception près que l'éditeur
   signale : un **formulaire** WhatsApp placé juste derrière ne partira que si le contact a écrit **sur
   WhatsApp** dans les 24 h, car répondre en RCS ne rouvre pas cette fenêtre.
+- ✅ **Les chiffres ne mélangent plus les deux canaux** (2026-08-25). Trois corrections qui changent ce que
+  disent les écrans : une réponse ou un clic reçu en RCS ne compte plus comme une réponse au **template
+  WhatsApp** d'une campagne (et l'inverse) ; une campagne RCS ne rentre plus dans le **coût estimé**, calculé
+  au tarif de Meta qui ne facture rien sur ce canal, ni dans le détail « par template » ; et les envois RCS
+  sortent de la série « Service » du tableau de bord, dont l'écran affirme que Meta ne les facture pas. Le
+  volume RCS n'a pas encore de série à lui : il vaut mieux ne pas le montrer que le montrer comme gratuit.
 - ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.

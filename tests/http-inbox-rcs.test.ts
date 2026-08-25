@@ -30,7 +30,7 @@ function app(over: Partial<InboxRouteDeps> = {}, windowOpen = false) {
     getTenantPhoneNumberId: async () => 'pn1',
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
-    sendRcsFromLibrary: async () => ({ messageId: 'rcs-1', apercu: 'Bonjour Julien' }),
+    sendRcsFromInbox: async () => ({ messageId: 'rcs-1', apercu: 'Bonjour Julien' }),
     ...over,
   };
   const a = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, inbox: deps });
@@ -55,6 +55,40 @@ describe('Envoyer un RCS depuis l inbox', () => {
     await a.close();
   });
 
+  /**
+   * 🔴 Réponse LIBRE (2026-08-25). Un contact joignable seulement en RCS n'était atteignable qu'à travers la
+   * bibliothèque : l'opérateur ne pouvait pas répondre une phrase écrite à la main sur le canal où le client
+   * venait de lui parler. Il devait créer une entrée de bibliothèque, ou faire approuver un template WhatsApp.
+   */
+  it('accepte une reponse LIBRE {text} et la transmet telle quelle', async () => {
+    const recus: unknown[] = [];
+    const { a, journal } = app({
+      sendRcsFromInbox: async (_t, _w, contenu) => { recus.push(contenu); return { messageId: 'rcs-libre', apercu: 'Je regarde ca' }; },
+    });
+    const r = await a.inject(envoi({ text: '  Je regarde ca  ' }));
+    expect(r.statusCode).toBe(200);
+    expect(recus).toEqual([{ text: 'Je regarde ca' }]); // trimé, et AUCUN rcsMessageId inventé
+    expect(journal).toEqual([{ body: 'Je regarde ca', type: 'rcs', canal: 'rcs', sender: 'u1' }]);
+    await a.close();
+  });
+
+  it('refuse un corps ambigu : ni l un ni l autre, ou LES DEUX', async () => {
+    // Accepter les deux obligerait à inventer une priorité ; l'opérateur ne saurait pas ce qui est parti.
+    const { a } = app();
+    expect((await a.inject(envoi({}))).statusCode).toBe(400);
+    expect((await a.inject(envoi({ rcsMessageId: 'lib-1', text: 'et un texte' }))).statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('refuse un texte plus long que ce que le RCS accepte, AVANT d appeler le fournisseur', async () => {
+    let appele = 0;
+    const { a } = app({ sendRcsFromInbox: async () => { appele += 1; return { messageId: 'x', apercu: 'x' }; } });
+    const r = await a.inject(envoi({ text: 'a'.repeat(3073) }));
+    expect(r.statusCode).toBe(400);
+    expect(appele).toBe(0); // se faire refuser par smsmode coûterait un aller-retour et un message d'erreur opaque
+    await a.close();
+  });
+
   it('l operateur PREND le fil, comme sur une reponse texte', async () => {
     const { a, priseDeControle } = app();
     await a.inject(envoi());
@@ -67,7 +101,7 @@ describe('Envoyer un RCS depuis l inbox', () => {
    * deux gestes differents. Et en 422, jamais en 5xx, dont Cloudflare remplace le corps par sa page d'erreur.
    */
   it('rend la RAISON du refus en 422, et n enregistre rien', async () => {
-    const { a, journal } = app({ sendRcsFromLibrary: async () => ({ refus: 'Ce contact s’est désabonné du RCS.' }) });
+    const { a, journal } = app({ sendRcsFromInbox: async () => ({ refus: 'Ce contact s’est désabonné du RCS.' }) });
     const r = await a.inject(envoi());
     expect(r.statusCode).toBe(422);
     expect(r.json().error).toContain('désabonné');
@@ -76,7 +110,7 @@ describe('Envoyer un RCS depuis l inbox', () => {
   });
 
   it('repond 422 quand le canal RCS n est pas cable du tout', async () => {
-    const { a } = app({ sendRcsFromLibrary: undefined });
+    const { a } = app({ sendRcsFromInbox: undefined });
     const r = await a.inject(envoi());
     expect(r.statusCode).toBe(422);
     await a.close();
