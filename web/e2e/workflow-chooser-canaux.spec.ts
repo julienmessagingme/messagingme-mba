@@ -84,6 +84,19 @@ test.describe('Menu du fil : les mêmes blocs que la palette', () => {
     await expect(chooser).toHaveCount(0);
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
     await expect(page.locator('.react-flow__edge')).toHaveCount(1);
+
+    // Et l'arête PERSISTÉE part bien de la poignée du BOUTON, pas de la sortie par défaut du bloc : c'est ce
+    // qui fait que la branche « Oui » mène au mail. Une arête sans `sourceHandle` relierait le bloc entier et
+    // le scénario partirait dans la mauvaise branche, sans que rien ne le signale à l'écran.
+    await page.getByTestId('workflow-autoarrange').click(); // force l'auto-save sans attendre le debounce
+    await expect.poll(() => {
+      const dernier = saved[saved.length - 1];
+      const email = dernier?.nodes.find((n) => n.type === 'email');
+      return dernier?.edges.some((e) => {
+        const a = e as { source?: string; sourceHandle?: string; target?: string };
+        return a.source === 'n1' && a.sourceHandle === 'btn:0' && a.target === (email as { id?: string } | undefined)?.id;
+      }) ?? false;
+    }, { timeout: 10_000 }).toBe(true);
   });
 
   test('les deux entrées sont GRISÉES tant que le canal n’est pas prêt, jamais masquées', async ({ page }) => {

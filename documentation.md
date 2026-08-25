@@ -700,8 +700,19 @@ Comme la réponse texte, l'envoi fait PRENDRE le fil à l'opérateur, et la bull
 
 ### Le champ variable, comme un template Meta
 
-`RcsBodyField` : on écrit, on clique « + Variable », on choisit un champ du contact, et un chip `[Prénom]`
-s'insère au curseur. La chaîne stockée reste `Bonjour {{prenom}}` ; c'est l'AFFICHAGE qui change.
+`ChampCorpsVariables` (ex-`RcsBodyField`, renommé le 2026-08-25) : on écrit, on clique « + Variable », on
+choisit un champ du contact, et un chip `[Prénom]` s'insère au curseur. La chaîne stockée reste
+`Bonjour {{prenom}}` ; c'est l'AFFICHAGE qui change. Quatre appelants : messages RCS, bloc RCS du builder,
+campagne RCS, et le corps en format Texte d'un modèle d'email.
+
+⚠️ Le bouton et sa liste de champs vivent à part, dans `SelecteurVariable` : trois surfaces doivent l'ouvrir
+(le sujet d'un modèle d'email, son corps en Texte, son corps en HTML) et seule la première passe par l'éditeur
+à chips. Un `contenteditable` resérialise le DOM, donc il abîmerait un HTML collé depuis un outil externe.
+
+⚠️ La liste proposée vient de `emailVariableFields` et NON de `emailResolvableFields` : la première ajoute les
+variables de base réellement fournies par `contactVars` (`profile_name` pour le nom, `phone`), que
+`GET /user-fields` ne renvoie jamais puisqu'il ne sert que les champs perso. La seconde sert à choisir un champ
+qui CONTIENT une adresse (destinataire du bloc email), où proposer « Téléphone » serait un piège.
 
 L'éditeur à chips (`VariableBodyEditor`) est désormais partagé avec le corps d'un template Meta. Il prend un
 `varPattern` (positions `{{1}}` par défaut, motif NOMMÉ pour le RCS) et un `labelOf(nom)`. Les deux contrats

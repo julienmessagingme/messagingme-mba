@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Flottant } from '@/components/Flottant';
-import { emailResolvableFields } from '@/lib/fields';
+import { emailVariableFields } from '@/lib/fields';
 import type { UserFieldDef } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 
@@ -34,7 +34,7 @@ export function SelecteurVariable({
 }) {
   const t = useT();
   const [ouvert, setOuvert] = useState(false);
-  const variables = emailResolvableFields(fields);
+  const variables = emailVariableFields(fields, t);
 
   return (
     <span className={`relative inline-block ${className ?? ''}`}>

@@ -5,7 +5,7 @@ import { VariableBodyEditor, NAMED_VAR_RE, type VariableBodyEditorHandle } from 
 import { Flottant } from '@/components/Flottant';
 import { SelecteurVariable } from '@/components/SelecteurVariable';
 import { EMOJIS_MESSAGE } from '@/lib/emojis';
-import { emailResolvableFields } from '@/lib/fields';
+import { emailVariableFields } from '@/lib/fields';
 import type { UserFieldDef } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -47,7 +47,9 @@ export function ChampCorpsVariables({
   const editorRef = useRef<VariableBodyEditorHandle>(null);
   const [emojisOuverts, setEmojisOuverts] = useState(false);
 
-  const variables = emailResolvableFields(fields);
+  // Sert UNIQUEMENT à retrouver le libellé d'une variable pour l'afficher en chip. MÊME liste que le
+  // sélecteur, sinon un `{{phone}}` inséré s'afficherait en brut au lieu de « Téléphone ».
+  const variables = emailVariableFields(fields, t);
   const trop = max !== undefined && valeur.length > max;
 
   return (

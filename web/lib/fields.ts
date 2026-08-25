@@ -61,6 +61,45 @@ export function emailResolvableFields(fields: UserFieldDef[]): UserFieldDef[] {
   return fields.filter((f) => f.key !== 'name' && f.key !== 'wa_id');
 }
 
+/**
+ * Variables de BASE réellement résolues dans un corps de message (mail ou RCS), avec leur clé SERVEUR.
+ *
+ * 🔴 Elles n'étaient proposées NULLE PART, et c'est le défaut signalé par Julien le 2026-08-25 (« je ne vois
+ * pas le nom ou le numéro de tel »). La cause : la liste de champs vient de `GET /user-fields`, qui ne renvoie
+ * que les champs PERSO du tenant (table `user_fields`). Les champs de base sont des constantes du front
+ * (`SYSTEM_FIELDS`) qui n'avaient jamais été versées dans le sélecteur de variables.
+ *
+ * ⚠️ La CLÉ compte plus que le libellé, et c'est le deuxième piège. `contactVars` (`src/crm/render.ts`) ne
+ * fournit que `phone`, `phone_e164`, `bsuid`, `profile_name` et les clés de `contacts.fields`. Le nom du
+ * contact s'y appelle donc `profile_name`, PAS `name` : c'est exactement pour ça que `name` est exclu par
+ * `emailResolvableFields` ci-dessus, il rendrait toujours du vide. Proposer « Nom » sans corriger la clé
+ * aurait reproduit le défaut en le rendant invisible.
+ *
+ * `bsuid` n'est volontairement pas proposé : c'est un identifiant technique, il n'a rien à faire dans un
+ * message lu par un humain.
+ */
+const VARS_DE_BASE: Array<{ key: string; label: [string, string] }> = [
+  { key: 'profile_name', label: ['Nom', 'Name'] },
+  { key: 'phone', label: ['Téléphone', 'Phone'] },
+];
+
+/**
+ * Variables proposables dans un CORPS de message : les variables de base réellement résolues, PUIS les champs
+ * perso du tenant. Distinct de `emailResolvableFields`, qui sert à choisir un champ CONTENANT une adresse
+ * (destinataire du bloc email) : y proposer « Téléphone » serait un piège.
+ *
+ * Un champ perso qui porterait la même clé qu'une variable de base gagne : c'est lui que `contactVars`
+ * renverra, puisqu'il écrase la clé système en fin de construction.
+ */
+export function emailVariableFields(fields: UserFieldDef[], t: (fr: string, en: string) => string): UserFieldDef[] {
+  const perso = emailResolvableFields(fields);
+  const dejaLa = new Set(perso.map((f) => f.key));
+  const base: UserFieldDef[] = VARS_DE_BASE
+    .filter((v) => !dejaLa.has(v.key))
+    .map((v) => ({ key: v.key, label: t(v.label[0], v.label[1]), type: 'text' as const }));
+  return [...base, ...perso];
+}
+
 /** Code public DÉTERMINISTE d'un champ SYSTÈME. Défini dans `./codes` (module PUR, testé depuis la suite
  *  racine) et ré-exporté ici pour rester avec les autres helpers de champs. */
 export { systemFieldCode } from './codes';

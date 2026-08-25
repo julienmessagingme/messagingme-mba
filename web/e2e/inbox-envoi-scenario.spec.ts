@@ -89,6 +89,18 @@ async function choisirScenario(page: import('@playwright/test').Page, id: string
 }
 
 test.describe('Inbox : lancer un scénario', () => {
+  /**
+   * 90 s, comme son jumeau `campaign-carousel-preview`, et pour la MÊME raison mesurée : 4 workers partagent
+   * un seul serveur Next, et le chargement de la liste des scénarios (qui attend workflows ET templates, puis
+   * filtre par éligibilité) mange le budget avant que l'assertion ne commence. `ouvrirPanneau` réessaie déjà
+   * pendant 20 s sur un budget global de 30 : il n'en restait que 10 pour tout le reste.
+   *
+   * ⚠️ Ce n'est PAS affaiblir le test : aucune assertion ne bouge, on lui rend seulement le temps que la
+   * contention lui prend. Historique quantifié dans `todo.md` : échoue en suite complète, passe 5/5 en
+   * isolation, et l'échec change de test d'une exécution à l'autre.
+   */
+  test.describe.configure({ timeout: 90_000 });
+
   test('fenêtre OUVERTE -> tous les scénarios sont proposés', async ({ page }) => {
     await mock(page, true, []);
     await ouvrirPanneau(page);
