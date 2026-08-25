@@ -82,14 +82,14 @@ test.describe('Builder : bloc Envoi de mail', () => {
 
     await page.getByTestId('email-account-select').selectOption('a1');
     await page.getByTestId('email-template-select').selectOption('tpl1');
-    await page.getByTestId('email-recipient-value').fill('client@exemple.fr');
+    await page.getByTestId('email-recipient-value-0').fill('client@exemple.fr');
 
     await expect.poll(
       () => saved.some((g) => g.nodes.some((n) =>
         n.type === 'email'
         && (n.data as { emailAccountId?: string }).emailAccountId === 'a1'
         && (n.data as { templateId?: string }).templateId === 'tpl1'
-        && JSON.stringify((n.data as { to?: unknown }).to) === JSON.stringify({ kind: 'literal', value: 'client@exemple.fr' }))),
+        && JSON.stringify((n.data as { to?: unknown }).to) === JSON.stringify([{ kind: 'literal', value: 'client@exemple.fr' }]))),
       { timeout: 10_000 },
     ).toBe(true);
   });
@@ -110,16 +110,87 @@ test.describe('Builder : bloc Envoi de mail', () => {
 
     // Sélectionne le bloc pré-existant sur le canevas (un seul node ici).
     await page.locator('.react-flow__node').first().click();
-    await expect(page.getByTestId('email-recipient-kind-field')).toBeVisible();
+    await expect(page.getByTestId('email-recipient-kind-field-0')).toBeVisible();
 
-    await page.getByTestId('email-recipient-kind-field').click();
-    await page.getByTestId('email-recipient-field').selectOption('email');
+    await page.getByTestId('email-recipient-kind-field-0').click();
+    await page.getByTestId('email-recipient-field-0').selectOption('email');
 
     await expect.poll(
       () => saved.some((g) => g.nodes.some((n) =>
-        n.type === 'email' && JSON.stringify((n.data as { to?: unknown }).to) === JSON.stringify({ kind: 'field', field: 'email' }))),
+        n.type === 'email' && JSON.stringify((n.data as { to?: unknown }).to) === JSON.stringify([{ kind: 'field', field: 'email' }]))),
       { timeout: 10_000 },
     ).toBe(true);
+  });
+
+  test('jusqu\u2019\u00e0 3 destinataires : le bouton « + » dispara\u00eet au 3e, et chaque ligne se retire', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(
+      page,
+      { nodes: [{ id: 'e', type: 'email', position: { x: 0, y: 0 }, data: { emailAccountId: 'a1', templateId: 'tpl1', to: [{ kind: 'literal', value: 'un@ex.fr' }] } }], edges: [] },
+      saved,
+      { accounts: [ACCOUNT], templates: [TEMPLATE] },
+    );
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+
+    // Une seule ligne au d\u00e9part, et elle n\u2019est PAS supprimable (elle porte le « \u00c0 »).
+    await expect(page.getByTestId('email-recipient-row-0')).toBeVisible();
+    await expect(page.getByTestId('email-recipient-remove-0')).toHaveCount(0);
+
+    await page.getByTestId('email-recipient-add').click();
+    await page.getByTestId('email-recipient-add').click();
+    await expect(page.getByTestId('email-recipient-row-2')).toBeVisible();
+    // Au 3e, le bouton d\u2019ajout dispara\u00eet : le plafond est le m\u00eame que celui du serveur.
+    await expect(page.getByTestId('email-recipient-add')).toHaveCount(0);
+
+    // Le 1er annonce que les suivants sont en copie cach\u00e9e : sans \u00e7a, on croit que tout le monde se voit.
+    await expect(page.getByTestId('email-recipient-row-0')).toContainText(/copie cach\u00e9e/i);
+
+    await page.getByTestId('email-recipient-remove-2').click();
+    await expect(page.getByTestId('email-recipient-row-2')).toHaveCount(0);
+    await expect(page.getByTestId('email-recipient-add')).toBeVisible();
+  });
+
+  test('changer le mode d\u2019une ligne n\u2019efface PAS les autres', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(
+      page,
+      { nodes: [{ id: 'e', type: 'email', position: { x: 0, y: 0 }, data: { emailAccountId: 'a1', templateId: 'tpl1', to: [{ kind: 'literal', value: 'garde@ex.fr' }, { kind: 'literal', value: 'deux@ex.fr' }] } }], edges: [] },
+      saved,
+      { accounts: [ACCOUNT], templates: [TEMPLATE] },
+    );
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+
+    // Le basculement \u00e9tait GLOBAL avant : passer la 2e en variable remettait les deux \u00e0 z\u00e9ro.
+    await page.getByTestId('email-recipient-kind-field-1').click();
+    await page.getByTestId('email-recipient-field-1').selectOption('email');
+
+    await expect(page.getByTestId('email-recipient-value-0')).toHaveValue('garde@ex.fr');
+    await expect.poll(
+      () => saved.some((g) => g.nodes.some((n) =>
+        JSON.stringify((n.data as { to?: unknown }).to) === JSON.stringify([{ kind: 'literal', value: 'garde@ex.fr' }, { kind: 'field', field: 'email' }]))),
+      { timeout: 10_000 },
+    ).toBe(true);
+  });
+
+  test('\ud83d\udd34 un bloc \u00e0 l\u2019ANCIENNE forme (objet) s\u2019ouvre normalement et reste envoyable', async ({ page }) => {
+    // Les sc\u00e9narios enregistr\u00e9s avant le 2026-08-25 portent `to` comme un objet. Ne lire que la forme liste
+    // afficherait un panneau vide et un r\u00e9sum\u00e9 « configurer l\u2019envoi » sur un bloc qui envoie parfaitement.
+    const saved: Graph[] = [];
+    await mockBuilder(
+      page,
+      { nodes: [{ id: 'e', type: 'email', position: { x: 0, y: 0 }, data: { emailAccountId: 'a1', templateId: 'tpl1', to: { kind: 'literal', value: 'ancien@ex.fr' } } }], edges: [] },
+      saved,
+      { accounts: [ACCOUNT], templates: [TEMPLATE] },
+    );
+    await page.goto('/workflows?open=wf1');
+
+    // Le r\u00e9sum\u00e9 du canevas le montre configur\u00e9, pas \u00e0 configurer.
+    await expect(page.locator('.react-flow__node').getByText('ancien@ex.fr')).toBeVisible();
+
+    await page.locator('.react-flow__node').first().click();
+    await expect(page.getByTestId('email-recipient-value-0')).toHaveValue('ancien@ex.fr');
   });
 
   test('sans modèle ni boîte choisis, le résumé du bloc invite à le configurer', async ({ page }) => {

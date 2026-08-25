@@ -70,7 +70,9 @@ describe('executor : le node email est best-effort', () => {
     expect(sendEmail).toHaveBeenCalledWith(
       't1',
       '33600000001',
-      { kind: 'sendEmail', emailAccountId: 'a1', templateId: 't1', to: { kind: 'literal', value: 'dest@exemple.fr' } },
+      // ⚠️ Le node porte `to` sous son ANCIENNE forme objet (l.27) : l'action reçue doit être la forme LISTE,
+      // c'est-à-dire la preuve que la lecture des deux formes tient de bout en bout, du graphe à l'executor.
+      { kind: 'sendEmail', emailAccountId: 'a1', templateId: 't1', to: [{ kind: 'literal', value: 'dest@exemple.fr' }] },
     );
     // Le node SUIVANT (tag) est quand même appliqué : la panne d'envoi n'a pas arrêté le parcours.
     expect(applyTag).toHaveBeenCalledTimes(1);

@@ -19,13 +19,22 @@ export type EmailRecipient =
   | { kind: 'literal'; value: string }
   | { kind: 'field'; field: string };
 
-/** Action « Envoi de mail » : boîte SMTP + modèle + destinataire, portés par leur id/valeur opaques. Exportée :
- *  consommée par l'executor (câblage de l'envoi réel, IO). */
+/** Nombre maximal de destinataires d'un bloc « Envoi de mail ». Borné ICI, côté moteur, et pas seulement par
+ *  le bouton « + » du builder : `parseGraph` ne regarde pas `data`, donc un graphe fabriqué à la main passerait
+ *  autant d'adresses qu'il veut. Le surplus est TRONQUÉ (pas de refus : un bloc refusé devient un no-op muet). */
+export const MAX_DESTINATAIRES_EMAIL = 3;
+
+/** Action « Envoi de mail » : boîte SMTP + modèle + destinataires, portés par leur id/valeur opaques. Exportée :
+ *  consommée par l'executor (câblage de l'envoi réel, IO).
+ *
+ *  `to` est une LISTE (1 à 3). Le premier part en « À », les suivants en COPIE CACHÉE : les destinataires
+ *  peuvent être des clients, et ils ne doivent pas voir les adresses les uns des autres (décision produit du
+ *  2026-08-25). La liste ne peut pas être vide : `actionOf` rend `null` avant d'en fabriquer une. */
 export interface SendEmailAction {
   kind: 'sendEmail';
   emailAccountId: string;
   templateId: string;
-  to: EmailRecipient;
+  to: EmailRecipient[];
 }
 
 export type WorkflowAction =
@@ -331,6 +340,52 @@ function emailRecipientOf(raw: unknown): EmailRecipient | null {
   return null;
 }
 
+/**
+ * Les destinataires d'un bloc email, lus depuis `data.to` opaque.
+ *
+ * 🔴 ACCEPTE LES DEUX FORMES, et ce n'est pas du confort. Jusqu'au 2026-08-25, `to` était un OBJET unique, et
+ * les scénarios déjà enregistrés le portent tel quel dans leur JSONB : rien ne les renormalise à la lecture
+ * (`parseGraph` laisse `data` opaque). Ne lire que la forme LISTE ferait rendre `null` à `actionOf`, donc
+ * transformerait ces blocs en no-op TOTALEMENT SILENCIEUX (aucun log, aucun événement, aucun statut d'échec) :
+ * des scénarios en production cesseraient d'envoyer sans que rien ne le dise. La forme objet est donc lue
+ * comme une liste d'un élément, et elle doit le rester tant qu'un ancien graphe peut exister.
+ *
+ * Les entrées invalides sont ÉCARTÉES une à une plutôt que de faire échouer le tout : une 3e adresse laissée
+ * vide ne doit pas empêcher les deux premières de recevoir. Liste vide -> null (bloc non configuré).
+ */
+function emailRecipientsOf(raw: unknown): EmailRecipient[] | null {
+  const bruts = Array.isArray(raw) ? raw : [raw];
+  const out: EmailRecipient[] = [];
+  for (const b of bruts) {
+    const r = emailRecipientOf(b);
+    if (r) out.push(r);
+    if (out.length === MAX_DESTINATAIRES_EMAIL) break;
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * Adresses réellement joignables d'un bloc email, résolues contre les variables du contact. PURE.
+ *
+ * Extraite du câblage d'envoi (`wiring.ts`) pour être testable : c'est elle qui décide qui reçoit, et à quel
+ * titre. Chaque destinataire est résolu INDÉPENDAMMENT, parce qu'une adresse en mode variable lit
+ * `contacts.fields`, qui est libre (import CSV, webhook, inbox) : rien ne garantit qu'elle soit renseignée, et
+ * une 3e ligne vide ne doit pas priver les deux premières de leur mail.
+ *
+ * Les doublons sont écartés : le même champ pointé deux fois, ou une adresse fixe qui répète la valeur d'une
+ * variable, enverrait deux exemplaires à la même personne.
+ *
+ * L'ordre est conservé : l'appelant met la PREMIÈRE en « À » et les suivantes en copie cachée.
+ */
+export function adressesDestinataires(to: EmailRecipient[], vars: Record<string, string | null>): string[] {
+  return [...new Set(
+    to
+      .map((r) => (r.kind === 'literal' ? r.value : (vars[r.field] ?? '')))
+      .map((a) => a.trim())
+      .filter((a) => a !== ''),
+  )];
+}
+
 /** Exportée : consommée directement par le test unitaire du node email (`actionOf` en isolation), sans passer
  *  par `walk`. */
 export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null {
@@ -407,7 +462,7 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     // 'email', pareil que pour les autres types). Compte, modèle ou destinataire manquant/invalide -> null.
     const emailAccountId = String(node.data.emailAccountId ?? '').trim();
     const templateId = String(node.data.templateId ?? '').trim();
-    const to = emailRecipientOf(node.data.to);
+    const to = emailRecipientsOf(node.data.to);
     if (!emailAccountId || !templateId || !to) return null;
     return { kind: 'sendEmail', emailAccountId, templateId, to };
   }

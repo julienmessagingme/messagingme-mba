@@ -3,6 +3,9 @@ import type { DecryptedEmailAccount } from './types';
 
 export interface SmtpMessage {
   to: string;
+  /** Destinataires en COPIE CACHÉE. Ils ne voient pas les adresses les uns des autres, ni celle du « À ».
+   *  Absent ou vide -> aucun en-tête `bcc` n'est posé (voir `sendSmtpEmail`). */
+  bcc?: string[];
   subject: string;
   text?: string;
   html?: string;
@@ -29,6 +32,9 @@ export async function sendSmtpEmail(
   await transport.sendMail({
     from: account.fromName ? { name: account.fromName, address: account.fromAddress } : account.fromAddress,
     to: msg.to,
+    // Posé SEULEMENT s'il y a des destinataires cachés : passer `bcc: []` ou `bcc: undefined` change l'objet
+    // remis à nodemailer, et les tests de ce module comparent cet objet au caractère près.
+    ...(msg.bcc && msg.bcc.length > 0 ? { bcc: msg.bcc } : {}),
     replyTo: account.replyTo ?? undefined,
     subject: msg.subject,
     text: msg.text,

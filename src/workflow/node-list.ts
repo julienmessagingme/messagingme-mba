@@ -70,9 +70,15 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
     }
     case 'email': {
       // Même contrat que les autres blocs de config : non configuré -> chaîne vide (pas de placeholder).
-      const dest = data.to as { kind?: unknown; value?: unknown; field?: unknown } | undefined;
-      const cible = dest?.kind === 'field' ? `{{${s(dest.field)}}}` : s(dest?.value);
-      out = cible === '' ? '' : `Mail vers ${cible}`;
+      // ⚠️ Lit les DEUX formes de `to` (objet avant le 2026-08-25, liste depuis), comme le moteur et le
+      // canevas : n'en lire qu'une afficherait un résumé vide sur des blocs qui envoient très bien.
+      type Dest = { kind?: unknown; value?: unknown; field?: unknown };
+      const bruts: Dest[] = Array.isArray(data.to) ? (data.to as Dest[]) : [data.to as Dest];
+      const cibles = bruts
+        .map((dst) => (dst?.kind === 'field' ? (s(dst.field) === '' ? '' : `{{${s(dst.field)}}}`) : s(dst?.value)))
+        .filter((x) => x !== '');
+      const reste = cibles.length - 1;
+      out = cibles.length === 0 ? '' : reste === 0 ? `Mail vers ${cibles[0]}` : `Mail vers ${cibles[0]} +${reste}`;
       break;
     }
     case 'inbox': out = ''; break;

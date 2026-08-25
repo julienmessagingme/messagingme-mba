@@ -29,7 +29,7 @@ import type { PgEmailTemplateStore } from '../email/template-store.pg';
 import type { EmailAccountResolver } from '../email/resolver';
 import { sendSmtpEmail } from '../email/smtp';
 import { renderText, contactVars } from '../crm/render';
-import type { SendEmailAction } from './engine';
+import { adressesDestinataires, type SendEmailAction } from './engine';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -242,15 +242,20 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // porte qu'un waId, jamais un contact déjà résolu. Hors base -> objet vide (variables système à null).
     const contact = await contactStore.getResolvableByPhone(tenant, waId);
     const vars = contactVars(contact ?? {});
-    const to = action.to.kind === 'literal' ? action.to.value : (vars[action.to.field] ?? '');
-    if (!to) {
+    const adresses = adressesDestinataires(action.to, vars);
+    if (adresses.length === 0) {
       // eslint-disable-next-line no-console
-      console.error(`workflow sendEmail: destinataire vide pour ${waId} (${tenant}), envoi ignoré`);
+      console.error(`workflow sendEmail: aucun destinataire résolu pour ${waId} (${tenant}), envoi ignoré`);
       return;
     }
     const html = template.format === 'html';
+    // Le 1er en « À », les suivants en COPIE CACHÉE : les destinataires peuvent être des clients et ne doivent
+    // pas voir les adresses les uns des autres (décision produit du 2026-08-25). Les mettre tous en « À » les
+    // exposerait mutuellement, ce qui est une fuite de données personnelles, pas un détail de présentation.
+    const [premier, ...caches] = adresses;
     await sendSmtpEmail(resolved.transport, resolved.account, {
-      to,
+      to: premier as string,
+      ...(caches.length > 0 ? { bcc: caches } : {}),
       subject: renderText(template.subject, vars, { html: false }),
       ...(html
         ? { html: renderText(template.body, vars, { html: true }) }

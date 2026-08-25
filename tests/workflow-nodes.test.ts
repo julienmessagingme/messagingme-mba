@@ -71,6 +71,28 @@ describe('collectNodes', () => {
     expect(out[5]!.summary).toBe('legacy_key = v');
   });
 
+  it('résumé du node email : les DEUX formes de `to`, et le compte des destinataires cachés', () => {
+    const out = collectNodes([
+      wf('w1', 'W', [
+        // Ancienne forme OBJET : un bloc enregistré avant le 2026-08-25 doit rester lisible ici, sinon la
+        // liste affiche un résumé vide sur un bloc qui envoie parfaitement.
+        node({ id: 'n1', type: 'email', data: { to: { kind: 'literal', value: 'seul@ex.fr' } } }),
+        node({ id: 'n2', type: 'email', data: { to: [{ kind: 'literal', value: 'un@ex.fr' }] } }),
+        node({ id: 'n3', type: 'email', data: { to: [
+          { kind: 'literal', value: 'un@ex.fr' },
+          { kind: 'field', field: 'email_pro' },
+          { kind: 'literal', value: 'trois@ex.fr' },
+        ] } }),
+        node({ id: 'n4', type: 'email', data: {} }), // non configuré
+      ]),
+    ]);
+    expect(out[0]!.summary).toBe('Mail vers seul@ex.fr');
+    expect(out[1]!.summary).toBe('Mail vers un@ex.fr');
+    // Le 1er nommé (celui du « À »), les autres comptés : trois adresses entières déborderaient de la ligne.
+    expect(out[2]!.summary).toBe('Mail vers un@ex.fr +2');
+    expect(out[3]!.summary).toBe('');
+  });
+
   it('résumé du node RCS : le texte du message, comme sur le canevas', () => {
     // Sans ce cas, `summarize` tombait sur `default` et rendait '' : « Contenu > Blocs » listait alors des
     // blocs RCS au résumé VIDE, indistinguables les uns des autres. Même incident que pour le bloc `wait`.

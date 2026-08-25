@@ -20,7 +20,7 @@ import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
 import { RcsBodyField } from '@/components/RcsBodyField';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
@@ -87,10 +87,21 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     return n === 1 ? t(`${m} de 1 condition`, `${m} of 1 condition`) : t(`${m} de ${n} conditions`, `${m} of ${n} conditions`);
   }
   if (wfType === 'email') {
-    const to = data.to as EmailRecipientData | undefined;
-    const dest = to?.kind === 'field' ? (to.field ? `{{${to.field}}}` : '') : (to?.value ?? '');
-    if (!data.emailAccountId || !data.templateId || !dest) return t('configurer l’envoi…', 'configure the send…');
-    return `${t('Mail vers', 'Email to')} ${dest}`;
+    // Lit les DEUX formes de `data.to` (objet avant le 2026-08-25, liste depuis) : un ancien bloc afficherait
+    // sinon « configurer l'envoi » alors qu'il envoie parfaitement.
+    const dests: EmailRecipientData[] = Array.isArray(data.to)
+      ? (data.to as EmailRecipientData[])
+      : [(data.to as EmailRecipientData | undefined) ?? {}];
+    const lisibles = dests
+      .map((r) => (r.kind === 'field' ? (r.field ? `{{${r.field}}}` : '') : (r.value ?? '')))
+      .filter((x) => x !== '');
+    if (!data.emailAccountId || !data.templateId || lisibles.length === 0) return t('configurer l’envoi…', 'configure the send…');
+    // Au-delà d'un destinataire, on nomme le 1er (celui du « À ») et on compte les autres : trois adresses
+    // entières déborderaient de la carte du bloc.
+    const reste = lisibles.length - 1;
+    return reste === 0
+      ? `${t('Mail vers', 'Email to')} ${lisibles[0]}`
+      : `${t('Mail vers', 'Email to')} ${lisibles[0]} +${reste}`;
   }
   // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
@@ -1163,7 +1174,15 @@ function ConfigPanel({
         </p>
       )}
       {wfType === 'email' && (() => {
-        const to: EmailRecipientData = (d.to as EmailRecipientData | undefined) ?? { kind: 'literal', value: '' };
+        // ⚠️ `data.to` porte DEUX formes : un OBJET pour les blocs créés avant le 2026-08-25, une LISTE depuis.
+        // Rien ne renormalise les anciens graphes, donc la lecture doit tolérer les deux ici comme côté moteur
+        // (`emailRecipientsOf`) : n'accepter que la liste afficherait un panneau VIDE sur un bloc qui envoie.
+        const destinataires: EmailRecipientData[] = Array.isArray(d.to)
+          ? (d.to as EmailRecipientData[])
+          : [(d.to as EmailRecipientData | undefined) ?? { kind: 'literal', value: '' }];
+        // Écrit TOUJOURS la forme liste : un bloc touché est migré au passage, sans traitement de masse.
+        const patchDest = (maj: EmailRecipientData[]) => onPatch({ to: maj });
+        const majLigne = (i: number, v: EmailRecipientData) => patchDest(destinataires.map((x, j) => (j === i ? v : x)));
         // Champs proposés comme destinataire « variable » : ceux qui résolvent réellement à l'envoi (le
         // node fait feu au premier échec silencieux si le champ choisi ne tient jamais d'adresse, ex. « Nom »).
         const recipientFields = emailResolvableFields(fields);
@@ -1200,49 +1219,84 @@ function ConfigPanel({
               )}
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Destinataire', 'Recipient')}</label>
-              <div className="mb-1.5 inline-flex overflow-hidden rounded-lg border border-ink-200 text-xs">
+              <label className="mb-1 block text-xs font-medium text-ink-600">
+                {t('Destinataires', 'Recipients')} <span className="font-normal text-ink-400">({destinataires.length}/{MAX_DESTINATAIRES_EMAIL})</span>
+              </label>
+              {destinataires.map((r, i) => (
+                <div key={i} data-testid={`email-recipient-row-${i}`} className="mb-2 rounded-lg border border-ink-100 p-1.5">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    {/* Le mode est PAR LIGNE : partagé, changer celui de la 2e adresse remettrait les trois à zéro. */}
+                    <div className="inline-flex overflow-hidden rounded-lg border border-ink-200 text-xs">
+                      <button
+                        type="button"
+                        data-testid={`email-recipient-kind-literal-${i}`}
+                        onClick={() => majLigne(i, { kind: 'literal', value: '' })}
+                        className={`px-2 py-1 font-medium transition ${r.kind !== 'field' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                      >
+                        {t('Adresse fixe', 'Fixed address')}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`email-recipient-kind-field-${i}`}
+                        onClick={() => majLigne(i, { kind: 'field', field: '' })}
+                        className={`px-2 py-1 font-medium transition ${r.kind === 'field' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                      >
+                        {t('Variable', 'Variable')}
+                      </button>
+                    </div>
+                    {/* Le 1er destinataire n'est pas supprimable : il porte le « À », les suivants sont en copie
+                        cachée. Une liste vidée rendrait le bloc silencieusement inerte côté moteur. */}
+                    {i > 0 && (
+                      <button
+                        type="button"
+                        data-testid={`email-recipient-remove-${i}`}
+                        onClick={() => patchDest(destinataires.filter((_, j) => j !== i))}
+                        className="rounded-md px-1.5 py-0.5 text-xs text-ink-400 hover:bg-coral/10 hover:text-coral"
+                        aria-label={t('Retirer ce destinataire', 'Remove this recipient')}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {r.kind === 'field' ? (
+                    <select
+                      data-testid={`email-recipient-field-${i}`}
+                      value={r.field ?? ''}
+                      onChange={(e) => majLigne(i, { kind: 'field', field: e.target.value })}
+                      className={`${cls} bg-white`}
+                    >
+                      <option value="">{t('Choisir un champ…', 'Choose a field…')}</option>
+                      {recipientFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      data-testid={`email-recipient-value-${i}`}
+                      type="email"
+                      value={r.value ?? ''}
+                      onChange={(e) => majLigne(i, { kind: 'literal', value: e.target.value })}
+                      className={cls}
+                      placeholder={t('destinataire@exemple.fr', 'recipient@example.com')}
+                    />
+                  )}
+                  {i === 0 && destinataires.length > 1 && (
+                    <p className="mt-1 text-[11px] text-ink-400">{t('En « À ». Les suivants sont en copie cachée.', 'In “To”. The others are blind-copied.')}</p>
+                  )}
+                </div>
+              ))}
+              {destinataires.length < MAX_DESTINATAIRES_EMAIL && (
                 <button
                   type="button"
-                  data-testid="email-recipient-kind-literal"
-                  onClick={() => onPatch({ to: { kind: 'literal', value: '' } })}
-                  className={`px-2 py-1 font-medium transition ${to.kind !== 'field' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
+                  data-testid="email-recipient-add"
+                  onClick={() => patchDest([...destinataires, { kind: 'literal', value: '' }])}
+                  className="text-xs text-brand-600 hover:underline"
                 >
-                  {t('Adresse fixe', 'Fixed address')}
+                  {t('+ destinataire', '+ recipient')}
                 </button>
-                <button
-                  type="button"
-                  data-testid="email-recipient-kind-field"
-                  onClick={() => onPatch({ to: { kind: 'field', field: '' } })}
-                  className={`px-2 py-1 font-medium transition ${to.kind === 'field' ? 'bg-brand-500 text-white' : 'text-ink-600 hover:bg-ink-50'}`}
-                >
-                  {t('Variable', 'Variable')}
-                </button>
-              </div>
-              {to.kind === 'field' ? (
-                <select
-                  data-testid="email-recipient-field"
-                  value={to.field ?? ''}
-                  onChange={(e) => onPatch({ to: { kind: 'field', field: e.target.value } })}
-                  className={`${cls} bg-white`}
-                >
-                  <option value="">{t('Choisir un champ…', 'Choose a field…')}</option>
-                  {recipientFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                </select>
-              ) : (
-                <input
-                  data-testid="email-recipient-value"
-                  type="email"
-                  value={to.value ?? ''}
-                  onChange={(e) => onPatch({ to: { kind: 'literal', value: e.target.value } })}
-                  className={cls}
-                  placeholder={t('destinataire@exemple.fr', 'recipient@example.com')}
-                />
               )}
               <p className="mt-1 text-[11px] text-ink-400">
                 {t(
-                  'En mode variable, le champ choisi doit contenir une adresse email valide sur la fiche du contact (ex. le champ « Email »).',
-                  'In variable mode, the chosen field must hold a valid email address on the contact (e.g. the “Email” field).',
+                  'En mode variable, le champ choisi doit contenir une adresse email valide sur la fiche du contact (ex. le champ « Email »). Une adresse qui ne résout à rien est ignorée, les autres partent quand même.',
+                  'In variable mode, the chosen field must hold a valid email address on the contact (e.g. the “Email” field). An address that resolves to nothing is skipped, the others are still sent.',
                 )}
               </p>
             </div>

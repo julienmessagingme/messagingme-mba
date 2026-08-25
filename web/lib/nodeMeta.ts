@@ -36,6 +36,12 @@ export const RCS_NODE_ORDER: WorkflowNodeType[] = ['rcs_message'];
 // Même doctrine que RCS_NODE_ORDER : le bloc se prépare, mais ne peut rien envoyer sans boîte derrière.
 export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 
+/** Nombre maximal de destinataires d'un bloc « Envoi de mail ». ⚠️ MIROIR de MAX_DESTINATAIRES_EMAIL
+ *  (src/workflow/engine.ts), qui fait AUTORITÉ : c'est lui qui tronque, le bouton « + » n'est qu'un confort.
+ *  La valeur est recopiée plutôt qu'importée pour ne pas tirer du code serveur dans le bundle client ;
+ *  `tests/web-email-recipients-parity.test.ts` casse dès que les deux divergent. */
+export const MAX_DESTINATAIRES_EMAIL = 3;
+
 // Infobulles des deux blocs GATÉS, définies ICI parce qu'elles sont affichées à DEUX endroits : la palette et
 // le menu qui s'ouvre quand on tire un fil. Les recopier d'un côté à l'autre est exactement la faute qui a
 // rendu ces deux blocs inatteignables au fil (la palette a été mise à jour, le menu oublié).

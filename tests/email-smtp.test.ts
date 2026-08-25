@@ -42,6 +42,39 @@ describe('sendSmtpEmail', () => {
     expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: 'support@ex.fr' }));
   });
 
+  it('les destinataires supplémentaires partent en COPIE CACHÉE, jamais dans le « À »', async () => {
+    // Décision produit du 2026-08-25 : les destinataires d'un bloc email peuvent être des CLIENTS. Les mettre
+    // tous dans le « À » les exposerait les uns aux autres, ce qui est une fuite de données personnelles.
+    const sendMail = vi.fn().mockResolvedValue({});
+    await sendSmtpEmail({ sendMail } as never, account, {
+      to: 'premier@ex.fr',
+      bcc: ['deux@ex.fr', 'trois@ex.fr'],
+      subject: 'S',
+      text: 't',
+    });
+
+    const envoye = sendMail.mock.calls[0]![0] as { to: string; bcc?: string[] };
+    expect(envoye.to).toBe('premier@ex.fr');
+    expect(envoye.bcc).toEqual(['deux@ex.fr', 'trois@ex.fr']);
+    // Le « À » ne porte QUE le premier : aucune des adresses cachées ne doit s'y retrouver.
+    expect(envoye.to).not.toContain('deux@ex.fr');
+    expect(envoye.to).not.toContain('trois@ex.fr');
+  });
+
+  it("aucun en-tête bcc quand il n'y a qu'un destinataire (l'objet remis reste celui d'avant)", async () => {
+    const sendMail = vi.fn().mockResolvedValue({});
+    await sendSmtpEmail({ sendMail } as never, account, { to: 'seul@ex.fr', subject: 'S', text: 't' });
+
+    expect(sendMail.mock.calls[0]![0]).not.toHaveProperty('bcc');
+  });
+
+  it('bcc vide traité comme absent : pas d’en-tête bcc posé pour rien', async () => {
+    const sendMail = vi.fn().mockResolvedValue({});
+    await sendSmtpEmail({ sendMail } as never, account, { to: 'seul@ex.fr', bcc: [], subject: 'S', text: 't' });
+
+    expect(sendMail.mock.calls[0]![0]).not.toHaveProperty('bcc');
+  });
+
   it("replyTo omis (undefined, pas null) quand la boîte n'en a pas", async () => {
     const sendMail = vi.fn().mockResolvedValue({});
     const sansReplyTo: DecryptedEmailAccount = { ...account, replyTo: null };
