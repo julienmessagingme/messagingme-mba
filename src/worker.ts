@@ -723,7 +723,12 @@ async function main(): Promise<void> {
   // qu'elle protège, et testable là-bas), contrairement à `wakeSweep` qui la porte dans son câblage.
   const dlqSweepGarde = async (): Promise<void> => {
     try {
-      await dlqSweep();
+      const n = await dlqSweep();
+      // Une alerte qui part sans laisser de trace est indiagnosticable : si le Telegram n'arrive pas, rien ne
+      // dit si elle a été émise. C'est précisément le défaut que ce lot corrige ailleurs (le balayage des
+      // campagnes programmées était muet). Même forme que les autres sweepers : on ne logue que l'effet.
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`dlq-sweep: ${n} file(s) d'échec en hausse, alerte émise`);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('dlq-sweep erreur:', err instanceof Error ? err.message : err);
