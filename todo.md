@@ -3,6 +3,23 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
+## 🔴 PROCHAIN LOT : étanchéité des canaux RCS / WhatsApp (audit fait le 2026-08-25)
+
+**Tout est dans `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md`** : 6 rouges, 9 jaunes, et surtout **41 partages de
+canal qui sont VOULUS et qu'il ne faut pas « corriger »**. L'audit a été demandé par Julien après l'incident
+de la fenêtre 24 h, et il a déjà servi : il a trouvé une régression que j'avais introduite (corrigée en
+`76756c3`). Ne PAS refaire ce travail, le lire.
+
+Le fond du sujet, en une phrase : `workflow_runs.channel` existe, il est correctement ÉCRIT à l'envoi, mais il
+n'est **jamais relu** au moment de décider si un message entrant concerne ce parcours. Conséquence : un tap
+RCS fait avancer une branche d'une question posée en WhatsApp, et l'inverse.
+
+Deux points demandent une **décision produit** avant de coder, pas seulement du code :
+- un contact purement RCS n'est joignable depuis l'inbox qu'à travers la bibliothèque, sans réponse libre ;
+- `lastInboundAt` poussé à HubSpot a DEUX consommateurs de sens opposé (la fenêtre 24 h, qui veut WhatsApp
+  seul ; le « dernier contact », où le tous-canaux est correct). Le corriger d'un bloc introduirait un
+  second bug.
+
 ## Laissé ouvert par le lot « Journée 1 » de l'audit de scalabilité (2026-08-25)
 
 Ces deux points ont été VOLONTAIREMENT écartés du lot pour ne pas le faire déborder. Ils sont consignés ici
