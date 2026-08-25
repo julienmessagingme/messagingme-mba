@@ -719,6 +719,8 @@ async function main(): Promise<void> {
     // le throttle de 5 min en masquerait une. La dédup sur la répétition est faite par le balayage lui-même.
     alert: (queue, m) => alert(`dlq:${queue}`, m),
   });
+  // La garde de RÉ-ENTRANCE est portée par `creerDlqSweep` lui-même (elle est indissociable du compteur
+  // qu'elle protège, et testable là-bas), contrairement à `wakeSweep` qui la porte dans son câblage.
   const dlqSweepGarde = async (): Promise<void> => {
     try {
       await dlqSweep();
@@ -783,6 +785,10 @@ async function main(): Promise<void> {
     clearInterval(handoffSweeper);
     clearInterval(idempotencySweeper);
     clearInterval(webhookPayloadSweeper);
+    clearInterval(dlqSweeper);
+    // `wakeSweeper` manquait aussi ici, depuis son introduction : corrigé au passage, c'est la ligne voisine
+    // et le même oubli, une passe dédiée coûterait plus que la correction.
+    clearInterval(wakeSweeper);
     clearInterval(dateSweeper);
     if (analysisSweeper) clearInterval(analysisSweeper);
     if (catchupSweeper) clearInterval(catchupSweeper);

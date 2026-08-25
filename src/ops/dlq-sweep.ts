@@ -32,8 +32,24 @@ const DLQ = new Set(BASE_QUEUES.map((q) => dlqName(q)));
  */
 export function creerDlqSweep(deps: DlqSweepDeps): () => Promise<number> {
   const dejaAlerte = new Map<string, number>();
+  let enCours = false;
 
   return async function dlqSweep(): Promise<number> {
+    // Garde de RÉ-ENTRANCE. `setInterval` n'attend pas la passe précédente : deux passes qui se chevauchent
+    // liraient le même `dejaAlerte` avant que l'une des deux ne l'ait mis à jour, donc alerteraient DEUX FOIS
+    // sur la même hausse. Elle vit ICI et non dans le câblage (contrairement à `wakeSweep`) parce que cette
+    // fonction est une fabrique qui porte déjà son état : la garde est indissociable du compteur qu'elle
+    // protège, et elle devient testable au passage.
+    if (enCours) return 0;
+    enCours = true;
+    try {
+      return await passe();
+    } finally {
+      enCours = false;
+    }
+  };
+
+  async function passe(): Promise<number> {
     const charge = await deps.queueLoad();
     let enHausse = 0;
     for (const ligne of charge) {
@@ -52,5 +68,5 @@ export function creerDlqSweep(deps: DlqSweepDeps): () => Promise<number> {
       }
     }
     return enHausse;
-  };
+  }
 }

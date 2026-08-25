@@ -89,6 +89,32 @@ describe('dlq-sweep', () => {
     expect(alertes).toHaveLength(2);
   });
 
+  it('garde de RÉ-ENTRANCE : une passe lancée pendant la précédente ne double pas l alerte', async () => {
+    // `setInterval` n'attend pas la passe précédente. Sans garde, les deux passes lisent le compteur AVANT
+    // que l'une des deux ne l'ait mis à jour, et alertent donc toutes les deux sur la même hausse.
+    const alertes: string[] = [];
+    let debloquer: (() => void) | undefined;
+    const premiereLecture = new Promise<void>((r) => { debloquer = r; });
+    let appels = 0;
+    const sweep = creerDlqSweep({
+      queueLoad: async () => {
+        appels += 1;
+        if (appels === 1) await premiereLecture; // la 1re passe reste en vol
+        return [ligne('webhook-dlq', 1)];
+      },
+      alert: (_q, m) => alertes.push(m),
+    });
+
+    const enVol = sweep();          // 1re passe : bloquée dans queueLoad
+    const concurrente = await sweep(); // 2e passe pendant la 1re : doit rendre la main tout de suite
+    expect(concurrente).toBe(0);
+    expect(appels).toBe(1);         // la 2e n'a même pas interrogé les files
+
+    debloquer?.();
+    expect(await enVol).toBe(1);
+    expect(alertes).toHaveLength(1); // UNE alerte, pas deux
+  });
+
   it('compte les jobs actifs et échoués, pas seulement le backlog', async () => {
     const alertes: string[] = [];
     const sweep = creerDlqSweep({
