@@ -18,6 +18,14 @@ Créer dans Cloudflare `mba.messagingme.app` -> A `146.59.233.252`, **Proxied** 
 
 ## 2. Démarrer (une commande)
 
+> ⚠️ **Le dépôt est PRIVÉ depuis le 2026-08-25** (il était public alors qu'il porte les audits de
+> scalabilité, donc l'inventaire de nos faiblesses). Le VPS ne peut donc plus cloner en HTTPS anonyme : il
+> pull via une **deploy key dédiée en lecture seule** (`~/.ssh/mba_deploy_key`) et l'alias `github.com-mba`
+> de `~/.ssh/config`, avec le remote `git@github.com-mba:julienmessagingme/messagingme-mba.git`.
+> Un `git pull` qui redemande un nom d'utilisateur GitHub signifie que le remote est repassé en HTTPS.
+> **Ordre à respecter si un autre dépôt bascule un jour** : installer et VÉRIFIER l'accès pendant que le
+> dépôt est encore public, et seulement ensuite le passer en privé. L'inverse coupe le déploiement.
+
 ```bash
 ssh -i ~/.ssh/id_ed25519 ubuntu@146.59.233.252
 cd /home/ubuntu/mba
