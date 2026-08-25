@@ -72,9 +72,14 @@ describe('budget de connexions Postgres', () => {
   it('les plafonds sont BORNÉS par défaut : sans eux, pg et pg-boss prennent 10 chacun (40 sessions pour ~15)', () => {
     const c = schema.parse({});
     // On n'assène pas la constante exacte (ça ne testerait que la relecture du littéral) : ce qui compte est
-    // qu'un plafond existe, qu'il soit petit devant les 15 du pooler, et que l'attente ne soit jamais illimitée.
+    // qu'un plafond existe, qu'il reste sous la contrainte RÉELLE, et que l'attente ne soit jamais illimitée.
+    // ⚠️ Les deux plafonds ne répondent PAS à la même contrainte, ils avaient été bornés ensemble par erreur :
+    //  - DB_POOL_MAX vit sur le pooler en mode TRANSACTION. Capacité mesurée : 16 clients, et le pool est
+    //    instancié PAR PROCESS (API + worker), d'où 8 au plus. Au-delà, la file passe chez Supavisor où elle
+    //    est muette, et DB_CONN_TIMEOUT_MS ne protège plus de rien.
+    //  - PGBOSS_MAX vit, lui, dans le budget de ~15 SESSIONS partagé avec mm-hubspot : il doit rester petit.
     expect(c.DB_POOL_MAX).toBeGreaterThan(0);
-    expect(c.DB_POOL_MAX).toBeLessThan(8);
+    expect(c.DB_POOL_MAX).toBeLessThanOrEqual(8);
     expect(c.PGBOSS_MAX).toBeGreaterThan(0);
     expect(c.PGBOSS_MAX).toBeLessThan(8);
     // 0 = attente ILLIMITÉE : c'est précisément ce qui figeait l'API sans trace. Ne doit jamais être le défaut.

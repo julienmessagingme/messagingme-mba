@@ -84,18 +84,26 @@ export const schema = z.object({
   APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /**
-   * Budget de connexions Postgres. Le pooler Supabase est en SESSION mode, plafonné à ~15 clients, et il est
-   * PARTAGÉ avec mm-hubspot (qui borne déjà : 2 + 2 par process). Sans plafond ici, `pg` prend son défaut de 10
-   * et pg-boss le sien : 2 process x (10 + 10) = 40 sessions demandées pour 15 disponibles -> EMAXCONNSESSION,
-   * l'API se fige et le worker meurt. Arithmétique du défaut ci-dessous : mba 2 process x (3 + 2) = 10,
-   * mm-hubspot 2 process x (2 + 2) = 8, soit 18 pour ~15 disponibles.
-   * ⚠️ Le pire cas simultané DÉPASSE donc encore le plafond du pooler. Ce qui change n'est PAS qu'on tient le
-   * budget : c'est que le dépassement devient borné, rare (les pools sont paresseux, ils n'ouvrent que sous
-   * charge réelle) et diagnosticable (timeout net + log, au lieu d'un gel silencieux).
-   * Le vrai correctif est le mode TRANSACTION pour l'API (bloc 4 du PLAN.md), pas un plafond plus fin.
+   * Budget de connexions du pool APPLICATIF (tous les stores, API + worker), qui passe par le pooler en mode
+   * TRANSACTION (`APP_DATABASE_URL`, port 6543). ⚠️ Ce n'est PLUS le budget des ~15 sessions partagé avec
+   * mm-hubspot : ce budget-là ne concerne que pg-boss, resté en mode SESSION (`PGBOSS_MAX` ci-dessous). La
+   * valeur de 3 datait d'avant la bascule en mode transaction et n'était qu'un pansement, que son propre
+   * commentaire annonçait comme provisoire. Elle a survécu au correctif qu'elle attendait.
+   *
+   * Pourquoi 8 et pas plus, mesuré en production le 2026-08-25 : le pool est instancié PAR PROCESS (l'API et
+   * le worker importent le même module), donc 2 x 8 = 16 clients simultanés vers le pooler, ce qui est
+   * exactement la capacité observée (au-delà de 16 la latence double sans qu'aucune erreur ne remonte). Passer
+   * au-dessus déplacerait la file d'attente de NOTRE pool vers celle de Supavisor, où elle est MUETTE :
+   * `DB_CONN_TIMEOUT_MS` ne protégerait alors plus de rien, ce qui est l'inverse du but.
+   *
+   * Pourquoi le relever tout court : à 3, l'API ne pouvait tenir que 3 requêtes en vol, soit environ 250
+   * requêtes/s à 11 ms d'aller-retour mesuré. C'était le plafond direct du polling de l'inbox. ⚠️ Le relever
+   * ne CORRIGE pas ce polling, ça déplace seulement le goulot (cf. AUDIT-SCALE-2026-08-25.md, R7).
    */
-  DB_POOL_MAX: z.coerce.number().default(3),
-  /** Max de connexions du pool pg-boss (même contrainte de pooler partagé). */
+  DB_POOL_MAX: z.coerce.number().default(8),
+  /** Max de connexions du pool pg-boss, qui reste en mode SESSION : c'est LUI qui vit dans le budget de ~15
+   *  sessions partagé avec mm-hubspot (2 process x 2 ici, + 2 x 2 chez lui). Ne pas le relever sans refaire
+   *  l'arithmétique de ce budget-là. */
   PGBOSS_MAX: z.coerce.number().default(2),
   /**
    * Timeout d'ACQUISITION d'une connexion du pool (ms). Le défaut `pg` est une attente ILLIMITÉE : pool saturé

@@ -3,8 +3,9 @@
  * INDÉPENDANT du connectionTimeoutMillis (8 s) du pool. Sans ce plafond propre, un pool saturé ferait pendre la
  * sonde 8 s. Fonction fabrique (pool + timeout injectés) -> unit-testable sans DB.
  *
- * ⚠️ La query timeoutée continue en arrière-plan et consomme une acquisition du pool (cap DB_POOL_MAX=3, partagé
- * avec mm-hubspot) : ne pas sonder trop souvent (>= 10-30 s). Distinct de /live (liveness), qui ne touche jamais la DB.
+ * ⚠️ La query timeoutée continue en arrière-plan et consomme une acquisition du pool (borné par `DB_POOL_MAX`,
+ * cf. `src/config.ts`) : ne pas sonder trop souvent (>= 10-30 s). Distinct de /live (liveness), qui ne touche
+ * jamais la DB.
  */
 export function makeDbReadinessCheck(
   pool: { query: (text: string) => Promise<unknown> },

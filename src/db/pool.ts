@@ -17,10 +17,11 @@ export function resolveAppDatabaseUrl(cfg: { APP_DATABASE_URL: string; DATABASE_
 /**
  * Pool Postgres applicatif partagé (tous les stores, API + worker). Connexion paresseuse.
  *
- * `max` et `connectionTimeoutMillis` sont OBLIGATOIRES ici, pas du confort : le pooler Supabase est plafonné
- * (~15 clients) et partagé avec mm-hubspot. Sans `max`, `pg` en prend 10 par process ; sans timeout, une
- * acquisition sur pool saturé attend INDÉFINIMENT, donc la requête HTTP ne répond jamais et ne laisse aucune
- * trace. Cf. `src/config.ts` pour l'arithmétique du budget et le mode transaction (APP_DATABASE_URL).
+ * `max` et `connectionTimeoutMillis` sont OBLIGATOIRES ici, pas du confort : sans `max`, `pg` en prend 10 par
+ * process ; sans timeout, une acquisition sur pool saturé attend INDÉFINIMENT, donc la requête HTTP ne répond
+ * jamais et ne laisse aucune trace. Le raisonnement chiffré sur la valeur de `max` (capacité du pooler en mode
+ * transaction, pool instancié par process) vit dans `src/config.ts` et NULLE PART AILLEURS, pour qu'il n'y ait
+ * qu'un endroit à corriger le jour où elle bouge.
  */
 export const pool = new Pool({
   connectionString: resolveAppDatabaseUrl(config),
