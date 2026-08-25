@@ -493,7 +493,30 @@ export class WorkflowExecutor {
     // Fenêtre de service fermée : on écarte les SEULS messages de session (Meta les refuserait, 131047) et on
     // applique le reste. Un walk peut désormais mêler un message rapide sans bouton, des actions et un
     // TEMPLATE : jeter le lot entier ferait sauter le template, qui n'a justement pas besoin de la fenêtre.
-    const aBesoinFenetre = (a: WorkflowAction): boolean => a.kind === 'sendFlow' || a.kind === 'sendQuickMessage';
+    //
+    // 🔴 La fenêtre est une règle de META, pas du monde : un message rapide envoyé sur un parcours RCS part
+    // par `envoyerQuickEnRcs`, qui n'a AUCUNE fenêtre à respecter. La lui imposer bloquait un envoi
+    // parfaitement légitime, tuait le parcours et remontait la conversation en inbox avec un log qui parlait
+    // de WhatsApp. Le défaut ne s'est révélé qu'une fois le calcul de fenêtre restreint au canal WhatsApp
+    // (2026-08-25) : avant, un retour RCS ouvrait la fenêtre WhatsApp et masquait le problème.
+    //
+    // ⚠️ Le canal ne peut PAS être lu une fois pour toutes : `apply` le fait MUTER en cours de lot (un
+    // template ou un formulaire réussi ramène le parcours sur WhatsApp, l.398-400, et c'est la manière
+    // documentée de changer de canal). Un lot `[template, message rapide]` (possible quand MBA est actif,
+    // engine.ts) enverrait donc le message rapide en WhatsApp, où la fenêtre s'applique bel et bien. On rejoue
+    // ici la MÊME mutation ordonnée, sinon on exempterait un envoi que Meta refuserait en 131047.
+    const besoinsFenetre = new Set<WorkflowAction>();
+    {
+      let canalSimule = apresWalk;
+      for (const e of actions) {
+        const a = e.action;
+        // Un formulaire est WhatsApp par nature (aucun équivalent RCS) : toujours soumis à la fenêtre.
+        if (a.kind === 'sendFlow') besoinsFenetre.add(a);
+        else if (a.kind === 'sendQuickMessage' && canalSimule !== 'rcs') besoinsFenetre.add(a);
+        if (a.kind === 'sendTemplate' || a.kind === 'sendFlow') canalSimule = 'whatsapp';
+      }
+    }
+    const aBesoinFenetre = (a: WorkflowAction): boolean => besoinsFenetre.has(a);
     let aExecuter = actions;
     let fenetreFermee = false;
     if (actions.some((e) => aBesoinFenetre(e.action))) {

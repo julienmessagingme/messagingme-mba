@@ -506,6 +506,81 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
     expect(runs.run).toMatchObject({ status: 'waiting', currentNode: 'tpl' });
   });
 
+  /**
+   * La fenêtre de 24 h est une règle de META. Un parcours dont le canal courant est le RCS envoie son message
+   * rapide par le canal RCS, qui n'a aucune fenêtre : la lui imposer bloquait un envoi légitime, tuait le
+   * parcours et remontait la conversation en inbox avec un log qui parlait de WhatsApp.
+   *
+   * Ce défaut ne s'est révélé qu'une fois le calcul de fenêtre restreint au canal WhatsApp (bf0408d) : avant,
+   * un retour RCS ouvrait la fenêtre WhatsApp et le masquait.
+   */
+  const rcsQuiMarche = (envoyes: string[]) => ({
+    rcs: {
+      agentIdFor: async () => 'agent-1',
+      sender: { sendTo: async (_t: string, _a: string, _w: string, m: { text?: string }) => { envoyes.push(`rcs:${m.text}`); return { messageId: 'm-rcs' }; } },
+    },
+  } as unknown as Partial<WorkflowExecutorDeps>);
+
+  it('🔴 parcours sur canal RCS : le message rapide part EN RCS, la fenêtre WhatsApp n’est même pas interrogée', async () => {
+    const envoyes: string[] = [];
+    let fenetreInterrogee = false;
+    const suite = n2('qm', 'quick_message', { body: 'Alors ?', quickReplies: ['Oui'] });
+    const { ex, runs, calls } = makeResume(grapheAvecSuite(suite), {
+      isWindowOpen: async () => { fenetreInterrogee = true; return false; },
+      ...rcsQuiMarche(envoyes),
+    });
+    runs.run = { ...runs.run!, channel: 'rcs' } as typeof runs.run;
+
+    expect(await ex.resume({ id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', channel: 'rcs' } as never)).toBe(true);
+    expect(envoyes).toEqual(['rcs:Alors ?']);   // parti par le bon tuyau
+    expect(calls).toEqual([]);                   // et surtout PAS par WhatsApp
+    expect(fenetreInterrogee).toBe(false);       // une règle Meta n'a rien à dire ici
+  });
+
+  it('🔴 canal RCS mais un TEMPLATE d’abord : le message rapide REDEVIENT soumis à la fenêtre', async () => {
+    // Test de non-régression du correctif naïf. `apply` ramène le parcours sur WhatsApp après un template
+    // réussi (c'est la manière documentée de changer de canal) : exempter le message rapide au seul motif que
+    // le run a démarré en RCS enverrait donc un message que Meta refuserait en 131047, et le parcours
+    // continuerait sur un message jamais reçu.
+    const envoyes: string[] = [];
+    const suite = n2('qm', 'quick_message', { body: 'Alors ?', quickReplies: ['Oui'] });
+    const graph: WorkflowGraph = {
+      nodes: [n2('t', 'tag', { tag: 'vip' }), n2('w', 'wait', { delay: 2, unit: 'hours' }), n2('tpl', 'template', { templateName: 'relance' }), suite],
+      edges: [
+        { id: 'e1', source: 't', target: 'w' },
+        { id: 'e2', source: 'w', target: 'tpl' },
+        { id: 'e3', source: 'tpl', target: 'qm' },
+      ],
+    };
+    const { ex, runs, calls, escalations } = makeResume(graph, {
+      isWindowOpen: async () => false,
+      mbaActifPour: async () => true, // laisse un template SANS bouton poursuivre le walk
+      ...rcsQuiMarche(envoyes),
+    });
+    runs.run = { ...runs.run!, channel: 'rcs' } as typeof runs.run;
+
+    await ex.resume({ id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', channel: 'rcs' } as never);
+    expect(calls).toContain('tpl:relance');  // le template part, il n'a pas besoin de la fenêtre
+    expect(envoyes).toEqual([]);             // et le message rapide ne part PAS en RCS…
+    expect(calls).not.toContain('qm:Alors ?'); // …ni en WhatsApp : la fenêtre est fermée
+    expect(escalations).toEqual(['33600']);
+  });
+
+  it('canal RCS : un FORMULAIRE reste soumis à la fenêtre (aucun équivalent RCS)', async () => {
+    const envoyes: string[] = [];
+    const suite = n2('fl', 'flow', { flowId: 'f1', body: 'Remplis', cta: 'Ouvrir' });
+    const { ex, runs, calls, escalations } = makeResume(grapheAvecSuite(suite), {
+      isWindowOpen: async () => false,
+      ...rcsQuiMarche(envoyes),
+    });
+    runs.run = { ...runs.run!, channel: 'rcs' } as typeof runs.run;
+
+    await ex.resume({ id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', channel: 'rcs' } as never);
+    expect(calls).toEqual([]);
+    expect(envoyes).toEqual([]);
+    expect(escalations).toEqual(['33600']);
+  });
+
   it('un TEMPLATE part même hors fenêtre 24 h : c’est tout son intérêt', async () => {
     const { ex, calls, run } = makeResume(grapheAvecSuite(n2('tpl', 'template', { templateName: 'relance' })), {
       isWindowOpen: async () => false,
