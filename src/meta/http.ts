@@ -78,7 +78,15 @@ export interface RetryOpts {
 
 /**
  * Rejoue `fn` sur erreur rejouable avec backoff exponentiel BORNÉ + jitter.
- * Respecte `Retry-After` si l'erreur Meta en porte un. Erreur terminale -> throw immédiat.
+ * Respecte `Retry-After` si l'erreur Meta en porte un, mais SANS DÉPASSER `maxDelayMs`. Erreur terminale ->
+ * throw immédiat.
+ *
+ * Pourquoi plafonner un délai que Meta demande explicitement : ce sommeil a lieu DANS le job de la file
+ * `webhook`, qui traite les entrants de TOUS les tenants en série (`batchSize: 1`, src/queue/pgboss.ts:141).
+ * Un seul tenant à qui Meta répond `Retry-After: 3600` gèlerait donc l'inbox de tout le parc pendant une
+ * heure, et autant de fois qu'il reste de tentatives. On préfère épuiser les tentatives en ~2 min et laisser
+ * l'échec remonter à l'appelant, qui sait déjà le traiter (classification src/meta/errors.ts, mise en pause
+ * de campagne). Le plafond ne touche pas le backoff, déjà borné par `cap` juste au-dessus.
  */
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): Promise<T> {
   const maxRetries = opts.maxRetries ?? 4;
@@ -97,7 +105,7 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): 
       const retryAfter = (err as { retryAfterMs?: number } | null)?.retryAfterMs;
       const capped = Math.min(cap, base * factor ** attempt);
       const backoff = Math.round(capped * (0.5 + random() * 0.5)); // jitter 50-100%
-      await sleep(retryAfter ?? backoff);
+      await sleep(Math.min(retryAfter ?? backoff, cap));
       attempt += 1;
     }
   }

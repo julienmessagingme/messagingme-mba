@@ -3,6 +3,25 @@
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
 
+## Laissé ouvert par le lot « Journée 1 » de l'audit de scalabilité (2026-08-25)
+
+Ces deux points ont été VOLONTAIREMENT écartés du lot pour ne pas le faire déborder. Ils sont consignés ici
+plutôt que perdus : chacun est un chemin que le correctif voisin ne couvre PAS, malgré ce que son intitulé
+laisse croire.
+
+- 🔴 **`FetchTransport.post` n'a AUCUN timeout HTTP** (`src/meta/http.ts:13`). Le plafonnement du
+  `Retry-After` borne l'attente ENTRE deux tentatives, pas la durée d'UNE requête : une connexion qui reste
+  ouverte sans répondre bloque toujours le job de la file `webhook`, donc l'inbox de tous les tenants.
+  ⚠️ Ajouter `AbortSignal.timeout(...)` oblige à classer `TimeoutError` dans `isRetryable`
+  (`src/meta/http.ts:59`), sinon un timeout deviendrait terminal par défaut et ferait échouer des envois
+  parfaitement rejouables.
+- 🔴 **Le retry-sweep enfile `campaign-run` SANS `expireInSeconds`** (`src/worker.ts:560`). C'est le seul
+  appelant de cette file qui ne passe aucun dimensionnement : il retombe donc sur le défaut de 15 minutes, et
+  une relance de plus d'environ 450 destinataires (à 30/min) expire en cours de route puis est rejouée en
+  parallèle, ce qui double le débit réel. Le plafond de 23 h posé par ce lot ne protège PAS ce chemin, qui
+  n'en passe simplement pas. Correctif d'une ligne : réutiliser `enqueueCampaignRun` avec le sizing relu par
+  `getRunSizing`, comme le fait déjà la route de renvoi d'un destinataire (`src/http/campaigns.ts:373-377`).
+
 ## Ouvert par le lot « webhooks entrants » (2026-08-23)
 
 - **Aucun appel d'un VRAI outil du marché.** L'arbre de mapping est éprouvé sur des payloads fabriqués. Ce

@@ -90,6 +90,37 @@ describe('withRetry', () => {
     expect(res).toBe('ok');
     expect(waits).toEqual([5000]);
   });
+
+  it('plafonne Retry-After à maxDelayMs : un délai énorme de Meta ne gèle pas la file webhook', async () => {
+    // Ce sommeil a lieu DANS le job de la file `webhook`, sérialisée et partagée par TOUS les tenants. Sans
+    // plafond, un `Retry-After: 3600` d'un seul tenant gèle l'inbox de tout le parc une heure PAR tentative.
+    const waits: number[] = [];
+    let calls = 0;
+    const res = await withRetry(
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new MetaApiError(429, null, 3_600_000); // Meta demande 1 h
+        return 'ok';
+      },
+      { maxRetries: 2, sleep: async (ms) => void waits.push(ms), random: noJitter },
+    );
+    expect(res).toBe('ok');
+    expect(waits).toEqual([30_000]); // le défaut de maxDelayMs, pas l'heure demandée
+  });
+
+  it("le plafond du Retry-After suit maxDelayMs, il n'est pas une constante en dur", async () => {
+    const waits: number[] = [];
+    let calls = 0;
+    await withRetry(
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new MetaApiError(429, null, 3_600_000);
+        return 'ok';
+      },
+      { maxRetries: 2, maxDelayMs: 5_000, sleep: async (ms) => void waits.push(ms), random: noJitter },
+    );
+    expect(waits).toEqual([5_000]);
+  });
 });
 
 describe('RateLimiter', () => {
