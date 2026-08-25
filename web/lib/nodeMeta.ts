@@ -36,6 +36,18 @@ export const RCS_NODE_ORDER: WorkflowNodeType[] = ['rcs_message'];
 // Même doctrine que RCS_NODE_ORDER : le bloc se prépare, mais ne peut rien envoyer sans boîte derrière.
 export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 
+// Infobulles des deux blocs GATÉS, définies ICI parce qu'elles sont affichées à DEUX endroits : la palette et
+// le menu qui s'ouvre quand on tire un fil. Les recopier d'un côté à l'autre est exactement la faute qui a
+// rendu ces deux blocs inatteignables au fil (la palette a été mise à jour, le menu oublié).
+export const RCS_GATE_TITRE: [string, string] = [
+  'Disponible quand votre agent RCS sera déposé et validé',
+  'Available once your RCS agent is filed and approved',
+];
+export const EMAIL_GATE_TITRE: [string, string] = [
+  'Disponible dès qu’une boîte email est connectée (menu Compte > Boîtes email)',
+  'Available once an email mailbox is connected (Account menu > Email accounts)',
+];
+
 
 /** Repli pour un type de node NON encore connu du front (ex. un type ajouté côté backend avant son UI, comme
  *  `condition` en attendant la Phase 3). Évite un crash de rendu (`NODE_META[type].emoji` sur `undefined`) qui

@@ -20,7 +20,7 @@ import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
 import { RcsBodyField } from '@/components/RcsBodyField';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
@@ -612,6 +612,15 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 300 }));
   }
 
+  // Les blocs proposables, DÉRIVÉS des trois listes de `nodeMeta.ts` avec leur grisage. Une seule construction,
+  // consommée par la palette ET par le menu du fil : c'est leur divergence qui a rendu email et RCS
+  // inatteignables au fil. Ne pas réintroduire une liste écrite à la main ici.
+  const choixBlocs: Array<{ nt: WorkflowNodeType; actif: boolean; titre: string | undefined }> = [
+    ...NODE_ORDER.map((nt) => ({ nt, actif: true, titre: undefined })),
+    ...RCS_NODE_ORDER.map((nt) => ({ nt, actif: rcsEnabled, titre: rcsEnabled ? undefined : t(...RCS_GATE_TITRE) })),
+    ...EMAIL_NODE_ORDER.map((nt) => ({ nt, actif: emailEnabled, titre: emailEnabled ? undefined : t(...EMAIL_GATE_TITRE) })),
+  ];
+
   return (
     <div className="flex flex-col gap-3 lg:h-full">
       <div className="flex flex-wrap items-center gap-2">
@@ -630,7 +639,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             data-testid={`add-node-${nt}`}
             onClick={() => { if (rcsEnabled) addNode(nt); }}
             disabled={!rcsEnabled}
-            title={rcsEnabled ? undefined : t('Disponible quand votre agent RCS sera déposé et validé', 'Available once your RCS agent is filed and approved')}
+            title={rcsEnabled ? undefined : t(...RCS_GATE_TITRE)}
             className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
           >
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
@@ -644,7 +653,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             data-testid={`add-node-${nt}`}
             onClick={() => { if (emailEnabled) addNode(nt); }}
             disabled={!emailEnabled}
-            title={emailEnabled ? undefined : t('Disponible dès qu’une boîte email est connectée (menu Compte > Boîtes email)', 'Available once an email mailbox is connected (Account menu > Email accounts)')}
+            title={emailEnabled ? undefined : t(...EMAIL_GATE_TITRE)}
             className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
           >
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
@@ -723,8 +732,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             <Controls showInteractive={false} />
           </ReactFlow>
           </TemplatesCtx.Provider>
-          {/* Choix de la NATURE du bloc qu'on vient de créer. Même liste que la palette (NODE_ORDER, source
-              unique) : c'est le SEUL endroit où l'on choisit un type, le panneau de droite ne fait que configurer. */}
+          {/* Choix de la NATURE du bloc qu'on vient de créer. Consomme les TROIS listes de la palette, avec les
+              MÊMES grisages : n'en lire qu'une rendait `email` et `rcs_message` inatteignables dès qu'on créait
+              un bloc en tirant un fil, alors qu'ils étaient bien dans la palette. C'est ce qui s'est produit
+              quand ces deux canaux ont été ajoutés (palette mise à jour, ce menu-ci oublié).
+              Le grisage doit suivre, pas disparaître : proposer un envoi sans agent RCS ni boîte SMTP derrière,
+              c'est promettre un envoi qui finira en erreur (cf. la doctrine dans `nodeMeta.ts`). */}
           {chooser && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setChooser(null)} />
@@ -732,19 +745,22 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
                 data-testid="node-type-chooser"
                 className="fixed z-50 w-52 rounded-xl border border-ink-200 bg-white p-1.5 shadow-lg"
                 // Bornée à la fenêtre : lâcher une flèche en bas ou à droite du canevas sortait la liste de
-                // l'écran, donc rendait le bloc impossible à choisir.
+                // l'écran, donc rendait le bloc impossible à choisir. La hauteur est DÉRIVÉE du nombre
+                // d'entrées : la valeur en dur d'avant était calibrée pour 7 et débordait dès qu'on en ajoutait.
                 style={{
                   left: Math.max(8, Math.min(chooser.screenX, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 220)),
-                  top: Math.max(8, Math.min(chooser.screenY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 300)),
+                  top: Math.max(8, Math.min(chooser.screenY, (typeof window !== 'undefined' ? window.innerHeight : 800) - (40 + choixBlocs.length * 30))),
                 }}
               >
                 <p className="px-2 py-1 text-[11px] font-medium text-ink-500">{t('Quel bloc ?', 'Which block?')}</p>
-                {NODE_ORDER.map((nt) => (
+                {choixBlocs.map(({ nt, actif, titre }) => (
                   <button
                     key={nt}
                     data-testid={`node-type-${nt}`}
-                    onClick={() => pickType(nt)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-ink-700 transition hover:bg-brand-50"
+                    onClick={() => { if (actif) pickType(nt); }}
+                    disabled={!actif}
+                    title={titre}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-ink-700 transition disabled:cursor-not-allowed disabled:text-ink-400 disabled:opacity-60 enabled:hover:bg-brand-50"
                   >
                     <span>{NODE_META[nt].emoji}</span>
                     <span>{t(...NODE_META[nt].label)}</span>

@@ -71,6 +71,19 @@ describe('collectNodes', () => {
     expect(out[5]!.summary).toBe('legacy_key = v');
   });
 
+  it('résumé du node RCS : le texte du message, comme sur le canevas', () => {
+    // Sans ce cas, `summarize` tombait sur `default` et rendait '' : « Contenu > Blocs » listait alors des
+    // blocs RCS au résumé VIDE, indistinguables les uns des autres. Même incident que pour le bloc `wait`.
+    const out = collectNodes([
+      wf('w1', 'W', [
+        node({ id: 'n1', type: 'rcs_message', data: { text: '  Bonjour\n\n  Julien  ' } }),
+        node({ id: 'n2', type: 'rcs_message', data: {} }), // pas encore écrit -> vide, pas de placeholder
+      ]),
+    ]);
+    expect(out[0]!.summary).toBe('Bonjour Julien');
+    expect(out[1]!.summary).toBe('');
+  });
+
   it('résumé du node condition (combineur + pluriel), et data.clauses opaque -> pas de throw', () => {
     const rows = [
       wf('w1', 'W', [

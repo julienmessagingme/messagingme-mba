@@ -6,7 +6,7 @@ import Link from 'next/link';
 import type { Session } from '@/lib/session';
 import { listNodes, type NodeListItem, type WorkflowNodeType } from '@/lib/api';
 import { filterNodes } from '@/lib/node-search';
-import { NODE_META, NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, nodeMetaOf } from '@/lib/nodeMeta';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 
@@ -68,7 +68,11 @@ function NodesInner({ session }: { session: Session }) {
 
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setFilter('all')} className={chip(filter === 'all')}>{t('Tous', 'All')}</button>
-        {NODE_ORDER.map((type) => {
+        {/* Les TROIS listes, pas seulement NODE_ORDER : sans RCS ni email, ces blocs existaient dans les
+            scénarios sans qu'aucun filtre ne permette de les isoler ici. ⚠️ Pas de grisage sur CET écran,
+            contrairement à la palette : on filtre des blocs qui EXISTENT déjà. Un tenant dont l'agent RCS a
+            été détaché garde ses blocs RCS, et doit pouvoir les retrouver. */}
+        {[...NODE_ORDER, ...RCS_NODE_ORDER, ...EMAIL_NODE_ORDER].map((type) => {
           const meta = NODE_META[type];
           return (
             <button key={type} onClick={() => setFilter(type)} className={chip(filter === type)}>

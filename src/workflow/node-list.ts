@@ -26,6 +26,10 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
   switch (type) {
     case 'template': out = s(data.templateName); break;
     case 'quick_message': out = s(data.body); break;
+    // Aligné sur le résumé du canevas (`summaryOf`, web/components/WorkflowBuilder.tsx, qui lit `data.text`) :
+    // sans ce cas, les blocs RCS tombaient sur `default` et s'affichaient ici avec un résumé VIDE, donc
+    // indistinguables les uns des autres. C'est l'incident déjà vécu pour le bloc `wait` plus bas.
+    case 'rcs_message': out = s(data.text); break;
     case 'flow': out = s(data.flowName); break;
     case 'tag': out = s(data.tag); break;
     case 'field': {
