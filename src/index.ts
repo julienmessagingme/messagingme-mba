@@ -235,6 +235,10 @@ async function main(): Promise<void> {
       rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),
       listRcsAgents: (tenant) => workflowRuntime.rcsStack.agents.listForTenant(tenant),
       campaignBelongsTo: (id, tenant) => repo.campaignBelongsTo(id, tenant),
+      // Campagne AU FIL DE L'EAU : le webhook doit appartenir à l'espace ET être actif. Même nature de garde
+      // que pour le numéro Meta et l'agent RCS, sur la troisième porte d'entrée possible des destinataires.
+      webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
+      stopWebhookCampaign: (id, tenant) => repo.stopWebhookCampaign(id, tenant),
       getRunSizing: (id) => repo.getRunSizing(id),
       scheduleCampaign: (id, tenant, when) => repo.scheduleCampaign(id, tenant, when),
       cancelSchedule: (id, tenant) => repo.cancelSchedule(id, tenant),
@@ -292,6 +296,7 @@ async function main(): Promise<void> {
       clearSecret: (tenant, id) => webhookStore.clearSecret(tenant, id),
       forgetPayload: (tenant, id) => webhookStore.forgetPayload(tenant, id),
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
+      campagneVivante: (tenant, id) => repo.webhookFeedsLiveCampaign(tenant, id),
       baseUrl: config.APP_URL,
     },
     templates: {

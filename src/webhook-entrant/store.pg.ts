@@ -35,6 +35,14 @@ export interface WebhookPublic {
   name: string;
   /** null = ce webhook n'écrit que des champs, il n'y a aucun scénario à déclencher. */
   automationId: string | null;
+  /**
+   * Une campagne AU FIL DE L'EAU en cours attend-elle les arrivants de cette adresse ?
+   *
+   * Sert UNIQUEMENT à décider de publier l'événement : un webhook sans scénario ne publiait rien, ce qui
+   * suffisait tant que le scénario était le seul consommateur. Absent (faux store de test) -> comportement
+   * d'avant, c'est-à-dire « publie seulement s'il y a un scénario ».
+   */
+  alimenteCampagne?: boolean;
 }
 
 /** Ce que l'écran d'administration affiche. Ne contient JAMAIS le hash du secret, ni son clair (qu'on n'a pas). */
@@ -121,8 +129,14 @@ export class PgWebhookStore {
    * testable sans base (`server.inject` avec un faux store).
    */
   async getByCode(code: string): Promise<WebhookPublic | null> {
-    const res = await this.pool.query<{ id: string; tenant_id: string; name: string; enabled: boolean; secret_hash: string | null; mapping: unknown; create_contact: boolean; opt_in: boolean; automation_id: string | null }>(
-      `select id, tenant_id, name, enabled, secret_hash, mapping, create_contact, opt_in, automation_id
+    const res = await this.pool.query<{ id: string; tenant_id: string; name: string; enabled: boolean; secret_hash: string | null; mapping: unknown; create_contact: boolean; opt_in: boolean; automation_id: string | null; alimente_campagne: boolean }>(
+      // `alimente_campagne` : une campagne AU FIL DE L'EAU attend-elle les arrivants de cette adresse ?
+      // Calculé ICI, dans la requête qui a lieu de toute façon, plutôt que tenu en compteur sur la table (un
+      // compteur se désynchronise au premier arrêt, archivage ou suppression oubliés). C'est ce booléen qui
+      // décide de publier l'événement quand le webhook n'a AUCUN scénario attaché : sans lui, une campagne au
+      // fil de l'eau ne recevrait jamais rien, sans le moindre signal.
+      `select id, tenant_id, name, enabled, secret_hash, mapping, create_contact, opt_in, automation_id,
+              exists (select 1 from campaigns c where c.webhook_id = webhooks.id and c.status = 'running') as alimente_campagne
          from webhooks where code = $1 limit 1`,
       [code],
     );
@@ -138,7 +152,20 @@ export class PgWebhookStore {
       optIn: r.opt_in,
       name: r.name,
       automationId: r.automation_id,
+      alimenteCampagne: r.alimente_campagne,
     };
+  }
+
+  /**
+   * Ce webhook est-il utilisable comme SOURCE d'une campagne au fil de l'eau ? Il doit appartenir à l'espace
+   * et être actif : brancher une campagne sur une adresse éteinte donnerait une campagne qui n'attrape rien.
+   */
+  async usableByTenant(tenantId: string, id: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `select 1 from webhooks where tenant_id = $1 and id = $2 and enabled = true`,
+      [tenantId, id],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /**

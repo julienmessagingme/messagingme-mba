@@ -66,6 +66,14 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   const campaign = await deps.getCampaign(campaignId);
   if (!campaign) throw new Error(`campaign-run : campagne inconnue ${campaignId}`);
 
+  // Campagne AU FIL DE L'EAU déjà ARRÊTÉE. Un job a pu être enfilé juste avant l'arrêt, ou un arrivant être
+  // inscrit dans la même seconde. L'exécuter aurait DEUX effets, tous deux faux : envoyer un message que
+  // l'opérateur croit avoir coupé, et surtout la RESSUSCITER, puisque le moteur remet toute campagne au fil
+  // de l'eau en `running` en sortie de run. Elle repartirait alors pour de bon, sans que personne l'ait voulu.
+  if (campaign.webhookId && campaign.status === 'completed') {
+    return { sent: 0, skipped: 0, failed: 0, paused: false, reason: "campagne au fil de l'eau arrêtée" };
+  }
+
   // Garde d'appartenance du numéro (optionnelle, injectée en prod par le worker). Si le numéro a été réaffecté à un
   // autre tenant depuis la création de la campagne, on n'envoie RIEN et on remonte la raison dans le rapport (pas de
   // colonne dédiée) plutôt que d'envoyer depuis un numéro qui n'est plus le nôtre.

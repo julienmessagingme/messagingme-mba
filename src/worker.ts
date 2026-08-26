@@ -17,6 +17,9 @@ import { campaignRunJob } from './campaign/run-job';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runRetrySweep } from './campaign/retry-sweep';
+import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
+import { enqueueCampaignRun } from './campaign/enqueue';
+import { resolveRatePerMinute } from './campaign/pacing';
 import { flagContactUnreachable } from './crm/hubspot-service';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgInboxStore } from './inbox/store.pg';
@@ -187,6 +190,20 @@ async function main(): Promise<void> {
     emailTemplates, emailResolver,
   });
 
+  /**
+   * Campagnes AU FIL DE L'EAU : un contact arrive par un webhook entrant, il devient destinataire des
+   * campagnes vivantes qui s'en nourrissent, et le run part. Aucun chemin d'envoi propre : on INSCRIT, puis
+   * `runCampaign` fait le reste avec sa cadence et ses garde-fous.
+   */
+  const webhookFeedDeps: WebhookFeedDeps = {
+    listRunning: (tenant, webhookId) => repo.listRunningByWebhook(tenant, webhookId),
+    contact: (tenant, waId) => repo.contactForBuildByWaId(tenant, waId),
+    insertRecipient: (campaignId, r) => repo.insertWebhookRecipient(campaignId, r),
+    // Un seul arrivant enfilé : `pendingCount` à 1 suffit à dimensionner l'expiration du job, et le débit
+    // résolu est le MÊME que celui du run réel (sinon pg-boss rejouerait le job en parallèle).
+    enqueueRun: (c) => enqueueCampaignRun(queue, c.id, 1, resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE)),
+  };
+
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
   // ci-dessus, donc hérite gratuitement de ses gardes (fil détenu par un humain/MBA, ouverture hors fenêtre 24 h).
   const automationRunnerDeps = {
@@ -232,6 +249,25 @@ async function main(): Promise<void> {
       return;
     }
     await runAutomations(job.tenantId, job.event, automationRunnerDeps);
+
+    // Second consommateur du MÊME événement : les campagnes AU FIL DE L'EAU nourries par ce webhook. Elles
+    // sont indépendantes du scénario (une adresse peut alimenter les deux, ou seulement l'un des deux), d'où
+    // l'appel séparé plutôt qu'une branche dans `runAutomations`, qui ne sait rien des campagnes.
+    //
+    // Isolé dans son propre try : un souci de campagne ne doit pas faire échouer l'événement, donc rejouer le
+    // scénario déjà démarré. Une campagne perdue se rattrape au balayage (destinataires en attente), un
+    // scénario démarré deux fois ne se rattrape pas.
+    if (job.event.kind === 'webhook') {
+      try {
+        const r = await alimenterCampagnesWebhook(job.tenantId, job.event.webhookId, job.event.waId, webhookFeedDeps);
+        // eslint-disable-next-line no-console
+        if (r.inscrits > 0 || r.ecartes > 0) console.log(`webhook-feed: ${r.inscrits} inscrit(s), ${r.ecartes} écarté(s), ${r.deja} déjà destinataire(s)`);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('webhook-feed: échec', err instanceof Error ? err.message : err);
+        alert('webhook-feed', `alimentation d'une campagne au fil de l'eau en échec : ${err instanceof Error ? err.message : err}`);
+      }
+    }
   });
 
   await queue.work('webhook', async (data) => {
@@ -544,6 +580,36 @@ async function main(): Promise<void> {
   void scheduleSweep();
   const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
   scheduleSweeper.unref();
+
+  /**
+   * FILET des campagnes au fil de l'eau : relance celles qui ont des destinataires en attente.
+   *
+   * L'arrivant est déjà enfilé au moment où il arrive. Mais `singletonKey` refuse un second job tant que le
+   * run précédent de la même campagne est en vol : un contact arrivé pendant un envoi verrait donc son job
+   * avalé, et resterait en attente jusqu'à l'arrivant SUIVANT, qui peut ne jamais venir. Ce balayage le
+   * reprend au tour d'après. Coût : une requête indexée par minute, et zéro enfilement quand rien n'attend.
+   */
+  const filDeLEauSweep = async (): Promise<void> => {
+    try {
+      const enAttente = await repo.listWebhookCampaignsWithPending();
+      for (const c of enAttente) {
+        try {
+          await enqueueCampaignRun(queue, c.id, c.pendingCount, resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE));
+        } catch (err) {
+          // Par campagne : une file qui refuse un job ne doit pas empêcher les autres campagnes de repartir.
+          // eslint-disable-next-line no-console
+          console.error(`fil-de-l-eau: enfilement impossible pour ${c.id}`, err instanceof Error ? err.message : err);
+        }
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('fil-de-l-eau erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:fil-de-l-eau', `balayage des campagnes au fil de l'eau en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void filDeLEauSweep();
+  const filDeLEauSweeper = setInterval(() => void filDeLEauSweep(), 60_000);
+  filDeLEauSweeper.unref();
 
   // Sweeper de RÉVEIL : reprend les parcours endormis sur un bloc « Attente » arrivé à échéance. Même patron
   // que le sweeper de planification. La granularité du délai vaut cet intervalle : une attente de 5 min repart

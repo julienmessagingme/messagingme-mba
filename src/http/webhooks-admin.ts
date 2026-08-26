@@ -30,6 +30,12 @@ export interface WebhooksAdminRouteDeps {
   forgetPayload(tenantId: string, id: string): Promise<boolean>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Même garde que la campagne et l'automation. */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
+  /**
+   * Nom d'une campagne AU FIL DE L'EAU encore vivante nourrie par ce webhook, s'il y en a une. Interroge la
+   * SUPPRESSION : couper l'adresse laisserait la campagne « en cours » sans qu'elle ne reçoive plus jamais
+   * rien. Absente du câblage -> aucune garde (comportement d'avant les campagnes au fil de l'eau).
+   */
+  campagneVivante?(tenantId: string, webhookId: string): Promise<string | null>;
   /** Base publique des URLs (`config.APP_URL`) : l'écran affiche l'URL complète à coller chez le tiers. */
   baseUrl: string;
 }
@@ -201,6 +207,16 @@ export function registerWebhooksAdmin(app: FastifyInstance, deps: WebhooksAdminR
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
+    // Une campagne au fil de l'eau vit de cette adresse : la supprimer la transformerait en coquille « en
+    // cours » qui ne recevrait plus rien, sans le moindre signal. On refuse, en la NOMMANT, plutôt que de
+    // laisser l'opérateur découvrir le trou des semaines plus tard. 409 (et pas 5xx) : Cloudflare remplace le
+    // corps de toute réponse 5xx, le message n'arriverait jamais à l'écran.
+    if (deps.campagneVivante) {
+      const campagne = await deps.campagneVivante(tenant, id);
+      if (campagne !== null) {
+        return reply.code(409).send({ error: `La campagne « ${campagne} » se nourrit de ce webhook. Arrête-la avant de supprimer l'adresse.` });
+      }
+    }
     const ok = await deps.remove(tenant, id);
     if (!ok) return reply.code(404).send({ error: 'webhook inconnu' });
     return reply.code(204).send();

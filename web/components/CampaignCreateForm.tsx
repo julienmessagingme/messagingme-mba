@@ -41,6 +41,8 @@ import {
   getSettings,
   getCampaign,
   contactIdentity,
+  listWebhooks,
+  type WebhookEntrant,
   type UserFieldDef,
   type CreateCampaignInput,
   type RecipientCounts,
@@ -60,6 +62,20 @@ import {
 import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample, varCountOf } from '@/lib/fields';
 import { filtersActive } from '@/lib/contact-filters';
 import { firstTemplateOf, isCampaignEligible } from '@/lib/campaign-eligibility';
+/**
+ * D'où viennent les destinataires. `crm` et `file` désignent une liste FIGÉE ; `hubspot` aussi, ailleurs.
+ * `webhook` est d'une autre nature : il n'y a pas de liste du tout, les destinataires arrivent au fil de
+ * l'eau et la campagne reste ouverte jusqu'à ce qu'on l'arrête.
+ */
+type SourceDestinataires = 'crm' | 'file' | 'hubspot' | 'webhook';
+
+/** Les deux sources rangées derrière le bouton « Autre » (elles ne servent pas au cas courant). */
+const SOURCES_AUTRES: readonly SourceDestinataires[] = ['hubspot', 'webhook'];
+
+function estSourceDestinataires(v: unknown): v is SourceDestinataires {
+  return v === 'crm' || v === 'file' || v === 'hubspot' || v === 'webhook';
+}
+
 interface VarRow {
   /** Option choisie dans le sélecteur : 'sys:<key>' (champ de base), 'field:<key>' (champ perso), ou 'literal'. */
   sel: string;
@@ -183,12 +199,22 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [brouillonEnregistre, setBrouillonEnregistre] = useState(false);
 
   // --- Zone Destinataires : source + filtres du mini-CRM ---
-  const [source, setSource] = useState<'crm' | 'file' | 'hubspot'>('crm');
+  //
+  // Quatre sources, deux familles. Les deux premières (liste du CRM, import de fichier) désignent une liste
+  // FIGÉE. Les deux autres vivent derrière « Autre » : HubSpot (une liste, ailleurs) et le webhook, qui est
+  // d'une autre nature puisqu'il n'y a AUCUNE liste, seulement des arrivants au fil de l'eau.
+  const [source, setSource] = useState<SourceDestinataires>('crm');
   // Toggle « Campagnes via données HubSpot » (réglé sur l'accueil) : gate le 3e bouton de source.
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
   // Campagnes via listes HubSpot en pause (F3-b, flag tenant campaignsPaused) : on grise la source HubSpot pour ne
   // pas envoyer l'admin vers un panneau vide pendant la pause.
   const [hubspotPaused, setHubspotPaused] = useState(false);
+  // Source WEBHOOK : l'adresse choisie, et les adresses disponibles. Chargées PARESSEUSEMENT (à la première
+  // ouverture du panneau) : la majorité des campagnes ne sont pas au fil de l'eau, elles n'ont pas à payer
+  // cet appel. `null` = pas encore chargées, ce qui n'est pas la même chose que « aucune adresse ».
+  const [webhookId, setWebhookId] = useState('');
+  const [webhooks, setWebhooks] = useState<WebhookEntrant[] | null>(null);
+  const [webhooksErreur, setWebhooksErreur] = useState(false);
   // Filtres de la source CRM : UN objet ContactFilters, édité par le composant PARTAGÉ ContactFilterPanel
   // (même moteur de recherche que le mini-CRM, pas de 2e implémentation parallèle).
   const [filters, setFilters] = useState<ContactFilters>({});
@@ -506,11 +532,35 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
 
   // Bascule de source. Pour les sources non implémentées, on vide la sélection (donc étape 2 désactivée).
   // Un changement manuel de source referme le récap d'import (il ne concerne plus l'écran affiché).
-  function chooseSource(s: 'crm' | 'file' | 'hubspot') {
+  function chooseSource(s: SourceDestinataires) {
     setSource(s);
     setImportMsg(null);
     if (s !== 'crm') setSelected(new Set());
+    // Quitter la source webhook OUBLIE l'adresse choisie : la laisser posée ferait partir une campagne « au
+    // fil de l'eau » alors que l'opérateur a sous les yeux une liste de contacts cochés.
+    if (s !== 'webhook') setWebhookId('');
   }
+
+  // Adresses disponibles, chargées à la PREMIÈRE ouverture du panneau webhook seulement. Un échec n'est pas
+  // silencieux : sans adresse affichée ET sans message, l'écran laisserait croire qu'il n'y en a aucune.
+  useEffect(() => {
+    if (source !== 'webhook' || webhooks !== null) return;
+    let vivant = true;
+    (async () => {
+      try {
+        const { webhooks: liste } = await listWebhooks(tenantId);
+        if (!vivant) return;
+        const actives = Array.isArray(liste) ? liste.filter((w) => w.enabled) : [];
+        setWebhooks(actives);
+        // Adresse d'un brouillon repris, supprimée ou désactivée depuis : le sélecteur l'afficherait VIDE
+        // alors que l'état la porte encore, et la campagne partirait sur une adresse morte (400 serveur).
+        setWebhookId((id) => (id !== '' && !actives.some((w) => w.id === id) ? '' : id));
+      } catch {
+        if (vivant) { setWebhooks([]); setWebhooksErreur(true); }
+      }
+    })();
+    return () => { vivant = false; };
+  }, [source, webhooks, tenantId]);
 
   // Après un import fichier : les contacts sont dans le CRM, taggés. On CIBLE ces contacts en posant leur(s)
   // tag(s) comme seul filtre et en vidant tout le reste, pour que le compteur/liste (étape Destinataires) ne
@@ -558,6 +608,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
 
   // Payload de création partagé par le brouillon (submit) et le lancement direct (createAndLaunch).
   function buildCreateInput(): CreateCampaignInput {
+    // Comment les destinataires sont DÉSIGNÉS, et c'est l'un ou l'autre : une liste figée, ou une adresse qui
+    // les amènera au fil de l'eau. Envoyer les deux est refusé par le serveur, et à juste titre : ce serait
+    // laisser croire que la liste va partir alors que seule l'adresse compte.
+    const cible: Pick<CreateCampaignInput, 'contactIds' | 'webhookId'> = auFilDeLEau
+      ? { webhookId }
+      : { contactIds: [...selected] };
     // Débit TOUJOURS choisi (jauge, défaut 60) : on envoie systématiquement le plafond 1..80.
     // Campagne RCS : ni numéro Meta, ni template, ni variables. Le message part tel qu'il est écrit.
     if (mode === 'rcs') {
@@ -568,12 +624,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
         // selon qu'il y a un visuel, et qui écarte les boutons sans libellé (le serveur refuserait la
         // création entière pour une ligne qu'un opérateur a juste oublié de remplir).
         rcsMessage: versMessageRcs({ text: rcsText, imageUrl: rcsImage, suggestions: rcsBoutons }),
-        contactIds: [...selected], ratePerMinute,
+        ...cible, ratePerMinute,
       };
     }
     return mode === 'workflow'
-      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), contactIds: [...selected], ratePerMinute }
-      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), contactIds: [...selected], ratePerMinute };
+      ? { phoneNumberId, name, category, workflowId, paramMapping: toParamMapping(), ...cible, ratePerMinute }
+      : { phoneNumberId, name, category, templateName, templateLanguage, paramMapping: toParamMapping(), ...cible, ratePerMinute };
   }
 
   // Remise à zéro pour « Nouvelle campagne » après un lancement réussi (sans quitter l'écran de création).
@@ -602,7 +658,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
    */
   function etatDuFormulaire(): Record<string, unknown> {
     return {
-      category, mode, source,
+      category, mode, source, webhookId,
       phoneNumberId, templateName, templateLanguage, vars,
       workflowId, rcsAgentId, rcsText, rcsImage,
       ratePerMinute, timing, scheduledLocal,
@@ -651,7 +707,8 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setName(draft.name);
     if (txt('category') === 'marketing' || txt('category') === 'utility') setCategory(txt('category') as 'marketing' | 'utility');
     if (txt('mode') === 'template' || txt('mode') === 'workflow' || txt('mode') === 'rcs') setMode(txt('mode') as 'template' | 'workflow' | 'rcs');
-    if (txt('source') === 'crm' || txt('source') === 'file' || txt('source') === 'hubspot') setSource(txt('source') as 'crm' | 'file' | 'hubspot');
+    if (estSourceDestinataires(txt('source'))) setSource(txt('source') as SourceDestinataires);
+    if (txt('webhookId') !== undefined) setWebhookId(txt('webhookId')!);
     if (txt('phoneNumberId') !== undefined) setPhoneNumberId(txt('phoneNumberId')!);
     if (txt('templateName') !== undefined) setTemplateName(txt('templateName')!);
     if (txt('templateLanguage') !== undefined) setTemplateLanguage(txt('templateLanguage')!);
@@ -701,9 +758,26 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       // l'opérateur corriger des fiches alors que le problème était le consentement.
       const detail = detailEcartes(res.skipped);
 
-      if (res.recipientCount === 0) {
+      // ⚠️ 0 destinataire n'a pas le même sens selon la source. Sur une liste, c'est l'alerte rouge : tout a
+      // été sauté et rien ne partira. Sur une campagne AU FIL DE L'EAU, c'est l'état NORMAL de départ, les
+      // destinataires n'existent pas encore. La confondre avec un échec bloquerait la seule création valide.
+      if (res.recipientCount === 0 && !auFilDeLEau) {
         setError(messageAucunDestinataire(res.skipped));
         return; // le finally remet busy à false
+      }
+      if (auFilDeLEau) {
+        setOk(t(
+          'Campagne au fil de l\'eau créée. Clique « Lancer » : elle prendra ensuite chaque contact qui arrive par cette adresse.',
+          'Continuous campaign created. Click "Launch": it will then take every contact arriving through this address.',
+        ));
+        setName('');
+        setTemplateName('');
+        setVars([]);
+        setWorkflowId('');
+        setWfError(null);
+        await retirerBrouillon();
+        onCreated();
+        return;
       }
       // L'envoi part quand même aux valides ; les écartés sont NOMMÉS avec leur motif.
       const skippedMsg = res.skipped.length > 0
@@ -738,13 +812,28 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     try {
       const res = await createCampaign(tenantId, buildCreateInput());
       // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE lance PAS et on reste.
-      if (res.recipientCount === 0) {
+      // Sauf au fil de l'eau, où naître vide est l'état normal (cf. `submit`).
+      if (res.recipientCount === 0 && !auFilDeLEau) {
         setError(messageAucunDestinataire(res.skipped));
         setLaunch({ phase: 'idle' });
         return;
       }
       setLaunch({ phase: 'launching', campaignId: res.campaignId });
       await runCampaign(res.campaignId);
+      // Une campagne au fil de l'eau n'a RIEN à envoyer au lancement : sonder ses compteurs six fois de suite
+      // n'apprendrait rien à personne. On confirme qu'elle est ouverte, et elle vit sa vie.
+      if (auFilDeLEau) {
+        setDernierEnvoi({
+          kind: 'lance',
+          campaignId: res.campaignId,
+          message: t(
+            "Campagne ouverte : chaque contact qui arrive par cette adresse recevra le message. Arrête-la depuis la liste des campagnes.",
+            'Campaign open: every contact arriving through this address will get the message. Stop it from the campaign list.',
+          ),
+        });
+        resetForm();
+        return;
+      }
       let detail: CampaignDetail | undefined;
       for (let i = 0; i < 6; i += 1) {
         await new Promise((r) => setTimeout(r, 2000));
@@ -780,8 +869,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setLaunch({ phase: 'creating' });
     try {
       const res = await createCampaign(tenantId, buildCreateInput());
-      // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE programme PAS et on reste.
-      if (res.recipientCount === 0) {
+      // 0 destinataire = tous sautés : même avertissement ROUGE que le brouillon, on NE programme PAS et on
+      // reste. Au fil de l'eau, naître vide est normal : la programmation dit juste QUAND l'adresse s'ouvre.
+      if (res.recipientCount === 0 && !auFilDeLEau) {
         setError(messageAucunDestinataire(res.skipped));
         setLaunch({ phase: 'idle' });
         return;
@@ -815,9 +905,19 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       : (templateName !== '' && varsComplete);
   // Nommer la campagne est un PRÉALABLE (étape 0) : tant que c'est vide, les zones Destinataires/Message sont grisées.
   const nameSet = name.trim() !== '';
+  // --- Sources rangées sous « Autre » ---
+  // HubSpot n'est PROPOSÉ que si le connecteur est activé sur l'accueil : sinon il n'apparaît pas du tout.
+  const hubspotDisponible = hubspotListsEnabled;
+  const sourceAutre = SOURCES_AUTRES.includes(source);
+  // Campagne AU FIL DE L'EAU : pas de liste, une adresse. C'est ce booléen, et pas `selected.size`, qui dit
+  // si les destinataires sont désignés.
+  const auFilDeLEau = source === 'webhook';
+  const webhookChoisi = webhooks?.find((w) => w.id === webhookId) ?? null;
+  const destinatairesPrets = auFilDeLEau ? webhookId !== '' : selected.size > 0;
+
   // Étape 1 prête = ce qui active l'étape 2 (indépendant du busy/launch en cours).
   // Le numéro Meta n'est exigé que sur WhatsApp : une campagne RCS part d'un agent de marque.
-  const step1Ready = (mode === 'rcs' || phoneNumberId !== '') && nameSet && contentReady && selected.size > 0;
+  const step1Ready = (mode === 'rcs' || phoneNumberId !== '') && nameSet && contentReady && destinatairesPrets;
   const canSubmit = step1Ready && !busy;
   // Lancement en cours (création + polling) : verrouille les boutons des deux étapes. Couvre aussi la phase
   // 'creating' de la programmation (créer + programmer), donc le retour liste est gelé pendant l'opération.
@@ -918,25 +1018,109 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           <button type="button" disabled={importBusy} onClick={() => chooseSource('file')} className={`rounded-md px-2.5 py-1 disabled:opacity-40 ${source === 'file' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}>
             📄 {t('Import fichier', 'File import')}
           </button>
+          {/* « Autre » regroupe les sources qui ne servent pas au cas courant. Cliquer dessus ouvre la
+              deuxième ligne et choisit la PREMIÈRE source disponible, pour ne jamais laisser un onglet actif
+              sans panneau en dessous. */}
           <button
             type="button"
-            disabled={importBusy || !hubspotListsEnabled || hubspotPaused}
-            onClick={() => chooseSource('hubspot')}
-            title={
-              hubspotPaused
-                ? t("Synchronisation HubSpot en pause. Réactive-la sur l'accueil.", 'HubSpot sync is paused. Re-enable it on the home page.')
-                : hubspotListsEnabled ? undefined : t('Active « Campagnes via données HubSpot » sur l\'accueil', 'Enable "Campaigns from HubSpot data" on the home page')
-            }
-            className={`rounded-md px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${source === 'hubspot' ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
+            disabled={importBusy}
+            onClick={() => chooseSource(hubspotDisponible && !hubspotPaused ? 'hubspot' : 'webhook')}
+            data-testid="campaign-source-autre"
+            className={`rounded-md px-2.5 py-1 disabled:opacity-40 ${sourceAutre ? 'bg-white font-medium text-brand-700 shadow-sm' : 'text-ink-500 hover:text-ink-800'}`}
           >
-            🔗 {t('HubSpot', 'HubSpot')}
+            ⋯ {t('Autre', 'Other')}
           </button>
         </div>
+
+        {/* Deuxième ligne, visible seulement sous « Autre ».
+            HubSpot n'apparaît PAS quand le connecteur est éteint sur l'accueil (demande de Julien du
+            2026-08-26) : un bouton grisé pour une intégration qu'on n'a pas est du bruit, pas une information. */}
+        {sourceAutre && (
+          <div className="mb-3 flex flex-wrap gap-2 text-sm" data-testid="campaign-source-autre-panel">
+            {hubspotDisponible && (
+              <button
+                type="button"
+                disabled={importBusy || hubspotPaused}
+                onClick={() => chooseSource('hubspot')}
+                title={hubspotPaused ? t("Synchronisation HubSpot en pause. Réactive-la sur l'accueil.", 'HubSpot sync is paused. Re-enable it on the home page.') : undefined}
+                data-testid="campaign-source-hubspot"
+                className={`rounded-lg border px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40 ${source === 'hubspot' ? 'border-brand-300 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-600 hover:bg-ink-50'}`}
+              >
+                🔗 {t('HubSpot', 'HubSpot')}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={importBusy}
+              onClick={() => chooseSource('webhook')}
+              data-testid="campaign-source-webhook"
+              className={`rounded-lg border px-2.5 py-1 disabled:opacity-40 ${source === 'webhook' ? 'border-brand-300 bg-brand-50 font-medium text-brand-700' : 'border-ink-200 text-ink-600 hover:bg-ink-50'}`}
+            >
+              🪝 {t('Webhook', 'Webhook')}
+            </button>
+          </div>
+        )}
 
         {source === 'file' ? (
           <CsvImport tenantId={tenantId} requireTag onImported={handleImported} onBusyChange={setImportBusy} />
         ) : source === 'hubspot' ? (
           <HubspotListImport tenantId={tenantId} onImported={handleImported} onBusyChange={setImportBusy} />
+        ) : source === 'webhook' ? (
+          <div className="space-y-2">
+            <p className="text-xs text-ink-500">
+              {t(
+                "Aucune liste ici : la campagne reste ouverte, et chaque contact qui arrive par cette adresse reçoit le message dans la foulée. Elle envoie à partir de son lancement, pas aux contacts déjà arrivés avant.",
+                'No list here: the campaign stays open, and every contact arriving through this address gets the message right away. It sends from its launch onwards, not to contacts that arrived before.',
+              )}
+            </p>
+            {webhooks === null ? (
+              <p className="text-xs text-ink-400">{t('Chargement des adresses…', 'Loading addresses…')}</p>
+            ) : webhooksErreur ? (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                {t('Impossible de charger les adresses. Réessaie dans un instant.', 'Could not load the addresses. Try again in a moment.')}
+              </p>
+            ) : webhooks.length === 0 ? (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {t('Aucune adresse active. Crée-la dans Tools > Webhooks, puis reviens ici.', 'No active address. Create one in Tools > Webhooks, then come back here.')}
+              </p>
+            ) : (
+              <>
+                <label className="block text-xs font-medium text-ink-600" htmlFor="campaign-webhook">{t('Adresse (Tools > Webhooks)', 'Address (Tools > Webhooks)')}</label>
+                <select
+                  id="campaign-webhook"
+                  value={webhookId}
+                  onChange={(e) => setWebhookId(e.target.value)}
+                  data-testid="campaign-webhook-select"
+                  className={inputCls}
+                >
+                  <option value="">{t('Choisir une adresse…', 'Choose an address…')}</option>
+                  {webhooks.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+                {/* Le consentement est la SEULE condition qui peut tout écarter en silence : une campagne
+                    marketing n'envoie qu'aux contacts opt-in, et un webhook qui ne l'affirme pas produit des
+                    arrivants « consentement inconnu ». Ils seront inscrits et marqués écartés, jamais perdus,
+                    mais autant le dire avant de lancer. */}
+                {webhookChoisi && category === 'marketing' && !webhookChoisi.optIn && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="campaign-webhook-optin">
+                    {t(
+                      "Cette adresse n'affirme pas le consentement des contacts qu'elle crée. Sur une campagne marketing, ces contacts seront écartés. Coche le consentement dans Tools > Webhooks, ou passe la campagne en « Utility ».",
+                      'This address does not assert consent for the contacts it creates. On a marketing campaign they will be skipped. Tick consent in Tools > Webhooks, or switch the campaign to "Utility".',
+                    )}
+                  </p>
+                )}
+                {webhookChoisi && !webhookChoisi.createContact && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="campaign-webhook-creation">
+                    {t(
+                      "Cette adresse ne crée pas les contacts inconnus : seuls ceux qui existent déjà dans le CRM seront touchés.",
+                      'This address does not create unknown contacts: only those already in the CRM will be reached.',
+                    )}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         ) : loadingRefs ? (
           <p className="text-xs text-ink-400">{t('Chargement des contacts...', 'Loading contacts...')}</p>
         ) : (
@@ -1316,7 +1500,14 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           <p className="mt-1 text-xs text-ink-500">{t("Complète l'étape 1 pour activer le lancement.", 'Complete step 1 to enable launching.')}</p>
         ) : (
           <>
-            <p className="mt-1 text-sm text-ink-700">{t(`Prêt à lancer à ${selected.size} destinataire(s).`, `Ready to launch to ${selected.size} recipient(s).`)}</p>
+            <p className="mt-1 text-sm text-ink-700">
+              {auFilDeLEau
+                ? t(
+                    `Prêt à ouvrir sur « ${webhookChoisi?.name ?? ''} » : les contacts arriveront au fil de l'eau.`,
+                    `Ready to open on “${webhookChoisi?.name ?? ''}”: contacts will arrive continuously.`,
+                  )
+                : t(`Prêt à lancer à ${selected.size} destinataire(s).`, `Ready to launch to ${selected.size} recipient(s).`)}
+            </p>
 
             {/* Timing : lancer maintenant OU programmer un envoi futur. 'later' révèle un sélecteur date/heure. */}
             <div className="mt-4">

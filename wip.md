@@ -1,5 +1,31 @@
 # WIP
 
+## PRET, NON DEPLOYE (2026-08-26) : campagne AU FIL DE L'EAU alimentée par un webhook
+
+Demande de Julien : dans la création de campagne, un bouton **« Autre »** à côté de « Liste de contacts » et
+« Import fichier », qui contient HubSpot (masqué quand le connecteur est éteint) et un nouveau choix
+**Webhook** : on désigne une adresse de Tools > Webhooks, et tous les contacts qui arrivent par elle sont
+« shootés au fur et à mesure ».
+
+**Interprétation assumée** : la campagne envoie à partir de son LANCEMENT, pas aux contacts déjà arrivés par
+cette adresse avant. C'est la lecture naturelle de « au fil de l'eau », et la seule qui ne risque pas
+d'arroser d'un coup des centaines de contacts passés. Un rattrapage des antérieurs reste possible à ajouter.
+
+**⚠️ DEUX CHOSES RESTENT À FAIRE, dans cet ordre :**
+
+1. **Appliquer la migration 0084** (additive : une colonne `campaigns.webhook_id` + un index partiel). Elle
+   n'est appliquée NULLE PART. Déployer le code sans elle couperait la création de campagne en silence
+   (`column "webhook_id" does not exist`), exactement l'incident du 2026-08-17.
+2. **Lancer les tests d'intégration** `tests/integration/campagne-fil-de-l-eau.integration.test.ts`, qui sont
+   écrits mais **jamais exécutés** : ils exigent la colonne. C'est le seul endroit où le SQL neuf est
+   réellement vérifié (`listRunningByWebhook`, l'anti-doublon, `alimenteCampagne`, l'arrêt).
+
+Vérifié avant de m'arrêter : tsc vert (racine + front), racine **2448** tests verts, front **128**, E2E
+**320** (dont 8 neufs), lint front sans avertissement nouveau. Cinq mutations dans les deux sens (statut de
+sortie du moteur, anti-doublon, inscription d'un écart, condition de publication de la route publique, garde
+d'affichage de HubSpot) : chacune fait bien tomber les tests censés la couvrir.
+
+
 ## LIVRE ET DEPLOYE le 2026-08-24 : le canal RCS ecoute (rappels smsmode) + composeur a visuel
 
 Prod sur **`694b739`**, migrations **0079** et **0080** appliquees AVANT le code (image rebatie d'abord, puis

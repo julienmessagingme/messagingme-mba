@@ -602,3 +602,59 @@ describe('runCampaign : en-tête média du template', () => {
     expect(reads).toBe(0);
   });
 });
+
+/**
+ * Campagne AU FIL DE L'EAU : sa file vide ne veut PAS dire qu'elle est finie, elle attend son prochain
+ * arrivant. La marquer `completed` la couperait de son webhook, puisque seules les campagnes `running` sont
+ * alimentées, et plus aucun lead ne serait contacté sans que rien ne le signale.
+ */
+describe('runCampaign : campagne alimentée par un webhook', () => {
+  const auFilDeLEau: Campaign = { ...campaign, webhookId: 'wh1' };
+
+  it('🔴 reste RUNNING au lieu de passer completed, même après avoir tout envoyé', async () => {
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(auFilDeLEau, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611')]),
+      campaigns,
+    }));
+    expect(report.sent).toBe(1);
+    expect(campaigns.statuses).toEqual(['running', 'running']);
+    expect(campaigns.statuses).not.toContain('completed');
+  });
+
+  it('🔴 reste RUNNING aussi quand un run ne trouve aucun destinataire (le cas le plus fréquent)', async () => {
+    const campaigns = new FakeCampaigns();
+    await runCampaign(auFilDeLEau, deps({ recipients: new FakeRecipients([]), campaigns }));
+    expect(campaigns.statuses).toEqual(['running', 'running']);
+  });
+
+  it("🔴 reste RUNNING même quand le template est injouable (l'adresse doit continuer d'alimenter)", async () => {
+    const campaigns = new FakeCampaigns();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    // Carousel non envoyable : le run écarte tout le monde AVANT la boucle, par un chemin de sortie distinct.
+    await runCampaign(auFilDeLEau, deps({
+      recipients,
+      campaigns,
+      getTemplateCarousel: async () => ({ cards: [] }),
+    }));
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed' });
+    expect(campaigns.statuses).toEqual(['running', 'running']);
+  });
+
+  it("contrôle : une campagne ORDINAIRE se termine toujours (la règle ne déborde pas)", async () => {
+    const campaigns = new FakeCampaigns();
+    await runCampaign(campaign, deps({ recipients: new FakeRecipients([rec('r1', '+33611')]), campaigns }));
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  it("le quality gate garde le dernier mot : une campagne au fil de l'eau se met bien en pause", async () => {
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(auFilDeLEau, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611')]),
+      campaigns,
+      quality: new FakeQuality('RED'),
+    }));
+    expect(report.paused).toBe(true);
+    expect(campaigns.statuses).toEqual(['running', 'paused']);
+  });
+});

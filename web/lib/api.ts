@@ -292,6 +292,10 @@ export interface CampaignSummary {
   templateLanguage: string | null;
   /** Nom du scénario d'une campagne scénario. null = campagne template, ou scénario supprimé depuis. */
   workflowName: string | null;
+  /** Webhook qui alimente la campagne AU FIL DE L'EAU. null = campagne ordinaire (liste figée à la création). */
+  webhookId: string | null;
+  /** Nom de ce webhook, affiché tel quel. null = campagne ordinaire, ou adresse supprimée depuis. */
+  webhookName: string | null;
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
@@ -364,6 +368,12 @@ export interface CreateCampaignInput {
    * échappe au contrôle des propriétés en trop), ce qui est la pire des deux situations.
    */
   rcsMessage?: RcsOutbound;
+  /**
+   * Campagne AU FIL DE L'EAU : le webhook entrant (Tools > Webhooks) qui lui amènera ses destinataires, un
+   * par un, à mesure qu'ils arrivent. Elle naît donc SANS destinataire, et `contactIds` n'a plus de sens
+   * (le serveur refuse les deux ensemble).
+   */
+  webhookId?: string;
 }
 
 /** Campagnes actives par défaut ; `archived: true` renvoie la corbeille (les deux ensembles sont disjoints). */
@@ -552,6 +562,13 @@ export function cancelSchedule(campaignId: string): Promise<{ cancelled: boolean
 /** Archive une campagne : masquée de la liste, conservée en base (les analytics continuent de la compter). */
 export function archiveCampaign(tenantId: string, campaignId: string): Promise<{ archived: boolean }> {
   return request(`/tenants/${tenantId}/campaigns/${campaignId}/archive`, { method: 'POST' });
+}
+/**
+ * Arrête une campagne AU FIL DE L'EAU : elle cesse de prendre les arrivants du webhook. C'est son seul point
+ * final, elle n'en a aucun par elle-même. Son historique d'envoi reste intact.
+ */
+export function stopCampaign(tenantId: string, campaignId: string): Promise<{ stopped: boolean }> {
+  return request(`/tenants/${tenantId}/campaigns/${campaignId}/stop`, { method: 'POST' });
 }
 /** Sort une campagne de l'archive. */
 export function unarchiveCampaign(tenantId: string, campaignId: string): Promise<{ archived: boolean }> {

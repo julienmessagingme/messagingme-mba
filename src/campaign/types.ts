@@ -30,6 +30,14 @@ export interface Campaign {
   rcsAgentId?: string | null;
   /** Message RCS de la campagne, tel que validé à la création. Requis si `channel = 'rcs'`. */
   rcsMessage?: unknown;
+  /**
+   * Campagne AU FIL DE L'EAU : l'id du webhook entrant qui lui amène ses destinataires un par un, à mesure
+   * qu'ils arrivent. null = campagne ordinaire, dont la liste est figée à la création.
+   *
+   * Une seule décision du moteur en dépend, et elle est décisive : une campagne au fil de l'eau ne se TERMINE
+   * pas quand sa file est vide, elle reste `running` en attendant l'arrivant suivant.
+   */
+  webhookId?: string | null;
 }
 
 export interface Recipient {

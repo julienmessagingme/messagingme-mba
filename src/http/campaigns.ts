@@ -36,6 +36,14 @@ export interface CampaignRouteDeps {
   listRcsAgents?(tenantId: string): Promise<Array<{ agentId: string; brandName: string; status: string }>>;
   /** La campagne appartient-elle au tenant ? (scope le run, 404 sinon.) */
   campaignBelongsTo(campaignId: string, tenantId: string): Promise<boolean>;
+  /**
+   * Le webhook entrant appartient-il au tenant, et est-il ACTIF ? Garde d'une campagne AU FIL DE L'EAU : sans
+   * elle on brancherait une campagne sur l'adresse d'un autre espace. Absente du câblage -> aucune campagne au
+   * fil de l'eau n'est créable, et le refus est explicite (jamais une campagne muette qui n'attrape rien).
+   */
+  webhookUsableByTenant?(webhookId: string, tenantId: string): Promise<boolean>;
+  /** Arrête une campagne au fil de l'eau (scopée tenant) : elle cesse de prendre les arrivants. */
+  stopWebhookCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
   /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
    *  Sert à calculer l'expireInSeconds du job (éviter qu'un run throttlé long expire et soit rejoué en parallèle). */
   getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
@@ -197,6 +205,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       channel: string;
       rcsAgentId: string;
       rcsMessage: unknown;
+      webhookId: string;
     }>;
 
     if (!isCategory(b.category)) return reply.code(400).send({ error: 'category invalide (marketing|utility)' });
@@ -278,6 +287,24 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (!nonEmpty(b.templateLanguage)) return reply.code(400).send({ error: 'templateLanguage requis' });
     }
 
+    // Campagne AU FIL DE L'EAU : les destinataires n'existent pas encore, ils arriveront un par un par ce
+    // webhook entrant. Trois refus explicites plutôt qu'une campagne qui a l'air créée et n'attrape rien.
+    let webhookId: string | undefined;
+    if (nonEmpty(b.webhookId)) {
+      if (!deps.webhookUsableByTenant) {
+        return reply.code(400).send({ error: "Les campagnes alimentées par un webhook ne sont pas disponibles sur cette instance." });
+      }
+      if (!(await deps.webhookUsableByTenant(b.webhookId as string, effectiveTenant))) {
+        return reply.code(400).send({ error: 'webhookId inconnu (ou désactivé) pour ce tenant' });
+      }
+      // Une liste figée ET un flux d'arrivants sont deux façons contradictoires de désigner les destinataires.
+      // Accepter les deux en n'en honorant qu'une laisserait l'appelant croire que sa liste va partir.
+      if (Array.isArray(b.contactIds) && b.contactIds.length > 0) {
+        return reply.code(400).send({ error: "Une campagne alimentée par un webhook ne prend pas de liste de contacts : ses destinataires arrivent au fil de l'eau." });
+      }
+      webhookId = b.webhookId as string;
+    }
+
     // Sélection de contacts optionnelle : tableau de chaînes non vides. Absent -> tous les contacts.
     let contactIds: string[] | undefined;
     if (b.contactIds !== undefined) {
@@ -314,6 +341,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ...(isWorkflow ? { workflowId: b.workflowId as string } : {}),
       ...(ratePerMinute !== undefined ? { ratePerMinute } : {}),
       ...(isRcs ? { rcsAgentId: b.rcsAgentId as string, rcsMessage } : {}),
+      ...(webhookId ? { webhookId } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
     return reply.code(201).send(result);
@@ -386,6 +414,25 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const ok = await deps.cancelSchedule(campaignId, authTenant);
     if (!ok) return reply.code(404).send({ error: 'campagne non programmée' });
     return reply.code(200).send({ cancelled: true, campaignId });
+  });
+
+  /**
+   * ARRÊT d'une campagne au fil de l'eau. C'est son seul point final : elle n'en a aucun par elle-même, elle
+   * prendrait les arrivants indéfiniment. Elle passe en `completed`, donc plus rien ne l'alimente (le feed ne
+   * nourrit que les campagnes `running`), et son historique d'envoi reste intact.
+   *
+   * 404 sur une campagne ordinaire ou déjà arrêtée : le bouton ne s'affiche que là où il agit, et un appel
+   * direct ne doit pas répondre « arrêté » sur une campagne qui ne l'était pas.
+   */
+  app.post('/tenants/:tenantId/campaigns/:campaignId/stop', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { campaignId } = req.params as { campaignId: string };
+    if (!deps.stopWebhookCampaign) return reply.code(404).send({ error: 'campagne non arrêtable' });
+    const ok = await deps.stopWebhookCampaign(campaignId, tenant);
+    if (!ok) return reply.code(404).send({ error: 'campagne non arrêtable' });
+    return reply.code(200).send({ stopped: true, campaignId });
   });
 
   // Archivage : masque la campagne de la liste sans rien effacer. Les trois routes ci-dessous contrôlent

@@ -78,6 +78,9 @@ interface Compte {
   contact: 'cree' | 'trouve' | 'absent';
   champs: number;
   scenario: 'publie' | 'aucun';
+  /** Une campagne AU FIL DE L'EAU attend-elle les arrivants de cette adresse ? Dit à l'intégrateur que son
+   *  appel nourrit un envoi, même quand aucun scénario n'est branché. */
+  campagne: 'alimentee' | 'aucune';
   /** Pourquoi rien n'a été écrit, le cas échéant. Un mapping muet sans trace est indébogable. */
   raison?: string;
   /** Chemins du mapping qui n'ont rien rendu sur CET appel. */
@@ -131,7 +134,16 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     const payload = req.body;
 
     const ex = extraireDuPayload(payload, hook.mapping);
-    const compte: Compte = { ok: true, contact: 'absent', champs: 0, scenario: 'aucun' };
+    // Deux consommateurs possibles d'un arrivant, indépendants : le scénario attaché au webhook, et les
+    // campagnes au fil de l'eau qui s'en nourrissent. UN SEUL événement est publié pour les deux ; c'est le
+    // worker qui sert l'un, l'autre, ou les deux.
+    const alimenteCampagne = hook.alimenteCampagne === true;
+    const publier = hook.automationId !== null || alimenteCampagne;
+    const compte: Compte = {
+      ok: true, contact: 'absent', champs: 0,
+      scenario: 'aucun',
+      campagne: alimenteCampagne ? 'alimentee' : 'aucune',
+    };
     if (ex.ignores.length > 0) compte.ignores = ex.ignores;
 
     const fini = async (contactCreated: boolean): Promise<Compte> => {
@@ -196,10 +208,11 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     // pouvoir regarder ce que le tiers a envoyé.
     const reponse = await fini(res.statut === 'created');
 
-    if (hook.automationId !== null) {
+    if (publier) {
       // ⚠️ SEUL endroit où cette route laisse échapper une erreur, donc un 5xx. C'est délibéré : une file
       // indisponible est une panne, pas un refus métier, et la seule bonne réponse est de laisser le tiers
-      // réessayer. Répondre 200 en annonçant « scénario publié » perdrait l'événement en silence.
+      // réessayer. Répondre 200 en annonçant « scénario publié » perdrait l'événement en silence. Vaut à
+      // l'identique pour une campagne au fil de l'eau : l'événement perdu, c'est un lead jamais contacté.
       await deps.publish(hook.tenantId, { kind: 'webhook', waId, webhookId: hook.id });
     }
 

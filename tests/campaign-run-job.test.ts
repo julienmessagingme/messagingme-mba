@@ -345,3 +345,53 @@ describe('campaignRunJob', () => {
     ).rejects.toThrow(/campaignId/);
   });
 });
+
+
+/**
+ * Une campagne AU FIL DE L'EAU arrêtée ne doit PAS repartir. Le moteur remet toute campagne au fil de l'eau en
+ * `running` en sortie de run : exécuter un job en retard (enfilé juste avant l'arrêt) la ressusciterait, et
+ * enverrait un message que l'opérateur croit avoir coupé.
+ */
+describe('campaignRunJob : campagne au fil de l eau arrêtée', () => {
+  const arretee: Campaign = { ...campaign, webhookId: 'wh1', status: 'completed' };
+
+  it('🔴 un job en retard n envoie RIEN et ne ressuscite pas la campagne', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' }]);
+    let statuts = 0;
+    const rapport = await campaignRunJob({ campaignId: 'c1' }, deps({
+      getCampaign: async () => arretee,
+      senderFor: async () => sender,
+      recipients,
+      campaigns: { setStatus: async () => { statuts += 1; } },
+    }));
+    expect(sender.calls).toEqual([]);
+    expect(statuts).toBe(0); // aucun passage en `running` : elle reste arrêtée
+    expect(rapport.sent).toBe(0);
+    expect(rapport.reason).toContain('arrêtée');
+  });
+
+  it('la même campagne EN COURS envoie normalement (la garde ne déborde pas)', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' }]);
+    await campaignRunJob({ campaignId: 'c1' }, deps({
+      getCampaign: async () => ({ ...arretee, status: 'running' }),
+      senderFor: async () => sender,
+      recipients,
+    }));
+    expect(sender.calls).toEqual(['+33611']);
+  });
+
+  it('une campagne ORDINAIRE terminée garde son comportement d avant', async () => {
+    // Elle n'a pas de webhook : un job en retard la refait tourner comme avant, ce qui est inoffensif
+    // (le claim par destinataire empêche tout double envoi) et hors du périmètre de ce lot.
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([{ id: 'r1', contactId: 'ct1', toE164: '+33611', resolvedParams: [], status: 'pending' }]);
+    await campaignRunJob({ campaignId: 'c1' }, deps({
+      getCampaign: async () => ({ ...campaign, status: 'completed' }),
+      senderFor: async () => sender,
+      recipients,
+    }));
+    expect(sender.calls).toEqual(['+33611']);
+  });
+});

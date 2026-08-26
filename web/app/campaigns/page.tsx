@@ -21,6 +21,7 @@ import {
   cancelSchedule,
   archiveCampaign,
   unarchiveCampaign,
+  stopCampaign,
   deleteCampaign,
   getTemplateStats,
   type CampaignSummary,
@@ -196,6 +197,19 @@ function CampaignsInner({ session }: { session: Session }) {
   async function unarchive(id: string) {
     await mutateAndReload(id, () => unarchiveCampaign(session.tenantId, id), t('Restauration impossible', 'Restore failed'));
   }
+  /**
+   * Arrête une campagne AU FIL DE L'EAU. Confirmation demandée parce que le geste est SANS RETOUR : elle
+   * passe en terminée, et reprendre les arrivants suppose d'en créer une nouvelle. Ce qui est déjà parti
+   * reste parti, l'historique n'est pas touché.
+   */
+  async function stop(c: CampaignSummary) {
+    const ok = window.confirm(t(
+      `Arrêter « ${c.name} » ? Elle cessera de prendre les contacts qui arrivent. Pour la rouvrir, il faudra créer une nouvelle campagne.`,
+      `Stop “${c.name}”? It will stop taking incoming contacts. Reopening it means creating a new campaign.`,
+    ));
+    if (!ok) return;
+    await mutateAndReload(c.id, () => stopCampaign(session.tenantId, c.id), t('Arrêt impossible', 'Stop failed'));
+  }
   async function remove(c: CampaignSummary) {
     const ok = window.confirm(t(
       `Supprimer définitivement « ${c.name} » ? Cette campagne n'a jamais rien envoyé, elle sera effacée pour de bon.`,
@@ -331,6 +345,14 @@ function CampaignsInner({ session }: { session: Session }) {
                       <span className="font-medium">{c.name}</span>
                       <Badge status={c.status} />
                       <span className="text-xs text-ink-400">{c.category}</span>
+                      {/* Une campagne au fil de l'eau se lit « en cours » comme les autres, alors qu'elle ne
+                          se terminera jamais d'elle-même. Sans cette pastille, son statut mentirait par
+                          omission : c'est ce marqueur qui explique pourquoi elle est encore là. */}
+                      {c.webhookId && (
+                        <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700" data-testid="campaign-badge-fil">
+                          {t('au fil de l\'eau', 'continuous')}{c.webhookName ? ` · ${c.webhookName}` : ''}
+                        </span>
+                      )}
                     </div>
                     {c.status === 'scheduled' && c.scheduledAt && (
                       <p className="mt-0.5 text-xs font-medium text-violet-700">
@@ -361,6 +383,18 @@ function CampaignsInner({ session }: { session: Session }) {
                         className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                       >
                         {c.status === 'paused' ? t('Reprendre', 'Resume') : t('Lancer', 'Launch')}
+                      </button>
+                    )}
+                    {/* Seul point final d'une campagne au fil de l'eau : elle n'en a aucun par elle-même.
+                        Le bouton n'existe donc QUE là, et pas sur une campagne ordinaire, qui se termine
+                        quand son dernier destinataire est parti. */}
+                    {c.webhookId && (c.status === 'running' || c.status === 'paused') && (
+                      <button
+                        onClick={() => stop(c)}
+                        data-testid="campaign-stop"
+                        className="rounded-lg border border-ink-300 px-3 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50"
+                      >
+                        {t('Arrêter', 'Stop')}
                       </button>
                     )}
                     {/* Une campagne programmée part seule à l'échéance : pas de « Lancer », mais on peut annuler

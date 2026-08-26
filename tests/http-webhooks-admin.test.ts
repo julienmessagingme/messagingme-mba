@@ -297,3 +297,36 @@ describe('webhooks : modification partielle', () => {
     await server.close();
   });
 });
+
+
+/**
+ * Une campagne AU FIL DE L'EAU vit de son webhook. Supprimer l'adresse sous ses pieds la laisserait « en
+ * cours » pour toujours, sans qu'elle reçoive plus jamais un seul contact, et sans que rien ne le dise.
+ */
+describe('webhooks : suppression bloquée par une campagne vivante', () => {
+  it("🔴 refuse en 409, NOMME la campagne, et ne supprime rien", async () => {
+    const { server, cap } = app({ campagneVivante: async () => 'Leads du site' });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/wh1', ...h(adminTok) });
+    expect(res.statusCode).toBe(409);
+    // 409 et pas 5xx : Cloudflare remplace le corps de toute réponse 5xx, le message n'arriverait pas à l'écran.
+    expect(res.json<{ error: string }>().error).toContain('Leads du site');
+    expect(cap.supprimes).toEqual([]);
+    await server.close();
+  });
+
+  it('aucune campagne vivante -> la suppression passe comme avant', async () => {
+    const { server, cap } = app({ campagneVivante: async () => null });
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/wh1', ...h(adminTok) });
+    expect(res.statusCode).toBe(204);
+    expect(cap.supprimes).toEqual(['wh1']);
+    await server.close();
+  });
+
+  it("dépendance non câblée -> comportement d'avant, la suppression passe", async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/wh1', ...h(adminTok) });
+    expect(res.statusCode).toBe(204);
+    expect(cap.supprimes).toEqual(['wh1']);
+    await server.close();
+  });
+});

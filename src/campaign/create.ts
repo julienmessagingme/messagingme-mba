@@ -21,6 +21,13 @@ export async function createCampaignWithRecipients(
   input: CreateCampaignInput,
   repo: CampaignRepoLike,
 ): Promise<{ campaignId: string; recipientCount: number; skipped: SkippedRecipient[] }> {
+  // Campagne AU FIL DE L'EAU : elle naît VIDE, et c'est normal. Ses destinataires n'existent pas encore, ils
+  // arriveront un par un par le webhook. Charger le CRM ici serait au mieux inutile, au pire trompeur : on
+  // matérialiserait une liste que la campagne n'a jamais eu vocation à toucher.
+  if (input.webhookId) {
+    const cree = await repo.createWithRecipients(input, []);
+    return { ...cree, skipped: [] };
+  }
   const all = await repo.listContactsForBuild(input.tenantId);
   // Restreindre aux contacts choisis si une sélection est fournie (sinon tous). L'opt-in + le
   // numéro requis restent appliqués par buildRecipients : choisir un contact ne force pas l'envoi.

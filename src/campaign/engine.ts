@@ -1,4 +1,4 @@
-import type { Campaign, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
+import type { Campaign, CampaignStatus, Recipient, RunReport, GuardrailThresholds, QualityRating } from './types';
 import { frequencyAllows, qualityGate } from './guardrails';
 import { buildTemplateComponents, carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import type { OutboundCarouselCard } from '../meta/template-components';
@@ -146,6 +146,12 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   await deps.campaigns.setStatus(campaign.id, 'running');
   const pending = await deps.recipients.listPending(campaign.id);
 
+  // Statut de SORTIE du run. Une campagne AU FIL DE L'EAU (alimentée par un webhook) n'est pas finie quand sa
+  // file est vide : elle attend son prochain arrivant. La marquer `completed` la couperait définitivement de
+  // son webhook (seules les campagnes `running` sont nourries), et personne ne le verrait avant de constater
+  // que plus aucun lead n'est contacté. Elle repart donc en `running`.
+  const statutFinal: CampaignStatus = campaign.webhookId ? 'running' : 'completed';
+
   // Carousel : les cartes (image, corps, boutons) sont IDENTIQUES pour tous les destinataires -> relues une
   // seule fois par run. Une lecture qui échoue (réseau, WABA absent) ne casse pas la campagne : on part comme
   // avant (un template sans carousel est inchangé ; un carousel échouera avec le message d'erreur de Meta).
@@ -188,7 +194,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       await deps.recipients.markResult(r.id, { status: 'failed', error: reason });
       report.failed += 1;
     }
-    await deps.campaigns.setStatus(campaign.id, 'completed');
+    await deps.campaigns.setStatus(campaign.id, statutFinal);
     return report;
   }
 
@@ -346,6 +352,6 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
 
-  await deps.campaigns.setStatus(campaign.id, 'completed');
+  await deps.campaigns.setStatus(campaign.id, statutFinal);
   return report;
 }

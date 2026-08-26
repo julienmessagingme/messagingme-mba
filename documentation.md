@@ -53,7 +53,9 @@ Tables :
   `tags text[]`. Merge jsonb qui n'écrase jamais une clé absente.
 - `campaigns` (0003) — `template_name`/`template_language` (**nullable** depuis 0024, couplage par CHAÎNE,
   pas de FK), `category`, `status` ∈ draft|running|paused|completed|failed, + **`workflow_id`** (0024, FK
-  `workflows` on delete set null) = campagne déclencheur de workflow (XOR template).
+  `workflows` on delete set null) = campagne déclencheur de workflow (XOR template),
+  + **`webhook_id`** (0084, FK `webhooks` on delete set null) = campagne AU FIL DE L'EAU : elle naît sans
+  destinataire, chaque arrivant du webhook en devient un, et elle ne passe jamais `completed` toute seule.
 - `campaign_recipients` (0003+) — `status` interne ∈ pending|sending|sent|failed|skipped, `sent_at`, +
   **`delivery_status`** (0007) ∈ null|sent|delivered|read|failed (cycle Meta, écrit MONOTONE par message_id).
 - `conversation_messages` (0009) / `conversations` — inbox. `template_category`/`template_name` (0012),
@@ -1296,6 +1298,77 @@ Chaque refus remonte jusqu'à l'appelant (`raisonDateLisible`), donc un intégra
   `WEBHOOK_PAYLOAD_RETENTION_DAYS` jours sans appel (balayage du worker, toutes les 6 h) + bouton « oublier ».
 - ⚠️ `windowOpen = false` pour un événement webhook : le contact n'a pas forcément écrit, donc le scénario doit
   ouvrir par un template approuvé, sinon la garde de l'exécuteur le refuse.
+
+## Campagne AU FIL DE L'EAU, alimentée par un webhook (2026-08-26, migration 0084)
+
+Une campagne ordinaire fige ses destinataires à la création. Celle-ci n'en a AUCUN au départ : elle reste
+ouverte, et chaque contact qui arrive par le webhook désigné devient un destinataire de plus.
+
+### La décision structurante : aucun chemin d'envoi nouveau
+
+L'alimentation INSCRIT un destinataire et enfile un `campaign-run`. C'est `runCampaign` qui envoie, avec sa
+cadence, son quality gate, son claim atomique, son journal de conversation et ses statistiques. Un arrivant
+part donc exactement comme un destinataire choisi à la main, et aucune règle d'envoi n'existe en double.
+
+Même doctrine pour l'éligibilité : `alimenterCampagnesWebhook` appelle `buildRecipients` TEL QUEL sur UN
+contact (opt-in marketing, identité requise, résolution des variables). Rien n'est réécrit, donc rien ne peut
+diverger de la voie ordinaire.
+
+### Une colonne, pas un type de campagne
+
+`campaigns.webhook_id is not null` DIT déjà tout : c'est la source, et c'est le drapeau. Un `source text` en
+plus décrirait deux fois la même chose, avec le risque classique que les deux divergent.
+
+### Les cinq pièges, et ce qui les tient
+
+1. **Une campagne au fil de l'eau ne se TERMINE pas.** `runCampaign` sort en `running` au lieu de `completed`
+   quand `campaign.webhookId` est posé. La marquer terminée la couperait de son webhook (le feed ne nourrit
+   que les campagnes `running`) et plus aucun lead ne serait contacté, sans le moindre signal. Le quality gate
+   garde le dernier mot : une pause reste une pause.
+2. **La route publique ne publiait RIEN sans scénario.** `POST /w/:code` ne publiait l'événement que si
+   `automation_id` était posé. `getByCode` rend désormais `alimenteCampagne`, calculé par un `exists` sur les
+   campagnes `running` DANS la requête qui a lieu de toute façon. Un compteur sur la table se
+   désynchroniserait au premier arrêt ou archivage oublié ; l'état des campagnes, lui, fait foi.
+3. **`singletonKey` peut avaler l'enfilement.** Un arrivant pendant un run en vol verrait son job coalescé et
+   resterait `pending` jusqu'à l'arrivant SUIVANT, qui peut ne jamais venir. Un balayage de 60 s
+   (`listWebhookCampaignsWithPending`) relance les campagnes qui ont vraiment quelqu'un en attente.
+4. **Un écart doit s'INSCRIRE.** Un arrivant sans consentement (marketing) ou dont une variable manque est
+   enregistré `skipped` AVEC son motif. Sinon l'opérateur voit une campagne à zéro destinataire alors que des
+   gens sont bien arrivés. L'écran prévient en amont quand l'adresse choisie n'affirme pas le consentement.
+5. **Supprimer l'adresse tuerait la campagne en silence.** La route `DELETE /tenants/:t/webhooks/:id` refuse en
+   **409** tant qu'une campagne vivante s'en nourrit, en la NOMMANT (409 et pas 5xx : Cloudflare remplace le
+   corps de toute réponse 5xx). La FK reste `on delete set null` pour ne pas emporter l'historique d'une
+   campagne terminée.
+
+### Chemin complet
+
+```
+POST /w/:code  (route publique, tenant déduit du code)
+  -> écriture du contact (chemin partagé upsertContactsFromApi)
+  -> publish { kind: 'webhook', waId, webhookId }   si scénario OU campagne au fil de l'eau
+        file automation-event
+  -> worker : runAutomations(...)                    (scénario, inchangé)
+  -> worker : alimenterCampagnesWebhook(...)         (campagnes, isolé dans son propre try)
+        listRunningByWebhook -> contactForBuildByWaId -> buildRecipients
+        -> insertWebhookRecipient (on conflict do nothing) -> enqueueCampaignRun
+  -> job campaign-run -> runCampaign  (envoi réel, cadence, garde-fous)
+```
+
+L'alimentation est isolée dans son propre `try` : un souci de campagne ne doit pas faire échouer l'événement,
+donc rejouer un scénario DÉJÀ démarré. Une campagne perdue se rattrape au balayage, un scénario démarré deux
+fois ne se rattrape pas.
+
+### Anti-doublon
+
+La contrainte `campaign_recipients (campaign_id, contact_id)` fait tout le travail : la même personne qui
+repasse par l'adresse ne reçoit pas le message une seconde fois. `insertWebhookRecipient` rend `false` dans ce
+cas, et AUCUN run n'est enfilé (sinon la campagne repartirait pour rien à chaque repassage).
+
+### Arrêt
+
+`POST /tenants/:t/campaigns/:id/stop` passe la campagne en `completed` : c'est son seul point final. `completed`
+et pas `paused`, parce que la liste propose « Reprendre » sur une campagne en pause, ce qui n'aurait ici aucun
+sens (rien ne reste à envoyer). 404 sur une campagne ordinaire ou déjà arrêtée.
 
 ## Automation : déclencher un scénario sur un événement (Lots E / E.2, 2026-08-03, migrations 0052-0053)
 

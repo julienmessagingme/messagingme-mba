@@ -69,6 +69,13 @@ interface Deps {
   archiveCalls?: Array<{ id: string; tenant: string; kind: 'archive' | 'unarchive' | 'delete' }>;
   deleteOk?: boolean; // deleteDraftCampaign renvoie ce booléen (défaut true)
   retry?: RetryReset; // résultat de resetRecipientForRetry (F7)
+  /** Campagne AU FIL DE L'EAU : le webhook est-il utilisable dans cet espace ? (défaut true) */
+  webhookOk?: boolean;
+  /** Ne câble PAS les dépendances webhook : reproduit une instance sans campagne au fil de l'eau. */
+  sansWebhook?: boolean;
+  /** stopWebhookCampaign renvoie ce booléen (défaut true). */
+  stopOk?: boolean;
+  stopCalls?: Array<{ id: string; tenant: string }>;
   /** Brouillons de COMPOSITION. Absent -> les routes ne sont pas montées (dépendance optionnelle). */
   drafts?: CampaignRouteDeps['drafts'];
 }
@@ -82,6 +89,10 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
       ...(d.drafts ? { drafts: d.drafts } : {}),
       phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
+      ...(d.sansWebhook ? {} : {
+        webhookUsableByTenant: async () => d.webhookOk ?? true,
+        stopWebhookCampaign: async (id: string, tenant: string) => { d.stopCalls?.push({ id, tenant }); return d.stopOk ?? true; },
+      }),
       // Workflow non détenu -> null (comme un getById cross-tenant) ; sinon le graphe (override ou défaut).
       getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
       campaignBelongsTo: async (id, tenant) => id === 'known' && tenant === (d.campaignTenant ?? 't1'),
@@ -647,6 +658,99 @@ describe('brouillons de campagne', () => {
     const app = appWith(new FakeRepo(contacts), { drafts: store });
     expect((await app.inject({ method: 'POST', url, ...asAgent(), payload: { name: 'Idée' } })).statusCode).toBe(403);
     expect(lignes).toEqual([]);
+    await app.close();
+  });
+});
+
+
+/**
+ * Campagne AU FIL DE L'EAU (`webhookId`) : elle naît SANS destinataire, ils arriveront un par un par le
+ * webhook. Ce bloc verrouille ce qui distingue sa création d'une campagne ordinaire, et surtout les refus :
+ * une campagne branchée sur une mauvaise adresse n'attrape rien, en silence, et ça ne se voit pas.
+ */
+describe('POST /tenants/:tenantId/campaigns : au fil de l eau', () => {
+  it("crée la campagne SANS destinataire, et ne charge même pas le CRM", async () => {
+    let lectures = 0;
+    const repo = new FakeRepo(contacts);
+    const nu = Object.assign(repo, { listContactsForBuild: async () => { lectures += 1; return contacts; } });
+    const app = appWith(nu, {});
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, webhookId: 'wh1' } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({ campaignId: 'camp-1', recipientCount: 0, skipped: [] });
+    expect(repo.created.at(-1)?.webhookId).toBe('wh1');
+    expect(repo.lastRecipients).toEqual([]);
+    // Charger tout le CRM pour une campagne qui n'a aucune liste serait au mieux inutile, au pire trompeur.
+    expect(lectures).toBe(0);
+    await app.close();
+  });
+
+  it('🔴 webhook d un AUTRE espace (ou désactivé) -> 400, rien de créé', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { webhookOk: false });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, webhookId: 'wh-autre' } });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('🔴 une liste de contacts ET une adresse -> 400 : on ne fait pas croire que la liste partira', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {});
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, webhookId: 'wh1', contactIds: ['c1'] } });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it("dépendance non câblée -> 400 explicite, jamais une campagne muette", async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { sansWebhook: true });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, webhookId: 'wh1' } });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('sans webhookId, rien ne change : la campagne ordinaire garde ses destinataires', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {});
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody });
+    expect(res.statusCode).toBe(201);
+    expect(repo.created.at(-1)?.webhookId).toBeUndefined();
+    expect(repo.lastRecipients.length).toBe(1);
+    await app.close();
+  });
+});
+
+describe('POST /tenants/:tenantId/campaigns/:id/stop', () => {
+  it("arrête la campagne au fil de l'eau, scopée au tenant du jeton", async () => {
+    const stopCalls: Array<{ id: string; tenant: string }> = [];
+    const app = appWith(new FakeRepo(contacts), { stopCalls });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/stop', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ stopped: true, campaignId: 'known' });
+    expect(stopCalls).toEqual([{ id: 'known', tenant: 't1' }]);
+    await app.close();
+  });
+
+  it("🔴 campagne ordinaire ou déjà arrêtée -> 404 : on n'annonce pas un arrêt qui n'a pas eu lieu", async () => {
+    const app = appWith(new FakeRepo(contacts), { stopOk: false });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/stop', ...auth() });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('réservée aux admins', async () => {
+    const app = appWith(new FakeRepo(contacts), {});
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/stop', ...asAgent() });
+    expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("le tenant de l'URL ne peut pas désigner l'espace d'un autre", async () => {
+    const app = appWith(new FakeRepo(contacts), {});
+    const res = await app.inject({ method: 'POST', url: '/tenants/t2/campaigns/known/stop', ...auth() });
+    expect(res.statusCode).toBe(403);
     await app.close();
   });
 });

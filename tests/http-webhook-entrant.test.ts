@@ -380,3 +380,45 @@ describe('webhook entrant : le plafond de débit', () => {
     await server.close();
   });
 });
+
+
+/**
+ * Campagne AU FIL DE L'EAU : le webhook n'a pas forcément de scénario attaché, et publiait donc RIEN dans ce
+ * cas. Le jour où une campagne se nourrit de l'adresse, ce silence devient une panne muette : la campagne
+ * reste « en cours » et ne reçoit jamais un seul lead.
+ */
+describe('webhook entrant : alimente une campagne au fil de l eau', () => {
+  it("🔴 publie l'événement MÊME sans scénario, quand une campagne attend les arrivants", async () => {
+    const { server, cap } = app({ ...HOOK, automationId: null, alimenteCampagne: true });
+    const res = await post(server, CORPS);
+    expect(res.statusCode).toBe(200);
+    expect(cap.publies).toHaveLength(1);
+    expect(cap.publies[0]!.ev).toEqual({ kind: 'webhook', waId: '33612345678', webhookId: 'wh1' });
+    // La réponse le DIT au tiers : son appel nourrit un envoi, même sans scénario.
+    expect(res.json()).toMatchObject({ scenario: 'aucun', campagne: 'alimentee' });
+    await server.close();
+  });
+
+  it("aucune campagne, aucun scénario -> toujours RIEN de publié (comportement d'avant intact)", async () => {
+    const { server, cap } = app({ ...HOOK, automationId: null });
+    const res = await post(server, CORPS);
+    expect(res.statusCode).toBe(200);
+    expect(cap.publies).toEqual([]);
+    expect(res.json()).toMatchObject({ campagne: 'aucune' });
+    await server.close();
+  });
+
+  it('scénario ET campagne : UN SEUL événement, le worker sert les deux', async () => {
+    const { server, cap } = app({ ...HOOK, automationId: 'a1', alimenteCampagne: true });
+    await post(server, CORPS);
+    expect(cap.publies).toHaveLength(1);
+    await server.close();
+  });
+
+  it("un contact non écrit (téléphone inexploitable) ne publie rien : il n'y a personne à inscrire", async () => {
+    const { server, cap } = app({ ...HOOK, automationId: null, alimenteCampagne: true });
+    await post(server, { client: { tel: 'pas un numéro', nom: 'X' } });
+    expect(cap.publies).toEqual([]);
+    await server.close();
+  });
+});

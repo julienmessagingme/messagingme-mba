@@ -3,6 +3,7 @@ import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRati
 import type { CampaignStore, RecipientStore, FrequencyStore, QualityProvider } from './engine';
 import type { BuildContact, BuiltRecipient } from './build';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
+import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 
 export interface CreateCampaignInput {
@@ -29,6 +30,11 @@ export interface CreateCampaignInput {
   rcsAgentId?: string;
   /** Message RCS, validé par zod à la création. Requis si `channel = 'rcs'`. */
   rcsMessage?: unknown;
+  /**
+   * Campagne AU FIL DE L'EAU : le webhook entrant qui lui amènera ses destinataires. Une telle campagne naît
+   * SANS destinataire (`contactIds` n'a plus de sens), et ne se termine pas toute seule.
+   */
+  webhookId?: string;
 }
 
 /** Ligne SQL d'un résumé de campagne (liste + détail : même projection). */
@@ -36,6 +42,8 @@ export interface CampaignSummaryRow {
   id: string; name: string; category: CampaignCategory; status: CampaignStatus;
   phone_number_id: string; template_name: string | null; template_language: string | null;
   workflow_name?: string | null;
+  webhook_id?: string | null;
+  webhook_name?: string | null;
   created_at: Date; scheduled_at?: Date | null; archived_at?: Date | null;
   total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
 }
@@ -54,6 +62,8 @@ export function rowToSummary(r: CampaignSummaryRow): CampaignSummary {
     templateName: r.template_name,
     templateLanguage: r.template_language,
     workflowName: r.workflow_name ?? null,
+    webhookId: r.webhook_id ?? null,
+    webhookName: r.webhook_name ?? null,
     createdAt: r.created_at.toISOString(),
     scheduledAt: r.scheduled_at ? r.scheduled_at.toISOString() : null,
     archivedAt: r.archived_at ? r.archived_at.toISOString() : null,
@@ -89,6 +99,10 @@ export interface CampaignSummary {
   templateLanguage: string | null;
   /** Nom du scénario d'une campagne scénario. null = campagne template, ou scénario supprimé depuis. */
   workflowName: string | null;
+  /** Webhook qui alimente la campagne AU FIL DE L'EAU. null = campagne ordinaire (liste figée à la création). */
+  webhookId: string | null;
+  /** Nom de ce webhook, pour l'afficher sans second appel. null = campagne ordinaire, ou adresse supprimée. */
+  webhookName: string | null;
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
@@ -154,6 +168,8 @@ const RECIPIENT_FAILED_SQL = `r.status = 'failed' or r.delivery_status = 'failed
 const summarySelect = (colonnesEnPlus = '') => `select c.id, c.name, c.category, c.status, c.phone_number_id,
               c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
               (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
+              c.webhook_id,
+              (select h.name from webhooks h where h.id = c.webhook_id and h.tenant_id = c.tenant_id) as webhook_name,
               count(r.id) as total,
               count(r.id) filter (where r.status = 'pending') as pending,
               count(r.id) filter (where r.status = 'sending') as sending,
@@ -188,13 +204,16 @@ export class PgCampaignRepo {
       channel: 'whatsapp' | 'rcs' | null;
       rcs_agent_id: string | null;
       rcs_message: unknown;
+      webhook_id: string | null;
     }>(
       // `channel`, `rcs_agent_id` et `rcs_message` sont RELUS ici : c'est cette lecture qui alimente le job de
       // run, donc c'est elle qui décide du canal d'envoi. Les omettre ferait repartir une campagne RCS bien
       // enregistrée sur le chemin WhatsApp historique, avec un phone_number_id nul.
+      // `webhook_id` est relu pour la MÊME raison : c'est lui qui dit au moteur qu'une file vide n'est pas
+      // une campagne finie, mais une campagne qui attend son prochain arrivant.
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
               param_mapping, status, workflow_id, rate_per_minute, start_node_id,
-              channel, rcs_agent_id, rcs_message
+              channel, rcs_agent_id, rcs_message, webhook_id
        from campaigns where id = $1`,
       [id],
     );
@@ -216,6 +235,7 @@ export class PgCampaignRepo {
       channel: r.channel ?? 'whatsapp',
       rcsAgentId: r.rcs_agent_id,
       rcsMessage: r.rcs_message,
+      webhookId: r.webhook_id,
     };
   }
 
@@ -612,6 +632,102 @@ export class PgCampaignRepo {
   }
 
   /**
+   * UN contact prêt pour buildRecipients, résolu par son `wa_id`. Chemin des campagnes au fil de l'eau : un
+   * seul arrivant à la fois, donc charger tout le CRM (`listContactsForBuild`) n'aurait aucun sens.
+   *
+   * Mêmes exclusions que la liste complète (supprimé, bloqué) et MÊME fragment de résolution que l'inbox
+   * (`MATCH_BY_WAID_SQL`) : un contact doit être reconnu à l'identique quelle que soit la porte d'entrée.
+   */
+  async contactForBuildByWaId(tenantId: string, waId: string): Promise<BuildContact | null> {
+    const res = await this.pool.query<{
+      id: string;
+      phone_e164: string | null;
+      bsuid: string | null;
+      profile_name: string | null;
+      fields: Record<string, unknown>;
+      opt_in_status: 'opted_in' | 'opted_out' | 'unknown';
+    }>(
+      `select id, phone_e164, bsuid, profile_name, fields, opt_in_status
+       from contacts
+       where tenant_id = $1 and deleted_at is null and blocked_at is null
+       ${MATCH_BY_WAID_SQL}`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    return r
+      ? { id: r.id, phone_e164: r.phone_e164, bsuid: r.bsuid, profile_name: r.profile_name, fields: r.fields, optInStatus: r.opt_in_status }
+      : null;
+  }
+
+  /**
+   * Les campagnes VIVANTES nourries par ce webhook. `running` uniquement : une campagne en pause, terminée ou
+   * jamais lancée ne prend pas les arrivants, et c'est ce qui rend le bouton « Arrêter » réellement efficace.
+   */
+  async listRunningByWebhook(tenantId: string, webhookId: string): Promise<Campaign[]> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from campaigns
+       where tenant_id = $1 and webhook_id = $2 and status = 'running'
+       order by created_at`,
+      [tenantId, webhookId],
+    );
+    // Relecture par `getCampaign` : une seule projection de campagne dans ce fichier, donc aucun risque
+    // qu'une colonne décisive (canal, agent RCS, message) manque sur ce chemin-ci.
+    const out: Campaign[] = [];
+    for (const r of res.rows) {
+      const c = await this.getCampaign(r.id);
+      if (c) out.push(c);
+    }
+    return out;
+  }
+
+  /**
+   * Campagnes au fil de l'eau qui ont des destinataires EN ATTENTE. Filet du balayeur : l'enfilement immédiat
+   * d'un arrivant peut être avalé par le `singletonKey` si un run est déjà en vol, et le destinataire
+   * resterait alors en attente jusqu'à l'arrivant suivant. Ici, il repart au tour d'après.
+   */
+  async listWebhookCampaignsWithPending(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
+    const res = await this.pool.query<{ id: string; rate_per_minute: number | null; pending: string }>(
+      `select c.id, c.rate_per_minute,
+              (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
+       from campaigns c
+       where c.webhook_id is not null and c.status = 'running'
+         and exists (select 1 from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')`,
+    );
+    return res.rows.map((r) => ({ id: r.id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
+  }
+
+  /**
+   * Ferme une campagne au fil de l'eau : elle cesse de prendre les arrivants. `completed` et pas `paused`,
+   * parce que c'est un ARRÊT décidé, pas une suspension technique, et que la liste propose déjà « Reprendre »
+   * sur une campagne en pause (ce qui n'aurait ici aucun sens : rien ne reste à envoyer).
+   *
+   * Bornée aux statuts vivants et au tenant : false = rien de fermé (déjà arrêtée, ou pas la sienne).
+   */
+  async stopWebhookCampaign(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set status = 'completed'
+       where id = $1 and tenant_id = $2 and webhook_id is not null and status in ('running', 'paused', 'scheduled')`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Une campagne ENCORE VIVANTE se nourrit-elle de ce webhook ? Interroge la route de suppression d'un
+   * webhook : la laisser passer transformerait la campagne en coquille « en cours » qui ne recevrait plus
+   * jamais rien, sans le moindre signal.
+   */
+  async webhookFeedsLiveCampaign(tenantId: string, webhookId: string): Promise<string | null> {
+    const res = await this.pool.query<{ name: string }>(
+      `select name from campaigns
+       where tenant_id = $1 and webhook_id = $2 and status in ('draft', 'scheduled', 'running', 'paused')
+       limit 1`,
+      [tenantId, webhookId],
+    );
+    return res.rows[0]?.name ?? null;
+  }
+
+  /**
    * Crée la campagne ET ses destinataires dans UNE transaction : un échec en cours de route
    * ne laisse pas de campagne draft orpheline avec des destinataires partiels.
    */
@@ -638,6 +754,29 @@ export class PgCampaignRepo {
   async insertRecipients(campaignId: string, recipients: BuiltRecipient[]): Promise<number> {
     return bulkInsertRecipients(this.pool, campaignId, recipients);
   }
+
+  /**
+   * UN arrivant d'une campagne au fil de l'eau.
+   *
+   * Le contrat d'unicité `(campaign_id, contact_id)` fait ici tout le travail : la même personne qui repasse
+   * par le webhook une deuxième fois ne reçoit pas le message une deuxième fois. `false` = déjà destinataire.
+   *
+   * `statut` vaut `skipped` quand `buildRecipients` a ÉCARTÉ l'arrivant (pas de consentement sur une campagne
+   * marketing, variable de template absente de sa fiche). On l'inscrit quand même, avec son motif : sans ça
+   * l'opérateur voit une campagne à zéro destinataire sans jamais savoir que des gens sont bien arrivés.
+   */
+  async insertWebhookRecipient(
+    campaignId: string,
+    r: { contactId: string; toE164: string; resolvedParams: string[]; statut: 'pending' | 'skipped'; motif?: string },
+  ): Promise<boolean> {
+    const res = await this.pool.query(
+      `insert into campaign_recipients (campaign_id, contact_id, to_e164, resolved_params, status, error)
+       values ($1, $2, $3, $4::jsonb, $5, $6)
+       on conflict (campaign_id, contact_id) do nothing`,
+      [campaignId, r.contactId, r.toE164, JSON.stringify(r.resolvedParams), r.statut, r.motif ?? null],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
 }
 
 /**
@@ -654,8 +793,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   const isWorkflow = !!input.workflowId;
   const res = await q.query<{ id: string }>(
     `insert into campaigns
-       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb)
+       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14)
      returning id`,
     [
       input.tenantId,
@@ -673,6 +812,7 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       input.channel ?? 'whatsapp',
       input.rcsAgentId ?? null,
       input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage),
+      input.webhookId ?? null,
     ],
   );
   const id = res.rows[0]?.id;

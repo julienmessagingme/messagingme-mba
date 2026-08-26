@@ -485,7 +485,23 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
     « N contact(s) correspondent » ; « Tout sélectionner (N) » cible tout le segment.
   - **📄 Import fichier** : importe un CSV (même écran de mapping que l'onglet Contacts) avec un **tag obligatoire**.
     Les contacts atterrissent dans le CRM taggés, et la campagne cible aussitôt ce tag.
-  - **🔗 HubSpot** (2026-07-18) : importe une **liste HubSpot** comme destinataires. Le bouton est actif seulement
+  - **⋯ Autre** (2026-08-26) : les deux sources qui ne servent pas au cas courant sont rangées derrière ce
+    bouton, qui ouvre une seconde ligne. **HubSpot n'y apparaît pas du tout** quand le connecteur est éteint sur
+    l'Accueil (avant : un bouton grisé pour une intégration qu'on n'a pas).
+  - **🪝 Webhook : campagne AU FIL DE L'EAU** (2026-08-26, sous « Autre ») : au lieu d'une liste figée, on choisit
+    une **adresse** créée dans **Tools > Webhooks**. La campagne reste alors **ouverte** : chaque contact qui
+    arrive par cette adresse reçoit le message dans la foulée, un par un. Elle envoie **à partir de son
+    lancement**, jamais aux contacts arrivés avant. Tout le reste est identique à une campagne ordinaire :
+    même message (template, scénario ou RCS), même cadence, mêmes garde-fous, mêmes statistiques.
+    - La même personne qui repasse par l'adresse **ne reçoit pas deux fois**.
+    - Un arrivant écarté (pas de consentement sur une campagne marketing, variable de template absente de sa
+      fiche) est **inscrit avec son motif** dans le détail : il ne disparaît pas en silence. L'écran prévient
+      **avant** le lancement quand l'adresse choisie n'affirme pas le consentement, ou ne crée pas les contacts
+      inconnus.
+    - La campagne porte une pastille **« au fil de l'eau »** dans la liste et un bouton **« Arrêter »** : c'est son
+      seul point final, elle n'en a aucun par elle-même. Arrêter ne touche pas à l'historique déjà envoyé.
+    - Supprimer une adresse dont une campagne vivante se nourrit est **refusé**, en nommant la campagne.
+  - **🔗 HubSpot** (2026-07-18, sous « Autre ») : importe une **liste HubSpot** comme destinataires. Le bouton est actif seulement
     si le toggle « Campagnes via données HubSpot » est activé (sur l'Accueil) **et** que la synchronisation HubSpot
     n'est pas en pause : pendant une pause, la source est **grisée** avec l'explication au survol, au lieu d'ouvrir
     un panneau vide. On choisit une liste du portail (nom, nombre de contacts, active/statique), on importe ses
