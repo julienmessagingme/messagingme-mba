@@ -18,6 +18,40 @@ Next.js 15 dans `web/`, Playwright pour les e2e.
 
 **Cadrage de référence :** [AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md).
 
+## Révision du 2026-08-26 : le bloc Question change trois choses
+
+Un chantier parallèle ajoute un bloc **Question** au moteur (24 fichiers, non commité au moment de
+cette révision). Il résout le même problème que l'inactivité de l'agent, et mieux que ce que ce plan
+prévoyait. Trois conséquences.
+
+**La tâche 3 est supprimée.** Le bloc Question fait attendre un run sur **deux choses à la fois** :
+une réponse du contact **et** le temps qui passe. Le run reste `waiting`, donc `findWaitingByWaId` le
+voit et une réponse peut le reprendre, et il porte **en plus** un `resume_at` que le balayeur de
+réveil consomme. `WalkRest.waiting` a gagné un `timeoutInMs` optionnel, `restToState` le traduit en
+`resume_at`, et `claimDueQuestions` le réclame en le **consommant** (`resume_at = null`), donc une
+expiration ne peut être prise qu'une fois même avec plusieurs instances. L'agent monte dessus tel
+quel : plus besoin de `startAfter` sur le contrat `Queue`, plus besoin d'un job différé.
+
+**La tâche 17 devient une ligne, plus un mécanisme.** Quand l'agent pose une question et attend, le
+tour rend `{ status: 'waiting', nodeId, timeoutInMs: inactivite_minutes * 60_000 }`. Le reste est
+déjà écrit. Et la sortie prend le **même nom de handle que le bloc Question**, `timeout`, plutôt
+qu'un `sortie:inactivite` à moi : un seul vocabulaire dans le builder.
+
+**La migration passe de 0085 à 0086**, et elle n'a **pas** à créer l'index partiel sur
+`workflow_runs (resume_at) where status = 'waiting' and resume_at is not null` : le bloc Question
+l'apporte déjà.
+
+Deux choses à reprendre telles quelles de ce chantier, parce qu'elles sont le patron exact dont les
+tâches 6, 7 et 8 ont besoin : ses cas `question` dans `actionOf`, `walk`, `scanOpening`,
+`waitBeforeSessionMessage`, `node-list`, `nodeMeta` et `campaign-eligibility` ; et sa façon de
+reprendre par un handle nommé plutôt que par `nextNode`, avec sa justification (« le successeur d'une
+question n'a aucun sens, c'est la réponse qui décide de la suite »).
+
+Et une course résiduelle documentée chez eux vaut aussi pour l'agent : si le contact répond dans les
+quelques centaines de millisecondes qui suivent la réclamation de l'échéance, il reçoit deux
+messages. L'arbitrage retenu est explicite et il tient pour nous : mieux vaut un message en double,
+qui se voit, qu'une réponse de client avalée en silence.
+
 ## État de ce plan, à lire avant de commencer
 
 **Les tâches 1 à 13 sont détaillées pas à pas, avec le code et les commandes.** Elles vont du bump
@@ -45,7 +79,7 @@ Le cadrage contient des numéros de ligne périmés et deux erreurs de fond. Ce 
 | `executor.ts:191` (`restToState`) | `executor.ts:241-248` |
 | `executor.ts:637` (`advance`) | `executor.ts:867-978` |
 | `web/lib/api.ts:1282` (miroir des types) | `web/lib/api.ts:1445` |
-| migrations 0075 et 0076 | **déjà prises**, la prochaine libre est **0085** |
+| migrations 0075 et 0076 | **déjà prises**. 0085 l est aussi depuis le bloc Question : la prochaine libre est **0086** |
 | « une seule branche à ajouter dans `advance()` » | **trois sites** : `advance` (867), `resume` (489-582), `runFrom` (678-742) |
 | zod : viser `^3.25.76` | **faux et dangereux**, viser `^4.4.3` directement, voir tâche 1 |
 
@@ -60,7 +94,7 @@ atteint par le nouveau statut (contrairement à `rcs_send`, toujours résolu ava
   `@modelcontextprotocol/client@2.0.0` déclare `zod: ^4.2.0` en dépendance **dure** : installé sur une
   racine en 3.x, il crée trois arbres zod dans le lock, et deux runtimes zod dans un process font
   lâcher les `instanceof` en silence.
-- **Prochaine migration libre : 0085.** Les migrations vivent dans l'image Docker (`COPY db ./db`) :
+- **Prochaine migration libre : 0086** (0085 est prise par le bloc Question). Les migrations vivent dans l'image Docker (`COPY db ./db`) :
   `compose build` **avant** `compose run --rm --no-deps mba-api npm run migrate`, puis `up -d --build`.
 - **`tenant_id = $1` sur chaque requête.** Le pooler est superuser, la RLS est bypassée, le filtrage
   en code est le seul contrôle.
@@ -249,7 +283,22 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 3 : ajouter `startAfter` au contrat `Queue`
+## Tâche 3 : SUPPRIMÉE, le bloc Question rend `startAfter` inutile
+
+**Ne pas exécuter.** Conservée pour mémoire du raisonnement, et parce que savoir pourquoi un
+mécanisme n'a pas été ajouté vaut mieux que son absence silencieuse.
+
+L'agent avait besoin de se réveiller sur inactivité. Un job différé par `startAfter` était le moyen
+d'éviter un second balayage. Mais le bloc Question a apporté mieux : le run reste `waiting` avec un
+`resume_at`, et le balayeur **existant** le réclame en consommant l'échéance. Un mécanisme de moins,
+et l'agent attend exactement comme le reste du produit au lieu d'inventer sa propre façon.
+
+Passer directement à la tâche 4.
+
+<details>
+<summary>Le contenu d'origine, pour mémoire</summary>
+
+### (obsolète) ajouter `startAfter` au contrat `Queue`
 
 **Fichiers :**
 - Modifier : `src/queue/queue.ts:15`
@@ -349,17 +398,10 @@ Attendu : 2 passed, et `tsc` propre.
 
 ```bash
 git add src/queue/queue.ts src/queue/pgboss.ts src/queue/fake.ts tests/queue-start-after.test.ts
-git commit -m "feat(queue): startAfter sur enqueue, pour differer un job sans balayage
-
-Le bloc agent a besoin de se reveiller sur inactivite. Un second balayage aurait
-ajoute une DLQ et un mode de panne ; pg-boss sait deja differer un job, et le
-schedule: false pose volontairement ne desactive que le cron, pas les jobs differes.
-
-Option propagee sous la meme forme conditionnelle que les deux autres : une option
-absente doit rester absente, et startAfter 0 serait avale par un test de veracite.
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(queue): startAfter sur enqueue"
 ```
+
+</details>
 
 ---
 
@@ -503,9 +545,22 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 # Phase L1-A, le socle sans comportement
 
-## Tâche 5 : la migration 0085
+> **Lire le bloc Question avant de commencer cette phase.** Il vient d'ajouter un type de node en
+> traitant exactement les mêmes points de couture, et son code est le patron à recopier plutôt qu'à
+> réinventer : ses cas `question` dans `actionOf`, `walk`, `scanOpening`,
+> `waitBeforeSessionMessage`, `etapeOffreUnChoix`, `node-list`, `nodeMeta` et
+> `campaign-eligibility`. Deux points où sa version fait autorité sur les extraits de ce plan :
+> `WalkRest.waiting` porte désormais un `timeoutInMs` optionnel, et `restToState` a déjà gagné le cas
+> qui le traduit en `resume_at`. Les extraits ci-dessous s'insèrent **à côté**, jamais par-dessus.
+>
+> Un choix de leur `walk` mérite d'être repris pour l'agent : un bloc Question **non configuré** est
+> un passe-plat plutôt qu'un blocage, avec la justification « attendre une réponse à une question
+> jamais posée figerait le parcours pour toujours, sans le moindre signal ». Un bloc agent sans agent
+> configuré doit se comporter pareil : passer au suivant, pas geler le fil.
 
-**Fichiers :** Créer `db/migrations/0085_agent_ia.sql`.
+## Tâche 5 : la migration 0086
+
+**Fichiers :** Créer `db/migrations/0086_agent_ia.sql`.
 
 **Interfaces :** Produit les tables `agents`, `agent_tools`, `agent_sessions`, `agent_tool_calls`,
 consommées par les tâches 9 à 17.
@@ -518,7 +573,7 @@ dédié, il faudrait **remplacer** le CHECK d'origine et non en ajouter un secon
 - [ ] **Étape 1 : écrire la migration**
 
 ```sql
--- 0085_agent_ia.sql
+-- 0086_agent_ia.sql
 -- Le bloc agent : la fiche, son catalogue d outils, l etat multi-tours, le journal d appels.
 -- Le journal est AUSSI le grand livre de facturation : c est la meme table, volontairement.
 
@@ -624,7 +679,7 @@ create index if not exists agent_tool_calls_session_idx on agent_tool_calls (ten
 ls db/migrations/ | tail -3
 ```
 
-Attendu : `0084_campaign_webhook.sql` est la dernière avant la nouvelle. Si `0085` existe déjà,
+Attendu : `0085_question_timeout.sql` est la dernière avant la nouvelle. Si `0086` existe déjà,
 prendre le numéro suivant : le suivi se fait par **nom** dans `schema_migrations`, les trous sont
 sans conséquence, les doublons non.
 
@@ -645,8 +700,8 @@ deux sont faux. Mettre à jour dans ce commit.
 - [ ] **Étape 5 : commit**
 
 ```bash
-git add db/migrations/0085_agent_ia.sql CLAUDE.md
-git commit -m "feat(agent): les quatre tables du bloc agent (migration 0085)
+git add db/migrations/0086_agent_ia.sql CLAUDE.md
+git commit -m "feat(agent): les quatre tables du bloc agent (migration 0086)
 
 Le run reste en waiting sur le bloc agent, donc AUCUNE migration sur workflow_runs.
 
@@ -1582,31 +1637,85 @@ très désagréable côté client. L'outil doit appeler `escalateToHuman` (`wiri
 
 **Fichiers :** Modifier `src/agent/run-turn.ts`. Test : `tests/agent-inactivite.test.ts`.
 
-Quand l'agent pose une question et attend, enfiler un `agent-turn { raison: 'inactivite', tours: N }`
-avec `startAfter = inactivite_minutes * 60`. Si le contact répond avant, le compteur a avancé, le
-verrou optimiste de la tâche 9 rend `null`, et le job différé sort sans rien faire. **Zéro balayage,
-zéro colonne, zéro requête nouvelle.**
+**Révisée le 2026-08-26 : il n'y a plus de mécanisme à écrire.** Le bloc Question a apporté
+exactement ce qu'il fallait, et l'agent monte dessus.
 
-Poser aussi un `singletonKey` par session pour qu'un seul job différé soit en attente à la fois.
+Quand le tour se termine sans sortie prédéfinie, c'est-à-dire quand l'agent a posé une question et
+attend, le tour rend l'échéance dans le repos :
+
+```ts
+{ status: 'waiting', nodeId, timeoutInMs: agent.inactiviteMinutes * 60_000 }
+```
+
+Le reste est déjà écrit et en production : `restToState` traduit `timeoutInMs` en `resume_at` sur un
+run qui **reste** `waiting`, `claimDueQuestions` le réclame en **consommant** l'échéance
+(`resume_at = null`, `for update skip locked`), le balayeur de réveil le reprend, et `resume` sort
+par le handle **`timeout`**. Même nom de handle que le bloc Question, délibérément : un seul
+vocabulaire dans le builder.
+
+Deux conséquences à respecter, tirées de leur code.
+
+**On ne reprend jamais par `nextNode` sur une échéance.** Leur commentaire le dit et vaut mot pour
+mot pour l'agent : « le successeur d'une question n'a aucun sens, c'est la réponse qui décide de la
+suite. Prendre `nextNode` ici enverrait un contact silencieux dans la branche du premier câblage
+venu. » Si la sortie `timeout` n'est pas câblée, on clôt le parcours **et on rend la main**, parce
+que l'agent la retenait.
+
+**La course résiduelle est assumée et bornée.** Si le contact répond dans les quelques centaines de
+millisecondes qui suivent la réclamation, `advance` et la reprise avancent le même parcours et le
+contact reçoit deux messages. L'ordre inverse est sûr : `advance` réécrit l'état sans `resume_at`.
+L'arbitrage est déjà pris et il tient pour nous.
 
 - [ ] **Étape 1 : écrire le test des deux sens**
 
 ```ts
-it('le job d inactivite ne fait rien si le contact a repondu entre temps', async () => {
-  // le contact a repondu : tours vaut 4, le job differe attendait 3
-  sessions.prendreLeTour.mockResolvedValue(null);
-  await runTurn({ ...deps, job: { ...job, raison: 'inactivite', tours: 3 } });
-  expect(sendQuickMessage).not.toHaveBeenCalled();
+it('un tour sans sortie pose l echeance d inactivite dans le repos', async () => {
+  const out = await runTurn({ ...deps, agent: { ...agent, inactiviteMinutes: 30 } });
+  expect(out.rest).toEqual({ status: 'waiting', nodeId: 'a', timeoutInMs: 30 * 60_000 });
 });
 
-it('le job d inactivite sort par sortie:inactivite quand le contact n a pas repondu', async () => {
-  const out = await runTurn({ ...deps, job: { ...job, raison: 'inactivite', tours: 3 } });
-  expect(out.sortie).toBe('inactivite');
-  expect(brain.penser).not.toHaveBeenCalled(); // on ne paie pas un appel modele pour constater un silence
+it('une echeance de zero ne pose AUCUN resume_at, l agent attend sans limite', async () => {
+  const out = await runTurn({ ...deps, agent: { ...agent, inactiviteMinutes: 0 } });
+  expect(out.rest).toEqual({ status: 'waiting', nodeId: 'a' });
+});
+
+it('la reprise sur echeance sort par le handle timeout, jamais par nextNode', async () => {
+  // graphe : agent 'a' -> 'suivant' par une arete SANS handle, plus 'fin' par le handle timeout
+  await executor.resume({ ...run, currentNode: 'a', status: 'waiting' });
+  expect(runs.setState).toHaveBeenCalledWith('run1', expect.objectContaining({ currentNode: 'fin' }));
 });
 ```
 
-- [ ] **Étape 2 à 5 :** échouer, implémenter, passer, commit.
+Le deuxième test est celui qui compte : `restToState` n'écrit `resume_at` que si `timeoutInMs` est
+**défini**, et un `0` transmis au lieu d'un champ absent poserait une échéance immédiate. C'est le
+même piège que `startAfter: 0` et `max: 0` déjà documenté deux fois dans `src/queue/pgboss.ts`.
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+- [ ] **Étape 3 : implémenter, en réutilisant `restToState` sans le modifier**
+
+- [ ] **Étape 4 : relancer, plus la suite entière**
+
+- [ ] **Étape 5 : commit**
+
+```bash
+git add src/agent/run-turn.ts tests/agent-inactivite.test.ts
+git commit -m "feat(agent): l inactivite monte sur l echeance du bloc Question
+
+Aucun mecanisme nouveau. Le bloc Question fait deja attendre un run sur deux choses a
+la fois, une reponse du contact et le temps qui passe : le run reste waiting, donc
+findWaitingByWaId le voit, et il porte en plus un resume_at que le balayeur consomme.
+L agent rend simplement timeoutInMs dans son repos.
+
+Meme nom de handle que le bloc Question, timeout, plutot qu une sortie a nous : un
+seul vocabulaire dans le builder.
+
+Une echeance de zero ne pose AUCUN resume_at. Le test le verifie explicitement : un 0
+transmis au lieu d un champ absent poserait une echeance immediate, c est le piege
+deja documente deux fois dans src/queue/pgboss.ts.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
 
 ---
 
