@@ -99,6 +99,10 @@ C'est cohérent avec l'écran WhatsApp Manager, qui liste « Payment method » p
 À dire au client à l'onboarding : sans moyen de paiement, l'agent ne répond pas, et rien ne le signale côté
 console.
 
+⚠️ **À NUANCER depuis le 2026-08-25** : Meta annonce une exception pour `ai_audience = ALLOWLISTED_ONLY`.
+Voir le relevé du 2026-08-26 ci-dessous, qui documente aussi la contradiction laissée dans les pages de
+référence. La phrase ci-dessus reste celle de Meta, mot pour mot, dans `get-started` et `agent-settings`.
+
 ### 🟢 Test d'agent : les jetons consommés ne sont pas facturés
 
 > « Tokens consumed while testing through this endpoint are not billed. »
@@ -130,6 +134,113 @@ consigne est réécrite valeur par valeur, avec obligation d'OMETTRE le champ qu
 
 Renvoi vers la grille « WhatsApp pricing for non-template messages ». Notre modèle de coût, calé sur les
 catégories de template, ne couvre pas ce régime.
+
+## ⚠️ Ce qui a changé chez Meta (relevé du 2026-08-26)
+
+La veille a signalé quatre pages touchées en deux jours. Les pages ont été relues à la source, et l'état réel
+de notre propre numéro a été **mesuré** (lecture seule) pour ne rien conclure d'une supposition.
+
+### 🔴 Le moyen de paiement n'est plus exigé pour ALLUMER un agent en `ALLOWLISTED_ONLY`
+
+Changelog du **2026-08-25**, mot pour mot :
+
+> « Turning your agent on with `ai_audience` set to `ALLOWLISTED_ONLY` **no longer requires a payment method**
+> on your Business Agent account. An allowlisted-only agent responds only to the consumers on your channel
+> allowlist, so you can **enable it and test end to end before you set up billing**. Turning the agent on for
+> `EVERYONE`, or expanding an already-enabled allowlisted-only agent to `EVERYONE`, still requires a payment
+> method and returns a `400` until one is attached. »
+
+C'est le verrou qui bloquait toute mise en service réelle depuis juillet.
+
+⚠️ **La doc se contredit, et il faut le savoir avant de s'y fier.** Le changelog dit « Updated Agent
+Settings », mais la page `agent-settings` porte TOUJOURS, en date du 2026-08-26, la phrase absolue
+« messages are not delivered unless your Business Agent account has a payment method attached », et
+`get-started` garde son « Step 2: Set up billing » inchangé. Deux lectures possibles : soit les pages de
+référence n'ont pas suivi, soit l'exception porte sur l'ALLUMAGE et pas sur la LIVRAISON.
+
+**Ce qui tranche est une mesure, pas une relecture** : allumer en `ALLOWLISTED_ONLY` avec un seul numéro
+allowlisté et regarder si l'appel passe, puis si un message arrive. Tant que ce n'est pas fait, ne rien
+promettre à un client sur ce point.
+
+### 🔴 L'allowlist ne restreint RIEN par elle-même, et l'ordre des appels compte
+
+Changelog du **2026-08-19**, puis une section neuve dans `get-started` (« Restrict the agent to a set of
+consumers ») :
+
+> « Adding consumers to the allowlist does not by itself limit who the agent replies to. The allowlist is only
+> enforced when the `ai_audience` setting is `ALLOWLISTED_ONLY`. The default is `EVERYONE`, so an agent enabled
+> without changing `ai_audience` responds to every consumer who messages your business, regardless of what the
+> allowlist contains. »
+
+La séquence est désormais prescrite, dans cet ordre :
+
+1. `POST /{entity_id}/agent_config/allowlist` par consommateur (E.164, **un par appel**) ;
+2. `PUT /{entity_id}/agent_config/settings` avec `ai_audience = ALLOWLISTED_ONLY`, **puis relecture en GET
+   pour confirmer que le réglage a pris** ;
+3. **seulement ensuite** `rollout.enabled = true`.
+
+> « This ordering matters when you are testing against a live WhatsApp Business phone number, because
+> **enabling the agent first exposes it to real conversations**. »
+
+**Notre console dit déjà la moitié de cette règle** (`MbaAllowlistPanel` avertit que la liste est sans effet
+quand l'audience est « tout le monde »). Elle ne dit PAS l'autre moitié : allumer avec `EVERYONE` sur un
+numéro vivant expose immédiatement l'agent à tout le monde, et rien ne l'annonce au moment du clic.
+
+### 🆕 UI Skills : une surface entière que nous n'implémentons pas
+
+`reference/configure/ui-skills` (CRUD, jamais lue par notre corpus) + le guide `usage-guides/writing-ui-skills`
+(2026-08-25). Une « UI skill » dit à l'agent **quand** envoyer un message riche, et **quoi mettre dedans**.
+
+Neuf `component_type` : `cta_url`, `image`, `interactive_list`, `interactive_reply_buttons`, `location`,
+`location_request`, `carousel_url`, `carousel_quick_reply`, `flow`.
+
+Deux traits qui commandent la conception :
+
+- **Aucun champ structuré.** On ne fournit pas le corps, les boutons ou l'URL en JSON : on écrit une
+  `instruction` en langue naturelle qui dit à la fois quand envoyer et quoi mettre dans chaque champ. Le guide
+  liste, pour chaque type, les éléments à décrire et leurs limites (corps 1-1024, libellé de bouton 1-20,
+  liste 1-10 lignes, carrousel 2-10 cartes...).
+- **`flow` est l'exception** : `flow_id` est un vrai champ de la skill, requis pour ce type et refusé pour tous
+  les autres. **C'est un pont direct avec ce que nous gérons déjà** : les formulaires WhatsApp de l'onglet
+  Contenu. L'agent peut ouvrir NOS flows.
+
+### 🆕 Trois guides de cas d'usage, et un angle mort de notre veille
+
+Meta a publié `usage-guides/writing-ui-skills` (10 k caractères), `usage-guides/booking-and-reservation-agent`
+(43 k) et `usage-guides/single-purchase-transaction-agent` (46 k). **Notre veille n'a rien dit** : elle ne
+surveille qu'une liste de pages en dur, et `usage-guides/*` n'y était pas. Corrigé le 2026-08-26 (pages
+ajoutées à `ops/mba-docs-watch.mjs`), mais la leçon tient : **une veille ne voit que ce qu'on lui a nommé.**
+
+Le guide « booking » documente au passage la macro **`WHATSAPP_PHONE_NUMBER`** sur un connector tool : Meta
+remplit le numéro du client à l'exécution, l'agent n'a donc jamais à le demander ni à le deviner.
+
+### 🟠 Réglages : deux champs confirmés, un que nous ne savons pas écrire
+
+- `handoff.enabled` : « Controls whether the agent will release thread control after sending a handoff
+  message. » La doc dit maintenant EXACTEMENT ce que nous avions mesuré le 2026-08-18. Notre commentaire de
+  code n'était pas une interprétation prudente, c'était la règle.
+- `handoff.message_selection` (`DEFAULT` | `AGENT` | `CUSTOM`) : déjà supporté chez nous.
+- `followup.message` : « The message sent to follow up with the user after inactivity ». **Nous ne savons
+  écrire que `enabled` et `followup_interval_in_seconds`.** Le texte de relance est donc celui de Meta, et
+  aucun écran ne permet de le changer. Le read-modify-write le préserve, il ne le pose pas.
+
+### 🟡 Autres écarts mineurs
+
+- `agent_test` rend aussi `product_variant_ids` (« variant IDs of the products referenced in the agent
+  response ») : absent de notre type de retour. Sans effet tant qu'aucun catalogue n'est branché.
+- `ai_audience` est désormais « Supported for WhatsApp **and Instagram** entities », et l'éligibilité s'ouvre
+  aux « authorized Instagram Enterprise integrations ». Hors de notre canal aujourd'hui ; dit où va Meta.
+
+### 📍 État MESURÉ de notre numéro au 2026-08-26 (lecture seule)
+
+`+33 5 25 68 02 50` (`1234840649713976`) : `agent_eligibility` → **`is_eligible: true`** ;
+`agent_config/settings` → **`rollout.enabled: false`**, **`ai_audience: "EVERYONE"`**,
+`followup: {enabled: true, 3600 s}`, `never_say_phrases: []`, aucun bloc `handoff` ;
+`agent_config/allowlist` → **vide**.
+
+Autrement dit : l'agent n'a jamais été allumé, et **dans l'état actuel, l'allumer le rendrait joignable par
+tout le monde**. La séquence prescrite ci-dessus n'est pas une précaution théorique, c'est l'ordre à suivre
+la première fois.
 
 ## Pourquoi ce document existe
 

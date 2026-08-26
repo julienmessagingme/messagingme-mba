@@ -66,6 +66,15 @@ const PAGES = [
   ['pricing', `${BASE}/pricing`],
   ['webhooks', `${BASE}/reference/operate/webhooks`],
   ['changelog', `${BASE}/changelog`], // apparue le 2026-08-14, c'est elle qui a annonce l'action `take`
+  // ⚠️ ANGLE MORT COMBLE le 2026-08-26. Meta a publie une page de reference (ui-skills) et trois guides
+  // entre le 14 et le 25 aout, soit une centaine de milliers de caracteres de doc, et cette sonde n'a RIEN
+  // dit : elle ne surveille qu'une liste ecrite en dur, et le groupe `usage-guides/` n'y figurait pas.
+  // Une veille ne voit que ce qu'on lui a nomme. C'est le changelog qui les a revelees, en les liant.
+  ['ui-skills', `${BASE}/reference/configure/ui-skills`],
+  ['guide-ui-skills', `${BASE}/usage-guides/writing-ui-skills`],
+  ['guide-booking', `${BASE}/usage-guides/booking-and-reservation-agent`],
+  ['guide-purchase', `${BASE}/usage-guides/single-purchase-transaction-agent`],
+  ['usage-guides', `${BASE}/usage-guides`], // le repertoire : c'est lui qui portera les guides suivants
 ];
 
 function log(msg) {
