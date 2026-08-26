@@ -10,7 +10,7 @@
  * sont enregistrées qu'à l'exécution (analyse activée / push connecteur), mais la file EXISTE côté /ops même
  * désactivée — getQueueLoad renvoie zéro job si aucun n'a été enfilé — donc on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event'] as const;
+export const BASE_QUEUES = ['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn'] as const;
 
 /**
  * Convention de nommage de la dead-letter queue d'une file. UNE seule définition : PgBossQueue.ensure()
@@ -20,7 +20,7 @@ export function dlqName(queue: string): string {
   return `${queue}-dlq`;
 }
 
-/** Les 12 files réelles = chaque file de base + sa DLQ. Consommé par PgOpsStore.getQueueLoad (surface /ops). */
+/** Les 14 files réelles = chaque file de base + sa DLQ. Consommé par PgOpsStore.getQueueLoad (surface /ops). */
 export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
 
 /**
@@ -32,6 +32,8 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  *
  * La cadence se règle donc par file, sur la latence RÉELLEMENT utile à l'utilisateur, pas sur un défaut global :
  * - `webhook` : chemin des messages entrants (réponse auto, scénario). La latence est conversationnelle -> 2 s.
+ * - `agent-turn` : un tour d'agent IA (appel LLM plus outils) répond à un message du contact, donc même
+ *   chemin conversationnel que `webhook` -> 2 s.
  * - `campaign-run` : l'utilisateur vient de cliquer « lancer » et regarde l'écran -> 5 s.
  * - `automation-event` : démarre un scénario sur mot-clé / tag / nouveau contact, donc chemin conversationnel -> 5 s.
  * - `analyze-conversation`, `push-analysis`, `hubspot-catchup` : traitements de fond, personne n'attend -> 30 s.
@@ -45,6 +47,7 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
   'analyze-conversation': 30,
   'push-analysis': 30,
   'hubspot-catchup': 30,
+  'agent-turn': 2,
 };
 
 /**

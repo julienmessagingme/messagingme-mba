@@ -19,6 +19,7 @@ describe('queue names (source unique)', () => {
     // Une constante de nom de file doit être définie quelque part avec sa valeur : on la résout par son export.
     const resolved = viaConst.map((name) => {
       if (name === 'AUTOMATION_EVENT_QUEUE') return 'automation-event';
+      if (name === 'AGENT_TURN_QUEUE') return 'agent-turn';
       throw new Error(`constante de file inconnue du test : ${name} (ajoute sa résolution ici)`);
     });
     const worked = [...new Set([...literals, ...resolved])];
