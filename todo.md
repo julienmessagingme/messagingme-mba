@@ -1,5 +1,25 @@
 # todo.md — backlog
 
+## ⚠️ En attente d'une VÉRIFICATION EN VOL (2026-08-26)
+
+Deux fonctionnalités sont livrées et déployées, mais AUCUNE n'a encore été vue fonctionner sur du vrai
+trafic. Les tests prouvent que notre code émet la bonne forme, pas que Meta réagit comme attendu. Tant que
+ce n'est pas fait, ne pas les compter comme acquises.
+
+**1. L'image sur un bloc « message rapide »** (commit `f6f7be5`). La référence Meta documente les types
+d'en-tête (text/video/image/document) et le fait qu'un média se donne par `id` ou par `link`, mais elle ne dit
+PAS explicitement que l'en-tête est accepté sur le sous-type « boutons de réponse ». Un seul envoi réel
+tranche. Trois issues possibles : le message arrive avec l'image (c'est réglé) ; Meta refuse l'envoi (le bloc
+remonte son refus, et on bascule sur le lien plutôt que l'identifiant, ou sur deux messages) ; le message
+arrive SANS l'image, et c'est le cas embarrassant car rien ne le signalerait.
+
+**2. Le déclencheur « publicité » (CTWA)** (commit `bee7137`). Sur 275 corps de webhook conservés depuis
+juillet, aucun ne contient `referral` ni `ctwa_clid` : personne n'a encore pointé de pub sur ce numéro.
+⚠️ AVANT la première campagne publicitaire, vérifier la bascule d'attribution dans les réglages WhatsApp
+Business : sans elle, Meta n'envoie pas l'objet `referral` du tout, et le déclencheur restera muet sans
+qu'aucune erreur n'apparaisse nulle part. Quand une pub tournera, deux signaux disent que la chaîne est bonne :
+la fiche du contact porte « Pub (identifiant) » et « Pub (titre) », et le scénario part.
+
 ## À faire : renvoyer les conversions publicitaires à Meta (`ctwa_clid`)
 
 Le déclencheur « publicité » est livré (2026-08-26) : on sait de quelle pub vient un lead et on le route vers
