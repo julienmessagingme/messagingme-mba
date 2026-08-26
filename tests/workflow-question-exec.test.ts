@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
@@ -44,7 +44,6 @@ interface Capture {
   tags: string[];
   etats: Array<{ id: string; state: RunState }>;
   escalades: string[];
-  rendus: string[];
 }
 
 function monter(graph: WorkflowGraph, run: WorkflowRunRow | null, cap: Capture, over: Partial<WorkflowExecutorDeps> = {}) {
@@ -73,7 +72,7 @@ function monter(graph: WorkflowGraph, run: WorkflowRunRow | null, cap: Capture, 
   return { ex: new WorkflowExecutor(deps), deps };
 }
 
-const capture = (): Capture => ({ envois: [], tags: [], etats: [], escalades: [], rendus: [] });
+const capture = (): Capture => ({ envois: [], tags: [], etats: [], escalades: [] });
 const runQ = (): WorkflowRunRow => ({
   id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', contactId: 'c1',
   currentNode: 'q', status: 'waiting', lastMessageId: null, channel: 'whatsapp',

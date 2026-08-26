@@ -1,5 +1,41 @@
 # todo.md — backlog
 
+## ⚠️ Revue du bloc Question : ce qui n'a PAS été instruit (2026-08-26)
+
+La revue adversariale du bloc Question a rapporté **39 défauts**, chacun devant être soumis à deux sceptiques
+chargés de le réfuter. **La moitié des réfutations n'a jamais tourné** (limite d'usage atteinte en cours de
+route), et le décompte a écarté ces défauts-là par construction : un défaut dont AUCUN juge n'a pu se
+prononcer compte comme non confirmé.
+
+**Les 10 confirmés ont été vérifiés dans le code et corrigés** (commit `52a33b6`). Ce qui suit est la liste
+de ce qui n'a été NI réfuté NI instruit, à reprendre à tête reposée. Aucun n'est bloquant à vue d'œil,
+mais aucun n'a été vérifié non plus.
+
+- **Le plafond du corps d'une liste.** J'ai retenu 4096 caractères, relevé sur la référence Cloud API que j'ai
+  lue moi-même. Un relecteur affirme 1024. Non tranché : à vérifier à la source avant qu'un client écrive une
+  question longue.
+- **Échéance de plus de 7 jours.** Un relecteur soutient qu'elle sort du garde-fou d'unicité de parcours, donc
+  que deux scénarios pourraient écrire au même contact. Plausible, jamais vérifié.
+- **Reprise pendant un fil GELÉ** (repris par un humain ou par l'agent) : `resume` clot le run, là où
+  `advance` refuse explicitement de le faire. Comportement hérité du bloc Attente, pas introduit ici, mais il
+  prend un sens nouveau sur une question.
+- **Délai remis à zéro après avoir relié « Pas de réponse »** : la sortie disparaît de l'éditeur, l'arête reste
+  dans le graphe. Branche morte, invisible.
+- **Le journal de conversation garde la question, pas le menu** : un opérateur qui relit un fil ne voit pas
+  les choix qui ont été proposés.
+- **Trous de couverture nommés** : `wiring.sendQuestion` (le seul code qui décide « liste ou texte ») n'a aucun
+  test ; la branche `question` de `waitBeforeSessionMessage` côté front n'est exercée par aucun cas ; rien ne
+  prouve de bout en bout qu'un `row:<i>` reçu du webhook redescend jusqu'au routage.
+
+### 🔴 Un point qui touche la base de PRODUCTION
+
+`tests/integration/question-timeout.integration.test.ts` appelle `claimDueQuestions(50)` **sans filtre de
+tenant** : il réclame donc aussi les échéances réelles d'autres espaces qui seraient dues au même instant.
+Depuis le passage au BAIL, le dégât se limite à repousser leur réveil de 15 minutes (avant, la version qui
+consommait l'échéance l'aurait détruite). À borner au tenant du test avant que des clients aient des
+questions en vol.
+
+
 ## ⚠️ En attente d'une VÉRIFICATION EN VOL (2026-08-26)
 
 Deux fonctionnalités sont livrées et déployées, mais AUCUNE n'a encore été vue fonctionner sur du vrai
