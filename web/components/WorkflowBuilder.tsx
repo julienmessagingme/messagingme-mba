@@ -18,6 +18,7 @@ import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } fro
 import { boutonsDepuisNode, ouvreUneSortie } from '@/lib/rcs-boutons';
 import { RcsButtonsEditor } from '@/components/RcsButtonsEditor';
 import { RcsImageField } from '@/components/RcsImageField';
+import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
 import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
@@ -290,10 +291,13 @@ function WFNode({ id, data, selected }: NodeProps) {
           {/* Sortie LIBRE, sans id : l'arête créée ne porte aucun sourceHandle, et c'est elle que l'exécuteur
               suit quand le contact ÉCRIT au lieu de taper un bouton. Non reliée, une réponse hors boutons
               termine le parcours et rend la parole à l'agent : c'est voulu, mais il faut pouvoir choisir. */}
-          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-500">
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700">
             <span className="shrink-0">✎</span>
             <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
-            <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-ink-400" title={t('Le contact écrit au lieu de taper un bouton', 'The contact writes instead of tapping a button')} />
+            {/* 🔴 MÊME couleur que les autres sorties. Elle était grise, et Julien en a conclu le 2026-08-26
+                qu'elle n'était pas reliable : sur un bloc où tous les autres points sont bleus, un point gris
+                se lit comme désactivé. Le mécanisme, lui, marchait déjà. */}
+            <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de taper un bouton : relie ce point pour prévoir ce cas', 'The contact writes instead of tapping a button: connect this dot to handle that case')} />
           </div>
         </div>
       ) : isCondition ? (
@@ -765,6 +769,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             defaultEdgeOptions={EDGE_OPTS}
+            // Rayon d'accrochage élargi : par défaut il faut lâcher la flèche à 20 px du petit point d'entrée
+            // du bloc visé, sinon rien ne se passe et l'éditeur a l'air cassé. Lâcher SUR le bloc suffit.
+            connectionRadius={60}
             fitView
             proOptions={{ hideAttribution: true }}
           >
@@ -989,9 +996,30 @@ function ConfigPanel({
         // DÉFENSIVE (une forme inconnue redevient un bouton « Réponse » réparable en un clic) et rend la même
         // structure typée que les deux autres écrans, qui partagent l'éditeur ci-dessous.
         const boutons = boutonsDepuisNode(d.suggestions);
+        // 🔴 D'où vient le message : de la BIBLIOTHÈQUE, ou composé ICI. Demandé par Julien le 2026-08-26 :
+        // afficher l'image et le texte à modifier sous un message pris en bibliothèque n'a pas de sens, on
+        // vient justement de choisir un message tout fait.
+        //
+        // Défaut « composé ici » : les blocs DÉJÀ construits n'ont pas ce marqueur et doivent garder leurs
+        // champs éditables. Le contenu reste COPIÉ dans le bloc dans les deux cas, c'est de l'affichage.
+        const source = d.rcsSource === 'bibliotheque' ? 'bibliotheque' : 'libre';
+        const composeIci = source === 'libre';
         return (
           <div className="space-y-3">
-            <div>
+            <div className="flex gap-1 rounded-lg bg-ink-50 p-1" role="group">
+              {([['bibliotheque', t('Message enregistré', 'Saved message')], ['libre', t('Composer ici', 'Compose here')]] as const).map(([v, libelle]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => onPatch({ rcsSource: v })}
+                  data-testid={`rcs-node-source-${v}`}
+                  className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${source === v ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-500 hover:text-ink-700'}`}
+                >
+                  {libelle}
+                </button>
+              ))}
+            </div>
+            <div className={composeIci ? 'hidden' : undefined}>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Partir d’un message enregistré', 'Start from a saved message')}</label>
               <select
                 value=""
@@ -1013,7 +1041,18 @@ function ConfigPanel({
               </p>
             </div>
 
-            <div>
+            {!composeIci && (
+              // Ce qui a été copié, montré tel que le contact le verra. Sans ça, masquer les champs laisserait
+              // un panneau qui ne dit RIEN du message choisi. Même composant que l'aperçu de l'inbox.
+              <div data-testid="rcs-node-apercu">
+                <RcsPreview
+                  brouillon={{ text: (d.text as string) ?? '', imageUrl: (d.imageUrl as string) ?? '', suggestions: boutons }}
+                  vide={t('Choisis un message enregistré ci-dessus.', 'Pick a saved message above.')}
+                />
+              </div>
+            )}
+
+            <div className={composeIci ? undefined : 'hidden'}>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Image d’en-tête (facultatif)', 'Header image (optional)')}</label>
               <RcsImageField
                 tenantId={tenantId}
@@ -1027,7 +1066,7 @@ function ConfigPanel({
               </p>
             </div>
 
-            <div>
+            <div className={composeIci ? undefined : 'hidden'}>
               <ChampCorpsVariables
                 valeur={(d.text as string) ?? ''}
                 onChange={(text) => onPatch({ text })}
@@ -1042,7 +1081,7 @@ function ConfigPanel({
               </p>
             </div>
 
-            <div>
+            <div className={composeIci ? undefined : 'hidden'}>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Boutons', 'Buttons')}</label>
               <RcsButtonsEditor
                 boutons={boutons}
@@ -1054,14 +1093,7 @@ function ConfigPanel({
                 compact
                 testIdPrefix="rcs-node"
               />
-              <p className="mt-1 text-[11px] text-ink-400">
-                {t('Seul un bouton « Réponse » devient une sortie à relier. Les cinq autres formes agissent sur le téléphone du contact et ne renvoient rien au scénario.', 'Only a “Reply” button becomes an output to connect. The other five act on the contact’s phone and send nothing back to the scenario.')}
-              </p>
             </div>
-
-            <p className="text-[11px] text-amber-700">
-              {t('Ce bloc a aussi deux sorties de livraison. Reliez « Non joignable en RCS » à un envoi de template WhatsApp pour rattraper les contacts que le RCS n’atteint pas.', 'This block also has two delivery outputs. Connect “Not reachable on RCS” to a WhatsApp template to catch contacts RCS cannot reach.')}
-            </p>
           </div>
         );
       })()}

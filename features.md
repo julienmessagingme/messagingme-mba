@@ -275,6 +275,17 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Quatre frottements corrigés dans l'éditeur de scénario** (2026-08-26), tous signalés par Julien :
+  - **Lâcher une flèche SUR le bloc visé suffit** désormais. Il fallait viser son petit point d'entrée à
+    20 pixels près, sinon rien ne se passait et l'éditeur avait l'air cassé.
+  - **La sortie « Toute autre réponse » n'est plus grise.** Elle était reliable depuis toujours, mais sur un
+    bloc où tous les autres points sont bleus, un point gris se lit comme désactivé. C'est LA sortie à
+    brancher pour prévoir le cas « le contact écrit au lieu de cliquer ».
+  - **Le bloc RCS demande d'abord d'où vient le message** : d'un message enregistré, ou composé ici. Sur un
+    message enregistré, l'image et le texte à modifier disparaîssent (on vient de choisir un message tout
+    fait) et un aperçu montre ce qui partira. Les blocs déjà construits gardent leurs champs.
+  - **Trois pavés de texte retirés** du panneau latéral, qui expliquaient la mécanique des sorties au milieu
+    d'un sélecteur de bouton et alourdissaient un écran déjà chargé.
 - ✅ **Un lead venu d'une publicité WhatsApp déclenche un scénario** (2026-08-26). Nouveau déclencheur
   d'automation : « le contact arrive d'une publicité WhatsApp ». On peut viser **une pub précise** par son
   identifiant, ou **laisser vide pour toutes les pubs**, ce qui est le montage le plus courant. Un message

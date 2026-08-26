@@ -25,10 +25,10 @@ export const LIBELLE_KIND: Record<KindBouton, [string, string]> = {
 
 /** Ce que fait le bouton, en une phrase, sous le sélecteur. Ce qui compte pour choisir : où ça mène. */
 export const AIDE_KIND: Record<KindBouton, [string, string]> = {
-  reply: [
-    'Le contact répond en un tap. C’est le SEUL bouton qui ouvre une sortie à relier dans un scénario.',
-    'The contact replies in one tap. This is the ONLY button that opens an output you can connect in a scenario.',
-  ],
+  // Vide à dessein : « Réponse » est la forme par défaut et se comprend seule. La phrase qui était ici
+  // expliquait la mécanique des sorties de scénario au milieu d'un sélecteur de bouton, hors sujet et
+  // illisible (retirée sur demande de Julien, 2026-08-26). Le rendu saute les aides vides.
+  reply: ['', ''],
   openUrl: ['Ouvre une page web. Le contact quitte la conversation.', 'Opens a web page. The contact leaves the conversation.'],
   dial: ['Compose un numéro de téléphone.', 'Dials a phone number.'],
   calendar: [

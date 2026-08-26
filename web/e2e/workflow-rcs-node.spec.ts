@@ -114,3 +114,49 @@ test.describe('Builder : bloc RCS', () => {
     await expect(page.getByTestId('add-node-template')).toBeEnabled();
   });
 });
+
+/**
+ * 🔴 D'où vient le message d'un bloc RCS : de la BIBLIOTHÈQUE, ou composé ICI.
+ *
+ * Demandé par Julien le 2026-08-26 : afficher « l'image d'en-tête à modifier » et « le corps du texte à
+ * modifier » sous un message pris en bibliothèque n'a pas de sens, on vient justement de choisir un message
+ * tout fait. Le contenu reste COPIÉ dans le bloc dans les deux cas : c'est de l'affichage, pas du moteur.
+ */
+test.describe('Bloc RCS : message enregistré ou composé ici', () => {
+  const BLOC_RCS: Graph = {
+    nodes: [{ id: 'r', type: 'rcs_message', position: { x: 0, y: 0 }, data: { wfType: 'rcs_message', text: 'Bonjour', imageUrl: '', suggestions: [] } }],
+    edges: [],
+  };
+
+  test('un bloc DÉJÀ construit garde ses champs éditables (aucune régression)', async ({ page }) => {
+    await mockBuilder(page, BLOC_RCS, []);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+    await expect(page.getByTestId('rcs-node-text')).toBeVisible();
+    await expect(page.getByTestId('rcs-node-image')).toBeVisible();
+  });
+
+  test('🔴 « Message enregistré » masque l image et le texte à modifier, et montre l aperçu', async ({ page }) => {
+    await mockBuilder(page, BLOC_RCS, []);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+
+    await page.getByTestId('rcs-node-source-bibliotheque').click();
+
+    await expect(page.getByTestId('rcs-node-text')).toBeHidden();
+    await expect(page.getByTestId('rcs-node-image')).toBeHidden();
+    // Masquer sans rien montrer laisserait un panneau muet : l'aperçu dit ce qui partira.
+    await expect(page.getByTestId('rcs-node-apercu')).toBeVisible();
+    await expect(page.getByTestId('rcs-node-library')).toBeVisible();
+  });
+
+  test('revenir sur « Composer ici » rend les champs', async ({ page }) => {
+    await mockBuilder(page, BLOC_RCS, []);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+    await page.getByTestId('rcs-node-source-bibliotheque').click();
+    await page.getByTestId('rcs-node-source-libre').click();
+    await expect(page.getByTestId('rcs-node-text')).toBeVisible();
+    await expect(page.getByTestId('rcs-node-apercu')).toHaveCount(0);
+  });
+});

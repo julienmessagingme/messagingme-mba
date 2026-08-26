@@ -134,7 +134,9 @@ export function RcsButtonsEditor({
               </div>
             )}
 
-            <p className="mt-1 text-[11px] text-ink-400">{t(...AIDE_KIND[b.kind])}</p>
+            {t(...AIDE_KIND[b.kind]) !== '' && (
+              <p className="mt-1 text-[11px] text-ink-400">{t(...AIDE_KIND[b.kind])}</p>
+            )}
           </div>
         ))}
       </div>
