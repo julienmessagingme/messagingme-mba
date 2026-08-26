@@ -115,6 +115,27 @@ test.describe('Éditeur : le bloc Question', () => {
     await expect(page.getByTestId('sortie-orpheline-row:2')).toBeVisible();
   });
 
+  test('🔴 le bouton qui ouvre le menu est AU-DESSUS des réponses, et déjà là quand il n’y en a aucune', async ({ page }) => {
+    // Ordre de l'écran du contact : la question, le bouton qui ouvre la liste, puis la liste. Et le champ
+    // doit exister AVANT la première réponse : le faire apparaître à ce moment-là décalerait vers le bas la
+    // ligne qu'on vient de créer et qu'on s'apprête à remplir.
+    const sansMenu: Graph = {
+      nodes: [{ id: 'n1', type: 'question', position: { x: 0, y: 0 }, data: { wfType: 'question', body: 'Q', rows: [] } }],
+      edges: [],
+    };
+    await mockBuilder(page, sansMenu);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+    await expect(page.getByTestId('question-node-button')).toBeVisible();
+
+    await page.getByTestId('question-add-row').click();
+    const bouton = page.getByTestId('question-node-button');
+    const premiere = page.getByTestId('question-row-title-0');
+    await expect(premiere).toBeVisible();
+    const [hautBouton, hautPremiere] = [await bouton.boundingBox(), await premiere.boundingBox()];
+    expect(hautBouton!.y).toBeLessThan(hautPremiere!.y);
+  });
+
   test('une question SANS menu garde la sortie libre : elle attend une réponse écrite', async ({ page }) => {
     const sansMenu: Graph = {
       nodes: [{ id: 'n1', type: 'question', position: { x: 0, y: 0 }, data: { wfType: 'question', body: 'Ton code postal ?', rows: [] } }],

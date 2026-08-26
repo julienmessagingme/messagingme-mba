@@ -1227,6 +1227,27 @@ function ConfigPanel({
               />
             </div>
 
+            {/* AVANT les réponses, dans l'ordre où le contact le voit : la question, le bouton qui ouvre la
+                liste, puis la liste. Le champ reste affiché même sans réponse : le faire apparaître à la
+                première réponse ajoutée décalerait vers le bas la ligne qu'on est en train de taper. Un
+                libellé vide part en « Choisir ». */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton qui ouvre le menu', 'Button that opens the menu')}</label>
+              <input
+                value={(d.buttonLabel as string) ?? ''}
+                maxLength={20}
+                onChange={(e) => onPatch({ buttonLabel: e.target.value })}
+                data-testid="question-node-button"
+                className={cls}
+                placeholder={t('Choisir', 'Choose')}
+              />
+              {rows.length === 0 && (
+                <p className="mt-1 text-[11px] text-ink-400">
+                  {t('Ce bouton n’apparaît que si tu proposes des réponses ci-dessous.', 'This button only appears if you offer answers below.')}
+                </p>
+              )}
+            </div>
+
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Réponses proposées (menu)', 'Offered answers (menu)')}</label>
               <div className="space-y-1.5">
@@ -1265,22 +1286,6 @@ function ConfigPanel({
                 {t('Maximum 10 réponses, 24 caractères chacune. Chaque réponse devient une sortie à relier. Sans aucune réponse, la question part en texte simple et attend une réponse écrite.', 'Maximum 10 answers, 24 characters each. Each answer becomes an output to connect. With no answer at all, the question goes out as plain text and waits for a written reply.')}
               </p>
             </div>
-
-            {/* Le libellé du bouton n'a de sens qu'avec un menu : c'est lui qui ouvre la liste. Sans ligne,
-                l'afficher demanderait de remplir un champ qui ne partira pas. */}
-            {rows.length > 0 && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton qui ouvre le menu', 'Button that opens the menu')}</label>
-                <input
-                  value={(d.buttonLabel as string) ?? ''}
-                  maxLength={20}
-                  onChange={(e) => onPatch({ buttonLabel: e.target.value })}
-                  data-testid="question-node-button"
-                  className={cls}
-                  placeholder={t('Choisir', 'Choose')}
-                />
-              </div>
-            )}
 
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Si le contact ne répond pas', 'If the contact does not reply')}</label>
