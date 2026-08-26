@@ -28,6 +28,47 @@ describe('extractInbound', () => {
     expect(extractInbound(p)[0]).toMatchObject({ field: null });
   });
 
+  /**
+   * 🔴 Publicité Click-to-WhatsApp. Meta n'envoie l'objet `referral` que sur le PREMIER message après le
+   * clic : ne pas le capter ici, c'est perdre l'origine du lead pour toujours. La forme testée est celle d'un
+   * corps RÉELLEMENT capté (dont un `ctwa_clid` VIDE, qui arrive).
+   */
+  it('🔴 message venu d une PUB : le referral est capté (source_id = l identifiant de la pub)', () => {
+    const r = extractInbound(payload([{
+      id: 'wamid.ad', from: '33611', type: 'text', text: { body: 'Bonjour' },
+      referral: {
+        source_url: 'https://fb.me/XXXX',
+        source_id: '120212345678901234',
+        source_type: 'ad',
+        headline: 'Offre de rentrée',
+        body: 'Parlez-nous sur WhatsApp',
+        media_type: 'image',
+        image_url: 'https://exemple/img.jpg',
+        ctwa_clid: '',
+      },
+    }]));
+    expect(r[0]!.referral).toEqual({
+      adId: '120212345678901234',
+      sourceType: 'ad',
+      titre: 'Offre de rentrée',
+      url: 'https://fb.me/XXXX',
+      ctwaClid: null, // vide chez Meta -> null chez nous, jamais une chaîne vide qui passerait pour une valeur
+    });
+  });
+
+  it('message ordinaire : AUCUN referral (la clé est absente, pas un objet vide)', () => {
+    const r = extractInbound(payload([{ id: 'wamid.ord', from: '33611', type: 'text', text: { body: 'coucou' } }]));
+    expect(r[0]!.referral).toBeUndefined();
+  });
+
+  it('referral SANS source_id : ignoré (rien à router, on n invente pas une origine)', () => {
+    const r = extractInbound(payload([{
+      id: 'wamid.bad', from: '33611', type: 'text', text: { body: 'x' },
+      referral: { source_type: 'ad', headline: 'Sans identifiant' },
+    }]));
+    expect(r[0]!.referral).toBeUndefined();
+  });
+
   it('tap de bouton quick-reply (type button)', () => {
     const r = extractInbound(payload([{ id: 'wamid.2', from: '33611', type: 'button', button: { text: 'Oui', payload: 'YES' } }]));
     expect(r[0]).toMatchObject({ type: 'button', body: 'Oui', buttonPayload: 'YES' });

@@ -269,3 +269,57 @@ test.describe('Automation : HubSpot non connecté', () => {
     await expect(page.getByTestId('automation-submit')).toBeDisabled();
   });
 });
+
+/**
+ * 🔴 Déclencheur « le contact arrive d'une publicité WhatsApp » (CTWA).
+ *
+ * Meta joint l'origine de la pub (`referral.source_id`) au PREMIER message envoyé après le clic, et à lui
+ * seul. C'est ce qui permet de router un lead publicitaire vers un scénario d'accueil.
+ *
+ * La config VIDE veut dire « n'importe quelle pub », à l'INVERSE du déclencheur « tag ajouté » : c'est le
+ * montage le plus courant, et il reste borné aux messages venus d'une pub.
+ */
+test.describe('Automation : déclencheur publicité (CTWA)', () => {
+  async function monter(page: import('@playwright/test').Page, posted: Array<Record<string, unknown>>) {
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.endsWith('/automations') && req.method() === 'POST') {
+        posted.push(req.postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'a1' }) });
+      }
+      if (url.endsWith('/automations')) return json({ automations: [] });
+      if (url.endsWith('/workflows')) return json({ workflows: [WF] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/automations');
+    await page.getByTestId('automation-add').click();
+    await page.getByTestId('automation-name').fill('Lead pub');
+    await page.getByTestId('automation-trigger').selectOption('ctwa_ad');
+  }
+
+  test('🔴 sans identifiant, la config part VIDE : le scénario vaut pour toutes les pubs', async ({ page }) => {
+    const posted: Array<Record<string, unknown>> = [];
+    await monter(page, posted);
+    await expect(page.getByTestId('config-ctwa-ad')).toBeVisible();
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await page.getByTestId('automation-submit').click();
+
+    await expect.poll(() => posted.length, { timeout: 10_000 }).toBe(1);
+    expect(posted[0]).toMatchObject({ triggerKind: 'ctwa_ad', triggerConfig: {} });
+  });
+
+  test('avec un identifiant, il part dans la config', async ({ page }) => {
+    const posted: Array<Record<string, unknown>> = [];
+    await monter(page, posted);
+    await page.getByTestId('automation-ad-id').fill('120212345678901234');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    await page.getByTestId('automation-submit').click();
+
+    await expect.poll(() => posted.length, { timeout: 10_000 }).toBe(1);
+    expect(posted[0]).toMatchObject({ triggerKind: 'ctwa_ad', triggerConfig: { adId: '120212345678901234' } });
+  });
+});

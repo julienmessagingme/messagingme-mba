@@ -19,6 +19,43 @@ export interface InboundMessage {
    *  fil...). Sert au consommateur d'AVANCE de scénario à ignorer un standby (ne pas répondre / reprendre le
    *  contrôle au MBA). L'INBOX, elle, enregistre tout (voir les échanges vus en standby). null si absent. */
   field: string | null;
+  /** Publicité Click-to-WhatsApp à l'origine du message. Absent sur un message ordinaire. */
+  referral?: InboundReferral;
+}
+
+/**
+ * La pub qui a amené ce contact (objet `referral` de Meta).
+ *
+ * 🔴 Meta ne l'envoie que sur le PREMIER message après le clic. Les suivants ne le portent plus : ne pas le
+ * capter ici, c'est le perdre pour toujours.
+ *
+ * `ctwaClid` sert à renvoyer les conversions à Meta (attribution publicitaire). Il arrive parfois VIDE, vu
+ * dans un corps réel : on le garde tel quel plutôt que d'en faire une condition.
+ */
+export interface InboundReferral {
+  /** `source_id` : l'identifiant de la PUB (ou du post). C'est la clé de routage. */
+  adId: string;
+  /** `source_type` : 'ad' | 'post'. */
+  sourceType: string | null;
+  /** `headline` : le titre de la pub, lisible par un humain. */
+  titre: string | null;
+  /** `source_url` : le lien de la pub. */
+  url: string | null;
+  ctwaClid: string | null;
+}
+
+/** Referral d'un message, ou undefined. Sans `source_id` il n'y a rien à router : on ignore. */
+function referralOf(msg: Record<string, unknown>): InboundReferral | undefined {
+  const r = asRecord(msg['referral']);
+  const adId = str(r['source_id']);
+  if (!adId) return undefined;
+  return {
+    adId,
+    sourceType: str(r['source_type']) ?? null,
+    titre: str(r['headline']) ?? null,
+    url: str(r['source_url']) ?? null,
+    ctwaClid: str(r['ctwa_clid']) ?? null,
+  };
 }
 
 /** Complétion d'un WhatsApp Flow (nfm_reply parsé) : le discriminant `ref` identifie le flow (donc le
@@ -108,6 +145,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
           buttonPayload,
           profileName,
           field,
+          ...(referralOf(msg) ? { referral: referralOf(msg)! } : {}),
         });
       }
     }

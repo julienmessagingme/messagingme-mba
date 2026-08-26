@@ -211,3 +211,33 @@ describe('matchesTrigger : étape de deal HubSpot', () => {
     expect(isAutomationTriggerKind('hubspot_deal_stage')).toBe(true);
   });
 });
+
+/**
+ * 🔴 Déclencheur « le contact arrive d'une publicité ». La doctrine de la config VIDE est volontairement
+ * l'INVERSE de celle de « tag ajouté » : ici vide veut dire « n'importe quelle pub », parce que « tout lead
+ * venu d'une pub part dans le scénario d'accueil » est le montage le plus courant. La portée reste bornée aux
+ * messages issus d'une pub : elle ne peut pas déborder sur le trafic ordinaire.
+ */
+describe('déclencheur publicité (ctwa_ad)', () => {
+  const pub = (adId?: string): AutomationEvent => ({
+    kind: 'message', waId: '33611', body: 'Bonjour', isNewContact: true, channel: 'whatsapp',
+    ...(adId ? { adId } : {}),
+  });
+  const autoPub = (cfg: Record<string, unknown> = {}): AutomationRow => ({
+    id: 'a1', tenantId: 't1', name: 'Pub', enabled: true, triggerKind: 'ctwa_ad', triggerConfig: cfg,
+    workflowId: 'wf1', startNodeId: null, conditionGroup: null, cooldownSeconds: null,
+  });
+
+  it('config VIDE : n importe quelle pub déclenche', () => {
+    expect(matchesTrigger(autoPub(), pub('120212345678901234'))).toBe(true);
+  });
+
+  it('un message ORDINAIRE ne déclenche jamais, même avec une config vide', () => {
+    expect(matchesTrigger(autoPub(), pub())).toBe(false);
+  });
+
+  it('une pub PRÉCISE ne déclenche que sur elle', () => {
+    expect(matchesTrigger(autoPub({ adId: '120212345678901234' }), pub('120212345678901234'))).toBe(true);
+    expect(matchesTrigger(autoPub({ adId: '120299999999999999' }), pub('120212345678901234'))).toBe(false);
+  });
+});

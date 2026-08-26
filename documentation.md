@@ -298,6 +298,57 @@ Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (si
 120 par minute) et **`WEBHOOK_PAYLOAD_RETENTION_DAYS`** (défaut 7, purge du dernier payload). ⚠️ Un changement de `.env.prod`
 exige `docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
 
+## Publicités Click-to-WhatsApp (CTWA) : identifier d'où vient un lead
+
+Quand quelqu'un clique une publicité « Click to WhatsApp », Meta joint un objet **`referral`** au message
+entrant, dans `messages[]` :
+
+```json
+"referral": {
+  "source_url": "https://fb.me/XXXX",
+  "source_id": "120212345678901234",
+  "source_type": "ad",
+  "headline": "Offre de rentrée",
+  "body": "Parlez-nous sur WhatsApp",
+  "media_type": "image",
+  "image_url": "...",
+  "ctwa_clid": ""
+}
+```
+
+`source_id` est l'identifiant de la PUB : c'est la clé de routage.
+
+**🔴 Trois pièges, tous vérifiés avant de coder :**
+
+1. **Le referral n'arrive que sur le PREMIER message** après le clic. Les suivants ne le portent plus. Ne pas
+   le capter à l'arrivée, c'est perdre l'origine du lead définitivement. D'où l'écriture immédiate sur la
+   fiche contact, dans le même passage que l'auto-création (`src/worker.ts`).
+2. **`ctwa_clid` peut arriver VIDE.** Vu dans un corps réellement capté. N'en jamais faire une condition.
+3. **Une bascule d'attribution doit être active côté WhatsApp Business**, sinon Meta n'envoie pas le referral
+   du tout. Information de source tierce, à vérifier dans les réglages du WABA le jour du premier test réel.
+
+**Où ça atterrit.** Deux champs de contact aux clés stables (`src/crm/fields.ts`) : `pub_id` (« Pub
+(identifiant) ») et `pub_titre` (« Pub (titre) »), créés à la volée au premier lead publicitaire. Des CHAMPS
+plutôt qu'une colonne dédiée, et ce n'est pas un raccourci : l'origine devient filtrable dans le mini-CRM,
+utilisable comme variable dans un message, et segmentable en campagne, sans migration ni écran de plus.
+
+**Le déclencheur d'automation** `ctwa_ad` route ces leads vers un scénario. Sa config vide veut dire
+« n'importe quelle pub », à l'INVERSE de « tag ajouté » et « étape de deal » où une config vide n'attrape
+rien : ici le montage courant est « tout lead publicitaire part dans le scénario d'accueil », et la portée
+reste bornée aux messages venus d'une pub. Un message ordinaire ne déclenche jamais.
+
+**La fenêtre 24 h est ouverte** sur ce premier message (le contact vient d'écrire à Meta), donc le scénario
+déclenché peut ouvrir par un message rapide, sans template à faire approuver.
+
+**Ce qui n'est pas fait** : renvoyer les conversions à Meta via `ctwa_clid` (Automatic Events / Conversions
+API) pour que l'algorithme optimise la diffusion. Le `ctwa_clid` n'est pas recopié sur la fiche, mais il n'est
+pas perdu pour autant : le corps brut de chaque webhook est conservé intégralement dans `webhook_events.payload`
+(aucune purge), donc ce chantier pourra repartir de là.
+
+**⚠️ Rien de tout cela n'a encore été vu en vol.** Au 2026-08-26, sur 275 corps de webhook conservés depuis
+juillet, AUCUN ne contient `referral` ni `ctwa_clid` : personne n'a encore pointé de pub sur ce numéro. Le
+code suit la doc et un corps réel capté par un tiers, il n'est pas prouvé par notre propre trafic.
+
 ## Patterns
 
 - **Idempotence** : dédup par `meta_message_id` avant traitement (les webhooks arrivent en

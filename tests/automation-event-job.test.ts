@@ -53,6 +53,16 @@ describe('parseAutomationEventJob', () => {
       .toEqual({ tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: true, channel: 'rcs' } });
   });
 
+  it('🔴 la publicité d origine SURVIT au passage en file', () => {
+    // Sans ça, un message venu d'une pub perdrait son origine entre l'API et le worker, et le déclencheur
+    // « publicité » ne partirait jamais. Meta ne renvoie pas cette information une seconde fois.
+    const job = parseAutomationEventJob({
+      tenantId: 't1',
+      event: { kind: 'message', waId: '33611', body: 'Bonjour', isNewContact: true, channel: 'whatsapp', adId: '120212345678901234' },
+    });
+    expect(job?.event).toMatchObject({ adId: '120212345678901234' });
+  });
+
   it('le nom de file est stable (API et worker doivent parler de la même)', () => {
     expect(AUTOMATION_EVENT_QUEUE).toBe('automation-event');
   });

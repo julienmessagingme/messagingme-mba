@@ -31,6 +31,9 @@ function AutomationsInner({ session }: { session: Session }) {
   const [keywords, setKeywords] = useState('');
   const [mode, setMode] = useState<'contains' | 'equals'>('contains');
   const [tag, setTag] = useState('');
+  // Identifiant de la publicité Click-to-WhatsApp. VIDE = n'importe quelle pub, qui est le montage le plus
+  // courant (« tout lead venu d'une pub part dans le scénario d'accueil »).
+  const [adId, setAdId] = useState('');
   const [sentiment, setSentiment] = useState<'' | 'positif' | 'neutre' | 'negatif'>('negatif');
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [workflowId, setWorkflowId] = useState('');
@@ -107,6 +110,7 @@ function AutomationsInner({ session }: { session: Session }) {
   function configDuDeclencheur(): Record<string, unknown> {
     if (triggerKind === 'keyword') return { keywords: keywords.split(',').map((k) => k.trim()).filter((k) => k !== ''), mode };
     if (triggerKind === 'tag_added') return { tag: tag.trim() };
+    if (triggerKind === 'ctwa_ad') return adId.trim() !== '' ? { adId: adId.trim() } : {};
     if (triggerKind === 'conversation_analyzed') return { ...(sentiment !== '' ? { sentiment } : {}), ...(unresolvedOnly ? { unresolvedOnly: true } : {}) };
     if (triggerKind === 'avant_date') return { fieldKey: dateField, delai, unite };
     if (triggerKind === 'hubspot_deal_stage') {
@@ -130,7 +134,7 @@ function AutomationsInner({ session }: { session: Session }) {
       // Remise à zéro COMPLÈTE : un filtre resté collé (ressenti, « non résolue », étape) produirait une
       // automation plus restrictive que voulu, sans que rien ne le signale à l'écran.
       setCreating(false); setName(''); setKeywords(''); setTag(''); setWorkflowId(''); setDealStageKey('');
-      setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword');
+      setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword'); setAdId('');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Création impossible', 'Unable to create'));
@@ -173,6 +177,12 @@ function AutomationsInner({ session }: { session: Session }) {
       return `${m} ${words.map(cite).join(t(' ou ', ' or '))}`;
     }
     if (a.triggerKind === 'new_contact') return t('1er message d’un nouveau contact', 'first message from a new contact');
+    if (a.triggerKind === 'ctwa_ad') {
+      const pub = String(a.triggerConfig.adId ?? '').trim();
+      return pub === ''
+        ? t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')
+        : t(`le contact arrive de la publicité ${pub}`, `the contact comes from ad ${pub}`);
+    }
     if (a.triggerKind === 'tag_added') return `${t('tag « ', 'tag "')}${String(a.triggerConfig.tag ?? '')}${t(' » ajouté', '" added')}`;
     if (a.triggerKind === 'conversation_analyzed') {
       const s = String(a.triggerConfig.sentiment ?? '');
@@ -253,8 +263,29 @@ function AutomationsInner({ session }: { session: Session }) {
                   : t('un deal HubSpot atteint une étape', 'a HubSpot deal reaches a stage')}
               </option>
               <option value="avant_date">{t('un délai avant une date du contact', 'a delay before a date on the contact')}</option>
+              <option value="ctwa_ad">{t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')}</option>
             </select>
           </div>
+          {triggerKind === 'ctwa_ad' && (
+            <div data-testid="config-ctwa-ad">
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Publicité (facultatif)', 'Ad (optional)')}</label>
+              <input
+                value={adId}
+                onChange={(e) => setAdId(e.target.value)}
+                data-testid="automation-ad-id"
+                className={inputCls}
+                placeholder={t('identifiant de la pub, ou vide pour toutes', 'ad ID, or empty for any ad')}
+              />
+              <p className="mt-1 text-xs text-ink-500">
+                {t('Laissé vide, le scénario part pour toute personne arrivant par une publicité. L’identifiant se trouve dans le gestionnaire de publicités Meta, et il apparaît aussi sur la fiche du contact (champ « Pub (identifiant) ») dès le premier message.',
+                    'Left empty, the scenario runs for anyone arriving from an ad. The ID is in Meta Ads Manager, and it also lands on the contact record (field “Pub (identifiant)”) from the very first message.')}
+              </p>
+              <p className="mt-1 text-xs text-ink-500">
+                {t('Le contact vient d’écrire : la fenêtre de 24 h est ouverte, ce scénario peut donc commencer par un message rapide, sans template à faire approuver.',
+                    'The contact has just written: the 24-hour window is open, so this scenario can start with a quick message, with no template to get approved.')}
+              </p>
+            </div>
+          )}
           {triggerKind === 'avant_date' && (
             <div data-testid="config-avant-date">
               <label className="mb-1 block text-sm font-medium text-ink-700">{t('Combien de temps avant', 'How long before')}</label>

@@ -1,5 +1,17 @@
 # todo.md — backlog
 
+## À faire : renvoyer les conversions publicitaires à Meta (`ctwa_clid`)
+
+Le déclencheur « publicité » est livré (2026-08-26) : on sait de quelle pub vient un lead et on le route vers
+un scénario. Ce qui reste, et qui a une vraie valeur commerciale : **refermer la boucle d'attribution**.
+`ctwa_clid` sert à renvoyer à Meta les conversions (un lead qualifié, un achat) via l'Automatic Events /
+Conversions API, ce qui laisse l'algorithme optimiser la diffusion de la pub. C'est un argument de vente
+concret pour un client qui fait de l'acquisition.
+
+Deux précautions connues : `ctwa_clid` arrive parfois VIDE, et il n'est transmis que sur le premier message.
+Il n'est pas recopié sur la fiche contact aujourd'hui, mais il n'est pas perdu : le corps brut de chaque
+webhook reste dans `webhook_events.payload`, sans purge.
+
 ## Étanchéité des canaux : ce que le lot du 2026-08-25 a volontairement laissé
 
 Le lot est livré (voir `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md` et `.loop/etancheite-canaux.md`). Trois points

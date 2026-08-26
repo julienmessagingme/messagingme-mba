@@ -47,6 +47,15 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     if (cfg.mode !== undefined && cfg.mode !== 'contains' && cfg.mode !== 'equals') return "mode invalide ('contains' | 'equals')";
     return null;
   }
+  if (kind === 'ctwa_ad') {
+    // `adId` FACULTATIF, contrairement au tag ou à l'étape de deal : vide veut dire « n'importe quelle pub »,
+    // ce qui est le montage le plus courant et reste borné aux messages venus d'une pub. Fourni, il doit
+    // être exploitable : un identifiant vide ne matcherait jamais et l'automation paraîtrait active pour rien.
+    if (cfg.adId !== undefined && cfg.adId !== null && cfg.adId !== '' && !nonEmpty(cfg.adId)) {
+      return 'adId invalide (identifiant de publicité, ou vide pour « n’importe quelle pub »)';
+    }
+    return null;
+  }
   if (kind === 'tag_added') {
     // Sans tag, l'automation partirait sur n'importe quel tag posé : on refuse plutôt que de deviner.
     if (!nonEmpty(cfg.tag)) return 'tag requis pour un déclencheur « tag ajouté »';

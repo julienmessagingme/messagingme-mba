@@ -35,7 +35,7 @@ import type { ConditionGroup } from '../workflow/conditions';
  * pas a un evenement mais a l'ECOULEMENT DU TEMPS : c'est un balayage qui le leve (`automation/date-sweep`),
  * et c'est lui qui a deja tranche l'echeance. Voir `automation/avant-date.ts`.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date'] as const;
+export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad'] as const;
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);
@@ -63,7 +63,9 @@ export interface AutomationRow {
 export type AutomationEvent =
   /** `channel` = le tuyau du message reçu. Il décide notamment si la fenêtre de service WhatsApp est
    *  prouvée ouverte : un message RCS ne prouve RIEN côté Meta (cf. `runAutomations`). */
-  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs' }
+  /** `adId` = la publicité Click-to-WhatsApp d'où vient ce message, quand il y en a une. Meta ne le
+   *  transmet que sur le PREMIER message après le clic. */
+  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs'; adId?: string }
   | { kind: 'tag_added'; waId: string; tag: string }
   /** Une conversation vient d'être analysée : `sentiment` catégoriel (pas de score numérique) + `resolved`. */
   | { kind: 'analysis'; waId: string; sentiment: string; resolved: boolean }
@@ -120,6 +122,19 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
   }
   if (a.triggerKind === 'new_contact') {
     return ev.kind === 'message' && ev.isNewContact;
+  }
+  if (a.triggerKind === 'ctwa_ad') {
+    // Le message doit VENIR d'une pub : un message ordinaire ne déclenche rien, même si l'automation n'a
+    // pas de pub précise en tête.
+    if (ev.kind !== 'message') return false;
+    const venuDeLaPub = (ev.adId ?? '').trim();
+    if (venuDeLaPub === '') return false;
+    // ⚠️ Doctrine DIFFÉRENTE de « tag ajouté » et « étape de deal », où une config vide n'attrape RIEN.
+    // Ici, vide veut dire « n'importe quelle pub », et c'est légitime : « tout lead qui arrive par une pub
+    // part dans le scénario d'accueil » est le montage le plus courant. La portée reste bornée aux messages
+    // issus d'une pub, elle ne peut pas déborder sur le trafic ordinaire.
+    const voulue = String(a.triggerConfig.adId ?? '').trim();
+    return voulue === '' || voulue === venuDeLaPub;
   }
   if (a.triggerKind === 'tag_added') {
     if (ev.kind !== 'tag_added') return false;

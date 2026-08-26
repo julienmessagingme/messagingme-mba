@@ -275,6 +275,16 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Un lead venu d'une publicité WhatsApp déclenche un scénario** (2026-08-26). Nouveau déclencheur
+  d'automation : « le contact arrive d'une publicité WhatsApp ». On peut viser **une pub précise** par son
+  identifiant, ou **laisser vide pour toutes les pubs**, ce qui est le montage le plus courant. Un message
+  ordinaire ne déclenche jamais ce scénario. Et comme le contact vient d'écrire, le scénario peut commencer
+  par un message rapide, sans template à faire approuver.
+  L'origine est aussi **posée sur la fiche du contact** (champs « Pub (identifiant) » et « Pub (titre) ») dès
+  le premier message : elle devient filtrable dans le mini-CRM, utilisable comme variable dans un message, et
+  segmentable en campagne. ⚠️ Meta ne transmet cette origine qu'au PREMIER message après le clic, et l'envoie
+  seulement si l'attribution est activée côté WhatsApp Business : à vérifier dans les réglages avant la
+  première campagne publicitaire.
 - ✅ **Le bloc « message rapide » accepte une image** (2026-08-25). Même champ et même téléversement que le
   bloc RCS : un seul visuel, qui sert aux DEUX canaux. En WhatsApp il part en en-tête du message, au-dessus du
   texte et des boutons ; sur un parcours RCS, le message devient une carte qui porte l'image. Sans aucune

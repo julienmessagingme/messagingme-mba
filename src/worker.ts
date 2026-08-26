@@ -26,6 +26,11 @@ import { runHandoffSweep } from './mba/handoff-sweep';
 import { lireHandoffEnabled, ecrireHandoffEnabled } from './mba/handoff';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
+import { PgUserFieldStore } from './crm/field-store.pg';
+import {
+  ensureFieldByKey,
+  CTWA_AD_ID_FIELD_KEY, CTWA_AD_ID_FIELD_LABEL, CTWA_AD_TITLE_FIELD_KEY, CTWA_AD_TITLE_FIELD_LABEL,
+} from './crm/fields';
 import { PgWorkflowStore } from './workflow/store.pg';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
@@ -127,6 +132,9 @@ async function main(): Promise<void> {
   const settingsStore = new PgTenantSettingsStore(pool);
   const flowStore = new PgFlowStore(pool);
   const contactStore = new PgContactStore(pool);
+  // Sert à déclarer les champs « Pub » la première fois qu'un contact arrive par une publicité : sans
+  // définition, la valeur serait écrite mais invisible dans le CRM, donc infiltrable et insegmentable.
+  const fieldStore = new PgUserFieldStore(pool);
   const auditStore = new PgAuditStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const repo = new PgCampaignRepo(pool);
@@ -237,7 +245,26 @@ async function main(): Promise<void> {
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
       // Le résultat ('created') est le signal « 1er message d'un contact inconnu » : le handler le capture
       // pour le déclencheur d'automation `new_contact`. Ne PAS le jeter.
-      (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName),
+      async (tenant, m) => {
+        const issue = await contactStore.upsertFromInbound(tenant, m.waId, m.profileName);
+        // 🔴 L'origine PUBLICITAIRE, posée sur la fiche AU PASSAGE. Meta ne l'envoie que sur le premier
+        // message après le clic : ici ou jamais. Isolé dans son propre try : une fiche créée vaut mieux
+        // qu'une fiche perdue parce que l'écriture d'un champ a échoué.
+        if (m.referral) {
+          try {
+            await ensureFieldByKey(fieldStore, tenant, CTWA_AD_ID_FIELD_KEY, CTWA_AD_ID_FIELD_LABEL, 'text');
+            await ensureFieldByKey(fieldStore, tenant, CTWA_AD_TITLE_FIELD_KEY, CTWA_AD_TITLE_FIELD_LABEL, 'text');
+            await contactStore.mergeFieldsByPhone(tenant, m.waId, {
+              [CTWA_AD_ID_FIELD_KEY]: m.referral.adId,
+              ...(m.referral.titre ? { [CTWA_AD_TITLE_FIELD_KEY]: m.referral.titre } : {}),
+            });
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('origine publicitaire non posée sur la fiche:', err instanceof Error ? err.message : err);
+          }
+        }
+        return issue;
+      },
       // Pré-câblage MBA : bascules de contrôle et messages de l'agent Meta. Inerte tant que MBA n'est
       // activé nulle part, mais déjà branché pour que le premier test réel soit OBSERVABLE.
       {

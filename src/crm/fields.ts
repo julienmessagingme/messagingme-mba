@@ -25,6 +25,21 @@ export function isUserFieldType(t: string): t is UserFieldType {
 export const WHATSAPP_OPTIN_FIELD_KEY = 'whatsapp_optin';
 export const WHATSAPP_OPTIN_FIELD_LABEL = 'Consentement WhatsApp';
 
+/**
+ * Clés + libellés des champs qui portent la PUBLICITÉ Click-to-WhatsApp d'où vient un contact.
+ *
+ * 🔴 Meta n'envoie l'origine que sur le PREMIER message après le clic sur la pub. Ne pas la poser sur la
+ * fiche à cet instant, c'est la perdre définitivement.
+ *
+ * Des CHAMPS de contact plutôt qu'une colonne dédiée, et ce n'est pas un raccourci : l'origine devient du
+ * coup filtrable dans le mini-CRM, utilisable comme variable dans un message, et segmentable en campagne,
+ * sans une ligne de migration ni un écran de plus. Clés STABLES, jamais dérivées d'un libellé mutable.
+ */
+export const CTWA_AD_ID_FIELD_KEY = 'pub_id';
+export const CTWA_AD_ID_FIELD_LABEL = 'Pub (identifiant)';
+export const CTWA_AD_TITLE_FIELD_KEY = 'pub_titre';
+export const CTWA_AD_TITLE_FIELD_LABEL = 'Pub (titre)';
+
 /** Valide une valeur (string) selon le type déclaré du user field. Vide -> invalide (utiliser un retrait).
  *  Les valeurs sont stockées en STRING (cohérent avec String(v) de la substitution campagne). Déplacée depuis
  *  http/contacts.ts (comportement identique) pour être partagée par la fiche contact, l'import CSV et le

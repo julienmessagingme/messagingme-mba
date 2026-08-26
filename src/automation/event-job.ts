@@ -83,7 +83,11 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     if (channel === null) return null;
     return {
       tenantId: j.tenantId,
-      event: { kind: 'message', waId, body: typeof e.body === 'string' ? e.body : null, isNewContact: e.isNewContact === true, channel },
+      event: {
+        kind: 'message', waId, body: typeof e.body === 'string' ? e.body : null,
+        isNewContact: e.isNewContact === true, channel,
+        ...(typeof e.adId === 'string' && e.adId.trim() !== '' ? { adId: e.adId.trim() } : {}),
+      },
     };
   }
   return null; // genre inconnu : la file l ignore proprement plutot que de planter
