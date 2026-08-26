@@ -1,6 +1,6 @@
 # WIP
 
-## PRET, NON DEPLOYE (2026-08-26) : campagne AU FIL DE L'EAU alimentée par un webhook
+## LIVRE ET DEPLOYE le 2026-08-26 : campagne AU FIL DE L'EAU alimentée par un webhook
 
 Demande de Julien : dans la création de campagne, un bouton **« Autre »** à côté de « Liste de contacts » et
 « Import fichier », qui contient HubSpot (masqué quand le connecteur est éteint) et un nouveau choix
@@ -11,16 +11,20 @@ Demande de Julien : dans la création de campagne, un bouton **« Autre »** à 
 cette adresse avant. C'est la lecture naturelle de « au fil de l'eau », et la seule qui ne risque pas
 d'arroser d'un coup des centaines de contacts passés. Un rattrapage des antérieurs reste possible à ajouter.
 
-**⚠️ DEUX CHOSES RESTENT À FAIRE, dans cet ordre :**
+**Déploiement (prod sur `9f018c2`)** : migration **0084** appliquée AVANT le code, puis les 11 tests
+d'intégration lancés contre la vraie base (verts), puis `build mba-api` -> `ls db/migrations` dans l'image
+pour vérifier que 0084 y est -> `migrate` (« à jour », donc fiable) -> `up -d --build`. Les trois conteneurs
+sont sains, aucune erreur au démarrage, `mba-web` toujours rattaché à `mcp-robot_default`.
 
-1. **Appliquer la migration 0084** (additive : une colonne `campaigns.webhook_id` + un index partiel). Elle
-   n'est appliquée NULLE PART. Déployer le code sans elle couperait la création de campagne en silence
-   (`column "webhook_id" does not exist`), exactement l'incident du 2026-08-17.
-2. **Lancer les tests d'intégration** `tests/integration/campagne-fil-de-l-eau.integration.test.ts`, qui sont
-   écrits mais **jamais exécutés** : ils exigent la colonne. C'est le seul endroit où le SQL neuf est
-   réellement vérifié (`listRunningByWebhook`, l'anti-doublon, `alimenteCampagne`, l'arrêt).
+**Vérifié EN VOL** : colonne + index + FK `on delete set null` présents en base ; les marqueurs du nouvel
+écran (`campaign-source-autre`, `campaign-webhook-select`, `campaign-badge-fil`, `campaign-stop`) sont dans le
+bundle réellement servi ; la route `/stop` répond **401** là où une route inexistante répond 404 (le contrôle
+rend la distinction probante).
 
-Vérifié avant de m'arrêter : tsc vert (racine + front), racine **2448** tests verts, front **128**, E2E
+**Reste à voir sur du VRAI trafic** : personne n'a encore fait passer un lead par une adresse alimentée. Le
+premier test réel se fait en postant sur l'URL du webhook, campagne lancée.
+
+Vérifié avant de déployer : tsc vert (racine + front), racine **2448** tests verts, front **128**, E2E
 **320** (dont 8 neufs), lint front sans avertissement nouveau. Cinq mutations dans les deux sens (statut de
 sortie du moteur, anti-doublon, inscription d'un écart, condition de publication de la route publique, garde
 d'affichage de HubSpot) : chacune fait bien tomber les tests censés la couvrir.
