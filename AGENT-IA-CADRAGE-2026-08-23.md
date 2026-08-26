@@ -92,6 +92,71 @@ pas tenu. Ça conforte la discipline anti-tailor-made déjà inscrite dans le CL
 
 ---
 
+## 1 bis. Comment l'agent IA se déploie, et où il se configure
+
+Ajouté le 2026-08-26, sur demande de Julien.
+
+### Deux modes de déploiement, une seule implémentation
+
+L'agent se configure **une fois**, et le client choisit comment il le met au travail.
+
+**À petite dose, dans un scénario.** L'agent intervient à un point précis d'un parcours que le client
+a dessiné, sur un périmètre borné, et il en ressort par une branche câblée. Le scénario garde le
+contrôle. C'est le bloc agent, et c'est ce que le plan d'exécution construit.
+
+**Sur tout ce qui arrive, comme l'agent Meta.** L'agent répond à n'importe quel message entrant sur
+le numéro, sans parcours dessiné.
+
+**Ce ne sont pas deux architectures.** Le second mode est **un scénario à un seul bloc agent**,
+déclenché par une automation attrape-tout. Le run, `mayAct`, la fenêtre de 24 h, la reprise humaine,
+la mesure par bloc, les plafonds : tout existe déjà et sert les deux modes sans une ligne de plus.
+
+Conséquence qui vaut d'être écrite, parce qu'elle évite un chantier : **aucune quatrième valeur de
+`control_owner`.** Un détenteur `agent_ia` aurait coûté une migration du CHECK, une relecture de
+chaque comparaison, un délai dédié dans le balayage de reprise, et il aurait gelé le scénario qui
+contient l'agent puisque `mayAct` exige `app_workflow`. Le mode « il tient le fil » reste donc à
+l'intérieur de `app_workflow`, exactement comme n'importe quel autre parcours.
+
+Corollaire pour l'ordre des lots : le bloc agent n'est pas une alternative au mode « comme l'agent
+Meta », c'est la brique dont ce mode est fait. Le construire d'abord est le bon ordre, et le second
+mode arrive ensuite pour le prix d'une case d'activation et d'une automation.
+
+### Où ça vit dans l'interface
+
+**La barre latérale gagne un groupe « AI Agent »**, qui rassemble les deux agents que le client peut
+faire parler, le nôtre et celui de Meta. C'est le bon endroit conceptuel : ce sont deux réponses au
+même besoin, et le client arbitre.
+
+Contrainte à connaître : le modèle de navigation (`web/components/AppShell.tsx`) n'a **qu'un seul
+niveau d'enfants**. Un `NavItem` porte des `children`, mais un enfant porte un `href` et pas de
+`children` à son tour. Le groupe est donc plat :
+
+| Groupe | Entrées |
+|---|---|
+| **AI Agent** | MBA, guide · MBA, paramètres · **Other AI agent** |
+
+L'entrée « Other AI agent » est l'écran où l'agent se construit **en parlant**, décrit en §5. Le
+groupe `mba` actuel (`AppShell.tsx:78-80`) disparaît au profit de celui-ci, ses deux entrées
+gardant leurs URL pour ne casser ni les liens existants ni les signets.
+
+Si un vrai arbre à deux niveaux devenait nécessaire, c'est une modification du composant de
+navigation, pas un réglage. À ne faire que si la liste plate se révèle illisible à l'usage.
+
+### L'activation suit les règles de l'agent Meta
+
+Mêmes règles, même endroit, même forme. L'agent Meta s'active aujourd'hui par un interrupteur sur
+l'accueil, réservé aux administrateurs, qui écrit `tenant_settings.mba_enabled` par
+`PUT /tenants/:id/settings`, avec une mise à jour optimiste et un retour arrière en cas d'échec, plus
+un lien vers son écran de paramètres.
+
+L'agent IA reprend ce patron trait pour trait : un interrupteur sur l'accueil, à côté de celui de
+l'agent Meta, réservé aux administrateurs, écrivant un réglage de tenant du même genre, avec le même
+lien vers son écran. Un client doit voir d'un coup d'oeil, depuis l'accueil, **lequel des deux agents
+répond chez lui**, et pouvoir en changer sans chercher.
+
+C'est aussi ce qui rend l'arbitrage visible : les deux interrupteurs côte à côte posent la question
+« qui répond ? » sans qu'on ait à l'expliquer.
+
 ## 2. Le tool calling à l'échelle : le scénario est le routeur
 
 C'est le point où la première version se trompait, et c'est le plus important du document.
