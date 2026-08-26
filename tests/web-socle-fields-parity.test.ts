@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SOCLE_CLES } from './fields';
-import { SOCLE_FIELDS } from '../../src/crm/fields';
+import { SOCLE_CLES } from '../web/lib/fields';
+import { SOCLE_FIELDS } from '../src/crm/fields';
 
 /**
  * Les champs SOCLE sont ceux que le serveur matérialise à la première écriture. Le front en a besoin pour
@@ -11,8 +11,7 @@ import { SOCLE_FIELDS } from '../../src/crm/fields';
  * casse dès qu'elles divergent : un champ socle ajouté côté serveur et oublié ici resterait invisible sur une
  * fiche vierge, exactement le défaut que ce lot répare pour `email`.
  *
- * ⚠️ Il vit dans `web/` et non dans `tests/` : la suite racine n'a pas la lib DOM, et importer `web/lib/fields`
- * depuis là tire `web/lib/api` puis `http.ts`, qui référence `window`.
+ * Vit dans la suite racine (comme les autres `web-*-parity`) : elle a les dépendances des deux côtés.
  */
 describe('parité des champs socle front / back', () => {
   it('les deux listes portent exactement les mêmes clés', () => {

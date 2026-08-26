@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { emailVariableFields, emailResolvableFields } from './fields';
-import { contactVars } from '../../src/crm/render';
-import type { UserFieldDef } from './api';
+import { emailVariableFields, emailResolvableFields } from '../web/lib/fields';
+import { contactVars } from '../src/crm/render';
+import type { UserFieldDef } from '../web/lib/api';
 
 const t = (fr: string) => fr;
 const champ = (key: string, label: string): UserFieldDef => ({ key, label, type: 'text' });

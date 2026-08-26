@@ -17,16 +17,5 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  // Les TESTS sortent du type-check du build. Un build de production n'a pas a type-checker des
-  // fichiers de test, et ici ce n'etait pas theorique : cinq tests de parite de `lib/` importent le
-  // serveur (`../../src/crm/fields`, `../../src/workflow/engine`...). Ces imports tiraient le graphe
-  // serveur jusqu'a `src/crm/contact-store.pg.ts`, qui fait `import type { Pool } from 'pg'`, or `pg`
-  // est une dependance de la RACINE et pas de `web/`. Resultat : `npm run build` en echec depuis le
-  // 2026-08-25, donc la CI rouge ET l'image `mba-web` non reconstructible, en silence, pendant 34 h.
-  //
-  // Rien n'est perdu : ces tests de parite gardent toute leur valeur parce qu'ils TOURNENT (vitest,
-  // `lib/**/*.test.ts`), et c'est leur execution qui garantit la parite, pas le type-check du build.
-  //
-  // `e2e/**` sort pour la meme raison : des specs Playwright ne sont pas du code de production.
-  "exclude": ["node_modules", "**/*.test.ts", "**/*.test.tsx", "e2e/**"]
+  "exclude": ["node_modules"]
 }

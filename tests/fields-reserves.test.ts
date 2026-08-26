@@ -43,8 +43,6 @@ describe('libellés réservés aux champs de base', () => {
     for (const key of SYSTEM_FIELD_KEYS) expect(isReservedFieldLabel(key), key).toBe(true);
   });
 
-  // ⚠️ Le test ANTI-DÉRIVE (les libellés du serveur couvrent ceux que le front affiche) vit côté WEB,
-  // dans `web/lib/fields.test.ts`. Il ne peut pas vivre ici : importer `web/lib/fields.ts` depuis la suite
-  // racine tire `web/lib/api.ts` puis `http.ts`, et le tsconfig racine n'a pas la lib DOM, donc `tsc`
-  // passe au rouge sur `window`. L'import ne marche que dans l'autre sens.
+  // Le test ANTI-DÉRIVE (les libellés du serveur couvrent ceux que le front affiche) vit dans
+  // `tests/web-system-field-labels-parity.test.ts`, à côté des autres `web-*-parity`.
 });

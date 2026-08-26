@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SYSTEM_FIELDS } from './fields';
-import { SYSTEM_FIELD_LABELS, slugify } from '../../src/crm/fields';
+import { SYSTEM_FIELDS } from '../web/lib/fields';
+import { SYSTEM_FIELD_LABELS, slugify } from '../src/crm/fields';
 
 /**
  * ANTI-DÉRIVE entre les deux listes de libellés des champs de BASE.
@@ -10,9 +10,8 @@ import { SYSTEM_FIELD_LABELS, slugify } from '../../src/crm/fields';
  * si le front ajoute un champ de base ou en renomme un, le serveur cesserait de le protéger EN SILENCE, et
  * le doublon reviendrait.
  *
- * ⚠️ Ce test vit ICI et pas dans la suite racine : importer `web/lib/fields.ts` depuis la racine tire
- * `web/lib/api.ts` puis `http.ts`, et le tsconfig racine n'a pas la lib DOM. L'import ne marche que dans ce
- * sens-là, du web vers `src/` (qui est pur).
+ * Vit dans la suite racine (comme les autres `web-*-parity`) : elle a les dépendances des deux côtés
+ * (`zod`, `pg`), là où le job `web` de la CI n'installe que celles de `web/`.
  */
 describe('libellés des champs de base : front et serveur d’accord', () => {
   it('🔴 chaque libellé affiché par le front est protégé côté serveur, dans les DEUX langues', () => {

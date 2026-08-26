@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_DESTINATAIRES_EMAIL as FRONT } from './nodeMeta';
-import { MAX_DESTINATAIRES_EMAIL as BACK } from '../../src/workflow/engine';
+import { MAX_DESTINATAIRES_EMAIL as FRONT } from '../web/lib/nodeMeta';
+import { MAX_DESTINATAIRES_EMAIL as BACK } from '../src/workflow/engine';
 
 /**
  * Le plafond de destinataires d'un bloc email existe des DEUX côtés : le front pour masquer le bouton « + »,
@@ -9,8 +9,9 @@ import { MAX_DESTINATAIRES_EMAIL as BACK } from '../../src/workflow/engine';
  * dans le bundle client. Ce test casse dès qu'elles divergent, cas où le bouton proposerait une 4e ligne que
  * le serveur jetterait en silence.
  *
- * ⚠️ Il vit dans `web/` et non dans `tests/` : la suite racine n'a pas la lib DOM, et importer `web/lib/nodeMeta`
- * depuis là tire `web/lib/api` puis `http.ts`, qui référence `window`. Même raison que `web/lib/fields.test.ts`.
+ * Vit dans la suite racine (comme les autres `web-*-parity`) : elle a toutes les dépendances des deux côtés,
+ * et importe le front par chemin relatif sans jamais exécuter `web/lib/api.ts` (le type qu'il exporte ici
+ * n'est pas utilisé, seule la constante l'est).
  */
 describe('parité du plafond de destinataires email front / back', () => {
   it('les deux constantes valent la même chose', () => {

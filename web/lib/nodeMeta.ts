@@ -43,7 +43,7 @@ export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 /** Nombre maximal de destinataires d'un bloc « Envoi de mail ». ⚠️ MIROIR de MAX_DESTINATAIRES_EMAIL
  *  (src/workflow/engine.ts), qui fait AUTORITÉ : c'est lui qui tronque, le bouton « + » n'est qu'un confort.
  *  La valeur est recopiée plutôt qu'importée pour ne pas tirer du code serveur dans le bundle client ;
- *  `web/lib/email-recipients-parity.test.ts` casse dès que les deux divergent. */
+ *  `tests/web-email-recipients-parity.test.ts` casse dès que les deux divergent. */
 export const MAX_DESTINATAIRES_EMAIL = 3;
 
 // Infobulles des deux blocs GATÉS, définies ICI parce qu'elles sont affichées à DEUX endroits : la palette et
