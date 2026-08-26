@@ -1,6 +1,6 @@
 # WIP
 
-## PRET, NON DEPLOYE (2026-08-26) : bloc « Question » dans les scenarios
+## LIVRE ET DEPLOYE le 2026-08-26 : bloc « Question » dans les scenarios
 
 Demande de Julien : un bloc qui ouvre un MENU (au lieu de boutons) avec X reponses, qui ATTEND la reponse du
 contact, ou chaque reponse est mappable vers un autre bloc, ou la reponse ecrite est mappable meme quand un
@@ -9,9 +9,18 @@ menu existe, et ou « pas de reponse apres X temps » est une sortie mappable el
 Arbitrages tranches par Julien : sans menu, UNE seule sortie « il a repondu » (pas de mots-cles) ; bloc
 RESERVE a WhatsApp (pas de repli RCS).
 
-**⚠️ MIGRATION 0085 NON APPLIQUEE**, et les tests d integration qui l exigent n ont donc jamais tourne
-(`tests/integration/question-timeout.integration.test.ts`). Ordre au deploiement : appliquer 0085, lancer ces
-tests, puis deployer. C est le seul endroit ou le SQL de reclamation est reellement verifie.
+**Deploiement (prod sur `52a33b6`)** : migration **0085** appliquee AVANT le code, puis les 6 tests
+d integration lances contre la vraie base (verts, ils n avaient jamais pu tourner), puis `build mba-api` ->
+`ls db/migrations` dans l image pour verifier que 0085 y est -> `migrate` (« a jour », donc fiable) ->
+`up -d --build`. Les trois conteneurs sont sains, aucune erreur au demarrage, `mba-web` toujours rattache a
+`mcp-robot_default`.
+
+**Verifie EN VOL** : index partiel present en base ; les marqueurs du bloc (`question-node-timeout`,
+`question-row-title-`, `wf-row-delete`, la sortie « Pas de reponse ») sont dans le bundle reellement servi ;
+le type `question` et `claimDueQuestions` sont bien dans le code des conteneurs qui tournent.
+
+**Reste a voir sur du VRAI trafic** : aucun contact n a encore recu de menu. Le premier test se fait en
+posant un bloc Question dans un scenario et en se l envoyant depuis l Inbox (fenetre de 24 h ouverte).
 
 **Le point d architecture** : c est le seul bloc du produit qui attend DEUX choses a la fois, une reponse ET
 le temps qui passe. Le run reste `waiting` (sans quoi la reponse du contact serait perdue) et porte en plus un
