@@ -1,4 +1,4 @@
-# Agent IA dans MBA : cadrage du 2026-08-23
+# L'agent IA dans un scénario : cadrage du 2026-08-23
 
 **Statut : exploratoire.** Rien n'est engagé, rien n'est codé.
 
@@ -7,6 +7,26 @@ sur-outillée. Elle a été repassée au filtre de trois questions : est-ce simp
 est-ce que ça tient à l'échelle côté tool calling, est-ce différenciant sans sur-ingénierie.
 Six mécanismes en sont sortis. Ils sont listés en fin de document, avec la raison de chaque retrait,
 pour que la décision reste révisable si le terrain la contredit.
+
+## Vocabulaire, parce que « MBA » est un piège
+
+Le nom du repo et le nom de l'agent de Meta se confondent, et ce document construit précisément une
+**alternative** à l'agent de Meta. Convention tenue partout ici.
+
+- **MBA**, ou **l'agent Meta** : le Meta Business Agent, celui de Meta, et rien d'autre. C'est déjà
+  le sens du code : `mba_enabled`, `mba_handoff_mode`, `control_owner = 'mba'`, `rendreLaMainAMba`.
+- **la console** : notre produit, ce qui tourne sur `mba.messagingme.app`. Les noms techniques
+  (`mba-api`, `mba-worker`, `mba-web`) gardent leur graphie, ce sont des identifiants.
+- **l'agent IA** : notre agent, la feature décrite ici.
+
+**Les deux peuvent occuper le même fil, et le client choisit.** Proposer notre agent IA ne retire pas
+la possibilité de configurer l'agent de Meta : ce sont deux occupants distincts, et `control_owner`
+les distingue déjà. Notre agent IA vit **à l'intérieur** de `app_workflow`, donc il ne rend jamais la
+main tant qu'il tient le fil, ce qui est vérifié au plan d'exécution.
+
+Reste un arbitrage produit à trancher un jour, non bloquant pour les premiers lots : activer notre
+agent IA sur un numéro doit-il forcer `mba_enabled` à faux, ou les deux cohabitent-ils scénario par
+scénario ?
 
 ## Ce qui est tranché
 
@@ -34,7 +54,7 @@ pour que la décision reste révisable si le terrain la contredit.
 
 Rappel réglementaire déjà vérifié : **l'AI Act article 50 est applicable et exécutoire depuis le
 2 août 2026**. L'agent doit informer son interlocuteur qu'il parle à une IA, au plus tard au premier
-message. MBA est fournisseur, le tenant est déployeur. Le pattern existe déjà en production sur
+message. Nous sommes fournisseur au sens de l'AI Act, le tenant est déployeur. Le pattern existe déjà en production sur
 Gan Prévoyance.
 
 ---
@@ -45,7 +65,7 @@ Gan Prévoyance.
 
 1. **L'agent est un bloc DANS un scénario déterministe, pas un agent global.** Intercom, Decagon et
    Sierra ont tous un seul agent qui doit tout traiter, ce qui les oblige à inventer de la
-   recherche d'outils et du routage. MBA a déjà un graphe que le client construit et voit. Un bloc
+   recherche d'outils et du routage. La console a déjà un graphe que le client construit et voit. Un bloc
    agent « SAV commande » n'a pas besoin des outils du bloc « prise de rendez-vous ». Cette
    différence de départ a une conséquence technique décisive, développée en section 2. Et elle
    donne une famille d'outils que personne d'autre ne peut offrir : **un outil qui déclenche un
@@ -87,7 +107,7 @@ sont le premier segment du préfixe de cache chez Anthropic, et en modifier une 
 entier. Une shortlist qui bouge d'un tour à l'autre refacture donc tout à plein tarif, à chaque
 tour, là où un préfixe stable se relit à 0,1x.
 
-Ensuite, et surtout, ce mécanisme répond à un problème que MBA n'a pas. Une recherche d'outils est
+Ensuite, et surtout, ce mécanisme répond à un problème que la console n'a pas. Une recherche d'outils est
 nécessaire quand un agent unique doit couvrir tout le périmètre d'un client. Ici, le périmètre est
 déjà découpé par le graphe que le client a dessiné.
 
@@ -191,7 +211,7 @@ create table agent_tool_sources (
   tenant_id        uuid not null references tenants(id) on delete cascade,
   kind             text not null check (kind in ('http','mcp')),
   label            text not null,
-  base_url         text not null,        -- figée côté MBA, le modèle ne la choisit jamais
+  base_url         text not null,        -- figée côté console, le modèle ne la choisit jamais
   auth_kind        text not null check (auth_kind in ('none','bearer','header')),
   auth_header_name text,
   auth_secret      text,                 -- chiffré par src/crypto/secretbox.ts
@@ -498,7 +518,7 @@ marche.
 
 ### 5.2 Les dix premières minutes, concrètement
 
-**Ce que l'historique WhatsApp nous évite de demander.** MBA détient déjà les conversations du
+**Ce que l'historique WhatsApp nous évite de demander.** La console détient déjà les conversations du
 tenant. C'est le seul actif que Decagon (téléversement de transcriptions), Voiceflow et Copilot
 Studio n'ont pas par défaut. On l'exploite pour **ne poser aucune question dont on a la réponse** :
 les cinq motifs les plus fréquents des trente derniers jours avec leur volume, les formulations
@@ -939,7 +959,7 @@ silence, dans une conversation WhatsApp en cours.
 Quand L6 arrivera, le premier serveur à brancher est **Linear** : CIMD annoncé, `S256` seul donc
 aucun downgrade PKCE possible, scopes clairs, et un endpoint dédié en lecture seule pour démarrer.
 **HubSpot est le pire premier candidat** malgré sa pertinence métier : ni CIMD ni DCR, un
-`client_secret` à stocker par tenant, et surtout MBA possède déjà son connecteur HubSpot
+`client_secret` à stocker par tenant, et surtout la console possède déjà son connecteur HubSpot
 (`mm-hubspot`, en production sur le portail 139615673). Ce serait une deuxième façon de faire la
 même chose.
 
@@ -949,11 +969,26 @@ même chose.
 
 Trois décisions produit, et une recommandation technique que j'assume.
 
-**D1. Que fait l'agent quand une action irréversible est nécessaire** (envoi à un tiers,
-remboursement, écriture CRM, suppression) ? Bascule vers l'inbox humaine, ou exécution autonome avec
-des bornes dures câblées côté MBA ?
-*Recommandation : inbox par défaut, exécution autonome en option activable par un admin sur un outil
-précis.* C'est ce qui casse une patte du lethal trifecta et respecte la Rule of Two de Meta.
+**D1. Action irréversible : TRANCHÉ le 2026-08-26.** L'autonomie est **un réglage du client, outil
+par outil**. Une case dans la console, réservée aux administrateurs, dit que l'agent peut exécuter
+cet outil seul.
+
+J'avais recommandé la bascule vers l'inbox par défaut, au motif que l'agent réunit les trois pattes
+du lethal trifecta sans humain dans la boucle, que MCPTox mesure 72,8 % de succès d'attaque pour
+moins de 3 % de refus, et que le repo a déjà son précédent maison (`conversation_analysis.abusive`
+est un constat du modèle qui ne déclenche rien, `contacts.blocked_at` est une décision humaine qui a
+des effets). Julien a tranché autrement, en connaissance de ces éléments.
+
+Ce que ça implique, et qui est câblé en conséquence :
+
+- La case est **admin seulement**. Le RBAC existant suffit, les écritures y sont déjà réservées.
+- L'outil passe quand même par le tronc commun : arguments validés par Zod, identifiants en
+  `source: 'contact'` donc dérivés du numéro authentifié par la signature du webhook Meta et jamais
+  fabriqués par le modèle, budget de temps, plafond d'appels.
+- Chaque appel est journalisé dans `agent_tool_calls` avec ses arguments rédigés. C'est la seule
+  chose qui rende un incident instruisable après coup, et ce n'est pas facultatif.
+- **La responsabilité se déplace vers le tenant qui coche.** C'est la contrepartie assumée de
+  l'option, et elle doit être écrite dans les conditions. Action commerciale, pas technique.
 
 **D2. Que se passe-t-il quand le compte prépayé est à zéro en pleine conversation ?**
 *Recommandation : sortie par `sortie:plafond` avec le message de repli déclaré par le client, plus
@@ -988,7 +1023,7 @@ canal d'exfiltration le plus trivial ici est le message WhatsApp lui-même, et l
 `tracked_links` et `/r/:code` en production).
 
 **R2. Le SSRF depuis le réseau Docker `mcp-robot_default` casse le cloisonnement entre clients du
-parc, pas seulement entre tenants MBA.** Vérifié dans le code : aujourd'hui tout le trafic sortant
+parc, pas seulement entre tenants de la console.** Vérifié dans le code : aujourd'hui tout le trafic sortant
 vise des hôtes fixes, un grep de `fetch(` sur `src/` ne remonte que Meta et Telegram. Or
 `mba-worker` tourne sur un réseau où `mba-api:8095`, `odalys-admin:3000`, `ganprev-app`,
 `mm-hubspot-api:8096` et l'admin NPM sur le port 81 sont joignables **par nom**. Et ce n'est pas une
@@ -1017,7 +1052,7 @@ unique ».
 
 | Retiré | Raison |
 |---|---|
-| **Présélection d'outils par embeddings**, outil `chercher_un_outil`, gel de shortlist, détection de doublons sémantiques, métrique de rang | Résout un problème que MBA n'a pas : le graphe de scénario fait déjà le routage. Et le mécanisme créait lui-même l'invalidation du cache de prompt qu'il fallait ensuite contourner. Remplacé par un plafond de 20 et un message d'interface qui invite à couper le scénario en deux blocs |
+| **Présélection d'outils par embeddings**, outil `chercher_un_outil`, gel de shortlist, détection de doublons sémantiques, métrique de rang | Résout un problème que la console n'a pas : le graphe de scénario fait déjà le routage. Et le mécanisme créait lui-même l'invalidation du cache de prompt qu'il fallait ensuite contourner. Remplacé par un plafond de 20 et un message d'interface qui invite à couper le scénario en deux blocs |
 | **Colonne `embedding vector(1536)`** | Impose pgvector, que le repo n'a pas, pour un mécanisme retiré |
 | **Table de jonction `agent_tool_grants`** | N'a de sens que pour partager un outil entre plusieurs agents. Personne ne l'a demandé. Remplacée par `agent_tools.agent_id` |
 | **Colonne `input_schema` stockée** | Deux sources de vérité pour la même chose. Le schéma se dérive de `params` par une fonction pure, testable |

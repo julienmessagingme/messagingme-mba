@@ -61,9 +61,7 @@ incrément livrable et testable, et c'est la partie **risquée**, celle qui touc
 le plus chaud du produit.
 
 **Les tâches 14 à 19 portent leurs décisions, leurs contrats et leurs pièges, mais pas encore leurs
-étapes.** Elles ont besoin d'une passe de détail avant exécution, et deux d'entre elles dépendent
-d'une décision produit encore ouverte (que fait l'agent sur une action irréversible). Ne pas les
-lancer en l'état.
+étapes.** Elles ont besoin d'une passe de détail avant exécution. Ne pas les lancer en l'état.
 
 **Ce que ce plan ne couvre pas :** la conversation de construction (§5 du cadrage), que le cadrage
 prévoit de livrer en version minimale avec L1. C'est un chantier d'interface à part entière, il aura
@@ -618,6 +616,11 @@ create table if not exists agent_tools (
   actif           boolean not null default false,
   active_par      uuid references users(id) on delete set null,
   active_le       timestamptz,
+  -- Autonomie sur une action irreversible : reglage du CLIENT, outil par outil, pose par un
+  -- administrateur (decision du 2026-08-26). Faux par defaut : cocher est un acte explicite.
+  autonome        boolean not null default false,
+  autonome_par    uuid references users(id) on delete set null,
+  autonome_le     timestamptz,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -629,6 +632,11 @@ create index if not exists agent_tools_actifs_idx on agent_tools (tenant_id, age
 alter table agent_tools drop constraint if exists agent_tools_actif_humain_chk;
 alter table agent_tools add constraint agent_tools_actif_humain_chk
   check (actif = false or active_par is not null);
+-- Meme doctrine pour l autonomie : cochee, elle porte le nom de qui l a cochee. C est ce qui rend
+-- un incident instruisable, et c est la contrepartie du choix de deplacer la decision vers le client.
+alter table agent_tools drop constraint if exists agent_tools_autonome_humain_chk;
+alter table agent_tools add constraint agent_tools_autonome_humain_chk
+  check (autonome = false or autonome_par is not null);
 
 create table if not exists agent_sessions (
   id                uuid primary key default gen_random_uuid(),
@@ -1606,6 +1614,13 @@ alertée.
 
 Les huit étapes du tronc commun sont en §3.3 du cadrage. Deux points à ne pas rater.
 
+**L'autonomie sur une action irréversible est un réglage du client** (tranché le 2026-08-26). L'étape
+2 du tronc commun ne refuse donc pas `risk = 'irreversible'` en bloc : elle lit un drapeau posé outil
+par outil dans la console, par un administrateur. Trois choses restent non négociables autour, et
+elles ne dépendent pas de ce drapeau : les identifiants sont en `source: 'contact'` donc le modèle ne
+peut pas désigner la ressource d'un autre, chaque appel entre dans `agent_tool_calls` avec ses
+arguments rédigés, et la case est réservée aux administrateurs par le RBAC existant.
+
 **L'autorisation se relit en base à l'exécution**, `where tenant_id = $1 and agent_id = $2 and actif`.
 Filtrer ce qu'on envoie au modèle n'est pas un contrôle : `vercel/ai#8653` documente exactement le cas
 où le filtrage d'exposition marchait pendant que l'exécuteur tapait dans le catalogue complet.
@@ -1753,9 +1768,14 @@ entièrement déterminés par `web/lib/ui.ts` et `web/lib/i18n.tsx`.
 
 # Après L1
 
-Trois décisions restent ouvertes et ne bloquent que la suite, sauf la première qui touche la
-tâche 16 : que fait l'agent sur une action irréversible, que se passe-t-il quand le solde tombe à
-zéro en pleine conversation, et si MCP est une allowlist ou une URL libre. Elles sont posées en §8
+**L'action irréversible est tranchée** (2026-08-26) : l'autonomie est un réglage du client, outil par
+outil, par une case réservée aux administrateurs. La tâche 16 est donc débloquée. L'outil passe quand
+même par le tronc commun, les identifiants restent en `source: 'contact'`, et chaque appel est
+journalisé avec ses arguments rédigés. Contrepartie assumée : la responsabilité se déplace vers le
+tenant qui coche, ce qui doit être écrit dans les conditions.
+
+Deux décisions restent ouvertes et ne bloquent que la suite : que se passe-t-il quand le solde tombe
+à zéro en pleine conversation, et si MCP est une allowlist ou une URL libre. Elles sont posées en §8
 du cadrage.
 
 Et deux vérifications conditionnent le modèle économique : un appel live au Gateway pour confirmer
