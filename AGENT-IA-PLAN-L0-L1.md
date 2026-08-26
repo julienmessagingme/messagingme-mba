@@ -1,0 +1,1654 @@
+# Plan d'exécution, agent IA lots L0 et L1
+
+> **Pour un exécutant agentique :** SOUS-SKILL REQUISE, utiliser `superpowers:subagent-driven-development`
+> (recommandé) ou `superpowers:executing-plans` pour exécuter tâche par tâche. Les étapes sont des cases
+> à cocher (`- [ ]`).
+
+**But :** poser un bloc « agent » dans le moteur de scénario, capable de tenir une conversation
+WhatsApp sur plusieurs tours et d'en sortir par une branche câblée, avec les outils maison seulement.
+
+**Architecture :** le bloc agent est une **main rendue** dans le moteur (patron `rcs_send`), pas un
+état de repos. Le `walk` reste pur et rend un `rest`, l'exécuteur persiste et enfile un job
+`agent-turn`. Chaque tour est un job. La boucle vit **entre** les jobs, bornée par des compteurs
+persistés. L'inactivité est un job différé par `startAfter`, pas un balayage. Le run reste en
+`waiting` sur le bloc agent pendant toute la session.
+
+**Stack :** TypeScript ESM exécuté par `tsx`, Fastify, pg-boss sur Postgres Supabase, vitest,
+Next.js 15 dans `web/`, Playwright pour les e2e.
+
+**Cadrage de référence :** [AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md).
+
+## État de ce plan, à lire avant de commencer
+
+**Les tâches 1 à 13 sont détaillées pas à pas, avec le code et les commandes.** Elles vont du bump
+zod jusqu'à un **squelette ambulant** : un bloc agent qui tient le fil sur plusieurs tours, répond,
+sort par ses branches câblées et respecte ses plafonds, avec un cerveau bouchonné. C'est un
+incrément livrable et testable, et c'est la partie **risquée**, celle qui touche `advance`, le chemin
+le plus chaud du produit.
+
+**Les tâches 14 à 19 portent leurs décisions, leurs contrats et leurs pièges, mais pas encore leurs
+étapes.** Elles ont besoin d'une passe de détail avant exécution, et deux d'entre elles dépendent
+d'une décision produit encore ouverte (que fait l'agent sur une action irréversible). Ne pas les
+lancer en l'état.
+
+**Ce que ce plan ne couvre pas :** la conversation de construction (§5 du cadrage), que le cadrage
+prévoit de livrer en version minimale avec L1. C'est un chantier d'interface à part entière, il aura
+son propre plan.
+
+## Corrections du cadrage établies par la cartographie du 2026-08-26
+
+Le cadrage contient des numéros de ligne périmés et deux erreurs de fond. Ce plan fait foi.
+
+| Le cadrage dit | La vérité vérifiée sur HEAD |
+|---|---|
+| `engine.ts:487-495` (branche générique) | `engine.ts:567-574` |
+| `executor.ts:191` (`restToState`) | `executor.ts:241-248` |
+| `executor.ts:637` (`advance`) | `executor.ts:867-978` |
+| `web/lib/api.ts:1282` (miroir des types) | `web/lib/api.ts:1445` |
+| migrations 0075 et 0076 | **déjà prises**, la prochaine libre est **0085** |
+| « une seule branche à ajouter dans `advance()` » | **trois sites** : `advance` (867), `resume` (489-582), `runFrom` (678-742) |
+| zod : viser `^3.25.76` | **faux et dangereux**, viser `^4.4.3` directement, voir tâche 1 |
+
+Cinq points que le cadrage ne mentionnait pas et qui sont des pannes silencieuses : `scanOpening`,
+`waitBeforeSessionMessage`, `v1-sends.ts:39`, `node-list.ts` et le fait que `restToState` **sera**
+atteint par le nouveau statut (contrairement à `rcs_send`, toujours résolu avant).
+
+## Contraintes globales
+
+- **zod cible : `^4.4.3` exactement**, jamais `^3.25.76`, jamais `4.0.x`. Raison mesurée en tâche 1.
+- **Le bump zod atterrit AVANT tout `npm i ai` ou `npm i @modelcontextprotocol/client`.**
+  `@modelcontextprotocol/client@2.0.0` déclare `zod: ^4.2.0` en dépendance **dure** : installé sur une
+  racine en 3.x, il crée trois arbres zod dans le lock, et deux runtimes zod dans un process font
+  lâcher les `instanceof` en silence.
+- **Prochaine migration libre : 0085.** Les migrations vivent dans l'image Docker (`COPY db ./db`) :
+  `compose build` **avant** `compose run --rm --no-deps mba-api npm run migrate`, puis `up -d --build`.
+- **`tenant_id = $1` sur chaque requête.** Le pooler est superuser, la RLS est bypassée, le filtrage
+  en code est le seul contrôle.
+- **`node.data` est opaque et fourni par le client** (`graph.ts:81`). Un `data.agentId` peut pointer
+  l'agent d'un autre tenant : toute lecture d'agent se fait `where tenant_id = $1 and id = $2`.
+- **Zod `safeParse`, jamais `parse`,** sur toute entrée non fiable. Jamais de `as` sur un payload externe.
+- **Aucune erreur destinée à l'utilisateur en 5xx** : Cloudflare remplace le corps. 422 ou 409.
+- **Pas de tiret cadratin ni demi-cadratin** dans le code, les commentaires et la doc.
+- **`npm test` en local ne prouve que la moitié.** Le `DATABASE_URL` local pointe sur la PRODUCTION :
+  ne jamais lancer `test:integration` d'ici. Après push, lire le run GitHub (jobs `unit`,
+  `integration`, `web`).
+- **Référence à noter avant de commencer :** `npx tsc --noEmit` propre, et `npm test` à 192 fichiers
+  et 2451 tests verts en environ 94 s. C'est la seule base de comparaison.
+
+---
+
+# Phase L0, les fondations
+
+## Tâche 1 : passer zod en 4.4.3
+
+**Fichiers :**
+- Modifier : `package.json:31`
+- Modifier : `package-lock.json` (régénéré, jamais édité à la main)
+- Créer : `tests/zod-bump-garde.test.ts`
+
+**Interfaces :**
+- Consomme : rien.
+- Produit : un runtime zod 4 unique et dédupé, prérequis de toutes les tâches suivantes.
+
+**Pourquoi 4.4.3 et pas l'étape intermédiaire, mesuré :** le sous-chemin `zod/v4` exposé par 3.25.76
+est un instantané de zod 4.0, et **zod 4.0 réécrit les URL au parse**. Sur les quatre versions
+testées : 3.25.76 via `zod/v4` normalise, 4.0.0 normalise, 4.1 à 4.4.3 ne normalisent pas. L'étape
+dite prudente porte donc le comportement dangereux. Conséquence concrète dans ce repo :
+`src/rcs/schema.ts:69` déclare `mediaUrl: z.string().url().max(255)`, dans cet ordre la borne
+s'applique à la valeur **normalisée**, et la valeur parsée est **persistée**
+(`campaigns.ts:229`, `rcs-messages.ts:48` et `:60`) puis relue par `parseStoredRcsOutbound`, qui rend
+`null` sur échec. Un visuel de campagne dont l'URL porte un accent reviendrait en `content: null`,
+affiché en bulle vide, sans log et sans 500.
+
+**Aucun fichier source n'a besoin de changer.** Vérifié : 30 cas représentatifs rejoués sous 3.25.76
+puis 4.4.3 donnent une sortie identique octet pour octet, et `tsc --noEmit` est propre sous les deux.
+Le repo utilise déjà `z.record(z.string(), z.unknown())` à deux arguments (`analysis/schema.ts:19`) et
+lit déjà `error.issues` et non `error.errors` (`tests/config-guards.test.ts:21`), les deux ruptures
+qui auraient mordu.
+
+- [ ] **Étape 1 : noter la référence AVANT de toucher quoi que ce soit**
+
+```bash
+npx tsc --noEmit && npm test 2>&1 | tail -5
+```
+
+Attendu : `tsc` sans sortie, et une ligne de résumé vitest. Noter le nombre de fichiers et de tests.
+
+- [ ] **Étape 2 : écrire le test de garde, qui doit être vert AVANT et APRÈS**
+
+Ce test épingle la seule propriété qui diffère entre les versions candidates. Il est vert sur 3.25.76
+et sur 4.4.3, et rouge sur 4.0.0 et sur `zod/v4` de 3.25.76. C'est un vrai test à double sens.
+
+```ts
+// tests/zod-bump-garde.test.ts
+import { describe, expect, it } from 'vitest';
+import { rcsOutboundSchema } from '../src/rcs/schema';
+
+// Garde du bump zod. La seule difference de comportement entre les versions candidates est la
+// normalisation d URL au parse : zod 4.0 (et le sous-chemin zod/v4 de 3.25.76) reecrit l URL,
+// 3.25.76 et 4.1+ la rendent verbatim. Comme la valeur PARSEE est persistee puis relue par
+// parseStoredRcsOutbound (qui rend null sur echec), une reecriture rendrait un visuel de campagne
+// illisible en silence. Ce test tombe au rouge sur toute version normalisatrice.
+describe('garde du bump zod', () => {
+  it('rend une URL de media VERBATIM, sans normalisation', () => {
+    const url = 'https://CDN.Exemple.FR:443/ete photo.png';
+    const r = rcsOutboundSchema.safeParse({
+      kind: 'card',
+      card: { title: 'Ete', mediaUrl: url },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data).toMatchObject({ card: { mediaUrl: url } });
+  });
+});
+```
+
+- [ ] **Étape 3 : le lancer sur le repo intact, il doit être VERT**
+
+```bash
+npx vitest run tests/zod-bump-garde.test.ts
+```
+
+Attendu : PASS. S'il est rouge ici, c'est que la forme du schéma a changé : lire
+`src/rcs/schema.ts:66-86` et adapter l'objet, pas l'assertion.
+
+- [ ] **Étape 4 : bumper**
+
+```bash
+npm install zod@^4.4.3
+```
+
+Attendu : `package.json` passe à `"zod": "^4.4.3"` et `package-lock.json` est régénéré. Ne pas
+éditer le lock à la main. `Dockerfile:6` et les trois jobs de `.github/workflows/ci.yml` font
+`npm ci`, qui lit le **lock** et ignore la borne : un `package.json` édité sans lock régénéré fait
+échouer `npm ci` (bruyant, tant mieux), un lock régénéré sans édition de `package.json` est un no-op
+**silencieux**.
+
+- [ ] **Étape 5 : vérifier qu'il n'y a qu'un seul zod**
+
+```bash
+npm ls zod
+```
+
+Attendu : une seule ligne `zod@4.4.3`, aucun frère `deduped` à une autre version.
+
+- [ ] **Étape 6 : rejouer la référence**
+
+```bash
+npx tsc --noEmit && npm test 2>&1 | tail -5
+```
+
+Attendu : `tsc` propre, et exactement le même nombre de tests verts qu'à l'étape 1. Si un test casse,
+ne pas le modifier : c'est le signal.
+
+- [ ] **Étape 7 : vérifier le test de garde dans le sens de l'ÉCHEC**
+
+Ne pas revenir en arrière sur le repo. Dans une copie jetable hors du repo, installer `zod@4.0.0`,
+y copier `src/rcs/schema.ts` et `src/rcs/types.ts`, et constater que l'URL revient réécrite. Environ
+une minute. C'est le protocole qui a établi le comportement, et c'est ce qu'exige la règle « un test
+de non-régression se vérifie dans les deux sens ».
+
+- [ ] **Étape 8 : commit**
+
+```bash
+git add package.json package-lock.json tests/zod-bump-garde.test.ts
+git commit -m "chore(deps): zod 4.4.3, et la garde qui empeche une version normalisatrice
+
+Le sous-chemin zod/v4 de 3.25.76 est un instantane de zod 4.0, qui REECRIT les URL
+au parse. Comme la valeur parsee est persistee (campaigns, rcs-messages) puis relue
+par parseStoredRcsOutbound qui rend null sur echec, un visuel dont l URL porte un
+accent reviendrait en bulle vide, sans log ni 500. L etape intermediaire etait donc
+le chemin risque et la destination est propre : on va directement en 4.4.3.
+
+Aucun fichier source ne change : verifie sur 30 cas rejoues sous les deux versions,
+sortie identique et tsc propre. Le repo utilisait deja z.record a deux arguments et
+lisait deja error.issues, les deux ruptures qui auraient morde.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+- [ ] **Étape 9 : pousser et lire la CI**
+
+```bash
+git push origin main
+```
+
+Attendu : les trois jobs verts. Le job `integration` est le seul qui exerce les migrations et les
+stores contre un vrai Postgres, et il ne peut pas être joué en local.
+
+---
+
+## Tâche 2 : aligner `engines` sur le runtime réel
+
+**Fichiers :** Modifier `package.json` (champ `engines`).
+
+Commit **séparé** de la tâche 1, délibérément : zod 4.4.3 ne déclare aucun `engines`, les deux
+changements sont indépendants, et groupés une CI rouge aurait deux causes candidates.
+
+- [ ] **Étape 1 : passer `engines.node` de `>=20` à `>=22`**
+
+Le `Dockerfile` est déjà sur `node:22-alpine` et la CI sur `node-version: 22`. La borne `>=20` est
+déjà désynchronisée du runtime réel : c'est de l'honnêteté de manifeste.
+
+- [ ] **Étape 2 : vérifier**
+
+```bash
+npm ci --dry-run 2>&1 | tail -3
+```
+
+Attendu : aucun `EBADENGINE`.
+
+- [ ] **Étape 3 : commit**
+
+```bash
+git add package.json
+git commit -m "chore: engines node >=22, aligne sur le Dockerfile et la CI
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 3 : ajouter `startAfter` au contrat `Queue`
+
+**Fichiers :**
+- Modifier : `src/queue/queue.ts:15`
+- Modifier : `src/queue/pgboss.ts:124-132`
+- Modifier : `src/queue/fake.ts:8` et `:14`
+- Créer : `tests/queue-start-after.test.ts`
+
+**Interfaces :**
+- Produit : `Queue.enqueue(name, data, opts?: { singletonKey?, expireInSeconds?, startAfter? })`.
+  C'est le mécanisme d'inactivité de la tâche 17, et il remplace un second balayage.
+
+**Vérifié :** `maintenanceOptions` pose `schedule: false` (`pgboss.ts:50`), ce qui désactive le
+**cron** de pg-boss (`boss.schedule`) et **pas** les jobs différés, qui passent par la requête de
+récupération normale (`start_after <= now()`). Le mécanisme tient.
+
+- [ ] **Étape 1 : écrire le test qui échoue**
+
+```ts
+// tests/queue-start-after.test.ts
+import { describe, expect, it } from 'vitest';
+import { FakeQueue } from '../src/queue/fake';
+
+describe('Queue.enqueue startAfter', () => {
+  it('transporte startAfter jusqu au job empile', async () => {
+    const q = new FakeQueue();
+    await q.enqueue('agent-turn', { sessionId: 'a' }, { startAfter: 1800 });
+    expect(q.enqueued[0]?.opts).toMatchObject({ startAfter: 1800 });
+  });
+
+  it('n invente pas startAfter quand l appelant ne le passe pas', async () => {
+    const q = new FakeQueue();
+    await q.enqueue('agent-turn', { sessionId: 'a' });
+    expect(q.enqueued[0]?.opts?.startAfter).toBeUndefined();
+  });
+});
+```
+
+- [ ] **Étape 2 : le lancer, il doit ÉCHOUER**
+
+```bash
+npx vitest run tests/queue-start-after.test.ts
+```
+
+Attendu : FAIL, TypeScript refuse `startAfter` sur le type des options.
+
+- [ ] **Étape 3 : élargir le contrat**
+
+Dans `src/queue/queue.ts:15`, ajouter `startAfter` au type des options, avec sa doc, dans le style
+des deux options déjà documentées :
+
+```ts
+  /**
+   * Empile un job (fire-and-forget, durable cote impl reelle). `opts.singletonKey` :
+   * ... (doc existante conservee)
+   * `opts.startAfter` : DIFFERE le job. Nombre de SECONDES, date ISO ou Date. C est le
+   * mecanisme d inactivite du bloc agent : on enfile le tour de reveil au moment ou l agent
+   * pose sa question, et le verrou optimiste sur le numero de tour le rend inoffensif si le
+   * contact a repondu entre temps. `schedule: false` de pg-boss ne desactive que le CRON,
+   * pas les jobs differes.
+   */
+  enqueue(
+    name: string,
+    data: unknown,
+    opts?: { singletonKey?: string; expireInSeconds?: number; startAfter?: number | string | Date },
+  ): Promise<void>;
+```
+
+- [ ] **Étape 4 : câbler l'implémentation réelle**
+
+Dans `src/queue/pgboss.ts:128-131`, ajouter la propagation **sous la même forme conditionnelle** que
+les deux autres options. Ne pas écrire `?? valeur` : le fichier documente déjà lignes 34-46 pourquoi
+une option absente doit rester absente, et `startAfter: 0` serait avalé par un test de véracité,
+exactement comme `max: 0` l'a été pour `poolOptions`.
+
+```ts
+    await this.boss.send(name, data as object, {
+      ...(opts?.singletonKey ? { singletonKey: opts.singletonKey } : {}),
+      ...(opts?.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
+      ...(opts?.startAfter !== undefined ? { startAfter: opts.startAfter } : {}),
+    });
+```
+
+- [ ] **Étape 5 : câbler le fake**
+
+Dans `src/queue/fake.ts`, élargir le type du tableau `enqueued` (ligne 8) et la signature (ligne 14)
+avec exactement le même type d'options. Sans ça la file n'est pas testable.
+
+- [ ] **Étape 6 : relancer, les deux tests doivent PASSER**
+
+```bash
+npx vitest run tests/queue-start-after.test.ts && npx tsc --noEmit
+```
+
+Attendu : 2 passed, et `tsc` propre.
+
+- [ ] **Étape 7 : commit**
+
+```bash
+git add src/queue/queue.ts src/queue/pgboss.ts src/queue/fake.ts tests/queue-start-after.test.ts
+git commit -m "feat(queue): startAfter sur enqueue, pour differer un job sans balayage
+
+Le bloc agent a besoin de se reveiller sur inactivite. Un second balayage aurait
+ajoute une DLQ et un mode de panne ; pg-boss sait deja differer un job, et le
+schedule: false pose volontairement ne desactive que le cron, pas les jobs differes.
+
+Option propagee sous la meme forme conditionnelle que les deux autres : une option
+absente doit rester absente, et startAfter 0 serait avale par un test de veracite.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 4 : déclarer la file `agent-turn`
+
+**Fichiers :**
+- Créer : `src/agent/turn-job.ts`
+- Modifier : `src/queue/names.ts:13` et `:41-48`
+- Modifier : `tests/queue-names.test.ts:21`
+
+**Interfaces :**
+- Produit : `AGENT_TURN_QUEUE`, et `parseAgentTurnJob(raw): AgentTurnJob | null`, consommés par la
+  tâche 13.
+
+- [ ] **Étape 1 : créer le module de la file, sur le patron de `src/automation/event-job.ts`**
+
+```ts
+// src/agent/turn-job.ts
+export const AGENT_TURN_QUEUE = 'agent-turn';
+
+export type RaisonTour = 'demarrage' | 'message' | 'inactivite';
+
+export interface AgentTurnJob {
+  tenantId: string;
+  runId: string;
+  sessionId: string;
+  workflowId: string;
+  nodeId: string;
+  waId: string;
+  raison: RaisonTour;
+  /** Numero de tour ATTENDU. Verrou optimiste : pg-boss est at-least-once, et un job
+   *  d inactivite differe peut se reveiller apres que le contact a repondu. */
+  tours: number;
+}
+
+const RAISONS: readonly RaisonTour[] = ['demarrage', 'message', 'inactivite'];
+
+/**
+ * Coerce defensivement le payload de la file. Rend `null` plutot que de lever : un payload
+ * inexploitable ne doit pas faire boucler la file jusqu a la DLQ (meme doctrine que
+ * parseAutomationEventJob). Le producteur DOIT relire ce parseur : une chaine morte parce que
+ * le producteur emet un champ que le consommateur n attend pas est deja arrivee sur automation-event.
+ */
+export function parseAgentTurnJob(raw: unknown): AgentTurnJob | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const s = (k: string): string | null => (typeof o[k] === 'string' && o[k] ? (o[k] as string) : null);
+  const tenantId = s('tenantId');
+  const runId = s('runId');
+  const sessionId = s('sessionId');
+  const workflowId = s('workflowId');
+  const nodeId = s('nodeId');
+  const waId = s('waId');
+  const raison = RAISONS.find((r) => r === o.raison) ?? null;
+  const tours = typeof o.tours === 'number' && Number.isInteger(o.tours) && o.tours >= 0 ? o.tours : null;
+  if (!tenantId || !runId || !sessionId || !workflowId || !nodeId || !waId || !raison || tours === null) {
+    return null;
+  }
+  return { tenantId, runId, sessionId, workflowId, nodeId, waId, raison, tours };
+}
+```
+
+- [ ] **Étape 2 : écrire le test du parseur**
+
+```ts
+// tests/agent-turn-job.test.ts
+import { describe, expect, it } from 'vitest';
+import { parseAgentTurnJob } from '../src/agent/turn-job';
+
+const valide = {
+  tenantId: 't', runId: 'r', sessionId: 's', workflowId: 'w',
+  nodeId: 'n1', waId: '33600000000', raison: 'message', tours: 3,
+};
+
+describe('parseAgentTurnJob', () => {
+  it('accepte un payload complet', () => {
+    expect(parseAgentTurnJob(valide)).toEqual(valide);
+  });
+
+  it('rend null plutot que de lever sur un payload inexploitable', () => {
+    expect(parseAgentTurnJob(null)).toBeNull();
+    expect(parseAgentTurnJob({})).toBeNull();
+    expect(parseAgentTurnJob({ ...valide, raison: 'autre' })).toBeNull();
+    expect(parseAgentTurnJob({ ...valide, tours: 1.5 })).toBeNull();
+    expect(parseAgentTurnJob({ ...valide, tenantId: '' })).toBeNull();
+  });
+
+  it('accepte le tour zero, qui est le demarrage', () => {
+    expect(parseAgentTurnJob({ ...valide, raison: 'demarrage', tours: 0 })).not.toBeNull();
+  });
+});
+```
+
+- [ ] **Étape 3 : lancer, ça doit PASSER**
+
+```bash
+npx vitest run tests/agent-turn-job.test.ts
+```
+
+- [ ] **Étape 4 : déclarer la file**
+
+Dans `src/queue/names.ts`, ajouter `'agent-turn'` au tuple `BASE_QUEUES` (ligne 13) **et** une entrée
+dans `QUEUE_POLLING_SECONDS` (lignes 41-48). `QUEUE_POLLING_SECONDS` est typé
+`Record<(typeof BASE_QUEUES)[number], number>` : ajouter la file sans la cadence casse `tsc`, c'est
+voulu. Cadence **2 s**, comme `webhook`, parce que c'est un chemin conversationnel. À assumer
+explicitement : cette cadence a été descendue pour contenir l'egress Supabase (663 000 requêtes par
+jour mesurées le 2026-08-17, commentaire lignes 26-39). Conséquence : `ALL_QUEUES` passe de 12 à 14
+entrées et la DLQ `agent-turn-dlq` devient surveillée depuis `/ops`.
+
+- [ ] **Étape 5 : apprendre la constante au test de garde**
+
+`tests/queue-names.test.ts` dérive la liste des files en lisant le source de `src/worker.ts` et
+**lève** sur une constante qu'il ne sait pas résoudre (ligne 22, « constante de file inconnue du
+test »). Ajouter la résolution de `AGENT_TURN_QUEUE` ligne 21. Ne pas contourner en passant le
+littéral `'agent-turn'` au call site : la panne est bruyante et c'est le but.
+
+- [ ] **Étape 6 : vérifier**
+
+```bash
+npx vitest run tests/queue-names.test.ts && npx tsc --noEmit
+```
+
+- [ ] **Étape 7 : commit**
+
+```bash
+git add src/agent/turn-job.ts src/queue/names.ts tests/agent-turn-job.test.ts tests/queue-names.test.ts
+git commit -m "feat(agent): declarer la file agent-turn et son parseur defensif
+
+Un tour d agent est un appel LLM plus N appels d outils, soit 3 a 20 s. Le laisser en
+ligne dans le handler de webhook tiendrait la connexion Meta ouverte et ferait retenter
+le webhook pendant qu on parle au modele. D ou une file dediee, a 2 s comme webhook
+puisque c est un chemin conversationnel.
+
+Le payload porte le numero de tour attendu : pg-boss est at-least-once et le job
+d inactivite differe peut se reveiller apres que le contact a repondu.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+# Phase L1-A, le socle sans comportement
+
+## Tâche 5 : la migration 0085
+
+**Fichiers :** Créer `db/migrations/0085_agent_ia.sql`.
+
+**Interfaces :** Produit les tables `agents`, `agent_tools`, `agent_sessions`, `agent_tool_calls`,
+consommées par les tâches 9 à 17.
+
+Note : le design retenu (le run reste en `waiting` sur le bloc agent) n'exige **aucune** migration
+sur `workflow_runs`, et c'est un argument fort pour lui. Si quelqu'un proposait un statut de run
+dédié, il faudrait **remplacer** le CHECK d'origine et non en ajouter un second, précédent exact en
+`0054_workflow_wait.sql:12-16`, plus un index partiel.
+
+- [ ] **Étape 1 : écrire la migration**
+
+```sql
+-- 0085_agent_ia.sql
+-- Le bloc agent : la fiche, son catalogue d outils, l etat multi-tours, le journal d appels.
+-- Le journal est AUSSI le grand livre de facturation : c est la meme table, volontairement.
+
+create table if not exists agents (
+  id                 uuid primary key default gen_random_uuid(),
+  tenant_id          uuid not null references tenants(id) on delete cascade,
+  label              text not null,
+  -- Ce que l IA de setup peut ecrire, valide par ficheAgentSchema (Zod safeParse).
+  fiche              jsonb not null default '{}'::jsonb,
+  fiche_version      int  not null default 1,
+  -- Ce qu elle ne peut PAS ecrire : hors du jsonb, ecrit par un admin authentifie.
+  mention_ia         text not null,
+  max_tours          int  not null default 8  check (max_tours between 1 and 20),
+  max_appels_outils  int  not null default 12 check (max_appels_outils between 0 and 60),
+  budget_micro_eur   bigint not null default 30000 check (budget_micro_eur > 0),
+  inactivite_minutes int  not null default 30 check (inactivite_minutes between 1 and 1440),
+  contact_inconnu    text not null default 'lecture_seule'
+                     check (contact_inconnu in ('aucun_outil','lecture_seule','tous')),
+  modele             text not null,
+  status             text not null default 'draft' check (status in ('draft','active','disabled')),
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+create unique index if not exists agents_label_idx on agents (tenant_id, lower(label));
+
+create table if not exists agent_tools (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references tenants(id) on delete cascade,
+  agent_id        uuid not null references agents(id) on delete cascade,
+  origin          text not null check (origin in ('mba','http','mcp')),
+  -- Nom EXPOSE au modele. Charset commun OpenAI et Gemini.
+  name            text not null check (name ~ '^[a-z0-9_]{1,64}$'),
+  title           text not null,
+  description     text not null,
+  ne_pas_utiliser text not null,
+  params          jsonb not null default '[]'::jsonb,
+  binding         jsonb not null default '{}'::jsonb,
+  output_paths    text[] not null default '{}',
+  risk            text not null check (risk in ('read','write','irreversible')),
+  timeout_ms      int  not null default 8000 check (timeout_ms between 1000 and 30000),
+  max_bytes       int  not null default 16384 check (max_bytes between 256 and 262144),
+  actif           boolean not null default false,
+  active_par      uuid references users(id) on delete set null,
+  active_le       timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create unique index if not exists agent_tools_name_idx on agent_tools (agent_id, name);
+create index if not exists agent_tools_actifs_idx on agent_tools (tenant_id, agent_id) where actif;
+-- Un outil n est actif que si un humain l a active. La spec MCP exige un consentement humain
+-- avant l invocation d un outil ; notre agent n a pas d humain au runtime, donc on deplace le
+-- consentement du runtime vers la CONFIGURATION, et on le rend incontournable EN BASE.
+alter table agent_tools drop constraint if exists agent_tools_actif_humain_chk;
+alter table agent_tools add constraint agent_tools_actif_humain_chk
+  check (actif = false or active_par is not null);
+
+create table if not exists agent_sessions (
+  id                uuid primary key default gen_random_uuid(),
+  tenant_id         uuid not null references tenants(id) on delete cascade,
+  run_id            uuid not null references workflow_runs(id) on delete cascade,
+  agent_id          uuid not null references agents(id) on delete cascade,
+  node_id           text not null,
+  wa_id             text not null,
+  transcript        jsonb  not null default '[]'::jsonb,
+  tours             int    not null default 0,
+  appels_outils     int    not null default 0,
+  tokens_in         bigint not null default 0,
+  tokens_out        bigint not null default 0,
+  cout_micro_eur    bigint not null default 0,
+  status            text not null default 'en_cours'
+                    check (status in ('en_cours','sortie','inactivite','plafond','erreur')),
+  sortie            text,
+  derniere_activite timestamptz not null default now(),
+  created_at        timestamptz not null default now()
+);
+-- Une seule session vivante par parcours : l invariant est en base, pas dans une convention.
+create unique index if not exists agent_sessions_run_vivante_idx
+  on agent_sessions (run_id) where status = 'en_cours';
+create index if not exists agent_sessions_tenant_idx on agent_sessions (tenant_id, created_at desc);
+
+create table if not exists agent_tool_calls (
+  id             uuid primary key default gen_random_uuid(),
+  tenant_id      uuid not null references tenants(id) on delete cascade,
+  session_id     uuid not null references agent_sessions(id) on delete cascade,
+  tool_id        uuid references agent_tools(id) on delete set null,
+  tool_name      text not null,
+  origin         text not null,
+  args_rediges   jsonb,
+  status         text not null check (status in
+                   ('ok','erreur_outil','refuse','timeout','erreur_protocole','budget')),
+  http_status    int,
+  duree_ms       int,
+  taille_reponse int,
+  erreur         text,
+  at             timestamptz not null default now()
+);
+create index if not exists agent_tool_calls_session_idx on agent_tool_calls (tenant_id, session_id, at);
+```
+
+- [ ] **Étape 2 : vérifier la numérotation**
+
+```bash
+ls db/migrations/ | tail -3
+```
+
+Attendu : `0084_campaign_webhook.sql` est la dernière avant la nouvelle. Si `0085` existe déjà,
+prendre le numéro suivant : le suivi se fait par **nom** dans `schema_migrations`, les trous sont
+sans conséquence, les doublons non.
+
+- [ ] **Étape 3 : appliquer localement contre un Postgres jetable, jamais contre le `DATABASE_URL` du `.env`**
+
+```bash
+docker run --rm -d -p 55432:5432 -e POSTGRES_PASSWORD=x --name mba-mig postgres:16
+```
+
+Puis, avec `DATABASE_URL=postgres://postgres:x@localhost:55432/postgres npm run migrate`, vérifier
+qu'elle passe et qu'un second passage est un no-op.
+
+- [ ] **Étape 4 : corriger le CLAUDE.md du repo, périmé à deux endroits**
+
+Il annonce « Prochaine migration libre = 0059 » et « Dernière appliquée 0073, prochaine 0074 ». Les
+deux sont faux. Mettre à jour dans ce commit.
+
+- [ ] **Étape 5 : commit**
+
+```bash
+git add db/migrations/0085_agent_ia.sql CLAUDE.md
+git commit -m "feat(agent): les quatre tables du bloc agent (migration 0085)
+
+Le run reste en waiting sur le bloc agent, donc AUCUNE migration sur workflow_runs.
+
+agent_tools porte une contrainte dure : un outil ne peut etre actif que si un humain
+l a active. La spec MCP exige un consentement humain avant l invocation d un outil,
+notre agent n en a pas au runtime, on deplace donc le consentement vers la
+configuration et on le rend incontournable en base.
+
+agent_tool_calls est le journal d audit ET le grand livre de facturation. Meme table,
+volontairement : on ne compte pas deux fois la meme chose.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 6 : déclarer le type de bloc `agent` partout où il doit être connu
+
+**Fichiers :**
+- Modifier : `src/workflow/graph.ts:29`
+- Modifier : `web/lib/api.ts:1445`
+- Modifier : `web/lib/nodeMeta.ts`
+- Modifier : `src/workflow/node-list.ts:23-88`
+- Test : `tests/workflow-graph.test.ts`
+
+Le type cote web est une copie **manuelle** de l'enum serveur, et **aucun test ne les relie**. Bonne
+nouvelle : `web/lib/nodeMeta.ts:6` déclare `NODE_META` en `Record<WorkflowNodeType, ...>`, donc `tsc`
+du build web casse tant que l'entrée `agent` manque, ce qui rattrape l'oubli côté front.
+
+- [ ] **Étape 1 : écrire le test**
+
+```ts
+// dans tests/workflow-graph.test.ts, ajouter
+it('accepte un bloc de type agent', () => {
+  const r = parseGraph({
+    nodes: [{ id: 'n1', type: 'agent', position: { x: 0, y: 0 }, data: {} }],
+    edges: [],
+  });
+  expect(r.ok).toBe(true);
+});
+```
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+```bash
+npx vitest run tests/workflow-graph.test.ts
+```
+
+Attendu : FAIL, `parseGraph` rejette le graphe entier sur un type inconnu (`graph.ts:76`).
+
+- [ ] **Étape 3 : ajouter `'agent'` à la FIN du tuple `WORKFLOW_NODE_TYPES`**
+
+Règle écrite en clair lignes 19-23 du fichier : on ne **retire** jamais une valeur de cet enum,
+parce que retirer rendrait inenregistrable tout scénario sauvegardé avant le retrait, avec un
+« graphe invalide » inexplicable. C'est pour ça que `tag`, `field`, `mba_handoff` et `mba_disable`
+y sont encore alors qu'ils ne sont plus dans la palette.
+
+- [ ] **Étape 4 : ajouter `'agent'` au miroir front `web/lib/api.ts:1445`**
+
+Dans le même commit, sinon le canevas ne connaît pas le bloc.
+
+- [ ] **Étape 5 : ajouter un `case 'agent':` dans `summarize` de `src/workflow/node-list.ts`**
+
+Sans lui, le bloc tombe sur `default: out = ''` (ligne 85) et apparaît dans « Contenu > Blocs » avec
+un résumé **vide**, donc indistinguable des autres blocs agent. C'est exactement l'incident déjà vécu
+deux fois et documenté dans ce même fichier, pour `wait` (lignes 44-45) puis pour `rcs_message`
+(lignes 29-31). Le switch a un `default`, donc `tsc` n'aide pas.
+
+```ts
+    case 'agent':
+      out = String((data as { label?: unknown }).label ?? '');
+      break;
+```
+
+- [ ] **Étape 6 : relancer**
+
+```bash
+npx vitest run tests/workflow-graph.test.ts && npx tsc --noEmit
+```
+
+- [ ] **Étape 7 : commit**
+
+```bash
+git add src/workflow/graph.ts src/workflow/node-list.ts web/lib/api.ts tests/workflow-graph.test.ts
+git commit -m "feat(scenario): declarer le type de bloc agent, cote serveur et cote front
+
+Le miroir front est une copie manuelle et aucun test ne le relie a l enum serveur :
+les deux dans le meme commit. NODE_META est un Record sur le type, donc tsc du build
+web rattrape l oubli de ce cote la.
+
+summarize gagne son cas : c est la troisieme recidive du meme defaut (wait, puis
+rcs_message), un bloc sans cas apparait avec un resume vide dans Contenu > Blocs.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 7 : la main rendue dans le moteur
+
+**Fichiers :**
+- Modifier : `src/workflow/engine.ts:256-264` (`WalkRest`) et `:512-577` (`walk`)
+- Modifier : `src/workflow/executor.ts:241-248` (`restToState`)
+- Test : `tests/workflow-engine.test.ts`
+
+**Interfaces :**
+- Produit : `WalkRest` gagne `{ status: 'agent_turn'; nodeId: string }`. Consommé par les tâches 10
+  à 12.
+
+**Le piège central, confirmé par lecture.** Un type non traité par `walk` tombe dans la branche
+générique 567-574 : `actionOf` rend `null` (son `return null` final ligne 474), `if (a)` est faux,
+rien n'est journalisé, et la ligne 574 fait **avancer** le parcours au bloc suivant. Le bloc agent
+serait traversé en silence. Ce comportement n'est pas un accident, il est délibérément testé
+(`tests/workflow-engine.test.ts:66-97`, « un type inconnu est traversé en passe-plat ») : il ne peut
+pas être retiré, il faut seulement passer **avant** lui.
+
+**La différence avec `rcs_send`, qui décide du design.** `rcs_send` n'atteint jamais `restToState`
+parce que `walkResolved` le résout toujours. `agent_turn`, lui, n'est **pas** résolu dans
+`walkResolved` : il **atteindra** `restToState`, qui est une fonction de 8 lignes sans contrôle
+d'exhaustivité dont le `return` final avale tout le reste en `{ currentNode: null, status: 'done' }`.
+Le parcours serait clos en silence pile au moment où l'agent doit prendre la main. On ajoute donc un
+cas **explicite**.
+
+- [ ] **Étape 1 : écrire les deux tests qui échouent**
+
+```ts
+// tests/workflow-engine.test.ts
+it('un bloc agent rend la main au lieu d etre traverse', () => {
+  const graph = {
+    nodes: [
+      { id: 'a', type: 'agent', position: { x: 0, y: 0 }, data: {} },
+      { id: 'b', type: 'quick_message', position: { x: 1, y: 0 }, data: { body: 'apres' } },
+    ],
+    edges: [{ id: 'e', source: 'a', target: 'b' }],
+  };
+  const r = walk(graph, 'a');
+  expect(r.rest).toEqual({ status: 'agent_turn', nodeId: 'a' });
+  // le bloc suivant ne doit PAS avoir ete execute
+  expect(r.actions).toHaveLength(0);
+});
+
+it('les actions qui PRECEDENT le bloc agent partent quand meme', () => {
+  const graph = {
+    nodes: [
+      { id: 't', type: 'action', position: { x: 0, y: 0 }, data: { actionKind: 'add_tag', tag: 'vu' } },
+      { id: 'a', type: 'agent', position: { x: 1, y: 0 }, data: {} },
+    ],
+    edges: [{ id: 'e', source: 't', target: 'a' }],
+  };
+  const r = walk(graph, 't');
+  expect(r.rest).toEqual({ status: 'agent_turn', nodeId: 'a' });
+  expect(r.actions).toHaveLength(1);
+});
+```
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+```bash
+npx vitest run tests/workflow-engine.test.ts
+```
+
+Attendu : FAIL avec `rest` valant `{ status: 'done' }` et `actions` contenant le `quick_message` du
+premier test. C'est la traversée silencieuse, observée.
+
+- [ ] **Étape 3 : ajouter le statut au `WalkRest`**
+
+Juste après la ligne 262 (`rcs_send`), en recopiant le commentaire des lignes 259-261 **mot pour
+mot**, parce que c'est le même invariant :
+
+```ts
+  // Bloc agent : ce n est PAS un etat de repos, c est une MAIN RENDUE, comme rcs_send.
+  // Le walk est pur et ne peut pas savoir ce que le modele va decider. L executeur persiste,
+  // ouvre la session et enfile un tour ; il reprendra plus tard par un handle de sortie.
+  // Difference avec rcs_send : celui-ci est TOUJOURS resolu par walkResolved et n atteint donc
+  // jamais restToState. agent_turn, lui, l atteint : restToState a un cas explicite.
+  | { status: 'agent_turn'; nodeId: string }
+```
+
+- [ ] **Étape 4 : brancher dans `walk`, entre les lignes 546 et 547**
+
+Exactement au même endroit et sous la même forme que `rcs_message`, donc **avant** la branche
+template / flow / quick_message et **avant** la branche générique :
+
+```ts
+    if (node.type === 'agent') {
+      return { actions, rest: { status: 'agent_turn', nodeId: current } };
+    }
+```
+
+- [ ] **Étape 5 : rendre `restToState` explicite et exhaustif**
+
+Ajouter le cas, et un garde-fou pour que le prochain statut ajouté casse la compilation au lieu de
+tomber dans le `done` silencieux :
+
+```ts
+  if (rest.status === 'agent_turn') {
+    // Le run ATTEND sur le bloc agent : c est ce qui permet a findWaitingByWaId de retrouver
+    // le parcours au message suivant du contact. Ne jamais le passer en done ici.
+    return { currentNode: rest.nodeId, status: 'waiting' as const };
+  }
+```
+
+- [ ] **Étape 6 : relancer, les deux tests doivent PASSER**
+
+```bash
+npx vitest run tests/workflow-engine.test.ts && npx tsc --noEmit
+```
+
+- [ ] **Étape 7 : vérifier dans le sens de l'ÉCHEC**
+
+Commenter la branche ajoutée à l'étape 4, relancer, constater que les deux tests repassent au rouge
+avec la traversée silencieuse. Décommenter. Un test qui passe des deux côtés annonce une garantie
+qu'il n'apporte pas.
+
+- [ ] **Étape 8 : commit**
+
+```bash
+git add src/workflow/engine.ts src/workflow/executor.ts tests/workflow-engine.test.ts
+git commit -m "feat(scenario): le bloc agent rend la main au lieu d etre traverse
+
+Sans branche dediee, un type non traite tombe dans la branche generique de walk :
+actionOf rend null, rien n est journalise, et le parcours AVANCE au bloc suivant. Le
+bloc agent aurait ete traverse en silence. Ce passe-plat est deliberement teste, il ne
+peut pas etre retire : on passe avant lui.
+
+restToState gagne un cas EXPLICITE. Contrairement a rcs_send, toujours resolu par
+walkResolved, le statut agent_turn l atteint reellement, et son return final aurait
+clos le parcours en { currentNode: null, status: done } pile au moment ou l agent doit
+prendre la main.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 8 : les quatre gardes que le cadrage avait oubliées
+
+**Fichiers :**
+- Modifier : `src/workflow/engine.ts:88-143` (`scanOpening`) et `:198-254` (`waitBeforeSessionMessage`)
+- Modifier : `web/lib/campaign-eligibility.ts:91-140` et `:211` (miroirs manuels)
+- Modifier : `src/http/v1-sends.ts:39` (`exigeFenetre24h`)
+- Test : `tests/workflow-engine.test.ts`, `tests/web-campaign-eligibility.test.ts`
+
+Chacune est une panne silencieuse distincte. Elles vont dans le même commit parce qu'elles ont la
+même cause : un nouveau type de bloc qu'un `switch` non exhaustif traverse.
+
+**`scanOpening`** : sans cas dédié, un bloc agent tombe dans la branche générique 138-140 (« bloc
+synchrone, explorer la suite ») et est **traversé**. Un scénario « agent puis template » serait vu
+comme ouvrant sur le template. La garde de campagne (`src/http/campaigns.ts:258-270`) l'accepterait,
+la campagne demanderait de paramétrer ce template, et au lancement `walk` s'arrêterait sur le bloc
+agent : le template ne partirait **jamais** alors que les destinataires seraient comptés touchés.
+C'est le scénario « 500 envoyés, 0 message réel » que `StartOutcome` a été créé pour éviter.
+
+**`waitBeforeSessionMessage`** : un montage « attente 2 jours puis agent » ne serait pas signalé,
+alors que le premier message de l'agent est un message de session que Meta refusera à coup sûr.
+
+**`v1-sends.ts:39`** : le commentaire du fichier le dit lui-même, « liste explicite plutôt qu'une
+règle dérivée, le jour où un type de bloc s'ajoute, le compilateur ne dira rien mais ce commentaire
+si ». Sans l'ajout, un envoi ciblant un bloc agent n'écarterait **aucun** destinataire hors fenêtre.
+
+- [ ] **Étape 1 : écrire les tests qui échouent**
+
+```ts
+// tests/workflow-engine.test.ts
+it('scanOpening : un bloc agent ouvre en message de SESSION et bloque l exploration', () => {
+  const graph = {
+    nodes: [
+      { id: 'a', type: 'agent', position: { x: 0, y: 0 }, data: {} },
+      { id: 't', type: 'template', position: { x: 1, y: 0 }, data: { templateName: 'promo' } },
+    ],
+    edges: [{ id: 'e', source: 'a', target: 't' }],
+  };
+  const out = scanOpening(graph, 'a');
+  expect(out.sessionOpen).toBe(true);
+  expect(out.firstTemplate).toBeUndefined();
+});
+
+it('waitBeforeSessionMessage : attente longue puis agent est signale', () => {
+  const graph = {
+    nodes: [
+      { id: 'w', type: 'wait', position: { x: 0, y: 0 }, data: { delay: 2, unit: 'days' } },
+      { id: 'a', type: 'agent', position: { x: 1, y: 0 }, data: {} },
+    ],
+    edges: [{ id: 'e', source: 'w', target: 'a' }],
+  };
+  expect(waitBeforeSessionMessage(graph, 'w')).toEqual({ waitNodeId: 'w', messageNodeId: 'a' });
+});
+```
+
+Et dans `tests/v1-sends.test.ts`, un cas qui vérifie qu'un destinataire hors fenêtre ciblant un bloc
+agent est écarté en `out_of_window`.
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+```bash
+npx vitest run tests/workflow-engine.test.ts tests/v1-sends.test.ts
+```
+
+- [ ] **Étape 3 : traiter `scanOpening`**
+
+```ts
+    if (node.type === 'agent') {
+      // L agent envoie du texte libre : c est un message de SESSION (contrairement au RCS, qui
+      // ouvre legalement a froid), et il BLOQUE l exploration puisque walk s y arrete.
+      out.sessionOpen = true;
+      continue;
+    }
+```
+
+- [ ] **Étape 4 : traiter `waitBeforeSessionMessage`**
+
+Le traiter comme `flow` et `quick_message` (lignes 218-230) : rendre
+`{ waitNodeId: dernierWait, messageNodeId: id }` si le cumul dépasse la fenêtre, puis `continue`,
+l'agent étant bloquant on n'explore pas au-delà.
+
+- [ ] **Étape 5 : traiter `v1-sends.ts:39`**
+
+```ts
+  return type === null || type === 'quick_message' || type === 'flow' || type === 'agent';
+```
+
+- [ ] **Étape 6 : aligner les deux miroirs web**
+
+`web/lib/campaign-eligibility.ts` est un miroir **manuel** dans un build qui ne partage aucun module
+avec le serveur. Sans l'alignement, l'éditeur proposera en campagne un scénario que le serveur
+refusera en 400. La parité est gardée par `tests/web-campaign-eligibility.test.ts:213-254`, mais sur
+une **liste de cas écrite à la main** : elle ne cassera pas toute seule. Y ajouter au moins « bloc
+agent seul », « agent puis template » et « attente longue puis agent ».
+
+- [ ] **Étape 7 : relancer**
+
+```bash
+npx vitest run tests/workflow-engine.test.ts tests/v1-sends.test.ts tests/web-campaign-eligibility.test.ts && npx tsc --noEmit
+```
+
+- [ ] **Étape 8 : commit**
+
+```bash
+git add src/workflow/engine.ts src/http/v1-sends.ts web/lib/campaign-eligibility.ts tests/
+git commit -m "fix(scenario): les quatre gardes que le bloc agent doit franchir
+
+Meme cause pour les quatre : un switch non exhaustif traverse un type nouveau.
+
+scanOpening : sans cas dedie, un scenario agent puis template serait vu comme ouvrant
+sur le template. La campagne l accepterait, demanderait de le parametrer, et au
+lancement walk s arreterait sur l agent : le template ne partirait jamais alors que
+les destinataires seraient comptes touches.
+
+waitBeforeSessionMessage : un montage attente 2 jours puis agent n aurait pas ete
+signale, alors que le premier message de l agent est un message de session que Meta
+refuse hors fenetre.
+
+v1-sends : sans l ajout, un envoi ciblant un bloc agent n ecartait AUCUN destinataire
+hors fenetre. Le commentaire du fichier annoncait deja ce piege.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+# Phase L1-B, les trois sites de couture, et un squelette qui marche
+
+## Tâche 9 : le store des sessions
+
+**Fichiers :**
+- Créer : `src/agent/session-store.ts` (contrat) et `src/agent/session-store.pg.ts`
+- Test : `tests/agent-session-store.test.ts` (unitaire, sur un fake) et
+  `tests/integration/agent-session-store.int.test.ts` (Postgres, joué par la CI seulement)
+
+**Interfaces :**
+- Produit :
+
+```ts
+export interface AgentSession {
+  id: string; tenantId: string; runId: string; agentId: string;
+  nodeId: string; waId: string; tours: number; appelsOutils: number;
+  coutMicroEur: bigint; status: 'en_cours' | 'sortie' | 'inactivite' | 'plafond' | 'erreur';
+}
+
+export interface AgentSessionStore {
+  open(input: { tenantId: string; runId: string; agentId: string; nodeId: string; waId: string }): Promise<AgentSession>;
+  byRun(tenantId: string, runId: string): Promise<AgentSession | null>;
+  /** Verrou optimiste : incremente le tour SI et seulement si `tours` vaut `toursAttendus`.
+   *  Rend null si la ligne n a pas bouge, ce qui vaut REJEU et doit faire sortir sans rien faire. */
+  prendreLeTour(sessionId: string, toursAttendus: number): Promise<AgentSession | null>;
+  ajouterAuTranscript(sessionId: string, entree: unknown): Promise<void>;
+  clore(sessionId: string, status: AgentSession['status'], sortie?: string): Promise<void>;
+}
+```
+
+- [ ] **Étape 1 : écrire le test du verrou optimiste, le seul qui compte**
+
+```ts
+// tests/integration/agent-session-store.int.test.ts
+it('prendreLeTour rend null au second appel avec le meme numero de tour', async () => {
+  const s = await store.open({ tenantId, runId, agentId, nodeId: 'n1', waId: '336' });
+  const premier = await store.prendreLeTour(s.id, 0);
+  expect(premier?.tours).toBe(1);
+  const rejeu = await store.prendreLeTour(s.id, 0);
+  expect(rejeu).toBeNull();
+});
+
+it('une seule session vivante par run', async () => {
+  await store.open({ tenantId, runId, agentId, nodeId: 'n1', waId: '336' });
+  await expect(store.open({ tenantId, runId, agentId, nodeId: 'n1', waId: '336' })).rejects.toThrow();
+});
+```
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER (module absent)**
+
+- [ ] **Étape 3 : implémenter `prendreLeTour` en une seule requête atomique**
+
+```sql
+update agent_sessions
+   set tours = tours + 1, derniere_activite = now()
+ where id = $1 and status = 'en_cours' and tours = $2
+returning id, tenant_id, run_id, agent_id, node_id, wa_id, tours, appels_outils, cout_micro_eur, status
+```
+
+Zéro ligne rendue vaut rejeu. C'est la même mécanique que le `last_message_id` déjà en place sur
+`workflow_runs`, et c'est ce qui rend un job d'inactivité différé inoffensif quand le contact a
+répondu entre temps.
+
+- [ ] **Étape 4 : relancer les tests d'intégration**
+
+Ne pas les lancer en local. Pousser et lire le job `integration` de la CI.
+
+- [ ] **Étape 5 : commit**
+
+```bash
+git add src/agent/session-store.ts src/agent/session-store.pg.ts tests/
+git commit -m "feat(agent): le store de sessions et son verrou optimiste
+
+pg-boss est at-least-once, et un job d inactivite differe peut se reveiller apres que
+le contact a repondu. Le verrou est une seule requete : on incremente le tour si et
+seulement si le compteur vaut celui que le job attendait. Zero ligne rendue vaut
+rejeu, on sort sans rien faire.
+
+Meme mecanique que le last_message_id de workflow_runs, et l unicite d une session
+vivante par parcours est un index partiel, pas une convention.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 10 : la branche agent dans `advance`
+
+**Fichiers :** Modifier `src/workflow/executor.ts:867-978`. Test : `tests/workflow-executor.test.ts`.
+
+**C'est le chemin le plus chaud du produit** : `advance` est appelé sur chaque message entrant de
+chaque tenant, et il porte déjà la cicatrice de la régression du 2026-08-20 (bloc de doc lignes
+851-866 : « le cas 3 remplace l'ancien repli sur la 1re arête sortante, qui envoyait non merci dans
+la branche du bouton Oui »).
+
+**Ce qui casse sans la branche, vérifié ligne par ligne.** `sortieTypee` (923-925) ne regarde que
+`sent` et `unreachable`, donc il est faux pour un bloc agent. Deux issues, fatales toutes les deux :
+si une arête libre part du bloc agent, `nextNodeSansHandle` la trouve et **le parcours saute
+l'agent** dès le premier message du contact ; sinon `next` est null, le run est écrit
+`{ currentNode: null, status: 'done' }` (948) et `rendreLaMainAMba` (954) envoie la conversation à
+l'agent de Meta. Dans les deux cas la session reste `en_cours` en base, orpheline, et le job
+d'inactivité se réveillera plus tard sur un run mort.
+
+- [ ] **Étape 1 : écrire les trois tests qui échouent**
+
+```ts
+it('un message du contact sur un bloc agent enfile un tour au lieu de router', async () => {
+  await executor.advance(tenantId, waId, 'wamid.1', undefined);
+  expect(queue.enqueued.map((j) => j.name)).toEqual(['agent-turn']);
+  expect(queue.enqueued[0]?.data).toMatchObject({ raison: 'message', nodeId: 'a' });
+});
+
+it('le parcours ne SAUTE PAS le bloc agent quand une arete libre en part', async () => {
+  // graphe : agent 'a' -> quick_message 'b' par une arete SANS handle
+  await executor.advance(tenantId, waId, 'wamid.1', undefined);
+  expect(sendQuickMessage).not.toHaveBeenCalled();
+  expect(runs.setState).toHaveBeenCalledWith('run1', expect.objectContaining({ currentNode: 'a', status: 'waiting' }));
+});
+
+it('persiste lastMessageId, sinon un rejeu empile deux fois le message', async () => {
+  await executor.advance(tenantId, waId, 'wamid.1', undefined);
+  await executor.advance(tenantId, waId, 'wamid.1', undefined);
+  expect(queue.enqueued).toHaveLength(1);
+});
+```
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+Le deuxième test observe précisément le saut silencieux du bloc.
+
+- [ ] **Étape 3 : insérer la branche juste après la ligne 901**
+
+Donc **après** la garde d'étanchéité des canaux et **avant** la mesure de la réponse. Attention :
+la mesure `reply_text` des lignes 912-919 ne serait plus atteinte, il faut la faire dans la branche.
+
+```ts
+    if (courant?.type === 'agent') {
+      const session = await this.deps.agentSessions?.byRun(tenantId, run.id);
+      if (!session || session.status !== 'en_cours') {
+        // Session absente ou close alors que le run pointe encore le bloc : etat incoherent.
+        // On ne route pas au hasard, on remonte en inbox et on laisse une trace.
+        console.error('[agent] run sur bloc agent sans session vivante', { runId: run.id });
+        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox', lastMessageId: messageId });
+        await this.deps.escalateToHuman?.(tenantId, waId);
+        return;
+      }
+      await this.mesurer(run, courant.id, 'reply_text');
+      await this.deps.agentSessions.ajouterAuTranscript(session.id, { role: 'user', text: texte });
+      // ATTENTION : setState ecrit current_node SANS coalesce (run-store.pg.ts:124). Passer
+      // currentNode: null effacerait la position et le bloc agent serait perdu.
+      await this.deps.runs.setState(run.id, {
+        currentNode: run.currentNode,
+        status: 'waiting',
+        lastMessageId: messageId,
+      });
+      await this.deps.enqueueAgentTurn?.({
+        tenantId, runId: run.id, sessionId: session.id,
+        workflowId: run.workflowId, nodeId: courant.id, waId,
+        raison: 'message', tours: session.tours,
+      });
+      return;
+    }
+```
+
+- [ ] **Étape 4 : ajouter la dep optionnelle `enqueueAgentTurn`**
+
+Sur `WorkflowExecutorDeps`, en suivant la convention déjà établie du fichier : `setOptIn`,
+`recordNodeEvent`, `escalateToHuman`, `releaseToMba` et `emitTagAdded` sont tous **optionnels avec un
+no-op documenté**, ce qui préserve les suites de tests à deps minimales, dont l'intégration Postgres.
+Ne pas élargir `WorkflowRuntimeDeps.queue` (`wiring.ts:47-71`), qui est typée sans `opts` et ne sert
+qu'à publier « tag ajouté ».
+
+- [ ] **Étape 5 : relancer, les trois tests doivent PASSER**
+
+```bash
+npx vitest run tests/workflow-executor.test.ts && npx tsc --noEmit
+```
+
+- [ ] **Étape 6 : vérifier dans le sens de l'ÉCHEC**
+
+Retirer la branche, constater que le test « ne saute pas le bloc agent » repasse au rouge en montrant
+`sendQuickMessage` appelé. Remettre.
+
+- [ ] **Étape 7 : lancer la suite ENTIÈRE, pas seulement le fichier touché**
+
+```bash
+npm test
+```
+
+Attendu : le même nombre de tests verts qu'à la référence de la tâche 1, plus les nouveaux. C'est le
+chemin le plus chaud du produit : une régression ici casse **tous** les scénarios de **tous** les
+clients, pas seulement ceux qui ont un agent.
+
+- [ ] **Étape 8 : commit**
+
+```bash
+git add src/workflow/executor.ts tests/workflow-executor.test.ts
+git commit -m "feat(agent): advance rend la main au tour d agent au lieu de router
+
+Sans cette branche, un message du contact pendant une conversation d agent tombe dans
+le routage normal, et sortieTypee ne connait que sent et unreachable. Deux issues,
+fatales toutes les deux : une arete libre fait SAUTER le bloc agent des le premier
+message, sinon le run est clos en done et la conversation part a l agent de Meta. Dans
+les deux cas la session reste vivante et orpheline en base.
+
+lastMessageId est persiste dans la branche : sans lui la dedup at-least-once ne protege
+pas, et un rejeu empilerait deux fois le message avec deux appels LLM factures.
+
+currentNode est repasse explicitement : setState ecrit current_node sans coalesce, un
+null effacerait la position du parcours.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 11 : la branche agent dans `resume`
+
+**Fichiers :** Modifier `src/workflow/executor.ts:489-582`. Test : `tests/workflow-executor.test.ts`.
+
+Deuxième site. Un montage « attente puis agent » arrive ici : ligne 514, `walkResolved` part du
+successeur du bloc Attente.
+
+**Ordre obligatoire :** ouvrir la session **après** les sorties anticipées des lignes 561-565
+(fenêtre fermée, remontée en inbox) et 569-577 (refus sans envoi, remontée en inbox). Ouvrir avant
+ces `return` créerait une session vivante sur un run déjà clos, que rien ne nettoierait.
+
+- [ ] **Étape 1 : écrire les deux tests**
+
+Un montage « wait puis agent » qui réveille et enfile un tour `demarrage`. Et un montage identique
+mais avec la fenêtre 24 h **fermée**, qui doit remonter en inbox **sans** ouvrir de session.
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+- [ ] **Étape 3 : mapper le rest et ouvrir la session, après les sorties anticipées**
+
+À la ligne 578, là où `setState` est appelé avec `restToState`, ajouter le traitement du cas
+`agent_turn` : persister l'état (déjà fait par le cas explicite de la tâche 7), puis ouvrir la
+session et enfiler le tour.
+
+- [ ] **Étape 4 : relancer et vérifier dans les deux sens**
+
+- [ ] **Étape 5 : commit**
+
+```bash
+git add src/workflow/executor.ts tests/workflow-executor.test.ts
+git commit -m "feat(agent): resume ouvre la session quand un reveil atteint un bloc agent
+
+Deuxieme des trois sites. L ouverture se fait APRES les sorties anticipees (fenetre
+fermee, refus sans envoi), sinon on cree une session vivante sur un run deja clos que
+rien ne nettoie.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 12 : la branche agent dans `runFrom`, et la garde de fenêtre
+
+**Fichiers :** Modifier `src/workflow/executor.ts:678-742`. Test : `tests/workflow-executor.test.ts`.
+
+Troisième site, et le cadrage ne le mentionnait pas. Trois choses ici.
+
+**L'ordre est contraint par une clé étrangère.** Ligne 737, `runs.start` **crée** le run, et son
+retour `{ id }` est aujourd'hui **jeté**. Or `agent_sessions.run_id` est une FK not null vers
+`workflow_runs` : le run n'existe pas avant cette ligne. C'est ce qui interdit d'ouvrir la session
+dans `walkResolved`. Ordre obligatoire : `apply`, puis `runs.start` en **capturant l'id**, puis
+l'insert de session, puis l'enqueue.
+
+**Et une garde de fenêtre à élargir, sinon on brûle des tokens pour rien.** Lignes 718-722, la garde
+ne regarde que `actions.some(kind === 'sendFlow' || 'sendQuickMessage')`. Un rest `agent_turn` ne
+produit **aucune** action : une campagne froide dont le scénario ouvre sur un agent **passe** la
+garde, démarre un agent qui envoie du texte libre hors fenêtre, se fait refuser par Meta en 131047,
+et brûle des tokens. Ajouter `|| rest.status === 'agent_turn'` à cette condition.
+
+- [ ] **Étape 1 : écrire le test qui prouve la brûlure de tokens**
+
+```ts
+it('un demarrage hors fenetre sur un bloc agent est refuse AVANT d ouvrir la session', async () => {
+  isWindowOpen.mockResolvedValue(false);
+  const out = await executor.start(tenantId, waId, workflowId);
+  expect(out).toBe('out_of_window');
+  expect(queue.enqueued).toHaveLength(0);
+  expect(sessions.open).not.toHaveBeenCalled();
+});
+```
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER** (le démarrage passe et enfile un tour)
+
+- [ ] **Étape 3 : élargir la garde de fenêtre ligne 718-722**
+
+- [ ] **Étape 4 : capturer l'id du run et ouvrir la session dans le bon ordre**
+
+- [ ] **Étape 5 : relancer, plus la suite entière**
+
+- [ ] **Étape 6 : commit**
+
+```bash
+git add src/workflow/executor.ts tests/workflow-executor.test.ts
+git commit -m "feat(agent): runFrom ouvre la session, et la garde de fenetre couvre le bloc agent
+
+Troisieme des trois sites, absent du cadrage. L ordre est contraint par la FK :
+agent_sessions.run_id pointe workflow_runs, et le run n existe qu apres runs.start,
+dont le retour etait jusqu ici jete. D ou apply, puis start en capturant l id, puis
+la session, puis l enqueue.
+
+La garde de fenetre ne regardait que les actions produites. Un rest agent_turn n en
+produit aucune : une campagne froide ouvrant sur un agent PASSAIT la garde, envoyait
+du texte libre hors fenetre, se faisait refuser en 131047 et brulait des tokens.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Tâche 13 : le squelette qui marche, avec un cerveau bouchonné
+
+**Fichiers :**
+- Créer : `src/agent/brain.ts` (contrat) et `src/agent/brain.fake.ts`
+- Créer : `src/agent/run-turn.ts` (le tour, pur autant que possible)
+- Modifier : `src/worker.ts` (enregistrement du worker `agent-turn`)
+- Test : `tests/agent-run-turn.test.ts`
+
+**Interfaces :**
+- Produit :
+
+```ts
+export interface DecisionAgent {
+  /** Texte a envoyer au contact. `null` = ne rien envoyer (cas escalade, le node aval parle). */
+  texte: string | null;
+  /** Code de sortie predefinie, ou null si l agent pose une question et attend. */
+  sortie: string | null;
+  usage?: { tokensIn: number; tokensOut: number; coutMicroEur: bigint };
+}
+
+export interface AgentBrain {
+  penser(input: {
+    agentId: string; tenantId: string; transcript: unknown[]; deadline: number;
+  }): Promise<DecisionAgent>;
+}
+```
+
+C'est un **squelette ambulant** : à la fin de cette tâche, le bloc agent tient le fil, répond, sort
+par ses branches et respecte ses plafonds, avec un cerveau qui rend une réponse fixe. La tâche 14
+remplace le fake par le vrai client LLM sans toucher au reste. C'est ce qui permet de dérisquer le
+chemin chaud indépendamment du modèle.
+
+**La garde qui rend tout tueur de run futur inoffensif.** Trois chemins tuent un run `waiting` sans
+rien savoir des sessions d'agent : `closeActiveByWaId` (lancement manuel depuis l'inbox,
+`src/index.ts:430`), `endWaitingRun` du jeton de test (`src/worker.ts:334-337`), et les clôtures
+internes d'`advance` et de `resume`. Plutôt que de patcher les six sites, **le job relit le run par
+son id et exige `status = 'waiting'` et `current_node = <nodeId du job>` avant tout envoi.** Une
+seule garde, et tout tueur de run futur devient automatiquement sûr.
+
+- [ ] **Étape 1 : écrire les tests du tour**
+
+```ts
+it('sort par sortie:plafond quand max_tours est atteint, jamais en silence', async () => {
+  const out = await runTurn({ ...deps, session: { ...session, tours: 8 }, agent: { ...agent, maxTours: 8 } });
+  expect(out.sortie).toBe('plafond');
+  expect(brain.penser).not.toHaveBeenCalled();
+});
+
+it('n envoie RIEN si le run n est plus waiting sur le bloc agent', async () => {
+  runs.byId.mockResolvedValue({ status: 'done', currentNode: null });
+  await runTurn(deps);
+  expect(sendQuickMessage).not.toHaveBeenCalled();
+});
+
+it('ne fait rien sur un rejeu, le verrou optimiste rend null', async () => {
+  sessions.prendreLeTour.mockResolvedValue(null);
+  await runTurn(deps);
+  expect(brain.penser).not.toHaveBeenCalled();
+  expect(sendQuickMessage).not.toHaveBeenCalled();
+});
+
+it('relit mayAct juste avant d envoyer, un operateur a pu prendre la main entre temps', async () => {
+  mayAct.mockResolvedValue(false);
+  await runTurn(deps);
+  expect(sendQuickMessage).not.toHaveBeenCalled();
+});
+```
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+- [ ] **Étape 3 : implémenter `runTurn` dans cet ordre exact**
+
+1. `prendreLeTour(sessionId, tours)`, `null` vaut rejeu, sortir sans rien faire.
+2. Relire le run : `status === 'waiting'` et `currentNode === nodeId`, sinon clore la session en
+   `erreur` et sortir.
+3. Vérifier les plafonds (`tours`, `appelsOutils`, `coutMicroEur`), tout dépassement sort par
+   `sortie:plafond`.
+4. `brain.penser(...)` sous un `AbortSignal.timeout(30_000)`.
+5. Relire `mayAct` juste avant d'envoyer.
+6. Envoyer via la même dep que le reste du scénario, donc `DRY_RUN` honoré et journalisation dans
+   le fil.
+7. Mesurer `sent` ou `failed` sur le nodeId du bloc.
+8. Si `sortie` est null : enfiler le tour d'inactivité différé (tâche 17). Sinon clore la session et
+   reprendre le scénario par `sortie:<code>`.
+
+- [ ] **Étape 4 : enregistrer le worker dans `src/worker.ts`**
+
+Avec `queue.work(AGENT_TURN_QUEUE, ...)`, `retryLimit` à **2** (mieux vaut une conversation qui sort
+par `sortie:echec` avec le message de repli du client qu'une conversation qui reçoit trois fois la
+même relance), et le `parseAgentTurnJob` de la tâche 4 en entrée.
+
+- [ ] **Étape 5 : relancer, tous les tests doivent PASSER**
+
+```bash
+npx vitest run tests/agent-run-turn.test.ts && npm test && npx tsc --noEmit
+```
+
+- [ ] **Étape 6 : commit**
+
+```bash
+git add src/agent/ src/worker.ts tests/agent-run-turn.test.ts
+git commit -m "feat(agent): le tour d agent, avec un cerveau bouchonne
+
+Squelette ambulant : le bloc tient le fil, repond, sort par ses branches et respecte
+ses plafonds, avec un cerveau qui rend une reponse fixe. Le vrai client LLM le
+remplacera sans toucher au reste, ce qui derisque le chemin chaud independamment du
+modele.
+
+Une seule garde plutot que six correctifs : trois chemins tuent un run waiting sans
+rien savoir des sessions (lancement manuel depuis l inbox, jeton de test, clotures
+internes). Le job relit le run et exige waiting sur SON bloc avant tout envoi, donc
+tout tueur de run futur est automatiquement sur.
+
+mayAct est relu juste avant l envoi, pas seulement a l entree du tour : entre
+l enfilage et l execution du job, un operateur a pu prendre la main.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+# Phase L1-C, le vrai cerveau
+
+## Tâche 14 : le client Chat Completions
+
+**Fichiers :**
+- Créer : `src/llm/errors.ts` (déplacement de `LlmApiError`, ré-exportée depuis `llm-client.ts`)
+- Créer : `src/agent/llm/chat-client.ts`
+- Modifier : `src/meta/http.ts:1-10` (ajout d'un `signal` optionnel)
+- Test : `tests/agent-chat-client.test.ts`
+
+**Verdict : second contrat, pas une extension.** `LlmClient` est
+`complete(prompt): Promise<string>` : le seul canal de sortie est le texte, donc il ne peut porter ni
+`usage`, ni `tool_call`, ni `finish_reason`. `AnthropicClient.complete` **jette** déjà tout bloc non
+texte. L'élargir imposerait de toucher deux fakes de test et deux consommateurs pour un besoin
+qu'aucun d'eux n'a. Précédent maison à recopier : `src/rcs/channel-info.ts:1-8` déclare une interface
+`HttpGet` locale plutôt que d'élargir `HttpTransport`.
+
+Ne **pas** étendre `createLlmClient` non plus : le modèle y est une constante de boot
+(`config.LLM_MODEL`), alors que le modèle d'un agent est une colonne lue par ligne, et
+`LLM_PROVIDER: z.enum(['anthropic'])` a été posé exprès par l'audit pour refuser un provider inconnu
+**au boot**.
+
+**Le format, vérifié sur la doc Vercel datée du 2026-07-28.** `POST https://ai-gateway.vercel.sh/v1/chat/completions`,
+en-tête `Authorization: Bearer <clé>`. Le tableau `tools` porte le schéma **sous `function.parameters`**
+(forme Chat Completions, différente de Responses). La réponse porte `usage` **à la racine** en
+snake_case, et `provider_metadata.gateway` **sur le message** (`choices[0].message`), avec `cost` en
+**chaîne décimale de dollars**, hors surcharges.
+
+- [ ] **Étape 1 : écrire le test sur un `FakeTransport`**
+
+Vérifier que le corps envoyé porte bien `tools[].function.parameters`, que `usage` est lu à la
+racine, que `provider_metadata.gateway.cost` est lu sur le message, et qu'un 400 est **terminal**
+alors qu'un 429 est rejouable.
+
+- [ ] **Étape 2 : lancer, ça doit ÉCHOUER**
+
+- [ ] **Étape 3 : ajouter le `signal` à `HttpTransport`**
+
+```ts
+post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse>;
+```
+
+Vérifié : une implémentation qui ne déclare que trois paramètres reste assignable, donc les **six**
+`FakeTransport` existants ne cassent pas. Aujourd'hui l'appel n'a **aucun** timeout, le défaut undici
+est de l'ordre de 300 s : un Gateway qui pend immobilise un slot de worker pendant des minutes, sans
+trace.
+
+- [ ] **Étape 4 : implémenter le client**
+
+Réutiliser `withRetry`, mais **toujours avec des options explicites** :
+`{ maxRetries: 2, baseDelayMs: 250, maxDelayMs: 2000 }`. Les défauts sont `maxRetries: 4` et
+`maxDelayMs: 30000`, et la ligne 108 dort jusqu'à **30 secondes** sur un seul 429 portant un
+`Retry-After` long : avec une deadline de tour de 30 s, la seule attente de retry la consomme
+entièrement. `withRetry` n'a aucune notion de deadline murale, elle doit venir de l'`AbortSignal`.
+
+Taxonomie, en recopiant `llm-client.ts:58` et en y ajoutant 408 et 425 comme le fait
+`src/meta/errors.ts:23` : `retryable = status === 429 || status === 408 || status === 425 || status >= 500`.
+Un 400 (schéma d'outil refusé), un 401 (clé), un 403 (`no_providers_available`) et un 404 (modèle
+inconnu) sont **terminaux** : les rejouer paierait quatre fois la même erreur de configuration.
+
+- [ ] **Étape 5 : relancer et vérifier**
+
+- [ ] **Étape 6 : commit**
+
+---
+
+## Tâche 15 : le schéma d'outil envoyé au modèle
+
+**Fichiers :** Créer `src/agent/llm/tool-schema.ts` (fonction pure). Test : `tests/agent-tool-schema.test.ts`.
+
+Dérive `agent_tools.params` (source `modele` **seulement**) vers le JSON Schema. Deux nettoyages
+mesurés à faire : `z.number().int()` émet `minimum: -9007199254740991 / maximum: 9007199254740991`,
+du bruit payé à chaque tour, et `$schema` n'est attendu par aucun fournisseur.
+
+**C'est ici que le modèle perd la main sur la cible.** Les paramètres de source `contact` et `fixe`
+n'entrent **jamais** dans ce schéma : ils sont injectés par le runtime à l'étape 4 du tronc commun.
+Un test doit le prouver explicitement.
+
+- [ ] **Étape 1 : écrire le test, dont le cas de sécurité**
+
+```ts
+it('n expose au modele QUE les parametres de source modele', () => {
+  const s = toolParamsToJsonSchema([
+    { name: 'reference', type: 'string', source: 'modele', required: true, description: 'la reference' },
+    { name: 'wa_id', type: 'string', source: 'contact', required: true, description: 'le numero', contactPath: 'wa_id' },
+  ]);
+  expect(Object.keys(s.properties)).toEqual(['reference']);
+  expect(s.required).toEqual(['reference']);
+});
+```
+
+- [ ] **Étape 2 à 5 :** échouer, implémenter, passer, commit.
+
+---
+
+## Tâche 16 : le tronc commun d'exécution d'outil, et les outils maison
+
+**Fichiers :** Créer `src/agent/executor.ts`, `src/agent/resolvers/mba.ts`, `src/agent/catalog.pg.ts`.
+Test : `tests/agent-tool-executor.test.ts`.
+
+**Règle centrale : `execute` ne lève jamais.** Une exception qui remonte tue le tour, alors que le
+modèle sait se corriger sur une erreur d'exécution. C'est la leçon de hyundai, où un slug inconnu
+renvoie `{ erreur: "slug inconnu, utilise un slug du catalogue" }` et où le modèle se rattrape seul.
+Seule exception : une erreur de protocole, qui est un bug de notre client, arrête le tour et est
+alertée.
+
+Les huit étapes du tronc commun sont en §3.3 du cadrage. Deux points à ne pas rater.
+
+**L'autorisation se relit en base à l'exécution**, `where tenant_id = $1 and agent_id = $2 and actif`.
+Filtrer ce qu'on envoie au modèle n'est pas un contrôle : `vercel/ai#8653` documente exactement le cas
+où le filtrage d'exposition marchait pendant que l'exécuteur tapait dans le catalogue complet.
+
+**`mba_envoyer_bloc` ne doit pas passer par `startFromNode`.** Piège majeur : `startFromNode` passe
+par `runFrom`, qui **crée un run** dès que le rest n'est pas `done`. On obtiendrait deux runs
+`waiting` pour le même contact, et `findWaitingByWaId` ne rend que le plus récent : le run de l'agent
+deviendrait orphelin **pour toujours**, et rien ne nettoie un `waiting`. L'outil doit faire un `walk`
+plus `apply` borné **sans persister de run**. Si le bloc visé reboucle sur le même bloc agent,
+l'insert de session échouerait en 23505 sur l'index unique : à attraper et à rendre au modèle comme
+un refus, jamais à laisser remonter.
+
+**L'escalade doit clore la session, pas seulement basculer le détenteur.** Piège non mentionné au
+cadrage : une conversation tenue par `app_human` est **rendue automatiquement** au scénario par
+`runControlSweep` (`src/worker.ts:682-708`) après `CONTROL_HUMAN_TIMEOUT_MS`. Si l'outil se contente
+de basculer `control_owner`, alors l'humain traite, le balayage rend la main, le message suivant
+repasse `mayAct`, et **l'agent reprend la conversation qu'un humain avait récupérée**. Silencieux et
+très désagréable côté client. L'outil doit appeler `escalateToHuman` (`wiring.ts:288`, avec son
+`only: ['app_workflow']` qui évite d'écraser une prise de main concurrente), **et** clore la session,
+**et** sortir le run du bloc agent.
+
+- [ ] **Étape 1 : écrire les tests, dont les trois pièges ci-dessus**
+
+- [ ] **Étape 2 à 6 :** échouer, implémenter, passer, vérifier dans les deux sens, commit.
+
+---
+
+## Tâche 17 : l'inactivité
+
+**Fichiers :** Modifier `src/agent/run-turn.ts`. Test : `tests/agent-inactivite.test.ts`.
+
+Quand l'agent pose une question et attend, enfiler un `agent-turn { raison: 'inactivite', tours: N }`
+avec `startAfter = inactivite_minutes * 60`. Si le contact répond avant, le compteur a avancé, le
+verrou optimiste de la tâche 9 rend `null`, et le job différé sort sans rien faire. **Zéro balayage,
+zéro colonne, zéro requête nouvelle.**
+
+Poser aussi un `singletonKey` par session pour qu'un seul job différé soit en attente à la fois.
+
+- [ ] **Étape 1 : écrire le test des deux sens**
+
+```ts
+it('le job d inactivite ne fait rien si le contact a repondu entre temps', async () => {
+  // le contact a repondu : tours vaut 4, le job differe attendait 3
+  sessions.prendreLeTour.mockResolvedValue(null);
+  await runTurn({ ...deps, job: { ...job, raison: 'inactivite', tours: 3 } });
+  expect(sendQuickMessage).not.toHaveBeenCalled();
+});
+
+it('le job d inactivite sort par sortie:inactivite quand le contact n a pas repondu', async () => {
+  const out = await runTurn({ ...deps, job: { ...job, raison: 'inactivite', tours: 3 } });
+  expect(out.sortie).toBe('inactivite');
+  expect(brain.penser).not.toHaveBeenCalled(); // on ne paie pas un appel modele pour constater un silence
+});
+```
+
+- [ ] **Étape 2 à 5 :** échouer, implémenter, passer, commit.
+
+---
+
+# Phase L1-D, le front
+
+## Tâche 18 : le bloc agent dans le builder
+
+**Fichiers :** Modifier `web/lib/nodeMeta.ts`, `web/components/WorkflowBuilder.tsx`.
+Test : `web/e2e/` (une spec nouvelle).
+
+Quatre points côté builder : `NODE_META` et `NODE_ORDER`, `initialDataFor`, `summaryOf`,
+`ConfigPanel`.
+
+Reprendre le patron du **bloc conditionné** déjà en place pour RCS et l'email
+(`WorkflowBuilder.tsx:598-624`) : rendu à part, grisé et non cliquable tant qu'aucun agent n'est
+configuré, avec un `title` explicatif. Et le patron des **sorties multiples par handle nommé**, déjà
+utilisé pour les boutons de template et pour `sent` / `unreachable` de `rcs_message` : chaque règle
+d'arrêt devient un handle, plus les trois réservés `sortie:inactivite`, `sortie:plafond`,
+`sortie:echec`.
+
+- [ ] **Étape 1 à 6 :** spec e2e qui échoue, implémentation, passage, commit.
+
+## Tâche 19 : l'écran de configuration d'agent
+
+**Fichiers :** Créer `web/app/agents/page.tsx`, `web/lib/api-agent.ts`.
+Modifier `web/components/AppShell.tsx` (clé du type `Tab`, entrée de nav, chemin SVG de l'icône).
+
+Suivre le patron obligatoire de tout écran authentifié, et importer `request` depuis `web/lib/http.ts`
+comme le fait déjà `web/lib/api-mba.ts`, sans dupliquer l'authentification. Style et bilinguisme
+entièrement déterminés par `web/lib/ui.ts` et `web/lib/i18n.tsx`.
+
+- [ ] **Étape 1 à 6 :** spec e2e qui échoue, implémentation, passage, commit.
+
+---
+
+# Après L1
+
+Trois décisions restent ouvertes et ne bloquent que la suite, sauf la première qui touche la
+tâche 16 : que fait l'agent sur une action irréversible, que se passe-t-il quand le solde tombe à
+zéro en pleine conversation, et si MCP est une allowlist ou une URL libre. Elles sont posées en §8
+du cadrage.
+
+Et deux vérifications conditionnent le modèle économique : un appel live au Gateway pour confirmer
+`gateway.cost` et le comportement à solde zéro, et le texte primaire Meta sur la clause
+« AI Providers ».
