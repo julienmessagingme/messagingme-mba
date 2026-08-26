@@ -242,6 +242,156 @@ Autrement dit : l'agent n'a jamais été allumé, et **dans l'état actuel, l'al
 tout le monde**. La séquence prescrite ci-dessus n'est pas une précaution théorique, c'est l'ordre à suivre
 la première fois.
 
+## ⚠️ Second relevé du 2026-08-26 (le soir même)
+
+Une nouvelle entrée de changelog est apparue **après** le relevé de 15 h. En allant la lire, on a trouvé bien
+plus gros : **trois pages entières de la doc MBA que personne n'avait jamais lues**, dont une API que nous ne
+soupçonnions pas. Tout ce qui suit a été vérifié à la source, avec des témoins négatifs quand l'existence
+même d'une page était en jeu.
+
+### 🔴 Trois pages vivaient dans la nav de Meta, hors de notre veille
+
+`reference/configure/agent-budget`, `reference/insights/conversation-turns` et `troubleshooting`. Aucune des
+trois n'a d'entrée de changelog : le garde-fou noté le matin même (« c'est le changelog qui les révélera »)
+**ne vaut rien**. Seule la nav les nomme.
+
+⚠️ **Sur ce site, un HTTP 200 ne prouve rien** : c'est une application monopage qui répond 200 sur n'importe
+quel chemin, y compris inventé. Le discriminant est le **corpus extrait**. Mesure faite avec deux témoins
+bidons :
+
+| Page | corpus |
+|---|---|
+| `reference/configure/agent-budget` | 5174 car |
+| `reference/insights/conversation-turns` | 4532 car |
+| `troubleshooting` | 2091 car |
+| `reference/operate/agent-insights` (devinée le 2026-08-18) | **0 car** |
+| deux URL inventées (témoins) | **0 car** |
+
+`agent-insights` n'a donc jamais existé : 33 exécutions de la sonde à zéro caractère, signature identique à
+une URL bidon, absente de la nav. Elle est retirée de la veille, remplacée par `conversation-turns`, sous un
+groupe de nav **« Insights » entièrement neuf**.
+
+### 🔴 Agent Budget : un plafond d'usage qui BASCULE LA CONVERSATION VERS L'HUMAIN
+
+`GET` et `POST https://api.facebook.com/{entity_id}/agent_budget`. Mot pour mot :
+
+> « Once a budget is reached the agent completes the turn it is already working on, then **stops replying to
+> new messages and hands the conversation to a human using the routing the agent is already set up with**.
+> Replies resume once the time window rolls over. An agent with no budgets configured has unlimited usage. »
+
+C'est exactement la thèse produit de `mba.messagingme.app` (le contrôle, et le passage de main), et c'est
+Meta qui l'offre, en natif, sans que nous ayons rien à écrire dans le scénario.
+
+- `unit_type` : `token` ou `ai_turn`. **Les jetons se comptent sur tout le Business Manager, les tours se
+  comptent PAR CONVERSATION.** Ce ne sont pas deux unités du même compteur.
+- `time_window` : `one_day`, `seven_days`, `fourteen_days`, `thirty_days`. Fenêtre **glissante**, dans le
+  fuseau du compte WhatsApp Business. Un couple (unité, fenêtre) ne peut apparaître qu'une fois.
+- Le POST **remplace tout** : un budget omis est supprimé, un tableau vide rend l'usage illimité. Read
+  modify write obligatoire, comme sur les réglages.
+- 403 documenté : « The agent budget API is not enabled for this business integration. » Porte à mesurer
+  avant de promettre quoi que ce soit.
+
+🔴 **Piège d'implémentation.** Ici `{entity_id}` est « **The Business Manager ID that owns the agent, not the
+WhatsApp Business Phone Number ID used by the other agent endpoints** ». Tous nos appels `agent_config`
+passent le `phone_number_id`. Un copier-coller de `MbaClient` donnera un 404 incompréhensible.
+
+### 🆕 Conversation Turns : enfin le « pourquoi » d'une réponse
+
+`GET https://api.facebook.com/{entity_id}/insights/conversations/turns`, par numéro de consommateur en E.164,
+avec bornes de temps et pagination par curseur. Chaque tour porte `turn_id`, `e2e_latency_ms` (de la réception
+du message client jusqu'à la fin de la production de la réponse, appels d'outils compris), `session_id`, et
+des **étapes ordonnées** : `type` (`LLM_CALL` ou `TOOL_CALL`), latence, `status` (`SUCCESS`, `ERROR`,
+`TIMEOUT`), `llm_output_preview`, nom de l'outil, `tool_input`, `tool_output`.
+
+C'est la réponse à un trou que ce document listait comme définitif : savoir pourquoi l'agent a répondu ce
+qu'il a répondu, avec quel outil, et en combien de temps. Rien dans `src/` ne l'appelle.
+
+### 🟢 Troubleshooting : Meta confirme notre architecture, mot pour mot
+
+> « **Sending any message from your app to a conversation immediately transfers primary control to your app.**
+> This is the most common cause of agents that respond correctly in testing but go silent in production. »
+
+C'est la règle que ce document décrit déjà et que notre code applique (`release` après un envoi). Meta la
+nomme désormais comme **la cause numéro un** des agents muets en production. La page porte aussi la taxonomie
+des erreurs de connecteur (`UNAUTHORIZED`, `TRANSPORT_ERROR`, `API_RATE_LIMIT_EXCEEDED`,
+`CONFLICT_TOO_MANY_SIMULTANEOUS_REQUESTS`, `EXTERNAL_API_ERROR`...) et des états de connexion (`ACTIVE`,
+`PENDING_OAUTH`, `EXPIRED`, `ERROR`), dont ce document couvrait déjà une partie.
+
+### 🟠 `crawl_status` : le changelog du 2026-08-24, que la page de référence ignore
+
+> « A site we crawled successfully now reports `completed`, or the new **`completed_no_data`** value when the
+> crawl worked but the site had nothing we could extract. `failed` is now reserved for crawls that fetched no
+> pages at all. Previously a healthy site with no FAQ or business information page could report `failed`.
+> Added a **`crawl_error`** field to the same responses. »
+
+Et sur son cycle de vie : « It is **empty while a crawl is running and for crawls that fetched pages** »,
+donc `crawl_error` n'est renseigné que sur `failed`, jamais sur `completed` ni sur `completed_no_data`.
+
+⚠️ **Mesuré ce soir : la page de référence ne porte RIEN de tout ça.** `agent-knowledge-websites` compte 5
+occurrences de `crawl_status`, **0** de `completed_no_data`, **0** de `crawl_error`, et garde la description
+à quatre valeurs. Son export OpenAPI v2.0.0 est identique à notre copie du repo. **Le changelog est la seule
+source.** Donc : mesurer sur un appel réel avant de réécrire le contrat du client.
+
+Notre console, elle, ne casse pas : `libelleStatut` (`web/components/MbaWebsitesPanel.tsx`) fait tomber toute
+valeur inconnue dans une pastille grise neutre, jamais dans « Échec ». La règle « ne jamais traiter une valeur
+inconnue comme un succès » nous sauve une deuxième fois. Ce qui reste à faire quand le champ sera mesuré :
+libeller `COMPLETED_NO_DATA` (« Exploré, rien d'exploitable ») et afficher `crawl_error`, **conditionné à
+`FAILED` ET à une valeur non vide**, sinon on affichera un bloc d'erreur vide pendant chaque crawl en cours.
+
+### 🔴 Paiement : deux axes que les pages mélangent, et qu'il ne faut pas mélanger
+
+Vérifié ce soir, page par page. **Rien n'a bougé depuis 15 h.**
+
+- `get-started`, Step 2 : « Meta charges for Meta Business Agent messages. **Set up billing before you turn
+  your agent on**, messages are not delivered unless your account has a payment method attached. »
+- `agent-settings` : même phrase, avec « unless your **Business Agent account** has a payment method ».
+- Page de facturation WhatsApp : « a payment method is required in Billing Hub **to use** Meta Business
+  Agent. For any business that does not have a payment method for their Meta Business Agent account, **Meta
+  will not deliver** Meta Business Agent messages. »
+
+Les deux axes sont donc : **allumer** l'agent, et **livrer** les messages. Le changelog du 2026-08-25 ne lève
+la barrière que sur **l'allumage**, et seulement en `ALLOWLISTED_ONLY`. Aucune page ne dit que la livraison
+serait exemptée. La lecture prudente et défendable : on pourra allumer et voir l'agent configuré, mais rien ne
+garantit qu'un message parte. **Seule une mesure tranche.**
+
+📌 Fait daté relevé au passage sur la page de facturation : les **cartes bancaires** deviennent un moyen de
+paiement possible **à partir du 8 septembre 2026**, pour les entreprises sans ligne de crédit Meta.
+
+⚠️ **Notre script d'activation ne suit pas la séquence prescrite.**
+`scripts/mba-activer-restreint.mts` remplit l'allowlist, puis envoie `ai_audience` **et** `rollout.enabled`
+dans **un seul PUT**. Meta prescrit désormais : régler `ai_audience`, **relire en GET pour confirmer**, et
+seulement ensuite allumer. Si Meta évalue l'audience **stockée** au moment d'allumer, un PUT combiné se
+heurterait au 400 de facturation et nous conclurions à tort que la barrière tient toujours. À scinder en deux
+appels avant le premier allumage.
+
+### 🟡 Corrections apportées au relevé du matin
+
+- **`followup`** : nous n'écrivons que `enabled`. Ni `message` ni `followup_interval_in_seconds` ne sont
+  écrits par une route ou un écran (l'intervalle est dans le type, jamais envoyé). Et l'intervalle est un
+  **enum fermé** : `0, 300, 900, 1800, 3600, 7200, 28800, 86400` secondes, `0` désactivant la relance.
+- **UI Skills** : dire « aucun contenu structuré » était faux. `flow_id` **est** un champ structuré de la
+  skill (« This is the one data element that is supplied as a structured field on the skill itself »), et le
+  guide publie un schéma champ par champ avec des bornes chiffrées. À retenir en plus : le PUT **ne peut
+  changer ni `component_type` ni `flow_id`** (le type d'une skill est immuable), et une skill `flow` peut être
+  créée en `status: disabled`, donc préparée avant publication du formulaire.
+- **`handoff.message` et `handoff.message_selection`** : ce n'est pas un oubli. `documentation.md` dit
+  explicitement que nous n'écrivons que `enabled` tant que le comportement des deux autres n'a pas été mesuré
+  en conversation réelle. Décision documentée, pas dette.
+
+### 📌 Ce que ce relevé apprend sur la méthode
+
+1. **Le changelog mène, les pages de référence suivent avec du retard.** Deux cas mesurés en trois jours
+   (paiement, `crawl_status`). Une veille qui ne surveille que les pages de référence ne verra jamais un
+   changement déjà annoncé, et une décision prise sur la seule page de référence peut être périmée.
+2. **Une veille ne voit que ce qu'on lui a nommé.** Deux fois dans la même journée. La sonde lit désormais la
+   **nav** de Meta à chaque tour et alerte sur tout chemin inconnu, ce qui est le seul garde-fou qui ne dépend
+   pas de notre imagination.
+3. **Sur cette documentation, HTTP 200 ne prouve pas qu'une page existe.** Toujours discriminer par le corpus,
+   avec un témoin négatif.
+4. **Une empreinte doit ignorer ce qui n'est pas de la doc.** Les classes CSS de Meta étaient dans le corpus de
+   toutes les pages ; leur renumérotation du 2026-08-20 a produit 20 fausses alertes d'un coup, à longueur de
+   corpus rigoureusement identique, et a effacé la vraie date de dernier changement de 19 pages.
+
 ## Pourquoi ce document existe
 
 `mba.messagingme.app` est une couche logicielle qui aide les entreprises à **onboarder et piloter finement
@@ -563,7 +713,7 @@ Description : « Settings for handing over the conversation to a human agent. Nu
 **ATTENTION, articulation avec le controle du fil.** Le handoff des settings et le controle de conversation sont **deux mecanismes distincts** :
 
 - `handoff` (ici) : reglage declaratif de l'agent MBA.
-- Controle du fil (documente ailleurs, cote Cloud API) : quand MBA est actif il est **primary responder**, l'app tierce est **standby**. Les messages du consommateur arrivent sur le webhook `standby` quand MBA a le controle, sur `messages` quand l'app a le controle, et `messaging_handovers` notifie chaque changement. L'app **prend** le controle simplement en envoyant un message dans la conversation, et le **rend** via l'endpoint Thread Control avec l'action `pass`.
+- Controle du fil (documente ailleurs, cote Cloud API) : quand MBA est actif il est **primary responder**, l'app tierce est **standby**. Les messages du consommateur arrivent sur le webhook `standby` quand MBA a le controle, sur `messages` quand l'app a le controle, et `messaging_handovers` notifie chaque changement. L'app **prend** le controle simplement en envoyant un message dans la conversation, et le **rend** via l'endpoint Thread Control avec l'action `release`. ⚠️ **PAS `pass`** : la page Thread Control dit « `pass` is reserved for future use and is not currently accepted ». Voir le chapitre « La contradiction `pass` contre `release` », qui le demontre. Notre code envoie bien `release`.
 
 **Precision importante sur le `standby`** : l'app tierce n'y recoit pas seulement les messages entrants du consommateur. Elle recoit aussi des **copies des messages envoyes par l'agent au nom du business**, ainsi que leurs **accuses de livraison et de lecture**, explicitement « so it stays in sync ». Le `standby` n'est donc pas une simple redirection des entrants : c'est un flux miroir complet de la conversation, ce qui permet a la console d'afficher le fil integral meme quand MBA a le controle. Modeliser le stockage en consequence (auteur du message : consommateur, agent MBA, ou operateur humain).
 
@@ -1572,7 +1722,12 @@ ATTENTION : il n'existe pas de « bouton recrawler ». Le seul contournement pla
 
 #### Échec de crawl
 
-ATTENTION : quand un crawl échoue, la seule information disponible est `crawl_status` valant probablement `failed` ou `FAILED`. **Aucun champ d'erreur, aucun message, aucune raison** n'est prévu dans le schéma de réponse : ni code HTTP rencontré sur le site, ni « bloqué par robots.txt », ni « domaine injoignable », ni « certificat invalide ». La console ne pourra donc afficher que « le crawl a échoué », sans expliquer pourquoi. C'est un point de friction d'onboarding à anticiper : prévoir dans notre couche des vérifications préalables côté serveur (URL joignable, statut 200, robots.txt permissif, contenu non entièrement rendu en JavaScript) pour donner au client un diagnostic que Meta ne fournit pas.
+🔄 **PÉRIMÉ depuis le changelog du 2026-08-24, mais PAS ENCORE MESURÉ. Lire le relevé du 2026-08-26 (soir).**
+Meta annonce un champ `crawl_error` qui porte la raison de l'échec, en clair. La page de référence ci-dessous
+ne le porte toujours pas, et son export OpenAPI v2.0.0 est identique à notre copie : le champ n'existe donc
+aujourd'hui que dans le changelog. Ne pas réécrire le contrat du client avant de l'avoir vu sur un appel réel.
+
+Le texte d'origine, tant qu'il n'est pas tranché : quand un crawl échoue, la seule information disponible est `crawl_status` valant probablement `failed` ou `FAILED`. **Aucun champ d'erreur, aucun message, aucune raison** n'est prévu dans le schéma de réponse : ni code HTTP rencontré sur le site, ni « bloqué par robots.txt », ni « domaine injoignable », ni « certificat invalide ». La console ne pourra donc afficher que « le crawl a échoué », sans expliquer pourquoi. C'est un point de friction d'onboarding à anticiper : prévoir dans notre couche des vérifications préalables côté serveur (URL joignable, statut 200, robots.txt permissif, contenu non entièrement rendu en JavaScript) pour donner au client un diagnostic que Meta ne fournit pas.
 
 ATTENTION : le POST renvoie **201 immédiatement**, avant que le crawl n'ait eu lieu. Le 201 signifie « entrée créée », pas « site ingéré ». La console doit poller `GET /{website_id}` pour suivre `crawl_status`, sans indication de fréquence de polling recommandée ni de délai typique de crawl dans la doc. Aucun webhook de fin de crawl n'est documenté. Prévoir un polling à intervalle croissant et un timeout d'affichage côté produit.
 

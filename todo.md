@@ -1,5 +1,33 @@
 # todo.md — backlog
 
+## 🆕 Ouvert par le second relevé de doc Meta du 2026-08-26 (soir)
+
+Détail complet et citations : `docs/MBA-API-REFERENCE.md`, section « Second relevé du 2026-08-26 ».
+
+- 🔴 **Agent Budget (`{business_manager_id}/agent_budget`), à mesurer puis à arbitrer.** Un plafond
+  d'usage (jetons sur le Business Manager, ou tours d'IA **par conversation**, sur fenêtre glissante de
+  1 à 30 jours) qui, une fois atteint, **arrête l'agent et bascule la conversation vers un humain** par la
+  route de passation déjà configurée. C'est notre thèse produit, offerte en natif. Deux inconnues avant
+  d'en faire quoi que ce soit : le 403 « not enabled for this business integration » (porte ouverte ou
+  fermée pour nous ?), et le fait que cet endpoint attend le **Business Manager ID**, pas le
+  `phone_number_id` de tous nos autres appels.
+- 🟠 **Conversation Turns (`{entity_id}/insights/conversations/turns`).** Par tour : latence bout en bout,
+  étapes `LLM_CALL` / `TOOL_CALL` avec leur statut, aperçu de la sortie du modèle, entrées et sorties des
+  outils. C'est le « pourquoi l'agent a répondu ça » que notre référence listait comme définitivement
+  absent. À brancher quand un agent tournera pour de vrai.
+- 🟠 **`crawl_error` et `completed_no_data` : MESURER avant de coder.** Annoncés par le changelog du
+  2026-08-24, absents de la page de référence ET de son export OpenAPI. Quand ils seront vus sur un appel
+  réel : libeller `COMPLETED_NO_DATA` (« Exploré, rien d'exploitable », surtout pas en rouge) et afficher
+  `crawl_error` **uniquement** si `crawl_status` vaut `FAILED` et que la valeur n'est pas vide (Meta le
+  laisse vide pendant le crawl et sur tout crawl ayant ramené des pages).
+- 🔴 **Scinder le PUT d'activation en deux appels.** `scripts/mba-activer-restreint.mts` envoie
+  `ai_audience` et `rollout.enabled` dans le MÊME PUT. Meta prescrit maintenant : régler `ai_audience`,
+  **relire en GET**, puis allumer. Si Meta évalue l'audience stockée au moment d'allumer, le PUT combiné
+  se heurterait au 400 de facturation et on croirait à tort que la barrière n'a pas bougé.
+- 🟠 **L'avertissement qui manque dans la console.** Allumer un agent avec `ai_audience = EVERYONE` sur un
+  numéro vivant l'expose immédiatement à tout le monde. Le panneau allowlist dit que la liste est sans
+  effet en `EVERYONE` ; rien ne dit ce que coûte le clic d'allumage. À écrire au moment du clic.
+
 ## ⚠️ Revue du bloc Question : ce qui n'a PAS été instruit (2026-08-26)
 
 La revue adversariale du bloc Question a rapporté **39 défauts**, chacun devant être soumis à deux sceptiques
