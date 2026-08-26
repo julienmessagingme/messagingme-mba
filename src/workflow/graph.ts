@@ -26,7 +26,11 @@
 // `email` = node « Envoi de mail » (boîte SMTP + modèle + destinataire). Contrairement à `rcs_message`, ce n'est
 // PAS un envoi bloquant côté walk : c'est une action SYNCHRONE non bloquante (même branche que `tag`/`action`),
 // l'IO réelle étant faite best-effort par l'executor après coup (le parcours ne l'attend jamais).
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email'] as const;
+// `question` : pose une question au contact, avec un MENU déroulant de réponses (liste interactive WhatsApp)
+// ou sans menu du tout. Il ATTEND toujours une réponse, comme un message rapide à boutons, et il est le seul
+// bloc à porter EN PLUS une échéance : son parcours attend la réponse ET le temps qui passe.
+// Sorties : `row:<i>` par ligne du menu, `timeout` à l'échéance, et l'arête libre pour une réponse écrite.
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

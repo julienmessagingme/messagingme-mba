@@ -49,7 +49,22 @@ export type WorkflowAction =
    *  Absent = message texte, comportement historique. */
   | { kind: 'sendQuickMessage'; body: string; buttons: WorkflowButton[]; mediaUrl?: string }
   | { kind: 'sendFlow'; flowId: string; flowName: string; body: string; cta: string }
+  /**
+   * Bloc QUESTION : une question posée au contact, avec un MENU de réponses (liste interactive WhatsApp) ou
+   * sans menu du tout. Il attend TOUJOURS une réponse, et il peut porter une échéance « pas de réponse ».
+   *
+   * ⚠️ `rows` est transmis ENTIER, lignes au libellé vide comprises. C'est la même règle que les boutons de
+   * `sendQuickMessage` : l'index d'une ligne EST sa sortie (`row:<i>`), donc filtrer en amont renumérote les
+   * lignes et envoie le contact sur la mauvaise branche. Le filtrage se fait à l'ENVOI, en préservant l'index.
+   */
+  | { kind: 'sendQuestion'; body: string; buttonLabel: string; rows: QuestionRow[] }
   | SendEmailAction;
+
+/** Une ligne du menu d'un bloc Question. `title` est ce que le contact lit, `description` est facultative. */
+export interface QuestionRow {
+  title: string;
+  description?: string;
+}
 
 /** Ce que l'OUVERTURE d'un scénario contient, en un seul parcours (les deux questions posées sur l'ouverture
  *  ont la même exploration : les séparer en deux fonctions dupliquerait la traversée ET ses règles). */
@@ -115,6 +130,17 @@ export function scanOpening(graph: WorkflowGraph): OpeningScan {
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) out.sessionOpen = true;
       continue; // bloc bloquant NON configuré (pas d'action) : pas une ouverture, et on ne va pas au-delà
     }
+    if (node.type === 'question') {
+      // Message de SESSION comme un message rapide : la liste interactive est un message libre, donc soumise
+      // à la fenêtre de 24 h. Une question ne peut pas ouvrir une campagne.
+      const a = actionOf(node);
+      if (a) { out.sessionOpen = true; continue; }
+      // Non configuré = passe-plat DANS `walk` : l'analyse doit voir la même chose, sinon l'éditeur jugerait
+      // un scénario sur un parcours que le moteur ne suit pas.
+      const suite = nextNode(graph, id);
+      if (suite) queue.push(suite);
+      continue;
+    }
     if (node.type === 'rcs_message') {
       // Ouverture à froid LÉGALE. `waitBeforeTemplate` est consulté ici parce que le parcours est en LARGEUR :
       // une attente placée AVANT ce bloc a donc déjà été vue, et dans ce cas rien ne part au lancement.
@@ -168,6 +194,10 @@ function quickMessageNonBloquant(a: WorkflowAction | null): boolean {
 export function etapeOffreUnChoix(a: WorkflowAction | null): boolean {
   if (a === null) return false;
   if (a.kind === 'sendFlow') return true;
+  // Un bloc QUESTION attend toujours, MENU OU PAS. C'est sa définition même : sans menu, on attend la réponse
+  // libre du contact, et c'est cette réponse qui doit nous revenir. Le faire dépendre de `rows` rendrait une
+  // question sans menu non bloquante, donc suivie aussitôt par le bloc d'après, sans jamais lire la réponse.
+  if (a.kind === 'sendQuestion') return true;
   if (a.kind === 'sendTemplate' || a.kind === 'sendQuickMessage') return a.buttons.some((b) => b.text.trim() !== '');
   return false;
 }
@@ -215,6 +245,18 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
     const node = byId.get(id);
     if (!node) continue;
     if (node.type === 'inbox') continue;
+    if (node.type === 'question') {
+      // Une question est un message de SESSION : après 24 h d'attente cumulée, elle ne partira jamais. Même
+      // signalement que pour un message rapide ou un formulaire.
+      const a = actionOf(node);
+      if (a && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      // Configurée, elle BLOQUE (elle attend une réponse) : l'analyse s'arrête là, comme sur un message
+      // rapide à boutons. Non configurée, elle est un passe-plat : on explore au-delà.
+      if (a) continue;
+      const apres = nextNode(graph, id);
+      if (apres) pile.push({ id: apres, cumul, dernierWait });
+      continue;
+    }
     if (node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node);
       if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage') && cumul >= FENETRE_MS && dernierWait) {
@@ -254,7 +296,13 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
 }
 
 export type WalkRest =
-  | { status: 'waiting'; nodeId: string } // en attente d'une RÉPONSE du contact (après un template ou un formulaire)
+  /**
+   * En attente d'une RÉPONSE du contact (après un template, un formulaire, une question).
+   *
+   * `timeoutInMs` est l'échéance « pas de réponse » d'un bloc Question : le parcours attend la réponse ET le
+   * temps qui passe, ce qu'aucun autre bloc ne fait. Absent = attente sans limite, comportement historique.
+   */
+  | { status: 'waiting'; nodeId: string; timeoutInMs?: number }
   | { status: 'sleeping'; nodeId: string; resumeInMs: number } // en attente du TEMPS qui passe (bloc Attente)
   // Bloc RCS : ce n'est PAS un état de repos, c'est une MAIN RENDUE. Le walk est pur et ne peut pas savoir si
   // le numéro est joignable (appel réseau). L'executor fait l'IO puis reprend par 'sent' ou 'unreachable'.
@@ -282,6 +330,45 @@ export function waitDurationMs(node: WorkflowNode): number {
   const ms = UNIT_MS[unit];
   if (!ms) return 0;
   return Math.min(Math.round(brut * ms), WAIT_MAX_MS);
+}
+
+/** Nombre MAXIMAL de lignes d'un menu. Plafond WhatsApp : « up to 10 rows for all sections combined ». */
+export const QUESTION_MAX_ROWS = 10;
+/** Plafonds de caractères d'une liste interactive WhatsApp, relevés sur la référence Cloud API le 2026-08-26. */
+export const QUESTION_LIMITES = { body: 4096, bouton: 20, titre: 24, description: 72 } as const;
+
+/**
+ * Échéance « pas de réponse » d'un bloc Question, en millisecondes. 0 = aucune échéance : le parcours attend
+ * indéfiniment, exactement comme après un template ou un message rapide à boutons.
+ *
+ * Mêmes unités et même plafond que le bloc Attente, à dessein : c'est la même notion de délai pour
+ * l'utilisateur, et deux échelles différentes dans le même éditeur seraient un piège.
+ */
+export function questionTimeoutMs(node: WorkflowNode): number {
+  const brut = Number(node.data.timeoutValue ?? 0);
+  if (!Number.isFinite(brut) || brut <= 0) return 0;
+  const unit = String(node.data.timeoutUnit ?? 'hours') as WaitUnit;
+  const ms = UNIT_MS[unit];
+  if (!ms) return 0;
+  return Math.min(Math.round(brut * ms), WAIT_MAX_MS);
+}
+
+/**
+ * Les lignes du menu d'un bloc Question, lues DÉFENSIVEMENT depuis `node.data.rows` (JSON libre).
+ *
+ * Rend le tableau ENTIER, lignes vides comprises : voir la mise en garde de `sendQuestion`, l'index EST la
+ * sortie. Une forme inattendue (pas un tableau, entrée non objet) donne une ligne vide plutôt qu'un crash :
+ * un scénario enregistré par une version antérieure ne doit jamais devenir illisible.
+ */
+export function questionRows(node: WorkflowNode): QuestionRow[] {
+  const brut = node.data.rows;
+  if (!Array.isArray(brut)) return [];
+  return brut.slice(0, QUESTION_MAX_ROWS).map((r) => {
+    const o = (r ?? {}) as { title?: unknown; description?: unknown };
+    const title = String(o.title ?? '').trim().slice(0, QUESTION_LIMITES.titre);
+    const description = String(o.description ?? '').trim().slice(0, QUESTION_LIMITES.description);
+    return description === '' ? { title } : { title, description };
+  });
 }
 
 /**
@@ -391,6 +478,21 @@ export function adressesDestinataires(to: EmailRecipient[], vars: Record<string,
 /** Exportée : consommée directement par le test unitaire du node email (`actionOf` en isolation), sans passer
  *  par `walk`. */
 export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction | null {
+  if (node.type === 'question') {
+    // Le CORPS fait foi pour « configuré » : sans question écrite, il n'y a rien à envoyer, donc rien à
+    // attendre. Le menu, lui, est facultatif (une question sans menu attend une réponse libre).
+    const body = String(node.data.body ?? '').trim();
+    if (body === '') return null;
+    const buttonLabel = String(node.data.buttonLabel ?? '').trim().slice(0, QUESTION_LIMITES.bouton);
+    return {
+      kind: 'sendQuestion',
+      body: body.slice(0, QUESTION_LIMITES.body),
+      // Meta EXIGE un libellé de bouton dès qu'il y a une liste. Un repli est plus honnête qu'un refus : le
+      // bloc part avec « Choisir » plutôt que d'échouer sur un champ que personne n'a pensé à remplir.
+      buttonLabel: buttonLabel === '' ? 'Choisir' : buttonLabel,
+      rows: questionRows(node),
+    };
+  }
   if (node.type === 'tag') {
     const tag = String(node.data.tag ?? '').trim();
     return tag ? { kind: 'tag', tag } : null;
@@ -543,6 +645,22 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       // donc la main à l'executor, qui fera l'IO et reprendra par le handle 'sent' ou 'unreachable'. Les actions
       // déjà accumulées partent maintenant, comme pour un bloc Attente.
       return { actions, rest: { status: 'rcs_send', nodeId: current } };
+    }
+    if (node.type === 'question') {
+      const a = actionOf(node, work);
+      if (!a) {
+        // Question SANS texte : rien ne part, donc attendre une réponse à une question jamais posée figerait
+        // le parcours pour toujours, sans le moindre signal. Passe-plat, comme un bloc Attente sans durée.
+        // ⚠️ Divergence ASSUMÉE avec `quick_message`, qui lui bloque même non configuré : là-bas le
+        // comportement est historique, ici on choisit celui qui se voit (la conversation continue).
+        current = nextNode(graph, current);
+        continue;
+      }
+      actions.push({ nodeId: current, action: a });
+      // Il ATTEND toujours, menu ou pas. L'échéance éventuelle voyage avec le repos : c'est l'executor qui la
+      // traduit en `resume_at`, le walk reste pur.
+      const ms = questionTimeoutMs(node);
+      return { actions, rest: { status: 'waiting', nodeId: current, ...(ms > 0 ? { timeoutInMs: ms } : {}) } };
     }
     if (node.type === 'template' || node.type === 'flow' || node.type === 'quick_message') {
       const a = actionOf(node, work);

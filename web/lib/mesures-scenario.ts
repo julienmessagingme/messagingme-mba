@@ -60,7 +60,7 @@ export interface CompteurBrut {
  * Les autres blocs (tag, champ, condition, attente, assignation, mail) ne produisent rien qu'un contact
  * reçoive : les proposer à la mesure ferait miroiter des compteurs qui resteraient à zéro pour toujours.
  */
-const BLOCS_MESSAGE = new Set(['template', 'quick_message', 'flow', 'rcs_message']);
+const BLOCS_MESSAGE = new Set(['template', 'quick_message', 'question', 'flow', 'rcs_message']);
 
 /**
  * Le bloc « Envoi de mail » est mesurable LUI AUSSI, mais il ne connaît que deux issues : parti, ou pas.
@@ -109,6 +109,9 @@ function titreDe(n: GraphNode, locale: Locale): { titre: string; propre: boolean
   const s = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
   const saisi = n.type === 'template' ? s(d.templateName)
     : n.type === 'quick_message' ? s(d.body).slice(0, 60)
+    // Une question porte son texte, comme un message rapide : sans ça, tous les blocs Question d'un tableau
+    // s'appelleraient « Question » et seraient impossibles à distinguer les uns des autres.
+    : n.type === 'question' ? s(d.body).slice(0, 60)
     : n.type === 'flow' ? s(d.flowName)
     : '';
   if (saisi !== '') return { titre: saisi, propre: true };
@@ -116,6 +119,7 @@ function titreDe(n: GraphNode, locale: Locale): { titre: string; propre: boolean
   // distinguerait pas un bloc à configurer d'un bloc prêt.
   if (n.type === 'template') return { titre: locale === 'en' ? 'Template (not chosen)' : 'Template (non choisi)', propre: false };
   if (n.type === 'quick_message') return { titre: locale === 'en' ? 'Quick message (empty)' : 'Message rapide (vide)', propre: false };
+  if (n.type === 'question') return { titre: locale === 'en' ? 'Question (empty)' : 'Question (vide)', propre: false };
   return { titre: libelleType(n.type, locale), propre: false };
 }
 
@@ -126,6 +130,13 @@ export function libelleHandle(handle: string, boutons: string[], locale: Locale)
     const c = Number(carousel[1]) + 1;
     const b = Number(carousel[2]) + 1;
     return locale === 'en' ? `Card ${c}, button ${b}` : `Carte ${c}, bouton ${b}`;
+  }
+  const ligne = /^row:(\d+)$/.exec(handle);
+  if (ligne) {
+    const i = Number(ligne[1]);
+    const texte = boutons[i]?.trim();
+    if (texte) return guillemets(texte, locale);
+    return locale === 'en' ? `Answer ${i + 1}` : `Réponse ${i + 1}`;
   }
   const simple = /^btn:(\d+)$/.exec(handle);
   if (simple) {
@@ -152,6 +163,15 @@ interface BoutonDeclare {
  */
 function boutonsDe(n: GraphNode): BoutonDeclare[] {
   const d = n.data ?? {};
+  // Les lignes du menu d'une QUESTION sont des choix au même titre que des réponses rapides, mais leur
+  // libellé vit dans `title` et pas dans `text` : sans cette branche, le tableau afficherait « Réponse 1 »
+  // au lieu du texte que le contact a réellement lu.
+  if (Array.isArray(d.rows)) {
+    return d.rows.map((r) => {
+      const o = (r ?? {}) as { title?: unknown };
+      return { texte: String(o.title ?? ''), type: 'QUICK_REPLY' };
+    });
+  }
   const brut = Array.isArray(d.quickReplies) ? d.quickReplies : Array.isArray(d.templateButtons) ? d.templateButtons : [];
   return brut.map((b) => {
     if (typeof b !== 'object' || b === null) return { texte: '', type: 'QUICK_REPLY' };
@@ -200,11 +220,12 @@ export function blocsDuScenario(
     // Handles connus : ceux des boutons de CHOIX déclarés, ceux des arêtes du graphe, et ceux effectivement
     // mesurés. Les boutons URL en sont EXCLUS : Meta n'émet rien quand on les clique, leur compteur de
     // « choix » resterait à zéro pour toujours. Ils sont mesurés autrement, par la redirection.
-    const desBoutons = boutons.map((b, i) => ({ b, i })).filter((x) => x.b.type !== 'URL').map((x) => `btn:${x.i}`);
+    const prefixe = n.type === 'question' ? 'row' : 'btn';
+    const desBoutons = boutons.map((b, i) => ({ b, i })).filter((x) => x.b.type !== 'URL').map((x) => `${prefixe}:${x.i}`);
     const desAretes = graph.edges.filter((e) => e.source === id && e.sourceHandle).map((e) => e.sourceHandle!);
     const tous = [...new Set([...desBoutons, ...desAretes, ...(handlesMesures[id] ?? [])])]
       // Les sorties TYPÉES d'un bloc ne sont pas des choix du contact : elles décrivent une issue technique.
-      .filter((h) => !['true', 'false', 'sent', 'unreachable'].includes(h));
+      .filter((h) => !['true', 'false', 'sent', 'unreachable', 'timeout'].includes(h));
     const { titre, propre } = titreDe(n, locale);
     return {
       id,

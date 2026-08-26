@@ -126,6 +126,49 @@ export class MetaClient {
   }
 
   /**
+   * LISTE interactive (menu déroulant) : un corps de texte, un bouton qui ouvre le menu, et jusqu'à 10 lignes
+   * sélectionnables. C'est ce qu'envoie un bloc Question quand il porte un menu.
+   *
+   * MÊME règle d'index que `sendInteractive`, et pour la même raison : les lignes au libellé vide sont
+   * filtrées APRÈS numérotation, donc `row:<i>` reste stable même si une ligne du milieu est vide. Filtrer
+   * avant renumérote les lignes et envoie le contact dans la mauvaise branche du scénario.
+   *
+   * Limites relevées sur la référence Cloud API le 2026-08-26, et appliquées ICI plutôt que laissées à Meta :
+   * 10 lignes toutes sections confondues, bouton 20 caractères, titre de ligne 24, description 72, corps 4096.
+   * UNE seule section : Meta en accepte 10, mais le titre de section est un habillage que l'éditeur n'expose
+   * pas, et une section unique rend exactement le menu attendu.
+   */
+  async sendList(
+    to: string,
+    body: string,
+    buttonLabel: string,
+    rows: { title: string; description?: string }[],
+  ): Promise<SendResult> {
+    const lignes = rows
+      .map((r, i) => ({
+        id: `row:${i}`,
+        title: String(r.title ?? '').trim().slice(0, 24),
+        ...(r.description && r.description.trim() !== '' ? { description: r.description.trim().slice(0, 72) } : {}),
+      }))
+      .filter((r) => r.title !== '')
+      .slice(0, 10);
+    const json = await this.call('messages', {
+      messaging_product: 'whatsapp',
+      ...messagingTarget(to),
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: body.slice(0, 4096) },
+        action: {
+          button: buttonLabel.trim().slice(0, 20) || 'Choisir',
+          sections: [{ rows: lignes }],
+        },
+      },
+    });
+    return { messageId: this.messageId(json) };
+  }
+
+  /**
    * Image seule, légende facultative. Nécessaire parce qu'un message INTERACTIF exige au moins un bouton :
    * un bloc « message rapide » qui porte un visuel mais aucune réponse rapide n'a donc pas d'autre chemin.
    * Sans ça, ce montage partirait en texte nu et le visuel disparaîtrait sans que personne ne le sache.

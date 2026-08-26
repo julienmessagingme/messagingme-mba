@@ -1370,6 +1370,74 @@ cas, et AUCUN run n'est enfilé (sinon la campagne repartirait pour rien à chaq
 et pas `paused`, parce que la liste propose « Reprendre » sur une campagne en pause, ce qui n'aurait ici aucun
 sens (rien ne reste à envoyer). 404 sur une campagne ordinaire ou déjà arrêtée.
 
+## Bloc QUESTION : menu WhatsApp, réponse attendue, et échéance (2026-08-26, migration 0085)
+
+Un bloc qui pose une question au contact, avec un MENU déroulant de réponses (liste interactive WhatsApp) ou
+sans menu, et qui ROUTE la réponse. Trois familles de sorties : `row:<i>` par ligne du menu, l'arête LIBRE
+(le contact écrit au lieu de choisir), et `timeout` à l'échéance.
+
+### La décision structurante : il attend la réponse ET le temps
+
+C'est le seul bloc du produit dans ce cas, et c'est ce qui a demandé le plus de soin.
+
+Le moteur n'avait que deux repos : `waiting` (une réponse du contact le reprend, via `findWaitingByWaId`) et
+`sleeping` (le balayeur le reprend à l'échéance). Ils s'excluent : un run `sleeping` est INVISIBLE de
+`advance`, c'est écrit et voulu.
+
+Le bloc Question reste donc **`waiting`** et porte EN PLUS un `resume_at`. Le choix se lit à l'envers : mettre
+le run en `sleeping` pour obtenir l'échéance ferait perdre la réponse du contact, ce qui est exactement ce
+qu'un bloc Question ne peut pas se permettre.
+
+- `WalkRest` gagne `timeoutInMs` sur la variante `waiting` ; `restToState` le traduit en `resume_at`.
+- `claimDueQuestions` (nouveau) réclame les runs `waiting` à échéance due. Migration 0085 : un index partiel
+  `(resume_at) where status = 'waiting' and resume_at is not null`, sans quoi un balayage par minute
+  scannerait toute la table des runs en attente. AUCUNE colonne neuve, `resume_at` existe depuis 0054.
+- `resume(run)` reçoit désormais `status` : `sleeping` reprend au bloc SUIVANT (bloc Attente, inchangé),
+  `waiting` sort par la poignée `timeout`. Prendre le successeur enverrait un contact silencieux dans la
+  branche du premier câblage venu.
+
+### Réclamation : un BAIL, jamais une consommation
+
+Première version : `resume_at = null` à la réclamation, pour qu'une expiration ne soit prise qu'une fois.
+Elle garantissait surtout de la PERDRE définitivement au premier refus de Meta ou redéploiement du worker :
+le run restait `waiting` sans échéance, le fil tenu par un parcours mort, et `closeStaleSleeping` ne le voit
+pas (il ne regarde que les dormants).
+
+C'est donc le MÊME bail que `claimDueSleeping` (`resume_at = now() + 15 minutes`). Ce qui efface l'échéance
+pour de bon, c'est la reprise elle-même : toutes les sorties de `resume` passent par `setState`, qui écrit
+`resume_at` SANS coalesce. Différence assumée avec le sommeil : le run reste joignable par une réponse
+pendant la reprise, parce qu'avaler une réponse de client serait pire qu'un doublon.
+
+### L'index d'une ligne EST sa sortie
+
+`row:<i>` suit la ligne AFFICHÉE dans l'éditeur. Trois conséquences, chacune apprise à ses dépens ailleurs :
+
+1. `sendList` filtre les libellés vides **après** numérotation (miroir exact de `sendInteractive` pour
+   `btn:<i>`). Filtrer avant renuméroterait, et le contact partirait dans la mauvaise branche.
+2. Supprimer une ligne depuis le panneau passe par un événement `wf-row-delete` que le BUILDER traite :
+   il retire l'arête de la ligne et **décale les `row:<j>` suivants**. Le panneau seul ne voit pas les arêtes ;
+   renuméroter les données sans elles repointait silencieusement des branches déjà reliées.
+3. Une ligne au libellé vide n'expose AUCUNE poignée : elle n'est jamais envoyée, la relier promettrait une
+   branche que le contact ne peut pas prendre.
+
+### Ce qu'il fallait toucher ailleurs, et pourquoi
+
+- **Canal.** Une question réussie ramène le parcours sur WhatsApp, comme un template ou un formulaire. La
+  liste interactive n'existe QUE sur WhatsApp : sans cette bascule, un run venu d'un bloc RCS restait marqué
+  `rcs`, et la garde d'étanchéité de `advance` JETAIT la réponse WhatsApp du contact.
+- **Fenêtre de 24 h.** C'est un message de session : `besoinsFenetre` (reprise), la garde de `runFrom`
+  (ouverture à froid) et `exigeFenetre24h` (API publique `/v1/sends`) le connaissent tous les trois.
+- **Variables `{{champ}}`.** Le panneau offre le composant d'insertion partagé, donc `wiring.sendQuestion` les
+  RÉSOUT (corps, libellés et descriptions) avant l'envoi. La fiche n'est lue que si le texte en porte. Sans
+  ça, l'éditeur promettait une substitution que personne ne faisait et le contact lisait `{{prenom}}`.
+- **Bouton mort.** `row:` rejoint `btn:|card:` dans la règle d'escalade : une ligne tapée qui ne mène nulle
+  part remonte la conversation à un humain, au lieu de rendre la main en silence.
+- **Analytics.** `timeout` est exclu des choix (personne ne CLIQUE une absence de réponse), les lignes
+  portent leur libellé et non `row:0`, et chaque bloc porte SA question comme titre.
+- **Ouverture de campagne.** `scanOpening` le compte comme `sessionOpen`, et une question NON configurée est
+  un PASSE-PLAT (dans `walk` comme dans les deux miroirs d'analyse) : figer un parcours sur une question
+  jamais posée serait invisible, le laisser continuer se voit.
+
 ## Automation : déclencher un scénario sur un événement (Lots E / E.2, 2026-08-03, migrations 0052-0053)
 
 **Modèle.** Table `automations` (tenant, nom, `enabled`, `trigger_kind`, `trigger_config` jsonb,

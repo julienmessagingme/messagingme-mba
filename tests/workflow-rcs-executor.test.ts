@@ -58,6 +58,7 @@ function monter(graph: WorkflowGraph, nonJoignables: string[] = [], avecRcs = tr
     },
     sendQuickMessage: async (_t, _w, body) => { quickWhatsApp.push(body); },
     sendFlow: async () => {},
+    sendQuestion: async () => {},
     now: () => 1_000,
     runs: {
       start: async (_tenantId: string, _workflowId: string, _waId: string, _contactId: string | null, state: RunState) => {
@@ -440,6 +441,7 @@ describe('bloc RCS a l execution', () => {
     const executor = new WorkflowExecutor({
       ...deps,
       sendFlow: async () => 'fenêtre de 24 h fermée (131047)',
+      sendQuestion: async () => 'fenêtre de 24 h fermée (131047)',
       escalateToHuman: async (_t, waId) => { remontees.push(waId); },
       runs: { ...deps.runs, setState: async (_id, state) => { etats.push({ ...state }); } },
     });
@@ -579,5 +581,43 @@ describe('message rapide à visuel sur un parcours RCS', () => {
 
     const msg = provider.sent[0]!.msg as { kind: string };
     expect(msg.kind).toBe('text');
+  });
+});
+
+
+/**
+ * Une QUESTION branchee derriere un bloc RCS. La liste interactive n'existe QUE sur WhatsApp : le bloc part
+ * donc par WhatsApp, et le parcours doit BASCULER de canal en meme temps.
+ *
+ * Sans cette bascule, le run reste marque `rcs` alors que le contact a recu un message WhatsApp : sa reponse
+ * arrive par WhatsApp, la garde d'etancheite de `advance` la trouve sur le mauvais canal et l'IGNORE. Le
+ * contact repond, personne ne recoit rien, et rien ne le signale.
+ */
+describe('bloc Question derriere un bloc RCS', () => {
+  const grapheQuestion = (): WorkflowGraph => parseGraph({
+    nodes: [
+      { id: 'r', type: 'rcs_message', position: pos, data: { text: 'Bonjour en RCS' } },
+      { id: 'q', type: 'question', position: pos, data: { body: 'Ca vous convient ?', rows: [{ title: 'Oui' }] } },
+      { id: 'apres', type: 'action', position: pos, data: { actionKind: 'add_tag', tag: 'a-repondu' } },
+    ],
+    edges: [
+      { id: 'e1', source: 'r', target: 'q', sourceHandle: 'sent' },
+      { id: 'e2', source: 'q', target: 'apres', sourceHandle: 'row:0' },
+    ],
+  })!;
+
+  it('RAMENE le parcours sur WhatsApp, donc la reponse du contact sera bien recue', async () => {
+    // Le parcours est EN COURS sur le canal RCS : le contact vient de repondre au message RCS, et cette
+    // reponse le fait avancer jusqu'a la question.
+    const g = grapheQuestion();
+    const { etats, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+    // Reponse ECRITE (pas un bouton) : le bloc RCS reprend par sa sortie « envoye », qui mene a la question.
+    await executor.advance('t1', '33600000002', 'mo-1', null, 'rcs');
+    const dernier = etats.at(-1)!;
+    expect(dernier.currentNode).toBe('q');
+    expect(dernier.status).toBe('waiting');
+    // 🔴 LE point : le canal est repasse a WhatsApp, parce que la liste interactive y est partie. Sans ca, la
+    // reponse WhatsApp du contact serait jetee par la garde d'etancheite et le parcours se figerait.
+    expect(dernier.channel ?? 'whatsapp').toBe('whatsapp');
   });
 });

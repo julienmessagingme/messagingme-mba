@@ -266,7 +266,8 @@ describe('POST /tenants/:tenantId/campaigns', () => {
       edges: [ed('q', 't')],
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json<{ error: string }>().error).toMatch(/message rapide ou un formulaire/);
+    // Le refus NOMME les trois blocs de session concernes (la question a rejoint la liste le 2026-08-26).
+    expect(res.json<{ error: string }>().error).toMatch(/message rapide, une question ou un formulaire/);
   });
 
   it('workflow qui ATTEND avant son 1er envoi -> 400 (rien ne partirait au lancement)', async () => {

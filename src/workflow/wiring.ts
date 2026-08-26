@@ -477,6 +477,57 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };
     },
+    /**
+     * Bloc QUESTION : une LISTE interactive (menu déroulant) dès qu'une ligne porte un libellé, un simple
+     * texte sinon. Le contact répond en choisissant une ligne, ou en écrivant.
+     *
+     * ⚠️ `rows` part ENTIER, lignes vides comprises. C'est `sendList` qui les écarte APRÈS numérotation, donc
+     * `row:<i>` reste aligné sur la ligne affichée dans l'éditeur. Filtrer ici renumérotrait, et une ligne
+     * placée après une case vide renverrait un payload qui ne correspond à aucune branche du scénario.
+     *
+     * Sans aucune ligne, c'est un TEXTE : Meta refuse une liste vide, et c'est exactement ce qu'attend
+     * l'opérateur qui a posé une question ouverte. Le bloc attend la réponse dans les deux cas.
+     */
+    sendQuestion: async (tenant, waId, body, buttonLabel, rows) => {
+      if (dryRun) return; // DRY_RUN : aucun appel Meta
+      if (body.trim() === '') return 'le bloc « question » n\'a pas de texte'; // défense, actionOf filtre déjà
+      const pn = await repo.getTenantPhoneNumberId(tenant);
+      if (!pn) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendQuestion: aucun numéro pour le tenant ${tenant}, question non envoyée à ${waId}`);
+        return 'aucun numéro WhatsApp rattaché à ce workspace';
+      }
+      const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
+      /**
+       * 🔴 Variables `{{prenom}}` du contact, RÉSOLUES ICI.
+       *
+       * Le panneau de ce bloc offre le bouton « + Variable » (le même composant que partout ailleurs). Sans
+       * cette résolution, l'éditeur promettrait une substitution que personne ne fait, et le contact lirait
+       * `{{prenom}}` en toutes lettres. C'est exactement le genre d'option qui promet ce que le code ne tient pas.
+       *
+       * La fiche n'est lue QUE si le texte porte une variable : une question sans variable, qui est le cas
+       * courant, ne déclenche aucune requête de plus. Même patron que le bloc RCS.
+       */
+      const aVariable = /\{\{\s*[\w.-]+\s*\}\}/.test(body) || rows.some((r) => /\{\{\s*[\w.-]+\s*\}\}/.test(r.title) || /\{\{\s*[\w.-]+\s*\}\}/.test(r.description ?? ''));
+      let corps = body;
+      let lignes = rows;
+      if (aVariable) {
+        const vars = contactVars((await contactStore.getResolvableByPhone(tenant, waId)) ?? {});
+        corps = renderText(body, vars, { html: false });
+        lignes = rows.map((r) => ({
+          title: renderText(r.title, vars, { html: false }),
+          ...(r.description ? { description: renderText(r.description, vars, { html: false }) } : {}),
+        }));
+      }
+      const avecMenu = lignes.some((r) => r.title.trim() !== '');
+      const res = avecMenu
+        ? await client.sendList(waId, corps, buttonLabel, lignes)
+        : await client.sendText(waId, corps);
+      // Journalise la question dans le fil (best-effort, ne casse jamais un envoi Meta réussi). Le corps
+      // journalisé est celui REÇU par le contact, variables résolues : c'est ce qu'un opérateur doit relire.
+      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: corps, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+      return { messageId: res.messageId };
+    },
     // Formulaire (node flow) : message interactif type flow, hors template. Atteint via `advance` (le save du
     // graphe + la garde de `start` refusent un flow en OUVERTURE) ou via `startFromNode` (cible node, fenêtre
     // déjà vérifiée) -> fenêtre 24 h ouverte dans les deux cas. La complétion revient en nfm_reply : mapping

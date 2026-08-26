@@ -49,6 +49,7 @@ function executor(mayAct: boolean | undefined, trace: Trace) {
     sendTemplate: async (_t, _w, name) => { trace.sent.push(name); },
     sendQuickMessage: async () => {},
     sendFlow: async () => {},
+    sendQuestion: async () => {},
     ...(mayAct === undefined ? {} : { mayAct: async () => mayAct }),
   };
   return new WorkflowExecutor(deps);

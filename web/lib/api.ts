@@ -1442,7 +1442,10 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 // repli WhatsApp sur les contacts que le RCS n'atteint pas.
 // `email` : envoi via une boîte SMTP connectée (node « Envoi de mail »). Action SYNCHRONE best-effort (un
 // échec est journalisé côté serveur, jamais bloquant) -> une seule sortie, comme tag/field/action.
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email';
+// `question` : pose une question au contact, avec un MENU de reponses (liste interactive WhatsApp) ou
+// sans menu. Il attend TOUJOURS une reponse, et il est le seul bloc a porter en plus une echeance.
+// Sorties : `row:<i>` par ligne du menu, `timeout` a l'echeance, et l'arete libre pour une reponse ecrite.
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;

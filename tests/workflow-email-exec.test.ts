@@ -59,6 +59,7 @@ function makeDeps(
     sendTemplate: async () => {},
     sendQuickMessage: async () => {},
     sendFlow: async () => {},
+    sendQuestion: async () => {},
     sendEmail,
   };
 }

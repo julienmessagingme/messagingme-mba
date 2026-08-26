@@ -47,6 +47,8 @@ function envoieVraiment(node: GraphNodeLike): boolean {
   if (node.type === 'flow') return String(node.data.flowId ?? '').trim() !== '';
   // Un corps suffit : sans réponse rapide, le bloc envoie un message texte simple (il n'est plus muet).
   if (node.type === 'quick_message') return String(node.data.body ?? '').trim() !== '';
+  // Bloc QUESTION : le CORPS fait foi, exactement comme cote serveur. Le menu est facultatif.
+  if (node.type === 'question') return String(node.data.body ?? '').trim() !== '';
   return false;
 }
 
@@ -115,6 +117,15 @@ export function scanOpening(graph: GraphLike): OpeningScan {
       if (envoieVraiment(node)) out.sessionOpen = true;
       continue;
     }
+    if (node.type === 'question') {
+      // Message de SESSION : soumis a la fenetre de 24 h, donc il ne peut pas ouvrir une campagne.
+      // Non configure = PASSE-PLAT, comme dans `walk` : l'analyse doit voir le meme parcours que le
+      // moteur, sinon l'editeur juge un scenario sur un chemin qui n'existe pas a l'execution.
+      if (envoieVraiment(node)) { out.sessionOpen = true; continue; }
+      const suite = cible(graph, id);
+      if (suite) queue.push(suite);
+      continue;
+    }
     if (node.type === 'rcs_message') {
       // Miroir exact du serveur : ouverture à froid légale, et on explore au-delà pour retrouver le template
       // de repli branché sur « non joignable ».
@@ -164,13 +175,16 @@ export function isCampaignEligible(graph: GraphLike): boolean {
 }
 
 /**
- * Un FORMULAIRE WhatsApp branché derrière un bloc RCS.
+ * Un FORMULAIRE ou une QUESTION WhatsApp branchés derrière un bloc RCS.
  *
  * 🔴 Le seul montage qui reste impossible depuis le multicanal. Un « message rapide » n'est plus concerné : il
  * part désormais SUR LE CANAL DU PARCOURS, donc en RCS derrière un bloc RCS (un texte avec des réponses en un
  * tap existe des deux côtés). Un formulaire, lui, est un WhatsApp Flow : aucun équivalent RCS, il part donc
  * forcément par WhatsApp, et un contact qui vient de cliquer un bouton RCS n'y a jamais écrit. Meta refuse
  * (fenêtre de 24 h, 131047), le parcours clôt et remonte la conversation à un humain.
+ *
+ * Une QUESTION est dans le MÊME cas depuis le 2026-08-26 : la liste interactive n'existe que sur WhatsApp,
+ * le bloc part donc toujours par là, et il exige la fenêtre au même titre qu'un formulaire.
  *
  * On le SIGNALE au lieu de l'interdire : le montage reste légitime quand le contact vient d'écrire sur
  * WhatsApp. Même traitement que « attente >= 24 h puis message de session ».
@@ -184,7 +198,7 @@ export function sessionMessageAfterRcs(graph: GraphLike): { rcsNodeId: string; m
     // signaler trop large ferait ignorer l'alerte.
     for (const arete of graph.edges.filter((ed) => ed.source === rcs.id)) {
       const suivant = byId.get(arete.target);
-      if (suivant && suivant.type === 'flow' && envoieVraiment(suivant)) {
+      if (suivant && (suivant.type === 'flow' || suivant.type === 'question') && envoieVraiment(suivant)) {
         return { rcsNodeId: rcs.id, messageNodeId: suivant.id };
       }
     }
@@ -233,6 +247,15 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
     const node = byId.get(id);
     if (!node) continue;
     if (node.type === 'inbox') continue;
+    if (node.type === 'question') {
+      // Une question est un message de SESSION : apres 24 h d'attente cumulee, elle ne partira jamais.
+      // Miroir exact du serveur, y compris le passe-plat quand elle n'est pas configuree.
+      if (envoieVraiment(node) && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      if (envoieVraiment(node)) continue;
+      const apres = cible(graph, id);
+      if (apres) pile.push({ id: apres, cumul, dernierWait });
+      continue;
+    }
     if (node.type === 'flow' || node.type === 'quick_message') {
       if (envoieVraiment(node) && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
       // Un message sans bouton ne bloque pas le parcours : on explore AU-DELÀ, sinon « attente, message sans

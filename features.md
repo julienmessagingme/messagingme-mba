@@ -275,6 +275,24 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Nouveau bloc « Question »** (2026-08-26) : poser une question au contact et **router sa réponse**.
+  - **Un MENU déroulant** au lieu de boutons : jusqu'à **10 réponses** (24 caractères chacune, avec une
+    précision facultative en dessous), là où un message rapide plafonne à 3 boutons. Le contact ouvre le menu
+    d'un tap et choisit sa ligne.
+  - **Chaque réponse est une sortie à relier** vers le bloc de son choix.
+  - **Sans menu**, c'est une question ouverte : le bloc attend quand même, et la réponse écrite part sur la
+    sortie « Toute autre réponse ».
+  - **Avec un menu, la sortie « Toute autre réponse » reste là** : un contact peut toujours écrire au lieu de
+    choisir, et ce cas se prévoit.
+  - **« Pas de réponse »** : on pose un délai (minutes, heures ou jours, 30 jours maximum) et une sortie
+    supplémentaire apparaît sur le bloc. Passé ce délai sans réponse, le parcours part par là. À zéro, on
+    attend sans limite et la sortie n'apparaît pas : elle ne partirait jamais.
+  - Une réponse qui arrive **annule le délai**, et une ligne du menu **branchée sur rien** remonte la
+    conversation à un humain plutôt que de laisser le contact sans réponse.
+  - ⚠️ **WhatsApp uniquement**, et le contact doit avoir écrit dans les 24 h : le menu est un message libre.
+    Un scénario qui **commence** par une question ne peut donc pas être lancé en campagne, il se déclenche
+    depuis l'Inbox ou après un template.
+
 - ✅ **Quatre frottements corrigés dans l'éditeur de scénario** (2026-08-26), tous signalés par Julien :
   - **Lâcher une flèche SUR le bloc visé suffit** désormais. Il fallait viser son petit point d'entrée à
     20 pixels près, sinon rien ne se passait et l'éditeur avait l'air cassé.

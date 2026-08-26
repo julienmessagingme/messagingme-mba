@@ -5,7 +5,7 @@ const node = (id: string, type: string, over: Record<string, unknown> = {}) => (
 
 describe('isWorkflowNodeType', () => {
   it('accepte les types connus, rejette le reste', () => {
-    for (const t of ['template', 'quick_message', 'inbox', 'flow', 'condition', 'action', 'wait', 'rcs_message']) expect(isWorkflowNodeType(t)).toBe(true);
+    for (const t of ['template', 'quick_message', 'inbox', 'flow', 'question', 'condition', 'action', 'wait', 'rcs_message']) expect(isWorkflowNodeType(t)).toBe(true);
     expect(isWorkflowNodeType('mba')).toBe(false);
     expect(isWorkflowNodeType(3)).toBe(false);
   });

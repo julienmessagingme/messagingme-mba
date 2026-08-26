@@ -1,3 +1,4 @@
+import { exigeFenetre24h } from '../src/http/v1-sends';
 import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -345,5 +346,24 @@ describe('GET /v1/sends/:sendId', () => {
     expect((await server.inject({ method: 'GET', url: '/v1/sends/camp1', ...H(SEND_KEY) })).statusCode).toBe(200);
     expect((await server.inject({ method: 'GET', url: '/v1/sends/inconnu', ...H(SEND_KEY) })).statusCode).toBe(404);
     await server.close();
+  });
+});
+
+/**
+ * La fenetre de service de 24 h ne concerne que les blocs qui envoient un message de SESSION Meta. Se tromper
+ * dans un sens ecarte tous les destinataires en `out_of_window` sur un canal qui n'a pas de fenetre ; dans
+ * l'autre, on laisse partir un envoi que Meta refusera en 131047 sans avoir ecarte personne.
+ */
+describe('exigeFenetre24h', () => {
+  it('la exige pour les blocs de SESSION, question comprise', () => {
+    for (const t of ['quick_message', 'flow', 'question'] as const) expect(exigeFenetre24h(t), t).toBe(true);
+  });
+
+  it('ne la exige PAS pour un template, un bloc RCS ou un mail', () => {
+    for (const t of ['template', 'rcs_message', 'email'] as const) expect(exigeFenetre24h(t), t).toBe(false);
+  });
+
+  it('type inconnu -> on GARDE la fenetre : on ne relache pas une garde sur un bloc qu on n a pas su relire', () => {
+    expect(exigeFenetre24h(null)).toBe(true);
   });
 });

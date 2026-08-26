@@ -238,6 +238,13 @@ describe('parité front / serveur du parcours d’ouverture', () => {
     ['RCS puis suite sur « envoye »', g([n('r', 'rcs_message', { text: 'Bonjour' }), n('a', 'tag', { tag: 'v' })], [e('r', 'a', 'sent')])],
     ['attente puis RCS', g([n('w', 'wait', { delay: 2, unit: 'hours' }), n('r', 'rcs_message', { text: 'Bonjour' })], [e('w', 'r')])],
     ['condition -> RCS / template', g([n('c', 'condition', {}), n('r', 'rcs_message', { text: 'Bonjour' }), TPL('t')], [e('c', 'r', 'true'), e('c', 't', 'false')])],
+    // Bloc QUESTION : message de SESSION (donc jamais une ouverture de campagne), et PASSE-PLAT tant
+    // qu'il n'a pas de texte. Les deux cotes doivent voir exactement le meme parcours.
+    ['question configuree seule', g([n('q', 'question', { body: 'Ca va ?', rows: [{ title: 'Oui' }] })])],
+    ['question SANS menu', g([n('q', 'question', { body: 'Ton code postal ?' })])],
+    ['question NON configuree puis template', g([n('q', 'question', {}), TPL('t')], [e('q', 't')])],
+    ['action puis question', g([n('a', 'tag', { tag: 'v' }), n('q', 'question', { body: 'Q' })], [e('a', 'q')])],
+    ['attente puis question', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('q', 'question', { body: 'Q' })], [e('w', 'q')])],
   ];
 
   it('même verdict des deux côtés sur chaque graphe', () => {

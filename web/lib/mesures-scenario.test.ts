@@ -16,7 +16,7 @@ describe('quels blocs sont mesurables', () => {
     // Proposer un tag ou une condition ferait miroiter des compteurs qui resteraient à zéro pour toujours.
     // Le bloc mail, lui, envoie vraiment : il a rejoint la liste le 2026-08-25. Il n'écrivait aucune mesure,
     // donc un mail non parti (champ destinataire vide sur la fiche) était indiscernable d'un mail parti.
-    for (const t of ['template', 'quick_message', 'flow', 'rcs_message', 'email']) expect(estMesurable(t)).toBe(true);
+    for (const t of ['template', 'quick_message', 'question', 'flow', 'rcs_message', 'email']) expect(estMesurable(t)).toBe(true);
     for (const t of ['tag', 'field', 'action', 'condition', 'wait', 'inbox']) expect(estMesurable(t)).toBe(false);
   });
 
@@ -339,5 +339,52 @@ describe('les libellés suivent la langue de la console', () => {
     const sansCompteur = blocsDuScenario(g, 'en')[0]!;
     const barre = groupesDuTableau([enregistre], [], [sansCompteur], 'en')[0]!.barres[0]!;
     expect(barre.label).toBe('Clicked the link Button 2');
+  });
+});
+
+
+/**
+ * Le bloc Question dans Analytics. Trois pieges, tous introduits par sa seule presence dans la liste des
+ * blocs mesurables, et tous invisibles sans un test : un compteur qui ne bougera jamais, un nom technique
+ * montre a un operateur, et des blocs indistinguables les uns des autres.
+ */
+describe('bloc Question dans Analytics', () => {
+  const graphe = {
+    nodes: [
+      { id: 'q', type: 'question', data: { body: 'Quelle taille ?', rows: [{ title: 'Small' }, { title: 'Medium' }], timeoutValue: 30 } },
+      { id: 'a', type: 'tag', data: { tag: 'ok' } },
+      { id: 'muet', type: 'tag', data: { tag: 'rien' } },
+    ],
+    edges: [
+      { source: 'q', target: 'a', sourceHandle: 'row:0' },
+      { source: 'q', target: 'muet', sourceHandle: 'timeout' },
+    ],
+  };
+
+  it('🔴 « Pas de reponse » n est PAS un choix du contact : elle ne doit pas etre proposee comme un clic', () => {
+    // La proposer afficherait « A cliqué timeout », un compteur qui ne bougera jamais : personne ne CLIQUE
+    // une absence de reponse. Meme famille que sent/unreachable sur un bloc RCS.
+    const bloc = blocsDuScenario(graphe, 'fr')[0]!;
+    expect(bloc.choix.map((c) => c.handle)).not.toContain('timeout');
+  });
+
+  it('🔴 les lignes du menu portent leur LIBELLE, pas leur nom technique `row:0`', () => {
+    const bloc = blocsDuScenario(graphe, 'fr')[0]!;
+    expect(bloc.choix.map((c) => c.label)).toEqual(['« Small »', '« Medium »']);
+  });
+
+  it('🔴 chaque bloc Question porte SA question comme titre, sinon ils sont indistinguables', () => {
+    const bloc = blocsDuScenario(graphe, 'fr')[0]!;
+    expect(bloc.titre).toBe('Quelle taille ?');
+    expect(bloc.titrePropre).toBe(true);
+    // Sans texte, on DIT qu'il est vide plutot que d'afficher un « Question » anonyme.
+    const vide = blocsDuScenario({ nodes: [{ id: 'q', type: 'question', data: {} }], edges: [] }, 'fr')[0]!;
+    expect(vide.titre).toBe('Question (vide)');
+    expect(vide.titrePropre).toBe(false);
+  });
+
+  it('une ligne de menu NON reliee reste un choix mesurable : le contact peut la choisir quand meme', () => {
+    const bloc = blocsDuScenario(graphe, 'fr')[0]!;
+    expect(bloc.choix.map((c) => c.handle)).toEqual(['row:0', 'row:1']);
   });
 });

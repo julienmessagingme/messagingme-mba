@@ -263,3 +263,66 @@ describe('MetaClient.sendImage', () => {
     expect(body.image).toEqual({ id: 'MEDIA_8' });
   });
 });
+
+
+/**
+ * LISTE interactive : le payload EXACT attendu par la Cloud API, releve a la source le 2026-08-26. C'est ce
+ * que le bloc Question envoie quand il porte un menu.
+ */
+describe('MetaClient.sendList', () => {
+  it('construit une liste interactive : corps, bouton d ouverture, UNE section, lignes id/titre/description', async () => {
+    const t = new FakeTransport([okBody('wamid.l1')]);
+    const res = await client(t).sendList('33600000000', 'Quelle taille ?', 'Voir', [
+      { title: 'S' },
+      { title: 'M', description: 'le plus courant' },
+    ]);
+    expect(res.messageId).toBe('wamid.l1');
+    expect(t.requests[0]!.body).toEqual({
+      messaging_product: 'whatsapp',
+      to: '33600000000',
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: 'Quelle taille ?' },
+        action: {
+          button: 'Voir',
+          sections: [{ rows: [
+            { id: 'row:0', title: 'S' },
+            { id: 'row:1', title: 'M', description: 'le plus courant' },
+          ] }],
+        },
+      },
+    });
+  });
+
+  it('UNE ligne VIDE est ecartee mais ne renumerote PAS les suivantes', async () => {
+    // L'index d'une ligne EST sa sortie de scenario. Filtrer avant de numeroter enverrait le contact qui
+    // choisit la 3e ligne sur la branche de la 2e : le defaut le plus couteux de ce bloc, et le plus muet.
+    const t = new FakeTransport([okBody('wamid.l2')]);
+    await client(t).sendList('33600000000', 'Q', 'Choisir', [{ title: 'A' }, { title: '' }, { title: 'C' }]);
+    const rows = ((t.requests[0]!.body as { interactive: { action: { sections: Array<{ rows: Array<{ id: string; title: string }> }> } } })
+      .interactive.action.sections[0]!.rows);
+    expect(rows).toEqual([{ id: 'row:0', title: 'A' }, { id: 'row:2', title: 'C' }]);
+  });
+
+  it('borne aux limites de Meta : 10 lignes, bouton 20, titre 24, description 72', async () => {
+    const t = new FakeTransport([okBody('wamid.l3')]);
+    await client(t).sendList(
+      '33600000000',
+      'Q',
+      'un libelle de bouton beaucoup trop long',
+      Array.from({ length: 14 }, (_, i) => ({ title: `${i}-${'x'.repeat(40)}`, description: 'd'.repeat(120) })),
+    );
+    const action = (t.requests[0]!.body as { interactive: { action: { button: string; sections: Array<{ rows: Array<{ title: string; description?: string }> }> } } }).interactive.action;
+    expect(action.button.length).toBe(20);
+    expect(action.sections[0]!.rows.length).toBe(10);
+    expect(action.sections[0]!.rows[0]!.title.length).toBe(24);
+    expect(action.sections[0]!.rows[0]!.description!.length).toBe(72);
+  });
+
+  it('libelle de bouton vide -> repli Choisir (Meta l EXIGE des qu il y a une liste)', async () => {
+    const t = new FakeTransport([okBody('wamid.l4')]);
+    await client(t).sendList('33600000000', 'Q', '   ', [{ title: 'A' }]);
+    expect((t.requests[0]!.body as { interactive: { action: { button: string } } }).interactive.action.button).toBe('Choisir');
+  });
+});

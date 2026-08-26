@@ -37,6 +37,7 @@ function make(graph: WorkflowGraph, over: Partial<WorkflowExecutorDeps> = {}) {
     sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
     sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
     sendFlow: async (_t, _w, flowId, body, cta) => { calls.push(`flow:${flowId}:${body}:${cta}`); },
+    sendQuestion: async (_t, _w, body, bouton, rows) => { calls.push(`question:${body}:${bouton}:${rows.map((r) => r.title).join('|')}`); },
     escalateToHuman: async (_t, w) => { escalations.push(w); },
     ...over,
   });
@@ -275,6 +276,7 @@ describe('WorkflowExecutor', () => {
       sendTemplate: async (_t, _w, _name, _lang, _btns, explicitParams) => { captured.push(explicitParams); },
       sendQuickMessage: async () => {},
       sendFlow: async () => {},
+      sendQuestion: async () => {},
     });
     return { ex, captured };
   }
@@ -371,6 +373,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
       sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
       sendFlow: async (_t, _w, flowId) => { calls.push(`flow:${flowId}`); },
+      sendQuestion: async () => {},
       evalContext: async () => ctx,
     });
     return { ex, runs, calls };
@@ -453,7 +456,7 @@ describe('publication « tag ajouté » : gouvernée par le CHEMIN, pas par l’
       getGraph: async () => graphe,
       applyTag: async () => true, // le tag est réellement nouveau
       setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
-      sendTemplate: async () => {}, sendQuickMessage: async () => {}, sendFlow: async () => {},
+      sendTemplate: async () => {}, sendQuickMessage: async () => {}, sendFlow: async () => {}, sendQuestion: async () => {},
       emitTagAdded: async (_t, _w, tag) => { emitted.push(tag); },
       ...over,
     };
@@ -515,6 +518,7 @@ describe('WorkflowExecutor.resume (réveil après un bloc Attente)', () => {
       sendTemplate: async (_t, _w, name) => { calls.push(`tpl:${name}`); },
       sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
       sendFlow: async (_t, _w, id) => { calls.push(`flow:${id}`); },
+      sendQuestion: async () => {},
       escalateToHuman: async (_t, w) => { escalations.push(w); },
       emitTagAdded: async (_t, _w, tag) => { emis.push(tag); },
       ...over,

@@ -10,6 +10,7 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   // « À traiter ». Il s'appelait « Inbox », un nom de destination qui ne disait pas ce qu'il FAIT.
   inbox: { emoji: '🙋', label: ['Assigner à un agent', 'Assign to an agent'] },
   flow: { emoji: '📋', label: ['Formulaire', 'Form'] },
+  question: { emoji: '❓', label: ['Question', 'Question'] },
   tag: { emoji: '🏷️', label: ['Ajout de tag', 'Add tag'] }, // legacy : plus dans la palette, gardé pour le rendu des anciens blocs
   field: { emoji: '✏️', label: ['Ajout de champ', 'Add field'] }, // legacy : idem
   condition: { emoji: '🔀', label: ['Condition', 'Condition'] },
@@ -24,7 +25,10 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
 };
 
 // La palette ne propose plus `tag`/`field` séparés : le bloc « Action » les regroupe (ajouter/retirer tag, màj/vider champ).
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'flow', 'action', 'condition', 'wait', 'inbox'];
+// `question` est dans la liste NORMALE, pas dans une quatrieme liste gatee : rien ne le conditionne, il
+// part sur le numero WhatsApp deja rattache. Une liste de plus aurait demande de mettre a jour ses TROIS
+// lecteurs (palette, menu du fil, puces de Contenu > Blocs), la derive exacte du commit c1b8441.
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox'];
 
 // Bloc RCS : présenté à part et GRISÉ tant que le tenant n'a pas d'agent RCS rattaché. Même doctrine que les
 // blocs MBA. Le canal est construit de bout en bout, mais un agent doit être déposé et approuvé par Google et

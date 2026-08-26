@@ -44,6 +44,14 @@ function uid(): string {
 function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
   if (wfType === 'action') return { wfType, actionKind: 'add_tag' };
   if (wfType === 'wait') return { wfType, delay: 1, unit: 'hours' };
+  // Question : une ligne de menu VIDE au depart, pour que le menu soit visible et evident a remplir.
+  // Pas d'echeance par defaut (`timeoutValue: 0`) : une question attend sans limite, comme un message
+  // rapide a boutons. Poser un delai que personne n'a demande ferait partir des contacts dans une
+  // branche << pas de reponse >> a leur insu.
+  // 🔴 AUCUNE ligne au depart. Une ligne vide dessinerait aussitot une sortie non reliee, donc une
+  // pastille rouge « ne mene nulle part » sur un bloc que personne n'a encore configure. Une alerte qui
+  // s'allume avant la moindre faute apprend a ignorer les alertes. Le panneau propose « + reponse ».
+  if (wfType === 'question') return { wfType, body: '', buttonLabel: '', rows: [], timeoutValue: 0, timeoutUnit: 'hours' };
   if (wfType === 'email') return { wfType, emailAccountId: '', templateId: '', to: { kind: 'literal', value: '' } };
   return { wfType };
 }
@@ -58,6 +66,12 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
   if (wfType === 'quick_message') return (data.body as string)?.trim() || t('message + réponses rapides…', 'message + quick replies…');
   if (wfType === 'rcs_message') return (data.text as string)?.trim() || t('écrire le message RCS…', 'write the RCS message…');
   if (wfType === 'flow') return (data.flowName as string) || t('choisir un formulaire…', 'choose a form…');
+  if (wfType === 'question') {
+    const q = (data.body as string)?.trim() ?? '';
+    if (q === '') return t('écrire la question…', 'write the question…');
+    const n = Array.isArray(data.rows) ? (data.rows as Array<{ title?: string }>).filter((r) => (r?.title ?? '').trim() !== '').length : 0;
+    return n === 0 ? q : `${q} (${n} ${t('choix', 'choices')})`;
+  }
   if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir un tag…', 'choose a tag…');
   if (wfType === 'field') {
     const label = data.fieldLabel as string;
@@ -173,6 +187,15 @@ function WFNode({ id, data, selected }: NodeProps) {
   );
   const isCondition = wfType === 'condition';
   const isRcs = wfType === 'rcs_message';
+  const isQuestion = wfType === 'question';
+  // Lignes du MENU d'un bloc Question, lues défensivement : `data` est du JSON libre, et un scénario
+  // enregistré par une version antérieure ne doit jamais faire tomber l'éditeur.
+  const questionRows: Array<{ title: string }> = isQuestion && Array.isArray(data.rows)
+    ? (data.rows as Array<{ title?: unknown }>).map((r) => ({ title: String(r?.title ?? '') }))
+    : [];
+  // La sortie « pas de réponse » n'est dessinée QUE si un délai est posé. Sans délai elle ne partirait
+  // jamais : l'afficher promettrait une branche morte, et quelqu'un finirait par la relier.
+  const questionDelai = isQuestion && Number(data.timeoutValue ?? 0) > 0;
   // Sous un aperçu de carousel, on ne liste QUE ce qui se relie : les boutons lien sont déjà visibles dans
   // l'aperçu, les répéter ici doublerait la hauteur du bloc pour des lignes sur lesquelles on ne peut rien
   // tirer. Hors carousel il n'y a pas d'aperçu, donc on les garde pour le contexte.
@@ -181,7 +204,11 @@ function WFNode({ id, data, selected }: NodeProps) {
   // Faire défiler l'aperçu ne bouge AUCUNE poignée (elles sont hors de la zone), mais le nombre de sorties
   // change quand on choisit un autre template : React Flow doit alors re-mesurer, sinon les flèches gardent
   // les anciennes positions.
-  const handleSig = buttons.map((b, i) => b.handle ?? `btn:${i}`).join(',');
+  const handleSig = [
+    ...buttons.map((b, i) => b.handle ?? `btn:${i}`),
+    ...questionRows.map((_, i) => `row:${i}`),
+    ...(questionDelai ? ['timeout'] : []),
+  ].join(',');
   useEffect(() => { updateNodeInternals(id); }, [handleSig, id, updateNodeInternals]);
 
   return (
@@ -238,7 +265,42 @@ function WFNode({ id, data, selected }: NodeProps) {
           </div>
         </div>
       ) : null}
-      {isRcs ? (
+      {isQuestion ? (
+        // Bloc QUESTION : une sortie par ligne du menu, la sortie LIBRE (le contact écrit au lieu de
+        // choisir), et l'échéance « pas de réponse » quand un délai est posé. Les trois coexistent : un
+        // menu n'empêche pas d'écrire, et le silence est un troisième cas, distinct des deux autres.
+        <div className="border-t border-ink-200">
+          {questionRows.map((r, i) => {
+            // Une ligne au libellé VIDE n'est jamais envoyée (`sendList` l'écarte) : elle ne doit donc pas
+            // offrir de poignée, sinon on relierait une branche que le contact ne pourra jamais prendre.
+            const vide = r.title.trim() === '';
+            return (
+              <div key={`row${i}`} className={`relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] first:border-t-0 ${vide ? 'text-ink-400' : 'text-ink-700'}`}>
+                <span className="shrink-0">☰</span>
+                <span className="truncate">{vide ? t('réponse à écrire…', 'answer to write…') : r.title}</span>
+                {!vide && orpheline(`row:${i}`) && <span data-testid={`sortie-orpheline-row:${i}`} className="shrink-0 text-coral" title={TITRE_ORPHELINE}>⚠</span>}
+                {vide ? (
+                  <span className="absolute right-[-5px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full border border-white bg-ink-300" title={t('Ligne sans libellé : elle ne partira pas', 'Row without a label: it will not be sent')} />
+                ) : (
+                  <Handle type="source" id={`row:${i}`} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(`row:${i}`) ? '!bg-coral' : '!bg-brand-500'}`} title={orpheline(`row:${i}`) ? TITRE_ORPHELINE : t(`Relier « ${r.title} »`, `Connect “${r.title}”`)} />
+                )}
+              </div>
+            );
+          })}
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700">
+            <span className="shrink-0">✎</span>
+            <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
+            <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de choisir dans le menu', 'The contact writes instead of picking from the menu')} />
+          </div>
+          {questionDelai && (
+            <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-amber-700">
+              <span className="shrink-0">⏱</span>
+              <span className="truncate">{t('Pas de réponse', 'No reply')}</span>
+              <Handle type="source" id="timeout" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-amber-500" title={t('Le contact n’a pas répondu dans le délai', 'The contact did not reply within the delay')} />
+            </div>
+          )}
+        </div>
+      ) : isRcs ? (
         // Bloc RCS : les DEUX dimensions coexistent, et il ne faut pas que l'une masque l'autre.
         // « Envoyé » et « Non joignable » qualifient la LIVRAISON du message ; les boutons qualifient la
         // RÉPONSE du contact. Un bloc avec boutons doit donc afficher les deux séries de sorties, sinon la
@@ -530,6 +592,31 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
       const edgeId = (ev as CustomEvent).detail as string;
       setEdges((eds) => eds.filter((e) => e.id !== edgeId));
     };
+    /**
+     * 🔴 Suppression d'une LIGNE de menu d'un bloc Question. Elle ne peut PAS se faire depuis le panneau,
+     * parce qu'elle touche aux ARÊTES autant qu'aux données.
+     *
+     * L'index d'une ligne EST sa sortie (`row:<i>`). Retirer la 2e ligne d'un menu de 3 fait de la 3e la
+     * nouvelle ligne 1 : sans remappage, le contact qui choisit « Non » part dans la branche de la réponse
+     * SUPPRIMÉE, et la branche de « Non » devient inatteignable. Rien ne le signalerait : la pastille
+     * d'orpheline ne regarde que les sorties NON reliées, et celle-ci l'est.
+     */
+    const onRowDelete = (ev: Event) => {
+      const { nodeId, index } = (ev as CustomEvent).detail as { nodeId: string; index: number };
+      setNodes((ns) => ns.map((n) => (n.id === nodeId
+        ? { ...n, data: { ...n.data, rows: (Array.isArray(n.data.rows) ? (n.data.rows as unknown[]) : []).filter((_, j) => j !== index) } }
+        : n)));
+      setEdges((eds) => eds
+        // L'arête de la ligne supprimée s'en va avec elle : la garder pointerait vers une branche fantôme.
+        .filter((e) => !(e.source === nodeId && e.sourceHandle === `row:${index}`))
+        // Les lignes SUIVANTES reculent d'un cran : leurs arêtes suivent, sinon elles désignent la voisine.
+        .map((e) => {
+          if (e.source !== nodeId) return e;
+          const m = /^row:(\d+)$/.exec(e.sourceHandle ?? '');
+          const j = m ? Number(m[1]) : -1;
+          return j > index ? { ...e, sourceHandle: `row:${j - 1}` } : e;
+        }));
+    };
     // Suppression d'un bloc via son ✕ : retire le node ET ses arêtes ; déselectionne si c'était lui.
     const onNodeDelete = (ev: Event) => {
       const nodeId = (ev as CustomEvent).detail as string;
@@ -540,10 +627,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     window.addEventListener('wf-edge-insert', onInsert);
     window.addEventListener('wf-edge-delete', onDelete);
     window.addEventListener('wf-node-delete', onNodeDelete);
+    window.addEventListener('wf-row-delete', onRowDelete);
     return () => {
       window.removeEventListener('wf-edge-insert', onInsert);
       window.removeEventListener('wf-edge-delete', onDelete);
       window.removeEventListener('wf-node-delete', onNodeDelete);
+      window.removeEventListener('wf-row-delete', onRowDelete);
     };
   }, [setEdges, setNodes, setSelectedId]);
 
@@ -747,8 +836,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="alerte-session-apres-rcs">
           <b>{t('Ce montage ne partira pas toujours.', 'This setup will not always be sent.')}</b>{' '}
           {t(
-            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » est un FORMULAIRE WhatsApp, branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». Un formulaire n'existe pas en RCS : il part forcément par WhatsApp, qui ne l'accepte que si le contact y a écrit dans les 24 h. Répondre en RCS ne rouvre pas cette fenêtre. Un message rapide, lui, suivrait le canal du parcours.`,
-            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” is a WhatsApp FORM, wired after the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”. Forms do not exist on RCS: it can only go out over WhatsApp, which accepts it only if the contact wrote there within 24h. Replying on RCS does not reopen that window. A quick message would follow the run channel.`,
+            `« ${nomDuBloc(sessionApresRcs.messageNodeId)} » n'existe QUE sur WhatsApp (formulaire ou question), et il est branché derrière le bloc RCS « ${nomDuBloc(sessionApresRcs.rcsNodeId)} ». Il part donc forcément par WhatsApp, qui ne l'accepte que si le contact y a écrit dans les 24 h. Répondre en RCS ne rouvre pas cette fenêtre. Un message rapide, lui, suivrait le canal du parcours.`,
+            `“${nomDuBloc(sessionApresRcs.messageNodeId)}” only exists on WhatsApp (form or question), and it is wired after the RCS block “${nomDuBloc(sessionApresRcs.rcsNodeId)}”. It can only go out over WhatsApp, which accepts it only if the contact wrote there within 24h. Replying on RCS does not reopen that window. A quick message would follow the run channel.`,
           )}
         </div>
       )}
@@ -1112,6 +1201,115 @@ function ConfigPanel({
           ) : null}
         </div>
       )}
+      {wfType === 'question' && (() => {
+        // Lecture DÉFENSIVE : `data` est du JSON libre, un scénario enregistré par une version antérieure ne
+        // doit jamais faire tomber le panneau. Une forme inattendue donne une ligne vide, pas un crash.
+        const rows: Array<{ title: string; description: string }> = Array.isArray(d.rows)
+          ? (d.rows as Array<{ title?: unknown; description?: unknown }>).map((r) => ({
+            title: String(r?.title ?? ''), description: String(r?.description ?? ''),
+          }))
+          : [];
+        const patchRows = (next: Array<{ title: string; description: string }>) => onPatch({ rows: next });
+        const delai = Number(d.timeoutValue ?? 0);
+        return (
+          <div className="space-y-3">
+            {/* MÊME composant d'insertion de variables que partout ailleurs (bloc RCS, corps d'un template) :
+                jamais un champ nu où il faudrait recopier des accolades à la main. */}
+            <div>
+              <ChampCorpsVariables
+                valeur={(d.body as string) ?? ''}
+                onChange={(body) => onPatch({ body })}
+                fields={fields}
+                label={t('La question', 'The question')}
+                testId="question-node-body"
+                max={4096}
+                compact
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Réponses proposées (menu)', 'Offered answers (menu)')}</label>
+              <div className="space-y-1.5">
+                {rows.map((r, i) => (
+                  <div key={i} className="rounded-lg border border-ink-200 p-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        value={r.title}
+                        maxLength={24}
+                        onChange={(e) => { const next = [...rows]; next[i] = { ...r, title: e.target.value }; patchRows(next); }}
+                        data-testid={`question-row-title-${i}`}
+                        className={cls}
+                        placeholder={`${t('Réponse', 'Answer')} ${i + 1}`}
+                      />
+                      {/* 🔴 Passe par le PARENT : retirer une ligne décale les sorties `row:<i>` suivantes,
+                          donc il faut remapper les arêtes en même temps. `patchRows` ne voit pas les arêtes. */}
+                      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('wf-row-delete', { detail: { nodeId: node.id, index: i } }))} data-testid={`question-row-del-${i}`} className="shrink-0 text-ink-400 hover:text-coral" aria-label={t('Retirer', 'Remove')}>×</button>
+                    </div>
+                    <input
+                      value={r.description}
+                      maxLength={72}
+                      onChange={(e) => { const next = [...rows]; next[i] = { ...r, description: e.target.value }; patchRows(next); }}
+                      data-testid={`question-row-desc-${i}`}
+                      className={`${cls} mt-1 text-[11px]`}
+                      placeholder={t('Précision (facultatif)', 'Detail (optional)')}
+                    />
+                  </div>
+                ))}
+              </div>
+              {rows.length < 10 && (
+                <button type="button" onClick={() => patchRows([...rows, { title: '', description: '' }])} data-testid="question-add-row" className="mt-1.5 text-xs text-brand-600 hover:underline">
+                  {t('+ réponse', '+ answer')}
+                </button>
+              )}
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('Maximum 10 réponses, 24 caractères chacune. Chaque réponse devient une sortie à relier. Sans aucune réponse, la question part en texte simple et attend une réponse écrite.', 'Maximum 10 answers, 24 characters each. Each answer becomes an output to connect. With no answer at all, the question goes out as plain text and waits for a written reply.')}
+              </p>
+            </div>
+
+            {/* Le libellé du bouton n'a de sens qu'avec un menu : c'est lui qui ouvre la liste. Sans ligne,
+                l'afficher demanderait de remplir un champ qui ne partira pas. */}
+            {rows.length > 0 && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-ink-600">{t('Bouton qui ouvre le menu', 'Button that opens the menu')}</label>
+                <input
+                  value={(d.buttonLabel as string) ?? ''}
+                  maxLength={20}
+                  onChange={(e) => onPatch({ buttonLabel: e.target.value })}
+                  data-testid="question-node-button"
+                  className={cls}
+                  placeholder={t('Choisir', 'Choose')}
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-600">{t('Si le contact ne répond pas', 'If the contact does not reply')}</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={Number.isFinite(delai) ? delai : 0}
+                  onChange={(e) => onPatch({ timeoutValue: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+                  data-testid="question-node-timeout"
+                  className={`${cls} w-24`}
+                />
+                <select value={String(d.timeoutUnit ?? 'hours')} onChange={(e) => onPatch({ timeoutUnit: e.target.value })} data-testid="question-node-timeout-unit" className={`${cls} bg-white`}>
+                  <option value="minutes">{t('minutes', 'minutes')}</option>
+                  <option value="hours">{t('heures', 'hours')}</option>
+                  <option value="days">{t('jours', 'days')}</option>
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-ink-400">
+                {t('0 = on attend sans limite. Au-delà de 0, une sortie « Pas de réponse » apparaît sur le bloc : relie-la pour prévoir ce cas. Maximum 30 jours.', '0 = wait with no limit. Above 0, a “No reply” output appears on the block: connect it to handle that case. Maximum 30 days.')}
+              </p>
+            </div>
+
+            <p className="text-[11px] text-amber-700">
+              {t('Ce bloc part sur WhatsApp uniquement, et exige que le contact ait écrit dans les 24 h : il ne peut donc pas ouvrir une campagne.', 'This block goes out on WhatsApp only, and requires the contact to have written within 24 hours: it cannot open a campaign.')}
+            </p>
+          </div>
+        );
+      })()}
       {wfType === 'quick_message' && (() => {
         const qr = Array.isArray(d.quickReplies) ? (d.quickReplies as string[]) : [];
         return (

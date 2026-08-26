@@ -1,5 +1,40 @@
 # WIP
 
+## PRET, NON DEPLOYE (2026-08-26) : bloc « Question » dans les scenarios
+
+Demande de Julien : un bloc qui ouvre un MENU (au lieu de boutons) avec X reponses, qui ATTEND la reponse du
+contact, ou chaque reponse est mappable vers un autre bloc, ou la reponse ecrite est mappable meme quand un
+menu existe, et ou « pas de reponse apres X temps » est une sortie mappable elle aussi.
+
+Arbitrages tranches par Julien : sans menu, UNE seule sortie « il a repondu » (pas de mots-cles) ; bloc
+RESERVE a WhatsApp (pas de repli RCS).
+
+**⚠️ MIGRATION 0085 NON APPLIQUEE**, et les tests d integration qui l exigent n ont donc jamais tourne
+(`tests/integration/question-timeout.integration.test.ts`). Ordre au deploiement : appliquer 0085, lancer ces
+tests, puis deployer. C est le seul endroit ou le SQL de reclamation est reellement verifie.
+
+**Le point d architecture** : c est le seul bloc du produit qui attend DEUX choses a la fois, une reponse ET
+le temps qui passe. Le run reste `waiting` (sans quoi la reponse du contact serait perdue) et porte en plus un
+`resume_at`, reclame par un bail, pas par une consommation. Detail dans `documentation.md`.
+
+**Revue adversariale** : 4 lentilles ont rapporte 39 defauts, chacun soumis a deux sceptiques charges de le
+REFUTER. 10 ont survecu, et j en ai verifie chacun dans le code avant de corriger. Les quatre plus graves
+etaient reels et invisibles sans revue :
+- supprimer une reponse du menu renumerotait les sorties et repointait SILENCIEUSEMENT les branches deja
+  reliees (le contact qui choisit « C » partait dans la branche de « B », supprimee) ;
+- l echeance etait CONSOMMEE avant la reprise : un refus de Meta la perdait pour toujours, le fil restant
+  tenu par un parcours mort que plus rien ne reveillait ;
+- une question posee sur un parcours RCS laissait le run marque `rcs`, donc la reponse WhatsApp du contact
+  etait jetee par la garde d etancheite ;
+- les variables `{{champ}}` du panneau ne resolvaient nulle part : le contact aurait lu `{{prenom}}`.
+
+Deux de mes propres tests passaient A VIDE (le canal, et un filtre d aretes mal ecrit) : corriges et
+re-verifies par mutation.
+
+Verifie avant de m arreter : tsc vert (racine + front), racine **2491** tests, front **132**, E2E **329**,
+lint front sans avertissement nouveau. **9 mutations dans les deux sens** sur les regles decisives.
+
+
 ## LIVRE ET DEPLOYE le 2026-08-26 : campagne AU FIL DE L'EAU alimentée par un webhook
 
 Demande de Julien : dans la création de campagne, un bouton **« Autre »** à côté de « Liste de contacts » et

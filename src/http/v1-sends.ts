@@ -37,7 +37,10 @@ export interface V1SendCreateInput {
  * on ne relâche pas une garde sur un bloc qu'on n'a pas su relire.
  */
 export function exigeFenetre24h(type: WorkflowNodeType | null): boolean {
-  return type === null || type === 'quick_message' || type === 'flow';
+  // `question` en est : sa liste interactive est un message de SESSION Meta, exactement comme un message
+  // rapide. L'oublier ici aurait laissé une cible node sur un bloc Question partir hors fenêtre, sans écarter
+  // le moindre destinataire au préalable, pour finir en 131047 chez Meta.
+  return type === null || type === 'quick_message' || type === 'flow' || type === 'question';
 }
 
 export interface V1SendsRouteDeps {

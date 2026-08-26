@@ -106,6 +106,25 @@ describe('collectNodes', () => {
     expect(out[1]!.summary).toBe('');
   });
 
+  it('résumé du node QUESTION : la question, et le nombre de choix quand il y a un menu', () => {
+    // Troisième bloc à risquer le résumé VIDE de la branche `default`, après `wait` et `rcs_message`. Les
+    // lignes au libellé vide ne comptent pas : elles existent dans l'éditeur, pas pour le contact.
+    const out = collectNodes([
+      wf('w1', 'W', [
+        node({ id: 'n1', type: 'question', data: { body: 'Quelle taille ?', rows: [{ title: 'S' }, { title: 'M' }] } }),
+        node({ id: 'n2', type: 'question', data: { body: 'Ton code postal ?' } }),
+        node({ id: 'n3', type: 'question', data: { body: 'Q', rows: [{ title: 'A' }, { title: '  ' }] } }),
+        node({ id: 'n4', type: 'question', data: {} }),
+        node({ id: 'n5', type: 'question', data: { body: 'Q', rows: 'pas un tableau' } }),
+      ]),
+    ]);
+    expect(out[0]!.summary).toBe('Quelle taille ? (2 choix)');
+    expect(out[1]!.summary).toBe('Ton code postal ?');
+    expect(out[2]!.summary).toBe('Q (1 choix)');
+    expect(out[3]!.summary).toBe('');
+    expect(out[4]!.summary).toBe('Q');
+  });
+
   it('résumé du node condition (combineur + pluriel), et data.clauses opaque -> pas de throw', () => {
     const rows = [
       wf('w1', 'W', [

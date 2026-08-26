@@ -623,6 +623,9 @@ async function main(): Promise<void> {
     try {
       const n = await runWorkflowWakeSweep({
         claimDue: (limit) => runStore.claimDueSleeping(limit),
+        // Bloc QUESTION resté sans réponse : son échéance vit sur un run `waiting`, invisible du claim
+        // ci-dessus. Sans cette ligne, la sortie « pas de réponse » ne partirait JAMAIS, en silence.
+        claimDueQuestions: (limit) => runStore.claimDueQuestions(limit),
         resume: (run) => workflowExecutor.resume(run),
         closeStale: () => runStore.closeStaleSleeping(),
       });

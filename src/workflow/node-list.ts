@@ -30,6 +30,15 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
     // sans ce cas, les blocs RCS tombaient sur `default` et s'affichaient ici avec un résumé VIDE, donc
     // indistinguables les uns des autres. C'est l'incident déjà vécu pour le bloc `wait` plus bas.
     case 'rcs_message': out = s(data.text); break;
+    // Bloc QUESTION : la question, plus le nombre de choix quand il y a un menu. Même résumé que le canevas
+    // (`summaryOf`). Sans ce cas il tomberait sur `default` et s'afficherait VIDE : c'est exactement ce qui
+    // est arrivé au bloc Attente, puis au bloc RCS, chacun à son tour.
+    case 'question': {
+      const q = s(data.body);
+      const n = Array.isArray(data.rows) ? data.rows.filter((r) => s((r as { title?: unknown })?.title) !== '').length : 0;
+      out = q === '' ? '' : n === 0 ? q : `${q} (${n} choix)`;
+      break;
+    }
     case 'flow': out = s(data.flowName); break;
     case 'tag': out = s(data.tag); break;
     case 'field': {

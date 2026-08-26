@@ -257,7 +257,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       // n'envoient rien et ne changent donc rien. On juge sur ce qui OUVRE réellement, pas sur le type du 1er bloc.
       const scan = scanOpening(graph);
       if (scan.sessionOpen) {
-        return reply.code(400).send({ error: "Ce scénario ouvre par un message rapide ou un formulaire, qui exige que le contact ait écrit dans les 24 h. Une campagne part sur une audience froide : il lui faut un envoi de template en ouverture." });
+        return reply.code(400).send({ error: "Ce scénario ouvre par un message rapide, une question ou un formulaire, qui exigent que le contact ait écrit dans les 24 h. Une campagne part sur une audience froide : il lui faut un envoi de template en ouverture." });
       }
       if (scan.waitBeforeTemplate) {
         return reply.code(400).send({ error: "Ce scénario attend avant son premier envoi : rien ne partirait au lancement. Pour différer une campagne, utilise « Plus tard » au moment de la lancer." });

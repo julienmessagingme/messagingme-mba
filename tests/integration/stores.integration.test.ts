@@ -1194,6 +1194,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       sendTemplate: async (_t, _w, name) => { sends.push(name); },
       sendQuickMessage: async (_t, _w, body) => { sends.push(`qm:${body}`); },
       sendFlow: async (_t, _w, flowId) => { sends.push(`flow:${flowId}`); },
+      sendQuestion: async (_t: string, _w: string, body: string) => { sends.push(`question:${body}`); },
     });
 
     await ex.start(tenantId, wfId, graph, { waId, contactId: null });

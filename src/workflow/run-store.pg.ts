@@ -177,6 +177,54 @@ export class PgWorkflowRunStore {
   }
 
   /**
+   * Réclame les parcours qui ATTENDENT UNE RÉPONSE et dont le délai « pas de réponse » a expiré (bloc
+   * Question). Miroir de `claimDueSleeping`, avec une différence de fond dans la façon de réclamer.
+   *
+   * MÊME BAIL que `claimDueSleeping`, et c'est la seule chose sûre. Une première version CONSOMMAIT
+   * l'échéance (`resume_at = null`) pour garantir qu'une expiration n'est prise qu'une fois. Elle garantissait
+   * surtout qu'une reprise ratée la perdait POUR TOUJOURS : un refus de Meta, un worker redéployé au mauvais
+   * moment, et le parcours restait `waiting` sur sa question, sans échéance, avec le fil tenu par un run mort
+   * que plus rien ne réveille et que `closeStaleSleeping` ne voit pas (il ne regarde que les dormants).
+   *
+   * Le bail rend la reprise REJOUABLE sans rien perdre de l'exclusivité : les autres passes ne voient plus la
+   * ligne comme due, et une reprise interrompue redevient due 15 minutes plus tard.
+   *
+   * Ce qui efface l'échéance pour de bon, c'est la reprise elle-même : TOUTES les sorties de
+   * `WorkflowExecutor.resume` passent par `setState`, qui écrit `resume_at` SANS coalesce.
+   *
+   * ⚠️ Différence de fond avec le sommeil, et elle est voulue : le run reste `waiting`, donc `advance` le voit
+   * pendant toute la reprise. Une réponse du contact peut le reprendre à tout instant, y compris juste après
+   * la réclamation. C'est le prix à payer pour ne jamais avaler une réponse de client, et l'ordre inverse
+   * (réponse PUIS échéance) est sûr de toute façon, `advance` effaçant `resume_at` en réécrivant l'état.
+   */
+  async claimDueQuestions(limit: number): Promise<WorkflowRunRow[]> {
+    const res = await this.pool.query<{
+      id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
+      current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
+    }>(
+      // Même borne de 90 jours que le sommeil : au-delà, un parcours n'a plus de sens métier, et la fenêtre
+      // de service est de toute façon fermée depuis longtemps. Même durée de bail, aussi : elle doit couvrir
+      // la reprise de TOUT un lot au pire cas, relances Meta comprises.
+      `update workflow_runs r set resume_at = now() + interval '15 minutes', updated_at = now()
+       from (
+         select id from workflow_runs
+         where status = 'waiting' and resume_at is not null and resume_at <= now()
+           and created_at > now() - interval '90 days'
+         order by resume_at
+         for update skip locked
+         limit $1
+       ) due
+       where r.id = due.id
+       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel`,
+      [limit],
+    );
+    return res.rows.map((r) => ({
+      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
+      currentNode: r.current_node, status: 'waiting' as const, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp',
+    }));
+  }
+
+  /**
    * Clôt les parcours dormants trop vieux. `created_at` est l'âge du RUN, pas du sommeil : ce que ça clôt
    * surtout, c'est un parcours ABANDONNÉ (né il y a longtemps, réveillé tard), et accessoirement une chaîne
    * d'attentes qui se rendort sans fin. Cohérent avec la doctrine maison, qui considère déjà un run `waiting`

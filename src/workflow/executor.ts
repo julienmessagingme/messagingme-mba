@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle } from './engine';
 import type { WalkStep } from './engine';
-import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction } from './engine';
+import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow } from './engine';
 import type { WorkflowGraph, WorkflowNode } from './graph';
 import type { EvalContext } from './conditions';
-import type { RunState, WorkflowRunRow, RunChannel } from './run-store.pg';
+import type { RunState, WorkflowRunRow, RunChannel, RunStatus } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
@@ -88,6 +88,14 @@ export interface WorkflowExecutorDeps {
    *  sendQuickMessage : la garde de `start` refuse un scénario qui OUVRE sur un flow/quick_message, et
    *  `startFromNode` n'est appelé qu'après vérification de la fenêtre destinataire par destinataire. */
   sendFlow(tenantId: string, waId: string, flowId: string, body: string, cta: string): Promise<SendRefusal>;
+  /**
+   * Envoie une QUESTION : une liste interactive WhatsApp (menu déroulant) quand `rows` porte au moins un
+   * libellé, un simple texte sinon. Même contrainte de fenêtre 24 h que `sendQuickMessage`.
+   *
+   * ⚠️ `rows` arrive ENTIER, lignes vides comprises : le câblage filtre à l'envoi EN PRÉSERVANT l'index,
+   * parce que l'index d'une ligne EST sa sortie de scénario (`row:<i>`).
+   */
+  sendQuestion(tenantId: string, waId: string, body: string, buttonLabel: string, rows: QuestionRow[]): Promise<SendRefusal>;
   /**
    * Envoie l'email du bloc « Envoi de mail » (résolution boîte SMTP + modèle + destinataire, rendu des
    * variables, envoi SMTP réel). Appelée en BEST-EFFORT par `apply` (try/catch autour de l'appel) : un échec
@@ -239,7 +247,15 @@ function rcsOutboundOf(node: WorkflowNode | undefined): RcsOutbound | null {
 const MAX_RCS_ENCHAINES = 20;
 
 function restToState(rest: WalkRest, now: number): RunState {
-  if (rest.status === 'waiting') return { currentNode: rest.nodeId, status: 'waiting' };
+  if (rest.status === 'waiting') {
+    // Bloc QUESTION à échéance : le run reste `waiting`, parce qu'une réponse du contact doit pouvoir le
+    // reprendre et que `findWaitingByWaId` ne voit QUE les runs `waiting`. Il porte EN PLUS un `resume_at`,
+    // que le balayeur de réveil récupère à l'échéance. C'est le seul état du produit qui attend les deux.
+    if (rest.timeoutInMs !== undefined) {
+      return { currentNode: rest.nodeId, status: 'waiting', resumeAt: new Date(now + rest.timeoutInMs) };
+    }
+    return { currentNode: rest.nodeId, status: 'waiting' };
+  }
   // Sommeil : on garde le bloc Attente comme position courante et on pose l'échéance. Le réveil repart de SON
   // successeur (le bloc Attente lui-même a déjà « joué », le repasser rendormirait le parcours en boucle).
   if (rest.status === 'sleeping') return { currentNode: rest.nodeId, status: 'sleeping', resumeAt: new Date(now + rest.resumeInMs) };
@@ -414,13 +430,23 @@ export class WorkflowExecutor {
           ? (canal === 'rcs'
             ? await this.envoyerQuickEnRcs(tenantId, waId, a)
             : await this.deps.sendQuickMessage(tenantId, waId, a.body, a.buttons, a.mediaUrl))
-          : a.kind === 'sendFlow'
-            ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
-            : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
+          // Une QUESTION part toujours en WhatsApp : la liste interactive n'a aucun équivalent RCS, et le
+          // bloc est réservé à ce canal (décision de Julien du 2026-08-26). Pas de branche `canal === 'rcs'`
+          // ici : elle promettrait un repli qui n'existe pas.
+          : a.kind === 'sendQuestion'
+            ? await this.deps.sendQuestion(tenantId, waId, a.body, a.buttonLabel, a.rows)
+            : a.kind === 'sendFlow'
+              ? await this.deps.sendFlow(tenantId, waId, a.flowId, a.body, a.cta)
+              : await this.deps.sendTemplate(tenantId, waId, a.templateName, a.language, a.buttons, firstTemplateParams);
         const rate = typeof dit === 'string' && dit !== '';
         // Un TEMPLATE (comme un formulaire) est WhatsApp par nature : le poser ramène volontairement le
         // parcours sur WhatsApp. C'est ainsi qu'on BASCULE de canal, en branchant un template après un RCS.
-        if (!rate && (a.kind === 'sendTemplate' || a.kind === 'sendFlow')) canal = 'whatsapp';
+        //
+        // 🔴 Une QUESTION aussi, et l'oublier gelait le parcours EN SILENCE : la liste part par WhatsApp quel
+        // que soit le canal courant (le RCS n'a pas de liste), mais le run restait marqué `rcs`. La réponse
+        // du contact arrivait alors par WhatsApp, la garde d'étanchéité la trouvait sur le mauvais canal et
+        // l'ignorait. Le contact répondait, personne ne recevait rien.
+        if (!rate && (a.kind === 'sendTemplate' || a.kind === 'sendFlow' || a.kind === 'sendQuestion')) canal = 'whatsapp';
         if (rate) {
           if (refus === null) refus = dit;
         } else {
@@ -491,6 +517,14 @@ export class WorkflowExecutor {
     contactId?: string | null; currentNode: string | null;
     /** Canal courant du parcours. Absent -> WhatsApp (runs d'avant la migration 0082). */
     channel?: RunChannel;
+    /**
+     * Pourquoi ce run était en repos, et donc par où le reprendre.
+     *
+     * `sleeping` = bloc Attente arrivé à échéance, on reprend au bloc SUIVANT (comportement historique).
+     * `waiting` = bloc QUESTION dont le délai « pas de réponse » a expiré, on sort par la sortie `timeout`.
+     * Absent -> `sleeping`, pour que tout appelant écrit avant le bloc Question garde son comportement.
+     */
+    status?: RunStatus;
   }): Promise<boolean> {
     const { tenantId, waId } = run;
     if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
@@ -504,10 +538,27 @@ export class WorkflowExecutor {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
       return false;
     }
-    // On repart du SUCCESSEUR du bloc Attente : repasser sur l'attente elle-même rendormirait le parcours.
-    const suite = nextNode(graph, run.currentNode);
+    // D'où repartir dépend de CE QUI a expiré.
+    //
+    // Bloc Attente : le SUCCESSEUR (repasser sur l'attente elle-même rendormirait le parcours).
+    //
+    // Bloc QUESTION : la sortie `timeout`, et elle seule. Le « successeur » d'une question n'a aucun sens,
+    // c'est la RÉPONSE qui décide de la suite. Prendre `nextNode` ici enverrait un contact silencieux dans la
+    // branche du premier câblage venu, exactement le défaut que `nextNodeSansHandle` évite déjà ailleurs.
+    const parQuestion = run.status === 'waiting';
+    const suite = parQuestion
+      ? nextNodeByHandle(graph, run.currentNode, 'timeout')
+      : nextNode(graph, run.currentNode);
     if (!suite) {
+      // Sortie « pas de réponse » non câblée : rien n'était prévu, le parcours s'arrête. On REND LA MAIN,
+      // parce qu'une question la retenait (`etapeOffreUnChoix`) : sans ça le fil resterait tenu par un
+      // parcours mort et l'agent de Meta ne reprendrait jamais la parole.
+      if (parQuestion) {
+        // eslint-disable-next-line no-console
+        console.log(`workflow ${run.workflowId}: pas de réponse dans le délai sur le bloc ${run.currentNode}, sortie « pas de réponse » non câblée -> parcours clos pour ${waId}`);
+      }
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
+      if (parQuestion) await this.rendreLaMainAMba(tenantId, waId);
       return false;
     }
     const ctx = await this.buildCtx(tenantId, waId, graph);
@@ -534,7 +585,9 @@ export class WorkflowExecutor {
       for (const e of actions) {
         const a = e.action;
         // Un formulaire est WhatsApp par nature (aucun équivalent RCS) : toujours soumis à la fenêtre.
-        if (a.kind === 'sendFlow') besoinsFenetre.add(a);
+        // Une QUESTION aussi : la liste interactive n'existe que sur WhatsApp (le RCS n'a que des
+        // suggestions), donc elle est soumise à la fenêtre quel que soit le canal simulé du parcours.
+        if (a.kind === 'sendFlow' || a.kind === 'sendQuestion') besoinsFenetre.add(a);
         else if (a.kind === 'sendQuickMessage' && canalSimule !== 'rcs') besoinsFenetre.add(a);
         if (a.kind === 'sendTemplate' || a.kind === 'sendFlow') canalSimule = 'whatsapp';
       }
@@ -715,10 +768,10 @@ export class WorkflowExecutor {
     // n'interdit plus cette forme (un scénario peut ouvrir sur un message de session, il est alors réservé aux
     // déclenchements en fenêtre garantie) : c'est `POST /campaigns` qui refuse un tel scénario en campagne, et
     // CETTE garde est le filet runtime si un autre chemin tentait quand même un `start` classique.
-    if (!opts.allowSessionOpen && actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage')) {
+    if (!opts.allowSessionOpen && actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage' || e.action.kind === 'sendQuestion')) {
       // eslint-disable-next-line no-console
-      console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
-      return "le scénario ouvre par un message rapide ou un formulaire, impossible hors de la fenêtre de 24 h";
+      console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide/question) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
+      return "le scénario ouvre par un message rapide, une question ou un formulaire, impossible hors de la fenêtre de 24 h";
     }
     const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId, apresWalk);
     // Refus alors que RIEN n'est parti : le contact n'a rien reçu. On ne persiste PAS de run en attente, pour
@@ -944,7 +997,10 @@ export class WorkflowExecutor {
       // carousel). Tout le reste (texte libre, payload d'un vieux template qui porte le libellé du bouton,
       // accusé `sent`/`unreachable` d'un bloc RCS dont la sortie n'est volontairement pas branchée) suit le
       // chemin historique : ce ne sont pas des trous de montage.
-      const boutonSansSuite = typeof buttonPayload === 'string' && /^(btn:|card:)/.test(buttonPayload);
+      // `row:<i>` = une ligne du MENU d'un bloc Question. Elle appartient à la même famille que `btn:` : le
+      // contact a fait un choix qu'on lui a proposé. L'oublier ici la ferait retomber en silence sur le
+      // chemin « il a écrit », donc rendre la main à l'agent au lieu de signaler le trou de montage.
+      const boutonSansSuite = typeof buttonPayload === 'string' && /^(btn:|card:|row:)/.test(buttonPayload);
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
       if (boutonSansSuite) {
         // eslint-disable-next-line no-console
