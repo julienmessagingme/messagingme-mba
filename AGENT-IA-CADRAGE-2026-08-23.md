@@ -96,30 +96,42 @@ pas tenu. Ça conforte la discipline anti-tailor-made déjà inscrite dans le CL
 
 Ajouté le 2026-08-26, sur demande de Julien.
 
-### Deux modes de déploiement, une seule implémentation
+### Qui répond par défaut : tranché le 2026-08-26, après discussion
 
-L'agent se configure **une fois**, et le client choisit comment il le met au travail.
+**L'agent de Meta reste le catch-all, notre agent IA intervient dans les scénarios.** Les deux
+cohabitent, et c'est déjà presque le monde actuel.
 
-**À petite dose, dans un scénario.** L'agent intervient à un point précis d'un parcours que le client
-a dessiné, sur un périmètre borné, et il en ressort par une branche câblée. Le scénario garde le
-contrôle. C'est le bloc agent, et c'est ce que le plan d'exécution construit.
+Le mécanisme existant, vérifié dans le code : l'agent de Meta répond à tout ce qui arrive sur le
+numéro quand il est allumé, nos scénarios lui **prennent** le fil quand ils démarrent et le lui
+**rendent** à la fin (`rendreLaMainAMba`, appelé sur chaque `rest.status === 'done'`), et le balayage
+de reprise renvoie vers `mba` un fil qu'un humain a laissé refroidir quand le compte a MBA allumé.
+Il ne manque que notre agent à l'intérieur du scénario.
 
-**Sur tout ce qui arrive, comme l'agent Meta.** L'agent répond à n'importe quel message entrant sur
-le numéro, sans parcours dessiné.
+L'argument qui a départagé n'est pas technique. Meta absorbe la longue traîne **sans consommer de
+tokens**, et notre agent ne parle qu'aux endroits que le client a choisis. C'est aussi ce qui permet
+de mesurer la consommation réelle avant d'ouvrir les vannes.
 
-**Ce ne sont pas deux architectures.** Le second mode est **un scénario à un seul bloc agent**,
-déclenché par une automation attrape-tout. Le run, `mayAct`, la fenêtre de 24 h, la reprise humaine,
-la mesure par bloc, les plafonds : tout existe déjà et sert les deux modes sans une ligne de plus.
+### L'asymétrie à connaître, parce qu'elle ferme une porte
 
-Conséquence qui vaut d'être écrite, parce qu'elle évite un chantier : **aucune quatrième valeur de
-`control_owner`.** Un détenteur `agent_ia` aurait coûté une migration du CHECK, une relecture de
-chaque comparaison, un délai dédié dans le balayage de reprise, et il aurait gelé le scénario qui
-contient l'agent puisque `mayAct` exige `app_workflow`. Le mode « il tient le fil » reste donc à
-l'intérieur de `app_workflow`, exactement comme n'importe quel autre parcours.
+**L'agent de Meta peut être un catch-all, mais il ne peut pas être un bloc de scénario.**
 
-Corollaire pour l'ordre des lots : le bloc agent n'est pas une alternative au mode « comme l'agent
-Meta », c'est la brique dont ce mode est fait. Le construire d'abord est le bon ordre, et le second
-mode arrive ensuite pour le prix d'une case d'activation et d'une automation.
+Il n'existe aucune API pour lui dire « réponds à ce message-ci ». Le seul levier est `thread_control`,
+qui lui remet **tout le fil**, et on ne le récupère pas sur commande : on attend qu'il le rende, ou le
+délai de `CONTROL_MBA_TIMEOUT_MS`, 24 heures par défaut. C'est une porte à sens unique, bornée.
+
+La preuve est dans le code : les blocs `mba_handoff` et `mba_disable` sont encore dans
+`WORKFLOW_NODE_TYPES` avec le commentaire « blocs RETIRÉS du produit, ils ne faisaient rien ». Ils ont
+été enlevés pour cette raison exacte.
+
+Conséquence : le monde inverse (notre agent en catch-all, celui de Meta appelé ponctuellement) n'est
+pas symétrique et ne doit pas être promis. En revanche le monde **sans Meta du tout**, où notre agent
+répond à tout, reste ouvert : c'est un scénario à un seul bloc agent démarré par une automation
+attrape-tout. Une case et une automation, pas un chantier.
+
+Et dans les trois cas, **aucune quatrième valeur de `control_owner`.** Un détenteur `agent_ia` aurait
+coûté une migration du CHECK, une relecture de chaque comparaison, un délai dédié dans le balayage,
+et il aurait gelé le scénario qui contient l'agent puisque `mayAct` exige `app_workflow`. Notre agent
+vit à l'intérieur de `app_workflow`, comme n'importe quel autre parcours.
 
 ### Où ça vit dans l'interface
 
@@ -149,13 +161,22 @@ l'accueil, réservé aux administrateurs, qui écrit `tenant_settings.mba_enable
 `PUT /tenants/:id/settings`, avec une mise à jour optimiste et un retour arrière en cas d'échec, plus
 un lien vers son écran de paramètres.
 
-L'agent IA reprend ce patron trait pour trait : un interrupteur sur l'accueil, à côté de celui de
-l'agent Meta, réservé aux administrateurs, écrivant un réglage de tenant du même genre, avec le même
-lien vers son écran. Un client doit voir d'un coup d'oeil, depuis l'accueil, **lequel des deux agents
-répond chez lui**, et pouvoir en changer sans chercher.
+L'agent IA reprend ce patron trait pour trait : un bloc sur l'accueil à côté de celui de l'agent
+Meta, réservé aux administrateurs, écrivant un réglage de tenant du même genre, avec un lien vers son
+écran de configuration.
 
-C'est aussi ce qui rend l'arbitrage visible : les deux interrupteurs côte à côte posent la question
-« qui répond ? » sans qu'on ait à l'expliquer.
+**Attention au sens du mot « activé », qui n'est pas le même pour les deux.** L'agent de Meta activé
+veut dire « il répond à tout ». Notre agent activé veut dire « il est configuré et utilisable dans
+les scénarios », pas « il répond à tout ». Écrire le même libellé pour les deux serait un
+contresens, et le client croirait avoir mis deux répondeurs sur le même numéro.
+
+Ce que l'accueil doit donc montrer, c'est **qui répond quand aucun scénario ne tourne** (l'agent de
+Meta, allumé ou éteint) et **si un agent IA est prêt à être utilisé dans les parcours** (configuré ou
+non, actif ou suspendu). Deux questions différentes, deux formulations différentes.
+
+Côté builder, l'état de l'agent commande la disponibilité du bloc, sur le patron déjà en place pour
+le RCS et l'email : le bloc est rendu à part, grisé et non cliquable tant qu'aucun agent n'est
+configuré, avec un `title` qui dit pourquoi.
 
 ## 2. Le tool calling à l'échelle : le scénario est le routeur
 
