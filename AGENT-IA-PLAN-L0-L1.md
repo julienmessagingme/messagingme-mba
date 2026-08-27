@@ -1725,13 +1725,15 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ## Tâche 14 : le client Chat Completions — ✅ FAIT (commit 4306a50, 2026-08-27)
 
 Le corps de réponse des tests est celui **réellement observé** lors d'un appel live au Gateway
-(2026-08-27), pas une recopie de doc.  déplacée en  et ré-exportée depuis
-son ancien emplacement (une seule classe,  reste vrai, aucun import cassé). gagne un 4e paramètre optionnel  : les six  du repo restent assignables (vérifié).
+(2026-08-27), pas une recopie de doc. `LlmApiError` déplacée en `src/llm/errors.ts` et ré-exportée depuis
+son ancien emplacement (une seule classe, `instanceof` reste vrai, aucun import cassé). `HttpTransport`
+gagne un 4e paramètre optionnel `signal` : les six `FakeTransport` du repo restent assignables (vérifié).
 
-⚠️ **DETTE EXPLICITE, à trancher avant la mise en service** : le Gateway facture en **DOLLARS**
-(), la colonne de budget s'appelle **** et  compare
-. La conversion (ou le renommage de la colonne) est une décision de
-facturation, pas du client HTTP. Rien ne câble encore ce client au tour, donc aucun bug latent.
+⚠️ **DETTE EXPLICITE, à trancher avant la mise en service** : le Gateway facture en **DOLLARS** (le
+champ rendu s'appelle `coutDollars`), alors que la colonne de budget s'appelle **`budget_micro_eur`** et
+que `runTurn` compare `coutMicroEur >= budgetMicroEur`. La conversion (ou le renommage de la colonne) est
+une décision de **facturation**, pas du client HTTP. Rien ne câble encore ce client au tour, donc aucun
+bug latent aujourd'hui.
 
 **Fichiers :**
 - Créer : `src/llm/errors.ts` (déplacement de `LlmApiError`, ré-exportée depuis `llm-client.ts`)
