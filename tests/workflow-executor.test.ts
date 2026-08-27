@@ -1253,3 +1253,174 @@ describe('sortie d agent NON câblée (revue 13b)', () => {
     spy.mockRestore();
   });
 });
+
+/**
+ * Tâche 16 : `mba_envoyer_bloc` déclenche un bloc du scénario COURANT sans persister de run.
+ *
+ * 🔴 Le piège majeur est de passer par `startFromNode` : il passe par `runFrom`, qui CRÉE un run dès que le
+ * repos n'est pas `done`. On aurait alors deux runs `waiting` pour le même contact, et comme
+ * `findWaitingByWaId` ne rend que le plus récent, le run de l'agent deviendrait orphelin POUR TOUJOURS.
+ */
+describe('envoyerBlocDepuisAgent : walk + apply sans run (tâche 16)', () => {
+  const surAgent = (runs: { run: WorkflowRunRow | null }) => {
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting', lastMessageId: null };
+  };
+
+  // agent 'a' (le bloc courant) et, à part, un message rapide portant un code public.
+  const avecBlocCode: WorkflowGraph = {
+    nodes: [
+      n('a', 'agent', { agentId: 'ag1' }),
+      n('q', 'quick_message', { body: 'voici le catalogue', code: 'nod_t1_BLOC' }),
+    ],
+    edges: [],
+  };
+
+  it('envoie le bloc visé et NE TOUCHE PAS au run : c est tout l intérêt', async () => {
+    const { ex, runs, calls } = make(avecBlocCode);
+    surAgent(runs);
+    const avant = { ...runs.run! };
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_BLOC' });
+    expect(r.ok).toBe(true);
+    expect(calls).toEqual(['qm:voici le catalogue']);
+    // Le run n'a pas bougé : ni second run, ni changement de position. C'est ce qui garde le bloc agent vivant.
+    expect(runs.run).toEqual(avant);
+  });
+
+  it('code inconnu -> refus rendu au modele, aucun envoi', async () => {
+    const { ex, runs, calls } = make(avecBlocCode);
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'inventé' });
+    expect(r.ok).toBe(false);
+    expect(r.raison).toContain('inconnu');
+    expect(calls).toEqual([]);
+  });
+
+  it('🔴 un bloc qui redonne la main a un AGENT est refuse AVANT tout envoi', async () => {
+    // Ouvrir une seconde session sur le même parcours lèverait en 23505 sur l'index unique « une seule
+    // session vivante par parcours ». Et le refus doit tomber avant l'envoi : sinon le contact reçoit un
+    // message pour une action qui n'a pas eu lieu.
+    const g: WorkflowGraph = {
+      nodes: [
+        n('a', 'agent', { agentId: 'ag1' }),
+        n('q', 'quick_message', { body: 'avant', code: 'nod_t1_BOUCLE' }),
+        n('a2', 'agent', { agentId: 'ag1' }),
+      ],
+      edges: [e('e1', 'q', 'a2')],
+    };
+    const { ex, runs, calls } = make(g);
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_BOUCLE' });
+    expect(r.ok).toBe(false);
+    expect(calls).toEqual([]); // AUCUN envoi
+  });
+
+  it('🔴 un bloc qui remonte a un humain est refuse, et n escalade PAS par ce chemin', async () => {
+    // Basculer le fil ici laisserait notre run planté sur le bloc agent : `advance` sort en premier sur
+    // `mayAct`, donc la sortie du bloc deviendrait inopérante. L escalade a son propre outil, qui ordonne
+    // clore, sortir, PUIS basculer.
+    const g: WorkflowGraph = {
+      nodes: [n('a', 'agent', { agentId: 'ag1' }), n('q', 'quick_message', { body: 'avant', code: 'nod_t1_IB' }), n('ib', 'inbox')],
+      edges: [e('e1', 'q', 'ib')],
+    };
+    const { ex, runs, calls, escalations } = make(g);
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_IB' });
+    expect(r.ok).toBe(false);
+    expect(calls).toEqual([]);
+    expect(escalations).toEqual([]);
+  });
+
+  it('🔴 un bloc qui contient une ATTENTE est refuse : sans run, la suite ne partirait jamais', async () => {
+    // Trouvé en revue. L'échéance rendue par `walk` n'est écrite nulle part puisqu'on ne persiste aucun run :
+    // tout ce qui suit le bloc Attente ne partirait JAMAIS, en silence, alors qu'on aurait répondu « envoyé »
+    // au modèle.
+    const g: WorkflowGraph = {
+      nodes: [
+        n('a', 'agent', { agentId: 'ag1' }),
+        n('q', 'quick_message', { body: 'avant', code: 'nod_t1_WAIT' }),
+        n('w', 'wait', { delay: 1, unit: 'hours' }),
+        n('q2', 'quick_message', { body: 'la relance qui ne partirait jamais' }),
+      ],
+      edges: [e('e1', 'q', 'w'), e('e2', 'w', 'q2')],
+    };
+    const { ex, runs, calls } = make(g);
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_WAIT' });
+    expect(r.ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('un bloc Question À ÉCHÉANCE est refuse : sa branche « pas de reponse » ne partirait jamais', async () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('a', 'agent', { agentId: 'ag1' }),
+        n('q', 'question', { body: 'un choix ?', buttonLabel: 'Voir', rows: [{ title: 'A' }], timeoutValue: 2, timeoutUnit: 'hours', code: 'nod_t1_QT' }),
+      ],
+      edges: [],
+    };
+    const { ex, runs, calls } = make(g);
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_QT' });
+    expect(r.ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('🔴 aucun evenement d automation n est publie : l agent tient le fil', async () => {
+    // Le drapeau `emitEvents` est celui qu'un refactor retourne sans le voir. Un tag posé par un
+    // sous-parcours ne doit pas démarrer une automation pendant que l'agent parle au contact.
+    const g: WorkflowGraph = {
+      nodes: [n('a', 'agent', { agentId: 'ag1' }), n('t', 'tag', { tag: 'vip', code: 'nod_t1_TAG' })],
+      edges: [],
+    };
+    const emis: string[] = [];
+    const { ex, runs, calls } = make(g, { emitTagAdded: async (_t: string, _w: string, tag: string) => { emis.push(tag); } });
+    surAgent(runs);
+    expect((await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_TAG' })).ok).toBe(true);
+    expect(calls).toEqual(['tag:vip']); // le tag est bien posé
+    expect(emis).toEqual([]); // mais rien n'est publié
+  });
+
+  it('un code qui ne porte pas le prefixe « nod_ » est refuse, code vide compris', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('a', 'agent', { agentId: 'ag1' }), n('q', 'quick_message', { body: 'sans code' })],
+      edges: [],
+    };
+    const { ex, runs, calls } = make(g);
+    surAgent(runs);
+    // Sans le préfixe exigé, ce code vide correspondrait au premier bloc dépourvu de code.
+    expect((await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: '' })).ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('un bloc RCS est refuse : le resoudre enverrait AVANT qu on ait pu refuser', async () => {
+    const g: WorkflowGraph = {
+      nodes: [n('a', 'agent', { agentId: 'ag1' }), n('r', 'rcs_message', { text: 'coucou', code: 'nod_t1_RCS' })],
+      edges: [],
+    };
+    const { ex, runs, calls } = make(g);
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_RCS' });
+    expect(r.ok).toBe(false);
+    expect(r.raison).toContain('RCS');
+    expect(calls).toEqual([]);
+  });
+
+  it('refuse si le parcours n attend pas sur un bloc agent, ou si le run ou le scenario ne sont pas ceux de l appelant', async () => {
+    const { ex, runs, calls } = make(avecBlocCode);
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'q', status: 'waiting', lastMessageId: null };
+    expect((await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_BLOC' })).ok).toBe(false);
+
+    surAgent(runs);
+    expect((await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r_autre', workflowId: 'wf1', code: 'nod_t1_BLOC' })).ok).toBe(false);
+    expect((await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf_autre', code: 'nod_t1_BLOC' })).ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('refuse si le fil est tenu par quelqu un d autre (mayAct)', async () => {
+    const { ex, runs, calls } = make(avecBlocCode, { mayAct: async () => false });
+    surAgent(runs);
+    const r = await ex.envoyerBlocDepuisAgent('t1', '33600', { runId: 'r1', workflowId: 'wf1', code: 'nod_t1_BLOC' });
+    expect(r.ok).toBe(false);
+    expect(calls).toEqual([]);
+  });
+});

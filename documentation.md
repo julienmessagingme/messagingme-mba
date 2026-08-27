@@ -1597,6 +1597,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/webhooks/json.ts` | `asArray`, `asRecord` (lecture défensive d'un payload Meta) | 3 copies. ⚠️ `str` reste LOCAL (null vs undefined selon le lecteur) |
 | `src/crm/identity.ts` -> `waIdOfTarget` | La règle wa_id pour une cible d'envoi | redérivée dans le moteur de campagne |
 | `src/account/types.ts` | Types de persistance du compte | ils vivaient dans la couche HTTP, que le store importait |
+| `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 La lecture de `agent_tools.params` et la séparation des sources (`modele` vs `contact`/`fixe`). Source UNIQUE : l'exposition au modèle, la validation des arguments et l'injection du runtime en dérivent toutes | posé en tâche 16. Deux lectures divergentes rendraient la cible au modèle, donc un IDOR. Les résolveurs `http` et `mcp` doivent l'importer, jamais relire `params` |
+| `src/workflow/executor.ts` -> `runEnAttenteSur` | « Le run en attente d'un contact ET le bloc qui l'attend, s'il est du type demandé » | 3 copies (reprises RCS, sortie d'agent, outil d'agent) |
 
 **Front**
 

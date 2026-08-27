@@ -28,6 +28,10 @@ export interface ParamOutil {
   required?: boolean;
   /** Valeurs autorisées. Une énumération fermée empêche le modèle d'inventer une valeur hors domaine. */
   enum?: string[];
+  /** `source: 'contact'` : le champ de la fiche contact d'où vient la valeur (`wa_id` compris). Jamais exposé. */
+  contactPath?: string;
+  /** `source: 'fixe'` : la constante du tenant. Jamais exposée. */
+  value?: string | number | boolean;
 }
 
 /** Schéma d'objet, forme commune à tous les fournisseurs. Pas de `$schema` : aucun ne l'attend. */
@@ -45,9 +49,10 @@ const TYPES: readonly TypeParam[] = ['string', 'number', 'integer', 'boolean'];
  * Coerce défensivement une entrée de `agent_tools.params` (du jsonb, donc opaque) en paramètre exploitable.
  * Rend `null` sur une entrée inutilisable plutôt que de lever.
  *
- * Le sens est SÛR : ignorer une entrée ne peut que RETIRER quelque chose de ce que le modèle voit, jamais en
- * ajouter. L'outil échouera alors à la validation de ses arguments, et le modèle se corrigera au tour
- * suivant, ce qui est le comportement voulu.
+ * ⚠️ IGNORER UNE ENTRÉE N'EST PAS ANODIN, contrairement à ce que ce commentaire affirmait. Tant que la
+ * coercion n'avait qu'un consommateur (l'exposition au modèle), la retirer ne pouvait que retrancher. Depuis
+ * qu'elle sert AUSSI l'injection du runtime, écarter une entrée `contact` malformée pendant qu'une entrée
+ * `modele` du MÊME nom survit rendrait la cible au modèle. C'est `paramsOutil` qui ferme ce cas, sur le brut.
  */
 function coercer(brut: unknown): ParamOutil | null {
   if (!brut || typeof brut !== 'object') return null;
@@ -59,6 +64,9 @@ function coercer(brut: unknown): ParamOutil | null {
   const enumeration = Array.isArray(o.enum)
     ? o.enum.filter((v): v is string => typeof v === 'string' && v !== '')
     : undefined;
+  const valeurFixe = typeof o.value === 'string' || typeof o.value === 'number' || typeof o.value === 'boolean'
+    ? o.value
+    : undefined;
   return {
     name,
     type,
@@ -66,7 +74,39 @@ function coercer(brut: unknown): ParamOutil | null {
     ...(typeof o.description === 'string' && o.description.trim() !== '' ? { description: o.description.trim() } : {}),
     ...(o.required === true ? { required: true } : {}),
     ...(enumeration && enumeration.length > 0 ? { enum: enumeration } : {}),
+    ...(typeof o.contactPath === 'string' && o.contactPath.trim() !== '' ? { contactPath: o.contactPath.trim() } : {}),
+    ...(valeurFixe !== undefined ? { value: valeurFixe } : {}),
   };
+}
+
+/**
+ * Les paramètres d'un outil, coercés, TOUTES sources confondues.
+ *
+ * 🔴 SOURCE UNIQUE de la séparation des sources. Le schéma exposé au modèle (ci-dessous), le schéma de
+ * validation des arguments et l'injection des valeurs du runtime (`src/agent/executor.ts`) dérivent tous les
+ * trois d'ICI. Deux lectures divergentes de `params` seraient exactement la faille que ce module existe pour
+ * fermer : le modèle perdrait la main sur la cible dans une lecture et la reprendrait dans l'autre.
+ */
+export function paramsOutil(params: unknown): ParamOutil[] {
+  const liste = Array.isArray(params) ? params : [];
+  // 🔴 Noms RÉSERVÉS par le runtime, lus sur le BRUT et non sur la coercion. Une entrée `contact` ou `fixe`
+  // inutilisable (type absent, mal orthographié) est écartée par `coercer` ; si le même nom est aussi déclaré
+  // en `modele`, il resterait alors exposé, validé, et plus rien ne viendrait l'écraser à l'injection : le
+  // modèle reprendrait la main sur la cible, c'est-à-dire exactement l'IDOR que ce module ferme. Une
+  // déclaration ambiguë se tranche donc TOUJOURS en faveur du runtime, y compris quand elle est cassée.
+  const reserves = new Set(
+    liste
+      .filter((b): b is Record<string, unknown> => !!b && typeof b === 'object')
+      .filter((b) => b.source === 'contact' || b.source === 'fixe')
+      .map((b) => (typeof b.name === 'string' ? b.name.trim() : ''))
+      .filter((n) => n !== ''),
+  );
+  const out: ParamOutil[] = [];
+  for (const brut of liste) {
+    const p = coercer(brut);
+    if (p && !(p.source === 'modele' && reserves.has(p.name))) out.push(p);
+  }
+  return out;
 }
 
 /**
@@ -78,12 +118,10 @@ function coercer(brut: unknown): ParamOutil | null {
  * dérivation ne le réintroduise pas sans qu'on le voie : ce bruit se paie à CHAQUE tour, dans le prompt.
  */
 export function toolParamsToJsonSchema(params: unknown): SchemaObjet {
-  const liste = Array.isArray(params) ? params : [];
   const schema: SchemaObjet = { type: 'object', properties: {}, required: [], additionalProperties: false };
-  for (const brut of liste) {
-    const p = coercer(brut);
+  for (const p of paramsOutil(params)) {
     // 🔴 LA garde de ce module : tout ce qui n'est pas rempli par le modèle est invisible pour lui.
-    if (!p || p.source !== 'modele') continue;
+    if (p.source !== 'modele') continue;
     schema.properties[p.name] = {
       type: p.type,
       ...(p.description ? { description: p.description } : {}),

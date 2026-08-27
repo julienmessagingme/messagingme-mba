@@ -88,6 +88,16 @@ export class PgAgentSessionStore implements AgentSessionStore {
     );
   }
 
+  async compterAppel(tenantId: string, sessionId: string): Promise<void> {
+    // Incrément côté BASE, sans condition de statut : un appel servi doit se compter même si la session vient
+    // d'être close par l'outil lui-même (l'escalade humaine clôt, et son appel compte quand même).
+    await this.pool.query(
+      `update agent_sessions set appels_outils = appels_outils + 1, derniere_activite = now()
+        where id = $1 and tenant_id = $2`,
+      [sessionId, tenantId],
+    );
+  }
+
   async clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void> {
     // `status = 'en_cours'` dans le WHERE : clore une session déjà close est sans effet plutôt que d'écraser
     // la cause de sa fin (un rejeu ne doit pas transformer une `sortie` en `erreur`).

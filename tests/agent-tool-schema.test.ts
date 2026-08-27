@@ -56,6 +56,27 @@ describe('toolParamsToJsonSchema (tâche 15)', () => {
     expect(s).toEqual({ type: 'object', properties: {}, required: [], additionalProperties: false });
   });
 
+  it('🔴 une entrée « contact » CASSÉE ne rend pas la cible au modèle si le même nom est aussi en « modele »', () => {
+    // Trouvé en revue de la tâche 16. La seconde entrée n'a pas de type : elle est écartée. Sans réservation
+    // du nom sur le BRUT, `wa_id` resterait exposé, validé, et plus rien ne l'écraserait à l'injection : le
+    // modèle désignerait la cible, c'est-à-dire l'IDOR que ce module existe pour fermer.
+    const s = toolParamsToJsonSchema([
+      { name: 'wa_id', type: 'string', source: 'modele', required: true },
+      { name: 'wa_id', source: 'contact', contactPath: 'wa_id' },
+    ]);
+    expect(s.properties).toEqual({});
+    expect(s.required).toEqual([]);
+  });
+
+  it('un nom réservé par une entrée « fixe » cassée est retiré de ce que le modèle voit', () => {
+    const s = toolParamsToJsonSchema([
+      { name: 'boutique', type: 'string', source: 'modele' },
+      { name: 'boutique', source: 'fixe', value: 'FR-01' }, // type absent -> écartée par la coercion
+      { name: 'reference', type: 'string', source: 'modele' },
+    ]);
+    expect(Object.keys(s.properties)).toEqual(['reference']);
+  });
+
   it('entrées mal formées ignorées, sans lever (params est du jsonb, donc opaque)', () => {
     const s = toolParamsToJsonSchema([
       null,

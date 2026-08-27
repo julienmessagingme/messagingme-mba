@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle } from './engine';
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow } from './engine';
-import type { WorkflowGraph, WorkflowNode } from './graph';
+import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
 import type { EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow, RunChannel, RunStatus } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
@@ -958,7 +958,7 @@ export class WorkflowExecutor {
    * identifiant de message. smsmode rejoue jusqu'à six fois, ce n'est donc pas un cas théorique.
    */
   async rcsUndeliverable(tenantId: string, waId: string, messageId: string): Promise<boolean> {
-    if (!(await this.blocRcsEnAttente(tenantId, waId))) return false;
+    if (!(await this.runEnAttenteSur(tenantId, waId, 'rcs_message'))) return false;
     await this.advance(tenantId, waId, messageId, 'unreachable', 'rcs');
     return true;
   }
@@ -977,7 +977,7 @@ export class WorkflowExecutor {
    * quasi-totalité d'entre eux.
    */
   async rcsDelivered(tenantId: string, waId: string, messageId: string): Promise<boolean> {
-    const bloc = await this.blocRcsEnAttente(tenantId, waId);
+    const bloc = (await this.runEnAttenteSur(tenantId, waId, 'rcs_message'))?.node;
     if (!bloc) return false;
     const boutons = Array.isArray(bloc.data.suggestions) ? bloc.data.suggestions : [];
     if (boutons.some((b) => (b as { kind?: unknown }).kind === 'reply')) return false;
@@ -999,25 +999,93 @@ export class WorkflowExecutor {
    * alors à rien, et forcer ferait avancer un parcours qui attend autre chose.
    */
   async sortirDuBlocAgent(tenantId: string, waId: string, sessionId: string, sortie: string): Promise<boolean> {
-    const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
-    if (!run || !run.currentNode) return false;
-    const graph = await this.deps.getGraph(run.workflowId, tenantId);
-    const courant = graph?.nodes.find((n) => n.id === run.currentNode);
-    if (courant?.type !== 'agent') return false;
+    const attente = await this.runEnAttenteSur(tenantId, waId, 'agent');
+    if (!attente) return false;
     // Le canal du PARCOURS est repassé tel quel : un bloc agent peut suivre un bloc RCS, et la garde
     // d'étanchéité d'`advance` écarterait un retour annoncé sur le mauvais tuyau.
-    await this.advance(tenantId, waId, `agent:${sessionId}:${sortie}`, `sortie:${sortie}`, run.channel ?? 'whatsapp');
+    await this.advance(tenantId, waId, `agent:${sessionId}:${sortie}`, `sortie:${sortie}`, attente.run.channel ?? 'whatsapp');
     return true;
   }
 
-  /** Le bloc RCS sur lequel ce contact a un parcours en attente, ou null. Garde commune aux deux reprises
-   *  ci-dessus : c'est elle qui empêche un accusé de faire avancer un parcours qui attend autre chose. */
-  private async blocRcsEnAttente(tenantId: string, waId: string): Promise<WorkflowNode | null> {
+  /**
+   * Déclenche un bloc du scénario COURANT depuis un outil d'agent (`mba_envoyer_bloc`) : `walk` + `apply`
+   * bornés, **sans persister de run**.
+   *
+   * 🔴 POURQUOI PAS `startFromNode`. Il passe par `runFrom`, qui CRÉE un run dès que le repos n'est pas
+   * `done`. On aurait alors deux runs `waiting` pour le même contact, et comme `findWaitingByWaId` ne rend
+   * que le plus récent, le run de l'agent deviendrait orphelin POUR TOUJOURS : rien ne nettoie un `waiting`.
+   *
+   * 🔴 UN SOUS-PARCOURS QUI REND LA MAIN EST REFUSÉ AVANT TOUT ENVOI. Quatre repos sont incompatibles avec le
+   * fait que notre session tient déjà le fil, et aucun ne peut être honoré sans run pour le porter :
+   * `agent_turn` (le bloc visé reboucle sur un bloc agent -> une seconde session lèverait en 23505 sur
+   * l'index unique « une seule session vivante par parcours »), `inbox` (basculer le fil laisserait notre run
+   * planté sur le bloc agent, cf. `mayAct` dans `advance`), `sleeping` (l'échéance n'est écrite nulle part,
+   * donc tout ce qui suit le bloc Attente ne partirait JAMAIS, en silence, alors qu'on aurait répondu
+   * « envoyé » au modèle), et `rcs_send` (le résoudre demanderait la boucle de `walkResolved`, dont l'IO
+   * partirait AVANT qu'on ait pu refuser). Dans les quatre cas on refuse, et le modèle reçoit la raison.
+   *
+   * Le repos `waiting` est normal et n'est pas persisté : le message est parti, et c'est l'agent qui garde la
+   * conversation. La réponse du contact lui revient par la branche agent d'`advance`, comme toute autre.
+   *
+   * `emitEvents` est FAUX : un tag posé par un sous-parcours ne doit pas démarrer une automation pendant que
+   * l'agent tient le fil.
+   */
+  async envoyerBlocDepuisAgent(
+    tenantId: string,
+    waId: string,
+    input: { runId: string; workflowId: string; code: string },
+  ): Promise<{ ok: boolean; raison?: string }> {
+    const attente = await this.runEnAttenteSur(tenantId, waId, 'agent');
+    // Le run doit être CELUI de l'agent qui appelle, scénario compris : c'est ce qui empêche un outil de
+    // pousser un bloc dans un parcours qui attend tout autre chose.
+    if (!attente || attente.run.id !== input.runId || attente.run.workflowId !== input.workflowId) {
+      return { ok: false, raison: 'aucun parcours d agent en cours pour ce contact' };
+    }
+    const { run, graph } = attente;
+    // Le préfixe est exigé comme le fait déjà `src/ids/resolve.ts` : sans lui, un code VIDE correspondrait au
+    // premier bloc dépourvu de code, et l'outil enverrait un bloc pris au hasard.
+    if (!input.code.startsWith('nod_')) return { ok: false, raison: `code de bloc inconnu : ${input.code}` };
+    const cible = graph.nodes.find((n) => String(n.data.code ?? '') === input.code);
+    if (!cible) return { ok: false, raison: `code de bloc inconnu : ${input.code}` };
+    if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
+      return { ok: false, raison: 'le fil est tenu par quelqu un d autre' };
+    }
+    const canal: RunChannel = run.channel ?? 'whatsapp';
+    const ctx = await this.buildCtx(tenantId, waId, graph);
+    const { actions, rest } = walk(graph, cible.id, ctx, { mbaActif: await this.mbaActif(tenantId) });
+    const refusDeRepos: Partial<Record<WalkRest['status'], string>> = {
+      agent_turn: 'ce bloc redonne la main a un agent, impossible depuis un agent',
+      inbox: 'ce bloc remonte la conversation a un humain, utilisez l outil d escalade',
+      sleeping: 'ce bloc contient une attente, non disponible depuis un outil',
+      rcs_send: 'ce bloc envoie en RCS, non disponible depuis un outil',
+    };
+    const refuse = refusDeRepos[rest.status];
+    if (refuse) return { ok: false, raison: refuse };
+    // Même raison que `sleeping` : un bloc Question À ÉCHÉANCE partirait, mais sa branche « pas de réponse »
+    // ne se déclencherait jamais, l'échéance n'étant portée par aucun run.
+    if (rest.status === 'waiting' && rest.timeoutInMs) {
+      return { ok: false, raison: 'ce bloc attend une reponse avec un delai, non disponible depuis un outil' };
+    }
+    const { refus, partis } = await this.apply(tenantId, waId, actions, undefined, false, run.workflowId, canal);
+    if (partis === 0 && refus !== null) return { ok: false, raison: refus };
+    return { ok: true };
+  }
+
+  /**
+   * Le parcours en attente d'un contact ET le bloc sur lequel il attend, quand ce bloc est du type demandé.
+   *
+   * Garde commune à toutes les reprises qui ne viennent PAS du contact (accusé de livraison RCS, sortie de
+   * tour d'agent, outil d'agent) : c'est elle qui empêche un signal de faire avancer un parcours qui attend
+   * autre chose.
+   */
+  private async runEnAttenteSur(
+    tenantId: string, waId: string, type: WorkflowNodeType,
+  ): Promise<{ run: WorkflowRunRow; graph: WorkflowGraph; node: WorkflowNode } | null> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || !run.currentNode) return null;
     const graph = await this.deps.getGraph(run.workflowId, tenantId);
-    const courant = graph?.nodes.find((n) => n.id === run.currentNode);
-    return courant?.type === 'rcs_message' ? courant : null;
+    const node = graph?.nodes.find((n) => n.id === run.currentNode);
+    return graph && node?.type === type ? { run, graph, node } : null;
   }
 
   /**

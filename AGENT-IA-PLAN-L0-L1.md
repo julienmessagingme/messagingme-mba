@@ -1843,7 +1843,43 @@ it('n expose au modele QUE les parametres de source modele', () => {
 
 ---
 
-## Tâche 16 : le tronc commun d'exécution d'outil, et les outils maison
+## Tâche 16 : le tronc commun d'exécution d'outil, et les outils maison — ✅ FAIT (commit COMMIT16, 2026-08-27)
+
+**Deux revues, deux FAIL avant le PASS**, et la seconde a trouvé le trou le plus sérieux du lot : la garde de
+source (tâche 15) **se contournait par une déclaration cassée**. Si `agent_tools.params` porte un paramètre en
+`source: 'modele'` ET une seconde entrée du MÊME nom en `contact` mais mal formée (type absent), la coercion
+écartait la seconde, la première restait exposée, validée, et **plus rien ne venait l'écraser à l'injection** :
+le modèle reprenait la main sur la cible, c'est-à-dire l'IDOR exact que le module existe pour fermer. La
+réservation des noms se fait désormais sur le **brut**, avant coercion, dans `paramsOutil`.
+
+Corrigé au passage, dans le même lot (règle zéro dette) : `catalogue.byName` était le seul `await` capable de
+tuer le tour ; le compteur d'appels n'avançait ni sur un délai dépassé ni sur un résolveur qui lève, c'est-à-dire
+sur les deux issues les plus chères ; `envoyerBlocDepuisAgent` acceptait un sous-parcours contenant une
+**attente** (tout ce qui suit ne partait jamais, en silence, alors qu'on répondait « envoyé » au modèle) ;
+`borner` comptait des caractères contre un plafond en octets ; l'escalade n'était qu'une interface documentée.
+
+**Écarts au plan, assumés :**
+- **Deux fichiers de plus que prévu.** `src/agent/catalog.ts` (les contrats catalogue + journal) et
+  `src/agent/escalade.ts`. Ce dernier ne fait que TRENTE lignes et n'apporte qu'une chose, l'ordre des trois
+  effets, mais c'est justement ce que le plan demandait de garantir : un test l'ancre par égalité stricte.
+- **Un sous-parcours qui rend la main est refusé, il n'est pas rattrapé.** Le plan prévoyait d'attraper le
+  23505 de l'index unique. On refuse **avant tout envoi** sur les repos `agent_turn`, `inbox`, `sleeping`,
+  `rcs_send` et `waiting` à échéance : même garantie, déterministe, sans dépendre d'une erreur de base.
+- **L'escalade ne clôt pas depuis le résolveur.** Le résolveur appelle une dep qui ordonne clore -> sortir ->
+  basculer, et rend `rendu: true`. L'ordre est contre-intuitif et vérifié : `advance` sort en premier sur
+  `mayAct`, donc basculer le fil AVANT de sortir du bloc rendrait la sortie inopérante.
+
+🔴 **CE QUI RESTE À BRANCHER, et qui n'a pas de tâche au plan.** `executeTool` n'a aujourd'hui **aucun
+appelant** : le tour ne l'appelle pas encore. Trois choses lui reviennent, et elles sont écrites en JSDoc là où
+elles se jouent, ce qui ne suffira pas :
+1. **alerter** sur `fatal: true` (erreur de protocole), avec la dep d'alerte du worker ;
+2. calculer `appelsRestants` et `budgetRestantMicroEur` depuis la fiche et la session ;
+3. **encadrer le résultat en bloc délimité** avant de le remettre au modèle (troisième volet de l'étape 7 du
+   cadrage, volontairement laissé à l'appelant : ce module rend une valeur, pas un morceau de prompt).
+
+À faire dans la tâche qui branchera le cerveau réel, avant toute mise en service.
+
+### Le détail d'origine
 
 **Fichiers :** Créer `src/agent/executor.ts`, `src/agent/resolvers/mba.ts`, `src/agent/catalog.pg.ts`.
 Test : `tests/agent-tool-executor.test.ts`.

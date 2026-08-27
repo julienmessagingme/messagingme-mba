@@ -58,6 +58,16 @@ export interface AgentSessionStore {
   /** Empile une entrée dans le transcript (message du contact, réponse du modèle, résultat d'outil). */
   ajouterAuTranscript(tenantId: string, sessionId: string, entree: unknown): Promise<void>;
 
+  /**
+   * Incrémente le compteur d'appels d'outils. Appelé par le tronc commun (`src/agent/executor.ts`) après
+   * chaque appel servi.
+   *
+   * C'est ce compteur qui rend effectif le plafond d'appels lu par `runTurn` d'un tour sur l'autre : sans lui
+   * la garde serait décorative, et une injection qui fait boucler l'agent sur ses outils brûlerait le compte
+   * prépayé du tenant.
+   */
+  compterAppel(tenantId: string, sessionId: string): Promise<void>;
+
   /** Clôt la session. `sortie` porte le handle emprunté quand il y en a un. */
   clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void>;
 }
