@@ -40,7 +40,9 @@ export function exigeFenetre24h(type: WorkflowNodeType | null): boolean {
   // `question` en est : sa liste interactive est un message de SESSION Meta, exactement comme un message
   // rapide. L'oublier ici aurait laissé une cible node sur un bloc Question partir hors fenêtre, sans écarter
   // le moindre destinataire au préalable, pour finir en 131047 chez Meta.
-  return type === null || type === 'quick_message' || type === 'flow' || type === 'question';
+  // `agent` en est aussi : son premier message est du texte libre, donc un message de SESSION. Sans lui, un
+  // envoi ciblant un bloc agent n'écarterait AUCUN destinataire hors fenêtre.
+  return type === null || type === 'quick_message' || type === 'flow' || type === 'question' || type === 'agent';
 }
 
 export interface V1SendsRouteDeps {

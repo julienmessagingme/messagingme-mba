@@ -49,6 +49,9 @@ function envoieVraiment(node: GraphNodeLike): boolean {
   if (node.type === 'quick_message') return String(node.data.body ?? '').trim() !== '';
   // Bloc QUESTION : le CORPS fait foi, exactement comme cote serveur. Le menu est facultatif.
   if (node.type === 'question') return String(node.data.body ?? '').trim() !== '';
+  // Bloc AGENT : l'agent rattache fait foi. Sans lui, le moteur traverse le bloc (passe-plat), l'analyse
+  // doit voir la meme chose.
+  if (node.type === 'agent') return String(node.data.agentId ?? '').trim() !== '';
   return false;
 }
 
@@ -126,6 +129,14 @@ export function scanOpening(graph: GraphLike): OpeningScan {
       if (suite) queue.push(suite);
       continue;
     }
+    if (node.type === 'agent') {
+      // L'agent envoie du texte libre : message de SESSION, et il BLOQUE l'exploration puisque le moteur s'y
+      // arrete. Miroir exact du serveur, y compris le passe-plat quand il n'est pas configure.
+      if (envoieVraiment(node)) { out.sessionOpen = true; continue; }
+      const suite = cible(graph, id);
+      if (suite) queue.push(suite);
+      continue;
+    }
     if (node.type === 'rcs_message') {
       // Miroir exact du serveur : ouverture à froid légale, et on explore au-delà pour retrouver le template
       // de repli branché sur « non joignable ».
@@ -175,7 +186,7 @@ export function isCampaignEligible(graph: GraphLike): boolean {
 }
 
 /**
- * Un FORMULAIRE ou une QUESTION WhatsApp branchés derrière un bloc RCS.
+ * Un FORMULAIRE, une QUESTION ou un AGENT WhatsApp branchés derrière un bloc RCS.
  *
  * 🔴 Le seul montage qui reste impossible depuis le multicanal. Un « message rapide » n'est plus concerné : il
  * part désormais SUR LE CANAL DU PARCOURS, donc en RCS derrière un bloc RCS (un texte avec des réponses en un
@@ -185,6 +196,10 @@ export function isCampaignEligible(graph: GraphLike): boolean {
  *
  * Une QUESTION est dans le MÊME cas depuis le 2026-08-26 : la liste interactive n'existe que sur WhatsApp,
  * le bloc part donc toujours par là, et il exige la fenêtre au même titre qu'un formulaire.
+ *
+ * Un bloc AGENT aussi : sa session est indexée par le numéro WhatsApp du contact et il n'a aucun équivalent
+ * RCS, donc son premier message part forcément par WhatsApp. Il est du côté formulaire/question, pas du côté
+ * message rapide.
  *
  * On le SIGNALE au lieu de l'interdire : le montage reste légitime quand le contact vient d'écrire sur
  * WhatsApp. Même traitement que « attente >= 24 h puis message de session ».
@@ -198,7 +213,7 @@ export function sessionMessageAfterRcs(graph: GraphLike): { rcsNodeId: string; m
     // signaler trop large ferait ignorer l'alerte.
     for (const arete of graph.edges.filter((ed) => ed.source === rcs.id)) {
       const suivant = byId.get(arete.target);
-      if (suivant && (suivant.type === 'flow' || suivant.type === 'question') && envoieVraiment(suivant)) {
+      if (suivant && (suivant.type === 'flow' || suivant.type === 'question' || suivant.type === 'agent') && envoieVraiment(suivant)) {
         return { rcsNodeId: rcs.id, messageNodeId: suivant.id };
       }
     }
@@ -250,6 +265,15 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
     if (node.type === 'question') {
       // Une question est un message de SESSION : apres 24 h d'attente cumulee, elle ne partira jamais.
       // Miroir exact du serveur, y compris le passe-plat quand elle n'est pas configuree.
+      if (envoieVraiment(node) && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      if (envoieVraiment(node)) continue;
+      const apres = cible(graph, id);
+      if (apres) pile.push({ id: apres, cumul, dernierWait });
+      continue;
+    }
+    if (node.type === 'agent') {
+      // Le premier message de l'agent est un message de SESSION : apres 24 h d'attente cumulee, il ne partira
+      // jamais. Miroir exact du serveur, y compris le passe-plat quand il n'est pas configure.
       if (envoieVraiment(node) && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
       if (envoieVraiment(node)) continue;
       const apres = cible(graph, id);

@@ -196,6 +196,25 @@ describe('sessionMessageAfterRcs', () => {
     expect(sessionMessageAfterRcs(graph)).toBeNull();
   });
 
+  it('agent configure juste apres un bloc RCS -> signale (sa session est WhatsApp, aucun equivalent RCS)', () => {
+    // Meme famille que le formulaire et la question, PAS que le message rapide : le bloc agent tient sa
+    // session sur le numero WhatsApp du contact, son premier message part donc forcement par WhatsApp. Un
+    // contact qui vient de cliquer un bouton RCS n'y a jamais ecrit : Meta refuse (131047).
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('a', 'agent', { agentId: 'ag1' })],
+      [{ id: 'e', source: 'r', target: 'a', sourceHandle: 'sent' }],
+    );
+    expect(sessionMessageAfterRcs(graph)?.messageNodeId).toBe('a');
+  });
+
+  it('agent NON configure apres un bloc RCS -> rien a signaler (il n envoie rien, il est traverse)', () => {
+    const graph = g(
+      [n('r', 'rcs_message', { text: 'Bonjour' }), n('a', 'agent', {})],
+      [{ id: 'e', source: 'r', target: 'a', sourceHandle: 'sent' }],
+    );
+    expect(sessionMessageAfterRcs(graph)).toBeNull();
+  });
+
   it('formulaire LOIN derriere (apres un template) -> rien a signaler', () => {
     const graph = g(
       [n('r', 'rcs_message', { text: 'Bonjour' }), n('t', 'template', { templateName: 'suite' }), n('f', 'flow', { flowId: 'fl1' })],
@@ -245,6 +264,14 @@ describe('parité front / serveur du parcours d’ouverture', () => {
     ['question NON configuree puis template', g([n('q', 'question', {}), TPL('t')], [e('q', 't')])],
     ['action puis question', g([n('a', 'tag', { tag: 'v' }), n('q', 'question', { body: 'Q' })], [e('a', 'q')])],
     ['attente puis question', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('q', 'question', { body: 'Q' })], [e('w', 'q')])],
+    // Bloc AGENT : message de SESSION (donc jamais une ouverture de campagne), et PASSE-PLAT tant qu'aucun
+    // agent n'y est rattache. « agent puis template » est le cas qui compte : sans le garde, le template
+    // serait vu comme ouverture, la campagne le ferait parametrer, et rien ne partirait au lancement.
+    ['agent configure seul', g([n('a', 'agent', { agentId: 'ag1' })])],
+    ['agent configure puis template', g([n('a', 'agent', { agentId: 'ag1' }), TPL('t')], [e('a', 't')])],
+    ['agent NON configure puis template', g([n('a', 'agent', {}), TPL('t')], [e('a', 't')])],
+    ['action puis agent', g([n('x', 'tag', { tag: 'v' }), n('a', 'agent', { agentId: 'ag1' })], [e('x', 'a')])],
+    ['attente puis agent', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('a', 'agent', { agentId: 'ag1' })], [e('w', 'a')])],
   ];
 
   it('même verdict des deux côtés sur chaque graphe', () => {
@@ -276,6 +303,14 @@ describe('parité de la détection « attente >= 24 h puis message de session »
       [n('w1', 'wait', { delay: 12, unit: 'hours' }), n('qm', 'quick_message', { body: 'un mot' }),
        n('w2', 'wait', { delay: 13, unit: 'hours' }), QM('q')],
       [e('w1', 'qm'), e('qm', 'w2'), e('w2', 'q')],
+    )],
+    // Bloc AGENT : son premier message est un message de SESSION, donc mort-ne apres 24 h d'attente cumulee.
+    // Non configure, il est traverse, et c'est le message d'apres qui doit etre signale.
+    ['attente 2 j puis agent configure', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('a', 'agent', { agentId: 'ag1' })], [e('w', 'a')])],
+    ['attente 2 h puis agent configure', g([n('w', 'wait', { delay: 2, unit: 'hours' }), n('a', 'agent', { agentId: 'ag1' })], [e('w', 'a')])],
+    ['attente 2 j puis agent NON configure puis message rapide', g(
+      [n('w', 'wait', { delay: 2, unit: 'days' }), n('a', 'agent', {}), QM('q')],
+      [e('w', 'a'), e('a', 'q')],
     )],
   ];
 

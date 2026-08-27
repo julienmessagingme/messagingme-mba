@@ -356,7 +356,9 @@ describe('GET /v1/sends/:sendId', () => {
  */
 describe('exigeFenetre24h', () => {
   it('la exige pour les blocs de SESSION, question comprise', () => {
-    for (const t of ['quick_message', 'flow', 'question'] as const) expect(exigeFenetre24h(t), t).toBe(true);
+    // `agent` en est : son premier message est du texte libre, donc un message de SESSION. Sans lui, un envoi
+    // ciblant un bloc agent n'ecarterait AUCUN destinataire hors fenetre.
+    for (const t of ['quick_message', 'flow', 'question', 'agent'] as const) expect(exigeFenetre24h(t), t).toBe(true);
   });
 
   it('ne la exige PAS pour un template, un bloc RCS ou un mail', () => {

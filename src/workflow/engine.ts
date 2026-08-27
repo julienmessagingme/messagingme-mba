@@ -141,6 +141,19 @@ export function scanOpening(graph: WorkflowGraph): OpeningScan {
       if (suite) queue.push(suite);
       continue;
     }
+    if (node.type === 'agent') {
+      // L'agent envoie du texte libre : c'est un message de SESSION (contrairement au RCS, qui ouvre
+      // légalement à froid), et il BLOQUE l'exploration puisque `walk` s'y arrête. Sans ce cas, un scénario
+      // « agent puis template » serait vu comme ouvrant sur le template : la campagne l'accepterait, ferait
+      // paramétrer ce template, et au lancement rien ne partirait alors que les destinataires seraient
+      // comptés touchés.
+      if (String(node.data.agentId ?? '').trim() !== '') { out.sessionOpen = true; continue; }
+      // Non configuré = passe-plat DANS `walk` : l'analyse doit voir la même chose, sinon l'éditeur jugerait
+      // un scénario sur un parcours que le moteur ne suit pas.
+      const suite = nextNode(graph, id);
+      if (suite) queue.push(suite);
+      continue;
+    }
     if (node.type === 'rcs_message') {
       // Ouverture à froid LÉGALE. `waitBeforeTemplate` est consulté ici parce que le parcours est en LARGEUR :
       // une attente placée AVANT ce bloc a donc déjà été vue, et dans ce cas rien ne part au lancement.
@@ -253,6 +266,18 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
       // Configurée, elle BLOQUE (elle attend une réponse) : l'analyse s'arrête là, comme sur un message
       // rapide à boutons. Non configurée, elle est un passe-plat : on explore au-delà.
       if (a) continue;
+      const apres = nextNode(graph, id);
+      if (apres) pile.push({ id: apres, cumul, dernierWait });
+      continue;
+    }
+    if (node.type === 'agent') {
+      // Le premier message de l'agent est un message de SESSION : après 24 h d'attente cumulée, il ne partira
+      // jamais. Même signalement que pour un message rapide ou un formulaire.
+      const configure = String(node.data.agentId ?? '').trim() !== '';
+      if (configure && cumul >= FENETRE_MS && dernierWait) return { waitNodeId: dernierWait, messageNodeId: id };
+      // Configuré, il BLOQUE (il tient la conversation) : l'analyse s'arrête là. Non configuré, il est un
+      // passe-plat, comme dans `walk` : on explore au-delà.
+      if (configure) continue;
       const apres = nextNode(graph, id);
       if (apres) pile.push({ id: apres, cumul, dernierWait });
       continue;
