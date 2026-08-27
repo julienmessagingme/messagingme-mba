@@ -587,10 +587,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 > jamais posée figerait le parcours pour toujours, sans le moindre signal ». Un bloc agent sans agent
 > configuré doit se comporter pareil : passer au suivant, pas geler le fil.
 
-## Tâche 4bis : la brique de concurrence par tenant (L0)
+## Tâche 4bis : la brique de concurrence par tenant (L0) — ✅ FAIT (commit 51de908, 2026-08-27)
 
-**Fichiers :** Modifier `src/queue/pgboss.ts` (le wrapper `Queue.work`) et son enfilage côté
-`agent-turn`. Test : `tests/agent-concurrence.test.ts`.
+**Fichiers :** `src/queue/queue.ts` (interface), `src/queue/pgboss.ts` (fonction pure
+`workConcurrencyOptions` + câblage `localConcurrency`/`localGroupConcurrency` + `groupId` à l'enqueue),
+`src/queue/fake.ts` (observable via `workCalls`). Tests : `tests/queue-group-concurrency.test.ts`
+(unitaire, local) et `tests/integration/queue-group-concurrency.integration.test.ts` (enforcement, CI
+seulement). Réalisé de façon **générique** : aucun enfilage `agent-turn` à ce stade, les tâches 10 et 13
+passeront `groupId=tenantId` et `{ concurrency, groupConcurrency }` aux vrais call sites.
 
 **Pourquoi, et pourquoi en L0.** Le worker est unique, sans réplicas, et chaque file est sérialisée
 (`pgboss.ts` force `batchSize: 1` sans option de concurrence). L'audit de scalabilité l'a déjà
