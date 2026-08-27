@@ -180,6 +180,25 @@ gardant leurs URL pour ne casser ni les liens existants ni les signets.
 Si un vrai arbre à deux niveaux devenait nécessaire, c'est une modification du composant de
 navigation, pas un réglage. À ne faire que si la liste plate se révèle illisible à l'usage.
 
+### Deux surfaces d'édition, la conversation et l'écran classique
+
+Un seul agent, deux entrées sur la même fiche. La **construction conversationnelle** (§5) écrit dans
+la fiche ; un **écran de réglage classique**, à onglets, calqué sur celui de l'agent Meta
+d'aujourd'hui, montre tout ce que la conversation a rempli, **dans les bonnes cases, éditable champ
+par champ**. Onglets miroir : identité et ton, objectif et règles de transfert, base de connaissance
+(les fiches), outils, périmètre et garde-fous, modèle, tester.
+
+Les deux surfaces sont **toujours accessibles**, en temps 1 comme en temps 2, et **synchronisées** :
+ce que le chat produit apparaît dans les cases, ce que le client change dans les cases est repris par
+le chat au tour suivant. Le but est double : que le client **comprenne** ce qui a été réglé sans avoir
+à réinterroger l'IA, et qu'il puisse **corriger un détail** sans relancer une conversation. C'est le
+principe déjà posé en §5.9 (« le chat n'est jamais le seul chemin d'édition »), rendu concret par un
+écran, pas une note.
+
+Les **connecteurs** (MCP, API) restent, eux, dans le menu **Tools > brancher un outil** (§5.4bis),
+parce qu'un outil peut servir plusieurs agents : l'onglet Outils de l'agent pioche dans ce qui y est
+branché. Séparation retenue : les **agents** sous « AI Agent », les **outils** sous « Tools ».
+
 ### L'activation suit les règles de l'agent Meta
 
 Mêmes règles, même endroit, même forme. L'agent Meta s'active aujourd'hui par un interrupteur sur
@@ -331,7 +350,7 @@ jonction : personne n'a demandé à partager un outil entre plusieurs agents, et
 où quelqu'un le demandera.
 
 ```sql
--- 0075 : les sources externes (rien pour les outils maison)
+-- 0086 : les sources externes (rien pour les outils maison)
 create table agent_tool_sources (
   id               uuid primary key default gen_random_uuid(),
   tenant_id        uuid not null references tenants(id) on delete cascade,
@@ -350,7 +369,7 @@ create table agent_tool_sources (
 );
 create unique index agent_tool_sources_label_idx on agent_tool_sources (tenant_id, lower(label));
 
--- 0075 : la fiche d'agent
+-- 0086 : la fiche d'agent
 create table agents (
   id                 uuid primary key default gen_random_uuid(),
   tenant_id          uuid not null references tenants(id) on delete cascade,
@@ -373,7 +392,7 @@ create table agents (
 );
 create unique index agents_label_idx on agents (tenant_id, lower(label));
 
--- 0075 : le catalogue, unifié pour les trois origines
+-- 0086 : le catalogue, unifié pour les trois origines
 create table agent_tools (
   id            uuid primary key default gen_random_uuid(),
   tenant_id     uuid not null references tenants(id) on delete cascade,
@@ -416,7 +435,7 @@ portabilité (profondeur 10, `additionalProperties: false`, pas de `$ref` résea
 premier appel en production.
 
 ```sql
--- 0076 : l'état multi-tours et le journal (qui est aussi le grand livre de facturation)
+-- 0087 : l'état multi-tours et le journal (qui est aussi le grand livre de facturation)
 create table agent_sessions (
   id                uuid primary key default gen_random_uuid(),
   tenant_id         uuid not null references tenants(id) on delete cascade,
@@ -668,6 +687,11 @@ agent, au-delà de répondre ? » Si le client répond « répondre aux question
 Prévoyance oriente vers la prise de rendez-vous, Odalys propose des résidences (bot commercial),
 Hyundai cerne le besoin puis oriente vers un test drive. L'objectif décide de tout le reste : quand
 transférer, quel scénario déclencher, ce que « réussi » veut dire.
+
+**1bis. L'identité et le ton.** Une étape courte, avec des propositions déduites du secteur : votre
+agent a-t-il un nom, il se présente comment, il tutoie ou vouvoie, plutôt direct ou chaleureux ? Ça
+reste borné (un nom, un registre, quelques traits), pas un éditeur de persona libre : trois champs de
+la fiche, pas une réouverture du prompt opaque qu'on a fermé.
 
 **2. Les règles de transfert. C'est là que ça démarre concrètement**, parce que ça ne demande aucun
 historique. Trois questions fermées : voulez-vous que l'agent transfère certaines conversations ?
@@ -1222,6 +1246,73 @@ modèle.*
 
 À inscrire dans le `CLAUDE.md` du repo au même titre que « les liens tracés sont une porte à sens
 unique ».
+
+---
+
+## Addendum technique (révision 3, 2026-08-27)
+
+Trois décisions techniques manquaient au cadrage, tranchées ici sur investigation du code réel du
+2026-08-27. Elles ferment « où vit la base de connaissance », « comment l'agent sait qu'il ne sait
+pas », et « ça casse si plusieurs clients en même temps ».
+
+### La base de connaissance : une table par tenant en recherche plein texte, pas de pgvector
+
+Constat : aujourd'hui rien n'existe pour ça dans mba (pas de pgvector, pas de tsvector, seulement du
+`pg_trgm` sur les contacts, migration 0032). On avait retiré pgvector sans dire par quoi le remplacer.
+
+Décision : une table `agent_knowledge` (migration 0088), par tenant et par agent, avec `titre`,
+`corps`, `source_url`, `derniere_lecture_at`, une colonne générée `corps_tsv tsvector` (config
+`french`) plus un index GIN scoré par `ts_rank_cd`, et le `pg_trgm` déjà installé en complément pour
+les requêtes courtes et les fautes de frappe (`similarity()`). **Aucune extension Postgres nouvelle.**
+Si un rapprochement vraiment sémantique s'avère nécessaire plus tard, on appellera l'API d'embeddings
+via le Gateway déjà validé et on stockera les vecteurs en colonne classique (`float4[]` ou `jsonb`),
+produit scalaire en code sur le petit volume de fiches d'un tenant. On n'ajoute pgvector que si la
+mesure le justifie, jamais par défaut. C'est aussi cette table qui alimente l'écran de fiches lisibles
+et éditables (§5.3).
+
+### L'anti-hallucination, déterministe : le handle `sortie:sans_source`
+
+C'était un principe du doc produit sans mécanisme dans le cadrage. Le voici, et il est déterministe,
+jamais laissé au jugement du modèle (philosophie du repo : les gardes en code, pas dans le raisonnement
+du LLM).
+
+L'outil de recherche dans la base de connaissance renvoie toujours un **score maximal calculé en code**
+(`ts_rank_cd`, complété par `similarity`). Si ce score est sous un seuil (constante ou réglage tenant),
+l'outil rend un résultat structuré `aucune_source` par le tronc commun (§3.3, jamais une exception), et
+le node agent sort par un **nouveau handle prédéfini `sortie:sans_source`**, au même rang que
+`sortie:inactivite`, `sortie:plafond`, `sortie:echec` (§4.1). Le client câble ce handle vers le
+transfert humain ou le renvoi aux coordonnées. Conséquence : « l'agent ne sait pas donc il transfère »
+n'est pas une intention confiée au modèle, c'est un seuil dans notre code plus un handle du graphe.
+C'est ce qui fait tenir la promesse anti-hallucination.
+
+### La concurrence par tenant : la brique partagée avec B4, en L0
+
+Investigation du 2026-08-27 : le pooling actuel tient (pool applicatif `DB_POOL_MAX=8` par process en
+mode transaction, pool pg-boss `PGBOSS_MAX=2`), à une condition dure : **le handler `agent-turn` ne
+doit jamais garder une connexion Postgres ouverte pendant l'appel LLM ou un appel d'outil.** Le repo a
+déjà le bon patron (l'analyse de conversation charge le contexte, appelle le LLM sans connexion,
+persiste après). Test de garde à ajouter, sur le modèle de `tests/queue-names.test.ts`.
+
+Le vrai risque n'est pas le pooling, c'est **l'équité entre tenants**, et le repo en a déjà la preuve :
+constat **B4** de l'`AUDIT-SCALE-2026-07-18.md`, un seul worker sans réplicas, files sérialisées, où un
+tenant à gros volume bloque les autres. La partie urgente de B4 (frein de débit) est déployée
+(bloc 3) ; le fair-share par tenant (item 5.3, `groupConcurrency`) est **encore à faire** (bloc 5).
+
+Décision : la **concurrence par tenant** (extension du wrapper `Queue` pour passer
+`groupConcurrency`/`localGroupConcurrency` à pg-boss) est la brique dont `agent-turn` a besoin, et
+c'est **la moitié réutilisable de B4**. On la pose en **L0**, on l'applique directement à `agent-turn`
+(un tour est déjà un job granulaire, donc un plafond par tenant borne ses tours simultanés). La fin de
+B4 sur les campagnes (découpage de `campaign-run` en lots, throttle par numéro) réutilisera cette
+brique au bloc 5 : ce n'est pas un prérequis de l'agent. Deux garde-fous complémentaires : interdire
+tout travail CPU synchrone lourd dans un outil (il gèlerait le worker unique), et isoler `agent-turn`
+dans un conteneur worker dédié si la charge le justifie.
+
+### Corrections
+
+- Les numéros de migration du cadrage étaient périmés : le repo est à 0085, donc les tables d'agent
+  passent en **0086 / 0087** (corrigé au §3.2) et la base de connaissance en **0088**.
+- Rappel : le module anti-SSRF `src/lib/egress.ts` (R2) est un prérequis des lots connecteurs et MCP
+  (L2/L4), à écrire **avant** le premier egress arbitraire, pas de l'agent de base (L1).
 
 ---
 

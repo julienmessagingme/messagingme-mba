@@ -102,6 +102,18 @@ réponse de l'agent se répare en éditant une fiche, en trente secondes.
 Dans l'éditeur de parcours, un bloc &laquo; agent &raquo; apparaît. Grisé tant qu'aucun agent n'est
 configuré, avec une explication au survol, comme les blocs RCS et email aujourd'hui.
 
+### Deux façons de régler l'agent : en parlant, ou dans un écran
+
+Un seul agent, deux entrées sur la même configuration. **En parlant** (la construction
+conversationnelle) pour le créer et pour revenir l'améliorer. Et **dans un écran de réglage
+classique**, à onglets, calqué sur celui du répondeur Meta d'aujourd'hui, où l'on retrouve **dans les
+bonnes cases** tout ce que la conversation a réglé : identité et ton, objectif et transferts, base de
+connaissance, outils, garde-fous, modèle, test.
+
+Les deux sont **toujours accessibles** et **synchronisés** : ce que le chat a produit apparaît dans
+les cases, ce qu'on change dans les cases est repris par le chat. Le but : comprendre ce qui a été
+réglé et corriger un détail **sans avoir à réinterroger l'IA à chaque fois**.
+
 ---
 
 ## Construire son agent en parlant (temps 1)
@@ -119,7 +131,9 @@ L'ordre compte, parce qu'il va du sens vers le détail.
    creuse : Gan Prévoyance oriente vers la prise de rendez-vous avec un conseiller ; Odalys est un bot
    commercial qui propose des résidences ; Hyundai cerne le besoin puis oriente vers un test drive.
    L'objectif est la colonne vertébrale : il décide quand transférer, quel scénario lancer, ce que
-   &laquo; réussi &raquo; veut dire.
+   &laquo; réussi &raquo; veut dire. On en profite pour poser son **identité** : un nom éventuel,
+   comment il se présente, s'il tutoie ou vouvoie, plutôt direct ou chaleureux. Ça reste borné (un
+   nom, un registre, quelques traits), pas un éditeur de persona libre.
 2. **Les règles de transfert. C'est là que ça démarre concrètement.** Trois questions oui-non :
    voulez-vous que l'agent transfère certaines conversations ? Quand le client demande à parler à
    quelqu'un, on transfère à un conseiller ? Quand le client s'énerve et reste insatisfait après
