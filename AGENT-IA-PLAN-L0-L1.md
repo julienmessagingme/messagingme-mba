@@ -1797,7 +1797,24 @@ inconnu) sont **terminaux** : les rejouer paierait quatre fois la même erreur d
 
 ---
 
-## Tâche 15 : le schéma d'outil envoyé au modèle
+## Tâche 15 : le schéma d'outil envoyé au modèle — ✅ FAIT (commit à venir, 2026-08-27)
+
+La garde a été auditée ligne à ligne par la revue : **aucun chemin** n'expose un paramètre `contact` ou
+`fixe`, y compris avec une `source` d'une autre casse, absente, ou inventée (l'égalité est stricte, et
+toute valeur non reconnue rejette l'entrée entière plutôt que de la traiter comme exposée).
+
+⚠️ **Écart au plan** : les deux nettoyages demandés (bruit `minimum`/`maximum` de `z.number().int()`, et
+`$schema`) supposaient une dérivation depuis Zod. **Le repo n'en a aucune** (`zod-to-json-schema` absent,
+vérifié) : le schéma est construit directement, donc le bruit n'existe pas par construction. Un test
+d'ancrage empêche qu'une future dérivation le réintroduise en silence.
+
+⚠️ **À GARDER EN TÊTE POUR LA TÂCHE 16**, relevé par la revue : au moment de l'exécution, le runtime
+fusionne les valeurs du modèle avec celles injectées (`contact`, `fixe`). Il faut garantir qu'**un
+paramètre rempli par le modèle ne peut jamais écraser une valeur injectée**, sinon la garde de ce module
+serait contournée à l'étape suivante. Ce n'est pas un défaut ici (fonction pure, sans état), c'est le
+point de vigilance du tronc commun.
+
+### Le détail d'origine
 
 **Fichiers :** Créer `src/agent/llm/tool-schema.ts` (fonction pure). Test : `tests/agent-tool-schema.test.ts`.
 
