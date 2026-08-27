@@ -1482,7 +1482,27 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 12 : la branche agent dans `runFrom`, et la garde de fenêtre
+## Tâche 12 : la branche agent dans `runFrom`, et la garde de fenêtre — ✅ FAIT (commit ef80bd4, 2026-08-27)
+
+⚠️ **La revue a trouvé DEUX trous que ce plan ne listait pas, tous deux réels.**
+
+1. **`resume` (tâche 11) avait le même trou que `runFrom`** : « attente puis agent » **DIRECT**, fenêtre
+   fermée, ouvrait la session. Le test de la tâche 11 ne l'attrapait pas (son montage avait un message
+   rapide intercalaire qui déclenchait la garde à sa place). Corrigé, et le commentaire d'`engine.ts`
+   qui affirmait une protection runtime inexistante a été rectifié.
+2. **🔴 `advance` ne traitait pas la TRANSITION FRAÎCHE, et c'est le montage CENTRAL du produit.**
+   « Template de campagne, puis l'agent reprend la main sur la réponse » : le run était posé sur le bloc
+   agent **sans session ni tour**, **l'agent restait muet**, et l'anomalie n'apparaissait qu'au message
+   suivant. Pas de garde de fenêtre à cet endroit : `advance` n'est déclenché que par un message
+   entrant, et c'est la **parité** avec les blocs de session existants, pas un relâchement.
+
+**Audit de clôture** : `walkResolved`, seule fonction capable de produire `agent_turn`, n'a que **trois**
+appelants (`resume`, `runFrom`, `advance`), tous durcis. Aucun chemin résiduel.
+
+**Noté hors périmètre** : `advance` est aussi appelé sur un accusé de livraison RCS, donc un montage
+`rcs_message --(unreachable)--> bloc de session` atteindrait une transition fraîche sans fenêtre WhatsApp
+prouvée. Trou **générique et préexistant** (vaut aussi pour `quick_message`/`flow`/`question`), bloqué en
+campagne par `scanOpening`.
 
 **Fichiers :** Modifier `src/workflow/executor.ts:678-742`. Test : `tests/workflow-executor.test.ts`.
 
