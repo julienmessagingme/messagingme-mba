@@ -1,5 +1,5 @@
 import { PgBoss } from 'pg-boss';
-import type { MaintenanceOptions, SchedulingOptions } from 'pg-boss';
+import type { MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
 import { dlqName, pollingSecondsFor } from './names';
 import { pgSsl } from '../db/ssl';
@@ -68,6 +68,27 @@ export function poolOptions(opts: PgBossPoolOpts): PgBossPoolOpts {
 }
 
 /**
+ * Options de CONCURRENCE passées à `boss.work`. Fonction PURE et exportée pour être testée, même raison et même
+ * piège que `poolOptions` : une valeur explicite (`concurrency: 0`) doit être transmise, une option ABSENTE doit
+ * rester absente pour que pg-boss applique son défaut (d'où `!== undefined`, jamais `?? valeur`).
+ *
+ * ⚠️ `localGroupConcurrency` (plafond par groupe, ex. par tenant) est un NO-OP tant que `localConcurrency` reste
+ * à son défaut de 1 : un seul job en vol, tous groupes confondus, il n'y a rien à répartir. Le plafond par groupe
+ * ne s'exprime que si le plafond global passe au-dessus de 1. Les deux se posent donc ENSEMBLE. On prend le suivi
+ * EN MÉMOIRE (`local*`), gratuit : le worker est unique, la variante coordonnée par la base (`groupConcurrency`)
+ * ne servirait qu'avec des réplicas et coûterait de l'egress pour rien.
+ */
+export function workConcurrencyOptions(opts: {
+  concurrency?: number;
+  groupConcurrency?: number;
+}): Pick<WorkOptions, 'localConcurrency' | 'localGroupConcurrency'> {
+  return {
+    ...(opts.concurrency !== undefined ? { localConcurrency: opts.concurrency } : {}),
+    ...(opts.groupConcurrency !== undefined ? { localGroupConcurrency: opts.groupConcurrency } : {}),
+  };
+}
+
+/**
  * Implémentation durable via pg-boss (Postgres/Supabase).
  * Chaque file a une dead-letter queue `<name>-dlq` et un retryLimit.
  */
@@ -121,27 +142,43 @@ export class PgBossQueue implements Queue {
     this.ensured.add(name);
   }
 
-  async enqueue(name: string, data: unknown, opts?: { singletonKey?: string; expireInSeconds?: number }): Promise<void> {
+  async enqueue(
+    name: string,
+    data: unknown,
+    opts?: { singletonKey?: string; expireInSeconds?: number; groupId?: string },
+  ): Promise<void> {
     await this.ensure(name);
     // `expireInSeconds` PAR JOB (prime sur la policy de file) : dimensionne la durée max d'un run de campagne
     // throttlé sur son travail réel, sinon un run long expirerait et serait rejoué en parallèle.
+    // `groupId` -> `group.id` : porte le tenant, sur lequel `work` applique un plafond de concurrence par groupe.
     await this.boss.send(name, data as object, {
       ...(opts?.singletonKey ? { singletonKey: opts.singletonKey } : {}),
       ...(opts?.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
+      ...(opts?.groupId ? { group: { id: opts.groupId } } : {}),
     });
   }
 
-  async work(name: string, handler: (data: unknown) => Promise<void>): Promise<void> {
+  async work(
+    name: string,
+    handler: (data: unknown) => Promise<void>,
+    opts?: { concurrency?: number; groupConcurrency?: number },
+  ): Promise<void> {
     await this.ensure(name);
     // batchSize:1 verrouille l'invariant per-job de l'abstraction (un throw ne fait
     // pas échouer un lot entier / ne rejoue pas des jobs déjà réussis).
     // pollingIntervalSeconds : cadence PAR FILE (défaut pg-boss 2 s, trop bavard pour une base facturée à
     // l'egress). La valeur vient de `names.ts`, source unique, et non du call site : ajouter une file sans
     // penser à sa cadence retombe alors sur un défaut sûr au lieu de rouvrir la fuite.
-    await this.boss.work<unknown>(name, { batchSize: 1, pollingIntervalSeconds: pollingSecondsFor(name) }, async (jobs) => {
-      for (const job of jobs) {
-        await handler(job.data);
-      }
-    });
+    // Concurrence PAR GROUPE (ex. par tenant) : voir `workConcurrencyOptions`. Absente par défaut, donc les
+    // files existantes (webhook, campaign-run, sweepers) gardent strictement le comportement d'aujourd'hui.
+    await this.boss.work<unknown>(
+      name,
+      { batchSize: 1, pollingIntervalSeconds: pollingSecondsFor(name), ...workConcurrencyOptions(opts ?? {}) },
+      async (jobs) => {
+        for (const job of jobs) {
+          await handler(job.data);
+        }
+      },
+    );
   }
 }

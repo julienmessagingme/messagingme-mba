@@ -5,18 +5,33 @@ import type { Queue } from './queue';
  * `enqueue` enregistre les jobs ; `deliver` rejoue les jobs vers le handler.
  */
 export class FakeQueue implements Queue {
-  public readonly enqueued: Array<{ name: string; data: unknown; opts?: { singletonKey?: string; expireInSeconds?: number } }> = [];
+  public readonly enqueued: Array<{
+    name: string;
+    data: unknown;
+    opts?: { singletonKey?: string; expireInSeconds?: number; groupId?: string };
+  }> = [];
+  /** Trace des appels à `work` : rend le passthrough des options de concurrence OBSERVABLE en test. */
+  public readonly workCalls: Array<{ name: string; opts?: { concurrency?: number; groupConcurrency?: number } }> = [];
   private readonly handlers = new Map<string, (data: unknown) => Promise<void>>();
 
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
 
-  async enqueue(name: string, data: unknown, opts?: { singletonKey?: string; expireInSeconds?: number }): Promise<void> {
+  async enqueue(
+    name: string,
+    data: unknown,
+    opts?: { singletonKey?: string; expireInSeconds?: number; groupId?: string },
+  ): Promise<void> {
     this.enqueued.push({ name, data, ...(opts ? { opts } : {}) });
   }
 
-  async work(name: string, handler: (data: unknown) => Promise<void>): Promise<void> {
+  async work(
+    name: string,
+    handler: (data: unknown) => Promise<void>,
+    opts?: { concurrency?: number; groupConcurrency?: number },
+  ): Promise<void> {
     this.handlers.set(name, handler);
+    this.workCalls.push({ name, ...(opts ? { opts } : {}) });
   }
 
   /** Rejoue les jobs empilés pour `name` vers le handler enregistré. */
