@@ -9,6 +9,8 @@ import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
+import type { AgentSessionStore } from '../agent/session-store';
+import type { AgentTurnJob } from '../agent/turn-job';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une CHAÎNE = pas parti, avec la raison EXACTE. Le booléen seul
@@ -172,6 +174,17 @@ export interface WorkflowExecutorDeps {
    * « le scénario répond » alors que plus rien n'avançait (trou A.5). OPTIONNEL : absent -> comportement historique.
    */
   escalateToHuman?(tenantId: string, waId: string): Promise<void>;
+  /**
+   * État des conversations tenues par un bloc agent. OPTIONNEL, comme les autres deps de ce fichier : absent,
+   * aucun bloc agent ne peut être servi, ce qui préserve les suites de tests à deps minimales et l'intégration.
+   */
+  agentSessions?: AgentSessionStore;
+  /**
+   * Enfile un tour d'agent. OPTIONNEL : absent -> no-op, le run reste simplement en attente sur le bloc.
+   * Un tour est un appel modèle plus N appels d'outils (3 à 20 s), il ne peut donc pas se jouer dans le
+   * handler de webhook, qui tiendrait la connexion Meta ouverte tout ce temps.
+   */
+  enqueueAgentTurn?(job: AgentTurnJob): Promise<void>;
   /**
    * L'agent de Meta est-il allumé sur le numéro de ce tenant ?
    *
@@ -973,6 +986,56 @@ export class WorkflowExecutor {
         aClique ? 'reply_button' : 'reply_text',
         aClique ? buttonPayload : undefined,
       );
+    }
+    // 🔴 BLOC AGENT : le contact répond pendant une conversation que l'agent tient. On n'entre PAS dans le
+    // routage. Sans cette branche, `sortieTypee` (juste en dessous) ne connaît que `sent`/`unreachable`, donc
+    // il est faux ici, et deux issues suivent, fatales toutes les deux : une arête libre partant du bloc fait
+    // SAUTER l'agent dès le premier message du contact, sinon `next` est null, le run est clos en `done` et la
+    // conversation est rendue à l'agent de Meta. Dans les deux cas la session reste vivante et ORPHELINE en
+    // base, et le réveil d'inactivité se déclenchera plus tard sur un run mort.
+    //
+    // Placé APRÈS le bloc de mesure ci-dessus, volontairement : celui-ci enregistre déjà la réponse du contact
+    // et distingue le clic du texte libre. Le refaire ici le dupliquerait, et en moins bien.
+    if (courant?.type === 'agent') {
+      const session = await this.deps.agentSessions?.byRun(tenantId, run.id);
+      if (!session || session.status !== 'en_cours') {
+        // Le run pointe un bloc agent mais aucune session ne le tient : état incohérent. On ne route pas au
+        // hasard (ce serait rejouer le saut silencieux qu'on vient de fermer), on remonte la conversation à
+        // un humain et on laisse une trace.
+        // eslint-disable-next-line no-console
+        console.error(`workflow ${run.workflowId}: run ${run.id} sur un bloc agent sans session vivante, remonté en inbox`);
+        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox', lastMessageId: messageId });
+        if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
+        return;
+      }
+      // ⚠️ ORDRE : on enfile AVANT de marquer le message consommé, comme partout ailleurs dans ce fichier
+      // (l'effet réel d'abord, `lastMessageId` ensuite). Si l'enfilage lève (panne transitoire de la file),
+      // l'exception est avalée par l'isolation par message de `processWorkflowAdvance` et Meta reçoit quand
+      // même un 200 : avec l'ordre inverse, `lastMessageId` serait déjà écrit, une redélivrance serait
+      // dédupliquée, et le tour ne serait JAMAIS enfilé (conversation bloquée jusqu'à ce que le contact
+      // réécrive). Dans ce sens-ci, si l'enfilage réussit mais que `setState` échoue, un rejeu réémet un job
+      // portant le MÊME `tours` attendu, que le verrou optimiste de `prendreLeTour` absorbe sans effet.
+      await this.deps.enqueueAgentTurn?.({
+        tenantId,
+        runId: run.id,
+        sessionId: session.id,
+        workflowId: run.workflowId,
+        nodeId: courant.id,
+        waId,
+        raison: 'message',
+        tours: session.tours,
+      });
+      // ⚠️ `currentNode` est repassé EXPLICITEMENT : `setState` écrit `current_node` SANS coalesce
+      // (`run-store.pg.ts`), donc passer null effacerait la position et le bloc agent serait perdu. Le run
+      // reste `waiting` SUR le bloc, c'est ce qui permet à `findWaitingByWaId` de le retrouver au message
+      // suivant. Et `lastMessageId` est persisté ICI : sans lui la dédup at-least-once ne protège plus, et un
+      // rejeu enfilerait un second tour, donc un second appel modèle facturé.
+      await this.deps.runs.setState(run.id, {
+        currentNode: run.currentNode,
+        status: 'waiting',
+        lastMessageId: messageId,
+      });
+      return;
     }
     // Bloc RCS : `sent` et `unreachable` qualifient la LIVRAISON, les boutons qualifient la RÉPONSE. Un clic
     // prime donc sur `sent` ; sans clic, on reprend par `sent`.

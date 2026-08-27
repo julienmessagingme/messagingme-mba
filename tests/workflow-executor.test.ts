@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { EvalContext } from '../src/workflow/conditions';
 import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
+import type { AgentTurnJob } from '../src/agent/turn-job';
 
 const n = (id: string, type: WorkflowNodeType, data: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
 const e = (id: string, source: string, target: string) => ({ id, source, target });
@@ -839,5 +840,104 @@ describe('WorkflowExecutor : un message rapide sans bouton ne bloque plus le par
     const { ex, runs } = make(g, { sendTemplate: async () => 'template introuvable chez Meta' });
     expect(await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' })).toBe('template introuvable chez Meta');
     expect(runs.run).toBeNull();
+  });
+});
+
+/**
+ * Tâche 10 : quand le contact répond pendant une conversation tenue par l'agent, `advance` doit ENFILER UN
+ * TOUR au lieu de router dans le graphe.
+ *
+ * 🔴 C'est le chemin le plus chaud du produit. Sans la branche, `sortieTypee` ne connaît que `sent` et
+ * `unreachable`, donc il est faux pour un bloc agent, et deux issues suivent, fatales toutes les deux : une
+ * arête libre partant du bloc fait SAUTER l'agent dès le premier message, sinon le run est clos en `done` et
+ * la conversation part à l'agent de Meta. Dans les deux cas la session reste vivante et orpheline en base.
+ */
+describe('advance : le bloc agent rend la main au tour (tâche 10)', () => {
+  const SESSION = { id: 's1', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 3, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  // agent 'a' -> quick_message 'b' par une arête SANS handle : c'est le montage qui fait sauter le bloc.
+  const avecAreteLibre: WorkflowGraph = {
+    nodes: [n('a', 'agent', { agentId: 'ag1' }), n('b', 'quick_message', { body: 'apres' })],
+    edges: [e('e1', 'a', 'b')],
+  };
+
+  const poserRunSurAgent = (runs: { run: WorkflowRunRow | null }) => {
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting', lastMessageId: null };
+  };
+
+  const deps = (over: Partial<WorkflowExecutorDeps> = {}) => {
+    const jobs: AgentTurnJob[] = [];
+    return {
+      jobs,
+      over: {
+        agentSessions: { byRun: async () => SESSION } as unknown as WorkflowExecutorDeps['agentSessions'],
+        enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); },
+        ...over,
+      },
+    };
+  };
+
+  it('enfile un tour au lieu de router, avec la raison, le bloc et le tour attendu', async () => {
+    const { jobs, over } = deps();
+    const { ex, runs } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ raison: 'message', nodeId: 'a', sessionId: 's1', runId: 'r1', tenantId: 't1', waId: '33600', tours: 3 });
+  });
+
+  it('🔴 ne SAUTE PAS le bloc agent quand une arête libre en part', async () => {
+    const { over } = deps();
+    const { ex, runs, calls } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(calls).toEqual([]); // le quick_message d'après ne doit PAS partir
+    expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
+  });
+
+  it('🔴 sans arête sortante, ne clôt pas le run et ne rend pas la main à l agent de Meta', async () => {
+    const seul: WorkflowGraph = { nodes: [n('a', 'agent', { agentId: 'ag1' })], edges: [] };
+    const rendus: string[] = [];
+    const { jobs, over } = deps({ releaseToMba: async (_t: string, w: string) => { rendus.push(w); } });
+    const { ex, runs } = make(seul, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
+    expect(rendus).toEqual([]);
+    expect(jobs).toHaveLength(1);
+  });
+
+  it('persiste lastMessageId : un rejeu du même message n enfile pas un second tour', async () => {
+    const { jobs, over } = deps();
+    const { ex, runs } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    await ex.advance('t1', '33600', 'msg1');
+    expect(jobs).toHaveLength(1);
+  });
+
+  it('🔴 si l enfilage ÉCHOUE, lastMessageId n est PAS marqué : la redélivrance peut retenter', async () => {
+    // Ordre voulu : on enfile AVANT de marquer le message consommé. Avec l'ordre inverse, une panne
+    // transitoire de la file laisserait `lastMessageId` écrit, la redélivrance serait dédupliquée, et le tour
+    // ne serait JAMAIS enfilé : conversation bloquée jusqu'à ce que le contact réécrive de lui-même.
+    const { over } = deps({ enqueueAgentTurn: async () => { throw new Error('file indisponible'); } });
+    const { ex, runs } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await expect(ex.advance('t1', '33600', 'msg1')).rejects.toThrow('file indisponible');
+    expect(runs.run?.lastMessageId).toBeNull();
+  });
+
+  it('session absente ou close : remonte en inbox, escalade, et n enfile aucun tour', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { jobs, over } = deps({
+      agentSessions: { byRun: async () => null } as unknown as WorkflowExecutorDeps['agentSessions'],
+    });
+    const { ex, runs, escalations } = make(avecAreteLibre, over);
+    poserRunSurAgent(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(runs.run).toMatchObject({ currentNode: null, status: 'inbox' });
+    expect(escalations).toEqual(['33600']);
+    expect(jobs).toEqual([]);
+    spy.mockRestore();
   });
 });
