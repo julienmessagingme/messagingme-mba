@@ -1942,7 +1942,7 @@ très désagréable côté client. L'outil doit appeler `escalateToHuman` (`wiri
 
 ---
 
-## Tâche 16bis : la recherche dans la base de connaissance, et `sortie:sans_source` — ✅ FAIT (commit COMMIT16B, 2026-08-28)
+## Tâche 16bis : la recherche dans la base de connaissance, et `sortie:sans_source` — ✅ FAIT (commit 962a044, 2026-08-28)
 
 🔴 **La leçon de cette tâche, et elle vaut au-delà.** La première version faisait exactement ce que le plan
 demandait : classer par `ts_rank_cd`, comparer le rang à un seuil en code. La revue a montré que **ce seuil
