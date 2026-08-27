@@ -1,6 +1,7 @@
 import type { AgentBrain } from './brain';
 import type { AgentSession, AgentSessionStore } from './session-store';
 import type { AgentTurnJob } from './turn-job';
+import { SORTIE_ECHEC, SORTIE_PLAFOND } from './sorties';
 
 /** Les plafonds d'un agent, lus sur sa fiche. Ce sont des gardes de SÉCURITÉ, pas un détail de facturation :
  *  une injection qui fait boucler l'agent brûlerait le compte prépayé du tenant. */
@@ -90,20 +91,20 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     // cascade`), mais l'incohérence n'a pas de raison d'être.
     // eslint-disable-next-line no-console
     console.error(`agent: fiche introuvable pour l'agent ${session.agentId}, session ${session.id} close`);
-    await deps.sessions.clore(job.tenantId, session.id, 'erreur', 'echec');
+    await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
     if (deps.sortir) {
-      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: 'echec' });
+      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_ECHEC });
     }
-    return { fait: 'erreur', sortie: 'echec' };
+    return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }
   if (session.tours > plafonds.maxTours
     || session.appelsOutils > plafonds.maxAppelsOutils
     || session.coutMicroEur >= plafonds.budgetMicroEur) {
-    await deps.sessions.clore(job.tenantId, session.id, 'plafond', 'plafond');
+    await deps.sessions.clore(job.tenantId, session.id, 'plafond', SORTIE_PLAFOND);
     if (deps.sortir) {
-      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: 'plafond' });
+      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_PLAFOND });
     }
-    return { fait: 'plafond', sortie: 'plafond' };
+    return { fait: 'plafond', sortie: SORTIE_PLAFOND };
   }
 
   // 4. LE CERVEAU, sous une échéance dure. Une conversation qui pend coûte plus cher qu'une sortie propre.
@@ -118,11 +119,11 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`agent: le tour a échoué pour la session ${session.id}`, err instanceof Error ? err.message : err);
-    await deps.sessions.clore(job.tenantId, session.id, 'erreur', 'echec');
+    await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
     if (deps.sortir) {
-      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: 'echec' });
+      await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_ECHEC });
     }
-    return { fait: 'erreur', sortie: 'echec' };
+    return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }
 
   // 5. RELIRE `mayAct` JUSTE AVANT D'ENVOYER, pas seulement à l'entrée du tour : entre l'enfilage du job et
@@ -148,11 +149,11 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
       // d'échec pour que le scénario reprenne avec le message de repli du client.
       // eslint-disable-next-line no-console
       console.error(`agent: envoi refusé pour ${job.waId} : ${res}`);
-      await deps.sessions.clore(job.tenantId, session.id, 'erreur', 'echec');
+      await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
       if (deps.sortir) {
-        await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: 'echec' });
+        await deps.sortir({ tenantId: job.tenantId, waId: job.waId, runId: job.runId, sessionId: session.id, sortie: SORTIE_ECHEC });
       }
-      return { fait: 'erreur', sortie: 'echec' };
+      return { fait: 'erreur', sortie: SORTIE_ECHEC };
     }
     await deps.sessions.ajouterAuTranscript(job.tenantId, session.id, { role: 'agent', texte: decision.texte });
   }

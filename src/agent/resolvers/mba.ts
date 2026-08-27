@@ -1,4 +1,6 @@
 import type { EntreeResolveur, ResolveurOutil, SortieResolveur } from '../executor';
+import { ficheEstPertinente, type KnowledgeStore } from '../knowledge';
+import { SORTIE_SANS_SOURCE } from '../sorties';
 
 /**
  * Le résolveur des outils MAISON : une table de correspondance `handler` vers fonction TypeScript, en dur, et
@@ -34,7 +36,27 @@ export interface DepsResolveurMba {
 
   /** Écrit une valeur dans les champs du contact (`mba_ecrire_variable`), pour qu'un bloc plus loin la relise. */
   ecrireChamp(tenantId: string, waId: string, cle: string, valeur: string): Promise<void>;
+
+  /** La base de connaissance de l'agent (`mba_chercher_connaissance`). */
+  connaissance: KnowledgeStore;
 }
+
+/** Nombre de fiches rendues au modèle. Au-delà, on paie du contexte à chaque tour pour des sources que le
+ *  modèle n'utilisera pas. */
+const FICHES_RENDUES = 3;
+
+/**
+ * Bornes de ce qui repart au modèle. Le tronc commun borne DÉJÀ la réponse entière à `max_bytes`, mais sa
+ * troncature remplace toute la structure par un aperçu : trois fiches entières la déclencheraient, et le
+ * modèle recevrait une source mutilée au lieu de sources listées. Le pire des deux mondes pour un mécanisme
+ * anti-hallucination, donc on borne fiche par fiche, en le disant.
+ */
+const CORPS_MAX = 2_000;
+
+/** La requête vient du modèle, qui peut recopier un message que le contact contrôle. `similarity()` génère
+ *  les trigrammes de cette chaîne pour chaque ligne candidate : une requête de plusieurs kilo-octets se
+ *  paierait en base. */
+const REQUETE_MAX = 512;
 
 /** Lit un argument textuel non vide. Les arguments sont déjà validés par le tronc commun, mais contre une
  *  DÉCLARATION qui vient du client : un handler ne suppose jamais que sa déclaration est bien faite. */
@@ -86,6 +108,33 @@ const HANDLERS: Record<string, Handler> = {
       tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, workflowId: ctx.workflowId, code,
     });
     return res.ok ? { contenu: { envoye: code } } : echec(res.raison ?? 'le bloc n a pas pu etre envoye');
+  },
+
+  /**
+   * Cherche dans la base de connaissance. C'est le seul handler qui peut demander une SORTIE sans que le
+   * modèle l'ait décidé, et c'est le sujet : aucune fiche pertinente -> `{ aucune_source: true }` et
+   * `sortie: sans_source`, jamais une fiche, jamais une réponse inventée.
+   *
+   * Les MESURES viennent de la base, la RÈGLE est appliquée ici (`ficheEstPertinente`), et le modèle ne voit
+   * ni l'une ni les autres : lui montrer un score reviendrait à lui rendre la décision qu'on lui retire.
+   */
+  chercher_connaissance: async ({ args, ctx }, deps) => {
+    const requete = texte(args, 'requete').slice(0, REQUETE_MAX);
+    if (requete === '') return echec('parametre « requete » manquant');
+    const fiches = await deps.connaissance.chercher(ctx.tenantId, ctx.agentId, requete, FICHES_RENDUES);
+    const retenues = fiches.filter(ficheEstPertinente);
+    if (retenues.length === 0) {
+      return { contenu: { aucune_source: true }, sortie: SORTIE_SANS_SOURCE };
+    }
+    return {
+      contenu: {
+        sources: retenues.map((f) => ({
+          titre: f.titre,
+          contenu: f.corps.length > CORPS_MAX ? `${f.corps.slice(0, CORPS_MAX)}...` : f.corps,
+          url: f.sourceUrl,
+        })),
+      },
+    };
   },
 
   /**

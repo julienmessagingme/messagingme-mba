@@ -1942,7 +1942,33 @@ très désagréable côté client. L'outil doit appeler `escalateToHuman` (`wiri
 
 ---
 
-## Tâche 16bis : la recherche dans la base de connaissance, et le handle `sortie:sans_source`
+## Tâche 16bis : la recherche dans la base de connaissance, et `sortie:sans_source` — ✅ FAIT (commit COMMIT16B, 2026-08-28)
+
+🔴 **La leçon de cette tâche, et elle vaut au-delà.** La première version faisait exactement ce que le plan
+demandait : classer par `ts_rank_cd`, comparer le rang à un seuil en code. La revue a montré que **ce seuil
+ne pouvait jamais se déclencher** : `ts_rank_cd` a un plancher arithmétique (poids D = 0,1, soit 0,0909 après
+normalisation) et l'opérateur `%` un autre (0,3), donc toute ligne rendue par le SQL était au-dessus d'un
+seuil de 0,05. Le filtre réel était le `where`, un OR sur les termes : **un seul mot commun suffisait** à
+livrer une fiche au modèle, ce qui est précisément le trou que cette tâche existe pour fermer.
+
+**Et aucun test ne pouvait le voir**, parce que tous les tests du seuil fabriquaient le score. Règle à
+retenir : **une garde chiffrée se prouve là où le nombre est PRODUIT**, pas là où on le simule. Ici, ça veut
+dire en intégration, contre un vrai Postgres, avec un corpus qui ressemble à une vraie base de connaissance.
+
+**Écart au plan, assumé et nécessaire :** on ne mesure plus un rang. Un rang dit « à quel point ça ressort » ;
+on mesure maintenant **combien de termes signifiants de la question se retrouvent dans la fiche**, ce qui
+répond à la seule question posée : « ai-je une source pour CETTE question ». Trois raisons d'accepter, chacune
+explicable en une phrase à un client (`ficheEstPertinente`, `src/agent/knowledge.ts`) : deux mots communs au
+moins, ou une question si courte que la fiche en couvre la moitié, ou un titre très proche au trigramme (la
+faute de frappe). Ce qui reste vrai quoi qu'il arrive, et qui porte la garantie : une question sans le moindre
+mot commun ne fait remonter **aucune** fiche.
+
+Corrigé dans le même lot : index `(tenant_id, agent_id)` manquant sur `agent_knowledge` (la migration 0086
+n'étant pas appliquée, elle a été complétée) ; le seuil trigramme dépendait d'un GUC serveur et vient
+désormais de notre code ; le plafond de termes coupait le sujet d'une question bavarde (doublons retirés
+avant) ; la requête et le corps des fiches n'étaient bornés par personne.
+
+### Le détail d'origine
 
 **Fichiers :** Modifier `src/agent/resolvers/mba.ts` (nouvel outil maison), créer
 `src/agent/knowledge.pg.ts` (la requête). Test : `tests/agent-knowledge.test.ts`.

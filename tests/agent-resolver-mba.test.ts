@@ -26,6 +26,8 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
     escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}`); },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
     ecrireChamp: async (_t, _w, cle, valeur) => { journal.push(`champ:${cle}=${valeur}`); },
+    // La recherche a sa propre suite (`tests/agent-knowledge.test.ts`) : ici elle ne rend rien.
+    connaissance: { chercher: async () => [] },
     ...over,
   };
   return { resolveur: creerResolveurMba(deps), journal };

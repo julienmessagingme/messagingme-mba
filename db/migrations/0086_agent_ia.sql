@@ -126,6 +126,10 @@ create table if not exists agent_knowledge (
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
+-- Le filtre tenant vient EN TETE de chaque recherche. Sans ce btree, le planificateur n a que les GIN pour
+-- attaquer la table : sur un mot frequent, la recherche d un client remonte puis jette les lignes de tous
+-- les autres. L isolation reste correcte, le cout ne l est pas. Postgres combine ce btree et les GIN.
+create index if not exists agent_knowledge_tenant_agent_idx on agent_knowledge (tenant_id, agent_id);
 create index if not exists agent_knowledge_tsv_idx on agent_knowledge using gin (corps_tsv);
 create index if not exists agent_knowledge_titre_trgm_idx
   on agent_knowledge using gin (titre gin_trgm_ops);
