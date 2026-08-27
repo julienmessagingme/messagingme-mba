@@ -45,7 +45,7 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
 `sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`). Dernière appliquée :
-**0073** (multi-espaces ; 0067 handoff MBA, 0068-0071 lot inbox/modération, 0072 identités). **Prochaine = 0074.**
+**0085** (question_timeout). La migration **0086** (les tables du bloc agent IA) est nouvelle, à appliquer au déploiement de l'agent IA. **Prochaine libre = 0087.**
 En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
@@ -97,7 +97,7 @@ qu'avant le premier envoi tracé.
 
 ### Automation (règles d'archi issues des revues, 2026-08-03)
 
-- **Prochaine migration libre = 0059.** Les migrations ne sont PAS auto-appliquées : construire l'image AVANT de
+- **Prochaine migration libre = 0087.** Les migrations ne sont PAS auto-appliquées : construire l'image AVANT de
   migrer (une migration ajoutée après le dernier build est absente de l'image, et `migrate` répond « à jour »
   sans rien appliquer). Cf `DEPLOY.md`.
 - **L'émission d'un événement d'automation est gouvernée par le CHEMIN appelant, jamais par la dépendance
