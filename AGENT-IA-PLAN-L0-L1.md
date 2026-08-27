@@ -1287,7 +1287,20 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 10 : la branche agent dans `advance`
+## Tâche 10 : la branche agent dans `advance` — ✅ FAIT (commit fd32eff, 2026-08-27)
+
+⚠️ **L'ORDRE des deux écritures compte, et le fragment ci-dessous l'a à l'envers.** On enfile le tour
+**AVANT** d'écrire `lastMessageId`. Si l'enfilage lève, l'exception est avalée par l'isolation par
+message de `processWorkflowAdvance` et Meta reçoit un 200 : avec l'ordre inverse, `lastMessageId` est
+déjà écrit, la redélivrance est dédupliquée, et le tour n'est **jamais** enfilé. Un test de garde le
+verrouille. Trouvé en revue.
+
+⚠️ **Trois écarts au fragment ci-dessous :** la branche est placée **APRÈS** le bloc de mesure (qui
+distingue déjà clic et texte libre ; la refaire dans la branche aurait perdu la mesure d'un bouton) ;
+**pas d'écriture au transcript ici**, car `advance` ne reçoit pas le texte du message et l'y ajouter
+changerait la signature du chemin le plus chaud et ses 3 appelants (**à faire en tâche 13**, qui lira
+la conversation en base : `recordInbound` tourne toujours avant `advance`) ; `this.mesurer` a une autre
+signature que le fragment.
 
 **Fichiers :** Modifier `src/workflow/executor.ts:867-978`. Test : `tests/workflow-executor.test.ts`.
 
