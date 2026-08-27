@@ -1562,6 +1562,27 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Tâche 13 : le squelette qui marche, avec un cerveau bouchonné
 
+⚠️ **COUPÉE EN DEUX.** 13a livre le contrat de cerveau, le cerveau bouchonné et `runTurn` avec ses huit
+gardes, tout injecté et testable sans base ni réseau. **13b reste à faire** : la plomberie (store
+d'agents pour les plafonds, lecture d'un run par son id, sortie du bloc par une branche) et
+l'enregistrement du worker. Raison de sûreté : **câbler le worker avec un cerveau bouchonné ferait
+répondre un agent déployé avec une réponse en dur.** On câble quand le vrai cerveau existe (tâche 14).
+
+### 13a — ✅ FAIT (commit 877671d, 2026-08-27)
+
+`src/agent/brain.ts`, `brain.fake.ts`, `run-turn.ts`, `tests/agent-run-turn.test.ts`. Diff **inerte en
+production** (la file `agent-turn` n'a aucun consommateur, et aucun tenant ne peut router vers un bloc
+agent, absent du builder). Reviewer PASS.
+
+⚠️ **Bornes de plafond** : `>` pour les tours et les outils, `>=` pour le budget. Avec `>=`, un agent
+réglé à `max_tours = 1` (valeur légale du CHECK 0086) ne pourrait **jamais** parler ; le budget, lui, est
+une limite dont on ne connaît pas le coût du tour à l'avance. Un test de frontière ancre la sémantique.
+
+⚠️ Le fragment de test ci-dessous est illustratif : `coutMicroEur` est un `number` (cf. tâche 9), et
+`runTurn` prend `(job, deps)`.
+
+### 13b — à faire
+
 **Fichiers :**
 - Créer : `src/agent/brain.ts` (contrat) et `src/agent/brain.fake.ts`
 - Créer : `src/agent/run-turn.ts` (le tour, pur autant que possible)
