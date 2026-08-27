@@ -111,6 +111,37 @@ atteint par le nouveau statut (contrairement à `rcs_send`, toujours résolu ava
 
 # Phase L0, les fondations
 
+## Révision du 2026-08-27 : réconciliation avec le cadrage rev3
+
+Le cadrage a beaucoup bougé les 2026-08-26 et 27 (deux IA, temps 1 contre temps 2, objectif de
+l'agent, scénarios déclenchés, choix de modèle, base de connaissance, anti-hallucination, concurrence
+par tenant). Ce plan est aligné ici. **Le cœur du moteur** (main rendue, jobs par tour, compteurs
+persistés) **ne change pas** ; seules ces additions arrivent.
+
+- **Nouvelle tâche 4bis (L0)** : la brique de concurrence par tenant sur `agent-turn`, la moitié
+  réutilisable du correctif **B4** de l'audit de scalabilité. Elle borne le nombre de tours simultanés
+  d'un même tenant, pour qu'un client bavard n'affame pas les autres sur le worker unique.
+- **Tâche 5 étendue** : la migration ajoute la table `agent_knowledge` (recherche plein texte
+  `tsvector` plus `pg_trgm`, aucune extension Postgres nouvelle, pas de pgvector). C'est la base de
+  connaissance par tenant, celle que l'écran de fiches montre et que l'agent interroge.
+- **Le schéma de fiche (`ficheAgentSchema`) gagne trois champs** : `nom`, `ton`, `personnalite`. Ils
+  vivent dans le `jsonb` de la fiche, donc pas de colonne : juste le schéma Zod et le prompt système
+  qui les lit.
+- **Nouvelle tâche 16bis** : l'outil maison de recherche dans `agent_knowledge`, et le handle
+  déterministe `sortie:sans_source`. Le seuil de score est calculé en code ; sous le seuil, l'outil
+  rend `aucune_source` et le node sort par ce handle, jamais une décision du modèle. C'est le
+  mécanisme anti-hallucination du doc produit.
+- **Tâches 18 et 19 réécrites** : le groupe de navigation « AI Agent », et les **deux surfaces
+  d'édition** (la construction en parlant et un écran de réglage classique à onglets, synchronisés sur
+  la même fiche).
+- **« Après L1 » rafraîchi** : la vérification live du Gateway est faite (`usage.cost` présent), elle
+  ne conditionne plus rien.
+
+Le plan L2 et suivants (connecteurs, MCP, retour dans la durée) reste au niveau du séquencement du
+cadrage §7 ; il sera détaillé le moment venu.
+
+---
+
 ## Tâche 1 : passer zod en 4.4.3
 
 **Fichiers :**
@@ -556,12 +587,42 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 > jamais posée figerait le parcours pour toujours, sans le moindre signal ». Un bloc agent sans agent
 > configuré doit se comporter pareil : passer au suivant, pas geler le fil.
 
+## Tâche 4bis : la brique de concurrence par tenant (L0)
+
+**Fichiers :** Modifier `src/queue/pgboss.ts` (le wrapper `Queue.work`) et son enfilage côté
+`agent-turn`. Test : `tests/agent-concurrence.test.ts`.
+
+**Pourquoi, et pourquoi en L0.** Le worker est unique, sans réplicas, et chaque file est sérialisée
+(`pgboss.ts` force `batchSize: 1` sans option de concurrence). L'audit de scalabilité l'a déjà
+constaté sur les campagnes (constat **B4** : un tenant à gros volume bloque tous les autres). La file
+`agent-turn` hériterait du même défaut : un client dont l'agent enchaîne beaucoup de tours, ou qui
+boucle sur une injection, affamerait les autres tenants **et** viderait son propre prépayé. On pose
+donc dès le départ un plafond de tours simultanés **par tenant**.
+
+**La brique est partagée avec B4.** pg-boss 12 n'a plus de `teamSize` ; il offre `localConcurrency`
+et surtout `groupConcurrency` / `localGroupConcurrency`, qui donnent un plafond **par groupe**. On
+étend le wrapper `Queue.work` pour accepter ces options et un identifiant de groupe par job, et on
+enfile chaque `agent-turn` avec le `tenant_id` comme groupe. La fin de B4 sur les campagnes (bloc 5)
+réutilisera la même extension. Confirmer le nom exact de l'option contre la doc pg-boss 12 à
+l'implémentation ; repli simple si besoin : un plafond applicatif (compter les sessions `en_cours`
+d'un tenant avant d'enfiler, refuser au-delà avec réenfilage différé).
+
+- [ ] **Étape 1 : écrire le test.** N+1 tours d'un même tenant enfilés, vérifier qu'au plus N
+  tournent en même temps, et qu'un second tenant n'est jamais bloqué par le premier.
+- [ ] **Étape 2 à 6 :** échouer, implémenter, passer, vérifier dans les deux sens, commit.
+
+**Garde-fous à porter ailleurs** (pas ici) : aucun travail CPU synchrone lourd dans un outil (il
+gèlerait le worker unique), et jamais de connexion Postgres tenue pendant l'appel LLM (règle de la
+tâche 13).
+
+---
+
 ## Tâche 5 : la migration 0086
 
 **Fichiers :** Créer `db/migrations/0086_agent_ia.sql`.
 
-**Interfaces :** Produit les tables `agents`, `agent_tools`, `agent_sessions`, `agent_tool_calls`,
-consommées par les tâches 9 à 17.
+**Interfaces :** Produit les tables `agents`, `agent_tools`, `agent_sessions`, `agent_tool_calls`
+et `agent_knowledge`, consommées par les tâches 9 à 16bis.
 
 Note : le design retenu (le run reste en `waiting` sur le bloc agent) n'exige **aucune** migration
 sur `workflow_runs`, et c'est un argument fort pour lui. Si quelqu'un proposait un statut de run
@@ -572,14 +633,16 @@ dédié, il faudrait **remplacer** le CHECK d'origine et non en ajouter un secon
 
 ```sql
 -- 0086_agent_ia.sql
--- Le bloc agent : la fiche, son catalogue d outils, l etat multi-tours, le journal d appels.
+-- Le bloc agent : la fiche, son catalogue d outils, l etat multi-tours, le journal d appels,
+-- et la base de connaissance par tenant.
 -- Le journal est AUSSI le grand livre de facturation : c est la meme table, volontairement.
 
 create table if not exists agents (
   id                 uuid primary key default gen_random_uuid(),
   tenant_id          uuid not null references tenants(id) on delete cascade,
   label              text not null,
-  -- Ce que l IA de setup peut ecrire, valide par ficheAgentSchema (Zod safeParse).
+  -- Ce que l IA de setup peut ecrire, valide par ficheAgentSchema (Zod safeParse) : objectif, nom,
+  -- ton, personnalite, regles de transfert et d arret, sources de connaissance.
   fiche              jsonb not null default '{}'::jsonb,
   fiche_version      int  not null default 1,
   -- Ce qu elle ne peut PAS ecrire : hors du jsonb, ecrit par un admin authentifie.
@@ -679,6 +742,25 @@ create table if not exists agent_tool_calls (
   at             timestamptz not null default now()
 );
 create index if not exists agent_tool_calls_session_idx on agent_tool_calls (tenant_id, session_id, at);
+
+-- La base de connaissance par tenant : les fiches issues du scraping, editables. Recherche plein
+-- texte native (tsvector), PAS de pgvector. pg_trgm (deja installe en 0032) en complement.
+create table if not exists agent_knowledge (
+  id                  uuid primary key default gen_random_uuid(),
+  tenant_id           uuid not null references tenants(id) on delete cascade,
+  agent_id            uuid not null references agents(id) on delete cascade,
+  titre               text not null,
+  corps               text not null,
+  source_url          text,
+  derniere_lecture_at timestamptz,
+  corps_tsv           tsvector generated always as
+                        (to_tsvector('french', coalesce(titre,'') || ' ' || coalesce(corps,''))) stored,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+create index if not exists agent_knowledge_tsv_idx on agent_knowledge using gin (corps_tsv);
+create index if not exists agent_knowledge_titre_trgm_idx
+  on agent_knowledge using gin (titre gin_trgm_ops);
 ```
 
 - [ ] **Étape 2 : vérifier la numérotation**
@@ -709,7 +791,7 @@ deux sont faux. Mettre à jour dans ce commit.
 
 ```bash
 git add db/migrations/0086_agent_ia.sql CLAUDE.md
-git commit -m "feat(agent): les quatre tables du bloc agent (migration 0086)
+git commit -m "feat(agent): les cinq tables du bloc agent (migration 0086)
 
 Le run reste en waiting sur le bloc agent, donc AUCUNE migration sur workflow_runs.
 
@@ -1648,6 +1730,34 @@ très désagréable côté client. L'outil doit appeler `escalateToHuman` (`wiri
 
 ---
 
+## Tâche 16bis : la recherche dans la base de connaissance, et le handle `sortie:sans_source`
+
+**Fichiers :** Modifier `src/agent/resolvers/mba.ts` (nouvel outil maison), créer
+`src/agent/knowledge.pg.ts` (la requête). Test : `tests/agent-knowledge.test.ts`.
+
+**C'est le mécanisme anti-hallucination**, et il est déterministe. On ne demande jamais au modèle de
+juger s'il sait : on le rend incapable de répondre hors de ses sources.
+
+**L'outil maison `mba_chercher_connaissance`** interroge `agent_knowledge` du tenant courant
+(`ts_rank_cd` sur `corps_tsv`, complété par `similarity()` de `pg_trgm` pour les requêtes courtes) et
+renvoie les fiches les mieux classées **avec leur score maximal, calculé en code**. Le tenant est
+toujours `tenant_id = $1` (rôle superuser, RLS bypassée, le filtrage en code est le seul contrôle).
+
+**Le seuil est en code, jamais dans le raisonnement du modèle.** Si le score maximal est sous un seuil
+(constante, ou réglage tenant plus tard), l'outil rend un résultat structuré `{ aucune_source: true }`
+par le tronc commun (§3.3, jamais une exception), et le tour fait **sortir le node par le handle
+`sortie:sans_source`**, réservé au même rang que `timeout`, `sortie:plafond`, `sortie:echec`. Le
+client câble ce handle vers le transfert humain ou le renvoi aux coordonnées. C'est ça, et rien
+d'autre, qui fait marcher « l'agent ne sait pas, donc il transfère ».
+
+- [ ] **Étape 1 : écrire les tests, dans les deux sens.** Une question couverte par une fiche : score
+  au-dessus du seuil, l'agent répond depuis la fiche. Une question hors sujet : score sous le seuil,
+  résultat `aucune_source`, sortie par `sortie:sans_source`, **jamais** une réponse inventée. Vérifier
+  que remettre le seuil à zéro casse le second test (preuve que la garde tient).
+- [ ] **Étape 2 à 6 :** échouer, implémenter, passer, vérifier dans les deux sens, commit.
+
+---
+
 ## Tâche 17 : l'inactivité
 
 **Fichiers :** Modifier `src/agent/run-turn.ts`. Test : `tests/agent-inactivite.test.ts`.
@@ -1748,19 +1858,41 @@ Reprendre le patron du **bloc conditionné** déjà en place pour RCS et l'email
 (`WorkflowBuilder.tsx:598-624`) : rendu à part, grisé et non cliquable tant qu'aucun agent n'est
 configuré, avec un `title` explicatif. Et le patron des **sorties multiples par handle nommé**, déjà
 utilisé pour les boutons de template et pour `sent` / `unreachable` de `rcs_message` : chaque règle
-d'arrêt devient un handle, plus les trois réservés `sortie:inactivite`, `sortie:plafond`,
-`sortie:echec`.
+d'arrêt devient un handle, plus les réservés `timeout` (inactivité, même nom que le bloc Question),
+`sortie:plafond`, `sortie:echec`, et `sortie:sans_source` (l'agent n'a trouvé aucune source, il sort).
 
 - [ ] **Étape 1 à 6 :** spec e2e qui échoue, implémentation, passage, commit.
 
-## Tâche 19 : l'écran de configuration d'agent
+## Tâche 19 : le groupe « AI Agent » et les deux surfaces d'édition
 
-**Fichiers :** Créer `web/app/agents/page.tsx`, `web/lib/api-agent.ts`.
-Modifier `web/components/AppShell.tsx` (clé du type `Tab`, entrée de nav, chemin SVG de l'icône).
+**Fichiers :** Créer `web/app/agents/page.tsx`, `web/lib/api-agent.ts`. Modifier
+`web/components/AppShell.tsx` (le groupe de nav et l'icône). C'est de l'UI, donc hors feature-loop :
+tâche d'ensemble, pas de TDD ligne à ligne.
 
-Suivre le patron obligatoire de tout écran authentifié, et importer `request` depuis `web/lib/http.ts`
-comme le fait déjà `web/lib/api-mba.ts`, sans dupliquer l'authentification. Style et bilinguisme
-entièrement déterminés par `web/lib/ui.ts` et `web/lib/i18n.tsx`.
+**Le groupe de navigation « AI Agent ».** La barre latérale gagne un groupe qui rassemble les deux
+répondeurs que le client peut faire parler : l'agent Meta (les deux entrées MBA existantes, guide et
+paramètres, qui gardent leurs URL) et **Other AI agent**, le nôtre. Contrainte connue : le modèle de
+nav (`AppShell.tsx`) n'a **qu'un niveau d'enfants**, donc le groupe est plat. Le groupe `mba` actuel
+disparaît au profit de celui-ci.
+
+**Les deux surfaces d'édition, sur la même fiche.** Un seul agent, deux entrées :
+
+- **La construction en parlant** (l'IA de construction, version minimale livrée avec L1 : mandat,
+  connaissance, règles d'arrêt et de transfert, modèle, outils maison), qui écrit dans la fiche.
+- **L'écran de réglage classique**, à onglets, calqué sur celui de l'agent Meta d'aujourd'hui, qui
+  montre **dans les bonnes cases** tout ce que la conversation a rempli, éditable champ par champ.
+  Onglets : identité et ton, objectif et transferts, base de connaissance (les fiches), outils,
+  périmètre et garde-fous, modèle, tester.
+
+Les deux sont **toujours accessibles** (temps 1 comme temps 2) et **synchronisées** : ce que le chat
+produit apparaît dans les cases, ce qu'on change dans les cases est repris par le chat. Objectif : que
+le client comprenne et corrige sans réinterroger l'IA. C'est le §1bis « Deux surfaces d'édition » du
+cadrage, rendu concret.
+
+Suivre le patron de tout écran authentifié : `request` depuis `web/lib/http.ts` comme `api-mba.ts`,
+style et bilinguisme par `web/lib/ui.ts` et `web/lib/i18n.tsx`. L'activation reprend trait pour trait
+le patron de l'agent Meta (interrupteur sur l'accueil, admin seulement), en gardant le sens propre au
+mot « activé » (prêt à servir dans les scénarios, pas « répond à tout »).
 
 - [ ] **Étape 1 à 6 :** spec e2e qui échoue, implémentation, passage, commit.
 
@@ -1774,10 +1906,12 @@ même par le tronc commun, les identifiants restent en `source: 'contact'`, et c
 journalisé avec ses arguments rédigés. Contrepartie assumée : la responsabilité se déplace vers le
 tenant qui coche, ce qui doit être écrit dans les conditions.
 
-Deux décisions restent ouvertes et ne bloquent que la suite : que se passe-t-il quand le solde tombe
-à zéro en pleine conversation, et si MCP est une allowlist ou une URL libre. Elles sont posées en §8
-du cadrage.
+Une décision reste ouverte et ne bloque que la suite : MCP en allowlist de serveurs validés ou en URL
+libre par tenant (D3, §8 du cadrage). Le solde à zéro (D2) a été **requalifié le 2026-08-27** : le
+prépayé par tenant est notre grand livre, la sortie propre est donc entièrement dans notre code, rien
+à négocier avec le Gateway.
 
-Et deux vérifications conditionnent le modèle économique : un appel live au Gateway pour confirmer
-`gateway.cost` et le comportement à solde zéro, et le texte primaire Meta sur la clause
-« AI Providers ».
+Côté vérifications : l'appel live au Gateway est **fait** (2026-08-27, `usage.cost` et
+`provider_metadata.gateway.cost` présents), le modèle économique n'attend plus rien. Reste à cadrer le
+texte primaire Meta sur la clause « AI Providers » avant d'ouvrir en grand, mais c'est commercial, pas
+un bloquant technique.
