@@ -246,7 +246,7 @@ function rcsOutboundOf(node: WorkflowNode | undefined): RcsOutbound | null {
  *  a déjà son propre `visited` par appel, ce plafond borne l'ENCHAÎNEMENT de walks. */
 const MAX_RCS_ENCHAINES = 20;
 
-function restToState(rest: WalkRest, now: number): RunState {
+export function restToState(rest: WalkRest, now: number): RunState {
   if (rest.status === 'waiting') {
     // Bloc QUESTION à échéance : le run reste `waiting`, parce qu'une réponse du contact doit pouvoir le
     // reprendre et que `findWaitingByWaId` ne voit QUE les runs `waiting`. Il porte EN PLUS un `resume_at`,
@@ -260,6 +260,10 @@ function restToState(rest: WalkRest, now: number): RunState {
   // successeur (le bloc Attente lui-même a déjà « joué », le repasser rendormirait le parcours en boucle).
   if (rest.status === 'sleeping') return { currentNode: rest.nodeId, status: 'sleeping', resumeAt: new Date(now + rest.resumeInMs) };
   if (rest.status === 'inbox') return { currentNode: null, status: 'inbox' };
+  // Bloc AGENT : le run ATTEND sur le bloc agent, c'est ce qui permet à `findWaitingByWaId` de retrouver le
+  // parcours au message suivant du contact. Cas EXPLICITE, parce que le `return` final ci-dessous avale tout
+  // le reste en `done` : sans lui, le parcours serait clos en silence pile au moment où l'agent prend la main.
+  if (rest.status === 'agent_turn') return { currentNode: rest.nodeId, status: 'waiting' };
   return { currentNode: null, status: 'done' };
 }
 

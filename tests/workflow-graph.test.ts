@@ -81,7 +81,7 @@ describe('parseGraph', () => {
   });
 });
 
-describe('bloc agent (tâche 6)', () => {
+describe('bloc agent, type (tâche 6)', () => {
   it('agent est un type de node connu', () => {
     expect(isWorkflowNodeType('agent')).toBe(true);
   });

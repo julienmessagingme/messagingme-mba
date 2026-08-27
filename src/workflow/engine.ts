@@ -308,6 +308,14 @@ export type WalkRest =
   // le numéro est joignable (appel réseau). L'executor fait l'IO puis reprend par 'sent' ou 'unreachable'.
   // Ce statut ne doit JAMAIS atteindre `restToState` : il n'y a pas d'état de run qui lui corresponde.
   | { status: 'rcs_send'; nodeId: string }
+  // Bloc AGENT : ce n'est PAS un état de repos non plus, c'est une MAIN RENDUE, comme rcs_send. Le walk est pur
+  // et ne peut pas savoir ce que le modèle va décider. L'executor persiste, ouvre la session et enfile un tour ;
+  // le parcours reprendra plus tard par un handle de sortie.
+  // ⚠️ Différence avec rcs_send, et elle décide du design : rcs_send est TOUJOURS résolu par `walkResolved` et
+  // n'atteint donc jamais `restToState`. `agent_turn`, lui, l'atteint réellement, et le `return` final de
+  // `restToState` aurait clos le parcours en `done` pile au moment où l'agent doit prendre la main. D'où un cas
+  // EXPLICITE là-bas.
+  | { status: 'agent_turn'; nodeId: string }
   | { status: 'inbox' } // conversation remontée à l'humain (terminal)
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
 
@@ -645,6 +653,20 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       // donc la main à l'executor, qui fera l'IO et reprendra par le handle 'sent' ou 'unreachable'. Les actions
       // déjà accumulées partent maintenant, comme pour un bloc Attente.
       return { actions, rest: { status: 'rcs_send', nodeId: current } };
+    }
+    if (node.type === 'agent') {
+      // `walk` est PUR : il ne peut pas savoir ce que le modèle répondra. Il rend donc la main à l'executor,
+      // qui ouvrira la session et enfilera un tour. Les actions déjà accumulées partent maintenant, comme pour
+      // un bloc RCS ou un bloc Attente.
+      // Non configuré = PASSE-PLAT, même choix que le bloc Question sans texte : rendre la main à un agent qui
+      // n'existe pas figerait le parcours pour toujours, sans le moindre signal. `data` est opaque et vient du
+      // client, d'où la coercition.
+      const agentId = String(node.data.agentId ?? '').trim();
+      if (!agentId) {
+        current = nextNode(graph, current);
+        continue;
+      }
+      return { actions, rest: { status: 'agent_turn', nodeId: current } };
     }
     if (node.type === 'question') {
       const a = actionOf(node, work);
