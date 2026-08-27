@@ -1797,7 +1797,7 @@ inconnu) sont **terminaux** : les rejouer paierait quatre fois la même erreur d
 
 ---
 
-## Tâche 15 : le schéma d'outil envoyé au modèle — ✅ FAIT (commit à venir, 2026-08-27)
+## Tâche 15 : le schéma d'outil envoyé au modèle — ✅ FAIT (commit d55763a, 2026-08-27)
 
 La garde a été auditée ligne à ligne par la revue : **aucun chemin** n'expose un paramètre `contact` ou
 `fixe`, y compris avec une `source` d'une autre casse, absente, ou inventée (l'égalité est stricte, et
