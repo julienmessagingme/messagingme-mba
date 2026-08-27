@@ -621,7 +621,12 @@ tâche 13).
 
 ---
 
-## Tâche 5 : la migration 0086
+## Tâche 5 : la migration 0086 — ✅ FAIT (commit 0816234, 2026-08-27), appliquée proprement en CI
+
+Vérifiée par le job `integration` de la CI (`npm run migrate` sur Postgres jetable) plutôt qu'en local :
+le `DATABASE_URL` local pointe la prod, l'étape 3 (Docker local) est donc remplacée par la preuve CI.
+`to_tsvector('french'::regconfig, ...)` a reçu le cast explicite (surcharge immutable, obligatoire dans
+une colonne générée). CLAUDE.md recalé (0086 nouvelle, 0087 libre).
 
 **Fichiers :** Créer `db/migrations/0086_agent_ia.sql`.
 
