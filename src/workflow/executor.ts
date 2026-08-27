@@ -610,9 +610,16 @@ export class WorkflowExecutor {
       }
     }
     const aBesoinFenetre = (a: WorkflowAction): boolean => besoinsFenetre.has(a);
+    // 🔴 Le bloc AGENT exige la fenêtre alors qu'il ne produit AUCUNE action : son premier message est du texte
+    // libre, donc un message de session. Ne regarder que les actions le laissait passer, et un montage
+    // « attente puis agent » DIRECT réveillait l'agent hors fenêtre : Meta refuse en 131047 et le modèle a déjà
+    // été payé. Même trou que celui fermé dans `runFrom`, ici au réveil. Attention, l'attente déclarée ne dit
+    // rien de la fenêtre réelle (elle court depuis le dernier message DU CONTACT) : même une attente courte
+    // peut se réveiller fenêtre fermée, d'où un test de l'état réel et pas une déduction sur la durée.
+    const reveilleUnAgent = rest.status === 'agent_turn';
     let aExecuter = actions;
     let fenetreFermee = false;
-    if (actions.some((e) => aBesoinFenetre(e.action))) {
+    if (reveilleUnAgent || actions.some((e) => aBesoinFenetre(e.action))) {
       const ouverte = this.deps.isWindowOpen ? await this.deps.isWindowOpen(tenantId, waId) : false;
       if (!ouverte) {
         fenetreFermee = true;
@@ -839,10 +846,16 @@ export class WorkflowExecutor {
     // n'interdit plus cette forme (un scénario peut ouvrir sur un message de session, il est alors réservé aux
     // déclenchements en fenêtre garantie) : c'est `POST /campaigns` qui refuse un tel scénario en campagne, et
     // CETTE garde est le filet runtime si un autre chemin tentait quand même un `start` classique.
-    if (!opts.allowSessionOpen && actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage' || e.action.kind === 'sendQuestion')) {
+    // 🔴 Le bloc AGENT ne produit AUCUNE action (c'est une main rendue, pas un envoi), donc regarder les seules
+    // actions le laissait passer : une campagne froide ouvrant sur un agent démarrait, l'agent envoyait du texte
+    // libre hors fenêtre, Meta refusait en 131047, et le modèle avait déjà été payé. On teste donc aussi le repos.
+    const ouvreParUnAgent = rest.status === 'agent_turn';
+    if (!opts.allowSessionOpen && (ouvreParUnAgent || actions.some((e) => e.action.kind === 'sendFlow' || e.action.kind === 'sendQuickMessage' || e.action.kind === 'sendQuestion'))) {
       // eslint-disable-next-line no-console
-      console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide/question) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
-      return "le scénario ouvre par un message rapide, une question ou un formulaire, impossible hors de la fenêtre de 24 h";
+      console.error(`workflow ${workflowId}: ouverture par un message de session (flow/message rapide/question/agent) hors fenêtre 24 h, run non démarré pour ${contact.waId}`);
+      return ouvreParUnAgent
+        ? "le scénario ouvre par un agent IA, qui écrit du texte libre : impossible hors de la fenêtre de 24 h"
+        : "le scénario ouvre par un message rapide, une question ou un formulaire, impossible hors de la fenêtre de 24 h";
     }
     const { refus, partis, canal } = await this.apply(tenantId, contact.waId, actions, opts.firstTemplateParams, opts.emitEvents === true, workflowId, apresWalk);
     // Refus alors que RIEN n'est parti : le contact n'a rien reçu. On ne persiste PAS de run en attente, pour
@@ -858,10 +871,20 @@ export class WorkflowExecutor {
     // Le canal du parcours est PERSISTÉ dès sa naissance : un scénario qui ouvre par un bloc RCS naît sur le
     // canal RCS, et son message rapide suivant partira donc en RCS, pas en WhatsApp.
     const state = { ...restToState(rest, this.now()), channel: canal };
-    if (state.status !== 'done') await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state);
+    // ⚠️ L'id rendu par `runs.start` est CAPTURÉ (il était jeté jusqu'ici) : `agent_sessions.run_id` est une FK
+    // NOT NULL vers `workflow_runs`, donc la session ne peut pas naître avant le run. C'est ce qui interdit
+    // d'ouvrir la session plus tôt, dans `walkResolved` par exemple. Ordre obligatoire : apply, puis start en
+    // capturant l'id, puis la session, puis l'enfilage.
+    const cree = state.status !== 'done'
+      ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state)
+      : null;
     // Le run a atteint un bloc `inbox` -> la conversation passe explicitement à un humain (badge honnête, A.5).
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, contact.waId);
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
+    // Bloc AGENT en ouverture : la session naît maintenant, le run existe enfin.
+    if (rest.status === 'agent_turn' && cree) {
+      await this.demarrerTourAgent(tenantId, contact.waId, { id: cree.id, workflowId }, graph, rest.nodeId);
+    }
     return true;
   }
 
@@ -1152,5 +1175,17 @@ export class WorkflowExecutor {
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
     // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
+    // 🔴 TRANSITION FRAÎCHE vers un bloc agent, à ne pas confondre avec la branche du haut. Là-haut, le run
+    // était DÉJÀ sur le bloc agent et le contact répondait pendant la conversation. Ici, sa réponse fait
+    // AVANCER le parcours depuis un autre bloc (typiquement un template de campagne) jusqu'au bloc agent, pour
+    // la première fois : il faut donc ouvrir la session et enfiler le premier tour. Sans ça, le run était posé
+    // en attente sur le bloc agent SANS session et SANS tour, l'agent restait muet, et l'anomalie n'était
+    // découverte qu'au message suivant du contact, par le filet du haut qui escalade en inbox.
+    // C'est le montage central du produit : template de campagne, puis l'agent reprend la main sur la réponse.
+    // Pas de garde de fenêtre ici, contrairement à `resume` et `runFrom` : `advance` n'est déclenché que par un
+    // message ENTRANT, donc la fenêtre est ouverte par construction.
+    if (rest.status === 'agent_turn') {
+      await this.demarrerTourAgent(tenantId, waId, { id: run.id, workflowId: run.workflowId }, graph, rest.nodeId);
+    }
   }
 }

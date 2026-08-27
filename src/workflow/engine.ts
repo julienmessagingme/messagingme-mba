@@ -228,8 +228,9 @@ export interface WaitThenSession {
  *
  * Ce montage ne peut jamais marcher : la fenêtre de service court depuis le dernier message DU CONTACT, donc
  * après 24 h d'attente elle est fermée à coup sûr, et Meta refuse tout message hors template (131047). Le
- * runtime le bloque déjà (`executor.resume`) ; cette fonction sert à le DIRE dans le builder, au moment où on
- * le construit, plutôt que de laisser découvrir le silence en production.
+ * runtime le bloque (`executor.resume` teste la fenêtre RÉELLE au réveil, y compris pour un bloc agent, qui
+ * ne produit pourtant aucune action) ; cette fonction sert à le DIRE dans le builder, au moment où on le
+ * construit, plutôt que de laisser découvrir le silence en production.
  *
  * Sous 24 h on ne dit rien : la fenêtre PEUT être encore ouverte (le contact a pu écrire entre-temps), c'est
  * au runtime de trancher sur l'état réel, pas à une analyse de graphe de deviner.

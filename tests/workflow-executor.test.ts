@@ -972,7 +972,7 @@ describe('resume : le bloc agent ouvre sa session (tâche 11)', () => {
   it('le réveil ouvre la session et enfile un tour « demarrage »', async () => {
     const jobs: AgentTurnJob[] = [];
     const { store, ouvertures } = sessionsFake();
-    const { ex, runs } = make(attenteAgent, { agentSessions: store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } });
+    const { ex, runs } = make(attenteAgent, { agentSessions: store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); }, isWindowOpen: async () => true });
     // Le run doit être SEMÉ dans le fake : `FakeRuns.setState` ne mute que si `this.run` existe déjà. Sans ce
     // seeding, l'assertion d'état plus bas porterait sur `null` et ne prouverait rien.
     runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', status: 'sleeping', lastMessageId: null };
@@ -984,6 +984,28 @@ describe('resume : le bloc agent ouvre sa session (tâche 11)', () => {
     // Le run attend SUR le bloc agent, ni done ni inbox. Assertion DIRECTE, sans repli : un `?? valeur
     // attendue` rendrait ce test incapable d'échouer.
     expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
+  });
+
+  it('🔴 « attente puis agent » DIRECT, fenêtre fermée : inbox, AUCUNE session, AUCUN tour', async () => {
+    // Trouvé en revue de la tâche 12 : le bloc agent ne produit AUCUNE action, donc la garde de fenêtre de
+    // `resume`, qui ne regardait que les actions, le laissait passer. Le test « fenêtre fermée » précédent
+    // avait un message rapide intercalaire, et c'est LUI qui déclenchait la garde : le cas direct n'était pas
+    // couvert. L'agent se réveillait alors hors fenêtre, Meta refusait en 131047, et le modèle était payé
+    // pour rien. Attention : l'attente déclarée ne dit rien de la fenêtre réelle, qui court depuis le dernier
+    // message DU CONTACT.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const jobs: AgentTurnJob[] = [];
+    const { store, ouvertures } = sessionsFake();
+    const { ex, escalations } = make(attenteAgent, {
+      agentSessions: store,
+      enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); },
+      isWindowOpen: async () => false,
+    });
+    expect(await ex.resume(runDormant)).toBe(false);
+    expect(ouvertures).toEqual([]);
+    expect(jobs).toEqual([]);
+    expect(escalations).toEqual(['33600']);
+    spy.mockRestore();
   });
 
   it('🔴 fenêtre 24 h fermée : remontée en inbox, AUCUNE session ouverte et aucun tour enfilé', async () => {
@@ -1010,7 +1032,7 @@ describe('resume : le bloc agent ouvre sa session (tâche 11)', () => {
   it('une session déjà vivante est RÉUTILISÉE, pas dupliquée (open lèverait sur l index partiel)', async () => {
     const jobs: AgentTurnJob[] = [];
     const { store, ouvertures } = sessionsFake({ byRun: async () => SESSION });
-    const { ex } = make(attenteAgent, { agentSessions: store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } });
+    const { ex } = make(attenteAgent, { agentSessions: store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); }, isWindowOpen: async () => true });
     expect(await ex.resume(runDormant)).toBe(true);
     expect(ouvertures).toEqual([]); // aucun open
     expect(jobs).toHaveLength(1);
@@ -1019,8 +1041,115 @@ describe('resume : le bloc agent ouvre sa session (tâche 11)', () => {
 
   it('sans store d agent branché, le réveil ne casse pas (dep optionnelle)', async () => {
     const jobs: AgentTurnJob[] = [];
-    const { ex } = make(attenteAgent, { enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } });
+    const { ex } = make(attenteAgent, { enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); }, isWindowOpen: async () => true });
     expect(await ex.resume(runDormant)).toBe(true);
     expect(jobs).toEqual([]);
+  });
+});
+
+/**
+ * Tâche 12 : troisième et dernier site de couture. Un scénario qui OUVRE sur un bloc agent.
+ *
+ * 🔴 Le sujet principal n'est pas l'ouverture de la session, c'est la GARDE DE FENÊTRE. Le bloc agent ne
+ * produit AUCUNE action (c'est une main rendue), donc la garde, qui ne regardait que les actions, le laissait
+ * passer : une campagne froide démarrait l'agent, qui écrivait du texte libre hors fenêtre, Meta refusait en
+ * 131047, et le modèle avait déjà été payé.
+ */
+describe('runFrom : ouverture sur un bloc agent (tâche 12)', () => {
+  const SESSION12 = { id: 's12', tenantId: 't1', runId: 'rNEW', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 0, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  const ouvreSurAgent: WorkflowGraph = { nodes: [n('a', 'agent', { agentId: 'ag1' })], edges: [] };
+
+  const fake12 = () => {
+    const ouvertures: unknown[] = [];
+    const jobs: AgentTurnJob[] = [];
+    const store = {
+      byRun: async () => null,
+      open: async (input: unknown) => { ouvertures.push(input); return SESSION12; },
+    } as unknown as WorkflowExecutorDeps['agentSessions'];
+    return { ouvertures, jobs, store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } };
+  };
+
+  it('🔴 hors fenêtre : le démarrage est REFUSÉ, aucune session, aucun tour, aucun run', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { ouvertures, jobs, store, enqueueAgentTurn } = fake12();
+    const { ex, runs } = make(ouvreSurAgent, { agentSessions: store, enqueueAgentTurn });
+    const out = await ex.start('t1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' });
+    expect(typeof out).toBe('string');
+    expect(String(out)).toContain('agent IA');
+    expect(ouvertures).toEqual([]);
+    expect(jobs).toEqual([]);
+    expect(runs.run).toBeNull(); // aucun run persisté
+    spy.mockRestore();
+  });
+
+  it('en fenêtre garantie (startFromNode) : session ouverte et tour « demarrage » enfilé', async () => {
+    const { ouvertures, jobs, store, enqueueAgentTurn } = fake12();
+    const { ex, runs } = make(ouvreSurAgent, { agentSessions: store, enqueueAgentTurn });
+    expect(await ex.startFromNode('t1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' }, 'a')).toBe(true);
+    expect(ouvertures).toHaveLength(1);
+    expect(ouvertures[0]).toMatchObject({ tenantId: 't1', agentId: 'ag1', nodeId: 'a', waId: '33600' });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ raison: 'demarrage', nodeId: 'a', sessionId: 's12' });
+    expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
+  });
+
+  it('🔴 la session porte l id du run CRÉÉ par runs.start (FK : elle ne peut pas naître avant)', async () => {
+    const { ouvertures, jobs, store, enqueueAgentTurn } = fake12();
+    const { ex, runs } = make(ouvreSurAgent, { agentSessions: store, enqueueAgentTurn });
+    await ex.startFromNode('t1', 'wf1', ouvreSurAgent, { waId: '33600', contactId: 'c1' }, 'a');
+    expect(runs.run?.id).toBe('r1'); // l'id que FakeRuns.start attribue
+    expect(ouvertures[0]).toMatchObject({ runId: 'r1' });
+    expect(jobs[0]?.runId).toBe('r1');
+  });
+
+  it('non-régression : un scénario ouvrant par un message rapide reste refusé hors fenêtre', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const g: WorkflowGraph = { nodes: [n('q', 'quick_message', { body: 'coucou' })], edges: [] };
+    const { ex } = make(g);
+    const out = await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(typeof out).toBe('string');
+    expect(String(out)).toContain('message rapide');
+    spy.mockRestore();
+  });
+});
+
+/**
+ * 🔴 LE MONTAGE CENTRAL DU PRODUIT, trouvé en revue de la tâche 12 : « template de campagne, puis l'agent
+ * reprend la main sur la réponse ». C'est une TRANSITION FRAÎCHE vers le bloc agent, à ne pas confondre avec
+ * le cas où le run est DÉJÀ sur le bloc (le contact répond pendant la conversation, tâche 10).
+ *
+ * Sans traitement, `walkResolved` rendait `agent_turn`, `restToState` posait le run en attente sur le bloc
+ * agent SANS session et SANS tour : l'agent restait MUET, et l'anomalie n'était découverte qu'au message
+ * suivant du contact, escaladée en inbox. Un silence, pour un montage parfaitement valide.
+ */
+describe('advance : transition FRAÎCHE vers un bloc agent (revue tâche 12)', () => {
+  const SESSION13 = { id: 's13', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 0, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  // template -> agent : le contact répond au template, le parcours atteint l'agent pour la PREMIÈRE fois.
+  const templatePuisAgent: WorkflowGraph = {
+    nodes: [n('tpl', 'template', { templateName: 'promo', language: 'fr' }), n('a', 'agent', { agentId: 'ag1' })],
+    edges: [e('e1', 'tpl', 'a')],
+  };
+
+  it('🔴 ouvre la session et enfile un tour : sans ça l agent reste MUET', async () => {
+    const ouvertures: unknown[] = [];
+    const jobs: AgentTurnJob[] = [];
+    const store = {
+      byRun: async () => null,
+      open: async (input: unknown) => { ouvertures.push(input); return SESSION13; },
+    } as unknown as WorkflowExecutorDeps['agentSessions'];
+    const { ex, runs } = make(templatePuisAgent, {
+      agentSessions: store,
+      enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); },
+    });
+    // le run attend sur le TEMPLATE, pas sur l'agent : c'est la réponse du contact qui l'y amène
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'tpl', status: 'waiting', lastMessageId: null };
+    await ex.advance('t1', '33600', 'msg1');
+    expect(ouvertures).toHaveLength(1);
+    expect(ouvertures[0]).toMatchObject({ tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600' });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ nodeId: 'a', sessionId: 's13', runId: 'r1' });
+    expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
   });
 });
