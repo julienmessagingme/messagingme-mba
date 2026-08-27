@@ -8,6 +8,17 @@ est-ce que ça tient à l'échelle côté tool calling, est-ce différenciant sa
 Six mécanismes en sont sortis. Ils sont listés en fin de document, avec la raison de chaque retrait,
 pour que la décision reste révisable si le terrain la contredit.
 
+**Révision 3, 2026-08-27, après discussion produit avec Julien.** Elle acte : la séparation nette de
+**deux IA** (l'agent runtime déployé par le client, et l'IA de construction qui l'aide à le bâtir) ;
+la distinction **temps 1** (démarrage à froid, sans historique) contre **temps 2** (optimisation par
+les vraies conversations) ; **l'objectif de l'agent** comme première étape de construction ; **les
+scénarios déclenchés** par l'agent comme famille d'outils et différenciateur ; le **choix de modèle
+rendu visible** au client (caché par défaut, révélable) avec un axe de souveraineté et le meilleur
+rapport qualité/prix, modèles chinois compris et servis hors de Chine ; le **re-test au changement de
+palier** de modèle ; la **porte custom** quand le besoin dépasse un mono-agent. Et surtout : la
+**vérification n°1 (appel live au Gateway) est faite**, elle lève l'incertitude sur le modèle
+économique. Chaque changement est à sa section.
+
 ## Vocabulaire, parce que « MBA » est un piège
 
 Le nom du repo et le nom de l'agent de Meta se confondent, et ce document construit précisément une
@@ -17,7 +28,12 @@ Le nom du repo et le nom de l'agent de Meta se confondent, et ce document constr
   le sens du code : `mba_enabled`, `mba_handoff_mode`, `control_owner = 'mba'`, `rendreLaMainAMba`.
 - **la console** : notre produit, ce qui tourne sur `mba.messagingme.app`. Les noms techniques
   (`mba-api`, `mba-worker`, `mba-web`) gardent leur graphie, ce sont des identifiants.
-- **l'agent IA** : notre agent, la feature décrite ici.
+- **l'agent IA, ou l'agent runtime** : l'agent que le client déploie et qui parle à ses clients
+  finaux. Un seul agent, un seul modèle à la fois, la feature décrite ici.
+- **l'IA de construction** : notre copilote de setup, qui aide le client à bâtir puis à optimiser son
+  agent runtime en conversation (§5). Ce n'est pas le même programme que l'agent runtime, et pas le
+  même modèle : elle est sophistiquée et tourne rarement, il est calibré au régime d'outils et tourne
+  à l'échelle.
 
 **Les deux peuvent occuper le même fil, et le client choisit.** Proposer notre agent IA ne retire pas
 la possibilité de configurer l'agent de Meta : ce sont deux occupants distincts, et `control_owner`
@@ -41,11 +57,19 @@ scénario ?
    prédéfinie ou une inactivité. L'inactivité rend la main au scénario.
 4. **Outils** : les trois familles, outils maison + connecteurs API du client + MCP.
 
-## Les deux vérifications à faire avant de s'engager
+## Les vérifications avant de s'engager
 
-- **Un appel live au Vercel AI Gateway avec une clé**, pour confirmer que `gateway.cost` est bien
-  présent sur la surface OpenAI-compat et voir ce que renvoie le Gateway à solde zéro. Toute la
-  documentation le dit, personne ne l'a observé, et tout le modèle économique en dépend.
+- **[FAIT le 2026-08-27] Appel live au Vercel AI Gateway.** Confirmé sur la surface OpenAI-compat
+  (`https://ai-gateway.vercel.sh/v1`, celle qu'utilise déjà hyundai) : chaque réponse porte le coût
+  réel de l'appel, à la fois en `usage.cost` (nombre) et en `provider_metadata.gateway.cost` (chaîne),
+  plus le détail des jetons dont `reasoning_tokens`, plus un `generationId`. L'endpoint `/v1/credits`
+  renvoie le solde du **compte entier** (`balance`, `total_used`), pas un solde par tenant : le prépayé
+  par client est donc notre grand livre, pas celui de Vercel. Le routage a été observé avec un fallback
+  (vertex puis google), ce qui confirme que l'épinglage du fournisseur est nécessaire. Le modèle
+  économique est levé : on somme `usage.cost` par tenant, on ajoute 10 %, on décrémente le prépayé. Le
+  comportement à solde zéro du compte maître n'a pas été testé (compte crédité) et n'a pas besoin de
+  l'être : le zéro par tenant est géré par notre logique (D2), le zéro du compte maître est un incident
+  d'exploitation à surveiller (monitor sur `/v1/credits`).
 - **Le texte primaire Meta sur la clause « AI Providers »** des conditions WhatsApp Business
   Solution. Les fournisseurs dont l'IA est la fonctionnalité principale plutôt qu'accessoire sont
   interdits d'accès depuis le 15 janvier 2026 ; les bots métier bornés restent autorisés. La source
@@ -69,8 +93,10 @@ Gan Prévoyance.
    agent « SAV commande » n'a pas besoin des outils du bloc « prise de rendez-vous ». Cette
    différence de départ a une conséquence technique décisive, développée en section 2. Et elle
    donne une famille d'outils que personne d'autre ne peut offrir : **un outil qui déclenche un
-   bloc du scénario** (envoyer la fiche produit, la photo, le formulaire). Zéro schéma, zéro
-   secret, zéro appel réseau, et le bloc tourne déjà. Voir 5.4.
+   bloc, ou un scénario entier, du parcours**. Envoyer la fiche produit, la photo, le formulaire ;
+   ou, quand le besoin est cerné, lancer le parcours de prise de rendez-vous avec ses boutons et ses
+   actions, en y injectant la réponse tirée de la connaissance stockée en variable. Zéro schéma, zéro
+   secret, zéro appel réseau, et le bloc tourne déjà. Voir 3.4 et 5.4.
 2. **La construction par conversation qui produit une fiche structurée**, et non un prompt libre.
    Le client revient, dit ce qu'il veut changer, et voit un diff avant que ça s'applique. Ce n'est
    pas du confort : la qualité des descriptions d'outils vaut environ +60 % de succès au niveau
@@ -177,6 +203,20 @@ non, actif ou suspendu). Deux questions différentes, deux formulations différe
 Côté builder, l'état de l'agent commande la disponibilité du bloc, sur le patron déjà en place pour
 le RCS et l'email : le bloc est rendu à part, grisé et non cliquable tant qu'aucun agent n'est
 configuré, avec un `title` qui dit pourquoi.
+
+### Quand un seul agent ne suffit pas : la porte custom
+
+On ne construit qu'**un seul agent** par bloc, avec **un seul modèle** à la fois. C'est un choix, pas
+une limite d'implémentation : un agent unique bien outillé, dans un graphe qui fait déjà le routage,
+couvre l'immense majorité des besoins sans la fragilité d'une orchestration multi-agents.
+
+Reste le cas où le besoin est vraiment une **chaîne d'agents spécialisés** qui se passent le relais
+(le terrain de CrewAI et consorts). L'IA de construction doit savoir le **détecter au diagnostic** et
+le dire franchement : soit vous restez en mono-agent en self-service, soit votre besoin dépasse
+l'outil et passe à l'équipe MessagingMe pour du sur-mesure. C'est ce qui protège la promesse « vous le
+construisez vous-même » : on ne laisse pas un client bricoler en self-service quelque chose qui ne
+tiendra pas, et on ne promet pas non plus que la console fasse de l'orchestration multi-agents qu'elle
+ne fait pas.
 
 ## 2. Le tool calling à l'échelle : le scénario est le routeur
 
@@ -454,9 +494,13 @@ est journalisée et alertée, elle ne repart pas vers le modèle.
 **`mba`.** Une table de correspondance `handler` vers fonction TypeScript, en dur. Aucun réseau.
 Ces outils sont les seuls à mériter `strict: true`. Noyau proposé : terminer par une sortie,
 escalader vers un humain, poser un tag, lire la fiche contact, enregistrer une réponse de
-formulaire, et **`mba_envoyer_bloc`**, qui déclenche un bloc du scénario courant (`code` en
-énumération fermée, validée contre le graphe). Ce dernier est la famille d'outils la plus utile et
-la moins chère du produit, et elle n'existe que parce que le graphe existe.
+formulaire, **`mba_envoyer_bloc`** qui déclenche un bloc du scénario courant (`code` en énumération
+fermée, validée contre le graphe), et **`mba_ecrire_variable`** qui écrit une valeur, souvent une
+réponse tirée de la connaissance, dans les variables du parcours pour qu'un node poussé plus loin la
+réutilise. Déclencher un **scénario entier** n'est pas un outil de plus : c'est une **sortie
+prédéfinie** (§4.1) que le client câble vers la branche voulue, par exemple `sortie:besoin_cerne`
+vers le parcours de prise de rendez-vous. `mba_envoyer_bloc` reste la famille la plus utile et la
+moins chère du produit, et elle n'existe que parce que le graphe existe.
 
 **`http`.** Construit l'URL à partir de `source.base_url + binding.pathTemplate`, avec les seules
 valeurs validées. Le gabarit d'URL n'est jamais un argument du modèle. Les en-têtes
@@ -602,66 +646,65 @@ documentées, la sémantique de sortie ambiguë et les préconditions implicites
 évitera seul. L'IA de setup n'est donc pas un confort d'ergonomie, c'est ce qui produit un agent qui
 marche.
 
-### 5.2 Les dix premières minutes, concrètement
+### 5.2 Le temps 1 : la construction à froid
 
-**Ce que l'historique WhatsApp nous évite de demander.** La console détient déjà les conversations du
-tenant. C'est le seul actif que Decagon (téléversement de transcriptions), Voiceflow et Copilot
-Studio n'ont pas par défaut. On l'exploite pour **ne poser aucune question dont on a la réponse** :
-les cinq motifs les plus fréquents des trente derniers jours avec leur volume, les formulations
-réelles des clients mot pour mot, les réponses que les humains ont effectivement écrites (donc le
-ton, la longueur type et le vouvoiement, proposés déjà renseignés), la langue, les horaires, le
-volume quotidien, et les questions restées sans réponse ou escaladées.
+**Deux moments, à ne pas confondre.** La révision 2 décrivait une construction qui minait l'historique
+WhatsApp du tenant (les motifs fréquents, les verbatims, les réponses des humains). C'est puissant,
+mais ça suppose un historique, et un numéro neuf n'en a pas. Le minage des vraies conversations
+appartient donc au **temps 2** (§5.8), pas au démarrage. Le **temps 1** se construit par le déclaratif
+et par des choix concrets. Quand le tenant a déjà un historique (numéro existant), les mécanismes du
+temps 2 peuvent l'amorcer, mais rien du temps 1 n'en dépend.
 
-On inverse la charge : **le client ne décrit pas, il reconnaît et il corrige.** C'est la réponse au
-constat de « Why Johnny Can't Prompt » sur dix non-techniciens : exploration opportuniste,
-sur-généralisation après un seul essai, difficulté déclarée à formuler.
+**La forme : des choix, pas un questionnaire.** L'anti-pattern est l'agent qui pose quarante questions
+à la file, ce serait un formulaire avec plus de friction. La forme retenue est celle d'un assistant de
+code : à chaque étape, une question et **plusieurs options, chacune techniquement applicable** (une
+option ne peut pointer que vers ce qui est réellement branché). Le client choisit, corrige, ou fait
+réessayer. Chaque proposition passe par un diff, jamais d'écriture silencieuse. C'est le flux
+d'Intercom (Keep / Clear / Try again), l'inverse du GPT Builder qui écrase en silence. L'ordre va du
+sens vers le détail.
 
-**Minute 0 à 1. On ne demande rien, on montre.** Les cinq motifs extraits, chacun avec son volume et
-deux verbatims clients bruts, non reformulés.
+**1. L'objectif de l'agent.** La première question, et la colonne vertébrale. « À quoi sert votre
+agent, au-delà de répondre ? » Si le client répond « répondre aux questions », on creuse : Gan
+Prévoyance oriente vers la prise de rendez-vous, Odalys propose des résidences (bot commercial),
+Hyundai cerne le besoin puis oriente vers un test drive. L'objectif décide de tout le reste : quand
+transférer, quel scénario déclencher, ce que « réussi » veut dire.
 
-> Voici ce que vos clients vous ont écrit ces trente derniers jours. Lequel de ces sujets voulez-vous
-> confier à l'agent en premier ?
+**2. Les règles de transfert. C'est là que ça démarre concrètement**, parce que ça ne demande aucun
+historique. Trois questions fermées : voulez-vous que l'agent transfère certaines conversations ?
+Quand le client demande un humain, on transfère à un conseiller ? Quand le client s'énerve et reste
+insatisfait après quelques réponses, on transfère ? Le détecteur de mécontentement en temps réel n'est
+pas à construire : il tourne déjà en production sur Gan Prévoyance (un node de mécontentement au
+seuil), on le réutilise.
 
-Un seul choix. Question fermée.
+**3. Les sources, sans prononcer le mot outil.** « Quand un client vous pose cette question, vous
+regardez où ? » et « Vous avez besoin de le savoir en direct, ou l'information ne bouge pas ? » Deux
+cas. Soit l'info vient d'un **outil déjà branché** : pour que l'IA puisse proposer « je regarde dans
+Shopify », Shopify doit avoir été connecté au préalable dans Tools (§5.4bis). Soit elle vient de
+**sources simples** (documents, site), et sur le site on **cadre le cœur** avec le client (Hyundai =
+tout ce qui touche aux véhicules, Odalys = les descriptions de résidences), jamais « tout le site » par
+défaut. Interdit d'entretien : « quels outils voulez-vous activer », « avez-vous une API », « avez-vous
+un serveur MCP ». C'est aussi ici que se calcule le nombre d'outils, donc la recommandation de modèle
+de 5.5.
 
-**Minute 1 à 2. Verrouiller le sujet par ses verbatims, pas par son intitulé.** Huit messages réels
-tirés de son historique, proches du sujet choisi.
+**4. À quoi servent ces sources.** Une fois les sources posées, on les relie à l'objectif : le site
+Odalys ne sert pas « à répondre », il sert à proposer des résidences. Si l'objectif reste flou, on met
+toutes les ressources à disposition pour répondre, mais on aura essayé de le préciser.
 
-> Cochez ceux où l'agent doit prendre la main.
+**5. Les scénarios que l'agent déclenche.** « Dans quel cas, au lieu de répondre, l'agent doit-il
+lancer un parcours ? » Le client câble une sortie prédéfinie vers la branche voulue (Hyundai : besoin
+cerné, `sortie:besoin_cerne` vers le parcours de rendez-vous, avec ses images, ses boutons, ses
+actions), et la réponse tirée des sources peut être écrite en variable de parcours et injectée dans le
+scénario poussé (`mba_ecrire_variable`, §3.4). C'est ce qui fait de l'agent un chef d'orchestre, pas un
+répondeur.
 
-puis, écran suivant, même liste :
+**6. Définir la fin.** « Quand est-ce que c'est bien terminé, pour vous ? » puis « À quel moment ça
+doit s'arrêter et vous revenir ? » Ce sont les règles d'arrêt. On ne demande **jamais** « quel est le
+parcours » ni « quelles étapes » : un patron de PME sait dire ce qu'il attend à la fin, pas décrire un
+enchaînement.
 
-> Et maintenant, cochez ceux où il ne doit surtout **pas** répondre.
-
-On récolte des exemples positifs **et négatifs**. Les négatifs sont la moitié qui protège, et c'est
-la seule façon d'obtenir un contre-exemple d'un client qui n'en produira jamais spontanément.
-
-**Minute 2 à 3. Définir la fin avant le milieu.** Deux questions, une à la fois.
-
-> Quand est-ce que c'est bien terminé, pour vous ? Le client a eu quoi, exactement, à la fin ?
-
-> Et à quel moment ça doit s'arrêter et vous revenir ?
-
-Ce sont les règles d'arrêt. On ne demande **jamais** « quel est le parcours » ni « quelles étapes ».
-Un patron de PME sait dire ce qu'il attend à la fin, il ne sait pas décrire un enchaînement.
-
-**Minute 3 à 4. Les outils, sans prononcer le mot outil.**
-
-> Pour répondre à ça, l'information est où aujourd'hui ? Vous, quand un client vous pose la
-> question, vous regardez où ?
-
-> Vous avez besoin de le savoir en direct, ou l'information ne bouge pas ?
-
-Interdit absolu : « quels outils voulez-vous activer », « avez-vous une API », « avez-vous un
-serveur MCP ». Ce sont deux fautes documentées d'entretien d'élicitation, la question technique et
-la demande d'une solution plutôt que d'un besoin. Le mapping vers nos trois familles se fait après,
-par nous. C'est aussi ici que se calcule le nombre d'outils, donc la recommandation de modèle de
-5.5, qui s'affichera à la minute 9.
-
-**Minute 4 à 7. Les cas limites. C'est le cœur.** Format imposé : **cinq cas concrets**, jamais une
-question ouverte du type « et les cas particuliers ? ». Chaque cas est un message client, tiré de
-son historique quand il existe, avec trois boutons : l'agent répond, l'agent refuse et vous passe la
-main, l'agent pose une question avant.
+**7. Les cas limites. C'est le cœur.** Format imposé : **cinq cas concrets**, jamais une question
+ouverte du type « et les cas particuliers ? ». Chaque cas est un message client, avec trois boutons :
+l'agent répond, l'agent refuse et vous passe la main, l'agent pose une question avant.
 
 1. « Bonjour, je veux me faire rembourser, le produit ne me convient pas. »
 2. « Ça fait trois fois que je vous écris. Si je n'ai pas de réponse aujourd'hui, je saisis un avocat. »
@@ -669,57 +712,44 @@ main, l'agent pose une question avant.
 4. « Vous pouvez me faire un geste, 20 % ? »
 5. « C'est pour un cadeau, vous livrez avant le 24, c'est sûr ? »
 
-Chaque clic écrit une ligne dans les refus ou dans les règles d'arrêt. **Le client ne rédige rien.**
+Chaque clic écrit une ligne dans les refus ou les règles d'arrêt, **le client ne rédige rien.** En
+temps 1 ces cinq cas sont proposés par secteur ; en temps 2 ils viennent de son historique. Pourquoi
+des cas et pas un questionnaire : PolicyCraft mesure **74 % contre 23 %** et **73 % contre 37 %** de
+politiques obtenant un soutien majoritaire quand la délibération est ancrée sur des cas concrets plutôt
+que sur des règles abstraites ; Case Law Grounding mesure **+16,0 à +23,3 points** d'exactitude côté
+humain. **Règle de dialogue** : si le client répond « ça dépend », ne pas enchaîner sur « ça dépend de
+quoi ? » (la faute la plus fréquente du corpus d'entretiens), mais basculer sur deux cas concrets à
+trancher.
 
-Pourquoi des cas et pas un questionnaire : PolicyCraft mesure **74 % contre 23 %** et **73 % contre
-37 %** de politiques obtenant un soutien majoritaire quand la délibération est ancrée sur des cas
-concrets plutôt que sur des règles abstraites. Case Law Grounding mesure **+16,0 à +23,3 points**
-d'exactitude côté humain sur le même mécanisme.
+**8. Le périmètre par ses bords, en cases pré-cochées.** Cinq cases pré-cochées par secteur, que le
+client **décoche** : ne jamais négocier un prix, ne jamais s'engager sur un délai ferme, ne jamais
+confirmer un remboursement, ne jamais donner un avis médical ou juridique, ne jamais inventer. Le
+périmètre négatif est précisément ce qu'un client n'écrit jamais spontanément.
 
-**Règle de dialogue à câbler ici** : si le client répond « ça dépend », **ne pas** enchaîner sur
-« ça dépend de quoi ? », qui est la faute la plus fréquente du corpus d'entretiens. Basculer
-immédiatement sur deux cas concrets à trancher. Le « ça dépend » est notre meilleur détecteur de cas
-limite non spécifié.
+**9. Relire, puis montrer.** Titre exact à l'écran : « Voilà ce que j'ai compris. Dites-moi ce qui est
+faux. » Chaque ligne porte un bouton « ce n'est pas ça ». La formulation « ce que j'ai compris »
+plutôt que « votre agent est prêt » est une contre-mesure d'ancrage mesurée (co-rédaction avec un
+modèle orienté : 45 % contre 35 %, p < 0,001), et le prédicteur le plus fort de la sur-acceptation est
+l'enthousiasme du client envers l'automatisation. Puis on montre : en **temps 1**, on rejoue les cas de
+test générés à partir de la fiche (les Simulations d'Intercom) ; en **temps 2**, on rejoue trois
+conversations réelles côte à côte avec ce que l'humain avait répondu à l'époque, un bouton « ce n'est
+pas ce que j'aurais dit » rouvrant le point. C'est là qu'apparaissent les vrais critères du client
+(*criteria drift* : on a besoin de critères pour juger des sorties, mais c'est en jugeant des sorties
+qu'on les définit).
 
-**Minute 7 à 8. Le périmètre par ses bords, en cases pré-cochées.** Cinq cases pré-cochées par
-secteur, que le client **décoche** : ne jamais négocier un prix, ne jamais s'engager sur un délai
-ferme, ne jamais confirmer un remboursement, ne jamais donner un avis médical ou juridique, ne
-jamais inventer. Le périmètre négatif est précisément ce qu'un client n'écrit jamais spontanément :
-c'est au produit de le proposer.
+**10. La recommandation de modèle**, à la fin, une fois le tour des besoins fait (§5.5).
 
-**Minute 8 à 9. Relire la fiche comme une interprétation à corriger.** Titre exact à l'écran :
-
-> Voilà ce que j'ai compris. Dites-moi ce qui est faux.
-
-Chaque ligne porte un bouton « ce n'est pas ça », et le champ le plus incertain est mis en évidence.
-La formulation « ce que j'ai compris » plutôt que « votre agent est prêt » est une contre-mesure
-d'ancrage dont l'effet est mesuré (co-rédaction avec un modèle orienté : 45 % contre 35 %, p < 0,001),
-et le prédicteur le plus fort de la sur-acceptation est l'enthousiasme du client envers
-l'automatisation. C'est ici qu'apparaît le profil de modèle recommandé, avec sa phrase de
-justification et un ordre de grandeur en conversations.
-
-**Minute 9 à 10. Montrer avant de valider.** Rejouer **trois conversations réelles de son
-historique** à travers l'agent tel que spécifié, côte à côte avec ce que l'humain avait
-effectivement répondu à l'époque. Un bouton unique : « ce n'est pas ce que j'aurais dit », qui
-rouvre le point concerné.
-
-C'est le seul moment où les vrais critères du client apparaissent. Le phénomène est documenté sous
-le nom de *criteria drift* : on a besoin de critères pour juger des sorties, mais c'est en jugeant
-des sorties qu'on définit ses critères. Un questionnaire seul, avant toute sortie observée, ne peut
-structurellement pas capturer le critère réel.
-
-**Le seul blocage dur.** On ne peut ni tester ni publier tant que la fiche n'a pas : un rôle et un
-périmètre, au moins un exemple positif **et** un exemple négatif de déclenchement, au moins une
-règle d'arrêt, au moins une source de connaissance. Blocage sur champs vides, **jamais sur une
+**Le seul blocage dur.** On ne peut ni tester ni publier tant que la fiche n'a pas : un objectif, une
+règle de transfert, au moins un exemple positif **et** un exemple négatif de déclenchement, au moins
+une règle d'arrêt, au moins une source de connaissance. Blocage sur champs vides, **jamais sur une
 qualité sémantique** : aucun produit du marché ne bloque sur du flou, et un détecteur sémantique qui
-refuse serait un mur arbitraire. La revue au moment d'enregistrer produit des recommandations, pas
-un refus.
+refuse serait un mur arbitraire. La revue à l'enregistrement produit des recommandations, pas un refus.
 
-Puis le test. L'agent se joue dans le panneau existant, et l'IA de setup **génère elle-même les cas
-limites** à partir de la fiche, comme les Simulations d'Intercom (« Fin generates Simulations
-directly from your Procedures, suggesting realistic edge cases »). Ces cas sont stockés et
-rejouables d'un bouton. Sans suite de tests rejouable, chaque re-conversation avec le constructeur
-est une régression invisible.
+**Le test.** L'agent se joue dans le panneau existant, et l'IA de construction **génère elle-même les
+cas limites** à partir de la fiche (« Fin generates Simulations directly from your Procedures »). Ces
+cas sont stockés et rejouables d'un bouton. Sans suite de tests rejouable, chaque re-conversation avec
+le constructeur est une régression invisible, et c'est aussi cette suite qu'on rejoue à chaque
+changement de palier de modèle (§5.5).
 
 ### 5.3 Ingérer le site ou pointer dessus : comment le dire au client
 
@@ -792,12 +822,37 @@ déjà Zapier Custom Actions et Macha. Deux points non négociables, tirés du t
   Voiceflow en object path). Chez nous, `web/components/ArbreJson.tsx` et `web/lib/chemin-json.ts`,
   déjà écrits pour les webhooks entrants, font exactement ce travail.
 
-### 5.5 Le modèle n'est pas choisi par le client, il est dérivé de la fiche
+### 5.4bis Où les outils se branchent : Tools > brancher un outil
 
-La révision 2 proposait trois profils au choix, rangés sur un seul axe économique vers capable.
-C'est faux, et le terrain du 2026-08-26 le démontre par le contre-exemple donné en section 2
-(`claude-haiku-4.5`, 6e à BFCL et dernier à MCP-Atlas). **On ne demande donc pas au client de
-choisir : on dérive la recommandation de sa fiche, et on lui explique en une phrase.**
+Prérequis que la révision 2 sous-estimait : pour que la conversation de construction puisse proposer
+« je regarde dans Shopify », encore faut-il que Shopify soit branché. Les connecteurs se posent donc
+dans un espace **Tools > brancher un outil**, en amont de la construction de l'agent, en deux
+sous-menus :
+
+- **MCP** : on connecte le serveur une fois, ses outils se décrivent seuls (`tools/list` lu une seule
+  fois à la connexion, figé en base avec son empreinte, cf 3.4). C'est le chemin le plus fluide, et
+  c'est pour ça qu'il ne doit pas être relégué « plus tard » : c'est lui qui alimente le catalogue que
+  l'IA de construction peut proposer.
+- **API** : on branche un point d'accès précis, avec le formulaire en quatre phases de 5.4. Plus de
+  réglage par point, mais le même contrôle.
+
+L'IA de construction lit ce catalogue et **ne propose que ce qui y est branché**. C'est ce qui rend
+vraie la règle « chaque option proposée est techniquement applicable » : une source non branchée
+n'apparaît pas dans les choix.
+
+### 5.5 Le modèle : dérivé de la fiche, visible au client, au meilleur rapport qualité/prix
+
+Deux corrections de la révision 3 sur la révision 2, venues de la discussion du 2026-08-27.
+
+**On ne cache plus le modèle, on ne l'impose plus en aveugle.** Le modèle reste **dérivé de la fiche**
+par défaut (on ne demande pas au client de deviner), mais son **nom est visible**, caché par défaut et
+révélé s'il clique « voir ou choisir le modèle » ou s'il pose une contrainte de souveraineté. Ce qu'il
+ne faut pas montrer, c'est le prix brut au million de tokens, pas le modèle.
+
+**Pas de purisme du modèle thinking.** On démarre au **moins cher qui suffit** (un Gemini Flash pour de
+la FAQ sans outil) et on **monte en gamme quand le tool calling s'accumule**. Un agent qui commence en
+FAQ simple et se voit ajouter des outils au fil du temps change de palier, et **changer de palier
+implique de rejouer les cas de test** (§5.2), ce qu'on annonce au client.
 
 **Ce qu'on lit dans la fiche, et rien d'autre.** Trois champs, tous déjà présents.
 
@@ -805,48 +860,74 @@ choisir : on dérive la recommandation de sa fiche, et on lui explique en une ph
 |---|---|---|
 | `outils.length` | Seule variable pour laquelle un banc existe dans notre régime exact (MCP-Atlas, 10 à 25 outils exposés) | La taille de la base de connaissance : aucune mesure ne la relie à la fiabilité d'appel |
 | présence d'un outil d'écriture | L'effort de raisonnement fait 84,8 % contre 61,6 % sur tau2-bench, l'écart montant à 89,7 contre 57,2 sur le domaine le plus outillé. Une action irréversible mérite le cran supérieur | Le poids en tokens des définitions : il pilote le coût, pas la fiabilité. Il ne doit pas entrer dans le choix de modèle |
-| résidence UE du tenant | Contrainte dure : `gpt-5.6-luna` et `gpt-5.6-sol` ne sont servis qu'en `us` | La criticité déclarée : elle change le réglage (confirmation avant action), pas le modèle |
+| préférence de souveraineté | Trois niveaux réglés par le client (ci-dessous), contrainte dure sur le pool | La criticité déclarée : elle change le réglage (confirmation avant action), pas le modèle |
 
-**La règle.**
+**La préférence à trois niveaux.** Le client règle sa sensibilité, le niveau **restreint le pool**, et
+dans le pool autorisé on dérive du régime d'outils.
 
-| Fiche | Modèle recommandé | Preuve |
+| Niveau | Pool | Pour qui |
 |---|---|---|
-| 0 outil | `google/gemini-3.1-flash-lite` | TTFT p50 623 ms, le moins cher disponible en UE. La preuve négative de la lignée porte sur la capacité d'**appeler**, elle ne s'applique pas sans outil |
-| 1 à 4 outils | `anthropic/claude-haiku-4.5` | BFCL V4 rang 6 sur 109 (68,70), Irrelevance 85,11, TTFT 578 / 845 ms, le p95 le plus serré du catalogue. Régime que BFCL mesure : peu d'outils, séquences courtes |
-| 5 à 20 outils | `openai/gpt-5.6-sol` | **MCP-Atlas 81,80**, protocole identique au nôtre. Confirmé par tau3-Banking 46,9 %, rang 4 sur 17. Seul modèle du catalogue avec deux mesures concordantes en multi-outils |
-| 5 à 20 outils, résidence UE | `anthropic/claude-sonnet-5` | **Provisoire.** Une seule mesure connue, mais c'est l'un des deux seuls modèles sur 14 à s'**améliorer** sous inondation à 128 schémas (+2,8 %), soit exactement la propriété cherchée |
+| **Performance** | le meilleur rapport qualité/prix, servi là où c'est optimal, **modèles chinois compris** | ceux qui s'en moquent, la majorité |
+| **Résidence UE** | modèle servi depuis l'Europe (éditeur non européen accepté s'il a un endpoint UE) | assurance, secteur public, DSI |
+| **Souverain** | éditeur européen, Mistral | ceux qui l'exigent |
 
-Plus une règle d'exclusion prioritaire sur tout le reste : **dès qu'il y a un outil, la lignée
-flash-lite sort du catalogue.** Trois signaux convergents, dont deux internes : BFCL V4 donne à
-`gemini-2.5-flash-lite` une Relevance de **43,75** pour une Irrelevance de 92,50 (le profil « il
-n'appelle pas »), `gemini-3.1-flash-lite` est 26e sur 30 à MCP-Atlas, et odalys comme Gan
-Prévoyance ont abandonné cette lignée pour ce motif exact.
+**Le meilleur rapport qualité/prix, sans fausse pudeur.** Dans le niveau Performance, les meilleurs
+modèles chinois (DeepSeek, Qwen et consorts) sont souvent le bon choix et on les prend, plutôt que de
+payer un modèle occidental frontier hors de prix que le client trouvera trop cher. Une règle
+d'exécution rend ça propre : **on les épingle sur un fournisseur qui les sert hors de Chine** (UE ou
+US), jamais la Chine par défaut. On a le prix et la performance sans envoyer les données des clients
+finaux en Chine, et un routage vers la Chine ne se ferait que sur accord explicite du tenant. C'est
+l'épinglage du fournisseur (ci-dessous) qui garantit le **où**.
 
-**Le seuil de 4 est arbitraire et signalé comme tel.** Aucune source publiée ne donne de courbe
-score contre nombre d'outils dans la plage 5 à 20, qui est précisément la nôtre. C'est la mesure la
-plus rentable à faire en premier (voir 5.6).
+**La règle de départ**, point de départ à valider au banc (§5.6), pas une vérité gravée. Le palier haut
+n'est pas un modèle frontier par principe, c'est le meilleur rapport à ce régime, souvent un top modèle
+chinois raisonneur.
+
+| Fiche | Modèle de départ | Preuve ou statut |
+|---|---|---|
+| 0 outil | `google/gemini-3.1-flash-lite` | TTFT p50 623 ms, le moins cher en UE. La preuve négative de la lignée porte sur la capacité d'**appeler**, elle ne s'applique pas sans outil |
+| 1 à 4 outils | `anthropic/claude-haiku-4.5` | BFCL V4 rang 6 sur 109 (68,70), Irrelevance 85,11, p95 le plus serré du catalogue. Régime que BFCL mesure : peu d'outils, séquences courtes |
+| 5 à 20 outils | le meilleur rapport au banc, candidats en tête `openai/gpt-5.6-sol` (MCP-Atlas 81,80) et les top modèles chinois raisonneurs | à départager au banc, notre catalogue n'étant mesuré nulle part ailleurs (§5.6) |
+| 5 à 20 outils, UE ou souverain | `anthropic/claude-sonnet-5` (UE), Mistral (souverain) | Sonnet 5 s'**améliore** sous inondation à 128 schémas (+2,8 %), l'un des deux seuls sur 14 ; Mistral passe au banc avant d'entrer |
+
+Plus une règle d'exclusion prioritaire : **dès qu'il y a un outil, la lignée flash-lite sort du
+catalogue.** BFCL V4 donne à `gemini-2.5-flash-lite` une Relevance de **43,75** pour une Irrelevance de
+92,50 (le profil « il n'appelle pas »), `gemini-3.1-flash-lite` est 26e sur 30 à MCP-Atlas, et odalys
+comme Gan Prévoyance ont abandonné cette lignée pour ce motif exact.
+
+**Le seuil de 4 est arbitraire et signalé comme tel.** Aucune source publiée ne donne de courbe score
+contre nombre d'outils dans la plage 5 à 20, qui est précisément la nôtre. C'est la mesure la plus
+rentable à faire en premier (§5.6).
 
 **Le client garde la main, avec un seul garde-fou.** S'il choisit un flash-lite alors que sa fiche
 porte au moins un outil, on affiche ceci et on demande une confirmation. Une case, pas un workflow.
 
-> Le profil le plus économique sait tenir une conversation, mais il n'appelle pas vos outils de
-> façon fiable : il répond de mémoire au lieu d'aller vérifier chez vous. Mesure indépendante :
-> quand aucun outil ne convient, il sait se taire 9 fois sur 10 ; mais quand il faut en appeler un,
-> il ne le fait que 4 fois sur 10. Deux de nos propres agents clients ont dû abandonner ce profil
-> pour cette raison.
+> Le profil le plus économique sait tenir une conversation, mais il n'appelle pas vos outils de façon
+> fiable : il répond de mémoire au lieu d'aller vérifier chez vous. Mesure indépendante : quand aucun
+> outil ne convient, il sait se taire 9 fois sur 10 ; mais quand il faut en appeler un, il ne le fait
+> que 4 fois sur 10. Deux de nos propres agents clients ont dû abandonner ce profil pour cette raison.
 
 **Deux phrases à tenir, y compris commercialement.** Le modèle le plus capable n'est **pas** le plus
 sûr : MCPTox mesure que les modèles les plus capables sont souvent plus vulnérables au détournement
-d'outils. Et la fiabilité dépend du couple modèle et fournisseur, pas du modèle : jusqu'à **15
-points** d'écart de fiabilité de tool calling entre deux endpoints du même modèle. D'où une règle
-technique sans exception : **on épingle le fournisseur** (`providerOptions.gateway.only`), toujours.
-Trois raisons chiffrées : jusqu'à 6x d'écart de p95 sur un même modèle, jusqu'à 3x de prix
-(`gpt-5.6-sol` à 2,00 / 10,00 chez openai contre 5,00 / 30,00 chez azure, et `/v1/models` n'affiche
-que le moins cher), et les 15 points ci-dessus.
+d'outils. Et la fiabilité dépend du couple modèle et fournisseur, pas du modèle : jusqu'à **15 points**
+d'écart de tool calling entre deux endpoints du même modèle. D'où une règle technique sans exception :
+**on épingle le fournisseur** (`providerOptions.gateway.only`), toujours. La vérification live du
+2026-08-27 l'a confirmé : un appel a été routé vers vertex avec google en fallback, donc sans épinglage
+deux appels identiques peuvent partir chez deux fournisseurs. Trois raisons chiffrées : jusqu'à 6x
+d'écart de p95 sur un même modèle, jusqu'à 3x de prix, et les 15 points ci-dessus. C'est aussi cet
+épinglage qui garantit le pays de service pour les modèles chinois.
 
-**Ce qu'on affiche au client, jamais.** Pas de dollars par million de tokens, pas de nom de modèle
-seul. Un profil, une phrase de justification, et un ordre de grandeur en conversations calculé sur
-sa consommation observée.
+**Le modèle de l'IA de construction, à ne pas confondre.** L'agent runtime se calibre au régime
+d'outils comme ci-dessus. L'IA de construction, elle, tourne rarement (setup et optimisation) et joue
+gros à chaque tour : elle doit raisonner sur le métier, générer des options valides, écrire de bonnes
+descriptions d'outils (§5.1) et détecter le cas custom. C'est un **modèle sophistiqué**, quality-first,
+volume faible : les meilleurs raisonneurs, un Claude de la classe Opus 5 comme les top modèles chinois
+raisonneurs, départagés au banc sur ce cas d'usage précis.
+
+**Ce qu'on affiche au client.** Par défaut, un profil recommandé et un ordre de grandeur en
+conversations calculé sur sa consommation observée. Jamais le prix brut au million de tokens. Le **nom
+du modèle** est révélé s'il clique « voir ou choisir le modèle » ou s'il pose une contrainte de
+souveraineté.
 
 ### 5.6 Le banc, parce que le catalogue qu'on veut vendre n'est mesuré nulle part
 
@@ -908,7 +989,13 @@ rapide.
 **Pas de Custom Reporting Vercel pour la facturation par tenant.** 0,075 dollar par 1000 écritures
 de tag, soit à deux tags par appel **24 % de surcoût** sur une conversation économique. On compte
 les tokens nous-mêmes depuis le champ `usage` de chaque réponse, et `gateway.cost` donne le chiffre
-du fournisseur gratuitement.
+du fournisseur gratuitement. **Confirmé en live le 2026-08-27** (cf. « Les vérifications ») :
+`usage.cost` et `provider_metadata.gateway.cost` sont bien présents sur chaque réponse, avec le détail
+des `reasoning_tokens`. La facturation est donc : somme de `usage.cost` par tenant dans
+`agent_sessions.cout_micro_eur`, **plus 10 % de marge**, décrémentée du prépayé. Le solde `/v1/credits`
+étant celui du compte Vercel entier et non par tenant, le prépayé par client est notre grand livre, pas
+celui de Vercel ; le solde du compte maître est un point d'exploitation à surveiller (monitor
+`/v1/credits`, alerte avant zéro, sinon tous les tenants coupent d'un coup).
 
 **Pas de Routing Rules du Gateway en production**, documentées en beta avec la mention « avoid
 relying on them in production », et un piège : un rewrite vers un autre fournisseur invalide
@@ -1076,11 +1163,15 @@ Ce que ça implique, et qui est câblé en conséquence :
 - **La responsabilité se déplace vers le tenant qui coche.** C'est la contrepartie assumée de
   l'option, et elle doit être écrite dans les conditions. Action commerciale, pas technique.
 
-**D2. Que se passe-t-il quand le compte prépayé est à zéro en pleine conversation ?**
-*Recommandation : sortie par `sortie:plafond` avec le message de repli déclaré par le client, plus
-alerte admin, plus un découvert très faible sur la conversation en cours uniquement.* Une
-conversation coupée au milieu d'une fenêtre de service de 24 h coûte plus cher en réputation qu'en
-tokens.
+**D2. Le compte prépayé à zéro en pleine conversation : REQUALIFIÉ le 2026-08-27.** La vérification
+Vercel montre que le solde par tenant est **notre** grand livre (le solde `/v1/credits` est celui du
+compte entier). Le zéro par tenant est donc **entièrement déterministe et dans notre code** : on
+vérifie le solde avant et après chaque appel. Mécanisme retenu : sortie par `sortie:plafond` avec le
+message de repli déclaré par le client, alerte admin, et un découvert très faible toléré sur la seule
+conversation en cours (une conversation coupée au milieu d'une fenêtre de 24 h coûte plus cher en
+réputation qu'en tokens). Rien à négocier avec le Gateway. Reste un point d'exploitation distinct : le
+solde du **compte maître** Vercel, à surveiller sur `/v1/credits`, parce que lui à zéro couperait tous
+les tenants.
 
 **D3. La famille MCP : allowlist de serveurs validés par nous, ou n'importe quelle URL saisie par le
 tenant ?**
