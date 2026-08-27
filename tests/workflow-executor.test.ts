@@ -1153,3 +1153,103 @@ describe('advance : transition FRAÎCHE vers un bloc agent (revue tâche 12)', (
     expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
   });
 });
+
+/**
+ * Tâche 13b : la sortie du bloc agent. Le tour a décidé, le parcours doit reprendre par la branche
+ * `sortie:<code>`.
+ *
+ * Réutilise `advance` avec un handle synthétique, comme le fait déjà le patron RCS. Deux gardes rendent ce
+ * marqueur sûr : il n'est produit que par nous (Meta n'envoie que `btn:`, `row:`, `card:`), il n'est pas
+ * mesuré comme une réponse du contact, et il n'est PAS intercepté par la branche agent (sans quoi la sortie
+ * réenfilerait un tour au lieu de faire avancer le parcours).
+ */
+describe('sortirDuBlocAgent (tâche 13b)', () => {
+  const SESSION_B = { id: 'sB', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 2, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  // agent 'a' --sortie:fini--> quick_message 'b'
+  const avecSortie: WorkflowGraph = {
+    nodes: [n('a', 'agent', { agentId: 'ag1' }), n('b', 'quick_message', { body: 'merci !' })],
+    edges: [eh('e1', 'a', 'b', 'sortie:fini')],
+  };
+
+  const surAgent = (runs: { run: WorkflowRunRow | null }) => {
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting', lastMessageId: null };
+  };
+
+  const depsB = () => {
+    const jobs: AgentTurnJob[] = [];
+    return {
+      jobs,
+      over: {
+        agentSessions: { byRun: async () => SESSION_B } as unknown as WorkflowExecutorDeps['agentSessions'],
+        enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); },
+      },
+    };
+  };
+
+  it('🔴 fait AVANCER le parcours par la branche, et ne réenfile PAS un tour', async () => {
+    const { jobs, over } = depsB();
+    const { ex, runs, calls } = make(avecSortie, over);
+    surAgent(runs);
+    expect(await ex.sortirDuBlocAgent('t1', '33600', 'sB', 'fini')).toBe(true);
+    expect(calls).toEqual(['qm:merci !']); // le bloc d'après a bien parlé
+    expect(jobs).toEqual([]); // la branche agent n'a PAS intercepté
+  });
+
+  it('la sortie ne s applique pas DEUX fois (le parcours a quitté le bloc agent entre-temps)', async () => {
+    // Deux mécanismes se recouvrent ici, et c'est voulu : la garde de type de `sortirDuBlocAgent` (le
+    // parcours n'est plus sur le bloc agent au second appel) ET la déduplication `lastMessageId` d'`advance`
+    // (l'identifiant synthétique porte la session). Ce test observe le résultat, pas lequel des deux a joué.
+    const { over } = depsB();
+    const { ex, runs, calls } = make(avecSortie, over);
+    surAgent(runs);
+    await ex.sortirDuBlocAgent('t1', '33600', 'sB', 'fini');
+    await ex.sortirDuBlocAgent('t1', '33600', 'sB', 'fini');
+    expect(calls).toEqual(['qm:merci !']); // une seule fois
+  });
+
+  it('aucun parcours en attente sur un bloc agent : la sortie ne s applique à rien', async () => {
+    const { over } = depsB();
+    const { ex, runs, calls } = make(avecSortie, over);
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'b', status: 'waiting', lastMessageId: null };
+    expect(await ex.sortirDuBlocAgent('t1', '33600', 'sB', 'fini')).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('🔴 une sortie n est PAS mesurée comme une réponse du contact', async () => {
+    // Sans la garde, chaque sortie d'agent polluerait Analytics avec un faux clic de bouton.
+    const mesures: string[] = [];
+    const { over } = depsB();
+    const { ex, runs } = make(avecSortie, {
+      ...over,
+      recordNodeEvent: async (e: { kind: string }) => { mesures.push(e.kind); },
+    });
+    surAgent(runs);
+    await ex.sortirDuBlocAgent('t1', '33600', 'sB', 'fini');
+    expect(mesures).not.toContain('reply_button');
+    expect(mesures).not.toContain('reply_text');
+  });
+});
+
+describe('sortie d agent NON câblée (revue 13b)', () => {
+  const SESSION_C = { id: 'sC', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  it('🔴 une sortie sans branche câblée ESCALADE, elle ne rend pas la main en silence', async () => {
+    // Même famille qu'un bouton non branché : le scénario a prévu que l'agent sorte par là, il l'a fait, et
+    // rien ne l'attend. Rendre la main à l'agent de Meta masquerait le trou de montage, et une sortie
+    // d'escalade non câblée enverrait le contact au bot générique au lieu d'alerter un opérateur.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const rendus: string[] = [];
+    const g: WorkflowGraph = { nodes: [n('a', 'agent', { agentId: 'ag1' })], edges: [] }; // aucune sortie câblée
+    const { ex, runs, escalations } = make(g, {
+      agentSessions: { byRun: async () => SESSION_C } as unknown as WorkflowExecutorDeps['agentSessions'],
+      enqueueAgentTurn: async () => {},
+      releaseToMba: async (_t: string, w: string) => { rendus.push(w); },
+    });
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting', lastMessageId: null };
+    expect(await ex.sortirDuBlocAgent('t1', '33600', 'sC', 'escalade')).toBe(true);
+    expect(escalations).toEqual(['33600']); // remontée à un humain
+    expect(rendus).toEqual([]); // et PAS rendue à l'agent de Meta
+    spy.mockRestore();
+  });
+});

@@ -985,6 +985,31 @@ export class WorkflowExecutor {
     return true;
   }
 
+  /**
+   * Le tour d'agent a décidé de sortir : le parcours reprend par la branche `sortie:<code>` du bloc.
+   *
+   * Réutilise `advance` avec un handle synthétique, exactement comme `rcsDelivered`/`rcsUndeliverable` le font
+   * avec `sent`/`unreachable` : tout le chemin de reprise (parcours du graphe, envois, persistance, canal) est
+   * déjà écrit et testé là, le dupliquer serait la faute que le repo combat.
+   *
+   * L'identifiant de message est SYNTHÉTIQUE et porte la session : il rend la sortie idempotente. Rejouée,
+   * elle est écartée par la déduplication `lastMessageId` d'`advance`, donc le parcours n'avance pas deux fois.
+   *
+   * Rend `false` si le contact n'a pas de parcours en attente sur un bloc agent : la sortie ne s'applique
+   * alors à rien, et forcer ferait avancer un parcours qui attend autre chose.
+   */
+  async sortirDuBlocAgent(tenantId: string, waId: string, sessionId: string, sortie: string): Promise<boolean> {
+    const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
+    if (!run || !run.currentNode) return false;
+    const graph = await this.deps.getGraph(run.workflowId, tenantId);
+    const courant = graph?.nodes.find((n) => n.id === run.currentNode);
+    if (courant?.type !== 'agent') return false;
+    // Le canal du PARCOURS est repassé tel quel : un bloc agent peut suivre un bloc RCS, et la garde
+    // d'étanchéité d'`advance` écarterait un retour annoncé sur le mauvais tuyau.
+    await this.advance(tenantId, waId, `agent:${sessionId}:${sortie}`, `sortie:${sortie}`, run.channel ?? 'whatsapp');
+    return true;
+  }
+
   /** Le bloc RCS sur lequel ce contact a un parcours en attente, ou null. Garde commune aux deux reprises
    *  ci-dessus : c'est elle qui empêche un accusé de faire avancer un parcours qui attend autre chose. */
   private async blocRcsEnAttente(tenantId: string, waId: string): Promise<WorkflowNode | null> {
@@ -1040,6 +1065,12 @@ export class WorkflowExecutor {
     // n'appartient pas à ce parcours ; le marquer consommé masquerait un rejeu légitime). Le message reste
     // visible et NON LU dans l'inbox (UNREAD_SQL ne regarde que l'antériorité, tous canaux confondus), c'est
     // ce qui le porte à l'attention d'un opérateur.
+    // Reprise APRÈS un bloc agent, déclenchée par `sortirDuBlocAgent` et par personne d'autre : ce n'est pas
+    // un retour du contact mais l'issue d'un tour. Le préfixe `sortie:` est produit par nous seuls (Meta
+    // n'envoie que `btn:`, `row:` et `card:`), c'est ce qui rend ce marqueur sûr. Il éteint deux
+    // comportements qui n'ont de sens que pour une vraie réponse : la mesure, et l'interception par la
+    // branche agent (sans quoi la sortie réenfilerait un tour au lieu de faire avancer le parcours).
+    const sortieAgent = typeof buttonPayload === 'string' && buttonPayload.startsWith('sortie:');
     const canalAttendu: RunChannel = courant?.type === 'rcs_message' ? 'rcs' : (run.channel ?? 'whatsapp');
     if (canalRetour !== canalAttendu) {
       // eslint-disable-next-line no-console
@@ -1056,7 +1087,7 @@ export class WorkflowExecutor {
     // « a répondu sans utiliser les choix proposés ».
     //
     // Les blocs RCS sont exclus : leur reprise n'est pas une réponse du contact mais l'issue d'un envoi.
-    if (run.currentNode && courant?.type !== 'rcs_message') {
+    if (run.currentNode && courant?.type !== 'rcs_message' && !sortieAgent) {
       const aClique = typeof buttonPayload === 'string' && buttonPayload !== '';
       await this.mesurer(
         tenantId, run.workflowId, run.currentNode, waId,
@@ -1073,7 +1104,7 @@ export class WorkflowExecutor {
     //
     // Placé APRÈS le bloc de mesure ci-dessus, volontairement : celui-ci enregistre déjà la réponse du contact
     // et distingue le clic du texte libre. Le refaire ici le dupliquerait, et en moins bien.
-    if (courant?.type === 'agent') {
+    if (courant?.type === 'agent' && !sortieAgent) {
       const session = await this.deps.agentSessions?.byRun(tenantId, run.id);
       if (!session || session.status !== 'en_cours') {
         // Le run pointe un bloc agent mais aucune session ne le tient : état incohérent. On ne route pas au
@@ -1144,7 +1175,11 @@ export class WorkflowExecutor {
       // `row:<i>` = une ligne du MENU d'un bloc Question. Elle appartient à la même famille que `btn:` : le
       // contact a fait un choix qu'on lui a proposé. L'oublier ici la ferait retomber en silence sur le
       // chemin « il a écrit », donc rendre la main à l'agent au lieu de signaler le trou de montage.
-      const boutonSansSuite = typeof buttonPayload === 'string' && /^(btn:|card:|row:)/.test(buttonPayload);
+      // `sortie:` = une SORTIE D'AGENT non câblée. Même famille que le bouton non branché, et pour la même
+      // raison : le scénario a prévu que l'agent sorte par là, il l'a fait, et rien ne l'attend. Rendre la
+      // main à l'agent de Meta en silence masquerait un trou de montage, et une sortie d'escalade non câblée
+      // enverrait le contact au bot générique au lieu d'alerter un opérateur.
+      const boutonSansSuite = typeof buttonPayload === 'string' && /^(btn:|card:|row:|sortie:)/.test(buttonPayload);
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
       if (boutonSansSuite) {
         // eslint-disable-next-line no-console

@@ -97,6 +97,33 @@ export class PgWorkflowRunStore {
   }
 
   /**
+   * UN run par son identifiant, quel que soit son statut.
+   *
+   * Sert la garde du tour d'agent : le job relit le run et exige qu'il attende toujours SUR SON bloc avant
+   * d'envoyer quoi que ce soit. C'est ce qui rend inoffensif tout chemin qui tue un run `waiting` sans rien
+   * savoir des sessions d'agent (lancement manuel depuis l'inbox, jeton de test, clôtures internes), y compris
+   * ceux qui n'existent pas encore. D'où la lecture de TOUS les statuts, et pas seulement `waiting` : le tour
+   * doit pouvoir DISTINGUER un run mort d'un run introuvable.
+   */
+  async byId(tenantId: string, id: string): Promise<WorkflowRunRow | null> {
+    const res = await this.pool.query<{
+      id: string; workflow_id: string; tenant_id: string; wa_id: string;
+      current_node: string | null; status: RunStatus; last_message_id: string | null;
+      channel: RunChannel | null;
+    }>(
+      `select id, workflow_id, tenant_id, wa_id, current_node, status, last_message_id, channel
+       from workflow_runs where tenant_id = $1 and id = $2`,
+      [tenantId, id],
+    );
+    const r = res.rows[0];
+    return r ? {
+      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id,
+      currentNode: r.current_node, status: r.status, lastMessageId: r.last_message_id,
+      channel: r.channel ?? 'whatsapp',
+    } : null;
+  }
+
+  /**
    * Clôt TOUS les parcours encore actifs d'un contact (en attente d'une réponse, ou endormis sur un bloc
    * Attente) et rend combien ont été clos.
    *
