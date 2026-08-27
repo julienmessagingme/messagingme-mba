@@ -1581,7 +1581,25 @@ une limite dont on ne connaît pas le coût du tour à l'avance. Un test de fron
 ⚠️ Le fragment de test ci-dessous est illustratif : `coutMicroEur` est un `number` (cf. tâche 9), et
 `runTurn` prend `(job, deps)`.
 
-### 13b — à faire
+### 13b — ✅ FAIT (commit cfb54f5, 2026-08-27), sauf le câblage du worker
+
+`PgAgentStore` (plafonds de la fiche), `PgWorkflowRunStore.byId` (tous statuts : le tour doit distinguer
+un run **mort** d'un run **introuvable**), et `sortirDuBlocAgent`. 7 tests d'intégration verts en CI.
+
+La sortie **réutilise `advance`** avec un handle synthétique `sortie:<code>`, comme le font déjà
+`rcsDelivered`/`rcsUndeliverable`, plutôt que de dupliquer le chemin de reprise. Deux gardes : une sortie
+n'est ni **mesurée** comme une réponse du contact, ni **interceptée** par la branche agent. Audit du
+reviewer : un contact **ne peut pas** forger ce préfixe (un texte libre rend toujours `buttonPayload:
+null`, et tous les payloads de boutons/menus/carrousels sont réécrits par notre code à chaque envoi).
+
+⚠️ Corrigé en revue : une sortie **non câblée** rendait la main à l'agent de Meta **en silence**. Elle
+rejoint la liste des trous de montage (escalade + journalisation), comme un bouton non branché.
+
+### Reste de la tâche 13 : le câblage du worker, DÉPLACÉ EN TÂCHE 14
+
+Volontairement : brancher `queue.work(AGENT_TURN_QUEUE, ...)` maintenant ferait répondre un agent déployé
+avec la phrase en dur du cerveau bouchonné. On câble avec le vrai cerveau, `retryLimit` à **2**, et
+`parseAgentTurnJob` en entrée.
 
 **Fichiers :**
 - Créer : `src/agent/brain.ts` (contrat) et `src/agent/brain.fake.ts`
