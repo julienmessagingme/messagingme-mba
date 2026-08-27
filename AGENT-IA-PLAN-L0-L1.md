@@ -1049,7 +1049,24 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 8 : les quatre gardes que le cadrage avait oubliées
+## Tâche 8 : les quatre gardes que le cadrage avait oubliées — ✅ FAIT (commit 04994e5, 2026-08-27)
+
+En réalité **CINQ** gardes. La revue en a trouvé une que ce plan ne listait pas :
+**`sessionMessageAfterRcs`** (web uniquement). Un montage « RCS puis agent » n'était pas signalé.
+`quick_message` en est exclu parce qu'il part sur le canal du parcours ; l'agent tient sa session sur le
+numéro WhatsApp et n'a aucun équivalent RCS, il est donc du côté formulaire/question.
+
+⚠️ **Invariant appliqué partout, que ce plan ne dit pas** : un agent **non configuré** est un
+**passe-plat** dans les analyses, comme dans `walk` (tâche 7), sinon l'éditeur juge un parcours que le
+moteur ne suit pas. C'est la règle déjà écrite dans le cas `question` de `scanOpening`.
+
+⚠️ Le test de parité front/serveur ne prouve que l'**égalité** des deux côtés, pas leur justesse : si
+les deux traversaient l'agent, la parité passerait. D'où des assertions explicites côté serveur.
+
+**Reste hors périmètre, pour une tâche dédiée** : `web/lib/mesures-scenario.ts` (`BLOCS_MESSAGE`)
+n'inclut pas `agent`, donc un bloc agent n'apparaît pas dans le tableau de mesures d'Analytics. Autre
+famille (aucune panne d'envoi), et ça pose une question produit à part : comment mesurer un contenu
+généré au fil des tours, qui n'est pas connu statiquement.
 
 **Fichiers :**
 - Modifier : `src/workflow/engine.ts:88-143` (`scanOpening`) et `:198-254` (`waitBeforeSessionMessage`)
