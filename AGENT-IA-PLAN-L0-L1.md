@@ -1430,7 +1430,18 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 11 : la branche agent dans `resume`
+## Tâche 11 : la branche agent dans `resume` — ✅ FAIT (commit b209d2b, 2026-08-27)
+
+⚠️ **ORDRE INVERSE de celui de la tâche 10, délibérément.** Ici on enfile **APRÈS** l'écriture d'état.
+Le claim du balayage est un **BAIL** : en cas d'échec avant `setState`, le run reste `sleeping` et
+`resume` serait rejoué EN ENTIER (`walkResolved` + `apply`), donc **les messages déjà partis seraient
+renvoyés**. Enfiler d'abord achèterait la reprise du job au prix de doublons chez le contact. Risque
+résiduel assumé : la conversation se répare au message suivant du contact (tâche 10 retrouve la session
+par `byRun`), seul le premier message spontané de l'agent est perdu.
+
+Un helper privé **`demarrerTourAgent`** est écrit ici et **réutilisé par la tâche 12**. Il RÉUTILISE une
+session vivante avant d'en ouvrir une (`open` lèverait sur l'index partiel, et l'échec emporterait tout
+le réveil).
 
 **Fichiers :** Modifier `src/workflow/executor.ts:489-582`. Test : `tests/workflow-executor.test.ts`.
 
