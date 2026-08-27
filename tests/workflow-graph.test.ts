@@ -80,3 +80,15 @@ describe('parseGraph', () => {
     expect(parseGraph({ nodes: two, edges: manyEdges })).toBeNull();
   });
 });
+
+describe('bloc agent (tâche 6)', () => {
+  it('agent est un type de node connu', () => {
+    expect(isWorkflowNodeType('agent')).toBe(true);
+  });
+
+  it('parseGraph accepte un bloc de type agent', () => {
+    const g = parseGraph({ nodes: [node('n1', 'agent')], edges: [] });
+    expect(g).not.toBeNull();
+    expect(g!.nodes.map((n) => n.type)).toEqual(['agent']);
+  });
+});

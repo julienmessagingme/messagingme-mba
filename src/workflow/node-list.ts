@@ -20,7 +20,7 @@ export interface NodeListItem {
 const NOD_RE = /^nod_[0-9a-z]+_[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** Résumé court d'un node selon son type. `data` est opaque : tout est coercé + borné, jamais de throw. */
-function summarize(type: WorkflowNodeType, data: Record<string, unknown>): string {
+export function summarize(type: WorkflowNodeType, data: Record<string, unknown>): string {
   const s = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim();
   let out: string;
   switch (type) {
@@ -91,6 +91,7 @@ function summarize(type: WorkflowNodeType, data: Record<string, unknown>): strin
       break;
     }
     case 'inbox': out = ''; break;
+    case 'agent': out = s(data.label); break;
     default: out = '';
   }
   return out.slice(0, 120);

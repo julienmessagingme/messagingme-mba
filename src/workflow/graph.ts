@@ -30,7 +30,7 @@
 // ou sans menu du tout. Il ATTEND toujours une réponse, comme un message rapide à boutons, et il est le seul
 // bloc à porter EN PLUS une échéance : son parcours attend la réponse ET le temps qui passe.
 // Sorties : `row:<i>` par ligne du menu, `timeout` à l'échéance, et l'arête libre pour une réponse écrite.
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email'] as const;
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

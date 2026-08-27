@@ -18,6 +18,7 @@ export const NODE_META: Record<WorkflowNodeType, { emoji: string; label: [string
   action: { emoji: '⚙️', label: ['Action', 'Action'] },
   rcs_message: { emoji: '📱', label: ['Message RCS', 'RCS message'] },
   email: { emoji: '✉️', label: ['Envoi de mail', 'Send email'] },
+  agent: { emoji: '🤖', label: ['Agent IA', 'AI agent'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
   mba_handoff: { emoji: '🗑️', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },
