@@ -648,7 +648,61 @@ export class WorkflowExecutor {
     await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), channel: canal });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
+    // Bloc AGENT atteint au réveil : ouvrir la session et enfiler le premier tour. APRÈS les sorties
+    // anticipées ci-dessus (fenêtre fermée, refus sans envoi), sinon on créerait une session vivante sur un
+    // run déjà clos, que rien ne nettoierait.
+    if (rest.status === 'agent_turn') {
+      await this.demarrerTourAgent(tenantId, waId, { id: run.id, workflowId: run.workflowId }, graph, rest.nodeId);
+    }
     return true;
+  }
+
+  /**
+   * Un parcours vient d'atteindre un bloc agent : ouvrir sa session et enfiler le premier tour.
+   *
+   * Partagé par `resume` (réveil d'une attente) et `runFrom` (démarrage direct sur le bloc). `advance` ne
+   * l'utilise PAS : là-bas la session existe déjà, c'est le contact qui répond.
+   *
+   * ⚠️ ORDRE, et il est l'INVERSE de celui d'`advance`, délibérément. Ici on enfile APRÈS que l'état du run a
+   * été écrit. Le claim du balayage de réveil est un BAIL : en cas d'échec le run reste `sleeping` et redevient
+   * dû, donc `resume` serait rejoué EN ENTIER, `walkResolved` et `apply` compris, ce qui RENVERRAIT les
+   * messages déjà partis avant le bloc agent. Enfiler d'abord achèterait la reprise du job au prix de doublons
+   * chez le contact : mauvais échange. Risque résiduel assumé : si l'enfilage échoue, le run reste `waiting`
+   * sur le bloc sans job, et la conversation se répare d'elle-même au message suivant du contact (`advance`
+   * retrouve la session vivante par `byRun`). Ce qui est perdu, c'est le premier message que l'agent devait
+   * dire de lui-même : une conversation silencieuse plutôt que des messages en double.
+   */
+  private async demarrerTourAgent(
+    tenantId: string,
+    waId: string,
+    run: { id: string; workflowId: string },
+    graph: WorkflowGraph,
+    nodeId: string,
+  ): Promise<void> {
+    if (!this.deps.agentSessions) return;
+    const noeud = graph.nodes.find((n) => n.id === nodeId);
+    const agentId = String(noeud?.data.agentId ?? '').trim();
+    if (!agentId) {
+      // `walk` ne rend `agent_turn` que sur un bloc CONFIGURÉ, donc on ne devrait jamais passer ici. Si ça
+      // arrive, le graphe a changé sous nos pieds : on ne crée pas une session qui pointe un agent inexistant.
+      // eslint-disable-next-line no-console
+      console.error(`workflow ${run.workflowId}: bloc agent ${nodeId} sans agentId au démarrage du tour, aucun tour enfilé`);
+      return;
+    }
+    // Une session vivante laissée par un passage précédent ferait LEVER `open` sur l'index partiel « une seule
+    // session vivante par parcours », et l'échec emporterait tout le réveil. On la réutilise.
+    const session = (await this.deps.agentSessions.byRun(tenantId, run.id))
+      ?? (await this.deps.agentSessions.open({ tenantId, runId: run.id, agentId, nodeId, waId }));
+    await this.deps.enqueueAgentTurn?.({
+      tenantId,
+      runId: run.id,
+      sessionId: session.id,
+      workflowId: run.workflowId,
+      nodeId,
+      waId,
+      raison: 'demarrage',
+      tours: session.tours,
+    });
   }
 
   /**

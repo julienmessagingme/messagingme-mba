@@ -941,3 +941,86 @@ describe('advance : le bloc agent rend la main au tour (tâche 10)', () => {
     spy.mockRestore();
   });
 });
+
+/**
+ * Tâche 11 : quand un réveil d'attente atteint un bloc agent, il faut OUVRIR la session et enfiler le premier
+ * tour. `restToState` met déjà le run en attente sur le bloc (tâche 7) ; c'est le démarrage qui manque.
+ *
+ * L'ordre est l'inverse de celui d'`advance` : ici on enfile APRÈS l'écriture d'état, parce que le claim du
+ * balayage est un BAIL et qu'un rejeu de `resume` renverrait les messages déjà partis.
+ */
+describe('resume : le bloc agent ouvre sa session (tâche 11)', () => {
+  const SESSION = { id: 's9', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 0, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  // attente -> agent : le montage exact que la tâche vise.
+  const attenteAgent: WorkflowGraph = {
+    nodes: [n('w', 'wait', { delay: 1, unit: 'hours' }), n('a', 'agent', { agentId: 'ag1' })],
+    edges: [e('e1', 'w', 'a')],
+  };
+
+  const sessionsFake = (over: { byRun?: () => Promise<unknown> } = {}) => {
+    const ouvertures: unknown[] = [];
+    const store = {
+      byRun: over.byRun ?? (async () => null),
+      open: async (input: unknown) => { ouvertures.push(input); return SESSION; },
+    } as unknown as WorkflowExecutorDeps['agentSessions'];
+    return { store, ouvertures };
+  };
+
+  const runDormant = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', status: 'sleeping' as const };
+
+  it('le réveil ouvre la session et enfile un tour « demarrage »', async () => {
+    const jobs: AgentTurnJob[] = [];
+    const { store, ouvertures } = sessionsFake();
+    const { ex, runs } = make(attenteAgent, { agentSessions: store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } });
+    // Le run doit être SEMÉ dans le fake : `FakeRuns.setState` ne mute que si `this.run` existe déjà. Sans ce
+    // seeding, l'assertion d'état plus bas porterait sur `null` et ne prouverait rien.
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', status: 'sleeping', lastMessageId: null };
+    expect(await ex.resume(runDormant)).toBe(true);
+    expect(ouvertures).toHaveLength(1);
+    expect(ouvertures[0]).toMatchObject({ tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600' });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ raison: 'demarrage', nodeId: 'a', sessionId: 's9', runId: 'r1', tours: 0 });
+    // Le run attend SUR le bloc agent, ni done ni inbox. Assertion DIRECTE, sans repli : un `?? valeur
+    // attendue` rendrait ce test incapable d'échouer.
+    expect(runs.run).toMatchObject({ currentNode: 'a', status: 'waiting' });
+  });
+
+  it('🔴 fenêtre 24 h fermée : remontée en inbox, AUCUNE session ouverte et aucun tour enfilé', async () => {
+    // Ouvrir avant la sortie anticipée créerait une session vivante sur un run déjà clos, que rien ne nettoie.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const jobs: AgentTurnJob[] = [];
+    const { store, ouvertures } = sessionsFake();
+    const g: WorkflowGraph = {
+      nodes: [n('w', 'wait', { delay: 1, unit: 'hours' }), n('q', 'quick_message', { body: 'coucou' }), n('a', 'agent', { agentId: 'ag1' })],
+      edges: [e('e1', 'w', 'q'), e('e2', 'q', 'a')],
+    };
+    const { ex, escalations } = make(g, {
+      agentSessions: store,
+      enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); },
+      isWindowOpen: async () => false,
+    });
+    expect(await ex.resume(runDormant)).toBe(false);
+    expect(ouvertures).toEqual([]);
+    expect(jobs).toEqual([]);
+    expect(escalations).toEqual(['33600']);
+    spy.mockRestore();
+  });
+
+  it('une session déjà vivante est RÉUTILISÉE, pas dupliquée (open lèverait sur l index partiel)', async () => {
+    const jobs: AgentTurnJob[] = [];
+    const { store, ouvertures } = sessionsFake({ byRun: async () => SESSION });
+    const { ex } = make(attenteAgent, { agentSessions: store, enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } });
+    expect(await ex.resume(runDormant)).toBe(true);
+    expect(ouvertures).toEqual([]); // aucun open
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.sessionId).toBe('s9');
+  });
+
+  it('sans store d agent branché, le réveil ne casse pas (dep optionnelle)', async () => {
+    const jobs: AgentTurnJob[] = [];
+    const { ex } = make(attenteAgent, { enqueueAgentTurn: async (j: AgentTurnJob) => { jobs.push(j); } });
+    expect(await ex.resume(runDormant)).toBe(true);
+    expect(jobs).toEqual([]);
+  });
+});
