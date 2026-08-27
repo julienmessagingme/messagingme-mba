@@ -18,6 +18,32 @@ Next.js 15 dans `web/`, Playwright pour les e2e.
 
 **Cadrage de référence :** [AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md).
 
+---
+
+## 🔴 DETTES OUVERTES (registre unique, tenu à jour à chaque tâche)
+
+La règle de la maison est « on ne laisse rien traîner » : 🔴 **et** 🟡 corrigés dans la foulée, pas de report
+qui s'empile. Ce registre existe pour ce qui **ne pouvait pas** être fait dans la tâche courante, parce que la
+pièce qui le consomme n'existe pas encore. Chaque ligne dit **quand** elle se ferme et **ce qui casse** si on
+l'oublie. Rien n'entre ici sans ces deux colonnes.
+
+**Aucune de ces dettes n'est un bug latent aujourd'hui** : rien de tout cela n'est branché en production, le
+bloc agent n'est servi nulle part. Elles deviennent des bugs le jour où on branche.
+
+| # | Dette | Se ferme | Ce qui casse si on l'oublie |
+|---|---|---|---|
+| D1 | **Devise.** Le Gateway facture en **dollars** (`coutDollars`, `chat-client.ts`) ; la colonne est `budget_micro_eur` et `runTurn` compare `coutMicroEur >= budgetMicroEur`. | Avant la mise en service. Décision de **facturation** (convertir, ou renommer la colonne), pas technique. | Le plafond de budget est faux d'un facteur de change. Trop haut, on dépasse ; trop bas, l'agent se coupe tout seul. |
+| D2 | **La file `agent-turn` n'a aucun consommateur.** Elle est dans `BASE_QUEUES` (donc visible d'`/ops`, DLQ surveillée), mais `src/worker.ts` ne l'écoute pas. Le test `queue-names` est **unidirectionnel** et ne peut pas le voir. | Tâche de câblage du cerveau réel. Avec `retryLimit: 2` et `parseAgentTurnJob`. | Rien n'enfile aujourd'hui non plus. Le jour où `enqueueAgentTurn` est câblé sans le worker : les tours s'empilent, les conversations restent muettes, et **c'est silencieux**. |
+| D3 | **`executeTool` n'a aucun appelant.** Trois responsabilités lui reviennent, écrites en JSDoc là où elles se jouent : (a) **alerter** sur `fatal: true` (erreur de protocole) via la dep d'alerte du worker ; (b) calculer `appelsRestants` et `budgetRestantMicroEur` depuis la fiche et la session ; (c) **encadrer le résultat en bloc délimité** avant de le remettre au modèle. | Même tâche de câblage que D2. | (a) une panne de notre client passe inaperçue ; (b) les deux plafonds ne s'appliquent pas ; (c) **un résultat d'outil concaténé au prompt est une injection indirecte**, c'est la règle du CLAUDE.md global. |
+| D4 | **Le câblage du runtime d'agent n'existe pas dans `wiring.ts`.** Ni `agentSessions`, ni `enqueueAgentTurn`, ni les résolveurs, ni `escaladerVersHumain`, ni `envoyerBloc`. | Même tâche que D2 et D3. C'est elle qui les ferme toutes les trois. | Le bloc agent est traversé comme un passe-plat en production : le scénario continue sans que l'agent parle. |
+| D5 | **Un bloc agent est invisible d'Analytics.** `web/lib/mesures-scenario.ts` (`BLOCS_MESSAGE`) n'inclut pas `agent`. | Tâche dédiée, après l'UI. Pose une **question produit** : comment mesurer un contenu généré au fil des tours, inconnu statiquement. | Aucune panne. Le client ne voit simplement pas ce bloc dans « Mes tableaux ». |
+| D6 | **La migration 0086 n'est pas appliquée en production** (dernière appliquée : 0085). | Au déploiement, **après** un `compose build` et **avant** le `up -d` (les migrations vivent dans l'image, pas sur le disque du VPS). | `column ... does not exist`, en silence, dans une file d'échec. C'est l'incident du 2026-08-17. |
+
+**Trou générique préexistant, hors périmètre agent** (noté ici pour ne pas le perdre) : `advance` est aussi
+appelé sur un accusé de livraison RCS, donc un montage `rcs_message --(unreachable)--> bloc de session`
+atteint une transition fraîche sans fenêtre WhatsApp prouvée. Vaut déjà pour `quick_message`, `flow` et
+`question`, et la campagne le bloque par `scanOpening`.
+
 ## Révision du 2026-08-26 : le bloc Question change trois choses
 
 Un chantier parallèle ajoute un bloc **Question** au moteur (24 fichiers, non commité au moment de
@@ -1729,11 +1755,8 @@ Le corps de réponse des tests est celui **réellement observé** lors d'un appe
 son ancien emplacement (une seule classe, `instanceof` reste vrai, aucun import cassé). `HttpTransport`
 gagne un 4e paramètre optionnel `signal` : les six `FakeTransport` du repo restent assignables (vérifié).
 
-⚠️ **DETTE EXPLICITE, à trancher avant la mise en service** : le Gateway facture en **DOLLARS** (le
-champ rendu s'appelle `coutDollars`), alors que la colonne de budget s'appelle **`budget_micro_eur`** et
-que `runTurn` compare `coutMicroEur >= budgetMicroEur`. La conversion (ou le renommage de la colonne) est
-une décision de **facturation**, pas du client HTTP. Rien ne câble encore ce client au tour, donc aucun
-bug latent aujourd'hui.
+⚠️ **Dette D1** (registre en tête de plan) : le Gateway facture en **dollars**, la colonne de budget est en
+micro-euros. Décision de facturation, à trancher avant la mise en service.
 
 **Fichiers :**
 - Créer : `src/llm/errors.ts` (déplacement de `LlmApiError`, ré-exportée depuis `llm-client.ts`)
@@ -1869,15 +1892,8 @@ sur les deux issues les plus chères ; `envoyerBlocDepuisAgent` acceptait un sou
   basculer, et rend `rendu: true`. L'ordre est contre-intuitif et vérifié : `advance` sort en premier sur
   `mayAct`, donc basculer le fil AVANT de sortir du bloc rendrait la sortie inopérante.
 
-🔴 **CE QUI RESTE À BRANCHER, et qui n'a pas de tâche au plan.** `executeTool` n'a aujourd'hui **aucun
-appelant** : le tour ne l'appelle pas encore. Trois choses lui reviennent, et elles sont écrites en JSDoc là où
-elles se jouent, ce qui ne suffira pas :
-1. **alerter** sur `fatal: true` (erreur de protocole), avec la dep d'alerte du worker ;
-2. calculer `appelsRestants` et `budgetRestantMicroEur` depuis la fiche et la session ;
-3. **encadrer le résultat en bloc délimité** avant de le remettre au modèle (troisième volet de l'étape 7 du
-   cadrage, volontairement laissé à l'appelant : ce module rend une valeur, pas un morceau de prompt).
-
-À faire dans la tâche qui branchera le cerveau réel, avant toute mise en service.
+🔴 **Dette D3** (registre en tête de plan) : `executeTool` n'a aucun appelant. L'alerte sur `fatal`, le calcul
+des plafonds restants et l'encadrement du résultat en bloc délimité reviennent à la tâche de câblage.
 
 ### Le détail d'origine
 

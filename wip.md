@@ -1,5 +1,15 @@
 # WIP
 
+## EN COURS : le bloc agent IA (lots L0 et L1)
+
+Le plan, l etat tache par tache et le **registre des dettes ouvertes** vivent dans
+[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). Six dettes, toutes du meme genre : la piece qui les
+consomme n existe pas encore. Aucune n est un bug latent, rien n est branche en production. La plus grosse
+(D2, D3, D4) se ferme d un coup, dans la tache qui branchera le cerveau reel au tour.
+
+⚠️ **Migration 0086 non appliquee en production** (dette D6). Elle passe AVANT tout deploiement de ce lot,
+et APRES un `compose build`.
+
 ## LIVRE ET DEPLOYE le 2026-08-26 : bloc « Question » dans les scenarios
 
 Demande de Julien : un bloc qui ouvre un MENU (au lieu de boutons) avec X reponses, qui ATTEND la reponse du
