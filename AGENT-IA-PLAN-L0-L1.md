@@ -1843,7 +1843,7 @@ it('n expose au modele QUE les parametres de source modele', () => {
 
 ---
 
-## Tâche 16 : le tronc commun d'exécution d'outil, et les outils maison — ✅ FAIT (commit COMMIT16, 2026-08-27)
+## Tâche 16 : le tronc commun d'exécution d'outil, et les outils maison — ✅ FAIT (commit dd776a2, 2026-08-27)
 
 **Deux revues, deux FAIL avant le PASS**, et la seconde a trouvé le trou le plus sérieux du lot : la garde de
 source (tâche 15) **se contournait par une déclaration cassée**. Si `agent_tools.params` porte un paramètre en
