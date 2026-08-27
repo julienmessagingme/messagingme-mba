@@ -903,7 +903,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 7 : la main rendue dans le moteur
+## Tâche 7 : la main rendue dans le moteur — ✅ FAIT (commit ff3cb82, 2026-08-27)
+
+`WalkRest` gagne `agent_turn`, branche dans `walk` à côté de `rcs_message`, cas explicite dans
+`restToState` (exportée pour être testée). Sens de l'échec vérifié sur les DEUX gardes. Run CI complet
+vert (`unit`, `integration`, `web` avec ses 70 e2e). Reviewer PASS.
+
+⚠️ **Conflit de plan tranché ici** : l'étape 4 ci-dessous montre un code minimal où `data: {}` rend la
+main. C'est la note de « Révision du 2026-08-26 » qui gouverne : un bloc agent **sans `agentId`** est un
+**passe-plat**, comme le bloc Question sans texte, sinon le parcours gèle pour toujours sans signal.
+Test dédié dans `tests/workflow-agent-main-rendue.test.ts`.
 
 **Fichiers :**
 - Modifier : `src/workflow/engine.ts:256-264` (`WalkRest`) et `:512-577` (`walk`)
