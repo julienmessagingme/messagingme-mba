@@ -4,17 +4,25 @@ export interface HttpResponse {
   headers?: Record<string, string>;
 }
 
-/** Transport HTTP injectable (fetch en prod, fake en test). */
+/**
+ * Transport HTTP injectable (fetch en prod, fake en test).
+ *
+ * `opts.signal` est OPTIONNEL et arrive en 4e position à dessein : une implémentation qui ne déclare que
+ * trois paramètres reste assignable à ce type, donc les `FakeTransport` existants ne cassent pas. Sans lui,
+ * un appel n'a AUCUN délai maximum (le défaut d'undici est de l'ordre de 300 s) : un fournisseur qui pend
+ * immobiliserait un slot de worker pendant des minutes, sans la moindre trace.
+ */
 export interface HttpTransport {
-  post(url: string, body: unknown, headers: Record<string, string>): Promise<HttpResponse>;
+  post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse>;
 }
 
 export class FetchTransport implements HttpTransport {
-  async post(url: string, body: unknown, headers: Record<string, string>): Promise<HttpResponse> {
+  async post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
+      ...(opts?.signal ? { signal: opts.signal } : {}),
     });
     let json: unknown = null;
     try {

@@ -1,4 +1,5 @@
 import { FetchTransport, withRetry, parseRetryAfter, type HttpTransport } from '../meta/http';
+import { LlmApiError } from '../llm/errors';
 
 /** Prompt structuré (system + user) attendu par un LLM de chat. */
 export interface LlmPrompt {
@@ -13,18 +14,15 @@ export interface LlmClient {
   complete(prompt: LlmPrompt): Promise<string>;
 }
 
-/** Erreur d'appel LLM. `retryable` (429/5xx) est reconnu par `withRetry` (duck-typing) + par le job (rethrow -> pg-boss). */
-export class LlmApiError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly retryable: boolean,
-    readonly retryAfterMs?: number,
-  ) {
-    super(message);
-    this.name = 'LlmApiError';
-  }
-}
+/**
+ * Erreur d'appel LLM. `retryable` (429/5xx) est reconnu par `withRetry` (duck-typing) + par le job
+ * (rethrow -> pg-boss).
+ *
+ * ⚠️ Elle vit désormais dans `src/llm/errors.ts`, partagée avec le client de l'agent. Ré-exportée ICI pour
+ * que les imports existants (et leurs tests) continuent de marcher : c'est une seule et même classe, donc
+ * `instanceof` reste vrai des deux côtés.
+ */
+export { LlmApiError } from '../llm/errors';
 
 /**
  * Client Anthropic (Claude) via l'API Messages en HTTP brut, sur le MÊME transport injectable + `withRetry` que les
