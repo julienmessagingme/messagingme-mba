@@ -1193,7 +1193,17 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 # Phase L1-B, les trois sites de couture, et un squelette qui marche
 
-## Tâche 9 : le store des sessions
+## Tâche 9 : le store des sessions — ✅ FAIT (commit 8d9a381, 2026-08-27)
+
+`src/agent/session-store.ts` (contrat) + `.pg.ts` (implémentation). Les 10 tests d'intégration ont
+réellement tourné en CI (vérifié dans le log du job, pas seulement au vert du run).
+
+⚠️ **Trois écarts au plan, assumés :** (1) `coutMicroEur` en **`number`** et non `bigint` (le repo lit
+ses colonnes bigint en string puis convertit, et `JSON.stringify` LÈVE sur un BigInt alors que ce champ
+ira dans une réponse d'API) ; (2) **`tenantId` exigé par CHAQUE méthode**, y compris les trois que
+l'interface du plan n'en dotait pas (pooler superuser, RLS bypassée, ce filtrage est le seul contrôle
+d'isolation) ; (3) **pas de fake** pour l'instant, il gagnera sa place à la tâche 13 où il aura un vrai
+consommateur (un fake testé contre lui-même ne prouve rien).
 
 **Fichiers :**
 - Créer : `src/agent/session-store.ts` (contrat) et `src/agent/session-store.pg.ts`
