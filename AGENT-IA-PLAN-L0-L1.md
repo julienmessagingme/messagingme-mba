@@ -817,7 +817,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-## Tâche 6 : déclarer le type de bloc `agent` partout où il doit être connu
+## Tâche 6 : déclarer le type de bloc `agent` partout où il doit être connu — ✅ FAIT (commit a0a48ba, 2026-08-27)
+
+Enum serveur + miroir front + entrée `NODE_META` + cas `summarize` (exportée pour être testée). Pas de
+palette ni de moteur (tâches 18 et 7). Reviewer PASS. Tests : `tests/workflow-graph.test.ts` (parseGraph
+accepte `agent`) et `tests/node-list.test.ts` (summarize rend le label).
 
 **Fichiers :**
 - Modifier : `src/workflow/graph.ts:29`
