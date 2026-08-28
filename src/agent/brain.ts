@@ -6,6 +6,36 @@
  * remplace le fake sans toucher au reste.
  */
 
+/**
+ * Ce qu'un tour a consommé. `coutMicroEur` est un `number` et non un `bigint`, pour la même raison qu'en base
+ * (`session-store.ts`) : `JSON.stringify` LÈVE sur un BigInt, et ce chiffre finit dans une réponse d'API.
+ */
+export interface UsageTour {
+  tokensIn: number;
+  tokensOut: number;
+  coutMicroEur: number;
+}
+
+/**
+ * Un tour a échoué APRÈS qu'un appel de modèle a déjà été facturé.
+ *
+ * 🔴 SANS ELLE, UNE CONSOMMATION RÉELLE DISPARAÎT. Un tour fait plusieurs allers-retours (le modèle appelle un
+ * outil, lit son résultat, reparle) et chacun est facturé séparément par le fournisseur. Si le deuxième échoue
+ * (panne, 4xx terminal, échéance dépassée), une exception nue emporterait avec elle ce que le premier a déjà
+ * coûté : ni le compteur de la session ni le solde prépayé du workspace ne bougeraient, alors que la facture
+ * du fournisseur, elle, est bien partie. Le contrat est donc : un cerveau qui lève après avoir dépensé lève
+ * CECI, et l'appelant enregistre `usage` avant de traiter l'échec.
+ *
+ * Elle vit ici, dans le CONTRAT, et non dans l'implémentation Gateway : c'est l'appelant du contrat qui doit
+ * la reconnaître, et l'y mettre ferait dépendre le tour d'une implémentation particulière du cerveau.
+ */
+export class TourInterrompu extends Error {
+  constructor(readonly erreur: unknown, readonly usage: UsageTour) {
+    super(erreur instanceof Error ? erreur.message : String(erreur));
+    this.name = 'TourInterrompu';
+  }
+}
+
 export interface DecisionAgent {
   /**
    * Texte à envoyer au contact. `null` = ne rien envoyer : cas d'une sortie où c'est le bloc AVAL qui parle
@@ -17,11 +47,8 @@ export interface DecisionAgent {
    * question et attend la réponse du contact. `null` laisse le parcours en attente sur le bloc.
    */
   sortie: string | null;
-  /**
-   * Consommation du tour. `coutMicroEur` est un `number` et non un `bigint`, pour la même raison qu'en base
-   * (`session-store.ts`) : `JSON.stringify` LÈVE sur un BigInt, et ce chiffre finit dans une réponse d'API.
-   */
-  usage?: { tokensIn: number; tokensOut: number; coutMicroEur: number };
+  /** Consommation du tour. Absente pour un cerveau bouchonné, qui ne consomme rien. */
+  usage?: UsageTour;
 }
 
 /**

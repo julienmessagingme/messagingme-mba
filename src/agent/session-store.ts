@@ -74,6 +74,20 @@ export interface AgentSessionStore {
    */
   compterAppel(tenantId: string, sessionId: string): Promise<void>;
 
+  /**
+   * Ajoute le coût d'un tour au cumul de la session, en micro-euros.
+   *
+   * 🔴 SANS ELLE, LE PLAFOND PAR CONVERSATION EST DÉCORATIF. `runTurn` compare `session.coutMicroEur` au
+   * budget de la fiche, mais rien n'écrivait jamais ce cumul : la colonne restait à zéro pour toujours, donc
+   * la comparaison était toujours fausse et le réglage affiché dans la console ne se déclenchait jamais. Le
+   * budget restant était bien appliqué À L'INTÉRIEUR d'un tour (une boucle d'outils emballée reste bornée),
+   * mais d'un message à l'autre rien ne s'accumulait.
+   *
+   * Incrémenté côté BASE, comme `compterAppel` et pour la même raison : deux écritures concurrentes ne
+   * peuvent pas s'écraser, et un tour déjà joué se compte même si la session vient d'être close.
+   */
+  ajouterCout(tenantId: string, sessionId: string, montantMicroEur: number): Promise<void>;
+
   /** Clôt la session. `sortie` porte le handle emprunté quand il y en a un. */
   clore(tenantId: string, sessionId: string, status: AgentSessionStatus, sortie?: string): Promise<void>;
 }

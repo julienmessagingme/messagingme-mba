@@ -32,7 +32,7 @@ bloc agent n'est servi nulle part. Elles deviennent des bugs le jour où on bran
 
 | # | Dette | Se ferme | Ce qui casse si on l'oublie |
 |---|---|---|---|
-| D1 | **Devise.** Le Gateway facture en **dollars** (`coutDollars`, `chat-client.ts`) ; la colonne est `budget_micro_eur` et `runTurn` compare `coutMicroEur >= budgetMicroEur`. | Avant la mise en service. Décision de **facturation** (convertir, ou renommer la colonne), pas technique. | Le plafond de budget est faux d'un facteur de change. Trop haut, on dépasse ; trop bas, l'agent se coupe tout seul. |
+| ~~D1~~ | ~~**Devise.** Le Gateway facture en dollars, la colonne est `budget_micro_eur`.~~ **FERMÉE par la tâche 21** (`src/agent/devise.ts`) : la conversion se fait à l'entrée, en un seul endroit (`brain.gateway.ts`, là où le coût brut s'accumule), avec un **taux commercial** de la configuration (`EUR_PER_USD`), jamais un cours en temps réel. Un taux absent ou aberrant retombe sur 1, jamais sur zéro : un zéro rendrait toute consommation gratuite, donc désarmerait tous les plafonds en silence. | Fermée. | Sans objet. |
 | ~~D2~~ | ~~**La file `agent-turn` n'a aucun consommateur.**~~ **FERMÉE par la tâche 20** : `src/worker.ts` la consomme, avec les VRAIS résolveurs. Et le test `queue-names` est devenu BIDIRECTIONNEL : toute file de `BASE_QUEUES` doit avoir un consommateur, ce qui ferme le trou pour de bon. | Fermée. | Sans objet. |
 | ~~D3~~ | ~~**`executeTool` n'a aucun appelant.**~~ **FERMÉE par la tranche 19e** (`src/agent/brain.gateway.ts`) : le cerveau réel est son appelant, et les trois responsabilités y sont, chacune testée. (a) il alerte sur `fatal`, et sur lui seul ; (b) il recalcule `appelsRestants` et `budgetRestantMicroEur` À CHAQUE appel, pas une fois par tour, donc une salve de six outils ne dépasse pas ; (c) le résultat repart au modèle dans un bloc délimité (`blocResultatOutil`). | Fermée. | Sans objet. |
 | ~~D4~~ | ~~**Le câblage du runtime d'agent n'existe pas dans `wiring.ts`.**~~ **FERMÉE par la tâche 20** : `agentSessions`, `enqueueAgentTurn`, `envoyerTexteAgent` et `poserTagDepuisAgent` y sont, et le worker branche les résolveurs réels. | Fermée. | Sans objet. |
@@ -1755,8 +1755,9 @@ Le corps de réponse des tests est celui **réellement observé** lors d'un appe
 son ancien emplacement (une seule classe, `instanceof` reste vrai, aucun import cassé). `HttpTransport`
 gagne un 4e paramètre optionnel `signal` : les six `FakeTransport` du repo restent assignables (vérifié).
 
-⚠️ **Dette D1** (registre en tête de plan) : le Gateway facture en **dollars**, la colonne de budget est en
-micro-euros. Décision de facturation, à trancher avant la mise en service.
+⚠️ **Dette D1** (registre en tête de plan, **fermée depuis par la tâche 21**) : le Gateway facture en
+**dollars**, la colonne de budget est en micro-euros. Tranchée en convertissant à l'entrée, au taux commercial
+de la configuration (`src/agent/devise.ts`).
 
 **Fichiers :**
 - Créer : `src/llm/errors.ts` (déplacement de `LlmApiError`, ré-exportée depuis `llm-client.ts`)
@@ -2219,9 +2220,60 @@ aucun chemin de masse ne l'atteint.
 bac à sable. Elle vit dans `src/agent/contexte.ts`, ce qui garantit surtout que le bac à sable montre
 exactement ce que la production ferait.
 
-**Ce qui reste ouvert.** D1 (la devise : le Gateway facture en dollars, la colonne est en micro-euros), D5
-(les blocs agent invisibles d'Analytics) et D6 (la migration 0086 non appliquée). Plus les deux variables
-d'environnement à poser sur le VPS.
+**Ce qui reste ouvert.** D1 (la devise) est fermée depuis, par la tâche 21 ; D6 (la migration 0086) l'a été le
+2026-08-28. Reste D5 (les blocs agent invisibles d'Analytics), plus les deux variables d'environnement à poser
+sur le VPS.
+
+## Tâche 21 : le solde prépayé par workspace -- ✅ FAIT (2026-08-28)
+
+**Ce que Julien a demandé :** un budget qui existe dans l'outil et qui **descend vraiment avec la
+consommation**, sans passer par Stripe (rechargé à la main). Deux décisions prises par lui, qui cadrent tout :
+le solde vit au niveau du **workspace** (une cagnotte prépayée par client, vide les agents s'arrêtent), et tout
+est stocké et affiché **en euros**, converti à l'entrée avec un **taux fixe en configuration**.
+
+🔴 **CE QUE LA CONCEPTION A MIS AU JOUR : LE COÛT D'UN TOUR N'ÉTAIT ÉCRIT NULLE PART.**
+`agent_sessions.cout_micro_eur` existait, la console affichait un plafond par conversation, `runTurn` comparait
+bien `session.coutMicroEur >= fiche.plafonds.budgetMicroEur`, et **rien n'écrivait jamais ce cumul**. La colonne
+restait à zéro pour toujours : la comparaison était toujours fausse, et le réglage montré au client était
+DÉCORATIF. Le budget restant s'appliquait bien À L'INTÉRIEUR d'un tour, mais d'un message à l'autre rien ne
+s'accumulait. C'est ce que ferme `ajouterCout`, et c'est ce qui rend le prépayé possible.
+
+**Ferme la dette D1** (`src/agent/devise.ts`) : la conversion dollars vers micro-euros se fait à l'entrée, en
+UN seul endroit, avec le taux commercial `EUR_PER_USD`. Un taux absent ou aberrant retombe sur 1, jamais sur
+zéro : un zéro rendrait toute consommation gratuite, donc désarmerait tous les plafonds en silence.
+
+**Les pièces :** migration `0087` (`agent_credits` + `agent_credit_mouvements`), `src/agent/credits.pg.ts` (le
+mouvement et son journal en UNE instruction, par CTE modifiantes : le worker joue plusieurs tours en parallèle
+pour le même workspace, un « lire puis écrire » perdrait une consommation sur deux), la garde de solde dans
+`runTurn` (avec les autres plafonds, donc AVANT l'appel au modèle), `GET`/`POST /ops/credits/:tenantId`, et une
+bannière de solde dans la console.
+
+⚠️ **La recharge est la PREMIÈRE écriture métier de `/ops`**, et c'est assumé plutôt que glissé : créditer le
+compte prépayé d'un client ne peut pas être accessible depuis un compte de la console, sans quoi un client se
+rechargerait lui-même. L'autorité de `/ops` est séparée du JWT client, elle est donc la bonne. Bornée à 1000 €
+par recharge (il n'existe aucune route de débit pour rattraper une virgule mal placée) et **note obligatoire**
+(le jeton est partagé, il n'y a aucune identité d'opérateur à enregistrer : cette phrase est la seule trace de
+qui a rechargé et pourquoi).
+
+🔴 **LE DÉFAUT QUE LA REVUE A TROUVÉ : UNE CONSOMMATION RÉELLE POUVAIT DISPARAÎTRE.** Un tour fait plusieurs
+allers-retours de modèle, facturés séparément. Le cumul vivait DANS la boucle : si le deuxième appel levait
+(panne, 4xx terminal, échéance), l'exception emportait avec elle ce que le premier avait déjà coûté. Le
+fournisseur facturait, le workspace ne payait rien. Le cerveau lève désormais un `TourInterrompu` qui PORTE la
+consommation, et les deux appelants (le tour de production, le bac à sable) l'enregistrent avant de traiter
+l'échec. La leçon est générale : **un compteur de dépense ne doit jamais vivre dans la portée qui peut lever.**
+
+🟡 **Trois autres constats de la revue, corrigés dans la foulée.** (1) Le débit du workspace et le compteur de
+session touchent deux tables et ne peuvent pas être atomiques entre eux : ils ont maintenant deux gardes
+séparées, le solde d'abord (c'est de l'argent) et deux traces distinctes, sinon un incident sur l'argent se
+noyait dans un raté de comptage. (2) Le bac à sable faisait tourner le VRAI Gateway sans jamais toucher au
+solde : une porte gratuite et illimitée sur un compte prépayé. Il est désormais soumis à la même garde et au
+même débit, avec une note qui l'explique dans le journal (un essai n'ouvre aucune session). (3) Un identifiant
+d'espace inconnu ou mal formé rendait 500 (donc une page Cloudflare) sur la seule route qui écrit de l'argent :
+404 des deux côtés, `/ops/observe` compris, qui portait le même trou.
+
+⚠️ **La migration 0087 n'est PAS appliquée en production.** Séquence : `compose build mba-api` AVANT
+`compose run --rm --no-deps mba-api npm run migrate` (les migrations vivent dans l'image), puis `up -d --build`.
+Tant qu'elle ne l'est pas, la lecture du solde échoue et les agents ne démarrent pas. **Prochaine libre = 0088.**
 
 ### Tranche 19e : l'onglet tester, et LE CERVEAU RÉEL -- ✅ FAIT (commit 013fe61, 2026-08-28)
 

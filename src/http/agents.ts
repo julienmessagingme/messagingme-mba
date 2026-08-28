@@ -17,6 +17,12 @@ export interface AgentsRouteDeps {
   /** Modèle par défaut d'un agent neuf. Vient de la configuration serveur, pas du client. */
   modeleParDefaut: string;
   /**
+   * Le solde prépayé du workspace, en micro-euros. LECTURE SEULE ici, et c'est le point : un client voit ce
+   * qu'il lui reste, il ne se recharge pas lui-même. Le rechargement vit sur `/ops`, sous une autorité
+   * séparée. Absente -> l'écran n'affiche pas de solde.
+   */
+  soldeAgent?(tenantId: string): Promise<number>;
+  /**
    * L'état à opposer au lint d'ACTIVATION. Absent, l'activation n'est pas contrôlée : c'est le montage des
    * tests de routes voisins, jamais la production.
    */
@@ -74,6 +80,17 @@ const creationSchema = z.object({ label: LABEL });
 
 export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
+
+  /**
+   * Le solde prépayé du workspace. En LECTURE seulement : c'est ce qui reste à dépenser, et un client qui
+   * pourrait s'en ajouter n'aurait plus de prépayé du tout.
+   */
+  app.get('/tenants/:tenantId/agents/solde', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (!deps.soldeAgent) return reply.code(200).send({ soldeMicroEur: null });
+    return reply.code(200).send({ soldeMicroEur: await deps.soldeAgent(tenant) });
+  });
 
   app.get('/tenants/:tenantId/agents', opts, async (req, reply) => {
     const tenant = scopeTenant(req);

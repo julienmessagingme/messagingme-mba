@@ -1,4 +1,5 @@
 import type { AgentBrain, ContexteTourAgent, DecisionAgent } from './brain';
+import { TourInterrompu } from './brain';
 import type { ChatMessage, OutilExpose, ReponseChat } from './llm/chat-client';
 import type { ContexteAppel, ResultatOutil, ToolExecutorDeps } from './executor';
 import { executeTool } from './executor';
@@ -7,6 +8,7 @@ import type { SortieAgent } from './agent-store';
 import { outilsExposes } from './outils-maison';
 import { blocResultatOutil, promptSysteme, type ContexteAgent } from './prompt';
 import { SORTIE_PLAFOND } from './sorties';
+import { microEurosDepuisDollars } from './devise';
 
 /**
  * Le CERVEAU réel : la boucle qui transforme un historique en une décision.
@@ -57,6 +59,12 @@ export interface GatewayBrainDeps {
    * partager.
    */
   lireContact?(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
+  /**
+   * Taux de conversion dollars vers euros. Le Gateway facture en DOLLARS, tous nos compteurs sont en
+   * micro-euros. Absent -> facteur 1, jamais zéro : mieux vaut facturer un dollar pour un euro que de ne
+   * rien facturer du tout, ce qui désarmerait les plafonds en silence.
+   */
+  tauxEurParDollar?: number;
   /** Signale une erreur de PROTOCOLE (bug de notre client). Best-effort : jamais bloquant. */
   alerter?(message: string): void;
   now?: () => number;
@@ -121,6 +129,28 @@ export async function penserTrace(
   tour: ContexteTour,
   deps: GatewayBrainDeps,
 ): Promise<DecisionTracee> {
+  // 🔴 LE COMPTEUR VIT ICI, EN DEHORS DE LA BOUCLE, POUR SURVIVRE À SON ÉCHEC. Un tour fait plusieurs
+  // allers-retours et le fournisseur facture chacun séparément : si le deuxième lève (panne, 4xx terminal,
+  // échéance dépassée), une exception nue emporterait avec elle ce que le premier a DÉJÀ coûté. Ni le
+  // compteur de la session ni le solde prépayé du workspace ne bougeraient, alors que la facture, elle, est
+  // partie. On repasse donc la consommation à l'appelant dans l'erreur, à charge pour lui de l'enregistrer.
+  const usage = { tokensIn: 0, tokensOut: 0, coutMicroEur: 0 };
+  try {
+    return await boucler(input, tour, deps, usage);
+  } catch (err) {
+    if (usage.coutMicroEur > 0) throw new TourInterrompu(err, usage);
+    throw err;
+  }
+}
+
+/** La boucle elle-même. `usage` est MUTÉ : c'est ce qui permet à `penserTrace` de le rattraper quand la
+ *  boucle lève. */
+async function boucler(
+  input: { agentId: string; tenantId: string; transcript: unknown[]; deadline: number },
+  tour: ContexteTour,
+  deps: GatewayBrainDeps,
+  usage: { tokensIn: number; tokensOut: number; coutMicroEur: number },
+): Promise<DecisionTracee> {
   const agent = await deps.contexte(input.tenantId, input.agentId);
   if (!agent) throw new AgentIntrouvable(input.agentId);
   // Le contact est lu UNE FOIS par tour, pas une fois par appel d'outil : il sert au prompt (l'agent doit
@@ -133,7 +163,6 @@ export async function penserTrace(
   ];
   const exposes = outilsExposes(agent.outilsActifs, agent.sorties);
   const appels: TraceAppel[] = [];
-  const usage = { tokensIn: 0, tokensOut: 0, coutMicroEur: 0 };
   let appelsFaits = tour.appelsDejaFaits;
 
   for (let allerRetour = 0; allerRetour < MAX_ALLERS_RETOURS; allerRetour += 1) {
@@ -147,10 +176,11 @@ export async function penserTrace(
     });
     usage.tokensIn += reponse.usage.tokensIn;
     usage.tokensOut += reponse.usage.tokensOut;
-    // ⚠️ DETTE D1 : le Gateway facture en DOLLARS et la colonne est en micro-euros. La conversion est une
-    // décision de facturation, pas technique, et elle est encore ouverte. On accumule la valeur telle
-    // quelle, en micro-unités, pour que le plafond morde au bon ordre de grandeur en attendant.
-    usage.coutMicroEur += Math.round(reponse.usage.coutDollars * 1_000_000);
+    // 🔴 LA CONVERSION SE FAIT ICI, ET UNE SEULE FOIS (ancienne dette D1). Le Gateway facture en DOLLARS,
+    // tous nos compteurs et tous nos plafonds sont en micro-euros : on additionnait donc des dollars dans
+    // une colonne d'euros, et le plafond réglé par le client était comparé à une autre monnaie que la
+    // sienne. Le taux est un paramètre COMMERCIAL de la configuration, pas un cours en temps réel.
+    usage.coutMicroEur += microEurosDepuisDollars(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1);
 
     if (reponse.appelsOutils.length === 0) {
       return { texte: reponse.texte ?? '', sortie: null, usage, appels };

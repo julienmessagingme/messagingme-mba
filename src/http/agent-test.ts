@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import type { ContexteTour, DecisionTracee, GatewayBrainDeps } from '../agent/brain.gateway';
 import { AgentIntrouvable, penserTrace } from '../agent/brain.gateway';
+import { TourInterrompu } from '../agent/brain';
 import { scopeTenant, estUuid } from './scope';
 
 /**
@@ -25,6 +26,18 @@ export interface AgentTestRouteDeps {
   cerveau?: GatewayBrainDeps;
   /** Le Gateway est-il configuré ? Le MODÈLE, lui, vient de la fiche de l'agent, pas d'une variable d'env. */
   disponible: boolean;
+  /**
+   * Le solde prépayé du workspace, en micro-euros. Optionnelles ensemble ; absentes -> l'essai ne coûte rien
+   * au workspace (suites de tests à deps minimales).
+   *
+   * 🔴 UN ESSAI CONSOMME POUR DE VRAI. Le bac à sable simule les outils à EFFET, jamais l'appel de modèle : le
+   * fournisseur facture un essai exactement comme une conversation. Le laisser hors du solde donnerait une
+   * porte gratuite et illimitée sur un compte prépayé, et ferait mentir le solde affiché juste à côté.
+   */
+  solde?(tenantId: string): Promise<number>;
+  /** Retire du solde ce que l'essai a coûté. La note dit d'où vient le mouvement : un essai n'ouvre aucune
+   *  session, donc le journal n'a rien d'autre pour l'expliquer. */
+  debiter?(tenantId: string, montantMicroEur: number, note: string): Promise<void>;
 }
 
 const messageSchema = z.object({
@@ -54,6 +67,22 @@ const TOUR_BAC_A_SABLE: Omit<ContexteTour, 'appelsDejaFaits' | 'coutDejaMicroEur
   waId: 'bac-a-sable',
 };
 
+/**
+ * Retire du solde ce que l'essai vient de coûter.
+ *
+ * BEST-EFFORT, comme en production : le fournisseur a déjà répondu, faire échouer la requête priverait le
+ * client de sa réponse pour une ligne de comptabilité. On perd le décompte, jamais l'essai.
+ */
+async function debiterEssai(tenantId: string, coutMicroEur: number, deps: AgentTestRouteDeps): Promise<void> {
+  if (!deps.debiter || !(coutMicroEur > 0)) return;
+  try {
+    await deps.debiter(tenantId, coutMicroEur, 'essai depuis la console');
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`agent: SOLDE NON DÉBITÉ pour un essai du tenant ${tenantId}`, err instanceof Error ? err.message : err);
+  }
+}
+
 export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
 
@@ -67,6 +96,13 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
     }
     const parse = corpsSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'messages requis (rôle « user » ou « assistant », texte non vide)' });
+
+    // Le SOLDE, avant l'appel au modèle et pour la même raison qu'en production : on ne paie pas un appel
+    // qu'on ne pourra pas facturer. 409 et non 5xx : c'est un état du compte, pas un incident, et Cloudflare
+    // remplacerait le corps d'une 5xx par sa page d'erreur, donc le client ne saurait même pas pourquoi.
+    if (deps.solde && (await deps.solde(tenant)) <= 0) {
+      return reply.code(409).send({ error: 'solde épuisé : rechargez le compte pour essayer votre agent' });
+    }
 
     let decision: DecisionTracee;
     try {
@@ -86,10 +122,15 @@ export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps
       // Une ERREUR TYPÉE distingue l'agent inconnu du reste : reconnaître un message se casserait en silence
       // au premier refactor de ce texte, et relire l'agent avant l'essai coûterait une requête par essai.
       if (err instanceof AgentIntrouvable) return reply.code(404).send({ error: 'agent introuvable' });
+      // Un aller-retour déjà facturé se paie même si le suivant a échoué : le cerveau porte dans l'erreur ce
+      // qu'il avait déjà dépensé, et un essai qui casse en cours de route n'a aucune raison d'être offert.
+      if (err instanceof TourInterrompu) await debiterEssai(tenant, err.usage.coutMicroEur, deps);
       // Panne du fournisseur, délai dépassé, clé refusée : rien de tout ça n'est un incident de la console,
       // et Cloudflare remplacerait le corps d'une 5xx par sa page d'erreur.
       return reply.code(502).send({ error: `l’essai a échoué : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
     }
+
+    await debiterEssai(tenant, decision.usage?.coutMicroEur ?? 0, deps);
 
     return reply.code(200).send({
       texte: decision.texte,

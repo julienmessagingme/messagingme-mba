@@ -908,6 +908,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Signal de vie du worker** (le process qui envoie réellement les messages) : « Actif », « Silencieux » ou
   « Aucun signal », affiché à côté du signal de charge des files. Distingue « les files ne se vident pas » de « le
   process est mort », ce que la seule charge des files ne dit pas.
+- ✅ **Solde prépayé de l'agent IA** : lecture du solde d'un client et de son journal de mouvements, et
+  **rechargement** (la seule écriture de cette surface). Le rechargement est ici et pas dans la console parce
+  qu'un client ne doit jamais pouvoir créditer son propre compte. Borné à 1000 € par opération, et une note
+  expliquant le mouvement est obligatoire. Rechargement à la main pour l'instant, sans paiement en ligne.
 
 ## MBA (menu « MBA » : Guide / Paramètres)
 

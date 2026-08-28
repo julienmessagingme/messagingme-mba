@@ -297,7 +297,11 @@ Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (si
 `SUPPORT_TO` (support), **`META_ES_CONFIG_ID`** (Embedded Signup ; vide → feature OFF, route 503), **`ENCRYPTION_KEY`**
 (64 hex ; chiffre les tokens business ES ; fail-fast prod si `META_ES_CONFIG_ID` posé),
 **`WEBHOOK_IN_RATE_LIMIT_MAX`** / **`WEBHOOK_IN_RATE_LIMIT_WINDOW_MS`** (débit d'UN webhook entrant, défaut
-120 par minute) et **`WEBHOOK_PAYLOAD_RETENTION_DAYS`** (défaut 7, purge du dernier payload). ⚠️ Un changement de `.env.prod`
+120 par minute) et **`WEBHOOK_PAYLOAD_RETENTION_DAYS`** (défaut 7, purge du dernier payload).
+Côté agent IA : **`AI_GATEWAY_API_KEY`** (vide -> la file `agent-turn` n'est pas consommée, l'assistant de
+construction et le bac à sable répondent 503), **`AGENT_SETUP_MODEL`** et **`EUR_PER_USD`**. ⚠️ Cette dernière
+est un **paramètre commercial** et non un cours : le Gateway facture en dollars, tous nos compteurs sont en
+micro-euros, et la changer change ce qu'on facture au client. ⚠️ Un changement de `.env.prod`
 exige `docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
 
 ## Publicités Click-to-WhatsApp (CTWA) : identifier d'où vient un lead
@@ -1607,6 +1611,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/brain.gateway.ts` -> `penserTrace` | 🔴 LA boucle de raisonnement d'un agent : appel du modèle, exécution des outils, arrêt. Elle est l'APPELANT d'`executeTool`, et porte les trois responsabilités que sa JSDoc lui assignait (alerte sur `fatal`, plafonds recalculés À CHAQUE appel, résultat encadré en bloc délimité) | posée en tâche 19e, ferme la dette D3. Le bac à sable et le futur tour de production partagent cette boucle : un bac à sable qui n'exercerait pas le vrai chemin ne testerait rien |
 | `src/agent/prompt.ts` | 🔴 Le prompt système d'un agent (mention légale d'IA EN TÊTE, jamais absente) et `blocResultatOutil`, qui encadre ce qu'un outil rend avant de le remettre au modèle | posé en tâche 19e. Un résultat d'outil concaténé au prompt est une injection indirecte : le contenu vient d'une base de connaissance qu'un site tiers a remplie |
 | `src/agent/outils-maison.ts` | 🔴 Le CATALOGUE des outils maison (handler, mots, paramètres, risque) et `outilExpose`, qui construit ce que le modèle voit. C'est ici, et nulle part ailleurs, que l'énumération du paramètre `sortie` de `terminer` est posée, DÉRIVÉE de `agents.fiche.sorties` | posé en tâche 19c. La console ne peut pas inventer un `handler` (l'outil serait actif et refuserait à chaque appel), et recopier les codes de sortie dans `agent_tools.params` créerait une seconde vérité qui divergerait au premier ajout de règle |
+| `src/agent/devise.ts` -> `microEurosDepuisDollars` / `eurosDepuisMicro` | 🔴 La conversion du coût d'un appel de modèle, en UN endroit. Le Gateway facture en DOLLARS, tous nos compteurs et tous nos plafonds sont en micro-euros. Le taux est un paramètre COMMERCIAL (`EUR_PER_USD`), pas un cours | posé en tâche 21, ferme la dette D1. Un taux absent ou aberrant retombe sur 1, JAMAIS sur zéro : un zéro rendrait toute consommation gratuite, donc désarmerait tous les plafonds en silence. `web/lib/agent-solde.ts` en porte le miroir d'affichage, dont `tests/agent-devise.test.ts` ancre la parité |
+| `src/agent/brain.ts` -> `TourInterrompu` | 🔴 Le contrat « un cerveau qui lève APRÈS avoir dépensé porte sa consommation dans l'erreur ». Ses deux appelants (le tour de production, le bac à sable) l'enregistrent avant de traiter l'échec | posé en tâche 21. Un tour fait plusieurs allers-retours facturés séparément : le cumul vivait DANS la boucle, donc une exception au deuxième appel emportait ce que le premier avait déjà coûté. **Un compteur de dépense ne vit jamais dans la portée qui peut lever** |
 | `src/workflow/executor.ts` -> `runEnAttenteSur` | « Le run en attente d'un contact ET le bloc qui l'attend, s'il est du type demandé » | 3 copies (reprises RCS, sortie d'agent, outil d'agent) |
 
 **Front**

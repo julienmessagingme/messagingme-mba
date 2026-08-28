@@ -5,6 +5,7 @@ import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catal
 import type { ResolveurOutil } from '../src/agent/executor';
 import { ficheVide } from '../src/agent/fiche';
 import { SORTIE_PLAFOND } from '../src/agent/sorties';
+import { TourInterrompu } from '../src/agent/brain';
 
 /**
  * Le CERVEAU : la boucle qui transforme un historique en une décision.
@@ -222,6 +223,33 @@ describe('penserTrace', () => {
     const r = await penserTrace(entree(), TOUR, d);
     expect(r.usage!.tokensIn).toBe(20);
     expect(r.usage!.tokensOut).toBe(10);
+  });
+
+  it('🔴 un appel de modèle qui ÉCHOUE APRÈS un autre rend quand même ce qui a été DÉPENSÉ', async () => {
+    // Le fournisseur facture CHAQUE aller-retour. Une exception nue au deuxième emportait avec elle le coût
+    // du premier : ni le compteur de session ni le solde prépayé ne bougeaient, alors que la facture, elle,
+    // était bien partie. L'erreur porte donc la consommation, et l'appelant l'enregistre avant de traiter
+    // l'échec.
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}')]);
+    let appels = 0;
+    d.completer = async () => {
+      appels += 1;
+      if (appels > 1) throw new Error('502 du fournisseur');
+      return appelOutil('mba_poser_tag', '{"tag":"vip"}');
+    };
+    const err = await penserTrace(entree(), TOUR, d).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(TourInterrompu);
+    // 0,00001 $ au taux par défaut de 1 : 10 micro-euros, le coût du SEUL aller-retour qui a abouti.
+    expect((err as TourInterrompu).usage.coutMicroEur).toBe(10);
+    expect((err as TourInterrompu).message).toContain('502 du fournisseur');
+  });
+
+  it('un échec AVANT toute dépense remonte tel quel', async () => {
+    // La distinction est le sujet : envelopper une panne qui n'a rien coûté ferait facturer au client des
+    // tours gratuits, et masquerait le type de l'erreur d'origine à ceux qui le reconnaissent.
+    const { d } = deps([texte('x')]);
+    d.completer = async () => { throw new AgentIntrouvable('a1'); };
+    await expect(penserTrace(entree(), TOUR, d)).rejects.toBeInstanceOf(AgentIntrouvable);
   });
 
   it('un agent sans outil actif parle quand même', async () => {

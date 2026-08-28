@@ -8,9 +8,10 @@ import { MbaTabs } from '@/components/MbaTabs';
 import { useT } from '@/lib/i18n';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
 import {
-  createAgent, deleteAgent, getAgent, listAgents, patchAgent,
+  createAgent, deleteAgent, getAgent, getSoldeAgent, listAgents, patchAgent,
   type AgentComplet, type AgentResume, type PatchAgent, type SortieAgent,
 } from '@/lib/api-agent';
+import { eurosDepuisMicro, SOLDE_BAS_MICRO_EUR } from '@/lib/agent-solde';
 import { CodeSortieInput } from '@/components/AgentSorties';
 import { AgentConnaissance } from '@/components/AgentConnaissance';
 import { AgentOutils } from '@/components/AgentOutils';
@@ -53,12 +54,16 @@ function Ecran({ tenantId }: { tenantId: string }) {
   // Ce qui manque pour ACTIVER, tel que le serveur le rend en 422. Séparé du message d'erreur : ce n'est pas
   // une panne, c'est une liste de choses à faire, et chacune pointe l'onglet où elle se fait.
   const [manques, setManques] = useState<ManqueFiche[]>([]);
+  // Le solde prépayé du workspace. `null` = aucun solde sur cette instance, on n'affiche rien plutôt que
+  // d'annoncer « 0 € » à un client dont le compte n'est simplement pas branché.
+  const [solde, setSolde] = useState<number | null>(null);
 
   const charger = useCallback(async () => {
     // `tous: true` : c'est l'écran qui CRÉE les agents, il doit voir ses propres brouillons. Le builder, lui,
     // n'appelle jamais avec ce drapeau.
     try {
       setAgents(await listAgents(tenantId, { tous: true }));
+      setSolde(await getSoldeAgent(tenantId));
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     }
@@ -240,6 +245,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-4">
+      {solde !== null && <Solde microEur={solde} />}
       <div>
         <p className={kickerCls}>{t('AGENT IA', 'AI AGENT')}</p>
         <h2 className="text-xl font-semibold tracking-tight text-ink-900">{t('Vos agents', 'Your agents')}</h2>
@@ -294,6 +300,43 @@ function Ecran({ tenantId }: { tenantId: string }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Le solde prépayé du workspace.
+ *
+ * 🔴 IL EST SUR LA LISTE, PAS DANS UN ONGLET. Un solde qu'il faut aller chercher ne prévient personne : ce
+ * qu'on veut, c'est qu'un client le voie descendre sans le demander, et qu'il sache pourquoi ses agents se
+ * sont tus le jour où ils se taisent.
+ */
+function Solde({ microEur }: { microEur: number }) {
+  const t = useT();
+  const euros = eurosDepuisMicro(microEur);
+  if (microEur <= 0) {
+    return (
+      <MbaNotice kind="error" testid="agent-solde-vide">
+        {t(
+          'Votre crédit est épuisé : vos agents ne répondent plus et sortent par « Plafond atteint ». Contactez-nous pour recharger.',
+          'Your credit is used up: your agents no longer answer and leave through “Cap reached”. Contact us to top up.',
+        )}
+      </MbaNotice>
+    );
+  }
+  if (microEur < SOLDE_BAS_MICRO_EUR) {
+    return (
+      <MbaNotice kind="warning" testid="agent-solde-bas">
+        {t(
+          `Crédit restant : ${euros} €. C’est bas : au bout, vos agents cesseront de répondre.`,
+          `Credit left: €${euros}. That is low: once it runs out, your agents will stop answering.`,
+        )}
+      </MbaNotice>
+    );
+  }
+  return (
+    <p data-testid="agent-solde" className="text-sm text-ink-500">
+      {t(`Crédit restant : ${euros} €`, `Credit left: €${euros}`)}
+    </p>
   );
 }
 

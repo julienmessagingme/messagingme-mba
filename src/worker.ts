@@ -54,6 +54,7 @@ import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { lireContexteAgent } from './agent/contexte';
+import { PgCreditStore } from './agent/credits.pg';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { PgEmailAccountStore } from './email/account-store.pg';
@@ -909,6 +910,7 @@ async function main(): Promise<void> {
     const toolCatalog = new PgToolCatalog(pool);
     const journalAppels = new PgJournalAppels(pool);
     const knowledgeStore = new PgKnowledgeStore(pool);
+    const credits = new PgCreditStore(pool);
 
     // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
     const escaladerVersHumain = creerEscaladeVersHumain({
@@ -940,6 +942,9 @@ async function main(): Promise<void> {
       // Point de lecture PARTAGÉ avec le bac à sable de la console : un champ ajouté d'un seul côté ferait
       // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
       contexte: (t, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog }, t, agentId),
+      // Le Gateway facture en dollars, tous nos compteurs sont en micro-euros : la conversion se fait a l
+      // entree, une seule fois, avec le taux commercial de la configuration.
+      tauxEurParDollar: config.EUR_PER_USD,
       outils: {
         catalogue: toolCatalog,
         // Le VRAI journal, contrairement au bac à sable : cette table est le grand livre de facturation
@@ -962,6 +967,10 @@ async function main(): Promise<void> {
     const agentTurnDeps: RunTurnDeps = {
       sessions: agentSessions,
       brain: cerveau,
+      // 🔴 Le solde PREPAYE du workspace : lu avec les autres plafonds (donc avant l appel au modele), et
+      // debite de ce que le tour a reellement coute. C est ce qui relie le budget affiche a la consommation.
+      soldeTenant: (t) => credits.solde(t),
+      debiterTenant: async (t, montant, sessionId) => { await credits.debiter(t, montant, { sessionId }); },
       lireRun: async (t, runId) => {
         const run = await runStore.byId(t, runId);
         return run ? { status: run.status, currentNode: run.currentNode } : null;

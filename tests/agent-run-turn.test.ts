@@ -9,6 +9,7 @@ import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
 import type { FicheAgent } from '../src/agent/agent-store';
 import { FakeAgentBrain } from '../src/agent/brain.fake';
 import type { DecisionAgent } from '../src/agent/brain';
+import { TourInterrompu } from '../src/agent/brain';
 import type { AgentSession } from '../src/agent/session-store';
 import type { AgentTurnJob } from '../src/agent/turn-job';
 
@@ -29,6 +30,17 @@ const FICHE: FicheAgent = {
 };
 const RUN_VIVANT: EtatRun = { status: 'waiting', currentNode: 'a' };
 
+/** Le store de sessions nominal. Extrait pour que les tests qui ne veulent surcharger QU'UNE méthode
+ *  n'aient pas à recopier les trois autres, et surtout n'oublient pas `ajouterCout`. */
+function sessionsOk(): RunTurnDeps['sessions'] {
+  return {
+    prendreLeTour: async () => SESSION,
+    clore: async () => {},
+    ajouterAuTranscript: async () => {},
+    ajouterCout: async () => {},
+  } as unknown as RunTurnDeps['sessions'];
+}
+
 /** Deps par défaut : tout est nominal, chaque test ne surcharge que ce qu'il veut casser. */
 function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
   const envois: string[] = [];
@@ -39,7 +51,7 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
   const brain = new FakeAgentBrain(decision ?? { texte: 'Bonjour', sortie: null });
   const deps: RunTurnDeps = {
     sessions: {
-      prendreLeTour: async () => SESSION,
+      ...sessionsOk(),
       clore: async (_t: string, _id: string, status: string, sortie?: string) => { clotures.push({ status, ...(sortie ? { sortie } : {}) }); },
       ajouterAuTranscript: async (_t: string, _id: string, e: unknown) => { transcript.push(e); },
     } as unknown as RunTurnDeps['sessions'],
@@ -320,5 +332,125 @@ describe('le tour, branché sur le VRAI cerveau', () => {
     await runTurn(JOB, deps);
     expect(cap.tours[0]).toEqual({ sessionId: SESSION.id, runId: JOB.runId, waId: JOB.waId });
     expect(cap.appels).toHaveLength(1);
+  });
+});
+
+/**
+ * LE BUDGET, VRAIMENT RELIÉ À LA CONSOMMATION.
+ *
+ * 🔴 CE QUE CES TESTS FERMENT. Le coût d'un tour n'était écrit NULLE PART : `agent_sessions.cout_micro_eur`
+ * existait, la console affichait un plafond par conversation, `runTurn` le comparait, et la colonne restait
+ * à zéro pour toujours. La comparaison était donc toujours fausse, et le réglage montré au client était
+ * DÉCORATIF. Le budget restant s'appliquait bien à l'intérieur d'UN tour, mais d'un message à l'autre rien
+ * ne s'accumulait.
+ */
+describe('le budget, relié à la consommation', () => {
+  const USAGE = { tokensIn: 100, tokensOut: 20, coutMicroEur: 4200 };
+
+  it('🔴 le coût du tour est écrit SUR LA SESSION et DÉBITÉ du solde du workspace', async () => {
+    const couts: number[] = [];
+    const debits: Array<{ montant: number; sessionId: string }> = [];
+    const { deps } = make({
+      sessions: { ...sessionsOk(), ajouterCout: async (_t, _s, m) => { couts.push(m); } },
+      soldeTenant: async () => 30_000,
+      debiterTenant: async (_t, montant, sessionId) => { debits.push({ montant, sessionId }); },
+    }, { texte: 'ok', sortie: null, usage: USAGE });
+    await runTurn(JOB, deps);
+    expect(couts).toEqual([4200]);
+    expect(debits).toEqual([{ montant: 4200, sessionId: SESSION.id }]);
+  });
+
+  it('🔴 un solde ÉPUISÉ refuse le tour AVANT d’appeler le modèle', async () => {
+    // Lire le solde après coup reviendrait à payer un appel qu'on savait ne pas pouvoir facturer.
+    let pense = 0;
+    const { deps, envois } = make({
+      soldeTenant: async () => 0,
+      brain: { penser: async () => { pense += 1; return { texte: 'jamais', sortie: null }; } },
+    });
+    const res = await runTurn(JOB, deps);
+    expect(res).toMatchObject({ fait: 'plafond', sortie: 'plafond' });
+    expect(pense).toBe(0);
+    expect(envois).toEqual([]);
+  });
+
+  it('et un solde NÉGATIF aussi : on ne laisse pas la dette creuser', async () => {
+    const { deps } = make({ soldeTenant: async () => -1200 });
+    expect((await runTurn(JOB, deps)).fait).toBe('plafond');
+  });
+
+  it('un solde suffisant laisse passer', async () => {
+    const { deps, envois } = make({ soldeTenant: async () => 1 });
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    expect(envois).toHaveLength(1);
+  });
+
+  it('🔴 une écriture de comptage EN ÉCHEC ne fait pas échouer le tour', async () => {
+    // Le modèle a déjà répondu et le fournisseur a déjà facturé : renvoyer le job en file paierait l'appel
+    // une seconde fois. On perd une ligne de comptabilité, jamais une conversation.
+    const { deps, envois } = make({
+      sessions: { ...sessionsOk(), ajouterCout: async () => { throw new Error('pooler injoignable'); } },
+      soldeTenant: async () => 30_000,
+    }, { texte: 'ok', sortie: null, usage: USAGE });
+    const res = await runTurn(JOB, deps);
+    expect(res.fait).toBe('repondu');
+    expect(envois).toHaveLength(1);
+  });
+
+  it('🔴 un tour qui ÉCHOUE APRÈS avoir déjà payé débite quand même', async () => {
+    // LE cas que le diff a failli laisser passer. Un tour fait plusieurs allers-retours de modèle, facturés
+    // séparément : le modèle appelle un outil, on paie ce premier appel, puis le second casse (panne, 4xx
+    // terminal, échéance). L'exception emportait avec elle ce qui avait déjà été dépensé, donc le fournisseur
+    // facturait et le workspace ne payait rien.
+    const couts: number[] = [];
+    const debits: number[] = [];
+    const { deps } = make({
+      sessions: { ...sessionsOk(), ajouterCout: async (_t: string, _s: string, m: number) => { couts.push(m); } } as unknown as RunTurnDeps['sessions'],
+      soldeTenant: async () => 30_000,
+      debiterTenant: async (_t, m) => { debits.push(m); },
+      brain: { penser: async () => { throw new TourInterrompu(new Error('502 du fournisseur'), USAGE); } },
+    });
+    expect((await runTurn(JOB, deps)).fait).toBe('erreur');
+    expect(debits).toEqual([4200]);
+    expect(couts).toEqual([4200]);
+  });
+
+  it('une panne SÈCHE, elle, ne débite rien', async () => {
+    // La distinction EST le sujet : une erreur survenue avant tout appel facturé (clé refusée, agent
+    // introuvable) ne doit rien prélever, sinon on facture au client des tours qui n'ont rien coûté.
+    const debits: number[] = [];
+    const { deps } = make({
+      soldeTenant: async () => 30_000,
+      debiterTenant: async (_t, m) => { debits.push(m); },
+      brain: { penser: async () => { throw new Error('clé refusée'); } },
+    });
+    expect((await runTurn(JOB, deps)).fait).toBe('erreur');
+    expect(debits).toEqual([]);
+  });
+
+  it('🔴 un débit de solde EN ÉCHEC n’empêche pas d’écrire le compteur de la session', async () => {
+    // Deux tables, deux écritures, donc deux gardes : elles ne peuvent pas être atomiques entre elles, et les
+    // enchaîner dans un seul `try` faisait sauter la seconde au premier raté de la première.
+    const couts: number[] = [];
+    const { deps, envois } = make({
+      sessions: { ...sessionsOk(), ajouterCout: async (_t: string, _s: string, m: number) => { couts.push(m); } } as unknown as RunTurnDeps['sessions'],
+      soldeTenant: async () => 30_000,
+      debiterTenant: async () => { throw new Error('contention sur la ligne de solde'); },
+    }, { texte: 'ok', sortie: null, usage: USAGE });
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    expect(couts).toEqual([4200]);
+    expect(envois).toHaveLength(1);
+  });
+
+  it('un tour sans usage ne débite rien', async () => {
+    const debits: number[] = [];
+    const { deps } = make({ soldeTenant: async () => 30_000, debiterTenant: async (_t, m) => { debits.push(m); } });
+    await runTurn(JOB, deps);
+    expect(debits).toEqual([]);
+  });
+
+  it('sans dep de solde, le tour marche comme avant', async () => {
+    // Comportement d'avant la tâche 21 : les suites à deps minimales n'ont pas à câbler un prépayé.
+    const { deps } = make({});
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
   });
 });

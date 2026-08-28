@@ -61,6 +61,17 @@ export async function listAgents(tenantId: string, opts: { tous?: boolean } = {}
   return r.agents ?? [];
 }
 
+/**
+ * Le solde prépayé du workspace, en micro-euros. `null` = aucun solde configuré sur cette instance.
+ *
+ * 🔴 LECTURE SEULE, et c'est le sujet. Le rechargement vit sur la surface d'exploitation, sous une autorité
+ * séparée du compte client : un client qui pourrait se créditer lui-même n'aurait plus de prépayé du tout.
+ */
+export async function getSoldeAgent(tenantId: string): Promise<number | null> {
+  const r = await request<{ soldeMicroEur: number | null }>(`/tenants/${tenantId}/agents/solde`);
+  return r.soldeMicroEur;
+}
+
 export async function getAgent(tenantId: string, agentId: string): Promise<AgentComplet> {
   return (await request<{ agent: AgentComplet }>(`/tenants/${tenantId}/agents/${agentId}`)).agent;
 }

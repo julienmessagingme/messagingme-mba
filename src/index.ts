@@ -81,6 +81,7 @@ import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
+import { PgCreditStore } from './agent/credits.pg';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
@@ -142,6 +143,7 @@ async function main(): Promise<void> {
   const agentStore = new PgAgentStore(pool);
   const knowledgeStore = new PgKnowledgeStore(pool);
   const toolCatalog = new PgToolCatalog(pool);
+  const credits = new PgCreditStore(pool);
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
   const gateway = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
   const automationStore = new PgAutomationStore(pool);
@@ -631,6 +633,8 @@ async function main(): Promise<void> {
       // Le modèle d'un agent NEUF vient de la configuration serveur, pas du client : il choisira ensuite
       // dans l'écran de réglage. Vide en l'absence de configuration, la colonne l'accepte.
       modeleParDefaut: config.LLM_MODEL,
+      // LECTURE seule : le client voit ce qui lui reste, il ne se recharge pas lui-meme (cf. /ops).
+      soldeAgent: (tenant) => credits.solde(tenant),
       // Le blocage dur avant activation : il lit les TROIS sources (fiche, connaissance, outils actifs),
       // parce qu un agent active est proposable dans un scenario, donc il finira par ecrire a de vrais clients.
       etatPourLint: async (tenant, agentId) => {
@@ -672,12 +676,20 @@ async function main(): Promise<void> {
       // prerequis est donc la cle du Gateway. Le lier a LLM_MODEL rendrait /test indisponible le jour ou
       // l analyse de conversation serait desactivee, sans aucun rapport.
       disponible: gateway !== null,
+      // 🔴 UN ESSAI CONSOMME POUR DE VRAI : les outils a effet sont simules, l appel de modele ne l est pas.
+      // Meme solde, meme garde qu en production, sinon la console offrirait une porte gratuite et illimitee
+      // sur un compte prepaye. Le mouvement n a pas de session (un essai n en ouvre aucune) : c est la note
+      // qui l explique dans le journal.
+      solde: (tenant) => credits.solde(tenant),
+      debiter: async (tenant, montant, note) => { await credits.debiter(tenant, montant, { note }); },
       ...(gateway ? {
         cerveau: {
           completer: (i) => gateway.completer(i),
           // Point de lecture PARTAGE avec le tour de production : c est ce qui garantit que le bac a sable
           // montre exactement ce que la production ferait, modele et politiques compris.
           contexte: (tenant, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog }, tenant, agentId),
+          // Meme taux qu en production : un essai doit annoncer ce que la conversation couterait vraiment.
+          tauxEurParDollar: config.EUR_PER_USD,
           outils: {
             catalogue: toolCatalog,
             // Muet : `agent_tool_calls.session_id` reference une session, et le bac a sable n en ouvre aucune.
@@ -998,6 +1010,24 @@ async function main(): Promise<void> {
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),
       getWorkerHeartbeat: () => heartbeatStore.get(),
+      // Le solde prepaye d un workspace pour l agent IA. La RECHARGE est la seule ecriture metier de cette
+      // surface, et elle est ici parce qu un client ne doit jamais pouvoir crediter son propre compte.
+      //
+      // ⚠️ L espace est RESOLU d abord, dans les deux sens. En lecture, un espace inconnu rendrait un solde de
+      // zero, que l operateur lirait comme « client a sec » et rechargerait. En ecriture, la cle etrangere
+      // leverait, donc un 500 remplace par la page d erreur de Cloudflare, sur la seule route qui ecrit de l
+      // argent. `getTenantName` est le meme point de resolution que `/ops/observe`.
+      soldeAgent: async (tenantId) => {
+        if ((await opsStore.getTenantName(tenantId)) === null) return null;
+        return {
+          soldeMicroEur: await credits.solde(tenantId),
+          mouvements: await credits.mouvements(tenantId, 50),
+        };
+      },
+      rechargerAgent: async (tenantId, montant, note) => {
+        if ((await opsStore.getTenantName(tenantId)) === null) return null;
+        return credits.crediter(tenantId, montant, note);
+      },
       /**
        * Session d'OBSERVATION d'un espace client : un jeton de session en LECTURE SEULE.
        *

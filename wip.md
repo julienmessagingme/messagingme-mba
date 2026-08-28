@@ -3,8 +3,35 @@
 ## EN COURS : le bloc agent IA (lots L0 et L1)
 
 Le plan, l etat tache par tache et le **registre des dettes** vivent dans
-[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D2, D3, D4 et D6 sont fermees**. Restent **D1** (devise)
-et **D5** (les blocs agent invisibles d Analytics).
+[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D1, D2, D3, D4 et D6 sont fermees**. Reste **D5** (les
+blocs agent invisibles d Analytics).
+
+## A DEPLOYER : le solde prepaye par workspace (tache 21)
+
+Demande de Julien : un budget qui existe dans l outil et qui **descend vraiment avec la consommation**, sans
+Stripe (recharge a la main). Ses deux arbitrages : un solde **par workspace**, et tout **en euros** avec un
+**taux fixe en configuration** (`EUR_PER_USD`), pas un cours en temps reel.
+
+🔴 **Ce que ca a mis au jour : le cout d un tour n etait ecrit NULLE PART.** La colonne
+`agent_sessions.cout_micro_eur` existait, la console affichait un plafond par conversation, `runTurn` le
+comparait, et rien ne l alimentait : le reglage montre au client etait DECORATIF. Repare, et c est ce qui rend
+le prepaye possible. **Ferme aussi D1** : la conversion dollars vers micro-euros se fait a l entree, en un seul
+endroit (`src/agent/devise.ts`).
+
+Le solde se lit et se recharge sur `/ops/credits/:tenantId` (**premiere ecriture metier de `/ops`** : un client
+ne doit jamais pouvoir crediter son propre compte). Recharge bornee a 1000 € et **note obligatoire**. Le bac a
+sable de la console consomme pour de vrai, il est donc soumis au meme solde.
+
+⚠️ **Migration 0087 NON appliquee en production.** Sequence : `compose build mba-api` AVANT
+`compose run --rm --no-deps mba-api npm run migrate` (les migrations vivent dans l image), puis `up -d --build`.
+Tant qu elle n est pas passee, la lecture du solde echoue et les agents ne demarrent pas. **Prochaine libre = 0088.**
+
+⚠️ **Nouvelle variable d env** : `EUR_PER_USD` (defaut dans `.env.example`). Elle est un **parametre
+commercial** : la changer change ce qu on facture.
+
+⚠️ **Un workspace neuf a un solde de ZERO**, donc ses agents ne demarrent pas tant que personne n a recharge.
+C est le bon defaut (un credit implicite ferait payer une consommation que personne n a autorisee), mais ca veut
+dire qu apres le deploiement il faut **recharger le workspace de demonstration** avant d essayer un agent.
 
 ## DEPLOYE le 2026-08-28 sur `a325844` (54 commits, migration 0086 appliquee)
 
@@ -23,12 +50,11 @@ consommee. Conséquences tant que la cle n est pas posee :
 
 Donc : ne pas poser de bloc agent dans un scenario vivant avant d avoir mis la cle.
 
-⚠️ **Et poser la cle rend D1 vivante** : le Gateway facture en DOLLARS, la colonne est `budget_micro_eur`.
-Le plafond de depense d un agent est alors faux d un facteur de change. Decision de facturation, a trancher
-par Julien avant qu un agent parle a un vrai contact.
+✅ **D1 (la devise) est fermee depuis, par la tache 21** : le Gateway facture en DOLLARS, la conversion se fait
+desormais a l entree au taux `EUR_PER_USD`, en un seul endroit.
 
-⚠️ **Migration 0086 non appliquee en production** (dette D6). Elle passe AVANT tout deploiement de ce lot,
-et APRES un `compose build`.
+✅ **Migration 0086 appliquee** le 2026-08-28 (dette D6 fermee). La **0087** (solde prepaye), elle, ne l est
+pas : voir la section « A DEPLOYER » ci-dessus.
 
 ⚠️ **Nouvelles variables d env** : `AI_GATEWAY_API_KEY` (19d et 19e) et `AGENT_SETUP_MODEL` (19d). Vides, la
 conversation de construction et le bac a sable repondent 503, aucun crash. A poser sur le VPS avant de

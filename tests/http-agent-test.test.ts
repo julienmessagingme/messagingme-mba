@@ -54,8 +54,11 @@ const appelOutil = (nom: string, args: string): ReponseChat => ({
   usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
 });
 
-function app(opts: { reponses?: ReponseChat[]; agentConnu?: boolean; sansCerveau?: boolean; indisponible?: boolean } = {}) {
-  const cap = { messages: [] as ChatMessage[][], journalises: 0 };
+function app(opts: {
+  reponses?: ReponseChat[]; agentConnu?: boolean; sansCerveau?: boolean; indisponible?: boolean;
+  solde?: number;
+} = {}) {
+  const cap = { messages: [] as ChatMessage[][], journalises: 0, debits: [] as Array<{ montant: number; note: string }> };
   let i = 0;
   const catalogue: ToolCatalog = {
     byName: async (_t, _a, name) => (name === OUTIL.name ? OUTIL : null),
@@ -86,6 +89,10 @@ function app(opts: { reponses?: ReponseChat[]; agentConnu?: boolean; sansCerveau
   const deps: AgentTestRouteDeps = {
     disponible: opts.indisponible !== true,
     ...(opts.sansCerveau ? {} : { cerveau }),
+    ...(opts.solde === undefined ? {} : {
+      solde: async () => opts.solde!,
+      debiter: async (_t: string, montant: number, note: string) => { cap.debits.push({ montant, note }); },
+    }),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentTest: deps }) };
 }
@@ -179,5 +186,74 @@ describe('bac à sable de l’agent', () => {
 
   it('réservé aux administrateurs', async () => {
     expect((await app().srv.inject({ method: 'POST', url: url('t1'), ...h(agentTok), payload: bonjour })).statusCode).toBe(403);
+  });
+
+  /**
+   * 🔴 UN ESSAI CONSOMME POUR DE VRAI, et doit donc descendre le solde prépayé comme une conversation.
+   *
+   * Ce que le bac à sable simule, ce sont les outils à EFFET, jamais l'appel de modèle : le fournisseur
+   * facture un essai exactement comme un message de contact. Le laisser hors du solde ouvrirait une porte
+   * gratuite et illimitée sur un compte prépayé, et ferait mentir le solde affiché juste à côté.
+   */
+  describe('le solde prépayé', () => {
+    it('🔴 un essai DÉBITE le solde du workspace, et la note explique le mouvement', async () => {
+      // 0,00001 $ au taux par défaut de 1 = 10 micro-euros. La note est la seule explication possible : un
+      // essai n'ouvre aucune session, donc le journal n'a rien d'autre pour dire d'où vient la dépense.
+      const { cap, srv } = app({ solde: 5_000_000 });
+      expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
+      expect(cap.debits).toEqual([{ montant: 10, note: 'essai depuis la console' }]);
+    });
+
+    it('🔴 un solde ÉPUISÉ refuse l’essai AVANT d’appeler le modèle, en 409', async () => {
+      // Avant, pour ne pas payer un appel qu'on ne pourra pas facturer. 409 et non 5xx : c'est un état du
+      // compte, et Cloudflare remplacerait le corps d'une 5xx par sa page d'erreur.
+      for (const solde of [0, -1200]) {
+        const { cap, srv } = app({ solde });
+        const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+        expect(res.statusCode, String(solde)).toBe(409);
+        expect(res.json().error).toContain('solde');
+        expect(cap.messages).toHaveLength(0);
+        expect(cap.debits).toEqual([]);
+      }
+    });
+
+    it('un essai qui ÉCHOUE après avoir déjà payé débite quand même', async () => {
+      // Même règle qu'en production : le fournisseur facture chaque aller-retour, et un essai qui casse au
+      // second n'a aucune raison d'être offert.
+      const cap = { debits: [] as number[] };
+      let appels = 0;
+      const casse = buildServer({
+        queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET },
+        agentTest: {
+          disponible: true,
+          solde: async () => 5_000_000,
+          debiter: async (_t: string, montant: number) => { cap.debits.push(montant); },
+          cerveau: {
+            completer: async () => {
+              appels += 1;
+              if (appels > 1) throw new Error('gateway indisponible');
+              return appelOutil('mba_poser_tag', '{"tag":"vip"}');
+            },
+            contexte: async () => AGENT,
+            outils: {
+              catalogue: { byName: async () => OUTIL, listActifs: async () => AGENT.outilsActifs },
+              journal: { ouvrir: async () => '', clore: async () => {} },
+              resolveurs: { mba: creerResolveurSimulation({ connaissance: { chercher: async () => [] } }) },
+              compterAppel: async () => {},
+            },
+          },
+        },
+      });
+      expect((await casse.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(502);
+      expect(cap.debits).toEqual([10]);
+    });
+
+    it('sans solde câblé, l’essai marche comme avant', async () => {
+      // Suites à deps minimales : une instance qui n'a pas câblé le prépayé ne doit pas voir ses essais
+      // refusés.
+      const { cap, srv } = app();
+      expect((await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour })).statusCode).toBe(200);
+      expect(cap.debits).toEqual([]);
+    });
   });
 });

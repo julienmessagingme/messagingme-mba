@@ -211,6 +211,13 @@ export const schema = z.object({
    * Vide -> repli sur LLM_MODEL.
    */
   AGENT_SETUP_MODEL: z.string().default(''),
+  /**
+   * Taux euros par dollar, pour convertir ce que le Gateway facture (en DOLLARS) vers nos compteurs, qui
+   * sont tous en micro-euros. C est un parametre COMMERCIAL, pas un cours en temps reel : le client charge
+   * et consomme des euros, et la marge absorbe tres largement la variation. Un taux a 0 retomberait sur 1
+   * plutot que de rendre toute consommation gratuite (`src/agent/devise.ts`).
+   */
+  EUR_PER_USD: z.coerce.number().positive().default(0.92),
   /** max_tokens de la réponse d'analyse (petit JSON). */
   LLM_MAX_TOKENS: z.coerce.number().default(1024),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est INERTE (aucun job enfilé). */

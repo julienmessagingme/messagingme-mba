@@ -90,6 +90,20 @@ export class PgAgentSessionStore implements AgentSessionStore {
     );
   }
 
+  async ajouterCout(tenantId: string, sessionId: string, montantMicroEur: number): Promise<void> {
+    // Un montant nul ou négatif ne s'écrit pas : il ne dirait rien, et un négatif serait un remboursement
+    // déguisé sur un compteur qui ne doit que monter.
+    const montant = Math.max(0, Math.round(montantMicroEur));
+    if (montant === 0) return;
+    // Incrément côté BASE, comme `compterAppel` : deux tours concurrents ne s'écrasent pas, et sans condition
+    // de statut parce qu'un tour déjà joué a déjà coûté, même si la session vient d'être close.
+    await this.pool.query(
+      `update agent_sessions set cout_micro_eur = cout_micro_eur + $3::bigint, derniere_activite = now()
+        where id = $1 and tenant_id = $2`,
+      [sessionId, tenantId, montant],
+    );
+  }
+
   async compterAppel(tenantId: string, sessionId: string): Promise<void> {
     // Incrément côté BASE, sans condition de statut : un appel servi doit se compter même si la session vient
     // d'être close par l'outil lui-même (l'escalade humaine clôt, et son appel compte quand même).

@@ -1,4 +1,5 @@
 import type { AgentBrain } from './brain';
+import { TourInterrompu } from './brain';
 import type { FicheAgent } from './agent-store';
 import type { AgentSession, AgentSessionStore } from './session-store';
 import type { AgentTurnJob } from './turn-job';
@@ -24,7 +25,7 @@ export interface EtatRun {
 export type ResultatEnvoi = SendRefusal;
 
 export interface RunTurnDeps {
-  sessions: Pick<AgentSessionStore, 'prendreLeTour' | 'clore' | 'ajouterAuTranscript'>;
+  sessions: Pick<AgentSessionStore, 'prendreLeTour' | 'clore' | 'ajouterAuTranscript' | 'ajouterCout'>;
   brain: AgentBrain;
   /** Relit le run par son id. `null` = introuvable, donc traité comme un run mort. */
   lireRun(tenantId: string, runId: string): Promise<EtatRun | null>;
@@ -63,6 +64,13 @@ export interface RunTurnDeps {
    * comportement d'avant cette tâche.
    */
   lireConversation?(tenantId: string, waId: string, depuis: string): Promise<unknown[]>;
+  /**
+   * Le solde prépayé du workspace, en micro-euros. Absent -> aucun plafond de workspace (suites à deps
+   * minimales, et comportement d'avant la tâche 21).
+   */
+  soldeTenant?(tenantId: string): Promise<number>;
+  /** Retire du solde ce que ce tour a coûté. Absent -> rien n'est débité. */
+  debiterTenant?(tenantId: string, montantMicroEur: number, sessionId: string): Promise<void>;
   /** Le fil est-il encore à nous ? Absent -> considéré comme oui (suites à deps minimales). */
   mayAct?(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie le texte de l'agent. MÊME dépendance que le reste du scénario, donc DRY_RUN honoré et
@@ -140,6 +148,43 @@ async function poserEcheance(
 }
 
 /**
+ * Enregistre ce qu'un tour a coûté : le SOLDE prépayé du workspace d'abord, le compteur de la session ensuite.
+ *
+ * 🔴 C'EST CE QUI RENDAIT LE BUDGET DÉCORATIF. `agent_sessions.cout_micro_eur` existait, la console affichait
+ * un plafond par conversation, `runTurn` le comparait, et rien n'écrivait jamais ce cumul : la colonne restait
+ * à zéro pour toujours, donc la comparaison était toujours fausse.
+ *
+ * 🔴 DEUX ÉCRITURES, DEUX GARDES SÉPARÉES, ET LE SOLDE EN PREMIER. Elles touchent deux tables et ne peuvent
+ * pas être atomiques entre elles : si la seconde échoue, la première doit tenir. Le solde du workspace passe
+ * donc d'abord, parce que c'est de l'ARGENT (un raté y fait consommer sans facturer, indéfiniment), alors
+ * qu'un raté sur le compteur de session ne relâche qu'un plafond, sur une seule conversation. Et les deux
+ * traces sont distinctes : un incident sur l'argent doit se repérer sans être noyé dans un raté de comptage.
+ *
+ * BEST-EFFORT dans les deux cas : le modèle a déjà répondu quand on arrive ici. Lever ferait retourner le job
+ * en file, donc repayer l'appel et réenvoyer le message. On perd une ligne de comptabilité, jamais une
+ * conversation.
+ */
+async function enregistrerCout(
+  job: AgentTurnJob, sessionId: string, coutMicroEur: number, deps: RunTurnDeps,
+): Promise<void> {
+  if (!(coutMicroEur > 0)) return;
+  if (deps.debiterTenant) {
+    try {
+      await deps.debiterTenant(job.tenantId, coutMicroEur, sessionId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`agent: SOLDE DU WORKSPACE NON DÉBITÉ (${coutMicroEur} micro-eur, session ${sessionId})`, err instanceof Error ? err.message : err);
+    }
+  }
+  try {
+    await deps.sessions.ajouterCout(job.tenantId, sessionId, coutMicroEur);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`agent: coût du tour non enregistré sur la session ${sessionId}`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
  * UN tour d'agent.
  *
  * L'ordre des étapes EST le sujet : chacune est une garde, et leur ordre est ce qui rend le tour sûr. Voir
@@ -182,7 +227,13 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     }
     return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }
-  if (session.tours > fiche.plafonds.maxTours
+  // 🔴 LE SOLDE PRÉPAYÉ DU WORKSPACE, lu ICI et pas ailleurs : avec les autres plafonds, donc AVANT l'appel
+  // au modèle. Le lire après reviendrait à payer un appel qu'on savait ne pas pouvoir facturer. Vide, tous
+  // les agents du workspace s'arrêtent, et le parcours sort par la même branche que les autres plafonds :
+  // le client câble « Plafond atteint » une seule fois, quelle qu'en soit la raison.
+  const soldeEpuise = deps.soldeTenant ? (await deps.soldeTenant(job.tenantId)) <= 0 : false;
+  if (soldeEpuise
+    || session.tours > fiche.plafonds.maxTours
     || session.appelsOutils > fiche.plafonds.maxAppelsOutils
     || session.coutMicroEur >= fiche.plafonds.budgetMicroEur) {
     await deps.sessions.clore(job.tenantId, session.id, 'plafond', SORTIE_PLAFOND);
@@ -226,6 +277,11 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
       },
     });
   } catch (err) {
+    // 🔴 UN ALLER-RETOUR DÉJÀ FACTURÉ SE PAIE, MÊME QUAND LE SUIVANT ÉCHOUE. Le cerveau lève un
+    // `TourInterrompu` qui porte ce qu'il avait déjà dépensé : sans cette ligne, un tour qui appelle un outil
+    // puis casse sur son second appel de modèle serait entièrement gratuit pour le workspace, alors que le
+    // fournisseur, lui, a bien facturé le premier.
+    if (err instanceof TourInterrompu) await enregistrerCout(job, session.id, err.usage.coutMicroEur, deps);
     // eslint-disable-next-line no-console
     console.error(`agent: le tour a échoué pour la session ${session.id}`, err instanceof Error ? err.message : err);
     await deps.sessions.clore(job.tenantId, session.id, 'erreur', SORTIE_ECHEC);
@@ -234,6 +290,11 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     }
     return { fait: 'erreur', sortie: SORTIE_ECHEC };
   }
+
+  // ENREGISTRER CE QUE CE TOUR A COÛTÉ, juste après la décision et pas plus loin : ce qui suit peut sortir par
+  // plusieurs chemins (envoi refusé, sortie d'outil, main perdue), et le coût est déjà engagé chez le
+  // fournisseur dans tous. Le placer sur un seul de ces chemins ferait des tours gratuits.
+  await enregistrerCout(job, session.id, decision.usage?.coutMicroEur ?? 0, deps);
 
   // 5. RELIRE `mayAct` JUSTE AVANT D'ENVOYER, pas seulement à l'entrée du tour : entre l'enfilage du job et
   // son exécution il s'est écoulé plusieurs secondes, et un opérateur a pu prendre la main entre-temps. On ne
