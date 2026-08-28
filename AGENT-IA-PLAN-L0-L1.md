@@ -2172,7 +2172,7 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 
 | Tranche | Contenu | État |
 |---|---|---|
-| **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit COMMIT19A, 2026-08-28) |
+| **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit 6dca192, 2026-08-28) |
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | à faire |
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | à faire |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | à faire |
