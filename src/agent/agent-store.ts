@@ -28,6 +28,30 @@ export interface FicheAgent {
   status: 'draft' | 'active' | 'disabled';
 }
 
+/**
+ * Une SORTIE déclarée par le client sur la fiche de son agent : sa règle d'arrêt. Le code est ce que l'outil
+ * `mba_terminer` rend, et il devient le handle `sortie:<code>` du bloc dans le builder.
+ *
+ * Les sorties vivent sur la FICHE : c'est là que le client les déclare, une fois, pour tous les blocs qui
+ * servent cet agent.
+ *
+ * ⚠️ Le builder les COPIE dans le bloc au moment du choix, et cette copie peut ensuite diverger de la fiche
+ * (une règle ajoutée après coup n'apparaît pas toute seule dans un bloc déjà configuré). L'issue d'un code
+ * non câblé n'est pas silencieuse pour autant : `advance` remonte la conversation en inbox avec une trace,
+ * comme pour un bouton non branché.
+ */
+export interface SortieAgent {
+  code: string;
+  label: string;
+}
+
+/** Ce que le builder a besoin de savoir d'un agent pour le proposer et dessiner ses sorties. */
+export interface AgentResume {
+  id: string;
+  label: string;
+  sorties: SortieAgent[];
+}
+
 export interface AgentStore {
   /**
    * Une fiche d'agent par son identifiant. `null` si elle n'existe pas OU si elle appartient à un autre
@@ -35,4 +59,13 @@ export interface AgentStore {
    * Le filtrage par tenant est le SEUL contrôle (le pooler est superuser, la RLS est bypassée).
    */
   byId(tenantId: string, id: string): Promise<FicheAgent | null>;
+
+  /**
+   * Les agents ACTIFS d'un tenant, pour la palette du builder.
+   *
+   * Actifs seulement : un agent en brouillon n'est pas prêt à tenir une conversation, et le proposer dans un
+   * scénario promettrait un envoi qui n'aurait pas lieu. Même doctrine que les blocs RCS et email, grisés
+   * tant que ce qu'il y a derrière n'existe pas.
+   */
+  listActifs(tenantId: string): Promise<AgentResume[]>;
 }

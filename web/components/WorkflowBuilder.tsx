@@ -21,7 +21,8 @@ import { RcsImageField } from '@/components/RcsImageField';
 import { RcsPreview } from '@/components/RcsPreview';
 import { ChampCorpsVariables } from '@/components/ChampCorpsVariables';
 import { useT } from '@/lib/i18n';
-import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
+import type { AgentResume } from '@/lib/api-agent';
+import { NODE_META, NODE_ORDER, RCS_NODE_ORDER, EMAIL_NODE_ORDER, AGENT_NODE_ORDER, RCS_GATE_TITRE, EMAIL_GATE_TITRE, AGENT_GATE_TITRE, AGENT_SORTIES_RESERVEES, MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
 import { emailResolvableFields } from '@/lib/fields';
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
@@ -53,7 +54,21 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
   // s'allume avant la moindre faute apprend a ignorer les alertes. Le panneau propose « + reponse ».
   if (wfType === 'question') return { wfType, body: '', buttonLabel: '', rows: [], timeoutValue: 0, timeoutUnit: 'hours' };
   if (wfType === 'email') return { wfType, emailAccountId: '', templateId: '', to: { kind: 'literal', value: '' } };
+  // Bloc agent : aucun agent choisi au départ, et AUCUNE sortie déclarée. Les sorties sont COPIÉES de la
+  // fiche au moment du choix (cf. `appliquerAgent`) ; en inventer ici dessinerait des branches que l'agent
+  // ne saurait pas emprunter.
+  if (wfType === 'agent') return { wfType, agentId: '', agentLabel: '', sorties: [] };
   return { wfType };
+}
+
+/** Les sorties DÉCLARÉES d'un bloc agent, lues défensivement : `data` est du JSON libre, et un scénario
+ *  enregistré par une version antérieure ne doit jamais faire tomber l'éditeur. */
+function sortiesDuBloc(data: Record<string, unknown>): Array<{ code: string; label: string }> {
+  if (!Array.isArray(data.sorties)) return [];
+  return (data.sorties as Array<{ code?: unknown; label?: unknown }>)
+    .map((s) => ({ code: String(s?.code ?? '').trim(), label: String(s?.label ?? '').trim() }))
+    .filter((s) => s.code !== '')
+    .map((s) => ({ code: s.code, label: s.label === '' ? s.code : s.label }));
 }
 
 /** Destinataire tel que porté par `data.to` du node email : `{kind:'literal',value}` ou `{kind:'field',field}`,
@@ -117,6 +132,10 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     return reste === 0
       ? `${t('Mail vers', 'Email to')} ${lisibles[0]}`
       : `${t('Mail vers', 'Email to')} ${lisibles[0]} +${reste}`;
+  }
+  if (wfType === 'agent') {
+    const label = String(data.agentLabel ?? '').trim();
+    return label === '' ? t('choisir un agent IA…', 'choose an AI agent…') : label;
   }
   // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
@@ -188,6 +207,10 @@ function WFNode({ id, data, selected }: NodeProps) {
   const isCondition = wfType === 'condition';
   const isRcs = wfType === 'rcs_message';
   const isQuestion = wfType === 'question';
+  const isAgent = wfType === 'agent';
+  // Les règles d'arrêt COPIÉES de la fiche au moment du choix de l'agent. Le bloc est ainsi auto-suffisant :
+  // le graphe se lit et se route sans aller relire la table des agents.
+  const agentSorties = isAgent ? sortiesDuBloc(data) : [];
   // Lignes du MENU d'un bloc Question, lues défensivement : `data` est du JSON libre, et un scénario
   // enregistré par une version antérieure ne doit jamais faire tomber l'éditeur.
   const questionRows: Array<{ title: string }> = isQuestion && Array.isArray(data.rows)
@@ -208,6 +231,7 @@ function WFNode({ id, data, selected }: NodeProps) {
     ...buttons.map((b, i) => b.handle ?? `btn:${i}`),
     ...questionRows.map((_, i) => `row:${i}`),
     ...(questionDelai ? ['timeout'] : []),
+    ...agentSorties.map((s) => `sortie:${s.code}`),
   ].join(',');
   useEffect(() => { updateNodeInternals(id); }, [handleSig, id, updateNodeInternals]);
 
@@ -265,7 +289,32 @@ function WFNode({ id, data, selected }: NodeProps) {
           </div>
         </div>
       ) : null}
-      {isQuestion ? (
+      {isAgent ? (
+        // Bloc AGENT : ses sorties sont les seules façons d'en RESSORTIR. Il n'a pas de sortie libre : tant
+        // que l'agent tient la conversation, la réponse du contact lui revient à LUI, elle ne fait pas
+        // avancer le parcours. Deux familles, dans cet ordre : les règles d'arrêt déclarées par le client
+        // (les plus parlantes), puis les sorties que la plateforme pose toujours.
+        <div className="border-t border-ink-200">
+          {agentSorties.map((s) => {
+            const h = `sortie:${s.code}`;
+            return (
+              <div key={h} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700 first:border-t-0">
+                <span className="shrink-0">➜</span>
+                <span className="truncate">{s.label}</span>
+                {orpheline(h) && <span data-testid={`sortie-orpheline-${h}`} className="shrink-0 text-coral" title={TITRE_ORPHELINE}>⚠</span>}
+                <Handle type="source" id={h} position={Position.Right} className={`!h-2.5 !w-2.5 !border-2 !border-white ${orpheline(h) ? '!bg-coral' : '!bg-brand-500'}`} title={orpheline(h) ? TITRE_ORPHELINE : t(`Relier « ${s.label} »`, `Connect “${s.label}”`)} />
+              </div>
+            );
+          })}
+          {AGENT_SORTIES_RESERVEES.map((s) => (
+            <div key={s.handle} className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-amber-700 first:border-t-0">
+              <span className="shrink-0">{s.emoji}</span>
+              <span className="truncate">{t(...s.label)}</span>
+              <Handle type="source" id={s.handle} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-amber-500" title={t(...s.aide)} />
+            </div>
+          ))}
+        </div>
+      ) : isQuestion ? (
         // Bloc QUESTION : une sortie par ligne du menu, la sortie LIBRE (le contact écrit au lieu de
         // choisir), et l'échéance « pas de réponse » quand un délai est posé. Les trois coexistent : un
         // menu n'empêche pas d'écrire, et le silence est un troisième cas, distinct des deux autres.
@@ -443,7 +492,9 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
  * point bas d'un bloc vers un autre). +/poubelle sur chaque flèche. Panneau de config par bloc. PB1 : édition
  * + sauvegarde du graphe (pas d'exécution). Le graphe est validé/sanitisé côté serveur au save.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false, rcsEnabled = false, emailEnabled = false }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean; rcsEnabled?: boolean; emailEnabled?: boolean }) {
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [] }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean; rcsEnabled?: boolean; emailEnabled?: boolean; /** Agents IA ACTIFS du workspace. `null` = pas encore chargés (ou lecture en échec), `[]` = aucun : la
+   *  brique « Agent IA » est grisée dans les deux cas, mais seul `[]` autorise à AFFIRMER qu'un agent n'est
+   *  plus actif. */ agents?: AgentResume[] | null }) {
   const t = useT();
   const seed = useMemo(() => toRF(initialGraph), [initialGraph]);
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>(seed.nodes);
@@ -617,6 +668,28 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           return j > index ? { ...e, sourceHandle: `row:${j - 1}` } : e;
         }));
     };
+    /**
+     * 🔴 CHANGER (ou effacer) l'agent d'un bloc EMPORTE les arêtes de ses anciennes règles d'arrêt.
+     *
+     * Sans ça, elles restent en base alors que leur poignée a disparu : invisibles à l'écran, mais bien
+     * enregistrées. Et le danger n'est pas cosmétique. Un bloc agent SANS agent est un passe-plat : il suivait
+     * la première arête venue, donc typiquement la branche « échec technique » d'un bloc qu'on vient de vider,
+     * et y envoyait tous les contacts sans le moindre signal. Le moteur a été durci depuis (arête libre
+     * seulement), mais laisser des arêtes fantômes derrière soi reste la faute que la suppression d'une ligne
+     * de menu ci-dessus corrige déjà, pour exactement la même raison.
+     *
+     * Seules les sorties DÉCLARÉES sont concernées : les réservées ne bougent jamais d'un agent à l'autre.
+     */
+    const onAgentChange = (ev: Event) => {
+      const { nodeId, codes } = (ev as CustomEvent).detail as { nodeId: string; codes: string[] };
+      const gardes = new Set(codes.map((c) => `sortie:${c}`));
+      setEdges((eds) => eds.filter((e) => {
+        if (e.source !== nodeId) return true;
+        const h = e.sourceHandle ?? '';
+        if (!h.startsWith('sortie:')) return true; // réservées et arêtes libres : intactes
+        return gardes.has(h);
+      }));
+    };
     // Suppression d'un bloc via son ✕ : retire le node ET ses arêtes ; déselectionne si c'était lui.
     const onNodeDelete = (ev: Event) => {
       const nodeId = (ev as CustomEvent).detail as string;
@@ -628,11 +701,13 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
     window.addEventListener('wf-edge-delete', onDelete);
     window.addEventListener('wf-node-delete', onNodeDelete);
     window.addEventListener('wf-row-delete', onRowDelete);
+    window.addEventListener('wf-agent-change', onAgentChange);
     return () => {
       window.removeEventListener('wf-edge-insert', onInsert);
       window.removeEventListener('wf-edge-delete', onDelete);
       window.removeEventListener('wf-node-delete', onNodeDelete);
       window.removeEventListener('wf-row-delete', onRowDelete);
+      window.removeEventListener('wf-agent-change', onAgentChange);
     };
   }, [setEdges, setNodes, setSelectedId]);
 
@@ -748,10 +823,13 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
   // Les blocs proposables, DÉRIVÉS des trois listes de `nodeMeta.ts` avec leur grisage. Une seule construction,
   // consommée par la palette ET par le menu du fil : c'est leur divergence qui a rendu email et RCS
   // inatteignables au fil. Ne pas réintroduire une liste écrite à la main ici.
+  // Un agent ACTIF au moins : sans lui, le bloc ne pourrait tenir aucune conversation.
+  const agentEnabled = (agents ?? []).length > 0;
   const choixBlocs: Array<{ nt: WorkflowNodeType; actif: boolean; titre: string | undefined }> = [
     ...NODE_ORDER.map((nt) => ({ nt, actif: true, titre: undefined })),
     ...RCS_NODE_ORDER.map((nt) => ({ nt, actif: rcsEnabled, titre: rcsEnabled ? undefined : t(...RCS_GATE_TITRE) })),
     ...EMAIL_NODE_ORDER.map((nt) => ({ nt, actif: emailEnabled, titre: emailEnabled ? undefined : t(...EMAIL_GATE_TITRE) })),
+    ...AGENT_NODE_ORDER.map((nt) => ({ nt, actif: agentEnabled, titre: agentEnabled ? undefined : t(...AGENT_GATE_TITRE) })),
   ];
 
   return (
@@ -787,6 +865,20 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             onClick={() => { if (emailEnabled) addNode(nt); }}
             disabled={!emailEnabled}
             title={emailEnabled ? undefined : t(...EMAIL_GATE_TITRE)}
+            className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
+          >
+            {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
+          </button>
+        ))}
+        {/* Bloc Agent IA : GRISÉ + non cliquable tant qu'aucun agent n'est actif (menu AI Agent). Même
+            doctrine que les deux blocs ci-dessus. */}
+        {AGENT_NODE_ORDER.map((nt) => (
+          <button
+            key={nt}
+            data-testid={`add-node-${nt}`}
+            onClick={() => { if (agentEnabled) addNode(nt); }}
+            disabled={!agentEnabled}
+            title={agentEnabled ? undefined : t(...AGENT_GATE_TITRE)}
             className="rounded-md border border-dashed border-ink-200 px-2 py-1 text-xs text-ink-400 disabled:cursor-not-allowed disabled:opacity-60 enabled:text-brand-600 enabled:hover:bg-brand-50"
           >
             {NODE_META[nt].emoji} {t(...NODE_META[nt].label)}
@@ -911,7 +1003,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           {!selected ? (
             <p className="text-sm text-ink-400">{t("Clique un bloc pour le configurer. Tire une flèche depuis le point d'un bloc : lâche sur un autre bloc pour relier, ou dans le vide pour créer un nouveau bloc. Le ✕ en coin d'un bloc le supprime.", "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} onCommitTag={commitTag} />
+            <ConfigPanel node={selected} tenantId={tenantId} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} onCommitTag={commitTag} />
           )}
         </div>
       </div>
@@ -998,7 +1090,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 function ConfigPanel({
-  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, onCommitTag,
+  node, tenantId, isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, onCommitTag,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
@@ -1012,6 +1104,9 @@ function ConfigPanel({
   /** Relévé « champ rempli sur N fiches ». null = indisponible -> le sélecteur s'affiche sans compteur. */
   usageChamps: { total: number; parChamp: Record<string, number> } | null;
   emailAccounts: EmailAccount[]; emailTemplates: EmailTemplate[]; rcsMessages: RcsMessage[];
+  /** Agents IA actifs, pour le sélecteur du bloc agent. `null` = liste pas encore chargée : on ne peut alors
+   *  pas AFFIRMER qu'un agent a disparu. */
+  agents: AgentResume[] | null;
   onCommitTag: (tag: string) => void;
 }) {
   const t = useT();
@@ -1454,6 +1549,93 @@ function ConfigPanel({
             "The thread goes to a human: the scenario stops here and the conversation shows up under “To handle” in the Inbox. Place it AFTER the message announcing the advisor, that message is what silences the automatic agent.",
           )}
         </p>
+      )}
+      {wfType === 'agent' && (
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-ink-700">{t('Quel agent tient la conversation', 'Which agent holds the conversation')}</label>
+          <select
+            data-testid="agent-node-select"
+            className={`${cls} bg-white`}
+            value={String(d.agentId ?? '')}
+            onChange={(e) => {
+              const choisi = (agents ?? []).find((a) => a.id === e.target.value);
+              // Les sorties sont COPIÉES ici. C'est ce qui rend le graphe auto-suffisant : le moteur route
+              // sur les handles du graphe, sans relire la fiche de l'agent. Aucun agent choisi -> on efface
+              // aussi les sorties, sinon le bloc garderait des branches sans rien derrière.
+              onPatch(choisi
+                ? { agentId: choisi.id, agentLabel: choisi.label, sorties: choisi.sorties }
+                : { agentId: '', agentLabel: '', sorties: [] });
+              // Et les ARÊTES des anciennes sorties partent avec elles : les garder laisserait des branches
+              // fantômes, enregistrées mais sans poignée pour les voir.
+              window.dispatchEvent(new CustomEvent('wf-agent-change', {
+                detail: { nodeId: node.id, codes: (choisi?.sorties ?? []).map((s) => s.code) },
+              }));
+            }}
+          >
+            <option value="">{t('choisir un agent IA…', 'choose an AI agent…')}</option>
+            {(agents ?? []).map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+          </select>
+          {/* Un agent choisi puis DÉSACTIVÉ disparaît de la liste : le bloc garde son libellé mais le
+              sélecteur retomberait sur « choisir… » sans rien dire. On le dit. */}
+          {/* `agents !== null` : sur une liste pas encore arrivée (ou une lecture en échec), affirmer que
+              l'agent n'est plus actif serait un mensonge sur un bloc parfaitement configuré. */}
+          {agents !== null && String(d.agentId ?? '') !== '' && !agents.some((a) => a.id === d.agentId) && (
+            <p data-testid="agent-node-absent" className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800">
+              {t(
+                `L’agent « ${String(d.agentLabel ?? '')} » n’est plus actif : ce bloc ne répondra pas tant qu’il ne l’est pas de nouveau.`,
+                `The agent “${String(d.agentLabel ?? '')}” is no longer active: this block will not answer until it is again.`,
+              )}
+            </p>
+          )}
+          <p className="text-xs leading-relaxed text-ink-500">
+            {t(
+              'L’agent tient la conversation sur plusieurs tours : tant qu’il l’a, les réponses du contact lui reviennent et le scénario n’avance pas. Il n’en ressort que par une des sorties du bloc.',
+              'The agent holds the conversation over several turns: while it does, the contact’s replies go to it and the scenario does not advance. It only leaves through one of the block’s outputs.',
+            )}
+          </p>
+          {/* 🔴 La copie est FIGÉE au moment du choix. Une règle d'arrêt ajoutée sur la fiche APRÈS coup
+              n'apparaît donc pas toute seule ici, et resterait incâblable : le seul symptôme en production
+              serait une escalade en inbox sur une sortie parfaitement légitime. On le dit, et on propose de
+              rafraîchir. Jamais automatiquement : ça déclencherait une sauvegarde que personne n'a demandée,
+              et ça pourrait élaguer des arêtes sans prévenir. */}
+          {(() => {
+            const fiche = (agents ?? []).find((a) => a.id === d.agentId);
+            if (!fiche) return null;
+            const ici = sortiesDuBloc(d).map((s) => s.code).join('|');
+            const surLaFiche = fiche.sorties.map((s) => s.code).join('|');
+            if (ici === surLaFiche) return null;
+            return (
+              <div data-testid="agent-node-sorties-obsoletes" className="flex flex-col gap-1.5 rounded-lg bg-brand-50 px-2 py-1.5">
+                <p className="text-[11px] leading-relaxed text-ink-700">
+                  {t(
+                    'Les règles d’arrêt de cet agent ont changé depuis que ce bloc a été configuré.',
+                    'This agent’s stop rules have changed since this block was configured.',
+                  )}
+                </p>
+                <button
+                  data-testid="agent-node-sorties-maj"
+                  className="self-start rounded-md border border-brand-300 bg-white px-2 py-1 text-[11px] text-brand-700 hover:bg-brand-100"
+                  onClick={() => {
+                    onPatch({ agentLabel: fiche.label, sorties: fiche.sorties });
+                    window.dispatchEvent(new CustomEvent('wf-agent-change', {
+                      detail: { nodeId: node.id, codes: fiche.sorties.map((s) => s.code) },
+                    }));
+                  }}
+                >
+                  {t('Mettre à jour les sorties du bloc', 'Update the block’s outputs')}
+                </button>
+              </div>
+            );
+          })()}
+          {sortiesDuBloc(d).length === 0 && String(d.agentId ?? '') !== '' && (
+            <p className="text-xs leading-relaxed text-ink-500">
+              {t(
+                'Cet agent n’a aucune règle d’arrêt : il ne sortira que par les sorties automatiques ci-dessous. Les règles d’arrêt se déclarent sur sa fiche, dans le menu AI Agent.',
+                'This agent has no stop rule: it will only leave through the automatic outputs below. Stop rules are declared on its card, in the AI Agent menu.',
+              )}
+            </p>
+          )}
+        </div>
       )}
       {wfType === 'email' && (() => {
         // ⚠️ `data.to` porte DEUX formes : un OBJET pour les blocs créés avant le 2026-08-25, une LISTE depuis.

@@ -11,8 +11,21 @@
  * bloc Question, sans préfixe, pour qu'il n'y ait qu'un seul vocabulaire dans le builder.
  */
 
+/**
+ * Le contact ne répond plus. SANS préfixe `sortie:`, volontairement : c'est le handle du bloc Question,
+ * réemprunté tel quel pour qu'il n'y ait qu'un seul vocabulaire dans le builder. Déclaré ici quand même,
+ * pour que le nom ne vive pas en littéral dans l'exécuteur d'un côté et dans le builder de l'autre.
+ */
+export const SORTIE_TIMEOUT = 'timeout';
+
 /** Tours, appels d'outils ou budget épuisés. */
 export const SORTIE_PLAFOND = 'plafond';
+
+/**
+ * L'agent passe la main à un humain (outil `mba_escalader_humain`). Le client câble ce handle vers ce qu'il
+ * veut voir après une escalade : un message d'attente, un tag, une fin de parcours.
+ */
+export const SORTIE_HUMAIN = 'humain';
 
 /** Repli : le modèle a échoué, l'envoi a été refusé, la fiche d'agent est introuvable. */
 export const SORTIE_ECHEC = 'echec';

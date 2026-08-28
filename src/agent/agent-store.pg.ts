@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
-import type { AgentStore, FicheAgent } from './agent-store';
+import type { AgentResume, AgentStore, FicheAgent, SortieAgent } from './agent-store';
+import { asArray, asRecord } from '../webhooks/json';
 
 interface Ligne {
   id: string;
@@ -42,4 +43,33 @@ export class PgAgentStore implements AgentStore {
       status: r.status,
     };
   }
+
+  async listActifs(tenantId: string): Promise<AgentResume[]> {
+    const res = await this.pool.query<{ id: string; label: string; fiche: unknown }>(
+      `select id, label, fiche from agents where tenant_id = $1 and status = 'active' order by lower(label)`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({ id: r.id, label: r.label, sorties: sortiesDeLaFiche(r.fiche) }));
+  }
+}
+
+/**
+ * Les règles d'arrêt d'une fiche, lues DÉFENSIVEMENT : `fiche` est du jsonb écrit par l'IA de construction,
+ * donc opaque. Une entrée inutilisable est écartée plutôt que de faire tomber le builder, qui serait alors
+ * inutilisable pour tout le scénario à cause d'une seule ligne mal formée.
+ *
+ * Le code est contraint au même alphabet que les noms d'outils (`[a-z0-9_]`) : il finit dans un handle
+ * d'arête `sortie:<code>`, et un caractère exotique y serait une source d'écarts silencieux.
+ */
+export function sortiesDeLaFiche(fiche: unknown): SortieAgent[] {
+  const out: SortieAgent[] = [];
+  const vus = new Set<string>();
+  for (const brut of asArray(asRecord(fiche).sorties)) {
+    const o = asRecord(brut);
+    const code = typeof o.code === 'string' ? o.code.trim().toLowerCase() : '';
+    if (!/^[a-z0-9_]{1,32}$/.test(code) || vus.has(code)) continue;
+    vus.add(code);
+    out.push({ code, label: typeof o.label === 'string' && o.label.trim() !== '' ? o.label.trim() : code });
+  }
+  return out;
 }

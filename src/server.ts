@@ -15,6 +15,7 @@ import { registerStats } from './http/stats';
 import { registerSettings } from './http/settings';
 import { registerUsers } from './http/users';
 import { registerFlows } from './http/flows';
+import { registerAgents } from './http/agents';
 import { registerMedia } from './http/media';
 import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
@@ -61,6 +62,7 @@ import type { StatsRouteDeps } from './http/stats';
 import type { SettingsRouteDeps } from './http/settings';
 import type { UsersRouteDeps } from './http/users';
 import type { FlowRouteDeps } from './http/flows';
+import type { AgentsRouteDeps } from './http/agents';
 import type { MediaRouteDeps } from './http/media';
 import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
@@ -121,6 +123,8 @@ export interface ServerDeps {
   admin?: UsersRouteDeps;
   /** Tableaux enregistrés d'Analytics > Mes tableaux — réservé aux admins. */
   workflowReports?: WorkflowReportsRouteDeps;
+  /** Agents IA du workspace, EN LECTURE : la palette du builder en a besoin pour proposer le bloc. */
+  agents?: AgentsRouteDeps;
   /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
   flows?: FlowRouteDeps;
   /** Upload d'image (headers de cartes carousel) — réservé aux admins. */
@@ -289,6 +293,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.settings) registerSettings(app, deps.settings, requireAdmin);
   if (deps.admin) registerUsers(app, deps.admin, requireAdmin);
   if (deps.flows) registerFlows(app, deps.flows, requireAdmin);
+  if (deps.agents) registerAgents(app, deps.agents, requireAdmin);
   if (deps.media) registerMedia(app, deps.media, requireAdmin);
   if (deps.tags) registerTags(app, deps.tags, requireAdmin);
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);

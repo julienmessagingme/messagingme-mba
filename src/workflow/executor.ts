@@ -10,6 +10,7 @@ import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
+import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 
 /**
@@ -568,9 +569,9 @@ export class WorkflowExecutor {
     // Une échéance consommée sur un bloc agent est une INACTIVITÉ : le contact n'a plus rien dit. Les autres
     // sorties de `resume` closent la session en `erreur`, parce qu'elles tuent le parcours pour une raison
     // qui n'a rien à voir avec le silence du contact.
-    if (parQuestion) await this.cloreSessionDuRun(tenantId, run.id, 'inactivite', 'timeout');
+    if (parQuestion) await this.cloreSessionDuRun(tenantId, run.id, 'inactivite', SORTIE_TIMEOUT);
     const suite = parQuestion
-      ? nextNodeByHandle(graph, run.currentNode, 'timeout')
+      ? nextNodeByHandle(graph, run.currentNode, SORTIE_TIMEOUT)
       : nextNode(graph, run.currentNode);
     if (!suite) {
       // Sortie « pas de réponse » non câblée : rien n'était prévu, le parcours s'arrête. On REND LA MAIN,

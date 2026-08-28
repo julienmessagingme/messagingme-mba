@@ -1,4 +1,5 @@
 import type { AgentSessionStore } from './session-store';
+import { SORTIE_HUMAIN } from './sorties';
 
 /**
  * L'escalade d'une conversation d'agent vers un humain, en TROIS effets et dans CET ordre.
@@ -29,7 +30,7 @@ export function creerEscaladeVersHumain(deps: {
   /** Handle emprunté à la sortie du bloc. Le client le câble vers ce qu'il veut voir après une escalade. */
   sortie?: string;
 }): (input: { tenantId: string; waId: string; runId: string; sessionId: string }) => Promise<void> {
-  const sortie = deps.sortie ?? 'humain';
+  const sortie = deps.sortie ?? SORTIE_HUMAIN;
   return async ({ tenantId, waId, sessionId }) => {
     await deps.sessions.clore(tenantId, sessionId, 'sortie', sortie);
     await deps.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);

@@ -57,6 +57,39 @@ describe('bloc agent : la main rendue (tâche 7)', () => {
     ]);
   });
 
+  it('🔴 le passe-plat ne VOLE PAS une sortie typée : sans arête libre, le parcours s arrête', async () => {
+    // Trouvé en revue de la tâche 18. Deux clics dans le builder suffisent à créer le cas : on choisit un
+    // agent, on câble ses sorties, puis on remet le sélecteur sur « choisir un agent ». Avec `nextNode`, tous
+    // les contacts partaient dans la PREMIÈRE arête du tableau, typiquement la branche « échec technique »,
+    // sans le moindre signal. Même règle que le bloc Condition, et pour la même raison.
+    const g: WorkflowGraph = {
+      nodes: [n('a', 'agent'), n('echec', 'template', { templateName: 'repli', language: 'fr' })],
+      edges: [{ id: 'e', source: 'a', target: 'echec', sourceHandle: 'sortie:echec' }],
+    };
+    const r = walk(g, 'a');
+    expect(r.rest).toEqual({ status: 'done' });
+    expect(r.actions).toHaveLength(0); // le template de repli ne part PAS
+  });
+
+  it('le passe-plat suit une arête LIBRE quand il y en a une, même à côté de sorties typées', async () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('a', 'agent'),
+        n('echec', 'template', { templateName: 'repli', language: 'fr' }),
+        n('suite', 'template', { templateName: 'suite', language: 'fr' }),
+      ],
+      edges: [
+        { id: 'e1', source: 'a', target: 'echec', sourceHandle: 'sortie:echec' },
+        { id: 'e2', source: 'a', target: 'suite' },
+      ],
+    };
+    const r = walk(g, 'a');
+    expect(r.rest).toEqual({ status: 'waiting', nodeId: 'suite' });
+    expect(r.actions.map((x) => x.action)).toEqual([
+      { kind: 'sendTemplate', templateName: 'suite', language: 'fr', buttons: [] },
+    ]);
+  });
+
   it('restToState garde le run en attente SUR le bloc agent, jamais en done', () => {
     // C'est ce qui permet à `findWaitingByWaId` de retrouver le parcours au message suivant du contact.
     expect(restToState({ status: 'agent_turn', nodeId: 'a' }, Date.now())).toEqual({ currentNode: 'a', status: 'waiting' });

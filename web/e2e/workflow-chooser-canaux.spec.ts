@@ -24,7 +24,7 @@ const AVEC_BOUTONS: Graph = {
 async function mockBuilder(
   page: import('@playwright/test').Page,
   saved: Graph[],
-  opts: { rcs: boolean; email: boolean },
+  opts: { rcs: boolean; email: boolean; agent?: boolean },
 ) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   const wf = { id: 'wf1', name: 'Scénario E2E', graph: AVEC_BOUTONS, createdAt: '', updatedAt: '' };
@@ -47,6 +47,7 @@ async function mockBuilder(
     if (url.includes('/flows')) return json({ flows: [] });
     if (url.includes('/tags')) return json({ tags: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
+    if (url.includes('/agents')) return json({ agents: opts.agent ? [{ id: 'ag1', label: 'Conseiller', sorties: [] }] : [] });
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: opts.rcs, hubspotListsEnabled: false, campaignsPaused: false });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
@@ -66,7 +67,7 @@ async function tirerDepuisUnBouton(page: import('@playwright/test').Page) {
 test.describe('Menu du fil : les mêmes blocs que la palette', () => {
   test('propose « Envoi de mail » et « Message RCS » quand les deux canaux sont prêts', async ({ page }) => {
     const saved: Graph[] = [];
-    await mockBuilder(page, saved, { rcs: true, email: true });
+    await mockBuilder(page, saved, { rcs: true, email: true, agent: true });
     await page.goto('/workflows?open=wf1');
 
     await tirerDepuisUnBouton(page);
@@ -78,6 +79,7 @@ test.describe('Menu du fil : les mêmes blocs que la palette', () => {
     // … et les deux canaux qui manquaient sont désormais proposés ET cliquables.
     await expect(chooser.getByTestId('node-type-email')).toBeEnabled();
     await expect(chooser.getByTestId('node-type-rcs_message')).toBeEnabled();
+    await expect(chooser.getByTestId('node-type-agent')).toBeEnabled();
 
     // Le bloc choisi est bien créé, et relié au bloc amont.
     await page.getByTestId('node-type-email').click();
@@ -115,6 +117,9 @@ test.describe('Menu du fil : les mêmes blocs que la palette', () => {
     // L'infobulle dit POURQUOI, sinon l'entrée grisée est une impasse muette.
     await expect(chooser.getByTestId('node-type-email')).toHaveAttribute('title', /boîte email/i);
     await expect(chooser.getByTestId('node-type-rcs_message')).toHaveAttribute('title', /agent RCS/i);
+    // Bloc Agent IA : même doctrine, et c'est ICI que la divergence palette / menu du fil se voit.
+    await expect(chooser.getByTestId('node-type-agent')).toBeDisabled();
+    await expect(chooser.getByTestId('node-type-agent')).toHaveAttribute('title', /agent IA/i);
 
     // Et un clic sur une entrée grisée ne crée RIEN.
     await chooser.getByTestId('node-type-email').click({ force: true });

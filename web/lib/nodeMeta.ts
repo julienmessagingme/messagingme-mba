@@ -41,6 +41,11 @@ export const RCS_NODE_ORDER: WorkflowNodeType[] = ['rcs_message'];
 // Même doctrine que RCS_NODE_ORDER : le bloc se prépare, mais ne peut rien envoyer sans boîte derrière.
 export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 
+// Bloc Agent IA : présenté à part et GRISÉ tant que le workspace n'a AUCUN agent actif. Même doctrine que
+// les deux ci-dessus : un bloc agent sans agent derrière ne peut pas tenir une conversation, et le proposer
+// promettrait une réponse qui ne viendrait jamais.
+export const AGENT_NODE_ORDER: WorkflowNodeType[] = ['agent'];
+
 /** Nombre maximal de destinataires d'un bloc « Envoi de mail ». ⚠️ MIROIR de MAX_DESTINATAIRES_EMAIL
  *  (src/workflow/engine.ts), qui fait AUTORITÉ : c'est lui qui tronque, le bouton « + » n'est qu'un confort.
  *  La valeur est recopiée plutôt qu'importée pour ne pas tirer du code serveur dans le bundle client ;
@@ -57,6 +62,62 @@ export const RCS_GATE_TITRE: [string, string] = [
 export const EMAIL_GATE_TITRE: [string, string] = [
   'Disponible dès qu’une boîte email est connectée (menu Compte > Boîtes email)',
   'Available once an email mailbox is connected (Account menu > Email accounts)',
+];
+export const AGENT_GATE_TITRE: [string, string] = [
+  'Disponible dès qu’un agent IA est actif (menu AI Agent)',
+  'Available once an AI agent is active (AI Agent menu)',
+];
+
+/**
+ * Les sorties que la PLATEFORME pose elle-même sur un bloc agent, toujours présentes, par opposition aux
+ * règles d'arrêt que le client déclare sur la fiche de son agent.
+ *
+ * ⚠️ MIROIR de `src/agent/sorties.ts` et du handle `timeout` du bloc Question. Les codes sont recopiés
+ * plutôt qu'importés pour ne pas tirer du code serveur dans le bundle client, comme
+ * `MAX_DESTINATAIRES_EMAIL` ci-dessus ; `tests/web-agent-sorties-parity.test.ts` casse dès qu'ils divergent.
+ *
+ * `timeout` n'a PAS de préfixe `sortie:`, et c'est voulu : c'est le même handle que le bloc Question, pour
+ * qu'il n'y ait qu'un seul vocabulaire dans le builder.
+ */
+export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; emoji: string; label: [string, string]; aide: [string, string] }> = [
+  {
+    handle: 'timeout',
+    emoji: '⏱',
+    label: ['Pas de réponse', 'No reply'],
+    aide: ['Le contact ne répond plus depuis le délai réglé sur la fiche', 'The contact has gone silent for the delay set on the agent'],
+  },
+  {
+    handle: 'sortie:sans_source',
+    emoji: '📕',
+    label: ['Aucune source', 'No source'],
+    aide: [
+      'L’agent n’a rien trouvé dans sa base de connaissance : brancher un humain ou vos coordonnées',
+      'The agent found nothing in its knowledge base: connect a human or your contact details',
+    ],
+  },
+  {
+    handle: 'sortie:humain',
+    emoji: '🙋',
+    label: ['Transfert à un humain', 'Handed to a human'],
+    aide: [
+      'L’agent a passé la main : brancher ce qui doit suivre (message d’attente, tag, fin de parcours)',
+      'The agent handed over: connect what should follow (waiting message, tag, end of journey)',
+    ],
+  },
+  {
+    handle: 'sortie:plafond',
+    emoji: '🛑',
+    label: ['Plafond atteint', 'Cap reached'],
+    aide: ['Tours, appels d’outils ou budget épuisés', 'Turns, tool calls or budget exhausted'],
+  },
+  {
+    // Pas de ⚠ ici : c'est déjà le glyphe de la pastille « ne mène nulle part », qui s'affiche sur la même
+    // carte. Deux sens pour un même signe à trois lignes d'écart se lisent mal.
+    handle: 'sortie:echec',
+    emoji: '💥',
+    label: ['Échec technique', 'Technical failure'],
+    aide: ['Le modèle ou un envoi a échoué : prévoir un repli', 'The model or a send failed: plan a fallback'],
+  },
 ];
 
 

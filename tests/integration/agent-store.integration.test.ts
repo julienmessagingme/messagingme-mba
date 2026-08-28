@@ -69,6 +69,31 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     expect(await agents.byId(tenantId, '00000000-0000-0000-0000-000000000000')).toBeNull();
   });
 
+  it('🔴 listActifs ne rend que les agents ACTIFS, avec leurs règles d arrêt', async () => {
+    // C'est cette liste qui GRISE ou non la brique « Agent IA » dans le builder. Un brouillon proposé
+    // promettrait une conversation qui n'aurait pas lieu ; et le filtre `status` est du SQL, donc sa seule
+    // preuve honnête est de tourner contre un vrai Postgres.
+    const fiche = JSON.stringify({ sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }, { code: 'X Y' }] });
+    await pool.query(
+      `insert into agents (tenant_id, label, mention_ia, modele, status, fiche)
+       values ($1, 'itest-actif', 'Je suis une IA.', 'm', 'active', $2::jsonb)`,
+      [tenantId, fiche],
+    );
+    await pool.query(
+      `insert into agents (tenant_id, label, mention_ia, modele, status) values ($1, 'itest-desactive', 'x', 'm', 'disabled')`,
+      [tenantId],
+    );
+    const liste = await agents.listActifs(tenantId);
+    // L'agent créé en `beforeAll` est un brouillon (statut par défaut) : il ne doit pas non plus remonter.
+    expect(liste.map((a) => a.label)).toEqual(['itest-actif']);
+    // Le code mal formé (« X Y ») est écarté à la lecture : il ne pourrait pas servir de handle d'arête.
+    expect(liste[0]?.sorties).toEqual([{ code: 'besoin_cerne', label: 'Besoin cerné' }]);
+  });
+
+  it('🔴 listActifs d un AUTRE tenant ne voit rien (le filtrage en code est le seul contrôle)', async () => {
+    expect(await agents.listActifs(autreTenantId)).toEqual([]);
+  });
+
   it('byId sur un run rend sa position et son statut', async () => {
     const r = await runs.byId(tenantId, runId);
     expect(r).toMatchObject({ id: runId, currentNode: 'a', status: 'waiting', waId: '33600000000' });

@@ -689,7 +689,12 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       // client, d'où la coercition.
       const agentId = String(node.data.agentId ?? '').trim();
       if (!agentId) {
-        current = nextNode(graph, current);
+        // 🔴 Le passe-plat suit une arête LIBRE, jamais une sortie typée. Même règle que le bloc Condition
+        // juste au-dessus, et pour la même raison : les sorties d'un bloc agent (`sortie:<code>`, `timeout`)
+        // sont des issues PRÉCISES. Un `nextNode` prendrait la première arête venue, donc typiquement la
+        // branche « échec technique » d'un bloc qu'on vient juste de vider de son agent, et y enverrait tous
+        // les contacts sans le moindre signal. Aucune arête libre -> le parcours s'arrête ici.
+        current = nextNodeSansHandle(graph, current);
         continue;
       }
       return { actions, rest: { status: 'agent_turn', nodeId: current } };

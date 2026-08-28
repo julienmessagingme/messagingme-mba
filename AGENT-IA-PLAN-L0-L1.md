@@ -2116,7 +2116,37 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 # Phase L1-D, le front
 
-## Tâche 18 : le bloc agent dans le builder
+## Tâche 18 : le bloc agent dans le builder — ✅ FAIT (commit COMMIT18, 2026-08-28)
+
+🔴 **Le bug que la revue a trouvé, et il tenait en deux clics.** Un bloc agent SANS agent est un passe-plat
+(décision de la tâche 7 : rendre la main à un agent qui n'existe pas figerait le parcours). Il suivait
+`nextNode`, c'est-à-dire la PREMIÈRE arête sortante, tous handles confondus. Or on peut choisir un agent,
+câbler ses sorties, puis remettre le sélecteur sur « choisir un agent » : tous les contacts partaient alors
+dans la première branche du tableau, typiquement « échec technique », sans le moindre signal. Le passe-plat
+suit désormais une arête LIBRE seulement, exactement comme le bloc Condition, et le builder EMPORTE les
+arêtes des sorties disparues quand on change d'agent, comme le fait déjà la suppression d'une ligne de menu.
+
+🔴 **Une sortie que la plateforme emprunte n'était dessinée nulle part** : `sortie:humain`, celle de l'outil
+d'escalade. Elle était donc incâblable, et son issue réelle aurait été l'escalade en inbox avec un log
+d'erreur. `sorties.ts` gagne `SORTIE_HUMAIN` et `SORTIE_TIMEOUT` (ce dernier vivait en littéral dans
+l'exécuteur), et le test de parité front/serveur les ancre tous les cinq.
+
+**Écart au plan, assumé :** le plan ne listait que deux fichiers front, mais un bloc dont on ne peut pas
+choisir l'agent n'est pas constructible. On ajoute donc la LECTURE (`GET /tenants/:id/agents`, admin comme le
+builder qu'elle sert) et son store. L'écriture reste la tâche 19.
+
+**Design :** les sorties d'un bloc sont de deux familles. Les réservées, toujours dessinées. Et les règles
+d'arrêt du client, qui vivent sur la fiche et sont COPIÉES dans le bloc au moment du choix, ce qui rend le
+graphe auto-suffisant (le moteur route sans relire la table des agents). La copie peut ensuite diverger de la
+fiche : un encart le signale dans le panneau, avec un bouton pour rafraîchir, jamais automatiquement.
+
+⚠️ **Pour la tâche 19, relevé par la revue.** `fiche.sorties` est un contrat de données posé ici, sans schéma
+(`ficheAgentSchema` n'existe pas encore) et sans lien avec la source runtime réelle des codes, qui est
+l'énumération du paramètre `sortie` de l'outil `terminer` (`agent_tools.params`). **La surface qui édite les
+règles d'arrêt doit écrire les DEUX d'un seul geste**, sinon on rejoue la divergence que ce lot combat. En
+attendant, `listActifs` rend `sorties: []` pour tout le monde, puisque rien n'écrit encore `fiche.sorties`.
+
+### Le détail d'origine
 
 **Fichiers :** Modifier `web/lib/nodeMeta.ts`, `web/components/WorkflowBuilder.tsx`.
 Test : `web/e2e/` (une spec nouvelle).

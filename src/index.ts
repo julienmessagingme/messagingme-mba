@@ -77,6 +77,7 @@ import { resolveHintParams } from './crm/template';
 import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
+import { PgAgentStore } from './agent/agent-store.pg';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
+  const agentStore = new PgAgentStore(pool);
   const automationStore = new PgAutomationStore(pool);
   // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
@@ -608,6 +610,8 @@ async function main(): Promise<void> {
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       fetchUrl: fetchUrlBorne(),
     },
+    // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
+    agents: { listActifs: (tenant) => agentStore.listActifs(tenant) },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),
