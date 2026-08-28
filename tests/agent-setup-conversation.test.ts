@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { construireMessages, MAX_CARACTERES_MESSAGE, MAX_TOURS_HISTORIQUE, type ContexteConstruction } from '../src/agent/setup/conversation';
+import { DIMENSIONS } from '../src/agent/setup/couverture';
 import { ficheVide } from '../src/agent/fiche';
 
 /**
@@ -26,8 +27,26 @@ describe('construireMessages', () => {
     const m = construireMessages(CTX(), [{ role: 'user', content: 'Bonjour' }]);
     expect(m).toHaveLength(2);
     expect(m[0]!.role).toBe('system');
-    expect(m[0]!.content).toContain('tu PROPOSES, il corrige');
+    expect(m[0]!.content).toContain('tu ne combles jamais un blanc');
     expect(m[1]).toEqual({ role: 'user', content: 'Bonjour' });
+  });
+
+  it('🔴 le mandat porte l’ORDRE DU JOUR des six points, et il vient de la source', () => {
+    // Le modèle ne peut couvrir que ce qu'on lui a nommé. Une liste recopiée à la main dans le prompt
+    // finirait par diverger de celle sur laquelle la route se ferme, et l'entretien s'arrêterait sur un point
+    // dont le modèle n'a jamais entendu parler.
+    const mandat = construireMessages(CTX(), [{ role: 'user', content: 'Bonjour' }])[0]!.content ?? '';
+    for (const d of DIMENSIONS) expect(mandat, d.code).toContain(d.code);
+  });
+
+  it('🔴 le mandat n’ordonne plus de DEVINER ce que le client n’a pas dit', () => {
+    // C'était la cause racine des propositions absurdes du 2026-08-28 : « déduis-les de ce qu'il raconte
+    // plutôt que de les lui demander », et une clause « quand ne pas l'appeler » jamais vide. Le modèle
+    // obéissait. Ce test existe pour que la consigne ne revienne pas par inadvertance.
+    const mandat = construireMessages(CTX(), [{ role: 'user', content: 'Bonjour' }])[0]!.content ?? '';
+    expect(mandat).not.toContain('plutôt que de les lui demander');
+    expect(mandat).not.toContain('n’est jamais vide');
+    expect(mandat).toContain('Ne DÉDUIS JAMAIS l\'action');
   });
 
   it('🔴 le contexte est DANS le bloc délimité, et le contenu ne peut pas le refermer', () => {

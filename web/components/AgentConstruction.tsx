@@ -5,7 +5,8 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import {
-  parlerAuConstructeur, type Changement, type PropositionConstruction, type TourConstruction,
+  parlerAuConstructeur, restreindreProposition,
+  type Changement, type PropositionConstruction, type TourConstruction,
 } from '@/lib/api-agent-setup';
 
 /**
@@ -34,6 +35,10 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
   const [erreur, setErreur] = useState<string | null>(null);
   const [changements, setChangements] = useState<Changement[] | null>(null);
   const [proposition, setProposition] = useState<PropositionConstruction | null>(null);
+  const [resteACouvrir, setResteACouvrir] = useState(0);
+  // Chaque réponse ouvre un nouveau lot : ce numéro sert de clé au diff, pour que les choix « garder / jeter »
+  // du lot précédent ne survivent pas à une proposition qui ne porte plus les mêmes lignes.
+  const [lot, setLot] = useState(0);
 
   async function envoyer(texte: string) {
     const propre = texte.trim();
@@ -50,6 +55,8 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
       setTours([...suite, { role: 'assistant', content: r.message }]);
       setProposition(r.proposition);
       setChangements(r.changements);
+      setResteACouvrir(r.couverture?.manquants.length ?? 0);
+      setLot((n) => n + 1);
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('L’assistant n’a pas répondu', 'The assistant did not answer'));
     } finally {
@@ -57,12 +64,12 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
     }
   }
 
-  async function garder() {
-    if (!proposition || busy) return;
+  async function garder(gardees: Map<string, string>) {
+    if (!proposition || !changements || busy) return;
     setBusy(true);
     setErreur(null);
     try {
-      await onApplique(proposition);
+      await onApplique(restreindreProposition(proposition, changements, gardees));
       setChangements(null);
       setProposition(null);
       setTours((t0) => [...t0, { role: 'assistant', content: t('C’est enregistré.', 'Saved.') }]);
@@ -77,8 +84,8 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
     <div className="flex flex-col gap-4">
       <MbaNotice kind="warning">
         {t(
-          'L’assistant ne change RIEN tout seul. Il propose, vous voyez exactement ce que ça changerait, et vous gardez ou vous jetez. Tout ce qu’il écrit reste modifiable dans les autres onglets.',
-          'The assistant changes NOTHING on its own. It proposes, you see exactly what would change, and you keep it or drop it. Everything it writes stays editable in the other tabs.',
+          'L’assistant fait d’abord le tour du sujet avec vous, puis il propose. Il ne change RIEN tout seul : vous voyez exactement ce que ça changerait, et vous gardez, corrigez ou jetez chaque règle séparément. Tout ce qu’il écrit reste modifiable dans les autres onglets.',
+          'The assistant first covers the ground with you, then proposes. It changes NOTHING on its own: you see exactly what would change, and you keep, edit or drop each rule separately. Everything it writes stays editable in the other tabs.',
         )}
       </MbaNotice>
       {erreur && <MbaNotice kind="error" testid="setup-erreur">{erreur}</MbaNotice>}
@@ -142,16 +149,55 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
         </div>
       </div>
 
-      {changements !== null && <Diff changements={changements} busy={busy} onGarder={garder} onJeter={() => { setChangements(null); setProposition(null); }} />}
+      {/* 🔴 TANT QUE LE PÉRIMÈTRE N'EST PAS COUVERT, IL N'Y A RIEN À MONTRER, et il faut le DIRE. Le serveur
+          retient le diff pendant l'entretien (`src/http/agent-setup.ts`) ; sans cette ligne, l'écran serait
+          simplement muet et le client croirait que l'assistant ne comprend rien à ce qu'il raconte. */}
+      {resteACouvrir > 0 && changements !== null && (
+        <p data-testid="setup-entretien" className="text-sm text-ink-500">
+          {t(
+            `On fait d’abord le tour du sujet : encore ${resteACouvrir} point${resteACouvrir > 1 ? 's' : ''} à voir avant que je vous montre ce que j’ai compris.`,
+            `Let’s cover the ground first: ${resteACouvrir} more point${resteACouvrir > 1 ? 's' : ''} before I show you what I understood.`,
+          )}
+        </p>
+      )}
+      {changements !== null && resteACouvrir === 0 && (
+        <Diff key={lot} changements={changements} busy={busy} onGarder={garder} onJeter={() => { setChangements(null); setProposition(null); }} />
+      )}
     </div>
   );
 }
 
-/** Le diff. C'est LE garde-fou de cette surface : rien ne s'écrit sans qu'il ait été montré. */
+/**
+ * Le diff. C'est LE garde-fou de cette surface : rien ne s'écrit sans qu'il ait été montré.
+ *
+ * 🔴 ET IL SE TRAITE RÈGLE PAR RÈGLE. Julien, 2026-08-28 : « il n'y a qu'un seul bouton Garder ou Jeter à la
+ * fin, alors que potentiellement le mec ne veut en changer qu'une et le reste lui convient ». Un lot
+ * indivisible force à tout refuser pour corriger une ligne, donc à relancer la conversation en espérant que le
+ * modèle ne défasse pas au passage les cinq autres qui convenaient. Chaque ligne se garde, se corrige sur
+ * place, ou se jette.
+ *
+ * ⚠️ Une ligne JETÉE n'est pas une ligne absente : voir `restreindreProposition`, elle réécrit la valeur
+ * actuelle. Les deux textes d'un outil partent dans le même enregistrement, et omettre celui qu'on a jeté le
+ * laisserait prendre la valeur proposée, c'est-à-dire exactement celle qu'on venait de refuser.
+ *
+ * ⚠️ La ligne des règles d'arrêt se garde ou se jette, mais ne se corrige pas ici : c'est un texte qui porte
+ * PLUSIEURS règles, et le relire pour reconstruire la liste ferait dépendre un enregistrement d'un format que
+ * le client peut casser en tapant. L'onglet Objectif a les bons champs pour ça.
+ */
 function Diff({ changements, busy, onGarder, onJeter }: {
-  changements: Changement[]; busy: boolean; onGarder: () => void; onJeter: () => void;
+  changements: Changement[];
+  busy: boolean;
+  onGarder: (gardees: Map<string, string>) => void;
+  onJeter: () => void;
 }) {
   const t = useT();
+  // Tout est gardé au départ, avec le texte proposé : le geste courant est d'accepter, et le client ne doit
+  // pas avoir à cocher six cases pour l'exprimer.
+  const [gardees, setGardees] = useState<Map<string, string>>(
+    () => new Map(changements.map((c) => [c.champ, c.apres])),
+  );
+  const editable = (champ: string) => champ !== 'fiche.sorties';
+
   if (changements.length === 0) {
     return (
       <p data-testid="setup-sans-changement" className="text-sm text-ink-500">
@@ -159,26 +205,66 @@ function Diff({ changements, busy, onGarder, onJeter }: {
       </p>
     );
   }
+
+  const corriger = (champ: string, texte: string) => setGardees((m) => new Map(m).set(champ, texte));
+  const basculer = (champ: string, apres: string) => setGardees((m) => {
+    const suite = new Map(m);
+    if (suite.has(champ)) suite.delete(champ); else suite.set(champ, apres);
+    return suite;
+  });
+
   return (
     <div data-testid="setup-diff" className={`${cardCls} flex flex-col gap-3`}>
       <p className="text-sm font-medium text-ink-700">{t('Ce que ça changerait', 'What this would change')}</p>
-      {changements.map((c) => (
-        <div key={c.champ} data-testid={`setup-diff-${c.champ}`} className="flex flex-col gap-1 rounded-lg border border-ink-200 px-3 py-2">
-          <p className="text-xs font-medium text-ink-700">{c.label}</p>
-          {c.avant !== '' && (
-            <p className="whitespace-pre-wrap text-xs text-ink-500 line-through">{c.avant}</p>
-          )}
-          <p className="whitespace-pre-wrap text-sm text-ink-800">{c.apres}</p>
-        </div>
-      ))}
-      <div className="flex flex-wrap gap-2">
+      {changements.map((c) => {
+        const garde = gardees.has(c.champ);
+        return (
+          <div
+            key={c.champ}
+            data-testid={`setup-diff-${c.champ}`}
+            className={`flex flex-col gap-1 rounded-lg border px-3 py-2 ${garde ? 'border-ink-200' : 'border-ink-200 bg-ink-50 opacity-60'}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs font-medium text-ink-700">{c.label}</p>
+              <button
+                data-testid={`setup-bascule-${c.champ}`}
+                disabled={busy}
+                aria-pressed={garde}
+                onClick={() => basculer(c.champ, c.apres)}
+                className={`shrink-0 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40 ${garde
+                  ? 'border-brand-600 bg-brand-50 text-brand-700'
+                  : 'border-ink-300 text-ink-600 hover:bg-white'}`}
+              >
+                {garde ? t('Gardée', 'Kept') : t('Jetée', 'Dropped')}
+              </button>
+            </div>
+            {c.avant !== '' && (
+              <p className="whitespace-pre-wrap text-xs text-ink-500 line-through">{c.avant}</p>
+            )}
+            {garde && editable(c.champ) ? (
+              <textarea
+                data-testid={`setup-texte-${c.champ}`}
+                className={`${inputCls} min-h-[64px] text-sm`}
+                disabled={busy}
+                value={gardees.get(c.champ) ?? ''}
+                onChange={(e) => corriger(c.champ, e.target.value)}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm text-ink-800">{garde ? gardees.get(c.champ) : c.apres}</p>
+            )}
+          </div>
+        );
+      })}
+      <div className="flex flex-wrap items-center gap-2">
         <button
           data-testid="setup-garder"
-          disabled={busy}
-          onClick={onGarder}
+          disabled={busy || gardees.size === 0}
+          onClick={() => onGarder(gardees)}
           className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
         >
-          {t('Garder', 'Keep')}
+          {gardees.size === changements.length
+            ? t('Enregistrer', 'Save')
+            : t(`Enregistrer les ${gardees.size} gardées`, `Save the ${gardees.size} kept`)}
         </button>
         <button
           data-testid="setup-jeter"
@@ -186,7 +272,7 @@ function Diff({ changements, busy, onGarder, onJeter }: {
           onClick={onJeter}
           className="rounded-lg border border-ink-300 px-3 py-2 text-sm text-ink-700 hover:bg-ink-50 disabled:opacity-40"
         >
-          {t('Jeter', 'Drop')}
+          {t('Tout jeter', 'Drop all')}
         </button>
       </div>
     </div>

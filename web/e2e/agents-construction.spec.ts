@@ -103,6 +103,57 @@ test.describe('Agents IA : construire en parlant', () => {
     expect(Object.keys(patch.contenu ?? {}).sort()).toEqual(['objectif', 'sorties']);
   });
 
+  test('🔴 TANT QUE LE PÉRIMÈTRE N EST PAS COUVERT, on discute : aucun diff', async ({ page }) => {
+    // Julien, 2026-08-28 : « je préfère qu'au début on discute avant d'afficher ce que le bot a compris ».
+    // Le serveur retient le diff pendant l'entretien ; l'écran doit le DIRE, sinon il serait simplement muet
+    // et le client croirait que l'assistant n'a rien compris à ce qu'il raconte.
+    await mock(page, [], {
+      setup: { status: 200, body: { ...PROPOSITION, couverture: { manquants: ['bascules', 'humain'], total: 6 } } },
+    });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes de séjour.');
+    await page.getByTestId('setup-envoyer').click();
+
+    await expect(page.getByTestId('setup-entretien')).toContainText('2 points');
+    await expect(page.getByTestId('setup-diff')).toHaveCount(0);
+  });
+
+  test('🔴 on peut n en JETER QU UNE : les autres règles partent quand même', async ({ page }) => {
+    // Julien, 2026-08-28 : « il n'y a qu'un seul bouton Garder ou Jeter à la fin, alors que potentiellement le
+    // mec ne veut en changer qu'une et le reste lui convient ». Un lot indivisible force à tout refuser pour
+    // corriger une ligne, donc à relancer la conversation en espérant que le modèle ne défasse pas le reste.
+    const appels: Appel[] = [];
+    await mock(page, appels);
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes.');
+    await page.getByTestId('setup-envoyer').click();
+
+    await page.getByTestId('setup-bascule-fiche.sorties').click();
+    await page.getByTestId('setup-garder').click();
+
+    await expect.poll(() => {
+      const patch = appels.find((a) => a.method === 'PATCH')?.body as { contenu?: Record<string, unknown> } | undefined;
+      return patch ? Object.keys(patch.contenu ?? {}).sort() : null;
+    }, { timeout: 5000 }).toEqual(['objectif']);
+  });
+
+  test('🔴 une règle se CORRIGE sur place, et c est le texte du client qui part', async ({ page }) => {
+    // L'autre moitié de la même demande : le client ne veut pas toujours jeter, il veut souvent amender.
+    const appels: Appel[] = [];
+    await mock(page, appels);
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes.');
+    await page.getByTestId('setup-envoyer').click();
+
+    await page.getByTestId('setup-texte-fiche.objectif').fill('Cerner le besoin, puis passer la main.');
+    await page.getByTestId('setup-garder').click();
+
+    await expect.poll(() => {
+      const patch = appels.find((a) => a.method === 'PATCH')?.body as { contenu?: { objectif?: string } } | undefined;
+      return patch?.contenu?.objectif ?? null;
+    }, { timeout: 5000 }).toBe('Cerner le besoin, puis passer la main.');
+  });
+
   test('« Jeter » n écrit rien et fait disparaître le diff', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels);

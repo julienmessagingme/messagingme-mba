@@ -53,12 +53,9 @@ séquencement et le pourquoi de l'ordre sont en §7 de
 [AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md) ; le tableau côté client est dans
 [AGENT-IA-PRODUIT-2026-08-27.md](AGENT-IA-PRODUIT-2026-08-27.md).
 
-- 🔴 **L2 : le connecteur API (HTTP) du client.** C'est l'argument commercial « branchez votre système », et
-  c'est le lot suivant. **Le plan d'exécution est écrit : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md)**
-  (9 tâches, migration 0088, quatre décisions produit à trancher en tête de document). Il porte au passage un
-  trou trouvé en relisant le code : un paramètre `contactPath: 'wa_id'` recevrait `null` aujourd'hui, parce
-  que la projection du contact ne porte pas le numéro (volontairement, elle part chez le fournisseur de
-  modèle) ; le numéro doit venir du contexte du tour, où il est authentifié par la signature du webhook Meta.
+- ✅ **L2 : le connecteur API (HTTP) du client. LIVRÉ ET DÉPLOYÉ le 2026-08-28** (migration 0088 appliquée).
+  Plan exécuté : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf tâches. Le système se déclare dans
+  **Tools > Connecteurs API**, l'agent n'y déclare que ses appels. Détail dans [wip.md](wip.md).
 - 🟠 **L3 : le « temps 2 ».** L'IA de construction relit les VRAIES conversations, le journal d'outils et le
   signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
   valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
@@ -73,11 +70,13 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   chose).
 - 🔵 **L7 : URL MCP arbitraire par tenant.** Décision commerciale, pas technique.
 
-⚠️ **PIÈGE DE VOCABULAIRE, vécu le 2026-08-28.** La console a un menu **Tools** dans la barre de gauche (il ne
-contient que les Webhooks entrants) ET un onglet **Outils** DANS un agent. Le connecteur vit dans le second,
-jamais dans le premier. Le document produit disait « déjà branché dans Tools », ce que tout lecteur mappe sur
-le menu : Julien a cherché là et n'a rien vu. La ligne nomme désormais le vrai endroit. Si la confusion revient,
-la vraie correction est de RENOMMER l'un des deux, pas de réexpliquer.
+⚠️ **PIÈGE DE VOCABULAIRE, vécu le 2026-08-28, et tranché depuis.** La console a un menu **Tools** dans la
+barre de gauche ET un onglet **Outils** DANS un agent. Julien a cherché le connecteur dans le menu et n'a rien
+vu, parce qu'il vivait alors dans l'agent. Le partage est désormais explicite, et c'est lui qui l'a tranché :
+le **système** (adresse, authentification, secret) se déclare dans **Tools > Connecteurs API**, une
+bibliothèque du workspace où plusieurs agents puisent ; l'**appel** que tel agent a le droit de faire se
+déclare dans son onglet Outils. Si la confusion revient malgré ça, la correction est de RENOMMER l'un des
+deux, pas de réexpliquer.
 
 ## Ouvert par la tranche 19c du bloc agent IA (2026-08-28)
 

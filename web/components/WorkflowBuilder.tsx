@@ -228,19 +228,49 @@ function WFNode({ id, data, selected }: NodeProps) {
   // tirer. Hors carousel il n'y a pas d'aperçu, donc on les garde pour le contexte.
   const outputRows = showCarousel ? buttons.filter((b) => b.type === 'QUICK_REPLY') : buttons;
 
-  // Faire défiler l'aperçu ne bouge AUCUNE poignée (elles sont hors de la zone), mais le nombre de sorties
-  // change quand on choisit un autre template : React Flow doit alors re-mesurer, sinon les flèches gardent
-  // les anciennes positions.
-  const handleSig = [
-    ...buttons.map((b, i) => b.handle ?? `btn:${i}`),
-    ...questionRows.map((_, i) => `row:${i}`),
-    ...(questionDelai ? ['timeout'] : []),
-    ...agentSorties.map((s) => `sortie:${s.code}`),
-  ].join(',');
-  useEffect(() => { updateNodeInternals(id); }, [handleSig, id, updateNodeInternals]);
+  // 🔴 UNE POIGNÉE QUE REACT FLOW N'A PAS MESURÉE NE SE RELIE PAS, ET RIEN NE LE DIT.
+  //
+  // Lu dans la source installée (@xyflow/system 0.0.79). React Flow garde les positions des poignées EN
+  // CACHE (`node.internals.handleBounds`) et ne les remesure que si la taille EXTÉRIEURE du bloc a changé
+  // (`dimensionChanged`) ou si on le lui ordonne (`updateNodeInternals`). Or, au tout début d'un glisser :
+  //
+  //     const fromHandleInternal = getHandle(nodeId, handleType, handleId, nodeLookup, connectionMode);
+  //     if (!fromHandleInternal) { return; }
+  //
+  // `getHandle` cherche dans le CACHE. Une poignée présente à l'écran mais absente du cache fait sortir
+  // `onPointerDown` en silence : le point se voit, se survole, et le glisser ne commence JAMAIS. C'est le
+  // « certains boutons de réponses restent rouge et je ne peux pas les relier » de Julien (2026-08-28), et
+  // c'est aussi pourquoi passer par l'inbox et revenir répare : le remontage vide le cache, donc remesure.
+  //
+  // 🔴 CE QUE LA SIGNATURE ÉCRITE À LA MAIN NE POUVAIT PAS VOIR. Elle listait ce qu'on avait l'INTENTION de
+  // dessiner, et deux cas divergeaient déjà du DOM réel :
+  //   - une ligne de menu au libellé VIDE compte dans `rows` mais ne dessine AUCUNE poignée ; taper son
+  //     libellé en ajoute une sans changer la liste des `row:i`, ni la hauteur du bloc ;
+  //   - un bouton qui passe de « lien » à « réponse rapide » garde son `btn:i` et gagne une poignée.
+  // Dans les deux cas la poignée naissait morte. Le défaut n'est donc pas dans la liste, il est dans le fait
+  // d'en tenir une à la main : elle doit reproduire le JSX, et elle finit toujours par s'en écarter.
+  //
+  // On lit donc la MÊME chose que React Flow : les poignées réellement dans le DOM, dans leur ordre. La
+  // dérive devient impossible par construction, et tout ce qu'on ajoutera plus tard est couvert d'avance.
+  // (Un déplacement de poignée à taille de bloc CONSTANTE reste hors de portée, mais React Flow le couvre
+  // déjà : toute ligne qui grandit change la hauteur du bloc, et son observateur de taille remesure.)
+  const hote = useRef<HTMLDivElement>(null);
+  const poigneesMesurees = useRef<string | null>(null);
+  useEffect(() => {
+    // Volontairement SANS tableau de dépendances : la seule source fiable est le DOM après rendu, et aucune
+    // valeur de `data` ne le résume. Le garde-fou est la comparaison ci-dessous, pas la liste de React.
+    const el = hote.current;
+    if (!el) return;
+    const signature = Array.from(el.querySelectorAll('.react-flow__handle'))
+      .map((h) => h.getAttribute('data-handleid') ?? '')
+      .join(',');
+    if (signature === poigneesMesurees.current) return;
+    poigneesMesurees.current = signature;
+    updateNodeInternals(id);
+  });
 
   return (
-    <div className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
+    <div ref={hote} className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
       {/* Suppression directe du bloc (sans passer par le menu de droite). nodrag + stopPropagation : ne déclenche ni
           le drag ni la sélection du bloc. Même pattern que le ✕ des arêtes (CustomEvent -> listener parent). */}

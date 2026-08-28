@@ -180,6 +180,36 @@ test.describe('Éditeur : viser un point de sortie, et voir la flèche partir de
     }
   });
 
+  test('🔴 une réponse AJOUTÉE À L’INSTANT se relie, sans quitter l’écran', async ({ page }) => {
+    // Julien, 2026-08-28 : « certains boutons de réponses restent rouge et je ne peux pas les relier [...]
+    // puis je vais dans l'inbox et je reviens et là je peux les relier ».
+    //
+    // La cause est dans React Flow, et elle est SILENCIEUSE. Les positions des poignées sont en cache
+    // (`node.internals.handleBounds`), et `onPointerDown` commence par y chercher la poignée de départ :
+    // absente du cache, il sort sans rien faire. Le point se voit, se survole, et le glisser ne commence
+    // jamais. Une ligne de menu au libellé vide ne dessine AUCUNE poignée ; taper son libellé en ajoute une
+    // sans changer la hauteur du bloc, donc sans que React Flow remesure quoi que ce soit.
+    //
+    // Ce test tire la flèche APRÈS avoir tapé le libellé, et sans recharger : c'est le seul geste qui
+    // distingue une poignée vivante d'une poignée dessinée. Les autres tests de ce fichier partent d'un
+    // graphe déjà rempli, donc mesuré au montage, et ne pouvaient pas le voir.
+    const saved: Graph[] = [];
+    await mockBuilder(page, AVEC_MENU(), saved);
+    await page.locator('.react-flow__node[data-id="n1"]').click();
+    await page.getByTestId('question-add-row').click();
+    await page.getByTestId('question-row-title-2').fill('Peut-être');
+    await expect(page.getByTestId('sortie-orpheline-row:2')).toBeVisible();
+
+    const point = (await pointsDeSortie(page)).find((p) => p.id === 'row:2');
+    expect(point, 'la 3e réponse doit avoir un point de sortie').toBeTruthy();
+    await tirer(page, point!, await centreDuBloc(page, 'n2'));
+
+    await expect.poll(
+      () => saved.some((g) => g.edges.some((e) => e.sourceHandle === 'row:2' && e.target === 'n2')),
+      { timeout: 10_000 },
+    ).toBe(true);
+  });
+
   test('🔴 un graphe qui porte DEUX arêtes sur la même sortie n’en dessine qu’une', async ({ page }) => {
     // Le moteur suit la PREMIÈRE : dessiner la seconde promettrait une branche que le parcours n'empruntera
     // jamais. Le canevas doit montrer ce qui va se passer, pas ce qui a été enregistré par erreur.

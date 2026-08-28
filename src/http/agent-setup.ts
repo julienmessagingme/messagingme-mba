@@ -5,6 +5,7 @@ import type { Guard } from '../auth/middleware';
 import type { ChatMessage, ReponseChat, OutilExpose } from '../agent/llm/chat-client';
 import { construireMessages, MAX_CARACTERES_MESSAGE, MAX_TOURS_HISTORIQUE, type ContexteConstruction } from '../agent/setup/conversation';
 import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
+import { DIMENSIONS, manquesDeCouverture } from '../agent/setup/couverture';
 import { scopeTenant, estUuid } from './scope';
 
 /**
@@ -100,16 +101,39 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const propose = propositionSchema.safeParse(brut);
     if (!propose.success) return reply.code(422).send({ error: 'l’assistant a rendu une proposition hors format' });
 
+    /**
+     * 🔴 LE DIFF EST RETENU TANT QUE LE PÉRIMÈTRE N'EST PAS COUVERT.
+     *
+     * Julien, 2026-08-28 : « poser des questions pour couvrir d'abord tout le périmètre en un premier round
+     * avant d'afficher les règles [...] je préfère qu'au début on discute avant d'afficher ce que le bot a
+     * compris ». Le mandat le dit au modèle ; ceci le lui IMPOSE. Sans ce point de passage, la consigne
+     * resterait un vœu qu'un modèle pressé de faire plaisir contourne dès la première phrase.
+     *
+     * Deux verrous, et le second existe parce que le premier est déclaré PAR le modèle :
+     *  - la couverture qu'il annonce doit être complète ;
+     *  - et il faut au moins deux messages du client, parce qu'une seule phrase ne tranche pas six points.
+     *    Ce second verrou est mécanique : il tient même si le modèle se déclare couvert d'emblée.
+     *
+     * On ne jette pas la proposition, on ne la MONTRE pas : le tour suivant la reformulera avec ce qu'il aura
+     * appris entre-temps, et rien de ce que le client n'a pas encore dit n'aura été présenté comme compris.
+     */
+    const messagesDuClient = parse.data.messages.filter((m) => m.role === 'user').length;
+    const manquants = messagesDuClient < 2
+      ? manquesDeCouverture([])
+      : manquesDeCouverture(propose.data.couverture);
+    const enEntretien = manquants.length > 0;
+
     return reply.code(200).send({
       message: propose.data.message,
-      proposition: {
+      couverture: { manquants, total: DIMENSIONS.length },
+      proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [] } : {
         fiche: propose.data.fiche ?? {},
         outils: propose.data.outils ?? [],
         // Les connecteurs proposés sont filtrés sur ceux qui EXISTENT : l'assistant n'en crée pas, et un nom
         // inventé ne doit pas atteindre l'application, qui tenterait un patch sur un outil inconnu.
         connecteurs: (propose.data.connecteurs ?? []).filter((c) => (etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
       },
-      changements: differences(etat, propose.data),
+      changements: enEntretien ? [] : differences(etat, propose.data),
       usage: { tokensIn: reponse.usage.tokensIn, tokensOut: reponse.usage.tokensOut },
     });
   });

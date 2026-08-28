@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fichePatchSchema, type FicheAgentContenu } from '../fiche';
 import { OUTILS_MAISON } from '../outils-maison';
+import { CODES_DIMENSIONS } from './couverture';
 
 /**
  * Ce que l'IA de construction a le DROIT de proposer, et le diff qu'on montre au client.
@@ -54,6 +55,16 @@ export const propositionSchema = z.object({
   /** Ce que l'assistant dit au client, en clair. Toujours présent : une proposition sans explication est
    *  un diff que personne ne peut juger. */
   message: z.string().trim().min(1).max(4000),
+  /**
+   * 🔴 Les points du périmètre que le CLIENT a réellement tranchés. La route s'en sert pour retenir le diff
+   * tant qu'il en manque un : c'est ce qui transforme « discute d'abord » en mécanisme plutôt qu'en vœu.
+   *
+   * ⚠️ Des CHAÎNES LIBRES, pas une énumération, et c'est délibéré. Un code inventé ne doit rien débloquer,
+   * mais il ne doit pas non plus faire échouer le tour : c'est la doctrine de ce fichier (« un modèle qui
+   * renvoie du bruit doit juste n'obtenir rien »), et une énumération ici rendait 422 sur une conversation
+   * par ailleurs parfaitement valide. Le tri se fait dans `manquesDeCouverture`, qui ignore l'inconnu.
+   */
+  couverture: z.array(z.string().trim().max(64)).max(CODES_DIMENSIONS.length * 4).default([]),
   /** Les champs de fiche proposés. PARTIEL au sens strict : le modèle ne touche qu'à ce dont il parle, et
    *  les champs absents restent ABSENTS (voir `fichePatchSchema`, qui n'applique aucun défaut). */
   fiche: fichePatchSchema.optional(),
@@ -77,6 +88,17 @@ export type ConnecteurPropose = z.infer<typeof connecteurProposeSchema>;
 export const OUTIL_PROPOSER = 'proposer';
 
 /**
+ * 🔴 CE TEXTE A ÉTÉ INVERSÉ LE 2026-08-28, ET C'EST LE CORRECTIF LE PLUS COURT DE TOUT LE LOT.
+ *
+ * Il disait « Quand NE PAS l'appeler. Jamais vide. », et le champ était REQUIS. Un modèle à qui on impose de
+ * remplir un champ sur un sujet dont personne n'a parlé le remplit quand même : d'où la clause que Julien a
+ * relevée, « ne pas l'appeler si le client pose encore des questions sur les séjours », qui aurait empêché
+ * l'agent d'agir précisément pendant qu'il fait son travail. On ne demande plus rien qui n'ait été dit.
+ */
+const NE_PAS_UTILISER = 'Quand NE PAS l’appeler. À remplir SEULEMENT si le client a nommé un cas où '
+  + 'l’appel serait de trop. Sinon, laisse ce champ vide plutôt que d’en inventer un.';
+
+/**
  * Le schéma envoyé au modèle, écrit À LA MAIN.
  *
  * Même raison qu'en tâche 15 : dériver un JSON Schema d'un schéma Zod produit du bruit
@@ -89,6 +111,12 @@ export const SCHEMA_PROPOSITION = {
   type: 'object',
   properties: {
     message: { type: 'string', description: 'Ce que tu dis au client, en français, bref.' },
+    couverture: {
+      type: 'array',
+      description: 'Les points du périmètre que le CLIENT a tranchés, par leur code. Un point que tu as '
+        + 'seulement supposé n’en fait PAS partie. Tant qu’il en manque un, tes champs ne seront pas montrés.',
+      items: { type: 'string', enum: [...CODES_DIMENSIONS] },
+    },
     fiche: {
       type: 'object',
       description: 'Les champs de la fiche que tu proposes de changer. N’y mets QUE ceux dont tu viens de parler.',
@@ -120,9 +148,9 @@ export const SCHEMA_PROPOSITION = {
         properties: {
           nom: { type: 'string', description: 'le nom exact du connecteur déjà déclaré' },
           description: { type: 'string', description: 'Quand l’appeler, avec un exemple de tournure du client.' },
-          nePasUtiliser: { type: 'string', description: 'Quand NE PAS l’appeler. Jamais vide.' },
+          nePasUtiliser: { type: 'string', description: NE_PAS_UTILISER },
         },
-        required: ['nom', 'description', 'nePasUtiliser'],
+        required: ['nom', 'description'],
       },
     },
     outils: {
@@ -133,9 +161,9 @@ export const SCHEMA_PROPOSITION = {
         properties: {
           handler: { type: 'string', enum: [...HANDLERS] },
           description: { type: 'string', description: 'Quand l’appeler, en une à trois phrases, avec un exemple de tournure du client.' },
-          nePasUtiliser: { type: 'string', description: 'Quand NE PAS l’appeler. Jamais vide.' },
+          nePasUtiliser: { type: 'string', description: NE_PAS_UTILISER },
         },
-        required: ['handler', 'description', 'nePasUtiliser'],
+        required: ['handler', 'description'],
       },
     },
   },
@@ -184,7 +212,7 @@ function texteSorties(sorties: FicheAgentContenu['sorties']): string {
  * l'habitude que ce diff existe pour empêcher. C'est aussi ce qui fait qu'une proposition sans effet rend
  * une liste vide, donc un écran qui dit « rien à changer » plutôt qu'un bouton qui n'aurait rien fait.
  */
-export function differences(courant: EtatCourant, proposition: Proposition): Changement[] {
+export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'couverture'>): Changement[] {
   const out: Changement[] = [];
 
   for (const [cle, valeur] of Object.entries(proposition.fiche ?? {})) {

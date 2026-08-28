@@ -44,7 +44,76 @@ export interface ReponseConstruction {
   message: string;
   proposition: PropositionConstruction;
   changements: Changement[];
+  /** Les points du périmètre encore à couvrir. Non vide = l'assistant est ENCORE EN ENTRETIEN, et le serveur
+   *  a volontairement retenu le diff : on discute avant d'afficher ce qu'il a compris. */
+  couverture?: { manquants: string[]; total: number };
   usage: { tokensIn: number; tokensOut: number };
+}
+
+/**
+ * Ce que le client GARDE, ligne par ligne : la clé technique du changement, et le texte retenu.
+ *
+ * 🔴 POURQUOI CE N'EST PAS UN SIMPLE FILTRE. Julien, 2026-08-28 : « il n'y a qu'un seul bouton Garder ou
+ * Jeter à la fin, alors que potentiellement le mec ne veut en changer qu'une et le reste lui convient ».
+ * Jeter une ligne ne veut PAS dire ne rien envoyer pour ce champ : les deux textes d'un outil partent dans le
+ * même `PATCH`, et omettre celui qu'on a jeté le laisserait prendre la valeur proposée. Une ligne jetée
+ * réécrit donc la valeur ACTUELLE (`avant`), ce qui la rend sans effet.
+ */
+export type LignesGardees = ReadonlyMap<string, string>;
+
+/**
+ * Réduit une proposition aux seules lignes gardées, avec le texte éventuellement corrigé par le client.
+ *
+ * ⚠️ `fiche.sorties` se garde ou se jette, mais ne se modifie pas ici : cette ligne est un TEXTE composé de
+ * plusieurs règles d'arrêt (`code : libellé`), et le relire pour reconstruire la liste ferait dépendre un
+ * enregistrement d'un format que le client peut casser en tapant. Les régler une par une est le travail de
+ * l'onglet Objectif, qui a les bons champs.
+ */
+export function restreindreProposition(
+  proposition: PropositionConstruction,
+  changements: Changement[],
+  gardees: LignesGardees,
+): PropositionConstruction {
+  const avantDe = new Map(changements.map((c) => [c.champ, c.avant]));
+  // Le texte à envoyer pour une ligne : celui que le client a gardé (corrigé ou non), sinon la valeur
+  // ACTUELLE quand il l'a jetée, sinon la proposition (le champ n'était pas une ligne de diff, donc il est
+  // déjà identique à l'existant et l'écrire ne change rien).
+  const retenu = (champ: string, propose: string): string => {
+    if (gardees.has(champ)) return gardees.get(champ) as string;
+    return avantDe.get(champ) ?? propose;
+  };
+
+  const fiche: PropositionConstruction['fiche'] = {};
+  for (const [cle, valeur] of Object.entries(proposition.fiche)) {
+    if (valeur === undefined) continue;
+    const champ = `fiche.${cle}`;
+    if (avantDe.has(champ) && !gardees.has(champ)) continue;
+    if (cle === 'sorties') { fiche.sorties = valeur as SortieAgent[]; continue; }
+    (fiche as Record<string, unknown>)[cle] = gardees.get(champ) ?? valeur;
+  }
+
+  // Un outil dont TOUTES les lignes ont été jetées n'est pas écrit du tout : le réécrire avec ses valeurs
+  // actuelles CRÉERAIT quand même l'outil (aux mots vides) alors que le client vient de refuser l'ajout.
+  const garde = <T>(liste: T[], cles: (x: T) => string[]): T[] => liste.filter((x) => {
+    const lignes = cles(x).filter((c) => avantDe.has(c));
+    return lignes.length === 0 || lignes.some((c) => gardees.has(c));
+  });
+
+  return {
+    fiche,
+    outils: garde(proposition.outils, (o) => [`outil.${o.handler}.description`, `outil.${o.handler}.nePasUtiliser`])
+      .map((o) => ({
+        handler: o.handler,
+        description: retenu(`outil.${o.handler}.description`, o.description),
+        nePasUtiliser: retenu(`outil.${o.handler}.nePasUtiliser`, o.nePasUtiliser),
+      })),
+    connecteurs: garde(proposition.connecteurs ?? [], (c) => [`connecteur.${c.nom}.description`, `connecteur.${c.nom}.nePasUtiliser`])
+      .map((c) => ({
+        nom: c.nom,
+        description: retenu(`connecteur.${c.nom}.description`, c.description),
+        nePasUtiliser: retenu(`connecteur.${c.nom}.nePasUtiliser`, c.nePasUtiliser),
+      })),
+  };
 }
 
 export async function parlerAuConstructeur(

@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentSetupRouteDeps } from '../src/http/agent-setup';
 import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
 import { OUTIL_PROPOSER } from '../src/agent/setup/proposition';
+import { DIMENSIONS } from '../src/agent/setup/couverture';
 import { ficheVide } from '../src/agent/fiche';
 
 /**
@@ -52,7 +53,11 @@ function app(opts: { reponse?: ReponseChat | Error; sansModele?: boolean; sansCl
       completer: async (i) => {
         cap.appels.push({ modele: i.modele, messages: i.messages, toolChoice: i.toolChoice });
         if (opts.reponse instanceof Error) throw opts.reponse;
-        return opts.reponse ?? reponse(JSON.stringify({ message: 'Je propose ceci.', fiche: { objectif: 'Cerner le besoin puis proposer un essai.' } }));
+        return opts.reponse ?? reponse(JSON.stringify({
+          message: 'Je propose ceci.',
+          couverture: DIMENSIONS.map((d) => d.code),
+          fiche: { objectif: 'Cerner le besoin puis proposer un essai.' },
+        }));
       },
     }),
     modele: opts.sansModele ? '' : 'modele-de-construction',
@@ -63,17 +68,80 @@ function app(opts: { reponse?: ReponseChat | Error; sansModele?: boolean; sansCl
 const url = (tenant: string, agentId = AG) => `/tenants/${tenant}/agents/${agentId}/setup`;
 const bonjour = { messages: [{ role: 'user', content: 'Mon agent doit qualifier les demandes de séjour.' }] };
 
+/** Les six points du périmètre, tirés de la source : une liste recopiée ici finirait par diverger. */
+const TOUS_COUVERTS = DIMENSIONS.map((d) => d.code);
+
+/**
+ * Un échange où l'entretien est TERMINÉ : deux messages du client, et une couverture complète.
+ *
+ * Les deux conditions sont nécessaires, et c'est le sujet du gate : la couverture est DÉCLARÉE par le modèle,
+ * donc un modèle pressé de faire plaisir pourrait l'annoncer dès la première phrase. Le compte de messages,
+ * lui, ne se déclare pas.
+ */
+const apresEntretien = {
+  messages: [
+    { role: 'user', content: 'Mon agent doit qualifier les demandes de séjour.' },
+    { role: 'assistant', content: 'Que doit-il faire quand quelqu’un veut réserver ?' },
+    { role: 'user', content: 'Il envoie le bloc « prise de rendez-vous » du scénario, et il ne parle jamais tarifs.' },
+  ],
+};
+
 describe('conversation de construction', () => {
-  it('rend le message, la proposition et le diff', async () => {
+  it('rend le message, la proposition et le diff UNE FOIS l’entretien fini', async () => {
     const { cap, srv } = app();
-    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: apresEntretien });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.message).toBe('Je propose ceci.');
+    expect(body.couverture.manquants).toEqual([]);
     expect(body.changements).toHaveLength(1);
     expect(body.changements[0]).toMatchObject({ champ: 'fiche.objectif', avant: 'Aider.', apres: 'Cerner le besoin puis proposer un essai.' });
     // La sortie structurée est FORCÉE : sans ça le modèle répondrait en prose un jour sur deux.
     expect(cap.appels[0]!.toolChoice).toBe(OUTIL_PROPOSER);
+  });
+
+  it('🔴 TANT QUE LE PÉRIMÈTRE N’EST PAS COUVERT, aucun champ n’est montré', async () => {
+    // Julien, 2026-08-28 : « poser des questions pour couvrir d'abord tout le périmètre [...] je préfère
+    // qu'au début on discute avant d'afficher ce que le bot a compris ». Le mandat le demande au modèle ;
+    // ceci le lui impose. Le message passe, la proposition est retenue : on discute, on ne conclut pas.
+    const r = reponse(JSON.stringify({
+      message: 'Que doit-il faire quand quelqu’un veut réserver ?',
+      couverture: ['mission', 'ton'],
+      fiche: { objectif: 'Cerner le besoin.', reglesTransfert: 'Passer la main si ça bloque.' },
+      outils: [{ handler: 'poser_tag', description: 'Tague les intéressés.', nePasUtiliser: '' }],
+    }));
+    const res = await app({ reponse: r }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: apresEntretien });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.message).toContain('réserver');
+    expect(body.changements).toEqual([]);
+    expect(body.proposition).toEqual({ fiche: {}, outils: [], connecteurs: [] });
+    expect(body.couverture.manquants).toEqual(['perimetre', 'aboutissements', 'bascules', 'humain']);
+  });
+
+  it('🔴 une SEULE phrase du client ne peut pas couvrir six points, même si le modèle l’affirme', async () => {
+    // Le verrou déclaratif ne suffit pas : la couverture est annoncée PAR le modèle, et un modèle pressé de
+    // faire plaisir la déclare complète dès la première phrase. Ce second verrou, lui, ne se déclare pas.
+    const { srv } = app();
+    const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.changements).toEqual([]);
+    expect(body.couverture.manquants).toEqual(TOUS_COUVERTS);
+  });
+
+  it('🔴 un code de couverture INVENTÉ ne débloque rien', async () => {
+    // La couverture vient d'un modèle, donc d'une source non fiable. Un code hors énumération est écarté par
+    // le schéma ; s'il passait, il suffirait d'en inventer six pour contourner l'entretien.
+    const r = reponse(JSON.stringify({
+      message: 'Voilà.',
+      couverture: [...TOUS_COUVERTS.slice(0, 5), 'tout_le_reste'],
+      fiche: { objectif: 'Cerner le besoin puis proposer un essai.' },
+    }));
+    const res = await app({ reponse: r }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: apresEntretien });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().changements).toEqual([]);
+    expect(res.json().couverture.manquants).toEqual(['ton']);
   });
 
   it('🔴 le contexte part en BLOC DÉLIMITÉ, et une injection ne peut pas en sortir', async () => {
@@ -139,12 +207,13 @@ describe('conversation de construction', () => {
     // modèle qui renvoie du bruit ne doit pas casser la conversation, il doit juste n'obtenir rien.
     const r = reponse(JSON.stringify({
       message: 'Voici.',
+      couverture: TOUS_COUVERTS,
       mentionIa: 'Vous parlez à un humain.',
       maxTours: 999,
       status: 'active',
       outils: [{ handler: 'poser_tag', description: 'Tague.', nePasUtiliser: 'Jamais au hasard.', actif: true }],
     }));
-    const res = await app({ reponse: r }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    const res = await app({ reponse: r }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: apresEntretien });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.proposition).not.toHaveProperty('mentionIa');
