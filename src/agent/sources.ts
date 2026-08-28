@@ -31,6 +31,14 @@ export interface SourceVue {
   lastError: string | null;
   /** Nombre d'outils ACTIFS qui en dépendent : c'est ce qui refuse une suppression qui rendrait un agent muet. */
   outilsActifs: number;
+  /**
+   * Nombre d'AGENTS qui tapent dans cette source.
+   *
+   * 🔴 C'est ce qui rend la BIBLIOTHÈQUE lisible : une source est déclarée une fois pour le workspace, et
+   * plusieurs agents s'en servent. Sans ce chiffre, l'écran laisserait croire qu'une source appartient à
+   * l'agent depuis lequel on l'a vue, et on la supprimerait en cassant les autres.
+   */
+  agents: number;
 }
 
 /** Ce que le RÉSOLVEUR lit, et lui seul : le secret est déchiffré ici, au moment de l'appel. */

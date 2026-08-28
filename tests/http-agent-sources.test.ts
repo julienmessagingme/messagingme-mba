@@ -30,7 +30,7 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 const SOURCE: SourceVue = {
   id: SRC, tenantId: 't1', kind: 'http', label: 'ERP', baseUrl: 'https://api.client.fr/v1',
   authKind: 'bearer', authHeaderName: null, aAuthentification: true,
-  status: 'active', lastOkAt: null, lastError: null, outilsActifs: 0,
+  status: 'active', lastOkAt: null, lastError: null, outilsActifs: 0, agents: 0,
 };
 
 function app(over: Partial<SourceVue> = {}, epreuve?: AgentSourcesRouteDeps['eprouver']) {

@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * BRANCHER LE SYSTÈME DU CLIENT (lot L2) : déclarer une source, l'éprouver, y poser un outil.
+ * BRANCHER LE SYSTÈME DU CLIENT (lot L2), en DEUX endroits, et c'est le sujet :
+ *  - la BIBLIOTHÈQUE du workspace vit dans **Tools > Connecteurs API** (`/connecteurs`) : l'adresse,
+ *    l'authentification, le secret, l'épreuve. Un système appartient au client, plusieurs agents tapent dedans ;
+ *  - un AGENT n'y déclare que les APPELS qu'il a le droit de faire, avec ses mots à lui.
  *
  * 🔴 CE QUE SEUL UN TEST DE BOUT EN BOUT VOIT ICI :
  *  - la section des connecteurs est SÉPARÉE du catalogue maison (le client ne doit pas confondre ce qu'on
@@ -17,7 +20,7 @@ const SRC = '22222222-2222-4222-8222-222222222222';
 const SOURCE = {
   id: SRC, kind: 'http', label: 'ERP', baseUrl: 'https://api.client.fr/v1',
   authKind: 'bearer', authHeaderName: null, aAuthentification: true,
-  status: 'active', lastOkAt: null, lastError: null, outilsActifs: 0,
+  status: 'active', lastOkAt: null, lastError: null, outilsActifs: 0, agents: 0,
 };
 
 const AGENT = {
@@ -57,19 +60,25 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
     if (url.includes('/settings')) return json({ mbaEnabled: false, rcsEnabled: false, hubspotListsEnabled: false, campaignsPaused: false });
     return json({});
   });
-  await page.goto(`/agents?id=${AG}&tab=outils`);
 }
 
-/** L'onglet Outils est ouvert par l'URL (`?id=...&tab=outils`), comme dans `agents-outils.spec.ts`. */
-async function ongletOutils(page: import('@playwright/test').Page) {
+/** La BIBLIOTHÈQUE, dans le menu Tools. C'est là que se déclare un système. */
+async function bibliotheque(page: import('@playwright/test').Page) {
+  await page.goto('/connecteurs');
   await expect(page.getByTestId('source-creer')).toBeVisible();
+}
+
+/** L'onglet Outils d'un agent. Il ne déclare AUCUN système : il puise dans la bibliothèque. */
+async function ongletOutils(page: import('@playwright/test').Page) {
+  await page.goto(`/agents?id=${AG}&tab=outils`);
+  await expect(page.getByTestId(`agent-source-${SRC}`).or(page.getByTestId('connecteurs-aucune-source'))).toBeVisible();
 }
 
 test.describe('Agent : brancher le système du client', () => {
   test('🔴 déclare une source, et le secret ne revient JAMAIS à l’écran', async ({ page }) => {
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { sources: [] });
-    await ongletOutils(page);
+    await bibliotheque(page);
 
     await page.getByTestId('source-label').fill('ERP');
     await page.getByTestId('source-url').fill('https://api.client.fr/v1');
@@ -88,7 +97,7 @@ test.describe('Agent : brancher le système du client', () => {
     // au milieu d'une conversation.
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture, { epreuve: { ok: false, httpStatus: 401, erreur: 'authentification refusée' } });
-    await ongletOutils(page);
+    await bibliotheque(page);
     await page.getByTestId(`source-eprouver-${SRC}`).click();
     await expect(page.getByTestId(`source-epreuve-${SRC}`)).toContainText(/authentification/i);
   });
@@ -153,5 +162,26 @@ test.describe('Agent : brancher le système du client', () => {
     await expect(page.getByTestId('outil-creer')).toBeDisabled();
     await page.getByTestId('outil-champs').fill('statut');
     await expect(page.getByTestId('outil-creer')).toBeEnabled();
+  });
+
+  test('🔴 la bibliothèque dit combien d’AGENTS tapent dans un système', async ({ page }) => {
+    // Sans ce chiffre, on croirait le système lié à l'agent d'où on l'a vu, et on le supprimerait en cassant
+    // les autres. C'est ce qui rend la bibliothèque partagée lisible.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { sources: [{ ...SOURCE, agents: 2, outilsActifs: 3 }] });
+    await page.goto('/connecteurs');
+    await expect(page.getByTestId(`source-usage-${SRC}`)).toContainText('2');
+    await expect(page.getByTestId(`source-usage-${SRC}`)).toContainText('3');
+  });
+
+  test('🔴 un agent ne déclare AUCUN système : il renvoie vers la bibliothèque', async ({ page }) => {
+    // Déclarer une adresse et un secret est un geste de workspace. Le proposer dans un agent ferait croire
+    // que le système lui appartient.
+    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+    await mock(page, capture, { sources: [] });
+    await page.goto(`/agents?id=${AG}&tab=outils`);
+    await expect(page.getByTestId('connecteurs-aucune-source')).toBeVisible();
+    // Et le formulaire de déclaration d'un système n'est PAS sur cette page.
+    await expect(page.getByTestId('source-creer')).toHaveCount(0);
   });
 });

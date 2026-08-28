@@ -899,16 +899,22 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   fenêtre au moment de la création, avec un bouton Copier : c'est le seul instant où elle existe. Une clé
   révoquée reste dans la liste, marquée comme telle.
 
-## Brancher vos outils : les connecteurs de l'agent IA (menu « AI Agent » > onglet Outils)
+## Brancher vos systèmes : les connecteurs API (menu « Tools » > Connecteurs API)
 
-- ✅ **Déclarer un système** (2026-08-28) : un nom, une adresse de base en HTTPS, et son mode
-  d'authentification (jeton, en-tête nommé, ou aucune). Le secret est chiffré chez nous et **n'est jamais
-  réaffiché** : un champ laissé vide veut dire « inchangé ».
+- ✅ **Une bibliothèque de systèmes pour tout le workspace** (2026-08-28), dans le menu **Tools**, à côté des
+  webhooks. Un système est déclaré UNE fois et sert à **tous vos agents** : c'est le client qui le possède,
+  pas un agent en particulier. L'écran dit combien d'agents s'en servent, ce qui évite de supprimer un système
+  en cassant les autres.
+- ✅ **Déclarer un système** : un nom, une adresse de base en HTTPS, et son mode d'authentification (jeton,
+  en-tête nommé, ou aucune). Le secret est chiffré chez nous et **n'est jamais réaffiché** : un champ laissé
+  vide veut dire « inchangé ».
 - ✅ **Éprouver la connexion** : un bouton, un chemin, et le verdict avec sa date. C'est le seul endroit où un
   jeton expiré se voit AVANT qu'un contact ne le découvre : un jeton mort ne produit aucune erreur visible
   côté client, l'agent se contenterait de ne plus savoir répondre.
-- ✅ **Poser un outil sur ce système** : une méthode, un chemin (`/commandes/{ref}`), les mots qui disent quand
-  l'appeler et quand ne pas l'appeler, et **les champs que l'agent aura le droit de lire**. Ces champs sont
+- ✅ **Dans CHAQUE agent** (onglet Outils), poser les appels qu'il a le droit de faire sur ces systèmes : une
+  méthode, un chemin (`/commandes/{ref}`), les mots qui disent quand l'appeler et quand ne pas l'appeler, et
+  **les champs que l'agent aura le droit de lire**. Deux agents peuvent interroger le même système avec des
+  consignes différentes. Ces champs sont
   obligatoires : la réponse de votre système ne part chez le fournisseur du modèle que par cette liste.
 - ✅ **Dire qui remplit chaque paramètre** : l'agent, le contact (son numéro, authentifié par WhatsApp), ou une
   valeur fixe. **L'agent ne peut pas fabriquer un identifiant de client** : c'est ce qui empêche quelqu'un de

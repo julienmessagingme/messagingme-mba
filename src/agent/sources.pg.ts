@@ -21,12 +21,13 @@ import {
 /** Colonnes de la projection PUBLIQUE. Le secret n'y est pas, seulement son EXISTENCE. */
 const COLS = `s.id, s.tenant_id, s.kind, s.label, s.base_url, s.auth_kind, s.auth_header_name,
   (s.auth_secret_enc is not null) as a_auth, s.status, s.last_ok_at, s.last_error,
-  (select count(*)::int from agent_tools t where t.source_id = s.id and t.actif) as outils_actifs`;
+  (select count(*)::int from agent_tools t where t.source_id = s.id and t.actif) as outils_actifs,
+  (select count(distinct t.agent_id)::int from agent_tools t where t.source_id = s.id) as agents`;
 
 interface LigneVue {
   id: string; tenant_id: string; kind: string; label: string; base_url: string;
   auth_kind: string; auth_header_name: string | null; a_auth: boolean;
-  status: string; last_ok_at: Date | null; last_error: string | null; outils_actifs: number;
+  status: string; last_ok_at: Date | null; last_error: string | null; outils_actifs: number; agents: number;
 }
 
 function versVue(r: LigneVue): SourceVue {
@@ -43,6 +44,7 @@ function versVue(r: LigneVue): SourceVue {
     lastOkAt: r.last_ok_at ? r.last_ok_at.toISOString() : null,
     lastError: r.last_error,
     outilsActifs: r.outils_actifs,
+    agents: r.agents,
   };
 }
 

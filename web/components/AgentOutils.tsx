@@ -115,8 +115,18 @@ export function AgentOutils({ tenantId, agentId }: { tenantId: string; agentId: 
         </div>
       )}
 
+      {/* 🔴 DEUX SECTIONS DISTINCTES, et ce n'est pas cosmétique : le client ne doit pas confondre ce qu'on
+          GARANTIT (les outils maison, dont nous écrivons le comportement) et ce que ses AGENTS vont chercher
+          dans SES systèmes. Les systèmes eux-mêmes ne se déclarent pas ici : ils vivent dans Tools >
+          Connecteurs API, parce qu'ils appartiennent au workspace et que plusieurs agents tapent dedans. */}
       <div className="border-t border-ink-200 pt-4">
-        <p className="mb-2 text-sm font-semibold text-ink-800">{t('Vos connecteurs', 'Your connectors')}</p>
+        <p className="text-sm font-semibold text-ink-800">{t('Vos systèmes', 'Your systems')}</p>
+        <p className="mb-2 text-xs text-ink-500">
+          {t(
+            'Déclarés une fois pour le workspace dans Tools > Connecteurs API, et partagés par tous vos agents. Ici, vous dites ce que CET agent a le droit d’y appeler.',
+            'Declared once for the workspace in Tools > API connectors, and shared by all your agents. Here you say what THIS agent may call there.',
+          )}
+        </p>
         <AgentConnecteurs tenantId={tenantId} agentId={agentId} outils={vue?.outils ?? []} onChange={charger} />
       </div>
     </div>

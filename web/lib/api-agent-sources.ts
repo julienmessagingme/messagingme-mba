@@ -29,6 +29,8 @@ export interface SourceAgent {
   lastError: string | null;
   /** Outils ACTIFS qui en dépendent : au-dessus de zéro, la suppression est refusée. */
   outilsActifs: number;
+  /** Agents qui tapent dans cette source. Une source est déclarée UNE fois pour le workspace. */
+  agents: number;
 }
 
 export interface ResultatEpreuve {

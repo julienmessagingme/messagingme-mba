@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'connecteurs' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -92,8 +92,13 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
       { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
     ] },
+    // Tools : ce qui BRANCHE la console sur l'extérieur. Les webhooks entrants, et les systèmes que les
+    // agents IA interrogent. Les connecteurs sont ICI et pas dans un agent : un système appartient au CLIENT,
+    // plusieurs agents tapent dans la même bibliothèque, et le déclarer dans un agent ferait croire qu'il lui
+    // appartient. MCP viendra s'ajouter dans ce menu, à côté.
     { key: 'tools', label: t('Tools', 'Tools'), d: icons.tools, children: [
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
+      { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
     ] },
     { key: 'analytics', label: t('Analytics', 'Analytics'), d: icons.analytics, children: [
       { key: 'dashboard', href: '/dashboard', label: t('Quantitatif', 'Quantitative') },

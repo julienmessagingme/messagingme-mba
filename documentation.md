@@ -1648,7 +1648,10 @@ refactor par expression régulière qui n'attend que `
 ## Le connecteur API d'un client (lot L2, livré le 2026-08-28)
 
 Une **source** (`agent_tool_sources`, migration 0088) porte l'adresse de base du système d'un client, son mode
-d'authentification et son secret chiffré. Un **outil de connecteur** (`agent_tools` avec `origin = 'http'` et
+d'authentification et son secret chiffré. Elle appartient au **workspace** (`tenant_id`, jamais `agent_id`) et
+se déclare dans **Tools > Connecteurs API** (`/connecteurs`) : plusieurs agents tapent dans la même
+bibliothèque. La placer dans un agent ferait croire qu'elle lui appartient, et on la supprimerait en cassant
+les autres ; l'écran affiche donc combien d'agents s'en servent. Un **outil de connecteur** (`agent_tools` avec `origin = 'http'` et
 `source_id`) est un gabarit de chemin sur cette source. Le résolveur `http` fait l'appel ; tout le reste (la
 validation des arguments, l'injection des paramètres non confiés au modèle, le budget de temps, le journal, la
 troncature) reste le tronc commun, exactement comme pour un outil maison.

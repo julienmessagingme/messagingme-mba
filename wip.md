@@ -32,6 +32,14 @@ POST non signe, par le chemin public reel (`/api/backend/webhooks/meta`).
 seconde sont rejouees par Meta. C est le cout normal d un `up -d --build` ; le noter pour ne pas le confondre
 avec un incident la prochaine fois qu on lit ces logs.
 
+🔴 **L ECRAN A CHANGE DE PLACE le 2026-08-28, apres retour de Julien.** La bibliotheque de systemes vit dans
+**Tools > Connecteurs API** (`/connecteurs`), a cote des webhooks, et pas dans l onglet Outils d un agent : un
+systeme appartient au CLIENT, et plusieurs agents tapent dedans. L agent, lui, ne declare que les APPELS qu il
+a le droit d y faire. En base, rien n a bouge : `agent_tool_sources` portait deja `tenant_id`.
+
+⚠️ **Piege de vocabulaire** : la console a un menu « Tools » ET un onglet « Outils » dans un agent. Ils ne
+parlent pas de la meme chose. Si la confusion revient, renommer l un des deux.
+
 ⚠️ **Rien n est branche tant qu un client n a pas declare de source.** Le lot n active rien tout seul : sans
 source, l onglet Outils est exactement ce qu il etait.
 
