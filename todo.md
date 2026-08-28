@@ -1,5 +1,40 @@
 # todo.md — backlog
 
+## 🔴 Agent IA : les lots NON développés (L2 à L7), du cadrage du 2026-08-23
+
+Ce qui est livré, c'est **L0 et L1** : l'agent, ses outils MAISON, sa base de connaissance, la construction en
+parlant, le bac à sable, le tour de production, et le solde prépayé. Tout le reste ci-dessous n'existe pas. Le
+séquencement et le pourquoi de l'ordre sont en §7 de
+[AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md) ; le tableau côté client est dans
+[AGENT-IA-PRODUIT-2026-08-27.md](AGENT-IA-PRODUIT-2026-08-27.md).
+
+- 🔴 **L2 : le connecteur API (HTTP) du client.** C'est l'argument commercial « branchez votre système », et
+  c'est le lot suivant. Manquent : la table `agent_tool_sources` (adresse de base FIGÉE côté console, type
+  d'authentification, secret chiffré), la colonne `agent_tools.source_id` avec sa contrainte
+  `origin <> 'mba' => source_id not null`, le résolveur `http`, l'écran de déclaration d'une source dans
+  l'onglet Outils, et l'extension de la conversation de construction aux connecteurs. **Migration à prévoir
+  (0088).** Déjà en place et réutilisable tel quel : la contrainte `origin in ('mba','http','mcp')` (0086),
+  le routage par origine de l'exécuteur (une origine sans résolveur est refusée proprement), le champ
+  `source` des paramètres (`modele`/`contact`/`fixe`) qui empêche le modèle de choisir une cible réseau,
+  la garde SSRF `src/lib/page-distante.ts`, et `src/crypto/secretbox.ts` pour le secret.
+- 🟠 **L3 : le « temps 2 ».** L'IA de construction relit les VRAIES conversations, le journal d'outils et le
+  signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
+  valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
+- 🟠 **L4 : MCP en jeton statique, sur allowlist.** Couvre 70 % du parc mesuré pour un quart du prix de
+  l'OAuth. **Décision produit à trancher avant** (D3 du cadrage) : allowlist de serveurs validés par nous, ou
+  URL libre saisie par le client. Recommandation tenue : allowlist par défaut, URL libre derrière un drapeau
+  par tenant.
+- 🔵 **L6 : MCP OAuth.** Quatre à huit fois le coût de L4, et le coût n'est pas dans le développement mais
+  dans la SUPERVISION : un jeton mort ne produit aucune erreur applicative, l'agent dégrade en silence au
+  milieu d'une conversation. Premier serveur à brancher : Linear. Le pire premier candidat : HubSpot (la
+  console a déjà son connecteur `mm-hubspot` en production, ce serait une deuxième façon de faire la même
+  chose).
+- 🔵 **L7 : URL MCP arbitraire par tenant.** Décision commerciale, pas technique.
+
+⚠️ **Le document produit promet déjà L2 dans son tableau des outils** (« un connecteur vers votre système (API
+ou MCP, déjà branché dans Tools) »). Cette ligne n'est pas livrable : à retirer ou à annoter avant de montrer
+le document à un client.
+
 ## Ouvert par la tranche 19c du bloc agent IA (2026-08-28)
 
 **Dire à l'admin qu'une suppression de compte a éteint des outils d'agent.** Supprimer un utilisateur éteint

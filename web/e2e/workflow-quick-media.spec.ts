@@ -73,3 +73,24 @@ test.describe('Bloc message rapide : le visuel', () => {
     await expect(page.getByTestId('quick-node-image')).toHaveValue('');
   });
 });
+
+/**
+ * 🔴 LE VISUEL SE VOIT SUR LE BLOC. Demandé par Julien le 2026-08-28 : « je veux voir cette photo dans la
+ * miniature du node et pas que sur la sidebar ». Un scénario se relit d'un coup d'œil sur le canevas ; sans
+ * ça, il faut ouvrir chaque bloc pour savoir lequel porte une image.
+ */
+test.describe('Éditeur : le visuel dans la miniature du bloc', () => {
+  test('🔴 un bloc qui porte une image la MONTRE, un bloc sans image ne montre rien', async ({ page }) => {
+    await mockBuilder(page, []);
+    await page.goto('/workflows?open=wf1');
+    // Le graphe de départ n'a pas d'image : aucune vignette.
+    await expect(page.getByTestId('node-visuel')).toHaveCount(0);
+    // On en pose une par le panneau, comme le ferait un client.
+    await page.locator('.react-flow__node').first().click();
+    await page.getByTestId('quick-node-image').fill('https://mba.messagingme.app/m/abc.png');
+    await page.getByTestId('quick-node-image').blur();
+    const vignette = page.getByTestId('node-visuel');
+    await expect(vignette).toHaveCount(1);
+    await expect(vignette).toHaveAttribute('src', 'https://mba.messagingme.app/m/abc.png');
+  });
+});

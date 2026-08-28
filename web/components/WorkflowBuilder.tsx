@@ -27,6 +27,7 @@ import { emailResolvableFields } from '@/lib/fields';
 import { isCampaignEligible, waitBeforeSessionMessage, sessionMessageAfterRcs, entryNodeOf } from '@/lib/campaign-eligibility';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { carouselButtonHandle } from '@/lib/carousel-handle';
+import { SORTIE_LIBRE, poigneeCanevas, poigneeGraphe, uneAreteParSortie } from '@/lib/workflow-sorties';
 import { autoLayoutHorizontal } from '@/lib/workflow-layout';
 import { ConditionBuilder, type ConditionGroup } from './ConditionBuilder';
 
@@ -189,6 +190,9 @@ function WFNode({ id, data, selected }: NodeProps) {
         ? (data.quickReplies as unknown[]).map((q): NodeButton => ({ type: 'QUICK_REPLY', text: String(q ?? '') }))
         : [];
   const hasQR = buttons.some((b) => b.type === 'QUICK_REPLY');
+  // Le visuel du bloc, montré dans la miniature. MÊME champ pour le message rapide et le message RCS (un seul
+  // téléversement, un seul champ d'écran), donc une seule lecture ici.
+  const visuel = String(data.imageUrl ?? '').trim();
   // 🔴 Sorties RELIÉES de ce bloc. Un bouton proposé au contact mais branché sur rien est un TROU DE
   // MONTAGE : il tape, et il ne reçoit rien. Vécu par Julien le 2026-08-25, invisible à l'écran comme à
   // l'exécution. On le signale ICI, sur la ligne du bouton, là où la flèche se tire.
@@ -251,6 +255,29 @@ function WFNode({ id, data, selected }: NodeProps) {
         <span className="truncate text-[11px] font-semibold text-ink-800">{String(data.name ?? '').trim() || t(...meta.label)}</span>
       </div>
       <div className="truncate px-2 py-1.5 text-[11px] text-ink-500">{summaryOf(data, t)}</div>
+      {/* 🔴 LE VISUEL SE VOIT SUR LE BLOC, pas seulement dans le panneau de droite. Demandé par Julien le
+          2026-08-28 : « je veux voir cette photo dans la miniature du node ». Un scénario se relit d'un coup
+          d'œil sur le canevas, et un bloc qui porte une image sans le montrer oblige à ouvrir chaque bloc
+          pour savoir lequel l'a. Même champ (`imageUrl`) pour le message rapide et le message RCS, donc un
+          seul aperçu ici. `no-referrer` comme pour les cartes de carousel : l'hébergeur du client n'a pas à
+          savoir d'où on regarde. */}
+      {visuel !== '' && (
+        <div className="border-t border-ink-200 p-1.5" style={{ backgroundColor: '#efeae2' }}>
+          <div className="flex h-16 w-full items-center justify-center overflow-hidden rounded bg-ink-100 text-[9px] text-ink-400">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={visuel}
+              alt={t('Visuel du message', 'Message image')}
+              referrerPolicy="no-referrer"
+              data-testid="node-visuel"
+              className="h-full w-full object-cover"
+              // Une adresse morte (visuel supprimé, CDN du client tombé) laisserait un cadre cassé : on
+              // efface l'image et le cadre gris reste, ce qui dit « il y a un visuel, il ne se charge pas ».
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          </div>
+        </div>
+      )}
       {showCarousel ? (
         // Aperçu CAROUSEL : bulle d'introduction puis les cartes, EMPILÉES et défilables. Les afficher côte à
         // côte rendrait le bloc large comme 10 cartes ; ici il garde sa taille et on fait défiler.
@@ -339,7 +366,9 @@ function WFNode({ id, data, selected }: NodeProps) {
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700">
             <span className="shrink-0">✎</span>
             <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
-            <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de choisir dans le menu', 'The contact writes instead of picking from the menu')} />
+            {/* 🔴 La poignée porte un NOM (`libre`), traduit en « aucune poignée » à l'enregistrement. Sans nom,
+                React Flow ancrait cette flèche sur la PREMIÈRE ligne du menu. Voir `lib/workflow-sorties.ts`. */}
+            <Handle type="source" id={SORTIE_LIBRE} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de choisir dans le menu', 'The contact writes instead of picking from the menu')} />
           </div>
           {questionDelai && (
             <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] font-medium text-amber-700">
@@ -399,16 +428,20 @@ function WFNode({ id, data, selected }: NodeProps) {
               </div>
             );
           })}
-          {/* Sortie LIBRE, sans id : l'arête créée ne porte aucun sourceHandle, et c'est elle que l'exécuteur
-              suit quand le contact ÉCRIT au lieu de taper un bouton. Non reliée, une réponse hors boutons
-              termine le parcours et rend la parole à l'agent : c'est voulu, mais il faut pouvoir choisir. */}
+          {/* Sortie LIBRE : l'arête ENREGISTRÉE ne porte aucun sourceHandle, et c'est elle que l'exécuteur suit
+              quand le contact ÉCRIT au lieu de taper un bouton. Non reliée, une réponse hors boutons termine le
+              parcours et rend la parole à l'agent : c'est voulu, mais il faut pouvoir choisir. */}
           <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-700">
             <span className="shrink-0">✎</span>
             <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
             {/* 🔴 MÊME couleur que les autres sorties. Elle était grise, et Julien en a conclu le 2026-08-26
                 qu'elle n'était pas reliable : sur un bloc où tous les autres points sont bleus, un point gris
-                se lit comme désactivé. Le mécanisme, lui, marchait déjà. */}
-            <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de taper un bouton : relie ce point pour prévoir ce cas', 'The contact writes instead of tapping a button: connect this dot to handle that case')} />
+                se lit comme désactivé.
+                🔴 Et le 2026-08-28 on a trouvé pourquoi il avait raison sur le fond : sans NOM de poignée,
+                React Flow ancrait la flèche de cette sortie sur la ligne de la PREMIÈRE réponse rapide. On la
+                reliait, et elle s'affichait ailleurs, là où une flèche partait déjà. Voir
+                `lib/workflow-sorties.ts`. */}
+            <Handle type="source" id={SORTIE_LIBRE} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de taper un bouton : relie ce point pour prévoir ce cas', 'The contact writes instead of tapping a button: connect this dot to handle that case')} />
           </div>
         </div>
       ) : isCondition ? (
@@ -440,7 +473,9 @@ function WFNode({ id, data, selected }: NodeProps) {
               ))}
             </div>
           )}
-          <Handle type="source" position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Tirer une flèche', 'Drag an arrow')} />
+          {/* La sortie unique d'un bloc sans branche EST la sortie libre : même nom de poignée, donc une arête
+              enregistrée sans poignée s'y rattache quel que soit le type de bloc. */}
+          <Handle type="source" id={SORTIE_LIBRE} position={Position.Bottom} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Tirer une flèche', 'Drag an arrow')} />
         </>
       )}
     </div>
@@ -474,7 +509,10 @@ const EDGE_OPTS = { type: 'wf', markerEnd: { type: MarkerType.ArrowClosed, color
 function toRF(graph: WorkflowGraph): { nodes: RFNode[]; edges: RFEdge[] } {
   return {
     nodes: graph.nodes.map((n) => ({ id: n.id, type: 'wf', position: n.position, data: { wfType: n.type, ...n.data } })),
-    edges: graph.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, ...EDGE_OPTS, ...(e.sourceHandle ? { sourceHandle: e.sourceHandle } : {}) })),
+    // 🔴 La sortie libre est NOMMÉE dans le canevas (`libre`) alors qu'elle ne l'est pas en base : sans nom,
+    // React Flow ancre la flèche sur la PREMIÈRE poignée du bloc, donc sur la ligne de la première réponse
+    // rapide, où une autre flèche part déjà. Voir `lib/workflow-sorties.ts`.
+    edges: uneAreteParSortie(graph.edges).map((e) => ({ id: e.id, source: e.source, target: e.target, ...EDGE_OPTS, sourceHandle: poigneeCanevas(e.sourceHandle) })),
   };
 }
 function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
@@ -483,7 +521,11 @@ function fromRF(nodes: RFNode[], edges: RFEdge[]): WorkflowGraph {
       const { wfType, ...rest } = n.data as { wfType?: WorkflowNodeType };
       return { id: n.id, type: (wfType ?? 'template') as WorkflowNodeType, position: { x: Math.round(n.position.x), y: Math.round(n.position.y) }, data: rest };
     }),
-    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, ...(e.sourceHandle ? { sourceHandle: e.sourceHandle } : {}) })),
+    // La sortie libre redevient une arête SANS poignée : c'est le contrat du moteur, et il ne change pas.
+    edges: edges.map((e) => {
+      const h = poigneeGraphe(e.sourceHandle);
+      return { id: e.id, source: e.source, target: e.target, ...(h ? { sourceHandle: h } : {}) };
+    }),
   };
 }
 
@@ -935,7 +977,9 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
       )}
 
       <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:flex-row">
-        <div className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
+        {/* `data-canevas-edition` : c'est ce qui donne aux points de liaison leur zone de prise (globals.css).
+            Mesuré le 2026-08-28 : sans elle, la tolérance de visée est de ±2 px sur un point de 5,7 px. */}
+        <div data-canevas-edition className="h-[70vh] overflow-hidden rounded-2xl border border-ink-200 bg-[#f3f4f6] lg:h-auto lg:min-h-0 lg:flex-1">
           <TemplatesCtx.Provider value={templates}>
           <ReactFlow
             nodes={nodes}

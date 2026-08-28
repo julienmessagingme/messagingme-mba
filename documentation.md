@@ -1625,6 +1625,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/components/Toggle.tsx` | L'interrupteur on/off de l'Accueil |
 | `web/components/PhoneFrame.tsx` | Le chrome « fenêtre WhatsApp » des aperçus |
 | `web/components/CampaignCreateForm.tsx` | L'assistant de création de campagne (extrait de la page, qui passait de 1637 à 486 lignes) |
+| `web/lib/workflow-sorties.ts` | 🔴 La SORTIE LIBRE d'un bloc (« toute autre réponse ») : nommée `libre` dans le canevas, et RIEN dans le graphe enregistré (contrat du moteur, `nextNodeSansHandle`). Traduction aux deux bords, plus `uneAreteParSortie`. Sans nom de poignée, React Flow ancrait cette flèche sur la PREMIÈRE sortie du bloc : elle se dessinait sur la ligne de la première réponse rapide, où une autre flèche part déjà (mesuré le 2026-08-28). Un patch d'arête du canevas passe TOUJOURS par ces deux fonctions |
 
 ⚠️ **Un composant React se déclare au niveau MODULE, jamais dans le corps d'un autre composant.** Sa fonction
 change alors d'identité à chaque rendu, donc React démonte et remonte le sous-arbre : une modale ouverte perd
