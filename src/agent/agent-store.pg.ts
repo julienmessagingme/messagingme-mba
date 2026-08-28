@@ -13,6 +13,7 @@ interface Ligne {
   max_appels_outils: number;
   budget_micro_eur: string;
   inactivite_minutes: number;
+  contact_inconnu: AgentComplet['contactInconnu'];
   status: 'draft' | 'active' | 'disabled';
 }
 
@@ -24,7 +25,7 @@ export class PgAgentStore implements AgentStore {
   async byId(tenantId: string, id: string): Promise<FicheAgent | null> {
     const res = await this.pool.query<Ligne>(
       `select id, tenant_id, mention_ia, modele, max_tours, max_appels_outils, budget_micro_eur,
-              inactivite_minutes, status
+              inactivite_minutes, contact_inconnu, status
          from agents where tenant_id = $1 and id = $2`,
       [tenantId, id],
     );
@@ -42,6 +43,7 @@ export class PgAgentStore implements AgentStore {
         budgetMicroEur: Number(r.budget_micro_eur ?? 0),
       },
       inactiviteMinutes: r.inactivite_minutes,
+      contactInconnu: r.contact_inconnu,
       status: r.status,
     };
   }

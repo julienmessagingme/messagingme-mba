@@ -29,6 +29,12 @@ export interface AgentSession {
    */
   coutMicroEur: number;
   status: AgentSessionStatus;
+  /**
+   * Instant d'ouverture (ISO). C'est la BORNE BASSE de ce que l'agent lit de la conversation : il voit ce
+   * qui s'est dit depuis qu'il a la main, et rien d'avant. Sans elle, un contact qui écrit depuis des mois
+   * ferait payer tout son historique à chaque tour, et l'agent répondrait à des questions déjà traitées.
+   */
+  ouvertLe: string;
 }
 
 /**

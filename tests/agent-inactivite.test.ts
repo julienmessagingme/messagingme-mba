@@ -25,13 +25,13 @@ const JOB: AgentTurnJob = {
 
 const SESSION: AgentSession = {
   id: 's1', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600',
-  tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours',
+  tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours', ouvertLe: '2026-08-28T10:00:00.000Z',
 };
 
 const FICHE: FicheAgent = {
   id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', modele: 'm', status: 'active',
   plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000 },
-  inactiviteMinutes: 30,
+  inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
 };
 
 const RUN_VIVANT: EtatRun = { status: 'waiting', currentNode: 'a' };

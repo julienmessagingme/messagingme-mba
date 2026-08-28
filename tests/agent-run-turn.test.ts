@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runTurn } from '../src/agent/run-turn';
+import { creerCerveauGateway } from '../src/agent/brain.gateway';
+import type { ReponseChat } from '../src/agent/llm/chat-client';
+import type { OutilDefini, ToolCatalog } from '../src/agent/catalog';
+import type { EntreeResolveur } from '../src/agent/executor';
+import { ficheVide } from '../src/agent/fiche';
 import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
 import type { FicheAgent } from '../src/agent/agent-store';
 import { FakeAgentBrain } from '../src/agent/brain.fake';
@@ -14,13 +19,13 @@ const JOB: AgentTurnJob = {
 
 const SESSION: AgentSession = {
   id: 's1', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600',
-  tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours',
+  tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours', ouvertLe: '2026-08-28T10:00:00.000Z',
 };
 
 const FICHE: FicheAgent = {
   id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', modele: 'm', status: 'active',
   plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000 },
-  inactiviteMinutes: 30,
+  inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
 };
 const RUN_VIVANT: EtatRun = { status: 'waiting', currentNode: 'a' };
 
@@ -206,5 +211,114 @@ describe('runTurn : les gardes du tour (tâche 13a)', () => {
     expect(clotures).toEqual([{ status: 'erreur', sortie: 'echec' }]);
     expect(sorties).toEqual(['echec']);
     spy.mockRestore();
+  });
+});
+
+describe('la MÉMOIRE du tour', () => {
+  it('🔴 la conversation est LUE et passée au cerveau', async () => {
+    // Sans elle, `runTurn` passait un transcript VIDE en dur : l'agent redemandait son nom au contact à
+    // chaque message. Elle est lue et non reçue, parce qu'`advance` ne porte pas le texte du message entrant
+    // et que changer sa signature toucherait le chemin le plus chaud du produit et ses trois appelants.
+    const vus: unknown[][] = [];
+    const { deps } = make({
+      lireConversation: async () => [{ role: 'contact', texte: 'Bonjour' }, { role: 'agent', texte: 'Bonjour !' }],
+      brain: { penser: async (i) => { vus.push(i.transcript); return { texte: 'ok', sortie: null }; } },
+    });
+    await runTurn(JOB, deps);
+    expect(vus[0]).toEqual([{ role: 'contact', texte: 'Bonjour' }, { role: 'agent', texte: 'Bonjour !' }]);
+  });
+
+  it('🔴 elle est bornée par l’OUVERTURE de la session, pas par tout l’historique du contact', async () => {
+    // Un contact qui écrit depuis des mois ferait sinon payer tout son historique à chaque tour, et l'agent
+    // répondrait à des questions déjà traitées par un humain.
+    const bornes: Array<{ waId: string; depuis: string }> = [];
+    const { deps } = make({
+      lireConversation: async (_t, waId, depuis) => { bornes.push({ waId, depuis }); return []; },
+    });
+    await runTurn(JOB, deps);
+    expect(bornes[0]).toEqual({ waId: JOB.waId, depuis: SESSION.ouvertLe });
+  });
+
+  it('🔴 une lecture EN ÉCHEC ne tue pas le tour : l’agent parle sans mémoire', async () => {
+    // Un tour mort laisse le contact sans réponse. Un tour sans mémoire est dégradé, mais il répond.
+    const { deps, envois } = make({
+      lireConversation: async () => { throw new Error('pooler injoignable'); },
+    });
+    const res = await runTurn(JOB, deps);
+    expect(res.fait).toBe('repondu');
+    expect(envois).toHaveLength(1);
+  });
+
+  it('sans dep de lecture, le tour marche quand même', async () => {
+    // C'est le comportement d'avant cette tâche, et il reste atteignable : les suites à deps minimales ne
+    // doivent pas avoir à câbler une conversation pour tester autre chose.
+    const { deps } = make({});
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+  });
+});
+
+/**
+ * 🔴 LE TOUR BRANCHÉ SUR LE VRAI CERVEAU, et pas sur le cerveau bouchonné.
+ *
+ * Ce test existe parce que son absence a laissé passer un défaut qui aurait cassé CHAQUE tour en production.
+ * `AgentBrain.penser` porte un `tour` OPTIONNEL (le cerveau bouchonné n'en a que faire), et `runTurn` avait
+ * oublié de le remplir. Le typecheck ne pouvait rien voir, les tests de `runTurn` non plus (leur cerveau
+ * ignore le champ), et ceux du cerveau non plus (ils le fournissent à la main). Il fallait un test qui relie
+ * les DEUX modules réels, et c'est le seul endroit d'où le défaut était visible.
+ *
+ * La leçon, générale : deux modules chacun testé ne prouvent rien de leur JOINTURE, surtout quand le contrat
+ * qui les lie est optionnel.
+ */
+describe('le tour, branché sur le VRAI cerveau', () => {
+  const OUTIL: OutilDefini = {
+    id: 'o1', tenantId: 't1', agentId: 'ag1', origin: 'mba', name: 'mba_poser_tag',
+    description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
+    binding: { handler: 'poser_tag' }, outputPaths: [], risk: 'write',
+    timeoutMs: 8000, maxBytes: 16384, autonome: false,
+  };
+
+  function cerveauReel(reponses: ReponseChat[]) {
+    const cap = { tours: [] as unknown[], appels: [] as string[] };
+    const brain = creerCerveauGateway({
+      completer: async () => reponses.shift() ?? reponses[0]!,
+      contexte: async () => ({
+        modele: 'm', mentionIa: 'Je suis une IA.', sorties: [{ code: 'fini', label: 'Fini' }],
+        contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [OUTIL],
+        plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
+      }),
+      outils: {
+        catalogue: { byName: async (_t: string, _a: string, n: string) => (n === OUTIL.name ? OUTIL : null), listActifs: async () => [OUTIL] } satisfies ToolCatalog,
+        journal: { ouvrir: async () => 'j1', clore: async () => {} },
+        resolveurs: { mba: async ({ ctx }: EntreeResolveur) => { cap.tours.push({ sessionId: ctx.sessionId, runId: ctx.runId, waId: ctx.waId }); return { contenu: { ok: true } }; } },
+        compterAppel: async () => { cap.appels.push('x'); },
+      },
+    });
+    return { cap, brain };
+  }
+
+  const reponseTexte = (t: string): ReponseChat => ({
+    texte: t, appelsOutils: [], finish: 'stop',
+    usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 }, generationId: null,
+  });
+
+  it('🔴 le tour lui passe son CONTEXTE : sans lui, le cerveau réel lève à chaque appel', async () => {
+    const { brain } = cerveauReel([reponseTexte('Bonjour !')]);
+    const { deps, envois } = make({ brain });
+    const res = await runTurn(JOB, deps);
+    expect(res.fait).toBe('repondu');
+    expect(envois).toEqual(['Bonjour !']);
+  });
+
+  it('🔴 et ce contexte désigne la BONNE conversation, jusque dans les outils', async () => {
+    // Un contexte figé au câblage ferait exécuter les outils du contact A dans la conversation de B : c'est
+    // le défaut de conception que le passage à l'appel a fermé, et il se vérifie ici, bout en bout.
+    const { cap, brain } = cerveauReel([
+      { texte: null, appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }], finish: 'tool_calls', usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 }, generationId: null },
+      reponseTexte('C est note.'),
+    ]);
+    const { deps } = make({ brain });
+    await runTurn(JOB, deps);
+    expect(cap.tours[0]).toEqual({ sessionId: SESSION.id, runId: JOB.runId, waId: JOB.waId });
+    expect(cap.appels).toHaveLength(1);
   });
 });

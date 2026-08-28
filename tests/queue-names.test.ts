@@ -27,6 +27,20 @@ describe('queue names (source unique)', () => {
     for (const q of worked) expect(BASE_QUEUES as readonly string[], `file ${q} absente de BASE_QUEUES`).toContain(q);
   });
 
+  it('🔴 et RÉCIPROQUEMENT : toute file de BASE_QUEUES a un consommateur dans le worker', () => {
+    // Ce sens-là manquait, et le trou n'était pas théorique : `agent-turn` a vécu plusieurs jours DANS
+    // `BASE_QUEUES` (donc visible d'/ops, DLQ surveillée) sans que personne ne la travaille. Le jour où un
+    // producteur est câblé sans son consommateur, les jobs s'empilent, les conversations restent muettes, et
+    // c'est SILENCIEUX : /ops montre une file qui grossit, ce que personne ne regarde en continu.
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const literals = [...worker.matchAll(/queue\.work\(\s*'([^']+)'/g)].map((m) => m[1]!);
+    const viaConst = [...worker.matchAll(/queue\.work\(\s*([A-Z_][A-Z0-9_]*)\s*,/g)].map((m) => m[1]!);
+    const resolus = new Set([...literals, ...viaConst.map((n) => (n === 'AUTOMATION_EVENT_QUEUE' ? 'automation-event' : n === 'AGENT_TURN_QUEUE' ? 'agent-turn' : n))]);
+    for (const q of BASE_QUEUES) {
+      expect([...resolus], `file ${q} déclarée mais SANS consommateur dans src/worker.ts`).toContain(q);
+    }
+  });
+
   it('ALL_QUEUES = chaque file de base + sa DLQ, sans doublon', () => {
     expect(ALL_QUEUES).toHaveLength(BASE_QUEUES.length * 2);
     expect(new Set(ALL_QUEUES).size).toBe(ALL_QUEUES.length);

@@ -27,6 +27,9 @@ export interface FicheAgent {
   plafonds: PlafondsAgent;
   /** Minutes d'inactivité avant que le parcours reprenne la main. */
   inactiviteMinutes: number;
+  /** Ce que l'agent a le droit de faire quand il ne sait pas à qui il parle. Lu par le TOUR, pas seulement
+   *  par l'écran de réglage : c'est une garde d'exécution, appliquée à chaque appel d'outil. */
+  contactInconnu: 'aucun_outil' | 'lecture_seule' | 'tous';
   status: 'draft' | 'active' | 'disabled';
 }
 

@@ -49,6 +49,20 @@ export interface RunTurnDeps {
    * comportement d'avant cette tâche.
    */
   majRun?(tenantId: string, runId: string, nodeId: string, state: RunState): Promise<void>;
+  /**
+   * La conversation, telle que le CERVEAU doit la lire.
+   *
+   * 🔴 C'EST LA MÉMOIRE DE L'AGENT, et sans elle il redemande son nom au contact à chaque message. Le tour la
+   * LIT en base plutôt que de la recevoir : `advance` ne reçoit pas le texte du message entrant, et le lui
+   * faire recevoir changerait la signature du chemin le plus chaud du produit et de ses trois appelants.
+   * `recordInbound` tourne toujours avant `advance`, donc le fil est déjà à jour quand ce tour s'exécute.
+   *
+   * Bornée par `depuis` = l'ouverture de la session : l'agent voit ce qui s'est dit DEPUIS QU'IL A LA MAIN.
+   *
+   * Optionnelle comme les autres deps de câblage : absente, l'agent parle sans mémoire, ce qui est le
+   * comportement d'avant cette tâche.
+   */
+  lireConversation?(tenantId: string, waId: string, depuis: string): Promise<unknown[]>;
   /** Le fil est-il encore à nous ? Absent -> considéré comme oui (suites à deps minimales). */
   mayAct?(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie le texte de l'agent. MÊME dépendance que le reste du scénario, donc DRY_RUN honoré et
@@ -181,11 +195,35 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
   // 4. LE CERVEAU, sous une échéance dure. Une conversation qui pend coûte plus cher qu'une sortie propre.
   let decision;
   try {
+    // La conversation est lue APRÈS les plafonds : on ne paie pas une requête pour un tour qu'on va refuser.
+    // Une lecture qui échoue ne doit pas tuer le tour non plus : l'agent parlera sans mémoire, ce qui est
+    // dégradé mais utilisable, alors qu'un tour mort laisse le contact sans réponse.
+    let transcript: unknown[] = [];
+    if (deps.lireConversation) {
+      try {
+        transcript = await deps.lireConversation(job.tenantId, job.waId, session.ouvertLe);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`agent: conversation illisible pour la session ${session.id}, tour sans mémoire`, err instanceof Error ? err.message : err);
+      }
+    }
     decision = await deps.brain.penser({
       agentId: session.agentId,
       tenantId: job.tenantId,
-      transcript: [],
+      transcript,
       deadline: maintenant + DEADLINE_MS,
+      // 🔴 OÙ EN EST CE TOUR. Un cerveau qui appelle des outils ne peut pas s'en passer : il en tire les
+      // identifiants que les outils exigent (envoyer un bloc DE CE parcours, escalader CETTE session) et les
+      // compteurs qui rendent les plafonds effectifs d'un tour sur l'autre. Le cerveau réel LÈVE s'il manque,
+      // et c'est voulu : un tour sans contexte exécuterait les outils d'une conversation dans une autre.
+      tour: {
+        sessionId: session.id,
+        runId: job.runId,
+        workflowId: job.workflowId,
+        waId: job.waId,
+        appelsDejaFaits: session.appelsOutils,
+        coutDejaMicroEur: session.coutMicroEur,
+      },
     });
   } catch (err) {
     // eslint-disable-next-line no-console

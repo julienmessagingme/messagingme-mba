@@ -3,10 +3,9 @@
 ## EN COURS : le bloc agent IA (lots L0 et L1)
 
 Le plan, l etat tache par tache et le **registre des dettes** vivent dans
-[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D3 est fermee** par la tranche 19e (le cerveau reel est
-l appelant qui manquait a `executeTool`). Restent D1 (devise), D2 et D4 (le cablage du tour de PRODUCTION,
-qui se ferment ensemble), D5 (Analytics) et D6 (la migration). Aucune n est un bug latent : rien n est
-branche en production, le bloc agent n est servi nulle part.
+[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D2, D3 et D4 sont fermees** : le cerveau reel existe
+(19e) et le tour de production est CABLE (tache 20). Restent **D1** (devise : le Gateway facture en dollars,
+la colonne est en micro-euros), **D5** (les blocs agent invisibles d Analytics) et **D6** (la migration).
 
 ⚠️ **Migration 0086 non appliquee en production** (dette D6). Elle passe AVANT tout deploiement de ce lot,
 et APRES un `compose build`.
@@ -20,9 +19,13 @@ il a une base de connaissance (fiches editables, lecture d une page du site), de
 activation par un humain, drapeau d autonomie), il se construit EN PARLANT (l assistant propose, le client
 garde ou jette, rien ne s ecrit en silence) et il se TESTE depuis la console avant d etre active.
 
-**Ce qui reste avant qu un vrai contact puisse lui parler** : le cablage du tour de production (D2 et D4),
-c est-a-dire le consommateur de la file `agent-turn` dans le worker et les resolveurs REELS a la place de
-ceux du bac a sable. Le cerveau, lui, est ecrit et teste.
+**Le tour de PRODUCTION est cable (tache 20).** Le worker consomme `agent-turn` avec les VRAIS resolveurs, et
+l agent a enfin une MEMOIRE : il lit la conversation en base depuis l ouverture de sa session. Un vrai
+contact peut donc lui parler des que le deploiement est fait.
+
+⚠️ **Rien n a encore tourne sur du VRAI trafic.** Ce qui reste a voir en vol : un contact qui atteint un bloc
+agent, une reponse qui part, un outil qui s execute, une sortie qui reprend le scenario. C est la premiere
+chose a faire apres le deploiement, et elle ne se remplace par aucun test.
 
 ## LIVRE ET DEPLOYE le 2026-08-26 : bloc « Question » dans les scenarios
 

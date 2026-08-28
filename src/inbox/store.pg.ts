@@ -486,6 +486,41 @@ export class PgInboxStore implements InboxStore {
     }));
   }
 
+  /**
+   * Les messages ÉCHANGÉS avec un contact depuis un instant donné, pour donner sa mémoire à un agent IA.
+   *
+   * 🔴 POURQUOI LE TOUR LIT LA CONVERSATION ICI PLUTÔT QUE DE LA RECEVOIR. `advance` ne reçoit pas le texte
+   * du message entrant, et le lui faire recevoir changerait la signature du chemin le plus chaud du produit
+   * (appelé sur CHAQUE message de CHAQUE client) et de ses trois appelants. `recordInbound` tourne toujours
+   * avant `advance` : le fil est donc déjà à jour quand le tour s'exécute, et le lire est gratuit en
+   * comparaison. Sans ça l'agent redemande son nom au contact à chaque message.
+   *
+   * ⚠️ `tenant_id` est dans le `where`, et pas seulement `wa_id` : le pooler est superuser, la RLS est
+   * bypassée, et cette lecture part directement dans le contexte d'un modèle. Un fil du mauvais client s'y
+   * retrouverait recopié chez le fournisseur.
+   *
+   * BORNÉE DEUX FOIS. Dans le temps (`depuis` = l'ouverture de la session : l'agent voit la conversation
+   * depuis qu'il a la main, pas dix mois d'historique) et en nombre, parce que le contexte se paie à chaque
+   * tour. Les plus RÉCENTS sont gardés, et rendus dans l'ordre chronologique.
+   */
+  async messagesDepuis(
+    tenantId: string, waId: string, depuis: string, limite: number,
+  ): Promise<Array<{ direction: 'in' | 'out'; body: string }>> {
+    const res = await this.pool.query<{ direction: 'in' | 'out'; body: string | null }>(
+      `select direction, body from (
+         select m.direction, m.body, m.created_at
+           from conversation_messages m
+           join conversations c on c.id = m.conversation_id
+          where c.tenant_id = $1 and c.wa_id = $2 and m.created_at >= $3::timestamptz
+            and m.body is not null and m.body <> ''
+          order by m.created_at desc
+          limit $4::int
+       ) recents order by created_at`,
+      [tenantId, waId, depuis, Math.max(1, Math.floor(limite))],
+    );
+    return res.rows.map((r) => ({ direction: r.direction, body: r.body ?? '' }));
+  }
+
   /** Journalise une réponse sortante de l'agent (texte libre ou template). Pour un template,
    *  `templateCategory` (marketing|utility) + `templateName` alimentent les stats du dashboard.
    *  `senderUserId` (EN FIN de signature) = auteur -> pastille dans l'inbox ; null pour les réponses auto. */

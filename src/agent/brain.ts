@@ -24,6 +24,23 @@ export interface DecisionAgent {
   usage?: { tokensIn: number; tokensOut: number; coutMicroEur: number };
 }
 
+/**
+ * Où en est CE tour, pour un cerveau qui appelle des outils.
+ *
+ * 🔴 IL EST PASSÉ À L'APPEL, ET NON FIGÉ À LA CONSTRUCTION. Un worker sert toutes les conversations de tous
+ * les clients avec UN cerveau : un contexte figé au câblage ferait exécuter les outils du contact A dans la
+ * conversation de B. Les compteurs viennent de la SESSION, relue à chaque tour : ce sont eux qui rendent les
+ * plafonds d'appels et de budget effectifs d'un tour sur l'autre.
+ */
+export interface ContexteTourAgent {
+  sessionId: string;
+  runId: string;
+  workflowId: string;
+  waId: string;
+  appelsDejaFaits: number;
+  coutDejaMicroEur: number;
+}
+
 export interface AgentBrain {
   penser(input: {
     agentId: string;
@@ -32,5 +49,7 @@ export interface AgentBrain {
     transcript: unknown[];
     /** Échéance ABSOLUE (ms epoch) : le cerveau doit rendre la main avant, ou lever. */
     deadline: number;
+    /** Absent pour un cerveau bouchonné, qui n'appelle aucun outil. */
+    tour?: ContexteTourAgent;
   }): Promise<DecisionAgent>;
 }

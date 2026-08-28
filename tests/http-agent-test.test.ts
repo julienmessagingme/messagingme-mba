@@ -42,6 +42,7 @@ const AGENT: ContexteAgentComplet = {
   contenu: { ...ficheVide(), objectif: 'Aider.' },
   outilsActifs: [OUTIL],
   plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 },
+  contactInconnu: 'tous',
 };
 
 const texte = (t: string): ReponseChat => ({

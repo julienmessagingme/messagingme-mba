@@ -38,18 +38,20 @@ const corpsSchema = z.object({ messages: z.array(messageSchema).min(1).max(30) }
  *  écran et préfère une réponse lente à un échec, alors qu'en production un contact attend sur WhatsApp. */
 const DELAI_MS = 60_000;
 
-/** Le bac à sable n'a ni session, ni run, ni parcours. Ces valeurs sont là pour que le tronc commun ait un
- *  contexte complet, et elles ne désignent RIEN en base : le journal du bac à sable est muet. */
+/**
+ * Le bac à sable n'a ni session, ni run, ni parcours. Ces identifiants sont là pour que le tronc commun ait
+ * un contexte complet, et ils ne désignent RIEN en base : le journal du bac à sable est muet.
+ *
+ * ⚠️ Le CONTACT est inconnu (aucun `lireContact` n'est câblé), et la politique de contact inconnu vient de
+ * la FICHE de l'agent, pas d'ici. Le bac à sable montre donc exactement ce que la production ferait, y
+ * compris quand un agent en `lecture_seule` refuse ses propres outils d'écriture face à un inconnu : c'est
+ * une chose que le client doit voir ici plutôt que de la découvrir en production.
+ */
 const TOUR_BAC_A_SABLE: Omit<ContexteTour, 'appelsDejaFaits' | 'coutDejaMicroEur'> = {
   sessionId: 'bac-a-sable',
   runId: 'bac-a-sable',
   workflowId: 'bac-a-sable',
   waId: 'bac-a-sable',
-  // Aucun contact, et c'est le cas le plus fréquent d'un premier message : c'est celui qu'on veut éprouver.
-  contact: null,
-  // `tous` : on ne veut pas que la politique de contact inconnu masque le comportement qu'on teste. Les
-  // outils à effet sont de toute façon simulés, donc rien ne peut arriver au monde réel.
-  contactInconnu: 'tous',
 };
 
 export function registerAgentTest(app: FastifyInstance, deps: AgentTestRouteDeps, guard?: Guard): void {

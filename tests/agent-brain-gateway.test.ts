@@ -32,11 +32,12 @@ const AGENT: ContexteAgentComplet = {
   contenu: { ...ficheVide(), objectif: 'Aider.' },
   outilsActifs: [OUTIL],
   plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 },
+  contactInconnu: 'tous',
 };
 
 const TOUR: ContexteTour = {
   sessionId: 's1', runId: 'r1', workflowId: 'w1', waId: '33600000000',
-  contact: null, contactInconnu: 'tous', appelsDejaFaits: 0, coutDejaMicroEur: 0,
+  appelsDejaFaits: 0, coutDejaMicroEur: 0,
 };
 
 const texte = (t: string): ReponseChat => ({
@@ -243,7 +244,7 @@ describe('penserTrace', () => {
     // Le tour de production n'a que faire des appels d'outils, et le contrat `AgentBrain` ne les porte pas.
     // Trois lignes, mais non testées elles laisseraient un doute sur ce que le tour recevra.
     const { d } = deps([texte('Bonjour.')]);
-    const decision = await creerCerveauGateway(TOUR, d).penser(entree());
+    const decision = await creerCerveauGateway(d).penser({ ...entree(), tour: TOUR });
     expect(decision).toMatchObject({ texte: 'Bonjour.', sortie: null });
     expect(decision).not.toHaveProperty('appels');
   });

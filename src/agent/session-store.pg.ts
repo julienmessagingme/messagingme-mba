@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import type { AgentSession, AgentSessionStatus, AgentSessionStore } from './session-store';
 
 /** Colonnes lues par toutes les requêtes de ce store. `cout_micro_eur` est un `bigint`, donc rendu en `string`. */
-const COLONNES = 'id, tenant_id, run_id, agent_id, node_id, wa_id, tours, appels_outils, cout_micro_eur, status';
+const COLONNES = 'id, tenant_id, run_id, agent_id, node_id, wa_id, tours, appels_outils, cout_micro_eur, status, created_at';
 
 interface Ligne {
   id: string;
@@ -15,6 +15,7 @@ interface Ligne {
   appels_outils: number;
   cout_micro_eur: string;
   status: AgentSessionStatus;
+  created_at: Date;
 }
 
 function versSession(r: Ligne): AgentSession {
@@ -30,6 +31,7 @@ function versSession(r: Ligne): AgentSession {
     // `bigint` rendu en `string` par node-pg. Converti ici, comme partout ailleurs dans le repo.
     coutMicroEur: Number(r.cout_micro_eur ?? 0),
     status: r.status,
+    ouvertLe: r.created_at.toISOString(),
   };
 }
 

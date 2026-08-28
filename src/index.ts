@@ -80,6 +80,7 @@ import { FetchTransport } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { PgToolCatalog } from './agent/catalog.pg';
+import { lireContexteAgent } from './agent/contexte';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
@@ -674,19 +675,9 @@ async function main(): Promise<void> {
       ...(gateway ? {
         cerveau: {
           completer: (i) => gateway.completer(i),
-          contexte: async (tenant, agentId) => {
-            const fiche = await agentStore.complet(tenant, agentId);
-            if (!fiche) return null;
-            return {
-              // Le modele de l AGENT, pas celui de l IA de construction : c est celui-la qu on teste.
-              modele: fiche.modele,
-              mentionIa: fiche.mentionIa,
-              sorties: fiche.contenu.sorties,
-              contenu: fiche.contenu,
-              outilsActifs: await toolCatalog.listActifs(tenant, agentId),
-              plafonds: { maxAppelsOutils: fiche.maxAppelsOutils, budgetMicroEur: fiche.budgetMicroEur },
-            };
-          },
+          // Point de lecture PARTAGE avec le tour de production : c est ce qui garantit que le bac a sable
+          // montre exactement ce que la production ferait, modele et politiques compris.
+          contexte: (tenant, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog }, tenant, agentId),
           outils: {
             catalogue: toolCatalog,
             // Muet : `agent_tool_calls.session_id` reference une session, et le bac a sable n en ouvre aucune.

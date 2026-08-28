@@ -25,6 +25,9 @@ import { waIdOfTarget } from '../crm/identity';
 import { PgRcsAgentStore } from '../rcs/store.pg';
 import { decryptSecret } from '../crypto/secretbox';
 import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
+import { AGENT_TURN_QUEUE, type AgentTurnJob } from '../agent/turn-job';
+import { PgAgentSessionStore } from '../agent/session-store.pg';
+import { creerPoserTagAgent } from '../agent/poser-tag';
 import type { PgEmailTemplateStore } from '../email/template-store.pg';
 import type { EmailAccountResolver } from '../email/resolver';
 import { sendSmtpEmail } from '../email/smtp';
@@ -46,7 +49,8 @@ import { adressesDestinataires, type SendEmailAction } from './engine';
  */
 export interface WorkflowRuntimeDeps {
   pool: Pool;
-  /** File pg-boss : sert UNIQUEMENT à publier « tag ajouté » pour les automations. Aucun `work` ici. */
+  /** File pg-boss : publie « tag ajouté » pour les automations, et les TOURS d'agent. Aucun `work` ici : ce
+   *  module ne fait qu'émettre, la consommation appartient au worker. */
   queue: { enqueue(name: string, data: unknown): Promise<void> };
   /** DRY_RUN : aucun appel Meta. ⚠️ À passer explicitement : l'oublier ferait envoyer pour de vrai. */
   dryRun: boolean;
@@ -264,6 +268,11 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     });
   };
 
+  // Les sessions d'agent : partagées avec le worker, qui les REÇOIT de ce module plutôt que d'en construire
+  // un second exemplaire. Deux instances ne se contrediraient pas (elles sont sans état), mais deux points de
+  // construction finissent toujours par diverger sur une option.
+  const agentSessions = new PgAgentSessionStore(pool);
+
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
     // Canal RCS du bloc `rcs_message`. `agentIdFor` est scopé tenant : c'est lui qui empêche un scénario
@@ -286,6 +295,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // mais SEULEMENT si le fil était encore à nous (`only: ['app_workflow']`) pour ne pas écraser une prise de
     // main concurrente. Rend le badge honnête (fin du trou où le scénario semblait « répondre » sans plus avancer).
     escalateToHuman: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human', { only: ['app_workflow'] }); },
+    // 🔴 LE BLOC AGENT. Sans ces deux dépendances, il est traversé comme un PASSE-PLAT : le scénario continue
+    // sans que l'agent parle, et personne ne voit rien puisque le moteur ne suit alors qu'une arête libre.
+    // Elles vont par paire : ouvrir une session sans enfiler le tour laisserait une session vivante et muette,
+    // enfiler sans session ferait échouer chaque tour sur un verrou qui n'existe pas.
+    agentSessions,
+    enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job),
     // Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
     // humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
     reclaimControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_workflow'); },
@@ -553,5 +568,40 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     sendEmail,
   });
 
-  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta };
+  /**
+   * L'envoi d'un message d'AGENT : un texte, rien de plus.
+   *
+   * 🔴 IL VIT ICI, avec les autres envois, et pas dans le worker. Trois choses le commandent, et chacune a
+   * déjà coûté un incident quand elle a été recopiée ailleurs : `dryRun` (l'oublier enverrait pour de vrai
+   * depuis une machine de test), le token PAR TENANT (un envoi sous la marque d'un autre client), et la
+   * journalisation dans le fil (un message que le contact reçoit sans que l'inbox le montre, donc un
+   * opérateur qui reprend la main sans savoir ce que l'agent a dit).
+   *
+   * Rend une chaîne NON VIDE en cas de refus, comme les autres envois du moteur (`SendRefusal`) : le tour
+   * sort alors par la branche d'échec plutôt que de laisser la conversation muette.
+   */
+  const envoyerTexteAgent = async (tenant: string, waId: string, texte: string): Promise<string | void> => {
+    if (dryRun) return; // DRY_RUN : aucun appel Meta
+    const pn = await repo.getTenantPhoneNumberId(tenant);
+    if (!pn) {
+      // eslint-disable-next-line no-console
+      console.error(`agent: aucun numéro pour le tenant ${tenant}, réponse non envoyée à ${waId}`);
+      return 'aucun numéro WhatsApp rattaché à ce workspace';
+    }
+    const client = await metaFactory.clientForTenant(tenant, pn);
+    const res = await client.sendText(waId, texte);
+    try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+  };
+
+  /** Poser un tag depuis un agent : les trois effets, et la règle qui les lie, vivent dans `agent/poser-tag`.
+   *  Ici on ne fait que brancher les stores. */
+  const poserTagDepuisAgent = creerPoserTagAgent({
+    ajouterAuContact: (tenant, waId, tag) => contactStore.addTagsByPhoneReturningNew(tenant, waId, [tag]),
+    declarer: async (tenant, tag) => { await tagStore.create(tenant, tag); },
+    emettre: async (tenant, waId, tag) => {
+      await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
+    },
+  });
+
+  return { executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, releaseThreadChezMeta, agentSessions, envoyerTexteAgent, poserTagDepuisAgent };
 }

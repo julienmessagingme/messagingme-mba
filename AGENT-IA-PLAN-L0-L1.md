@@ -33,9 +33,9 @@ bloc agent n'est servi nulle part. Elles deviennent des bugs le jour où on bran
 | # | Dette | Se ferme | Ce qui casse si on l'oublie |
 |---|---|---|---|
 | D1 | **Devise.** Le Gateway facture en **dollars** (`coutDollars`, `chat-client.ts`) ; la colonne est `budget_micro_eur` et `runTurn` compare `coutMicroEur >= budgetMicroEur`. | Avant la mise en service. Décision de **facturation** (convertir, ou renommer la colonne), pas technique. | Le plafond de budget est faux d'un facteur de change. Trop haut, on dépasse ; trop bas, l'agent se coupe tout seul. |
-| D2 | **La file `agent-turn` n'a aucun consommateur.** Elle est dans `BASE_QUEUES` (donc visible d'`/ops`, DLQ surveillée), mais `src/worker.ts` ne l'écoute pas. Le test `queue-names` est **unidirectionnel** et ne peut pas le voir. | Tâche de câblage du cerveau réel. Avec `retryLimit: 2` et `parseAgentTurnJob`. | Rien n'enfile aujourd'hui non plus. Le jour où `enqueueAgentTurn` est câblé sans le worker : les tours s'empilent, les conversations restent muettes, et **c'est silencieux**. |
+| ~~D2~~ | ~~**La file `agent-turn` n'a aucun consommateur.**~~ **FERMÉE par la tâche 20** : `src/worker.ts` la consomme, avec les VRAIS résolveurs. Et le test `queue-names` est devenu BIDIRECTIONNEL : toute file de `BASE_QUEUES` doit avoir un consommateur, ce qui ferme le trou pour de bon. | Fermée. | Sans objet. |
 | ~~D3~~ | ~~**`executeTool` n'a aucun appelant.**~~ **FERMÉE par la tranche 19e** (`src/agent/brain.gateway.ts`) : le cerveau réel est son appelant, et les trois responsabilités y sont, chacune testée. (a) il alerte sur `fatal`, et sur lui seul ; (b) il recalcule `appelsRestants` et `budgetRestantMicroEur` À CHAQUE appel, pas une fois par tour, donc une salve de six outils ne dépasse pas ; (c) le résultat repart au modèle dans un bloc délimité (`blocResultatOutil`). | Fermée. | Sans objet. |
-| D4 | **Le câblage du runtime d'agent n'existe pas dans `wiring.ts`.** Ni `agentSessions`, ni `enqueueAgentTurn`, ni les résolveurs, ni `escaladerVersHumain`, ni `envoyerBloc`. | Même tâche que D2 et D3. C'est elle qui les ferme toutes les trois. | Le bloc agent est traversé comme un passe-plat en production : le scénario continue sans que l'agent parle. |
+| ~~D4~~ | ~~**Le câblage du runtime d'agent n'existe pas dans `wiring.ts`.**~~ **FERMÉE par la tâche 20** : `agentSessions`, `enqueueAgentTurn`, `envoyerTexteAgent` et `poserTagDepuisAgent` y sont, et le worker branche les résolveurs réels. | Fermée. | Sans objet. |
 | D5 | **Un bloc agent est invisible d'Analytics.** `web/lib/mesures-scenario.ts` (`BLOCS_MESSAGE`) n'inclut pas `agent`. | Tâche dédiée, après l'UI. Pose une **question produit** : comment mesurer un contenu généré au fil des tours, inconnu statiquement. | Aucune panne. Le client ne voit simplement pas ce bloc dans « Mes tableaux ». |
 | D6 | **La migration 0086 n'est pas appliquée en production** (dernière appliquée : 0085). | Au déploiement, **après** un `compose build` et **avant** le `up -d` (les migrations vivent dans l'image, pas sur le disque du VPS). | `column ... does not exist`, en silence, dans une file d'échec. C'est l'incident du 2026-08-17. |
 
@@ -2177,6 +2177,51 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit c978e69, 2026-08-28) |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit fa32a18, 2026-08-28) |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | ✅ FAIT (commit 013fe61, 2026-08-28) |
+
+## Tâche 20 : le câblage du tour de production -- ✅ FAIT (commit HASH20, 2026-08-28)
+
+**Ferme les dettes D2 et D4.** Le bloc agent existait en entier et n'était branché nulle part : la file
+n'avait aucun consommateur, et `wiring.ts` ne passait ni les sessions ni l'enfilage à l'exécuteur. Un bloc
+agent posé dans un scénario était donc traversé comme un PASSE-PLAT, en silence.
+
+🔴 **LE TROU QUE LE PLAN AVAIT SIGNALÉ ET QUI SE FERME ICI : L'AGENT N'AVAIT AUCUNE MÉMOIRE.** `runTurn`
+passait `transcript: []` en dur, et rien n'écrivait ce que le contact avait dit. Il redemandait son nom à
+chaque message. Le plan avait tranché en tâche 13 (écart noté) : le tour LIT la conversation en base, parce
+qu'`advance` ne porte pas le texte du message entrant et que changer sa signature toucherait le chemin le
+plus chaud du produit et ses trois appelants. D'où `PgInboxStore.messagesDepuis`, bornée par l'ouverture de
+la SESSION (l'agent voit ce qui s'est dit depuis qu'il a la main), et prouvée en intégration sur les trois
+angles qui comptent : l'isolation tenant (cette lecture part chez un fournisseur de modèle), la borne de
+temps, et le fait que la borne de nombre garde les plus RÉCENTS en les rendant dans l'ordre.
+
+🔴 **LE DÉFAUT QUE LA REVUE A TROUVÉ, ET QUI AURAIT ÉTÉ TOTAL.** En déplaçant le contexte de tour de la
+CONSTRUCTION du cerveau vers son APPEL (un worker sert toutes les conversations de tous les clients : un
+contexte figé au câblage exécuterait les outils du contact A dans la conversation de B), j'ai fait la moitié
+du geste : `runTurn` ne le remplissait pas. Le cerveau réel LÈVE quand il manque. Chaque message atteignant
+un bloc agent aurait donc fermé la session en erreur et alerté, sans qu'aucun appel au modèle ne parte.
+
+⚠️ **Pourquoi rien ne le voyait, et c'est la leçon.** Le champ est OPTIONNEL dans le contrat `AgentBrain`
+(le cerveau bouchonné n'en a que faire), donc le typecheck passe. Les tests du tour utilisent ce cerveau
+bouchonné, qui l'ignore. Les tests du cerveau le fournissent à la main. **Deux modules chacun testé ne
+prouvent rien de leur JOINTURE, surtout quand le contrat qui les lie est optionnel.** Un `describe` branche
+maintenant le VRAI cerveau dans le VRAI tour, et vérifie que le contexte transmis désigne bien la session
+courante jusque dans le `ContexteAppel` que reçoit le résolveur.
+
+🔴 **Le second défaut : `mba_poser_tag` MENTAIT.** Sa description, montrée au client dans la console, promet
+« pour le retrouver dans le mini-CRM ou déclencher une automation ». Il posait le tag et s'arrêtait là : ni
+déclaration dans le référentiel, ni publication sur la file. Un client qui règle une automation sur tag et
+instruit son agent de le poser ne voyait jamais rien se déclencher. La règle vit maintenant dans
+`src/agent/poser-tag.ts`, un module minuscule sur le patron d'`escalade.ts` : ce qu'il apporte n'est pas le
+code, c'est la règle, et elle est testée dans les deux sens (émet sur un tag neuf, n'émet pas sur un
+répété). L'émission est légitime ici parce qu'un tour d'agent est un démarrage UNITAIRE par construction ;
+aucun chemin de masse ne l'atteint.
+
+🟡 **Le troisième constat**, corrigé : la lecture du contexte d'agent était recopiée entre le worker et le
+bac à sable. Elle vit dans `src/agent/contexte.ts`, ce qui garantit surtout que le bac à sable montre
+exactement ce que la production ferait.
+
+**Ce qui reste ouvert.** D1 (la devise : le Gateway facture en dollars, la colonne est en micro-euros), D5
+(les blocs agent invisibles d'Analytics) et D6 (la migration 0086 non appliquée). Plus les deux variables
+d'environnement à poser sur le VPS.
 
 ### Tranche 19e : l'onglet tester, et LE CERVEAU RÉEL -- ✅ FAIT (commit 013fe61, 2026-08-28)
 

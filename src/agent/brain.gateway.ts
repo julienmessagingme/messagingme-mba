@@ -1,4 +1,4 @@
-import type { AgentBrain, DecisionAgent } from './brain';
+import type { AgentBrain, ContexteTourAgent, DecisionAgent } from './brain';
 import type { ChatMessage, OutilExpose, ReponseChat } from './llm/chat-client';
 import type { ContexteAppel, ResultatOutil, ToolExecutorDeps } from './executor';
 import { executeTool } from './executor';
@@ -48,6 +48,15 @@ export interface GatewayBrainDeps {
   contexte(tenantId: string, agentId: string): Promise<ContexteAgentComplet | null>;
   /** L'exécution d'outil, avec ses deps. La boucle ne les connaît pas, elle les passe. */
   outils: ToolExecutorDeps;
+  /**
+   * La fiche du contact, bornée par l'appelant. Absente -> contact INCONNU, ce qui est la vérité d'un bac à
+   * sable et le cas le plus fréquent d'un premier message.
+   *
+   * ⚠️ C'est une PROJECTION, pas la ligne de base : `mba_lire_contact` la rend telle quelle au modèle, donc
+   * au fournisseur. Y verser une ligne brute enverrait chez lui des champs que personne n'a décidé de
+   * partager.
+   */
+  lireContact?(tenantId: string, waId: string): Promise<Record<string, unknown> | null>;
   /** Signale une erreur de PROTOCOLE (bug de notre client). Best-effort : jamais bloquant. */
   alerter?(message: string): void;
   now?: () => number;
@@ -61,20 +70,19 @@ export interface ContexteAgentComplet {
   /** Les outils ACTIFS, tels que le catalogue les rend. Vide = l'agent peut parler mais rien faire. */
   outilsActifs: OutilDefini[];
   plafonds: { maxAppelsOutils: number; budgetMicroEur: number };
+  /** Ce que l'agent a le droit de faire face à un contact inconnu. Vient de sa fiche, jamais de l'appelant. */
+  contactInconnu: ContexteAppel['contactInconnu'];
 }
 
-/** Ce que l'appelant fournit pour situer le tour. En bac à sable, ce sont des valeurs de bac à sable. */
-export interface ContexteTour {
-  sessionId: string;
-  runId: string;
-  workflowId: string;
-  waId: string;
-  contact: Record<string, unknown> | null;
-  contactInconnu: ContexteAppel['contactInconnu'];
-  /** Appels d'outils DÉJÀ faits dans cette session, et coût déjà engagé. */
-  appelsDejaFaits: number;
-  coutDejaMicroEur: number;
-}
+/**
+ * Ce que l'appelant fournit pour situer le tour.
+ *
+ * ⚠️ Il ne porte NI le contact NI la politique de contact inconnu, et c'est délibéré : le premier se lit
+ * (`lireContact`), la seconde vit sur la fiche de l'agent. Les faire remonter jusqu'ici obligerait chaque
+ * appelant à les résoudre, et le bac à sable l'avait fait en les forçant à des valeurs de son cru, ce qui
+ * lui faisait montrer un comportement que la production n'aurait pas eu.
+ */
+export type ContexteTour = ContexteTourAgent;
 
 /** Un appel d'outil, tel que l'écran de test le montre. Le tour de production, lui, n'en a pas besoin. */
 export interface TraceAppel {
@@ -115,9 +123,12 @@ export async function penserTrace(
 ): Promise<DecisionTracee> {
   const agent = await deps.contexte(input.tenantId, input.agentId);
   if (!agent) throw new AgentIntrouvable(input.agentId);
+  // Le contact est lu UNE FOIS par tour, pas une fois par appel d'outil : il sert au prompt (l'agent doit
+  // savoir s'il connaît son interlocuteur) et à l'autorisation de chaque outil.
+  const contact = deps.lireContact ? await deps.lireContact(input.tenantId, tour.waId) : null;
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: promptSysteme({ mentionIa: agent.mentionIa, contenu: agent.contenu, contactConnu: tour.contact !== null }) },
+    { role: 'system', content: promptSysteme({ mentionIa: agent.mentionIa, contenu: agent.contenu, contactConnu: contact !== null }) },
     ...versMessages(input.transcript),
   ];
   const exposes = outilsExposes(agent.outilsActifs, agent.sorties);
@@ -166,8 +177,8 @@ export async function penserTrace(
         runId: tour.runId,
         workflowId: tour.workflowId,
         waId: tour.waId,
-        contact: tour.contact,
-        contactInconnu: tour.contactInconnu,
+        contact,
+        contactInconnu: agent.contactInconnu,
         appelsRestants: agent.plafonds.maxAppelsOutils - appelsFaits,
         budgetRestantMicroEur: agent.plafonds.budgetMicroEur - (tour.coutDejaMicroEur + usage.coutMicroEur),
         deadline: input.deadline,
@@ -199,11 +210,18 @@ export async function penserTrace(
   return { texte: null, sortie: SORTIE_PLAFOND, usage, appels };
 }
 
-/** Le cerveau, pour le tour de production : la même boucle, sans la trace. */
-export function creerCerveauGateway(tour: ContexteTour, deps: GatewayBrainDeps): AgentBrain {
+/**
+ * Le cerveau, pour le tour de production : la même boucle, sans la trace.
+ *
+ * 🔴 LE TOUR EST PRIS SUR L'APPEL, jamais figé ici. Un worker sert toutes les conversations de tous les
+ * clients avec UN seul cerveau : un contexte figé au câblage ferait exécuter les outils du contact A dans la
+ * conversation de B, et les compteurs de plafond d'une session dans une autre.
+ */
+export function creerCerveauGateway(deps: GatewayBrainDeps): AgentBrain {
   return {
     penser: async (input) => {
-      const { appels: _appels, ...decision } = await penserTrace(input, tour, deps);
+      if (!input.tour) throw new Error('cerveau gateway : le tour est requis pour appeler des outils');
+      const { appels: _appels, ...decision } = await penserTrace(input, input.tour, deps);
       return decision;
     },
   };

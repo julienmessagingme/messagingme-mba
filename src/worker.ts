@@ -42,6 +42,20 @@ import { runDateSweep } from './automation/date-sweep';
 import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
+import { AGENT_TURN_QUEUE, parseAgentTurnJob } from './agent/turn-job';
+
+/** Messages de conversation donnés au cerveau à chaque tour. Borné : le contexte se paie à CHAQUE appel de
+ *  modèle, et un fil bavard ferait payer au client une conversation qu'il a déjà réglée. */
+const MESSAGES_DE_CONTEXTE = 30;
+import { runTurn, type RunTurnDeps } from './agent/run-turn';
+import { PgAgentStore } from './agent/agent-store.pg';
+import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
+import { PgKnowledgeStore } from './agent/knowledge.pg';
+import { GatewayChatClient } from './agent/llm/chat-client';
+import { creerCerveauGateway } from './agent/brain.gateway';
+import { lireContexteAgent } from './agent/contexte';
+import { creerResolveurMba } from './agent/resolvers/mba';
+import { creerEscaladeVersHumain } from './agent/escalade';
 import { PgEmailAccountStore } from './email/account-store.pg';
 import { PgEmailTemplateStore } from './email/template-store.pg';
 import { EmailAccountResolver } from './email/resolver';
@@ -183,7 +197,7 @@ async function main(): Promise<void> {
   // des visuels de carousel, qui ont chacun cassé la prod le 2026-08-15.
   const {
     executor: workflowExecutor, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
-    releaseThreadChezMeta,
+    releaseThreadChezMeta, agentSessions, envoyerTexteAgent, poserTagDepuisAgent,
   } = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
@@ -877,6 +891,123 @@ async function main(): Promise<void> {
     statusSweeper.unref();
   }
 
+
+  // ---------- File `agent-turn` : LE TOUR D'AGENT, en production (dettes D2 et D4) ----------
+  //
+  // 🔴 CE QUI CHANGE ICI, ET POURQUOI C'EST LE DERNIER VERROU. Tout le bloc agent existait sans être branché
+  // nulle part : la file n'avait aucun consommateur, donc un bloc agent posé dans un scénario était traversé
+  // comme un PASSE-PLAT, le parcours continuait, et personne ne voyait rien. Ce sont les résolveurs RÉELS
+  // qui sont câblés ici, pas ceux du bac à sable de la console : poser un tag écrit vraiment, envoyer un
+  // bloc part vraiment chez le contact.
+  //
+  // ⚠️ Sans clé de Gateway, la file n'est PAS consommée. C'est délibéré : un consommateur qui échouerait à
+  // chaque job enverrait les tours en DLQ et perdrait les conversations, alors qu'un job qui attend repart
+  // dès que la clé est posée.
+  const gatewayAgent = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
+  if (gatewayAgent) {
+    const agentStore = new PgAgentStore(pool);
+    const toolCatalog = new PgToolCatalog(pool);
+    const journalAppels = new PgJournalAppels(pool);
+    const knowledgeStore = new PgKnowledgeStore(pool);
+
+    // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
+    const escaladerVersHumain = creerEscaladeVersHumain({
+      sessions: agentSessions,
+      sortirDuBlocAgent: (t, waId, sessionId, sortie) => workflowExecutor.sortirDuBlocAgent(t, waId, sessionId, sortie),
+      escalateToHuman: async (t, waId) => { await inboxStore.setControlOwner(t, waId, 'app_human', { only: ['app_workflow'] }); },
+    });
+
+    // Les VRAIS outils maison. À comparer à `resolvers/simulation.ts`, qui sert le bac à sable : ici chaque
+    // dépendance touche le monde réel, et c'est exactement ce qui les sépare.
+    const resolveurMba = creerResolveurMba({
+      envoyerBloc: ({ tenantId, waId, runId, workflowId, code }) =>
+        workflowExecutor.envoyerBlocDepuisAgent(tenantId, waId, { runId, workflowId, code }),
+      escaladerVersHumain,
+      // Trois effets, pas un : le contact, le référentiel Tags, et la file d'automations. L'outil promet au
+      // client de pouvoir « déclencher une automation », et un appel direct au store le ferait mentir.
+      poserTag: poserTagDepuisAgent,
+      // ⚠️ La CLÉ vient du modèle. La portée est bornée aux champs libres du contact COURANT (jamais l'opt-in,
+      // jamais un autre contact), et la parade contre une injection est l'énumération fermée que la console
+      // propose sur ce paramètre.
+      ecrireChamp: async (t, waId, cle, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [cle]: valeur }); },
+      connaissance: knowledgeStore,
+    });
+
+    // UN seul cerveau pour toutes les conversations de tous les clients : le contexte du tour est passé à
+    // l'appel, jamais figé ici (`creerCerveauGateway`).
+    const cerveau = creerCerveauGateway({
+      completer: (i) => gatewayAgent.completer(i),
+      // Point de lecture PARTAGÉ avec le bac à sable de la console : un champ ajouté d'un seul côté ferait
+      // diverger ce que le modèle voit selon qu'on teste ou qu'on est en production.
+      contexte: (t, agentId) => lireContexteAgent({ agents: agentStore, outils: toolCatalog }, t, agentId),
+      outils: {
+        catalogue: toolCatalog,
+        // Le VRAI journal, contrairement au bac à sable : cette table est le grand livre de facturation
+        // autant que la trace d'audit, et une session existe bien ici pour la référencer.
+        journal: journalAppels,
+        resolveurs: { mba: resolveurMba },
+        compterAppel: (t, sessionId) => agentSessions.compterAppel(t, sessionId),
+      },
+      lireContact: async (t, waId) => {
+        const etat = await contactStore.getContactStateByWaId(t, waId);
+        if (!etat) return null;
+        // 🔴 PROJECTION, jamais la ligne brute. `mba_lire_contact` la rend TELLE QUELLE au modèle, donc au
+        // fournisseur : y verser la ligne enverrait chez lui le numéro, le BSUID et le statut d'opt-in, que
+        // personne n'a décidé de partager. Le nom, les tags et les champs libres suffisent à l'agent.
+        return { nom: etat.name ?? '', tags: etat.tags, champs: etat.fields };
+      },
+      alerter: (m) => { alert('agent', m); },
+    });
+
+    const agentTurnDeps: RunTurnDeps = {
+      sessions: agentSessions,
+      brain: cerveau,
+      lireRun: async (t, runId) => {
+        const run = await runStore.byId(t, runId);
+        return run ? { status: run.status, currentNode: run.currentNode } : null;
+      },
+      lireFiche: (t, agentId) => agentStore.byId(t, agentId),
+      // 🔴 La MÉMOIRE de l'agent : la conversation depuis l'ouverture de sa session. Sans elle il redemande
+      // son nom au contact à chaque message. Lue et non reçue : `advance` ne porte pas le texte du message.
+      lireConversation: async (t, waId, depuis) => {
+        const messages = await inboxStore.messagesDepuis(t, waId, depuis, MESSAGES_DE_CONTEXTE);
+        return messages.map((m) => ({ role: m.direction === 'in' ? 'contact' : 'agent', texte: m.body }));
+      },
+      // Écriture CONDITIONNELLE de l'échéance d'inactivité : rien n'est écrit si le run a bougé pendant le
+      // tour. Sans cette garde, un run tué en cours de tour ressusciterait avec une échéance, et le balayeur
+      // déclencherait plus tard la branche « pas de réponse » d'un parcours fermé exprès.
+      majRun: async (t, runId, nodeId, state) => { await runStore.setStateSiEncoreSur(t, runId, nodeId, state); },
+      // Le fil est-il encore à nous ? Relu par le tour JUSTE avant l'envoi, pas seulement à son entrée.
+      mayAct: async (t, waId) => (await inboxStore.getControlOwner(t, waId)) === 'app_workflow',
+      envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),
+      mesurer: ({ tenantId, workflowId, nodeId, waId, kind }) =>
+        nodeEventStore.record({ tenantId, workflowId, nodeId, waId, kind }),
+      sortir: async ({ tenantId, waId, sessionId, sortie }) => {
+        await workflowExecutor.sortirDuBlocAgent(tenantId, waId, sessionId, sortie);
+      },
+    };
+
+    await queue.work(AGENT_TURN_QUEUE, async (data) => {
+      const job = parseAgentTurnJob(data);
+      if (!job) {
+        // Un payload inexploitable est ignoré PROPREMENT plutôt que de faire boucler la file jusqu'à la DLQ.
+        // Même doctrine que `automation-event`.
+        // eslint-disable-next-line no-console
+        console.error('agent-turn: payload inexploitable, ignoré');
+        return;
+      }
+      // `runTurn` ne LÈVE JAMAIS sur un cas métier : il rend ce qu'il a fait. Une exception ici serait donc
+      // une panne d'infrastructure, et c'est le seul cas où pg-boss doit rejouer le job.
+      const res = await runTurn(job, agentTurnDeps);
+      if (res.fait === 'erreur') {
+        alert('agent-turn', `tour d'agent en échec (session ${job.sessionId}, sortie ${res.sortie ?? '?'})`);
+      }
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn('agent-turn: file NON consommée (AI_GATEWAY_API_KEY absente). Les blocs agent resteront muets.');
+  }
+
   installGracefulShutdown(async () => {
     clearInterval(heartbeat);
     clearInterval(sweeper);
@@ -902,6 +1033,9 @@ async function main(): Promise<void> {
     'webhook',
     'campaign-run',
     AUTOMATION_EVENT_QUEUE,
+    // La file d'agent n'est consommée que si le Gateway est configuré : le message de démarrage doit dire
+    // laquelle des deux situations on est, sinon un bloc agent muet ressemble à un bug du moteur.
+    ...(config.AI_GATEWAY_API_KEY ? [AGENT_TURN_QUEUE] : []),
     ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : []),
     ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '' ? ['push-analysis', 'hubspot-catchup'] : []),
   ];
