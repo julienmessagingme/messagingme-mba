@@ -611,7 +611,17 @@ async function main(): Promise<void> {
       fetchUrl: fetchUrlBorne(),
     },
     // Agents IA, en lecture : la palette du builder a besoin de la liste pour proposer le bloc.
-    agents: { listActifs: (tenant) => agentStore.listActifs(tenant) },
+    agents: {
+      listActifs: (tenant) => agentStore.listActifs(tenant),
+      listToutes: (tenant) => agentStore.listToutes(tenant),
+      complet: (tenant, id) => agentStore.complet(tenant, id),
+      create: (tenant, label, mention, modele) => agentStore.create(tenant, label, mention, modele),
+      patch: (tenant, id, p) => agentStore.patch(tenant, id, p),
+      remove: (tenant, id) => agentStore.remove(tenant, id),
+      // Le modèle d'un agent NEUF vient de la configuration serveur, pas du client : il choisira ensuite
+      // dans l'écran de réglage. Vide en l'absence de configuration, la colonne l'accepte.
+      modeleParDefaut: config.LLM_MODEL,
+    },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil
       getWabaId: (tenant) => repo.getTenantWabaId(tenant),

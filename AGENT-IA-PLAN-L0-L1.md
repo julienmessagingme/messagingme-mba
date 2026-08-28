@@ -2165,6 +2165,41 @@ d'arrêt devient un handle, plus les réservés `timeout` (inactivité, même no
 
 ## Tâche 19 : le groupe « AI Agent » et les deux surfaces d'édition
 
+**Cette tâche est trop grosse pour un lot, et elle est découpée.** Elle demande trois choses de tailles très
+différentes : un groupe de navigation, un écran de réglage à sept onglets, et une IA de construction qui
+remplit la fiche en discutant. La dernière est une feature à elle seule (appel modèle, sortie structurée,
+écriture validée dans la fiche). Découpage, dans l'ordre où chaque tranche débloque la suivante :
+
+| Tranche | Contenu | État |
+|---|---|---|
+| **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit COMMIT19A, 2026-08-28) |
+| **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | à faire |
+| **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | à faire |
+| **19d** | La surface de construction conversationnelle (l'IA de setup) | à faire |
+| **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
+
+**19a fait de l'agent une chose qui EXISTE.** Avant elle, la table `agents` était vide pour toujours et la
+brique du builder restait grisée quoi qu'on fasse : c'était le vrai blocage.
+
+🔴 **Les deux défauts que la revue a trouvés, et ils touchaient le même endroit.**
+
+**Le patch de la fiche REMPLAÇAIT tout.** Un `PATCH {contenu:{objectif}}` écrasait la fiche entière, parce que
+le schéma Zod remplissait chaque champ absent par son défaut. Deux onglets ouverts suffisaient : l'un ajoute
+une règle d'arrêt, l'autre enregistre l'objectif depuis son état périmé, et la règle disparaît sans erreur. Or
+le plan exige que le formulaire et la surface conversationnelle cohabitent sur la même fiche. Le patch est
+donc devenu une **fusion** (`fiche || $n::jsonb`, qui protège les clés qu'on ne touche pas) **plus un verrou
+optimiste** sur `fiche_version` (qui protège celles qu'on touche, en refusant en 409 au lieu d'écraser).
+
+**Un label en double rendait un 500**, donc une page Cloudflare, sur un geste aussi banal que créer deux
+agents du même nom. L'index unique de la migration 0086 est maintenant traduit en 409, et une route DELETE
+existe : sans elle, un agent mal nommé ne pouvait être ni renommé vers un nom occupé, ni retiré.
+
+**Écart au plan, assumé :** l'activation vit sur la FICHE, agent par agent, et non sur un interrupteur
+d'accueil comme l'agent de Meta. Meta n'a qu'un agent par workspace ; ici il y en a plusieurs, et « activé »
+veut dire « proposable dans un scénario », pas « répond à tout ».
+
+### Le détail d'origine
+
 **Fichiers :** Créer `web/app/agents/page.tsx`, `web/lib/api-agent.ts`. Modifier
 `web/components/AppShell.tsx` (le groupe de nav et l'icône). C'est de l'UI, donc hors feature-loop :
 tâche d'ensemble, pas de TDD ligne à ligne.

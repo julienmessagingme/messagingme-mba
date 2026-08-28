@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -75,9 +75,13 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
-    { key: 'mba', label: t('MBA', 'MBA'), d: icons.mba, children: [
-      { key: 'mba-guide', href: '/mba', label: t('Guide', 'Guide') },
-      { key: 'mba-settings', href: '/mba/parametres', label: t('Paramètres', 'Settings') },
+    // Les DEUX répondeurs que le client peut faire parler, dans un seul groupe : l'agent de Meta (guide et
+    // réglages, qui gardent leurs URL) et le nôtre. Le modèle de nav n'a qu'UN niveau d'enfants, donc le
+    // groupe est plat : « MBA » et « Other AI agent » sont des entrées voisines, pas deux sous-groupes.
+    { key: 'ia', label: t('AI Agent', 'AI Agent'), d: icons.mba, children: [
+      { key: 'mba-guide', href: '/mba', label: t('MBA, guide', 'MBA, guide') },
+      { key: 'mba-settings', href: '/mba/parametres', label: t('MBA, paramètres', 'MBA, settings') },
+      { key: 'agents', href: '/agents', label: t('Other AI agent', 'Other AI agent') },
     ] },
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
       { key: 'templates', href: '/templates', label: t('Templates WhatsApp', 'WhatsApp templates') },

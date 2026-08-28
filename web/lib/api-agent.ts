@@ -6,15 +6,81 @@ export interface SortieAgent {
   label: string;
 }
 
-/** Un agent ACTIF, tel que la palette du builder le propose. */
+export type StatutAgent = 'draft' | 'active' | 'disabled';
+
+/** Un agent, tel que la palette du builder et la liste de l'écran de réglage le voient. */
 export interface AgentResume {
   id: string;
   label: string;
+  status: StatutAgent;
   sorties: SortieAgent[];
 }
 
-/** Les agents actifs du workspace. Un workspace sans agent actif grise la brique « Agent IA ». */
-export async function listAgents(tenantId: string): Promise<AgentResume[]> {
-  const r = await request<{ agents?: AgentResume[] }>(`/tenants/${tenantId}/agents`);
+/** La partie de la fiche que le client décrit, et que l'IA de construction remplira un jour. */
+export interface FicheContenu {
+  nom: string;
+  objectif: string;
+  ton: string;
+  personnalite: string;
+  reglesTransfert: string;
+  sorties: SortieAgent[];
+}
+
+/** La fiche ENTIÈRE, telle que l'écran de réglage l'édite. */
+export interface AgentComplet {
+  id: string;
+  label: string;
+  status: StatutAgent;
+  mentionIa: string;
+  modele: string;
+  maxTours: number;
+  maxAppelsOutils: number;
+  budgetMicroEur: number;
+  inactiviteMinutes: number;
+  contactInconnu: 'aucun_outil' | 'lecture_seule' | 'tous';
+  contenu: FicheContenu;
+  /** Compteur d'écritures de la fiche, renvoyé tel quel dans un patch de fiche : c'est le verrou qui empêche
+   *  deux surfaces d'écraser la même clé en silence. */
+  ficheVersion: number;
+}
+
+/** Un patch : tout est optionnel, et `contenu` est une FUSION (seules les clés présentes sont écrites).
+ *  `ficheVersionAttendue` accompagne un patch de fiche et le fait refuser en 409 si elle a bougé. */
+export type PatchAgent = Partial<Omit<AgentComplet, 'id' | 'contenu' | 'ficheVersion'>> & {
+  contenu?: Partial<FicheContenu>;
+  ficheVersionAttendue?: number;
+};
+
+/**
+ * Les agents du workspace. Par défaut les ACTIFS seulement, ce dont la palette du builder a besoin : un
+ * brouillon proposé dans un scénario promettrait une conversation qui n'aurait pas lieu.
+ */
+export async function listAgents(tenantId: string, opts: { tous?: boolean } = {}): Promise<AgentResume[]> {
+  const q = opts.tous ? '?statut=tous' : '';
+  const r = await request<{ agents?: AgentResume[] }>(`/tenants/${tenantId}/agents${q}`);
   return r.agents ?? [];
+}
+
+export async function getAgent(tenantId: string, agentId: string): Promise<AgentComplet> {
+  return (await request<{ agent: AgentComplet }>(`/tenants/${tenantId}/agents/${agentId}`)).agent;
+}
+
+export async function createAgent(tenantId: string, label: string): Promise<AgentComplet> {
+  const r = await request<{ agent: AgentComplet }>(`/tenants/${tenantId}/agents`, {
+    method: 'POST',
+    body: JSON.stringify({ label }),
+  });
+  return r.agent;
+}
+
+export async function deleteAgent(tenantId: string, agentId: string): Promise<void> {
+  await request<void>(`/tenants/${tenantId}/agents/${agentId}`, { method: 'DELETE' });
+}
+
+export async function patchAgent(tenantId: string, agentId: string, patch: PatchAgent): Promise<AgentComplet> {
+  const r = await request<{ agent: AgentComplet }>(`/tenants/${tenantId}/agents/${agentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  return r.agent;
 }

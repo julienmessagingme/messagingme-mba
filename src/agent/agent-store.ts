@@ -1,3 +1,5 @@
+import type { FicheAgentContenu } from './fiche';
+
 /**
  * Les plafonds d'un agent, lus sur sa fiche. Ce sont des gardes de SÉCURITÉ, pas un détail de facturation :
  * une injection qui fait boucler l'agent brûlerait le compte prépayé du tenant.
@@ -49,7 +51,69 @@ export interface SortieAgent {
 export interface AgentResume {
   id: string;
   label: string;
+  status: StatutAgent;
   sorties: SortieAgent[];
+}
+
+export type StatutAgent = 'draft' | 'active' | 'disabled';
+
+/** La fiche ENTIÈRE, telle que l'écran de réglage l'édite. `contenu` est la partie jsonb (ce que l'IA de
+ *  construction pourra écrire), le reste vit en colonnes et n'est écrit que par un administrateur. */
+export interface AgentComplet {
+  id: string;
+  label: string;
+  status: StatutAgent;
+  mentionIa: string;
+  modele: string;
+  maxTours: number;
+  maxAppelsOutils: number;
+  budgetMicroEur: number;
+  inactiviteMinutes: number;
+  contactInconnu: 'aucun_outil' | 'lecture_seule' | 'tous';
+  contenu: FicheAgentContenu;
+  /** Compteur d'écritures de la fiche. L'écran le renvoie tel quel dans son patch : c'est le verrou. */
+  ficheVersion: number;
+}
+
+/** Ce qu'un administrateur peut écrire. Tout est optionnel : l'écran enregistre champ par champ. */
+export interface PatchAgent {
+  label?: string;
+  status?: StatutAgent;
+  mentionIa?: string;
+  modele?: string;
+  maxTours?: number;
+  maxAppelsOutils?: number;
+  budgetMicroEur?: number;
+  inactiviteMinutes?: number;
+  contactInconnu?: 'aucun_outil' | 'lecture_seule' | 'tous';
+  /**
+   * La partie jsonb, DÉJÀ validée. PARTIELLE : seules les clés présentes sont écrites, les autres restent
+   * telles quelles en base.
+   *
+   * 🔴 POURQUOI UNE FUSION ET NON UN REMPLACEMENT. Deux surfaces éditent la même fiche (le formulaire, et
+   * l'IA de construction qui vient), et le formulaire enregistre CHAMP PAR CHAMP. Un remplacement total
+   * ferait qu'enregistrer l'objectif depuis un onglet efface la règle d'arrêt qu'un autre onglet vient
+   * d'ajouter, sans la moindre erreur. Et un `{}` envoyé par erreur viderait la fiche entière.
+   */
+  contenu?: Partial<FicheAgentContenu>;
+  /**
+   * Verrou optimiste sur la fiche. Fourni -> l'écriture n'a lieu QUE si la version en base est celle-là.
+   *
+   * La fusion ci-dessus protège les clés que l'appelant ne touche pas ; ce verrou protège celles qu'il
+   * touche. Sans lui, deux surfaces qui réécrivent `sorties` en même temps se recouvrent en silence, et le
+   * plan exige justement qu'elles cohabitent.
+   */
+  ficheVersionAttendue?: number;
+}
+
+/** L'écriture a été refusée parce que la fiche a changé entre la lecture et l'enregistrement. */
+export class FicheAgentPerimee extends Error {
+  constructor() { super('la fiche a changé depuis son chargement'); this.name = 'FicheAgentPerimee'; }
+}
+
+/** Le libellé d'un agent est unique par workspace (index de la migration 0086). */
+export class LabelAgentDejaPris extends Error {
+  constructor() { super('un agent porte déjà ce nom'); this.name = 'LabelAgentDejaPris'; }
 }
 
 export interface AgentStore {
@@ -68,4 +132,26 @@ export interface AgentStore {
    * tant que ce qu'il y a derrière n'existe pas.
    */
   listActifs(tenantId: string): Promise<AgentResume[]>;
+
+  /** TOUS les agents d'un tenant, brouillons et désactivés compris : c'est la liste de l'écran de réglage. */
+  listToutes(tenantId: string): Promise<AgentResume[]>;
+
+  /** La fiche entière d'un agent, pour l'éditer. `null` si elle n'existe pas ou appartient à un autre tenant. */
+  complet(tenantId: string, id: string): Promise<AgentComplet | null>;
+
+  /**
+   * Crée un agent, en BROUILLON. Jamais actif d'emblée : un agent est prêt quand un humain le dit, et
+   * l'activer serait le rendre proposable dans les scénarios avant que quiconque ait relu ce qu'il dira.
+   */
+  create(tenantId: string, label: string, mentionIa: string, modele: string): Promise<AgentComplet>;
+
+  /** Supprime un agent. Rend `false` s'il n'existe pas ou appartient à un autre tenant. */
+  remove(tenantId: string, id: string): Promise<boolean>;
+
+  /**
+   * Écrit un patch d'administrateur. Rend `null` si l'agent n'existe pas ou appartient à un autre tenant.
+   * LÈVE `FicheAgentPerimee` si un `ficheVersionAttendue` est fourni et ne correspond plus, et
+   * `LabelAgentDejaPris` si le libellé est déjà porté par un autre agent du workspace.
+   */
+  patch(tenantId: string, id: string, patch: PatchAgent): Promise<AgentComplet | null>;
 }
