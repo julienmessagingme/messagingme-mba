@@ -6,6 +6,31 @@ Le plan, l etat tache par tache et le **registre des dettes** vivent dans
 [AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D1, D2, D3, D4 et D6 sont fermees**. Reste **D5** (les
 blocs agent invisibles d Analytics).
 
+## DEPLOYE le 2026-08-28 : l agent a ses DEUX modeles, et le canevas ne ment plus
+
+**Les modeles (`e678377`).** Deux metiers, deux reglages, choisis au BANC contre le Gateway avec notre propre
+schema (tableau complet dans `documentation.md`) :
+- `AGENT_SETUP_MODEL=zai/glm-4.7` pour l assistant de CONSTRUCTION (sortie structuree imbriquee, en francais).
+  Conforme 4 fois sur 4, propose a chaque fois des regles d arret ET des outils.
+- `AGENT_MODEL=zai/glm-4.7-flash` pour un agent NEUF, celui qui tourne a chaque message. 15/15 sur la boucle
+  reelle d outil, 0,000084 $ le tour, 2,2 s : le moins cher ET le plus rapide du banc.
+
+🔴 **Piege ferme au passage** : le modele d un agent neuf retombait sur `LLM_MODEL`, l identifiant de l ANALYSE
+de conversation servie EN DIRECT par Anthropic. Le Gateway ne le connait pas : chaque tour aurait echoue en
+pleine conversation, sans que la creation n ait rien signale. Poser la cle sans les deux modeles est desormais
+refuse au boot.
+
+⚠️ **La cle du Gateway est celle du projet hyundai** (compte Vercel de Julien), reutilisee pour debloquer. Une
+cle dediee a mba rendrait l attribution du cout lisible par projet : a creer cote Vercel quand Julien voudra.
+
+Verifie APRES deploiement : le worker liste `agent-turn` dans ses files, et le conteneur `mba-api` joint le
+Gateway et recoit `usage.cost` (c est lui qui alimente le solde prepaye).
+
+**Le canevas (`a4ea371`).** Trois symptomes signales par Julien, deux causes mesurees : la fleche de « toute
+autre reponse » etait ancree sur la PREMIERE sortie du bloc (arete sans `sourceHandle` = pas de poignee nommee
+pour React Flow), et les points de liaison faisaient 5,7 px avec une tolerance de visee de ±2 px. Corriges,
+avec les mesures en tests de bout en bout. Le visuel d un bloc s affiche desormais dans sa miniature.
+
 ## DEPLOYE le 2026-08-28 sur `cd90bd7` (2 commits, migration 0087 appliquee)
 
 Sequence tenue : `git pull`, `build mba-api`, verification que **0087 est DANS l image** (`ls db/migrations`),
