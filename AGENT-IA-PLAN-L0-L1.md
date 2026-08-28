@@ -2175,10 +2175,10 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit 6dca192, 2026-08-28) |
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit e9e2c73, 2026-08-28) |
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit c978e69, 2026-08-28) |
-| **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit HASH19D, 2026-08-28) |
+| **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit fa32a18, 2026-08-28) |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
 
-### Tranche 19d : la surface de construction conversationnelle -- ✅ FAIT (commit HASH19D, 2026-08-28)
+### Tranche 19d : la surface de construction conversationnelle -- ✅ FAIT (commit fa32a18, 2026-08-28)
 
 **Livré :** `src/agent/setup/` (le schéma de proposition et le diff, l'assemblage des messages, le lint), la
 route `src/http/agent-setup.ts`, l'onglet `web/components/AgentConstruction.tsx`, et le premier câblage réel
