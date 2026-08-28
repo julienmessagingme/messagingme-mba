@@ -2178,7 +2178,7 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit fa32a18, 2026-08-28) |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | ✅ FAIT (commit 013fe61, 2026-08-28) |
 
-## Tâche 20 : le câblage du tour de production -- ✅ FAIT (commit HASH20, 2026-08-28)
+## Tâche 20 : le câblage du tour de production -- ✅ FAIT (commit d087e6d, 2026-08-28)
 
 **Ferme les dettes D2 et D4.** Le bloc agent existait en entier et n'était branché nulle part : la file
 n'avait aucun consommateur, et `wiring.ts` ne passait ni les sessions ni l'enfilage à l'exécuteur. Un bloc
