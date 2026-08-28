@@ -6,7 +6,24 @@ Le plan, l etat tache par tache et le **registre des dettes** vivent dans
 [AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D1, D2, D3, D4 et D6 sont fermees**. Reste **D5** (les
 blocs agent invisibles d Analytics).
 
-## A DEPLOYER : le solde prepaye par workspace (tache 21)
+## DEPLOYE le 2026-08-28 sur `cd90bd7` (2 commits, migration 0087 appliquee)
+
+Sequence tenue : `git pull`, `build mba-api`, verification que **0087 est DANS l image** (`ls db/migrations`),
+`migrate` (« 1 migration appliquee »), verification des deux tables `agent_credits` et
+`agent_credit_mouvements` en base (colonnes conformes, aucune `par_utilisateur`), puis `up -d --build`.
+Les trois conteneurs sont sains, rattaches a `mcp-robot_default`, zero redemarrage ; l accueil et `/agents`
+repondent 200, `mba-api:8095/health` repond depuis le reseau interne.
+
+La surface `/ops/credits` a ete verifiee EN PRODUCTION, en lecture seule : un tenant reel rend
+`{"soldeMicroEur":0,"mouvements":[]}`, un uuid inconnu rend **404** (et non un solde de zero, qui etait le
+piege), un identifiant mal forme rend **404** (et non un 500 remplace par la page Cloudflare), et sans jeton
+d exploitation **401**. Aucune ecriture n a ete faite : personne n a ete recharge.
+
+⚠️ **`EUR_PER_USD` n a PAS ete posee dans `.env.prod`** : elle a un defaut de **0,92** dans `src/config.ts`,
+qui s applique donc. C est un parametre COMMERCIAL : le poser explicitement est un choix de Julien, pas une
+correction technique.
+
+## LE SOLDE PREPAYE PAR WORKSPACE (tache 21)
 
 Demande de Julien : un budget qui existe dans l outil et qui **descend vraiment avec la consommation**, sans
 Stripe (recharge a la main). Ses deux arbitrages : un solde **par workspace**, et tout **en euros** avec un
@@ -22,16 +39,25 @@ Le solde se lit et se recharge sur `/ops/credits/:tenantId` (**premiere ecriture
 ne doit jamais pouvoir crediter son propre compte). Recharge bornee a 1000 € et **note obligatoire**. Le bac a
 sable de la console consomme pour de vrai, il est donc soumis au meme solde.
 
-⚠️ **Migration 0087 NON appliquee en production.** Sequence : `compose build mba-api` AVANT
-`compose run --rm --no-deps mba-api npm run migrate` (les migrations vivent dans l image), puis `up -d --build`.
-Tant qu elle n est pas passee, la lecture du solde echoue et les agents ne demarrent pas. **Prochaine libre = 0088.**
+✅ **Migration 0087 appliquee** le 2026-08-28 (voir la section de deploiement ci-dessus).
+**Prochaine libre = 0088.**
 
-⚠️ **Nouvelle variable d env** : `EUR_PER_USD` (defaut dans `.env.example`). Elle est un **parametre
-commercial** : la changer change ce qu on facture.
+⚠️ **Nouvelle variable d env** : `EUR_PER_USD` (defaut **0,92** dans `src/config.ts`, gabarit dans
+`.env.example`). Elle est un **parametre commercial** : la changer change ce qu on facture. Non posee dans
+`.env.prod`, le defaut s applique.
 
-⚠️ **Un workspace neuf a un solde de ZERO**, donc ses agents ne demarrent pas tant que personne n a recharge.
-C est le bon defaut (un credit implicite ferait payer une consommation que personne n a autorisee), mais ca veut
-dire qu apres le deploiement il faut **recharger le workspace de demonstration** avant d essayer un agent.
+🔴 **AUCUN workspace n a de solde aujourd hui** (la table est vide, donc solde = ZERO partout). C est le bon
+defaut (un credit implicite ferait payer une consommation que personne n a autorisee), mais ca veut dire que
+**tant que personne n a recharge, les agents ne demarrent pas et le bac a sable rend 409**. Recharge, quand on
+la voudra (le montant est en MICRO-euros, 10 EUR = 10 000 000) :
+
+```bash
+curl -s -X POST "https://mba.messagingme.app/api/backend/ops/credits/<tenant-uuid>" -H "x-ops-token: <OPS_TOKEN, dans /home/ubuntu/mba/.env.prod>" -H "content-type: application/json" -d '{"montantMicroEur": 10000000, "note": "recharge Julien, phase de conception"}'
+```
+
+La **note est obligatoire** (qui recharge, et pourquoi) : c est la seule trace, le jeton d exploitation etant
+partage. Plafond de 1000 EUR par operation, et il n existe AUCUNE route de debit pour rattraper une virgule
+mal placee.
 
 ## DEPLOYE le 2026-08-28 sur `a325844` (54 commits, migration 0086 appliquee)
 
