@@ -632,7 +632,13 @@ async function main(): Promise<void> {
       remove: (tenant, id) => agentStore.remove(tenant, id),
       // Le modèle d'un agent NEUF vient de la configuration serveur, pas du client : il choisira ensuite
       // dans l'écran de réglage. Vide en l'absence de configuration, la colonne l'accepte.
-      modeleParDefaut: config.LLM_MODEL,
+      //
+      // 🔴 `AGENT_MODEL` D'ABORD, et `LLM_MODEL` seulement en repli. Le second est le modèle de l'ANALYSE de
+      // conversation, servi en DIRECT par Anthropic ; l'agent, lui, passe par le Gateway, dont les
+      // identifiants sont préfixés par leur fournisseur. Créer un agent avec l'identifiant de l'analyse lui
+      // donne un modèle que le Gateway ne connaît pas, et chaque tour échoue sans que la création n'ait rien
+      // signalé.
+      modeleParDefaut: config.AGENT_MODEL || config.LLM_MODEL,
       // LECTURE seule : le client voit ce qui lui reste, il ne se recharge pas lui-meme (cf. /ops).
       soldeAgent: (tenant) => credits.solde(tenant),
       // Le blocage dur avant activation : il lit les TROIS sources (fiche, connaissance, outils actifs),

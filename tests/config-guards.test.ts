@@ -66,6 +66,28 @@ describe('gardes de config en production', () => {
     expect(schema.safeParse({ ...prodEnv, ZADARMA_API_KEY: 'k', ZADARMA_API_SECRET: 's' }).success).toBe(true);
     expect(schema.safeParse(prodEnv).success).toBe(true); // aucune des deux : la capture est simplement inerte
   });
+
+  it('🔴 la clé du Gateway SANS modèle d’agent -> refusée, en nommant les deux variables', () => {
+    // Le piège exact qu'on ferait au déploiement : poser la clé, oublier les modèles. Le code retombe alors
+    // sur `LLM_MODEL`, qui est l'identifiant de l'ANALYSE de conversation servie EN DIRECT par Anthropic
+    // (`claude-haiku-4-5`), alors que le Gateway attend un identifiant préfixé (`zai/glm-4.7-flash`). Rien ne
+    // le dirait à la création d'un agent : ça se verrait au premier vrai contact, en pleine conversation.
+    asProd();
+    const r = schema.safeParse({ ...prodEnv, AI_GATEWAY_API_KEY: 'vck_test' });
+    expect(r.success).toBe(false);
+    expect(errPaths(r)).toContain('AGENT_MODEL');
+    expect(errPaths(r)).toContain('AGENT_SETUP_MODEL');
+    // Une seule des deux ne suffit pas non plus.
+    expect(errPaths(schema.safeParse({ ...prodEnv, AI_GATEWAY_API_KEY: 'vck_test', AGENT_MODEL: 'zai/glm-4.7-flash' }))).toContain('AGENT_SETUP_MODEL');
+  });
+
+  it('les deux modèles posés avec la clé -> accepté ; et SANS clé, rien n’est exigé', () => {
+    // Le fail-fast doit rester borné : une instance qui n'a pas câblé l'agent (la plupart) ne doit pas être
+    // obligée de déclarer des modèles qu'elle n'utilisera jamais.
+    asProd();
+    expect(schema.safeParse({ ...prodEnv, AI_GATEWAY_API_KEY: 'vck_test', AGENT_MODEL: 'zai/glm-4.7-flash', AGENT_SETUP_MODEL: 'zai/glm-4.7' }).success).toBe(true);
+    expect(schema.safeParse(prodEnv).success).toBe(true);
+  });
 });
 
 describe('budget de connexions Postgres', () => {

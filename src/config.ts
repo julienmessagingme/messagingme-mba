@@ -212,6 +212,18 @@ export const schema = z.object({
    */
   AGENT_SETUP_MODEL: z.string().default(''),
   /**
+   * Modele donne a un agent NEUF, c est-a-dire celui qui tournera a chaque message d un contact.
+   *
+   * 🔴 IL NE DOIT PAS RETOMBER SUR `LLM_MODEL`, et c est pour ca que cette variable existe. `LLM_MODEL` est
+   * le modele de l ANALYSE de conversation, servi en direct par Anthropic (`claude-haiku-4-5` en production).
+   * L agent, lui, passe par le Vercel AI Gateway, dont les identifiants sont prefixes par leur fournisseur
+   * (`zai/glm-4.7-flash`). Un agent cree avec l identifiant de l analyse porte donc un modele que le Gateway
+   * ne connait pas, et CHAQUE tour echouerait, sans que rien ne l ait signale a la creation.
+   *
+   * Vide -> repli sur `LLM_MODEL`, qui est le comportement d avant et reste faux : a poser au deploiement.
+   */
+  AGENT_MODEL: z.string().default(''),
+  /**
    * Taux euros par dollar, pour convertir ce que le Gateway facture (en DOLLARS) vers nos compteurs, qui
    * sont tous en micro-euros. C est un parametre COMMERCIAL, pas un cours en temps reel : le client charge
    * et consomme des euros, et la marge absorbe tres largement la variation. Un taux a 0 retomberait sur 1
@@ -271,6 +283,24 @@ export const schema = z.object({
       }
       if (c.LLM_MODEL === '') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['LLM_MODEL'], message: 'LLM_MODEL requis quand CONVERSATION_ANALYSIS_ENABLED=true (ex. claude-haiku-4-5)' });
+      }
+    }
+    /**
+     * 🔴 LA CLÉ DU GATEWAY SANS MODÈLE D'AGENT EST UN PIÈGE SILENCIEUX, et c'est pour ça que le boot refuse.
+     *
+     * Sans ces deux variables, le code retombe sur `LLM_MODEL`, qui est l'identifiant de l'ANALYSE de
+     * conversation servie EN DIRECT par Anthropic (`claude-haiku-4-5` en production). Le Gateway, lui,
+     * attend des identifiants préfixés par leur fournisseur (`zai/glm-4.7-flash`) : il refuserait chaque
+     * appel. Rien ne le signalerait à la création d'un agent ; ça se verrait au premier vrai contact, sur une
+     * conversation WhatsApp en cours. Poser la clé et oublier les modèles est l'erreur exacte qu'on ferait au
+     * déploiement, donc elle est refusée ici plutôt que découverte là-bas.
+     */
+    if (c.AI_GATEWAY_API_KEY !== '') {
+      if (c.AGENT_MODEL === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['AGENT_MODEL'], message: 'AGENT_MODEL requis quand AI_GATEWAY_API_KEY est defini (identifiant du Gateway, ex. zai/glm-4.7-flash)' });
+      }
+      if (c.AGENT_SETUP_MODEL === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['AGENT_SETUP_MODEL'], message: 'AGENT_SETUP_MODEL requis quand AI_GATEWAY_API_KEY est defini (identifiant du Gateway, ex. zai/glm-4.7)' });
       }
     }
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).

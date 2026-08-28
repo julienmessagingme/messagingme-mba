@@ -299,7 +299,11 @@ Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (si
 **`WEBHOOK_IN_RATE_LIMIT_MAX`** / **`WEBHOOK_IN_RATE_LIMIT_WINDOW_MS`** (débit d'UN webhook entrant, défaut
 120 par minute) et **`WEBHOOK_PAYLOAD_RETENTION_DAYS`** (défaut 7, purge du dernier payload).
 Côté agent IA : **`AI_GATEWAY_API_KEY`** (vide -> la file `agent-turn` n'est pas consommée, l'assistant de
-construction et le bac à sable répondent 503), **`AGENT_SETUP_MODEL`** et **`EUR_PER_USD`**. ⚠️ Cette dernière
+construction et le bac à sable répondent 503), **`AGENT_SETUP_MODEL`**, **`AGENT_MODEL`** et **`EUR_PER_USD`**.
+⚠️ Poser la clé SANS les deux modèles est refusé au boot : le code retomberait sur `LLM_MODEL`, qui est
+l'identifiant de l'ANALYSE de conversation servie EN DIRECT par Anthropic, là où le Gateway attend un
+identifiant préfixé par son fournisseur. Rien ne le signalerait à la création d'un agent, et chaque tour
+échouerait en pleine conversation. ⚠️ Cette dernière
 est un **paramètre commercial** et non un cours : le Gateway facture en dollars, tous nos compteurs sont en
 micro-euros, et la changer change ce qu'on facture au client. ⚠️ Un changement de `.env.prod`
 exige `docker compose up -d --force-recreate` (env_file rechargé seulement à la recréation).
@@ -1638,6 +1642,38 @@ refactor par expression régulière qui n'attend que `
 `
 ?
 `, et vérifier le compte de remplacements.
+
+## Banc de tool calling : le choix des deux modèles de l'agent (mesuré le 2026-08-28)
+
+🔴 **DEUX MÉTIERS, DEUX MODÈLES, et les confondre coûte cher.** L'assistant de CONSTRUCTION tourne rarement
+(réglage d'un agent) et fait le travail le plus dur : une sortie structurée imbriquée (objet + tableau d'objets
++ enum), en français, en appel d'outil FORCÉ. Le modèle d'un AGENT tourne à CHAQUE message d'un contact : il
+lui faut un appel d'outil fiable en boucle, la reprise fidèle de ce que l'outil a rendu, et le prix au tour.
+
+Banc joué contre le Gateway avec **notre propre schéma** (`SCHEMA_PROPOSITION` pour la construction, la vraie
+boucle `chercher_connaissance` -> résultat d'outil -> réponse pour le runtime), 5 répétitions par modèle sur le
+runtime, 4 sur la construction.
+
+| Modèle | Construction (conforme) | Boucle d'outil | Reprend le fait | N'invente rien sans source | $/tour | ms |
+|---|---|---|---|---|---|---|
+| `zai/glm-4.7` | **4/4**, avec sorties ET outils | - | - | 0,00097 | 2865 |
+| `deepseek/deepseek-v4-pro` | 4/4, jamais d'outil proposé | 5/5 | 5/5 | 5/5 | 0,000425 | 4563 |
+| `zai/glm-4.7-flash` | 0/1 (aucune sortie) | **5/5** | **5/5** | **5/5** | **0,000084** | **2177** |
+| `alibaba/qwen3.7-flash` | 1/4 | 5/5 | 5/5 | 5/5 | 0,000104 | 4477 |
+| `deepseek/deepseek-v4-flash` | 2/4 | 5/5 | 5/5 | 5/5 | 0,000161 | 3409 |
+| `minimax/minimax-m3` | 4/4 | 5/5 | **4/5** | 5/5 | 0,000283 | 2620 |
+| `moonshotai/kimi-k2.5` | 0/1 (aucune sortie) | 5/5 | **3/5** | 5/5 | 0,000697 | 4834 |
+
+**Retenu : `zai/glm-4.7` pour la construction, `zai/glm-4.7-flash` pour le runtime.** Le second est le moins
+cher ET le plus rapide du banc, sans une seule faute sur 15 épreuves. Les deux modes d'échec qui écartent les
+autres sont exactement ceux qui abîment une conversation client : **kimi-k2.5 perd le fait qu'il vient de lire
+2 fois sur 5** (une fois en rendant un texte VIDE), et **minimax-m3 répond « je ne trouve pas les horaires »
+alors que l'outil venait de les lui rendre**. Un modèle qui contredit sa propre source est pire qu'un modèle
+lent.
+
+⚠️ **Ce banc se rejoue.** Le catalogue du Gateway bouge toutes les semaines, et un modèle qu'on ajoute doit
+passer ces deux épreuves AVANT d'entrer dans le catalogue de la console. C'est le « banc » annoncé au §
+« Ce qui reste ouvert » du document produit.
 
 ## Gotchas et décisions (journal, déplacé de CLAUDE.md)
 
