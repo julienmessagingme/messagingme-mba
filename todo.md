@@ -1,5 +1,21 @@
 # todo.md — backlog
 
+## Ouvert par la tranche 19c du bloc agent IA (2026-08-28)
+
+**Dire à l'admin qu'une suppression de compte a éteint des outils d'agent.** Supprimer un utilisateur éteint
+maintenant les outils d'agent qu'il avait mis en service (sans quoi le `delete` échouait en `23514`, cf. le
+plan agent IA, tranche 19c). La réponse HTTP rend toujours `{id, deleted: true}` : seul un `console.warn`
+côté serveur dit combien de réglages sont tombés. Conséquence : si un agent cesse d'envoyer un bloc après un
+départ, il faut penser à chercher ce log. Renvoyer le compte dans la réponse du `DELETE` et l'afficher sur
+l'écran Admin fermerait le trou. Non fait tout de suite parce que `UserMutation` est partagé avec
+`setRole`/`setDisabled` et qu'aucune route de `users.ts` ne trace d'audit aujourd'hui : le faire ici seulement
+serait incohérent.
+
+**Confirmer avec Julien que `mba_envoyer_bloc` doit rester IRRÉVERSIBLE.** Déclaré tel quel en 19c (un message
+parti chez un contact ne se rappelle pas, et il est facturé), donc l'agent ne peut pas envoyer un bloc tant
+que l'autonomie n'est pas cochée sur cet outil. Si l'envoi de bloc doit être libre par défaut, c'est une ligne
+dans `src/agent/outils-maison.ts`.
+
 ## 🆕 Ouvert par le second relevé de doc Meta du 2026-08-26 (soir)
 
 Détail complet et citations : `docs/MBA-API-REFERENCE.md`, section « Second relevé du 2026-08-26 ».

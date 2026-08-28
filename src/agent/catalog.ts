@@ -55,6 +55,67 @@ export interface ToolCatalog {
   listActifs(tenantId: string, agentId: string): Promise<OutilDefini[]>;
 }
 
+/** Un outil tel que l'écran de réglage le montre : tout ce que le runtime lit, plus qui a autorisé quoi. */
+export interface OutilComplet extends OutilDefini {
+  title: string;
+  nePasUtiliser: string;
+  actif: boolean;
+  /** `null` tant que personne ne l'a activé. La migration 0086 refuse `actif` sans lui. */
+  activeLe: string | null;
+  autonomeLe: string | null;
+}
+
+/** Ce qu'un administrateur peut corriger sur un outil. Le `handler` et le risque n'en font PAS partie : ils
+ *  viennent du catalogue, et les changer ferait un outil dont le comportement ne suit plus le nom. */
+export interface PatchOutil {
+  name?: string;
+  title?: string;
+  description?: string;
+  nePasUtiliser?: string;
+  /** Valeurs autorisées, paramètre par paramètre. Seuls les paramètres que le catalogue ouvre sont écrits. */
+  enums?: Record<string, string[]>;
+}
+
+/** Le nom exposé d'un outil est unique par agent (index de la migration 0086). */
+export class NomOutilDejaPris extends Error {
+  constructor() { super('un outil de cet agent porte déjà ce nom'); this.name = 'NomOutilDejaPris'; }
+}
+
+/**
+ * L'écriture du catalogue, réservée à l'écran de réglage.
+ *
+ * 🔴 L'ACTIVATION PORTE LE NOM DE QUI L'A FAITE, et ce n'est pas de la traçabilité de confort. La spec MCP
+ * exige un consentement humain avant l'invocation d'un outil ; notre agent n'a aucun humain au runtime. Le
+ * consentement est donc déplacé du runtime vers la CONFIGURATION, et la migration 0086 le rend
+ * incontournable en base (`actif = false or active_par is not null`). Même doctrine pour l'autonomie.
+ *
+ * L'identité vient du JETON, jamais du corps de la requête : sinon la trace désignerait qui l'appelant veut.
+ */
+export interface ToolAdminStore {
+  /** TOUS les outils d'un agent, actifs ou non. */
+  listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]>;
+
+  /**
+   * Ajoute un outil MAISON à un agent, inactif. Rend `null` si l'agent n'existe pas ou appartient à un autre
+   * tenant. LÈVE `NomOutilDejaPris` si le nom exposé est déjà porté par un outil de cet agent.
+   */
+  ajouter(tenantId: string, agentId: string, outil: {
+    handler: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: RisqueOutil;
+  }): Promise<OutilComplet | null>;
+
+  /** Corrige les mots d'un outil. Rend `null` s'il n'est pas de ce couple (tenant, agent). */
+  patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
+
+  /** Active ou désactive. `parUtilisateur` vient du jeton. Rend `null` si l'outil n'est pas de ce couple. */
+  activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
+
+  /** Coche ou décoche l'autonomie sur une action irréversible. `parUtilisateur` vient du jeton. */
+  autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
+
+  retirer(tenantId: string, agentId: string, outilId: string): Promise<boolean>;
+}
+
 export interface JournalAppels {
   /**
    * Ouvre la ligne d'appel AVANT l'exécution, et rend son identifiant.

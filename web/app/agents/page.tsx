@@ -13,6 +13,7 @@ import {
 } from '@/lib/api-agent';
 import { CodeSortieInput } from '@/components/AgentSorties';
 import { AgentConnaissance } from '@/components/AgentConnaissance';
+import { AgentOutils } from '@/components/AgentOutils';
 
 /**
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
@@ -23,9 +24,9 @@ import { AgentConnaissance } from '@/components/AgentConnaissance';
  * un interrupteur d'accueil comme l'agent de Meta, qui lui est unique par workspace.
  */
 
-type Onglet = 'identite' | 'objectif' | 'connaissance' | 'perimetre' | 'modele';
+type Onglet = 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele';
 
-const ONGLETS: Onglet[] = ['identite', 'objectif', 'connaissance', 'perimetre', 'modele'];
+const ONGLETS: Onglet[] = ['identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele'];
 const lireOnglet = (v: string | null): Onglet => (ONGLETS as string[]).includes(v ?? '') ? (v as Onglet) : 'identite';
 
 export default function AgentsPage() {
@@ -165,6 +166,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             { key: 'identite', label: t('Identité et ton', 'Identity and tone') },
             { key: 'objectif', label: t('Objectif et transferts', 'Objective and handovers') },
             { key: 'connaissance', label: t('Base de connaissance', 'Knowledge base') },
+            { key: 'outils', label: t('Outils', 'Tools') },
             { key: 'perimetre', label: t('Périmètre et garde-fous', 'Scope and guardrails') },
             { key: 'modele', label: t('Modèle', 'Model') },
           ]}
@@ -174,6 +176,9 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels
             et son propre verrou d'ecriture, il ne passe pas par `enregistrer`. */}
         {onglet === 'connaissance' && <AgentConnaissance tenantId={tenantId} agentId={ouvert.id} />}
+        {/* Les outils vivent dans LEUR table, avec leur propre consentement humain : ce panneau ne passe pas
+            non plus par `enregistrer`, qui n'ecrit que la fiche. */}
+        {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} />}
         {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
         {onglet === 'modele' && <OngletModele agent={ouvert} busy={busy} onSave={enregistrer} />}
       </div>

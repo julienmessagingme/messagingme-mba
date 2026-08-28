@@ -79,6 +79,7 @@ import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
+import { PgToolCatalog } from './agent/catalog.pg';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -136,6 +137,7 @@ async function main(): Promise<void> {
   const workflowStore = new PgWorkflowStore(pool);
   const agentStore = new PgAgentStore(pool);
   const knowledgeStore = new PgKnowledgeStore(pool);
+  const toolCatalog = new PgToolCatalog(pool);
   const automationStore = new PgAutomationStore(pool);
   // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
@@ -633,6 +635,21 @@ async function main(): Promise<void> {
       supprimer: (tenant, agentId, ficheId) => knowledgeStore.supprimer(tenant, agentId, ficheId),
       remplacerSource: (tenant, agentId, url, fiches) => knowledgeStore.remplacerSource(tenant, agentId, url, fiches),
       fetchUrl: fetchUrlBorne(),
+    },
+    // Outils d'un agent. L'activation et l'autonomie portent le nom de qui les a posees : la migration 0086
+    // l'exige en base, et c'est ce qui rend un incident instruisable.
+    agentTools: {
+      listToutes: (tenant, agentId) => toolCatalog.listToutes(tenant, agentId),
+      ajouter: (tenant, agentId, outil) => toolCatalog.ajouter(tenant, agentId, outil),
+      patch: (tenant, agentId, id, p) => toolCatalog.patch(tenant, agentId, id, p),
+      activer: (tenant, agentId, id, actif, par) => toolCatalog.activer(tenant, agentId, id, actif, par),
+      autonomie: (tenant, agentId, id, autonome, par) => toolCatalog.autonomie(tenant, agentId, id, autonome, par),
+      retirer: (tenant, agentId, id) => toolCatalog.retirer(tenant, agentId, id),
+      // Les regles d'arret viennent de la FICHE : c'est d'elles que derive l'enumeration de « terminer ».
+      sortiesDeLAgent: async (tenant, agentId) => {
+        const fiche = await agentStore.complet(tenant, agentId);
+        return fiche ? fiche.contenu.sorties : null;
+      },
     },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil

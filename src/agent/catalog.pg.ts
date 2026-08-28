@@ -1,5 +1,8 @@
 import type { Pool } from 'pg';
-import type { JournalAppels, OutilDefini, ToolCatalog } from './catalog';
+import type {
+  JournalAppels, OutilComplet, OutilDefini, PatchOutil, RisqueOutil, ToolAdminStore, ToolCatalog,
+} from './catalog';
+import { NomOutilDejaPris } from './catalog';
 import { asRecord } from '../webhooks/json';
 
 interface Ligne {
@@ -50,7 +53,7 @@ function versOutil(r: Ligne): OutilDefini {
  * d'outil vient du modèle, donc d'un texte qu'un contact peut influencer : c'est la clause `where` qui
  * empêche d'appeler l'outil d'un autre agent ou d'un autre client (voir `ToolCatalog.byName`).
  */
-export class PgToolCatalog implements ToolCatalog {
+export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
   constructor(private readonly pool: Pool) {}
 
   async byName(tenantId: string, agentId: string, name: string): Promise<OutilDefini | null> {
@@ -71,6 +74,142 @@ export class PgToolCatalog implements ToolCatalog {
     );
     return res.rows.map(versOutil);
   }
+
+  // ---------- Écriture : l'écran de réglage (tranche 19c) ----------
+
+  async listToutes(tenantId: string, agentId: string): Promise<OutilComplet[]> {
+    const res = await this.pool.query<LigneAdmin>(
+      `select ${COLONNES_ADMIN} from agent_tools
+        where tenant_id = $1 and agent_id = $2 order by name`,
+      [tenantId, agentId],
+    );
+    return res.rows.map(versComplet);
+  }
+
+  async ajouter(tenantId: string, agentId: string, outil: {
+    handler: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: RisqueOutil;
+  }): Promise<OutilComplet | null> {
+    // `origin` vaut 'mba' en dur : L1 n'a que des outils maison, et le corps de la requête n'a rien à dire
+    // là-dessus. `actif` reste à son défaut (faux) : la migration 0086 refuserait un actif sans activateur,
+    // et surtout un outil actif d'emblée serait exposé au modèle avant que quiconque ait relu ses mots.
+    const res = await this.pool.query<LigneAdmin>(
+      `insert into agent_tools
+         (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
+       select $1, $2, 'mba', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9
+        where exists (select 1 from agents where id = $2 and tenant_id = $1)
+       returning ${COLONNES_ADMIN}`,
+      [
+        tenantId, agentId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
+        JSON.stringify(outil.params ?? []),
+        // `binding.handler` est ce qui donne son COMPORTEMENT à l'outil : le résolveur maison le lit là, et
+        // jamais dans le nom exposé, que le client peut changer.
+        JSON.stringify({ handler: outil.handler }),
+        outil.risk,
+      ],
+    ).catch(surNomDejaPris);
+    const r = res.rows[0];
+    return r ? versComplet(r) : null;
+  }
+
+  async patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null> {
+    // Les énumérations sont réécrites DANS le jsonb, en une instruction : une lecture suivie d'une écriture
+    // laisserait deux administrateurs se recouvrir en silence sur la même colonne.
+    const res = await this.pool.query<LigneAdmin>(
+      `update agent_tools set
+         name = coalesce($4, name),
+         title = coalesce($5, title),
+         description = coalesce($6, description),
+         ne_pas_utiliser = coalesce($7, ne_pas_utiliser),
+         params = case when $8::jsonb is null then params else (
+           select coalesce(jsonb_agg(
+             case when $8::jsonb ? (p->>'name')
+                  then jsonb_set(p - 'enum', '{enum}', $8::jsonb -> (p->>'name'))
+                  else p end
+             order by ord), '[]'::jsonb)
+             from jsonb_array_elements(params) with ordinality as t(p, ord)
+         ) end,
+         updated_at = now()
+       where tenant_id = $1 and agent_id = $2 and id = $3
+       returning ${COLONNES_ADMIN}`,
+      [tenantId, agentId, outilId, patch.name ?? null, patch.title ?? null, patch.description ?? null,
+        patch.nePasUtiliser ?? null, patch.enums ? JSON.stringify(patch.enums) : null],
+    ).catch(surNomDejaPris);
+    const r = res.rows[0];
+    return r ? versComplet(r) : null;
+  }
+
+  async activer(
+    tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string,
+  ): Promise<OutilComplet | null> {
+    // Désactiver EFFACE l'activateur : ces deux colonnes disent « qui l'a mis en service, et quand », pas
+    // « qui y a touché un jour ». Les garder ferait afficher un consentement qui n'a plus cours.
+    const res = await this.pool.query<LigneAdmin>(
+      `update agent_tools set
+         actif = $4,
+         active_par = case when $4 then $5::uuid else null end,
+         active_le = case when $4 then now() else null end,
+         updated_at = now()
+       where tenant_id = $1 and agent_id = $2 and id = $3
+       returning ${COLONNES_ADMIN}`,
+      [tenantId, agentId, outilId, actif, parUtilisateur],
+    );
+    const r = res.rows[0];
+    return r ? versComplet(r) : null;
+  }
+
+  async autonomie(
+    tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string,
+  ): Promise<OutilComplet | null> {
+    const res = await this.pool.query<LigneAdmin>(
+      `update agent_tools set
+         autonome = $4,
+         autonome_par = case when $4 then $5::uuid else null end,
+         autonome_le = case when $4 then now() else null end,
+         updated_at = now()
+       where tenant_id = $1 and agent_id = $2 and id = $3
+       returning ${COLONNES_ADMIN}`,
+      [tenantId, agentId, outilId, autonome, parUtilisateur],
+    );
+    const r = res.rows[0];
+    return r ? versComplet(r) : null;
+  }
+
+  async retirer(tenantId: string, agentId: string, outilId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      'delete from agent_tools where tenant_id = $1 and agent_id = $2 and id = $3',
+      [tenantId, agentId, outilId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+}
+
+/** L'index unique `(agent_id, name)` de la migration 0086, traduit en erreur métier. Sans ça, deux outils du
+ *  même nom remontaient en 500, dont Cloudflare remplace le corps : le client ne voyait rien. */
+function surNomDejaPris(err: unknown): never {
+  if ((err as { code?: string } | null)?.code === '23505') throw new NomOutilDejaPris();
+  throw err;
+}
+
+const COLONNES_ADMIN = `${COLONNES}, title, ne_pas_utiliser, actif, active_le, autonome_le`;
+
+interface LigneAdmin extends Ligne {
+  title: string;
+  ne_pas_utiliser: string;
+  actif: boolean;
+  active_le: Date | null;
+  autonome_le: Date | null;
+}
+
+function versComplet(r: LigneAdmin): OutilComplet {
+  return {
+    ...versOutil(r),
+    title: r.title,
+    nePasUtiliser: r.ne_pas_utiliser,
+    actif: r.actif,
+    activeLe: r.active_le ? r.active_le.toISOString() : null,
+    autonomeLe: r.autonome_le ? r.autonome_le.toISOString() : null,
+  };
 }
 
 /** Journal des appels d'outils. Le contrat et ses raisons sont sur `JournalAppels` (`./catalog`). */

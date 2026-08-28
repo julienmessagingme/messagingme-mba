@@ -2174,9 +2174,67 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 |---|---|---|
 | **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit 6dca192, 2026-08-28) |
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit e9e2c73, 2026-08-28) |
-| **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | à faire |
+| **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit HASH19C, 2026-08-28) |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | à faire |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
+
+### Tranche 19c : l'onglet outils -- ✅ FAIT (commit HASH19C, 2026-08-28)
+
+**Ce que ça débloque.** `agent_tools` restait vide, donc l'agent ne pouvait ni terminer par une sortie, ni
+escalader, ni envoyer un bloc, ni chercher dans sa base de connaissance. Tout le lot 16 était écrit et
+inatteignable.
+
+**Livré :** le catalogue déclaratif `src/agent/outils-maison.ts` (les sept outils, miroir de `HANDLERS` dans
+`resolvers/mba.ts`), le `ToolAdminStore` sur `PgToolCatalog`, les six routes de `src/http/agent-tools.ts`, et
+l'onglet `web/components/AgentOutils.tsx`.
+
+🔴 **LA RÈGLE QUE CETTE TRANCHE DEVAIT HONORER, et elle tient.** L'énumération du paramètre `sortie` de
+l'outil `terminer` DÉRIVE de `agents.fiche.sorties` au moment de construire le schéma, et n'est jamais écrite
+en base (`paramsInitiaux` la retire, `outilExpose` la pose). Une énumération qu'on écrirait quand même dans
+`agent_tools.params` est ignorée : la fiche fait autorité, seule. C'est le relevé de la revue de la tâche 18,
+fermé ici. Vérifié dans les deux sens : retirer la dérivation casse cinq tests.
+
+**Trois décisions de fond.**
+
+**Le client choisit dans un CATALOGUE, il ne compose pas un outil.** Le comportement vient de
+`binding.handler`, et les seuls handlers qui existent sont ceux du résolveur maison. Une console qui
+laisserait écrire un handler quelconque produirait un outil ACTIF, exposé au modèle, qui refuse à chaque
+appel : le client verrait un agent qui « ne fait rien », sans aucune trace lisible. Le titre, les mots, les
+paramètres et le RISQUE viennent donc du serveur ; le client compose le nom, les mots et les valeurs
+autorisées là où le catalogue lui en laisse.
+
+**`mba_envoyer_bloc` est déclaré IRRÉVERSIBLE.** Un message parti chez un contact ne se rappelle pas, et il
+est facturé. Le tronc commun refuse alors l'appel tant que le client n'a pas coché l'autonomie sur cet outil.
+C'est ce qui rend ce drapeau vivant dès L1, au lieu d'un réglage qui n'aurait servi qu'aux familles HTTP et
+MCP. ⟶ à confirmer par Julien : si l'envoi de bloc doit être libre par défaut, c'est une ligne à changer.
+
+**Une dérivation VIDE retire l'outil, elle ne l'expose pas sans énumération.** Un `terminer` offert sans
+valeurs possibles accepterait n'importe quelle chaîne : le modèle en inventerait une, le bloc n'aurait pas ce
+handle, et la conversation remonterait en inbox sans explication. La distinction avec une liste vide REMPLIE
+PAR LE CLIENT (les tags autorisés) est nette : là, vide veut dire « aucune restriction ».
+
+🔴 **Le défaut que la revue a trouvé, et il ne touchait même pas cette tranche en apparence.**
+
+**`on delete set null` NE SUFFIT PAS quand la table cible porte un `check` sur la colonne mise à null.**
+`agent_tools.active_par` référence `users` en `on delete set null`, et la migration 0086 exige
+`actif = false or active_par is not null`. L'action référentielle est une écriture ORDINAIRE, soumise au
+check : supprimer un collaborateur qui avait activé un outil encore actif faisait échouer TOUT le `delete`
+en `23514`, donc un 500, donc une page Cloudflare sur un geste d'offboarding parfaitement légitime. Le cas
+était inerte jusqu'ici parce que rien n'écrivait jamais `active_par` ; c'est cette tranche qui le rend
+atteignable. `deleteUser` passe en transaction : il éteint les outils que ce compte avait mis en service,
+puis supprime, et fait `rollback` si la suppression est refusée (un refus ne doit rien laisser d'éteint).
+
+⚠️ **La leçon, générale.** Le commentaire de 2026-07-18 de `store.pg.ts` disait « toute nouvelle FK vers
+`users` doit déclarer son comportement de suppression ». C'était juste et insuffisant : une FK
+`on delete set null` PLUS un `check` sur la même colonne casse quand même. La règle complète est donc : une FK
+vers `users` doit déclarer son comportement de suppression **et** ce comportement doit rester compatible avec
+les contraintes de la table qui la porte.
+
+🟡 **Les trois autres constats de la revue, corrigés dans le même lot.** `normaliserNomOutil` rendait `_` sur
+une saisie sans caractère alphanumérique, que la règle du serveur accepte : le champ aurait enregistré « _ »
+comme nom d'outil exposé au modèle (et le test qui prétendait couvrir ce cas ne pouvait pas échouer). Le
+PATCH des énumérations n'était pas borné aux paramètres que le catalogue ouvre. Et `/autonomie` n'avait pas
+le test d'usurpation d'identité que `/activation` avait déjà.
 
 ### Tranche 19b : l'onglet base de connaissance -- ✅ FAIT (commit e9e2c73, 2026-08-28)
 

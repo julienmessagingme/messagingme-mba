@@ -10,6 +10,11 @@ consomme n existe pas encore. Aucune n est un bug latent, rien n est branche en 
 ⚠️ **Migration 0086 non appliquee en production** (dette D6). Elle passe AVANT tout deploiement de ce lot,
 et APRES un `compose build`.
 
+**Ou on en est (2026-08-28)** : les tranches **19a, 19b et 19c** sont faites. Un agent EXISTE (fiche, regles
+d arret, activation), il a une base de connaissance (fiches editables, lecture d une page du site) et des
+OUTILS (catalogue maison, activation par un humain, drapeau d autonomie). Restent **19d** (la surface de
+construction conversationnelle) et **19e** (l onglet tester).
+
 ## LIVRE ET DEPLOYE le 2026-08-26 : bloc « Question » dans les scenarios
 
 Demande de Julien : un bloc qui ouvre un MENU (au lieu de boutons) avec X reponses, qui ATTEND la reponse du

@@ -152,6 +152,11 @@ const HANDLERS: Record<string, Handler> = {
   },
 };
 
+/** Les handlers qui existent VRAIMENT. Exporté pour que `tests/agent-outils-maison.test.ts` casse dès que le
+ *  catalogue de la console (`src/agent/outils-maison.ts`) et cette table cessent de se correspondre : un
+ *  handler sans entrée au catalogue est inatteignable, une entrée sans handler est un outil mort-né. */
+export const HANDLERS_MAISON: readonly string[] = Object.keys(HANDLERS);
+
 export function creerResolveurMba(deps: DepsResolveurMba): ResolveurOutil {
   return async (entree) => {
     const nom = String(entree.outil.binding.handler ?? '').trim();

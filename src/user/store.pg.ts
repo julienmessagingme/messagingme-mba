@@ -295,17 +295,59 @@ export class PgUserStore {
    * cette FK est déclarée `on delete set null`, pas parce qu'il n'y en aurait aucune. Toute nouvelle FK vers
    * `users` doit donc déclarer explicitement son comportement de suppression, sinon ce delete se mettra à
    * échouer sur une violation de contrainte.
+   *
+   * 🔴 Corrigé le 2026-08-28 : `on delete set null` NE SUFFIT PAS quand la table cible porte en plus un
+   * `check` sur la colonne mise à null. `agent_tools` (migration 0086) exige `actif = false or active_par is
+   * not null` : le `set null` déclenché par cette suppression est une écriture ORDINAIRE, soumise au check,
+   * et il fait donc échouer TOUT le `delete` en `23514`. Un départ de collaborateur rendait alors un 500,
+   * donc une page Cloudflare, sur un geste parfaitement légitime. Les outils que ce compte avait mis en
+   * service sont donc désactivés d'abord, dans la MÊME transaction : le consentement humain qu'ils portaient
+   * n'existe plus, et un outil actif sans personne pour l'avoir autorisé est exactement ce que la migration
+   * interdit. Ils réapparaissent inactifs dans l'onglet Outils de l'agent, où un admin les réactive.
    */
   async deleteUser(tenantId: string, userId: string): Promise<UserMutation> {
-    const del = await this.pool.query(
-      `delete from users
-         where id = $1 and tenant_id = $2
-           and (role <> 'admin' or disabled_at is not null
-                or (select count(*) from users where tenant_id = $2 and role = 'admin' and disabled_at is null) > 1)`,
-      [userId, tenantId],
-    );
-    if ((del.rowCount ?? 0) > 0) return 'ok';
-    const exists = await this.pool.query(`select 1 from users where id = $1 and tenant_id = $2`, [userId, tenantId]);
-    return (exists.rowCount ?? 0) > 0 ? 'last_admin' : 'not_found';
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      const outils = await client.query(
+        `update agent_tools
+            set actif = false, active_par = null, active_le = null, updated_at = now()
+          where tenant_id = $2 and active_par = $1 and actif`,
+        [userId, tenantId],
+      );
+      const autonomies = await client.query(
+        `update agent_tools
+            set autonome = false, autonome_par = null, autonome_le = null, updated_at = now()
+          where tenant_id = $2 and autonome_par = $1 and autonome`,
+        [userId, tenantId],
+      );
+      const del = await client.query(
+        `delete from users
+           where id = $1 and tenant_id = $2
+             and (role <> 'admin' or disabled_at is not null
+                  or (select count(*) from users where tenant_id = $2 and role = 'admin' and disabled_at is null) > 1)`,
+        [userId, tenantId],
+      );
+      if ((del.rowCount ?? 0) === 0) {
+        // Refus (dernier admin) ou compte inexistant : on ne désactive alors RIEN, sinon un refus laisserait
+        // derrière lui des outils éteints sans que le compte ait bougé.
+        await client.query('rollback');
+        const exists = await this.pool.query(`select 1 from users where id = $1 and tenant_id = $2`, [userId, tenantId]);
+        return (exists.rowCount ?? 0) > 0 ? 'last_admin' : 'not_found';
+      }
+      await client.query('commit');
+      const eteints = (outils.rowCount ?? 0) + (autonomies.rowCount ?? 0);
+      // Journalisé : un agent qui cesse d'envoyer un bloc doit pouvoir être rattaché à ce geste-là, sans
+      // quoi personne ne fera jamais le lien entre un départ et un agent devenu muet.
+      if (eteints > 0) {
+        console.warn(`[users] suppression de ${userId} (tenant ${tenantId}) : ${eteints} reglage(s) d outil d agent desactive(s)`);
+      }
+      return 'ok';
+    } catch (err) {
+      await client.query('rollback').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }
