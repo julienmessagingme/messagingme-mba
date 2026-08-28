@@ -15,11 +15,23 @@ import { LlmApiError } from '../../llm/errors';
  * par ligne, alors que `createLlmClient` le fige au boot depuis `config.LLM_MODEL`.
  */
 
-/** Un message de la conversation, au format Chat Completions. */
+/**
+ * Un message de la conversation, au format Chat Completions.
+ *
+ * 🔴 UN ALLER-RETOUR D'OUTIL A UNE FORME IMPOSÉE, et s'en écarter fait refuser le corps en 400. Le message
+ * `tool` doit répondre à un message `assistant` qui porte `tool_calls` : « messages with role 'tool' must be
+ * a response to a preceding message with 'tool_calls' ». Un `assistant` qui se contenterait de DÉCRIRE
+ * l'appel en texte libre ne compte pas, et un 400 est TERMINAL (pas rejoué) : la conversation s'arrêterait
+ * au deuxième tour, exactement là où l'agent reformule à partir de ses sources.
+ *
+ * `content` est donc nullable : c'est ce que l'API attend sur un `assistant` qui n'appelle que des outils.
+ */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-  /** Réponse à un appel d'outil : identifiant de l'appel auquel ce message répond. */
+  content: string | null;
+  /** `assistant` : les appels d'outils décidés par le modèle, RENVOYÉS TELS QUELS au tour suivant. */
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+  /** `tool` : identifiant de l'appel auquel ce message répond. */
   tool_call_id?: string;
 }
 

@@ -81,6 +81,8 @@ import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { GatewayChatClient } from './agent/llm/chat-client';
+import { creerResolveurSimulation } from './agent/resolvers/simulation';
+import { JOURNAL_MUET } from './agent/journal-muet';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -659,6 +661,44 @@ async function main(): Promise<void> {
       },
       ...(gateway ? { completer: (i: Parameters<GatewayChatClient['completer']>[0]) => gateway.completer(i) } : {}),
       modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
+    },
+    // Le BAC A SABLE : parler a son agent depuis la console avant de l activer. Il fait tourner le VRAI
+    // cerveau (vrai prompt, vrais outils exposes, VRAIE recherche de connaissance), mais les outils a EFFET
+    // sont simules : il n y a ni contact, ni conversation, ni parcours, et poser un tag ecrirait sur une
+    // vraie fiche du mini-CRM.
+    agentTest: {
+      // Le modele du bac a sable est celui de la FICHE de l agent, pas une variable d env : le seul
+      // prerequis est donc la cle du Gateway. Le lier a LLM_MODEL rendrait /test indisponible le jour ou
+      // l analyse de conversation serait desactivee, sans aucun rapport.
+      disponible: gateway !== null,
+      ...(gateway ? {
+        cerveau: {
+          completer: (i) => gateway.completer(i),
+          contexte: async (tenant, agentId) => {
+            const fiche = await agentStore.complet(tenant, agentId);
+            if (!fiche) return null;
+            return {
+              // Le modele de l AGENT, pas celui de l IA de construction : c est celui-la qu on teste.
+              modele: fiche.modele,
+              mentionIa: fiche.mentionIa,
+              sorties: fiche.contenu.sorties,
+              contenu: fiche.contenu,
+              outilsActifs: await toolCatalog.listActifs(tenant, agentId),
+              plafonds: { maxAppelsOutils: fiche.maxAppelsOutils, budgetMicroEur: fiche.budgetMicroEur },
+            };
+          },
+          outils: {
+            catalogue: toolCatalog,
+            // Muet : `agent_tool_calls.session_id` reference une session, et le bac a sable n en ouvre aucune.
+            journal: JOURNAL_MUET,
+            resolveurs: { mba: creerResolveurSimulation({ connaissance: knowledgeStore }) },
+            // Rien a compter : sans session, il n y a pas de compteur a incrementer. Le plafond d appels du
+            // tour est tenu en memoire par la boucle du cerveau.
+            compterAppel: async () => {},
+          },
+          alerter: (m: string) => console.error(`[agent] ${m}`),
+        },
+      } : {}),
     },
     // Base de connaissance d'un agent : la seule source que l'agent a le droit d'utiliser. `fetchUrl` porte
     // la garde SSRF (le serveur vit dans le reseau Docker du VPS) et le plafond de taille.

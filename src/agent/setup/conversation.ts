@@ -117,7 +117,7 @@ export function construireMessages(ctx: ContexteConstruction, historique: ChatMe
   const bloc = `${DEBUT}\n${sansDelimiteur(etat(ctx))}\n${FIN}`;
   const recents = historique.slice(-MAX_TOURS_HISTORIQUE).map((m) => ({
     role: m.role,
-    content: sansDelimiteur(m.content).slice(0, MAX_CARACTERES_MESSAGE),
+    content: sansDelimiteur(m.content ?? '').slice(0, MAX_CARACTERES_MESSAGE),
   }));
   return [{ role: 'system', content: `${MANDAT}\n\n${bloc}` }, ...recents];
 }

@@ -34,7 +34,7 @@ bloc agent n'est servi nulle part. Elles deviennent des bugs le jour où on bran
 |---|---|---|---|
 | D1 | **Devise.** Le Gateway facture en **dollars** (`coutDollars`, `chat-client.ts`) ; la colonne est `budget_micro_eur` et `runTurn` compare `coutMicroEur >= budgetMicroEur`. | Avant la mise en service. Décision de **facturation** (convertir, ou renommer la colonne), pas technique. | Le plafond de budget est faux d'un facteur de change. Trop haut, on dépasse ; trop bas, l'agent se coupe tout seul. |
 | D2 | **La file `agent-turn` n'a aucun consommateur.** Elle est dans `BASE_QUEUES` (donc visible d'`/ops`, DLQ surveillée), mais `src/worker.ts` ne l'écoute pas. Le test `queue-names` est **unidirectionnel** et ne peut pas le voir. | Tâche de câblage du cerveau réel. Avec `retryLimit: 2` et `parseAgentTurnJob`. | Rien n'enfile aujourd'hui non plus. Le jour où `enqueueAgentTurn` est câblé sans le worker : les tours s'empilent, les conversations restent muettes, et **c'est silencieux**. |
-| D3 | **`executeTool` n'a aucun appelant.** Trois responsabilités lui reviennent, écrites en JSDoc là où elles se jouent : (a) **alerter** sur `fatal: true` (erreur de protocole) via la dep d'alerte du worker ; (b) calculer `appelsRestants` et `budgetRestantMicroEur` depuis la fiche et la session ; (c) **encadrer le résultat en bloc délimité** avant de le remettre au modèle. | Même tâche de câblage que D2. | (a) une panne de notre client passe inaperçue ; (b) les deux plafonds ne s'appliquent pas ; (c) **un résultat d'outil concaténé au prompt est une injection indirecte**, c'est la règle du CLAUDE.md global. |
+| ~~D3~~ | ~~**`executeTool` n'a aucun appelant.**~~ **FERMÉE par la tranche 19e** (`src/agent/brain.gateway.ts`) : le cerveau réel est son appelant, et les trois responsabilités y sont, chacune testée. (a) il alerte sur `fatal`, et sur lui seul ; (b) il recalcule `appelsRestants` et `budgetRestantMicroEur` À CHAQUE appel, pas une fois par tour, donc une salve de six outils ne dépasse pas ; (c) le résultat repart au modèle dans un bloc délimité (`blocResultatOutil`). | Fermée. | Sans objet. |
 | D4 | **Le câblage du runtime d'agent n'existe pas dans `wiring.ts`.** Ni `agentSessions`, ni `enqueueAgentTurn`, ni les résolveurs, ni `escaladerVersHumain`, ni `envoyerBloc`. | Même tâche que D2 et D3. C'est elle qui les ferme toutes les trois. | Le bloc agent est traversé comme un passe-plat en production : le scénario continue sans que l'agent parle. |
 | D5 | **Un bloc agent est invisible d'Analytics.** `web/lib/mesures-scenario.ts` (`BLOCS_MESSAGE`) n'inclut pas `agent`. | Tâche dédiée, après l'UI. Pose une **question produit** : comment mesurer un contenu généré au fil des tours, inconnu statiquement. | Aucune panne. Le client ne voit simplement pas ce bloc dans « Mes tableaux ». |
 | D6 | **La migration 0086 n'est pas appliquée en production** (dernière appliquée : 0085). | Au déploiement, **après** un `compose build` et **avant** le `up -d` (les migrations vivent dans l'image, pas sur le disque du VPS). | `column ... does not exist`, en silence, dans une file d'échec. C'est l'incident du 2026-08-17. |
@@ -2176,7 +2176,54 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit e9e2c73, 2026-08-28) |
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit c978e69, 2026-08-28) |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit fa32a18, 2026-08-28) |
-| **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
+| **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | ✅ FAIT (commit HASH19E, 2026-08-28) |
+
+### Tranche 19e : l'onglet tester, et LE CERVEAU RÉEL -- ✅ FAIT (commit HASH19E, 2026-08-28)
+
+**Elle construit bien plus que son titre.** Un panneau de test qui n'appellerait pas d'outils ne testerait
+rien, puisque c'est là que se joue le comportement d'un agent. Cette tranche écrit donc la BOUCLE DE
+RAISONNEMENT (`src/agent/brain.gateway.ts`), et le bac à sable en est le premier consommateur, c'est-à-dire
+le plus sûr : aucun contact, aucun envoi, aucun parcours, aucune session.
+
+**Elle ferme la dette D3.** Les trois responsabilités que la JSDoc d'`executeTool` assignait à un appelant
+qui n'existait pas sont là, chacune testée : alerter sur `fatal` et sur lui seul, recalculer les plafonds
+À CHAQUE appel (une salve de six outils ne dépasse pas), et encadrer le résultat en bloc délimité.
+
+🔴 **LE DÉFAUT QUE LA REVUE A TROUVÉ, ET QUE SEULE LA PRODUCTION AURAIT RÉVÉLÉ.**
+
+Un aller-retour d'outil a une FORME IMPOSÉE en Chat Completions : un message `tool` doit répondre à un
+message `assistant` qui porte `tool_calls`. J'avais mis à la place un texte libre (`[appel: nom {args}]`).
+L'API refuse ce corps en **400, et un 400 est TERMINAL** (jamais rejoué) : la conversation se serait arrêtée
+au deuxième aller-retour, c'est-à-dire exactement là où l'agent reformule à partir des sources qu'il vient
+de trouver. Le scénario principal, celui que ce panneau existe pour éprouver.
+
+⚠️ **Et aucun test ne pouvait le voir**, parce qu'ils bouchonnent tous l'appel au modèle : rien ne validait
+la forme réellement envoyée au fournisseur. La leçon, générale : quand un module parle un PROTOCOLE, le
+bouchonner teste notre logique et jamais notre conformité. Il faut au moins une assertion sur la FORME
+émise. Deux tests l'ancrent maintenant, dont un sur une salve de plusieurs outils dans une seule réponse
+(un seul `assistant` portant tous les `tool_calls`, puis un `tool` par résultat, dans l'ordre).
+
+**Le bac à sable est sans effet de bord PAR CONSTRUCTION, pas par convention.** `creerResolveurSimulation`
+ne reçoit qu'une seule dépendance, la base de connaissance : il n'a même pas accès à la pose de tag, à
+l'envoi de bloc ni à l'escalade, contrairement à `DepsResolveurMba`. Aucun bug futur dans ce fichier ne
+peut donc déclencher un vrai effet. La règle est celle du monde réel : un outil qui LIT s'exécute, un outil
+qui AGIT est simulé, et la simulation le dit au client COMME AU MODÈLE (lui laisser croire que l'action a eu
+lieu ferait un test menteur, l'agent enchaînerait sur une prémisse fausse).
+
+**La recherche de connaissance, elle, tourne pour de vrai**, y compris sa sortie `sans_source`. Un bac à
+sable qui adoucirait ce garde-fou laisserait croire que l'agent sait répondre là où il transférera.
+
+**Le journal d'appels est MUET en bac à sable** (`src/agent/journal-muet.ts`) : `agent_tool_calls.session_id`
+référence une session et n'est pas nullable, et un essai n'en ouvre aucune. Conséquence assumée : le coût
+d'un essai n'entre pas dans le grand livre du tenant. La route rend l'`usage` de chaque essai pour que
+l'écran le montre, et la surface est admin, un clic à la fois.
+
+🟡 **Les cinq autres constats de la revue, corrigés.** `disponible` dépendait de `LLM_MODEL`, qui gouverne
+l'analyse de conversation et n'a aucun rapport (le modèle du bac à sable vient de la fiche de l'agent). Le
+404 se déduisait d'un `message.includes('introuvable')` : c'est une erreur TYPÉE (`AgentIntrouvable`), comme
+partout ailleurs dans le dépôt, ce qui supprime aussi une lecture d'agent par essai. `creerCerveauGateway`
+n'avait aucun test. L'échéance gardait une grâce d'une seconde même déjà dépassée. Et aucun test n'exerçait
+une vraie salve à plusieurs appels dans une seule réponse.
 
 ### Tranche 19d : la surface de construction conversationnelle -- ✅ FAIT (commit fa32a18, 2026-08-28)
 

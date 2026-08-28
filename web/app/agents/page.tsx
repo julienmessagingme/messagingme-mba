@@ -15,6 +15,7 @@ import { CodeSortieInput } from '@/components/AgentSorties';
 import { AgentConnaissance } from '@/components/AgentConnaissance';
 import { AgentOutils } from '@/components/AgentOutils';
 import { AgentConstruction } from '@/components/AgentConstruction';
+import { AgentTest } from '@/components/AgentTest';
 import { appliquerProposition, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
 import { ApiError } from '@/lib/http';
 
@@ -27,9 +28,9 @@ import { ApiError } from '@/lib/http';
  * un interrupteur d'accueil comme l'agent de Meta, qui lui est unique par workspace.
  */
 
-type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele';
+type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele' | 'tester';
 
-const ONGLETS: Onglet[] = ['construction', 'identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele'];
+const ONGLETS: Onglet[] = ['construction', 'identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele', 'tester'];
 const lireOnglet = (v: string | null): Onglet => (ONGLETS as string[]).includes(v ?? '') ? (v as Onglet) : 'identite';
 
 export default function AgentsPage() {
@@ -198,6 +199,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             { key: 'outils', label: t('Outils', 'Tools') },
             { key: 'perimetre', label: t('Périmètre et garde-fous', 'Scope and guardrails') },
             { key: 'modele', label: t('Modèle', 'Model') },
+            { key: 'tester', label: t('Tester', 'Test') },
           ]}
         />
         {/* La conversation n'ecrit RIEN toute seule : elle rend une proposition, et c'est cet ecran qui
@@ -229,6 +231,9 @@ function Ecran({ tenantId }: { tenantId: string }) {
         {onglet === 'outils' && <AgentOutils tenantId={tenantId} agentId={ouvert.id} />}
         {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
         {onglet === 'modele' && <OngletModele agent={ouvert} busy={busy} onSave={enregistrer} />}
+        {/* Le bac a sable fait tourner le VRAI cerveau, sans session ni run : il n ecrit rien, il ne passe
+            donc pas non plus par `enregistrer`. */}
+        {onglet === 'tester' && <AgentTest tenantId={tenantId} agentId={ouvert.id} />}
       </div>
     );
   }

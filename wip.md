@@ -2,18 +2,27 @@
 
 ## EN COURS : le bloc agent IA (lots L0 et L1)
 
-Le plan, l etat tache par tache et le **registre des dettes ouvertes** vivent dans
-[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). Six dettes, toutes du meme genre : la piece qui les
-consomme n existe pas encore. Aucune n est un bug latent, rien n est branche en production. La plus grosse
-(D2, D3, D4) se ferme d un coup, dans la tache qui branchera le cerveau reel au tour.
+Le plan, l etat tache par tache et le **registre des dettes** vivent dans
+[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D3 est fermee** par la tranche 19e (le cerveau reel est
+l appelant qui manquait a `executeTool`). Restent D1 (devise), D2 et D4 (le cablage du tour de PRODUCTION,
+qui se ferment ensemble), D5 (Analytics) et D6 (la migration). Aucune n est un bug latent : rien n est
+branche en production, le bloc agent n est servi nulle part.
 
 ⚠️ **Migration 0086 non appliquee en production** (dette D6). Elle passe AVANT tout deploiement de ce lot,
 et APRES un `compose build`.
 
-**Ou on en est (2026-08-28)** : les tranches **19a, 19b et 19c** sont faites. Un agent EXISTE (fiche, regles
-d arret, activation), il a une base de connaissance (fiches editables, lecture d une page du site) et des
-OUTILS (catalogue maison, activation par un humain, drapeau d autonomie). Restent **19d** (la surface de
-construction conversationnelle) et **19e** (l onglet tester).
+⚠️ **Nouvelles variables d env** : `AI_GATEWAY_API_KEY` (19d et 19e) et `AGENT_SETUP_MODEL` (19d). Vides, la
+conversation de construction et le bac a sable repondent 503, aucun crash. A poser sur le VPS avant de
+deployer ce lot.
+
+**Ou on en est (2026-08-28) : LA TACHE 19 EST FINIE.** Un agent EXISTE (fiche, regles d arret, activation),
+il a une base de connaissance (fiches editables, lecture d une page du site), des OUTILS (catalogue maison,
+activation par un humain, drapeau d autonomie), il se construit EN PARLANT (l assistant propose, le client
+garde ou jette, rien ne s ecrit en silence) et il se TESTE depuis la console avant d etre active.
+
+**Ce qui reste avant qu un vrai contact puisse lui parler** : le cablage du tour de production (D2 et D4),
+c est-a-dire le consommateur de la file `agent-turn` dans le worker et les resolveurs REELS a la place de
+ceux du bac a sable. Le cerveau, lui, est ecrit et teste.
 
 ## LIVRE ET DEPLOYE le 2026-08-26 : bloc « Question » dans les scenarios
 
