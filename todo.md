@@ -1,5 +1,33 @@
 # todo.md — backlog
 
+## 🟠 Joindre un FICHIER à un message rapide (demandé par Julien le 2026-08-28)
+
+Aujourd'hui un bloc « message rapide » ne porte qu'une IMAGE (`data.imageUrl`, champ partagé avec le bloc RCS).
+Julien veut pouvoir y joindre un document (PDF, devis, plaquette). Ce n'est pas un champ de plus : la chaîne
+entière est aujourd'hui image-seulement, par construction et volontairement.
+
+Ce qu'il faut, dans l'ordre :
+
+1. **Migration** (la médiathèque refuse tout le reste en base) : `rcs_media.mime` porte
+   `check (mime in ('image/jpeg','image/png','image/gif'))`. À élargir, avec un plafond de poids propre au
+   document (les octets vivent dans Postgres : 5 Mo maximum, pas les 100 Mo que Meta accepterait).
+2. **Signature du fichier** : `src/rcs/image.ts` lit la signature réelle des octets et c'est ELLE qui décide du
+   type servi (un PDF renommé en `.png` est refusé). Il faut la même chose pour `%PDF-`, jamais faire confiance
+   au type annoncé par le navigateur : ces fichiers sont servis sur une URL PUBLIQUE.
+3. **Route publique de service** : elle sert aujourd'hui `inline` avec un nom neutre (le nom d'origine en dirait
+   trop sur le client). Pour un document, décider `attachment` + nom, sachant que WhatsApp affiche le nom qu'on
+   passe à l'ENVOI, pas celui de l'URL : le nom neutre peut donc rester.
+4. **Envoi WhatsApp** : téléverser chez Meta (`uploadForSend` est déjà générique sur le mime) puis, selon que le
+   bloc porte des boutons ou non, un en-tête `document` sur le message interactif, ou un message `document`
+   avec `filename` et légende. `sendInteractive` n'expose aujourd'hui qu'un en-tête image.
+5. **Canal RCS** : un document n'a pas d'équivalent dans une carte RCS. Décider la dégradation (envoyer le
+   texte seul ? un lien ?) et la DIRE dans l'écran, sinon le client croira que la pièce jointe part sur les
+   deux canaux.
+6. **Écran** : champ de téléversement à côté de l'image, aperçu WhatsApp, et la pièce jointe visible dans la
+   miniature du bloc (comme le visuel depuis le 2026-08-28).
+
+Deux à trois heures, sur le chemin d'ENVOI en production : à faire d'un bloc, pas en passant.
+
 ## 🔴 Agent IA : les lots NON développés (L2 à L7), du cadrage du 2026-08-23
 
 Ce qui est livré, c'est **L0 et L1** : l'agent, ses outils MAISON, sa base de connaissance, la construction en
@@ -9,14 +37,11 @@ séquencement et le pourquoi de l'ordre sont en §7 de
 [AGENT-IA-PRODUIT-2026-08-27.md](AGENT-IA-PRODUIT-2026-08-27.md).
 
 - 🔴 **L2 : le connecteur API (HTTP) du client.** C'est l'argument commercial « branchez votre système », et
-  c'est le lot suivant. Manquent : la table `agent_tool_sources` (adresse de base FIGÉE côté console, type
-  d'authentification, secret chiffré), la colonne `agent_tools.source_id` avec sa contrainte
-  `origin <> 'mba' => source_id not null`, le résolveur `http`, l'écran de déclaration d'une source dans
-  l'onglet Outils, et l'extension de la conversation de construction aux connecteurs. **Migration à prévoir
-  (0088).** Déjà en place et réutilisable tel quel : la contrainte `origin in ('mba','http','mcp')` (0086),
-  le routage par origine de l'exécuteur (une origine sans résolveur est refusée proprement), le champ
-  `source` des paramètres (`modele`/`contact`/`fixe`) qui empêche le modèle de choisir une cible réseau,
-  la garde SSRF `src/lib/page-distante.ts`, et `src/crypto/secretbox.ts` pour le secret.
+  c'est le lot suivant. **Le plan d'exécution est écrit : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md)**
+  (9 tâches, migration 0088, quatre décisions produit à trancher en tête de document). Il porte au passage un
+  trou trouvé en relisant le code : un paramètre `contactPath: 'wa_id'` recevrait `null` aujourd'hui, parce
+  que la projection du contact ne porte pas le numéro (volontairement, elle part chez le fournisseur de
+  modèle) ; le numéro doit venir du contexte du tour, où il est authentifié par la signature du webhook Meta.
 - 🟠 **L3 : le « temps 2 ».** L'IA de construction relit les VRAIES conversations, le journal d'outils et le
   signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
   valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
