@@ -2173,10 +2173,63 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | Tranche | Contenu | État |
 |---|---|---|
 | **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit 6dca192, 2026-08-28) |
-| **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | à faire |
+| **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit HASH19B, 2026-08-28) |
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | à faire |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | à faire |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
+
+### Tranche 19b : l'onglet base de connaissance -- ✅ FAIT (commit HASH19B, 2026-08-28)
+
+**Ce que ça débloque.** `agent_knowledge` restait vide pour toujours, donc `mba_chercher_connaissance`
+(tâche 16bis) ne trouvait rien, donc TOUS les parcours d'agent seraient sortis par `sortie:sans_source`. Le
+garde-fou anti-hallucination existait sans que personne puisse lui donner de quoi travailler.
+
+**Livré :** le CRUD serveur (`KnowledgeAdminStore` dans `src/agent/knowledge.ts`, son implémentation dans
+`knowledge.pg.ts`, les cinq routes admin dans `src/http/agent-knowledge.ts`), l'extracteur pur
+`src/agent/scrape.ts`, l'onglet `web/components/AgentConnaissance.tsx`, et la garde de fraîcheur
+`web/lib/agent-connaissance.ts`.
+
+**Trois décisions de fond, chacune prise pour une raison qui n'est pas de confort.**
+
+**Le découpage d'une page en fiches est une GARDE, pas une commodité de lecture.** La recherche mesure
+« combien de termes de la question se retrouvent dans la fiche ». Une page avalée d'un bloc contient à peu
+près tous les mots du site : elle serait pertinente pour n'importe quelle question, et `sortie:sans_source`
+ne tomberait plus jamais. C'est le seul endroit du lot où l'extraction HTML a une conséquence de sûreté, et
+c'est pour ça qu'elle est testée à ses bornes.
+
+**Relire une source REMPLACE ses fiches.** Ajouter doublerait la base à chaque passage, et deux copies d'une
+même fiche ne rendent pas la réponse plus sûre, elles la rendent deux fois plus probable qu'une autre. Le
+prix (les corrections faites sur les fiches de cette adresse partent avec) est dit dans l'écran AVANT le clic.
+Écart assumé avec `MbaFaqImportPanel`, qui impose un « analyser puis confirmer » en deux temps : là-bas le
+résultat part chez Meta et n'est plus visible, ici les fiches s'affichent juste en dessous, éditables et
+supprimables une par une. Un aperçu n'apporterait rien que la liste ne montre déjà.
+
+**L'alerte de fraîcheur se calcule sur `updated_at`, la date AFFICHÉE sur `derniere_lecture_at`.** Les deux
+disent des choses différentes : la seconde est la provenance, la première dit qu'un humain est passé. Corriger
+une fiche à la main EST une vérification ; sans cette distinction, l'écran réclamerait une relecture d'une
+fiche que quelqu'un vient de relire, et l'avertissement finirait par ne plus rien vouloir dire.
+
+🟡 **Les quatre constats de la revue, tous corrigés dans le même lot.**
+
+1. **La garde de FORME d'identifiant avait tué une couverture de test.** En ajoutant `estUuid` aux routes
+   d'agents, les trois tests « agent inconnu » (qui appelaient `/agents/inconnu`) ne touchaient plus le
+   `if (!agent) return 404` derrière : ils ne prouvaient plus que la nouvelle garde. Un uuid valide mais
+   absent du store les remet sur le bon chemin, et un test séparé couvre la forme.
+2. **Le plafond de fiches par page était calculé, transporté, typé, et jamais montré.** Une page tronquée à
+   40 fiches se taisait : l'admin lisait « 40 fiches écrites » et croyait que toute sa page était devenue une
+   source. L'agent aurait ensuite transféré sur des questions que la page couvrait, sans explication possible.
+3. **Le plafond de titre était recopié en littéral dans le schéma de la route**, alors que celui du corps
+   était importé, précisément pour éviter qu'un titre produit par l'import ne soit plus modifiable à la main.
+   `MAX_TITRE` est maintenant exporté et importé comme `MAX_CORPS`, et le test de parité vérifie la DÉRIVATION
+   (que la route importe les constantes), pas seulement l'égalité des valeurs.
+4. **`modifier` et `supprimer` ne contrôlaient que le tenant, pas l'agent.** L'adresse
+   `/agents/:agentId/knowledge/:ficheId` promettait un périmètre que la requête ne tenait pas : ce n'était pas
+   un IDOR entre clients, mais un identifiant mal aiguillé par l'écran aurait corrigé en silence la fiche d'un
+   AUTRE agent du même client. Le couple (tenant, agent) est désormais le périmètre partout.
+
+**Deux modules partagés posés au passage** (inscrits dans `documentation.md` §Modules partagés) :
+`src/lib/page-distante.ts` (la garde SSRF et la lecture bornée, extraites de `src/http/mba.ts` où l'import de
+FAQ les avait écrites : un module de route n'est pas un point de passage) et `src/http/scope.ts -> estUuid`.
 
 **19a fait de l'agent une chose qui EXISTE.** Avant elle, la table `agents` était vide pour toujours et la
 brique du builder restait grisée quoi qu'on fasse : c'était le vrai blocage.

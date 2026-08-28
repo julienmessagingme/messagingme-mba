@@ -6,6 +6,8 @@ import { extraireDepuisCsv, extraireDepuisHtml, extraireDepuisJson, normaliser, 
 import type { FaqRow } from '../mba/faq-import';
 import { normalizePhone } from '../crm/phone';
 import { isSendableButtonUrl } from '../meta/button-url';
+import { urlRecuperable } from '../lib/page-distante';
+import type { PageDistante } from '../lib/page-distante';
 import { scopeTenant, nonEmpty } from './scope';
 
 /**
@@ -27,13 +29,11 @@ export interface MbaRouteDeps {
   /** Le numéro appartient-il à ce tenant ? Contrôle d'isolation, en base. */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
   /** Récupère une page pour l'import de FAQ depuis une URL. Injecté pour rester testable sans réseau. */
-  fetchUrl?(url: string): Promise<{ status: number; contentType: string; body: string }>;
+  fetchUrl?(url: string): Promise<PageDistante>;
 }
 
 /** Au-delà, ce n'est plus un import de FAQ : Meta prévient qu'« a few hundred » dégrade déjà les réponses. */
 const MAX_IMPORT = 500;
-/** Plafond de lecture d'une page distante. Au-delà on refuse plutôt que de charger le tas en mémoire. */
-const MAX_PAGE_OCTETS = 2_000_000;
 
 /**
  * Extensions acceptées par Meta (liste du schéma, pas de la prose : `.txt` et `.md` en sont ABSENTS).
@@ -122,26 +122,6 @@ function champTexte(v: unknown, max: number): { error: string } | { valeur: stri
   return { valeur: v };
 }
 
-/**
- * URL sûre à récupérer depuis le serveur (import de FAQ). Bloque les schémas non HTTP et les hôtes internes :
- * sans ça, la console offrirait un lecteur de l'intérieur du réseau (SSRF) à tout admin de tenant.
- *
- * ⚠️ Le contrôle porte sur le NOM D'HÔTE, pas sur l'IP finalement résolue : un domaine public qui pointe vers
- * une adresse privée passe. Le pare-feu reste la dernière barrière.
- */
-export function urlRecuperable(raw: string): boolean {
-  if (!isSendableButtonUrl(raw)) return false;
-  const hote = new URL(raw.trim()).hostname.toLowerCase();
-  if (hote === 'localhost' || hote.endsWith('.localhost') || hote.endsWith('.local') || hote.endsWith('.internal')) return false;
-  // Littéraux IPv4 privés / loopback / lien-local / métadonnées cloud.
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hote);
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
-    if (a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)) return false;
-  }
-  return true;
-}
-
 /** Extraction des Q/R d'un corps de requête : `items`, `csv` (texte collé ou fichier) ou `url`. */
 async function extraire(
   corps: Record<string, unknown>,
@@ -158,7 +138,7 @@ async function extraire(
   if (nonEmpty(corps.url)) {
     if (!deps.fetchUrl) return { error: 'import depuis une URL indisponible', code: 503 };
     if (!urlRecuperable(corps.url)) return { error: 'URL invalide ou non autorisée (http(s) et hôte public attendus)', code: 400 };
-    let page: { status: number; contentType: string; body: string };
+    let page: PageDistante;
     try {
       page = await deps.fetchUrl(corps.url.trim());
     } catch (err) {
@@ -628,39 +608,3 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, guard?: Gu
   });
 }
 
-/**
- * Récupération d'une page distante pour l'import de FAQ. Bornée : plafond de taille annoncé ET vérifié après
- * lecture (un serveur peut mentir sur `content-length`), et délai court, parce qu'un admin attend devant
- * l'écran pendant ce temps.
- *
- * ⚠️ Les redirections sont suivies À LA MAIN et CHAQUE saut est revalidé. En `redirect: 'follow'`, une page
- * publique parfaitement légitime en apparence peut renvoyer un 302 vers `169.254.169.254` : le contrôle
- * d'origine, qui ne porte que sur l'URL saisie, serait alors contourné en une ligne de configuration côté
- * attaquant.
- */
-export function fetchUrlBorne(timeoutMs = 10_000, fetchImpl: typeof fetch = fetch): NonNullable<MbaRouteDeps['fetchUrl']> {
-  return async (url: string) => {
-    let courante = url;
-    for (let saut = 0; saut <= 3; saut += 1) {
-      const res = await fetchImpl(courante, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(timeoutMs),
-        headers: { accept: 'text/html,application/json,text/csv;q=0.9,*/*;q=0.8' },
-      });
-      if (res.status >= 300 && res.status < 400) {
-        const destination = res.headers.get('location');
-        if (destination === null) throw new Error('redirection sans destination');
-        const absolue = new URL(destination, courante).toString();
-        if (!urlRecuperable(absolue)) throw new Error('redirection vers un hôte non autorisé');
-        courante = absolue;
-        continue;
-      }
-      const annonce = Number(res.headers.get('content-length') ?? '0');
-      if (annonce > MAX_PAGE_OCTETS) throw new Error('page trop lourde');
-      const body = await res.text();
-      if (Buffer.byteLength(body) > MAX_PAGE_OCTETS) throw new Error('page trop lourde');
-      return { status: res.status, contentType: res.headers.get('content-type') ?? '', body };
-    }
-    throw new Error('trop de redirections');
-  };
-}

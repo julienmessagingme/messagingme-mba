@@ -4,7 +4,7 @@ import type { Guard } from '../auth/middleware';
 import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
 import { ficheAgentSchema } from '../agent/fiche';
-import { scopeTenant, nonEmpty } from './scope';
+import { scopeTenant, nonEmpty, estUuid } from './scope';
 
 export interface AgentsRouteDeps {
   listActifs(tenantId: string): Promise<AgentResume[]>;
@@ -82,6 +82,9 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { agentId } = req.params as { agentId: string };
+    // Un identifiant mal forme part sinon tel quel dans un `where` sur une colonne `uuid` et fait LEVER
+    // Postgres, donc un 500 dont Cloudflare remplace le corps. Une adresse tapee de travers rend 404.
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     const agent = await deps.complet(tenant, agentId);
     if (!agent) return reply.code(404).send({ error: 'agent introuvable' });
     return reply.code(200).send({ agent });
@@ -113,6 +116,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { agentId } = req.params as { agentId: string };
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     const parse = patchSchema.safeParse(req.body ?? {});
     if (!parse.success) {
       const detail = parse.error.issues.map((i) => `${i.path.join('.') || '(racine)'} : ${i.message}`).join(' ; ');
@@ -138,6 +142,7 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { agentId } = req.params as { agentId: string };
+    if (!estUuid(agentId)) return reply.code(404).send({ error: 'agent introuvable' });
     // Sans cette route, un agent créé avec un nom malheureux ne pouvait être ni renommé vers un nom occupé,
     // ni retiré : le workspace gardait une ligne morte pour toujours.
     const supprime = await deps.remove(tenant, agentId);

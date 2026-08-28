@@ -12,6 +12,7 @@ import {
   type AgentComplet, type AgentResume, type PatchAgent, type SortieAgent,
 } from '@/lib/api-agent';
 import { CodeSortieInput } from '@/components/AgentSorties';
+import { AgentConnaissance } from '@/components/AgentConnaissance';
 
 /**
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
@@ -22,9 +23,9 @@ import { CodeSortieInput } from '@/components/AgentSorties';
  * un interrupteur d'accueil comme l'agent de Meta, qui lui est unique par workspace.
  */
 
-type Onglet = 'identite' | 'objectif' | 'perimetre' | 'modele';
+type Onglet = 'identite' | 'objectif' | 'connaissance' | 'perimetre' | 'modele';
 
-const ONGLETS: Onglet[] = ['identite', 'objectif', 'perimetre', 'modele'];
+const ONGLETS: Onglet[] = ['identite', 'objectif', 'connaissance', 'perimetre', 'modele'];
 const lireOnglet = (v: string | null): Onglet => (ONGLETS as string[]).includes(v ?? '') ? (v as Onglet) : 'identite';
 
 export default function AgentsPage() {
@@ -163,12 +164,16 @@ function Ecran({ tenantId }: { tenantId: string }) {
           tabs={[
             { key: 'identite', label: t('Identité et ton', 'Identity and tone') },
             { key: 'objectif', label: t('Objectif et transferts', 'Objective and handovers') },
+            { key: 'connaissance', label: t('Base de connaissance', 'Knowledge base') },
             { key: 'perimetre', label: t('Périmètre et garde-fous', 'Scope and guardrails') },
             { key: 'modele', label: t('Modèle', 'Model') },
           ]}
         />
         {onglet === 'identite' && <OngletIdentite agent={ouvert} busy={busy} onSave={enregistrer} />}
         {onglet === 'objectif' && <OngletObjectif agent={ouvert} busy={busy} onSave={enregistrer} />}
+        {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels
+            et son propre verrou d'ecriture, il ne passe pas par `enregistrer`. */}
+        {onglet === 'connaissance' && <AgentConnaissance tenantId={tenantId} agentId={ouvert.id} />}
         {onglet === 'perimetre' && <OngletPerimetre agent={ouvert} busy={busy} onSave={enregistrer} />}
         {onglet === 'modele' && <OngletModele agent={ouvert} busy={busy} onSave={enregistrer} />}
       </div>

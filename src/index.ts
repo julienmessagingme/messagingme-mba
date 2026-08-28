@@ -55,7 +55,7 @@ import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { encryptSecret, decryptSecret } from './crypto/secretbox';
 import { MetaCredentialsResolver } from './meta/credentials';
-import { fetchUrlBorne } from './http/mba';
+import { fetchUrlBorne } from './lib/page-distante';
 import { signSession } from './auth/token';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { MetaClientFactory } from './meta/factory';
@@ -78,6 +78,7 @@ import { EmailAccountResolver } from './email/resolver';
 import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
+import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -134,6 +135,7 @@ async function main(): Promise<void> {
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
   const agentStore = new PgAgentStore(pool);
+  const knowledgeStore = new PgKnowledgeStore(pool);
   const automationStore = new PgAutomationStore(pool);
   // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
@@ -621,6 +623,16 @@ async function main(): Promise<void> {
       // Le modèle d'un agent NEUF vient de la configuration serveur, pas du client : il choisira ensuite
       // dans l'écran de réglage. Vide en l'absence de configuration, la colonne l'accepte.
       modeleParDefaut: config.LLM_MODEL,
+    },
+    // Base de connaissance d'un agent : la seule source que l'agent a le droit d'utiliser. `fetchUrl` porte
+    // la garde SSRF (le serveur vit dans le reseau Docker du VPS) et le plafond de taille.
+    agentKnowledge: {
+      lister: (tenant, agentId) => knowledgeStore.lister(tenant, agentId),
+      creer: (tenant, agentId, fiche) => knowledgeStore.creer(tenant, agentId, fiche),
+      modifier: (tenant, agentId, ficheId, patch) => knowledgeStore.modifier(tenant, agentId, ficheId, patch),
+      supprimer: (tenant, agentId, ficheId) => knowledgeStore.supprimer(tenant, agentId, ficheId),
+      remplacerSource: (tenant, agentId, url, fiches) => knowledgeStore.remplacerSource(tenant, agentId, url, fiches),
+      fetchUrl: fetchUrlBorne(),
     },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil

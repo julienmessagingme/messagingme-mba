@@ -4,7 +4,6 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { MbaClient } from '../src/mba/client';
-import { fetchUrlBorne } from '../src/http/mba';
 import type { MbaRouteDeps } from '../src/http/mba';
 
 const SECRET = 'test-secret';
@@ -270,38 +269,6 @@ describe('routes MBA : FAQ', () => {
     const res = await server.inject({ method: 'POST', url: url('/faq/preview'), ...h(adminTok), payload: { url: 'https://www.exemple.fr/faq' } });
     expect(res.json()).toMatchObject({ source: 'url (html)', total: 1 });
     await server.close();
-  });
-});
-
-describe('fetchUrlBorne', () => {
-  const reponse = (status: number, entetes: Record<string, string>, corps = '') =>
-    new Response(corps, { status, headers: entetes }) as Response;
-
-  it('🔴 une redirection vers un hôte interne est REFUSÉE', async () => {
-    // Le contrôle d'origine ne porte que sur l'URL saisie : en suivi automatique, une page publique qui
-    // renvoie un 302 vers l'adresse de métadonnées du cloud contournerait tout le garde-fou.
-    const impl = (async () => reponse(302, { location: 'http://169.254.169.254/latest/meta-data' })) as unknown as typeof fetch;
-    await expect(fetchUrlBorne(1000, impl)('https://www.exemple.fr/faq')).rejects.toThrow('hôte non autorisé');
-  });
-
-  it('suit une redirection vers un hôte public, et s’arrête après 3 sauts', async () => {
-    let n = 0;
-    const impl = (async () => {
-      n += 1;
-      return n === 1
-        ? reponse(301, { location: 'https://www.exemple.fr/faq-v2' })
-        : reponse(200, { 'content-type': 'text/html' }, '<dl><dt>Q</dt><dd>R</dd></dl>');
-    }) as unknown as typeof fetch;
-    expect(await fetchUrlBorne(1000, impl)('https://www.exemple.fr/faq')).toMatchObject({ status: 200 });
-
-    const boucle = (async () => reponse(302, { location: 'https://www.exemple.fr/encore' })) as unknown as typeof fetch;
-    await expect(fetchUrlBorne(1000, boucle)('https://www.exemple.fr/faq')).rejects.toThrow('trop de redirections');
-  });
-
-  it('refuse une page qui dépasse le plafond, même si elle ment sur sa taille', async () => {
-    const gros = 'x'.repeat(2_000_001);
-    const impl = (async () => reponse(200, { 'content-type': 'text/html' }, gros)) as unknown as typeof fetch;
-    await expect(fetchUrlBorne(1000, impl)('https://www.exemple.fr/faq')).rejects.toThrow('trop lourde');
   });
 });
 

@@ -1,5 +1,8 @@
 import type { Pool } from 'pg';
-import { PROXIMITE_TITRE_MIN, termesDeRecherche, type FicheTrouvee, type KnowledgeStore } from './knowledge';
+import {
+  PROXIMITE_TITRE_MIN, termesDeRecherche,
+  type FicheAEcrire, type FicheConnaissance, type FicheTrouvee, type KnowledgeAdminStore, type KnowledgeStore,
+} from './knowledge';
 
 interface Ligne {
   id: string;
@@ -34,7 +37,7 @@ interface Ligne {
  * tableau, parce qu'elle a besoin des termes un par un. Le sous-select ne s'exécute que sur les candidats
  * déjà filtrés.
  */
-export class PgKnowledgeStore implements KnowledgeStore {
+export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
   constructor(private readonly pool: Pool) {}
 
   async chercher(tenantId: string, agentId: string, requete: string, limite: number): Promise<FicheTrouvee[]> {
@@ -76,4 +79,110 @@ export class PgKnowledgeStore implements KnowledgeStore {
       proximiteTitre: Number(r.proximite_titre ?? 0),
     }));
   }
+
+  // ---------- Écriture : l'écran de réglage (tranche 19b) ----------
+
+  async lister(tenantId: string, agentId: string): Promise<FicheConnaissance[]> {
+    const res = await this.pool.query<LigneFiche>(
+      `select ${COLONNES_FICHE} from agent_knowledge
+        where tenant_id = $1 and agent_id = $2
+        order by lower(titre)`,
+      [tenantId, agentId],
+    );
+    return res.rows.map(versFiche);
+  }
+
+  async creer(tenantId: string, agentId: string, fiche: FicheAEcrire): Promise<FicheConnaissance | null> {
+    // Le `where exists` est le contrôle d'appartenance, et il est DANS l'écriture : une fiche portant le
+    // tenant de l'un et l'agent de l'autre ne serait jamais lue par personne. Zéro ligne = agent introuvable.
+    const res = await this.pool.query<LigneFiche>(
+      `insert into agent_knowledge (tenant_id, agent_id, titre, corps, source_url, derniere_lecture_at)
+       select $1, $2, $3, $4, $5, case when $5::text is null then null else now() end
+        where exists (select 1 from agents where id = $2 and tenant_id = $1)
+       returning ${COLONNES_FICHE}`,
+      [tenantId, agentId, fiche.titre, fiche.corps, fiche.sourceUrl ?? null],
+    );
+    const r = res.rows[0];
+    return r ? versFiche(r) : null;
+  }
+
+  async modifier(
+    tenantId: string, agentId: string, ficheId: string, patch: { titre?: string; corps?: string },
+  ): Promise<FicheConnaissance | null> {
+    // `agent_id` fait partie du `where`, pas seulement `tenant_id` : le couple (tenant, agent) est le
+    // périmètre partout ailleurs, et l'adresse le promet. `updated_at` marque le passage d'un humain, ce qui
+    // désarme l'alerte de fraîcheur : quelqu'un vient de relire cette fiche.
+    const res = await this.pool.query<LigneFiche>(
+      `update agent_knowledge
+          set titre = coalesce($4, titre), corps = coalesce($5, corps), updated_at = now()
+        where tenant_id = $1 and agent_id = $2 and id = $3
+       returning ${COLONNES_FICHE}`,
+      [tenantId, agentId, ficheId, patch.titre ?? null, patch.corps ?? null],
+    );
+    const r = res.rows[0];
+    return r ? versFiche(r) : null;
+  }
+
+  async supprimer(tenantId: string, agentId: string, ficheId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      'delete from agent_knowledge where tenant_id = $1 and agent_id = $2 and id = $3',
+      [tenantId, agentId, ficheId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Retrait puis écriture EN UNE SEULE INSTRUCTION. Les CTE modifiantes de Postgres voient toutes le même
+   * instantané et s'exécutent une fois : la base ne passe jamais par un état où l'ancienne version est partie
+   * sans que la nouvelle soit là. Un client qui relit son site pendant qu'un contact discute ne le laisse
+   * donc pas sans source, même une fraction de seconde.
+   */
+  async remplacerSource(
+    tenantId: string, agentId: string, sourceUrl: string, fiches: FicheAEcrire[],
+  ): Promise<{ retirees: number; ecrites: number } | null> {
+    const res = await this.pool.query<{ retirees: number; ecrites: number; agent_connu: number }>(
+      `with cible as (select 1 from agents where id = $2 and tenant_id = $1),
+            retirees as (
+              delete from agent_knowledge
+               where tenant_id = $1 and agent_id = $2 and source_url = $3 and exists (select 1 from cible)
+              returning 1
+            ),
+            ecrites as (
+              insert into agent_knowledge (tenant_id, agent_id, titre, corps, source_url, derniere_lecture_at)
+              select $1, $2, f.titre, f.corps, $3, now()
+                from jsonb_to_recordset($4::jsonb) as f(titre text, corps text)
+               where exists (select 1 from cible)
+              returning 1
+            )
+       select (select count(*) from retirees)::int as retirees,
+              (select count(*) from ecrites)::int as ecrites,
+              (select count(*) from cible)::int as agent_connu`,
+      [tenantId, agentId, sourceUrl, JSON.stringify(fiches.map((f) => ({ titre: f.titre, corps: f.corps })))],
+    );
+    const r = res.rows[0];
+    if (!r || r.agent_connu === 0) return null;
+    return { retirees: r.retirees, ecrites: r.ecrites };
+  }
+}
+
+const COLONNES_FICHE = 'id, titre, corps, source_url, derniere_lecture_at, updated_at';
+
+interface LigneFiche {
+  id: string;
+  titre: string;
+  corps: string;
+  source_url: string | null;
+  derniere_lecture_at: Date | null;
+  updated_at: Date;
+}
+
+function versFiche(r: LigneFiche): FicheConnaissance {
+  return {
+    id: r.id,
+    titre: r.titre,
+    corps: r.corps,
+    sourceUrl: r.source_url,
+    derniereLectureAt: r.derniere_lecture_at ? r.derniere_lecture_at.toISOString() : null,
+    updatedAt: r.updated_at.toISOString(),
+  };
 }

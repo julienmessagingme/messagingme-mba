@@ -156,3 +156,118 @@ describe.skipIf(!url)('recherche dans la base de connaissance (Postgres)', () =>
     expect(r).toHaveLength(1);
   });
 });
+
+/**
+ * L'ÉCRITURE de la base de connaissance (tranche 19b) : ce que l'écran de réglage fait à la table.
+ *
+ * 🔴 Pourquoi ces cas ne peuvent PAS être prouvés par un double de test. Trois d'entre eux ne sont vrais que
+ * si Postgres se comporte comme on le croit : l'appartenance de l'agent vérifiée DANS l'écriture
+ * (`where exists`), le remplacement d'une source en une seule instruction (CTE modifiantes), et le fait
+ * qu'un identifiant d'un autre tenant ne touche RIEN. Un faux store dirait oui à tout.
+ */
+describe.skipIf(!url)('écriture de la base de connaissance (Postgres)', () => {
+  let pool: Pool;
+  let store: PgKnowledgeStore;
+  let tenantId: string;
+  let autreTenantId: string;
+  let agentId: string;
+  let agentDeLAutre: string;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
+    store = new PgKnowledgeStore(pool);
+    const t = await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-kb-write') returning id`);
+    tenantId = t.rows[0]!.id;
+    const t2 = await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-kb-write-autre') returning id`);
+    autreTenantId = t2.rows[0]!.id;
+    const a = await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-w', 'Je suis une IA.', 'm') returning id`,
+      [tenantId],
+    );
+    agentId = a.rows[0]!.id;
+    const b = await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-w-autre', 'Je suis une IA.', 'm') returning id`,
+      [autreTenantId],
+    );
+    agentDeLAutre = b.rows[0]!.id;
+  });
+
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    if (autreTenantId) await pool.query('delete from tenants where id = $1', [autreTenantId]);
+    await pool.end();
+  });
+
+  it('crée, liste, corrige et supprime une fiche', async () => {
+    const creee = await store.creer(tenantId, agentId, { titre: 'Le linge', corps: 'Draps et serviettes fournis.' });
+    expect(creee).not.toBeNull();
+    expect(creee!.sourceUrl).toBeNull();
+    // Une fiche écrite à la main n'a pas de date de lecture : il n'y a rien eu à relire.
+    expect(creee!.derniereLectureAt).toBeNull();
+
+    expect((await store.lister(tenantId, agentId)).map((f) => f.titre)).toEqual(['Le linge']);
+
+    const corrigee = await store.modifier(tenantId, agentId, creee!.id, { corps: 'Draps fournis, serviettes en option.' });
+    expect(corrigee!.corps).toContain('en option');
+    expect(corrigee!.titre).toBe('Le linge'); // un patch partiel n'efface pas ce qu'il ne mentionne pas
+
+    expect(await store.supprimer(tenantId, agentId, creee!.id)).toBe(true);
+    expect(await store.lister(tenantId, agentId)).toEqual([]);
+  });
+
+  it('🔴 un agent d’un AUTRE tenant ne peut pas recevoir de fiche, et rien n’est écrit', async () => {
+    // Le couple (tenant, agent) est ce qui rend une fiche visible : une ligne portant le tenant de l'un et
+    // l'agent de l'autre ne serait jamais lue par personne, tout en occupant la place.
+    expect(await store.creer(tenantId, agentDeLAutre, { titre: 'X', corps: 'Y' })).toBeNull();
+    const compte = await pool.query<{ n: string }>('select count(*) as n from agent_knowledge where agent_id = $1', [agentDeLAutre]);
+    expect(Number(compte.rows[0]!.n)).toBe(0);
+  });
+
+  it('🔴 un AUTRE tenant ne peut ni lire, ni corriger, ni supprimer une fiche', async () => {
+    const mienne = await store.creer(tenantId, agentId, { titre: 'Les clés', corps: 'Remise des clés à l accueil.' });
+    expect(await store.lister(autreTenantId, agentId)).toEqual([]);
+    expect(await store.modifier(autreTenantId, agentId, mienne!.id, { titre: 'Détournée' })).toBeNull();
+    expect(await store.supprimer(autreTenantId, agentId, mienne!.id)).toBe(false);
+    // Et la fiche est intacte : un refus qui aurait quand même écrit ne serait pas un refus.
+    const apres = await store.lister(tenantId, agentId);
+    expect(apres.map((f) => f.titre)).toEqual(['Les clés']);
+    await store.supprimer(tenantId, agentId, mienne!.id);
+  });
+
+  it('🔴 relire une source REMPLACE ses fiches au lieu de les dupliquer', async () => {
+    const source = 'https://exemple.test/residence';
+    const un = await store.remplacerSource(tenantId, agentId, source, [
+      { titre: 'La piscine', corps: 'Ouverte de 9 h à 20 h.' },
+      { titre: 'Le parking', corps: 'Gratuit pour les résidents.' },
+    ]);
+    expect(un).toEqual({ retirees: 0, ecrites: 2 });
+
+    const deux = await store.remplacerSource(tenantId, agentId, source, [{ titre: 'La piscine', corps: 'Ouverte de 8 h à 21 h.' }]);
+    expect(deux).toEqual({ retirees: 2, ecrites: 1 });
+
+    const fiches = await store.lister(tenantId, agentId);
+    expect(fiches).toHaveLength(1);
+    expect(fiches[0]!.corps).toContain('8 h à 21 h');
+    expect(fiches[0]!.sourceUrl).toBe(source);
+    // La date de lecture est posée par l'import : c'est elle que l'écran montre pour signaler un contenu périmé.
+    expect(fiches[0]!.derniereLectureAt).not.toBeNull();
+    await store.supprimer(tenantId, agentId, fiches[0]!.id);
+  });
+
+  it('une relecture ne touche QUE la source relue', async () => {
+    await store.remplacerSource(tenantId, agentId, 'https://exemple.test/a', [{ titre: 'A', corps: 'Contenu A.' }]);
+    await store.remplacerSource(tenantId, agentId, 'https://exemple.test/b', [{ titre: 'B', corps: 'Contenu B.' }]);
+    const main = await store.creer(tenantId, agentId, { titre: 'Écrite à la main', corps: 'Sans source.' });
+
+    await store.remplacerSource(tenantId, agentId, 'https://exemple.test/a', [{ titre: 'A2', corps: 'Contenu A revu.' }]);
+    const titres = (await store.lister(tenantId, agentId)).map((f) => f.titre).sort();
+    expect(titres).toEqual(['A2', 'B', 'Écrite à la main']);
+    expect(main).not.toBeNull();
+  });
+
+  it('🔴 relire pour un agent d’un autre tenant ne retire ni n’écrit rien', async () => {
+    expect(await store.remplacerSource(tenantId, agentDeLAutre, 'https://exemple.test/x', [{ titre: 'X', corps: 'Y' }])).toBeNull();
+    const compte = await pool.query<{ n: string }>('select count(*) as n from agent_knowledge where agent_id = $1', [agentDeLAutre]);
+    expect(Number(compte.rows[0]!.n)).toBe(0);
+  });
+});

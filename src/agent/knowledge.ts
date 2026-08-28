@@ -29,6 +29,69 @@ export interface KnowledgeStore {
   chercher(tenantId: string, agentId: string, requete: string, limite: number): Promise<FicheTrouvee[]>;
 }
 
+/** Une fiche telle que l'écran de réglage la montre et l'édite. */
+export interface FicheConnaissance {
+  id: string;
+  titre: string;
+  corps: string;
+  sourceUrl: string | null;
+  /** Quand la source a été lue pour la dernière fois. `null` pour une fiche écrite à la main. Visible dans
+   *  l'écran : le cadrage en fait la parade au défaut le plus courant du marché, le contenu périmé. */
+  derniereLectureAt: string | null;
+  updatedAt: string;
+}
+
+/** Ce qu'un import de page produit avant écriture. */
+export interface FicheAEcrire {
+  titre: string;
+  corps: string;
+  sourceUrl?: string | null;
+}
+
+/**
+ * L'écriture de la base de connaissance, réservée à l'écran de réglage.
+ *
+ * SÉPARÉE de `KnowledgeStore` à dessein : le tour d'agent ne lit que `chercher`, et lui faire porter cinq
+ * méthodes d'écriture obligerait chaque double de test du runtime à les implémenter pour rien. Une seule
+ * classe les sert toutes les deux.
+ */
+export interface KnowledgeAdminStore {
+  lister(tenantId: string, agentId: string): Promise<FicheConnaissance[]>;
+
+  /**
+   * Écrit une fiche. Rend `null` si l'agent n'existe pas OU appartient à un autre tenant.
+   *
+   * 🔴 L'appartenance de l'agent se vérifie DANS l'écriture, pas avant. Le couple (tenant, agent) est ce qui
+   * rend une fiche visible : une ligne portant le tenant de l'un et l'agent de l'autre ne serait jamais lue
+   * par personne, tout en consommant la place et en polluant les comptes.
+   */
+  creer(tenantId: string, agentId: string, fiche: FicheAEcrire): Promise<FicheConnaissance | null>;
+
+  /**
+   * Corrige une fiche. Rend `null` si elle n'existe pas, ou si elle n'est pas celle de CE couple
+   * (tenant, agent).
+   *
+   * L'agent fait partie du périmètre, comme à l'écriture : sans lui, l'adresse promet un agent que la requête
+   * ne contrôle pas, et un identifiant de fiche mal aiguillé par l'écran corrigerait en silence la fiche d'un
+   * AUTRE agent du même client.
+   */
+  modifier(tenantId: string, agentId: string, ficheId: string, patch: { titre?: string; corps?: string }): Promise<FicheConnaissance | null>;
+
+  /** Rend `false` si la fiche n'existe pas ou n'est pas celle de ce couple (tenant, agent). */
+  supprimer(tenantId: string, agentId: string, ficheId: string): Promise<boolean>;
+
+  /**
+   * Relit une source : retire les fiches de CETTE adresse pour CET agent, puis écrit les nouvelles, en une
+   * seule transaction.
+   *
+   * 🔴 REMPLACER ET NON AJOUTER. Une relecture qui ajouterait doublerait la base à chaque passage, et la
+   * recherche compte les mots partagés : deux copies d'une même fiche ne rendent pas la réponse plus sûre,
+   * elles la rendent deux fois plus probable qu'une autre. Le prix est dit au client dans l'écran : ses
+   * corrections sur les fiches de cette adresse partent avec.
+   */
+  remplacerSource(tenantId: string, agentId: string, sourceUrl: string, fiches: FicheAEcrire[]): Promise<{ retirees: number; ecrites: number } | null>;
+}
+
 /**
  * 🔴 LA RÈGLE DE PERTINENCE, ET ELLE EST EN CODE. C'est tout le mécanisme : on ne demande jamais au modèle de
  * juger s'il sait, on le rend incapable de répondre hors de ses sources. Une fiche jugée non pertinente n'est

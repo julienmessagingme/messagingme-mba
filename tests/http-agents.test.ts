@@ -19,6 +19,15 @@ import { ficheVide } from '../src/agent/fiche';
  *     accepte, et n'efface pas la mention légale d'IA ;
  *  4. un PATCH partiel n'efface pas ce qu'il ne mentionne pas.
  */
+/** Identifiants en forme d uuid : les routes refusent en 404 tout ce qui n en a pas la forme,
+ *  parce qu un identifiant mal forme ferait LEVER Postgres sur une colonne `uuid`. */
+const AG1 = '11111111-1111-4111-8111-111111111111';
+const AG2 = '22222222-2222-4222-8222-222222222222';
+const CONFLIT = '33333333-3333-4333-8333-333333333333';
+/** Bien formé mais absent du store : c'est ce cas-là qui exerce le `if (!agent) return 404` des routes. Une
+ *  chaîne quelconque, elle, serait arrêtée plus tôt par la garde de FORME et ne prouverait plus rien. */
+const INCONNU = '99999999-9999-4999-8999-999999999999';
+
 const SECRET = 'test-secret';
 let adminTok = '';
 let agentTok = '';
@@ -30,14 +39,14 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const COMPLET: AgentComplet = {
-  id: 'ag1', label: 'Conseiller séjours', status: 'draft',
+  id: AG1, label: 'Conseiller séjours', status: 'draft',
   mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-test',
   maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
   contactInconnu: 'lecture_seule', contenu: ficheVide(), ficheVersion: 1,
 };
 
-const ACTIFS: AgentResume[] = [{ id: 'ag1', label: 'Conseiller séjours', status: 'active', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }] }];
-const TOUTES: AgentResume[] = [...ACTIFS, { id: 'ag2', label: 'Brouillon', status: 'draft', sorties: [] }];
+const ACTIFS: AgentResume[] = [{ id: AG1, label: 'Conseiller séjours', status: 'active', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }] }];
+const TOUTES: AgentResume[] = [...ACTIFS, { id: AG2, label: 'Brouillon', status: 'draft', sorties: [] }];
 
 function app() {
   const cap = {
@@ -49,7 +58,7 @@ function app() {
   const deps: AgentsRouteDeps = {
     listActifs: async (t) => { cap.listes.push(`actifs:${t}`); return ACTIFS; },
     listToutes: async (t) => { cap.listes.push(`toutes:${t}`); return TOUTES; },
-    complet: async (_t, id) => (id === 'ag1' ? COMPLET : null),
+    complet: async (_t, id) => (id === AG1 ? COMPLET : null),
     create: async (tenant, label, mention, modele) => {
       cap.crees.push({ tenant, label, mention, modele });
       if (label === 'pris') throw new LabelAgentDejaPris();
@@ -57,11 +66,11 @@ function app() {
     },
     patch: async (tenant, id, patch) => {
       cap.patches.push({ tenant, id, patch });
-      if (id === 'conflit') throw new FicheAgentPerimee();
+      if (id === CONFLIT) throw new FicheAgentPerimee();
       if (patch.label === 'pris') throw new LabelAgentDejaPris();
-      return id === 'ag1' ? { ...COMPLET, ...patch } as AgentComplet : null;
+      return id === AG1 ? { ...COMPLET, ...patch } as AgentComplet : null;
     },
-    remove: async (tenant, id) => { cap.supprimes.push({ tenant, id }); return id === 'ag1'; },
+    remove: async (tenant, id) => { cap.supprimes.push({ tenant, id }); return id === AG1; },
     modeleParDefaut: 'modele-config',
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agents: deps }) };
@@ -79,14 +88,14 @@ describe('routes agents : lecture', () => {
 
   it('la fiche entière se lit par son identifiant, et 404 sinon', async () => {
     const { srv } = app();
-    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents/ag1', ...h(adminTok) })).json()).toEqual({ agent: COMPLET });
-    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents/inconnu', ...h(adminTok) })).statusCode).toBe(404);
+    expect((await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok) })).json()).toEqual({ agent: COMPLET });
+    expect((await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${INCONNU}`, ...h(adminTok) })).statusCode).toBe(404);
   });
 
   it('🔴 le tenant vient du JETON, jamais de l URL', async () => {
     const { cap, srv } = app();
     expect((await srv.inject({ method: 'GET', url: '/tenants/t2/agents', ...h(adminTok) })).statusCode).toBe(403);
-    expect((await srv.inject({ method: 'GET', url: '/tenants/t2/agents/ag1', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'GET', url: `/tenants/t2/agents/${AG1}`, ...h(adminTok) })).statusCode).toBe(403);
     expect(cap.listes).toEqual([]);
   });
 
@@ -131,7 +140,7 @@ describe('routes agents : création', () => {
 describe('routes agents : modification', () => {
   it('un patch partiel ne transmet QUE ce qu il mentionne', async () => {
     const { cap, srv } = app();
-    const res = await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok), payload: { label: 'Nouveau nom' } });
+    const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { label: 'Nouveau nom' } });
     expect(res.statusCode).toBe(200);
     expect(cap.patches[0]?.patch).toEqual({ label: 'Nouveau nom' });
   });
@@ -141,13 +150,13 @@ describe('routes agents : modification', () => {
     // produirait des écarts silencieux entre ce que le builder dessine et ce que le moteur route.
     const { srv } = app();
     const bon = await srv.inject({
-      method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok),
+      method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok),
       payload: { contenu: { nom: 'Léa', objectif: 'Renseigner', ton: '', personnalite: '', reglesTransfert: '', sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }] } },
     });
     expect(bon.statusCode).toBe(200);
 
     const mauvais = await srv.inject({
-      method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok),
+      method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok),
       payload: { contenu: { sorties: [{ code: 'Besoin Cerné', label: 'x' }] } },
     });
     expect(mauvais.statusCode).toBe(400);
@@ -163,25 +172,25 @@ describe('routes agents : modification', () => {
       { budgetMicroEur: 0 }, { inactiviteMinutes: 0 }, { inactiviteMinutes: 1441 },
       { contactInconnu: 'tout_ouvert' }, { status: 'super_actif' }, { mentionIa: '' }, { mentionIa: '   ' },
     ]) {
-      const res = await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok), payload });
+      const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload });
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
     }
   });
 
   it('un patch vide est refusé plutôt que d écrire un tour pour rien', async () => {
     const { cap, srv } = app();
-    expect((await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok), payload: {} })).statusCode).toBe(400);
+    expect((await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: {} })).statusCode).toBe(400);
     expect(cap.patches).toEqual([]);
   });
 
   it('un agent inconnu rend 404, pas une écriture silencieuse', async () => {
     const { srv } = app();
-    expect((await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/inconnu', ...h(adminTok), payload: { label: 'X' } })).statusCode).toBe(404);
+    expect((await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${INCONNU}`, ...h(adminTok), payload: { label: 'X' } })).statusCode).toBe(404);
   });
 
   it('🔴 activer un agent est possible, c est le seul geste qui le rend proposable', async () => {
     const { cap, srv } = app();
-    const res = await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok), payload: { status: 'active' } });
+    const res = await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { status: 'active' } });
     expect(res.statusCode).toBe(200);
     expect(cap.patches[0]?.patch).toEqual({ status: 'active' });
   });
@@ -191,13 +200,13 @@ describe('routes agents : modification', () => {
     // voyait une panne là où il avait simplement choisi un nom déjà utilisé.
     const { srv } = app();
     expect((await srv.inject({ method: 'POST', url: '/tenants/t1/agents', ...h(adminTok), payload: { label: 'pris' } })).statusCode).toBe(409);
-    expect((await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok), payload: { label: 'pris' } })).statusCode).toBe(409);
+    expect((await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { label: 'pris' } })).statusCode).toBe(409);
   });
 
   it('🔴 une fiche PÉRIMÉE rend 409 : deux surfaces ne s écrasent pas en silence', async () => {
     const { srv } = app();
     const res = await srv.inject({
-      method: 'PATCH', url: '/tenants/t1/agents/conflit', ...h(adminTok),
+      method: 'PATCH', url: `/tenants/t1/agents/${CONFLIT}`, ...h(adminTok),
       payload: { contenu: { objectif: 'x' }, ficheVersionAttendue: 3 },
     });
     expect(res.statusCode).toBe(409);
@@ -206,15 +215,15 @@ describe('routes agents : modification', () => {
 
   it('une version SEULE ne modifie rien : ce n est pas un patch', async () => {
     const { cap, srv } = app();
-    expect((await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(adminTok), payload: { ficheVersionAttendue: 2 } })).statusCode).toBe(400);
+    expect((await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok), payload: { ficheVersionAttendue: 2 } })).statusCode).toBe(400);
     expect(cap.patches).toEqual([]);
   });
 
   it('les écritures sont admin-only, PATCH et DELETE compris', async () => {
     const { srv } = app();
-    expect((await srv.inject({ method: 'PATCH', url: '/tenants/t1/agents/ag1', ...h(agentTok), payload: { label: 'X' } })).statusCode).toBe(403);
-    expect((await srv.inject({ method: 'DELETE', url: '/tenants/t1/agents/ag1', ...h(agentTok) })).statusCode).toBe(403);
-    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents/ag1', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(agentTok), payload: { label: 'X' } })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'DELETE', url: `/tenants/t1/agents/${AG1}`, ...h(agentTok) })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'GET', url: `/tenants/t1/agents/${AG1}`, ...h(agentTok) })).statusCode).toBe(403);
   });
 });
 
@@ -223,14 +232,26 @@ describe('routes agents : suppression', () => {
     // Sans cette route, un agent créé avec un nom malheureux ne pouvait être ni renommé vers un nom occupé,
     // ni retiré : le workspace gardait une ligne morte pour toujours.
     const { cap, srv } = app();
-    expect((await srv.inject({ method: 'DELETE', url: '/tenants/t1/agents/ag1', ...h(adminTok) })).statusCode).toBe(204);
-    expect(cap.supprimes[0]).toEqual({ tenant: 't1', id: 'ag1' });
-    expect((await srv.inject({ method: 'DELETE', url: '/tenants/t1/agents/inconnu', ...h(adminTok) })).statusCode).toBe(404);
+    expect((await srv.inject({ method: 'DELETE', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok) })).statusCode).toBe(204);
+    expect(cap.supprimes[0]).toEqual({ tenant: 't1', id: AG1 });
+    expect((await srv.inject({ method: 'DELETE', url: `/tenants/t1/agents/${INCONNU}`, ...h(adminTok) })).statusCode).toBe(404);
+  });
+
+  it('🔴 un identifiant qui n’a pas la forme d’un uuid rend 404, pas une erreur de base', async () => {
+    // Sans ce contrôle, la valeur part telle quelle dans un `where id = $1` sur une colonne `uuid`, Postgres
+    // LÈVE (22P02) et la console rend un 500, dont Cloudflare remplace le corps par sa page d'erreur.
+    const { cap, srv } = app();
+    for (const [method, payload] of [['GET', undefined], ['PATCH', { label: 'X' }], ['DELETE', undefined]] as const) {
+      const res = await srv.inject({ method, url: '/tenants/t1/agents/pas-un-uuid', ...h(adminTok), ...(payload ? { payload } : {}) });
+      expect(res.statusCode, method).toBe(404);
+    }
+    expect(cap.patches).toHaveLength(0);
+    expect(cap.supprimes).toHaveLength(0);
   });
 
   it('🔴 la cible vient du JETON, jamais de l URL', async () => {
     const { cap, srv } = app();
-    expect((await srv.inject({ method: 'DELETE', url: '/tenants/t2/agents/ag1', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'DELETE', url: `/tenants/t2/agents/${AG1}`, ...h(adminTok) })).statusCode).toBe(403);
     expect(cap.supprimes).toEqual([]);
   });
 });
