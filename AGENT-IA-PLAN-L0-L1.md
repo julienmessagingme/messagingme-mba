@@ -1996,7 +1996,7 @@ d'autre, qui fait marcher « l'agent ne sait pas, donc il transfère ».
 
 ---
 
-## Tâche 17 : l'inactivité — ✅ FAIT (commit COMMIT17, 2026-08-28)
+## Tâche 17 : l'inactivité — ✅ FAIT (commit ebf5cb2, 2026-08-28)
 
 Le pari du plan tient : **aucun mécanisme nouveau**. Le tour rend `timeoutInMs` dans son repos, `restToState`
 n'est pas touchée, et tout le reste (run `waiting` porteur d'un `resume_at`, `claimDueQuestions`, `resume` par
