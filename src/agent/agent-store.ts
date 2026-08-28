@@ -1,4 +1,15 @@
-import type { PlafondsAgent } from './run-turn';
+/**
+ * Les plafonds d'un agent, lus sur sa fiche. Ce sont des gardes de SÉCURITÉ, pas un détail de facturation :
+ * une injection qui fait boucler l'agent brûlerait le compte prépayé du tenant.
+ *
+ * Déclarés ICI et non dans `run-turn.ts` : `FicheAgent` les porte, et le tour lit la fiche entière (il a
+ * besoin de l'inactivité en plus). Les garder là-bas obligeait les deux modules à s'importer l'un l'autre.
+ */
+export interface PlafondsAgent {
+  maxTours: number;
+  maxAppelsOutils: number;
+  budgetMicroEur: number;
+}
 
 /**
  * La fiche d'un agent, vue du runtime. Volontairement RÉDUITE à ce dont un tour a besoin : ses plafonds, son

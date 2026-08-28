@@ -8,8 +8,15 @@
 
 export const AGENT_TURN_QUEUE = 'agent-turn';
 
-/** Ce qui declenche un tour : demarrage de session, message entrant du contact, ou reveil apres inactivite. */
-export type RaisonTour = 'demarrage' | 'message' | 'inactivite';
+/**
+ * Ce qui declenche un tour : demarrage de session, ou message entrant du contact.
+ *
+ * Il n y a PAS de raison « inactivite », et c est un choix : le reveil apres silence ne passe pas par cette
+ * file. Il emprunte le mecanisme du bloc Question (echeance `resume_at` sur un run qui reste `waiting`, puis
+ * `resume` par le handle `timeout`), donc il ne produit aucun job. Un vocabulaire sans producteur finit
+ * toujours par etre remis en service par erreur.
+ */
+export type RaisonTour = 'demarrage' | 'message';
 
 /** Ce qui transite dans la file. `tenantId` porte explicitement : le worker ne le deduit de rien d'autre. */
 export interface AgentTurnJob {
@@ -22,14 +29,14 @@ export interface AgentTurnJob {
   raison: RaisonTour;
   /**
    * Numero de tour ATTENDU par le producteur. Sert de verrou optimiste cote consommateur : pg-boss est
-   * at-least-once, et un job d'inactivite differe (programme puis reveille en retard) peut arriver APRES
-   * que le contact a deja repondu et fait avancer le tour. Le consommateur compare ce numero au tour reel
-   * de la session et ignore le job perime plutot que de rejouer une reponse obsolete.
+   * at-least-once, donc un job peut etre redelivre APRES que le contact a deja repondu et fait avancer le
+   * tour. Le consommateur compare ce numero au tour reel de la session et ignore le job perime plutot que de
+   * rejouer une reponse obsolete.
    */
   tours: number;
 }
 
-const RAISONS: readonly RaisonTour[] = ['demarrage', 'message', 'inactivite'];
+const RAISONS: readonly RaisonTour[] = ['demarrage', 'message'];
 
 /**
  * Coerce defensivement le payload de la file (JSON opaque, potentiellement ecrit par une version

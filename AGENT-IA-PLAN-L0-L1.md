@@ -1996,7 +1996,39 @@ d'autre, qui fait marcher « l'agent ne sait pas, donc il transfère ».
 
 ---
 
-## Tâche 17 : l'inactivité
+## Tâche 17 : l'inactivité — ✅ FAIT (commit COMMIT17, 2026-08-28)
+
+Le pari du plan tient : **aucun mécanisme nouveau**. Le tour rend `timeoutInMs` dans son repos, `restToState`
+n'est pas touchée, et tout le reste (run `waiting` porteur d'un `resume_at`, `claimDueQuestions`, `resume` par
+le handle `timeout`) était déjà écrit et en production pour le bloc Question.
+
+🔴 **Mais rendre ce chemin possible a ouvert deux trous, tous deux trouvés en revue.**
+
+**1. Une session d'agent orpheline, pour toujours.** Avant cette tâche, un run posé sur un bloc agent n'avait
+jamais de `resume_at` : le balayeur ne le voyait pas, donc `resume` n'était JAMAIS appelé dessus. La tâche 17
+rend ce chemin atteignable, et `resume` tue un run par trois sorties, dont deux qui ne closaient rien. La plus
+probable est même la première : un opérateur reprend le fil depuis l'Inbox, le contact se tait, l'échéance
+tombe, `mayAct` répond faux, le run meurt et la session reste `en_cours` à jamais. Elle serait alors
+RÉUTILISÉE si le scénario repasse un jour sur un bloc agent (`byRun ?? open`), avec ses tours et son coût déjà
+consommés : un agent muet dès le premier tour. La règle posée n'est donc pas « une échéance sur un bloc agent
+clôt sa session » mais **« `resume` qui tue un run clôt la session vivante de ce run »**, en `inactivite` quand
+c'est une échéance consommée, en `erreur` sinon.
+
+**2. Le tour pouvait RESSUSCITER un run tué pendant qu'il réfléchissait.** L'écriture finale du tour était un
+`setState` inconditionnel, 3 à 30 secondes après la lecture. Un opérateur qui lance un scénario depuis
+l'Inbox appelle `closeActiveByWaId` : le run passe `done`, un autre naît, et le tour remettait le premier en
+`waiting` AVEC une échéance. Invisible de `findWaitingByWaId` (le nouveau est plus récent), mais parfaitement
+visible du balayeur, qui aurait déclenché plus tard la branche « pas de réponse » d'un parcours fermé exprès,
+en parallèle du nouveau. D'où `setStateSiEncoreSur`, l'écriture conditionnelle : c'est le pendant, côté
+écriture, de la garde que le tour applique déjà en lecture.
+
+**Écarts au plan :** `lirePlafonds` devient `lireFiche` (le tour a besoin de l'inactivité en plus, et
+`FicheAgent` porte déjà les deux : deux lectures de la même ligne n'avaient pas lieu d'être). L'échéance est
+posée aussi quand la main est perdue, sans quoi un fil repris par un humain qui ne revient jamais laisserait
+run et session en plan. La raison de tour `inactivite` est retirée : elle n'a plus de producteur depuis que
+l'inactivité passe par le bloc Question, et un vocabulaire sans producteur finit remis en service par erreur.
+
+### Le détail d'origine
 
 **Fichiers :** Modifier `src/agent/run-turn.ts`. Test : `tests/agent-inactivite.test.ts`.
 

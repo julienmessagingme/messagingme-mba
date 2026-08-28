@@ -142,6 +142,30 @@ export class PgWorkflowRunStore {
     return res.rowCount ?? 0;
   }
 
+  /**
+   * Écrit l'état d'un run SEULEMENT s'il attend encore sur le bloc qu'on croit. Rend `false` si rien n'a bougé.
+   *
+   * 🔴 POURQUOI CETTE VARIANTE EXISTE. Un tour d'agent dure 3 à 30 secondes, et il écrit son état à la fin.
+   * Entre-temps, le run peut avoir été TUÉ : un opérateur qui lance un scénario depuis l'Inbox appelle
+   * `closeActiveByWaId`, qui passe le run en `done` et en crée un autre. Un `setState` inconditionnel le
+   * ressusciterait en `waiting` AVEC une échéance : invisible de `findWaitingByWaId` (le nouveau run est plus
+   * récent), mais parfaitement visible de `claimDueQuestions`, qui déclencherait plus tard la branche
+   * « pas de réponse » d'un parcours que quelqu'un avait délibérément fermé, en parallèle du nouveau.
+   *
+   * C'est le pendant, côté ÉCRITURE, de la garde que le tour applique déjà en lecture : « le run attend-il
+   * toujours sur CE bloc ». Même motif de verrou optimiste que `prendreLeTour` et `claimDueQuestions`.
+   */
+  async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string, state: RunState): Promise<boolean> {
+    const res = await this.pool.query(
+      `update workflow_runs set current_node = $4, status = $5,
+              last_message_id = coalesce($6, last_message_id), resume_at = $7,
+              channel = coalesce($8, channel), updated_at = now()
+        where id = $1 and tenant_id = $2 and status = 'waiting' and current_node = $3`,
+      [id, tenantId, nodeId, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async setState(id: string, state: RunState): Promise<void> {
     // `resume_at` est écrit SANS coalesce : quitter le sommeil doit effacer l'échéance, sinon un run réveillé
     // resterait éligible au balayage suivant.

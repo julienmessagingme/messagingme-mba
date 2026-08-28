@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runTurn } from '../src/agent/run-turn';
-import type { RunTurnDeps, PlafondsAgent, EtatRun } from '../src/agent/run-turn';
+import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
+import type { FicheAgent } from '../src/agent/agent-store';
 import { FakeAgentBrain } from '../src/agent/brain.fake';
 import type { DecisionAgent } from '../src/agent/brain';
 import type { AgentSession } from '../src/agent/session-store';
@@ -16,7 +17,11 @@ const SESSION: AgentSession = {
   tours: 1, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours',
 };
 
-const PLAFONDS: PlafondsAgent = { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000 };
+const FICHE: FicheAgent = {
+  id: 'ag1', tenantId: 't1', mentionIa: 'Je suis une IA.', modele: 'm', status: 'active',
+  plafonds: { maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000 },
+  inactiviteMinutes: 30,
+};
 const RUN_VIVANT: EtatRun = { status: 'waiting', currentNode: 'a' };
 
 /** Deps par défaut : tout est nominal, chaque test ne surcharge que ce qu'il veut casser. */
@@ -35,7 +40,7 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
     } as unknown as RunTurnDeps['sessions'],
     brain,
     lireRun: async () => RUN_VIVANT,
-    lirePlafonds: async () => PLAFONDS,
+    lireFiche: async () => FICHE,
     envoyer: async (_t, _w, texte) => { envois.push(texte); },
     mesurer: async (i) => { mesures.push(i.kind); },
     sortir: async (i) => { sorties.push(i.sortie); },
@@ -122,7 +127,7 @@ describe('runTurn : les gardes du tour (tâche 13a)', () => {
   it('fiche d agent introuvable : sortie par la branche d échec, sans appeler le cerveau', async () => {
     // Ne pas sortir laisserait le run en attente sur le bloc avec une session close : conversation muette.
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { deps, brain, envois, sorties, clotures } = make({ lirePlafonds: async () => null });
+    const { deps, brain, envois, sorties, clotures } = make({ lireFiche: async () => null });
     expect(await runTurn(JOB, deps)).toEqual({ fait: 'erreur', sortie: 'echec' });
     expect(brain.appels).toEqual([]);
     expect(envois).toEqual([]);
@@ -149,7 +154,9 @@ describe('runTurn : les gardes du tour (tâche 13a)', () => {
     // Entre l'enfilage du job et son exécution, un opérateur a pu prendre la main. Vérifier à l'entrée du
     // tour ne suffit pas : le cerveau a pris plusieurs secondes.
     const { deps, brain, envois, clotures } = make({ mayAct: async () => false });
-    expect(await runTurn(JOB, deps)).toEqual({ fait: 'main_perdue' });
+    // Le repos est rendu et l'échéance posée quand même (tâche 17) : sans elle, un fil repris par un
+    // humain qui ne revient jamais laisserait ce run et sa session en plan pour toujours.
+    expect(await runTurn(JOB, deps)).toMatchObject({ fait: 'main_perdue' });
     expect(brain.appels).toHaveLength(1); // le cerveau a bien été appelé AVANT la garde
     expect(envois).toEqual([]);
     expect(clotures).toEqual([]); // le gel est transitoire : on ne clôt PAS la session
@@ -157,7 +164,8 @@ describe('runTurn : les gardes du tour (tâche 13a)', () => {
 
   it('cas nominal : le texte part, la mesure « sent » est posée, le parcours reste en attente', async () => {
     const { deps, envois, mesures, sorties, transcript } = make();
-    expect(await runTurn(JOB, deps)).toEqual({ fait: 'repondu' });
+    // Le repos porte l'échéance d'inactivité de la fiche (tâche 17).
+    expect(await runTurn(JOB, deps)).toEqual({ fait: 'repondu', repos: { status: 'waiting', nodeId: 'a', timeoutInMs: 30 * 60_000 } });
     expect(envois).toEqual(['Bonjour']);
     expect(mesures).toEqual(['sent']);
     expect(sorties).toEqual([]); // pas de sortie : on attend la réponse du contact

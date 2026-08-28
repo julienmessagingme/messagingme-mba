@@ -9,7 +9,7 @@ import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
-import type { AgentSessionStore } from '../agent/session-store';
+import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
 import type { AgentTurnJob } from '../agent/turn-job';
 
 /**
@@ -547,11 +547,13 @@ export class WorkflowExecutor {
     if (this.deps.mayAct && !(await this.deps.mayAct(tenantId, waId))) {
       // eslint-disable-next-line no-console
       console.log(`workflow ${run.workflowId}: fil repris par un humain ou par MBA pendant l'attente, reprise annulée pour ${waId}`);
+      await this.cloreSessionDuRun(tenantId, run.id, 'erreur');
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
       return false;
     }
     const graph = await this.deps.getGraph(run.workflowId, tenantId);
     if (!graph || !run.currentNode) {
+      await this.cloreSessionDuRun(tenantId, run.id, 'erreur');
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'done' });
       return false;
     }
@@ -563,6 +565,10 @@ export class WorkflowExecutor {
     // c'est la RÉPONSE qui décide de la suite. Prendre `nextNode` ici enverrait un contact silencieux dans la
     // branche du premier câblage venu, exactement le défaut que `nextNodeSansHandle` évite déjà ailleurs.
     const parQuestion = run.status === 'waiting';
+    // Une échéance consommée sur un bloc agent est une INACTIVITÉ : le contact n'a plus rien dit. Les autres
+    // sorties de `resume` closent la session en `erreur`, parce qu'elles tuent le parcours pour une raison
+    // qui n'a rien à voir avec le silence du contact.
+    if (parQuestion) await this.cloreSessionDuRun(tenantId, run.id, 'inactivite', 'timeout');
     const suite = parQuestion
       ? nextNodeByHandle(graph, run.currentNode, 'timeout')
       : nextNode(graph, run.currentNode);
@@ -679,6 +685,27 @@ export class WorkflowExecutor {
    * retrouve la session vivante par `byRun`). Ce qui est perdu, c'est le premier message que l'agent devait
    * dire de lui-même : une conversation silencieuse plutôt que des messages en double.
    */
+  /**
+   * Clôt la session d'agent d'un parcours qu'on est en train de TUER ou de faire sortir de son bloc agent.
+   *
+   * 🔴 SANS ÇA LA SESSION RESTE VIVANTE POUR TOUJOURS, et rien ne la ramasse. Deux dégâts, tous deux
+   * silencieux. L'index partiel « une seule session vivante par parcours » ferait RÉUTILISER cette session si
+   * le scénario repasse plus tard sur un bloc agent (`byRun ?? open` dans `demarrerTourAgent`), avec ses tours
+   * et son coût déjà consommés : l'agent serait muet dès le premier tour. Et elle traînerait dans les écrans
+   * d'exploitation comme une conversation vivante qui n'existe plus.
+   *
+   * Appelée sur TOUTES les sorties de `resume` qui tuent le run, pas seulement sur l'échéance : le fil repris
+   * par un humain est même le cas le plus probable, puisque c'est lui qui fait taire le contact. `byRun` ne
+   * rend que la session vivante, il n'y a donc rien à faire quand le run n'en a pas.
+   */
+  private async cloreSessionDuRun(
+    tenantId: string, runId: string, statut: AgentSessionStatus, sortie?: string,
+  ): Promise<void> {
+    if (!this.deps.agentSessions) return;
+    const session = await this.deps.agentSessions.byRun(tenantId, runId);
+    if (session) await this.deps.agentSessions.clore(tenantId, session.id, statut, sortie);
+  }
+
   private async demarrerTourAgent(
     tenantId: string,
     waId: string,

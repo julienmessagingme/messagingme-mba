@@ -108,6 +108,38 @@ describe.skipIf(!url)('bloc Question : la réclamation de l’échéance', () =>
     expect(r.rowCount).toBe(1);
   });
 
+  it('🔴 setStateSiEncoreSur n ecrit RIEN quand le run a bouge', async () => {
+    // La garde qui empêche un tour d'agent de RESSUSCITER un run tué pendant qu'il réfléchissait. Sans elle,
+    // le run reviendrait `waiting` avec une échéance : invisible de `findWaitingByWaId` (un run plus récent
+    // existe) mais parfaitement visible du balayeur, qui déclencherait plus tard la branche « pas de
+    // réponse » d'un parcours que quelqu'un avait délibérément fermé.
+    const id = await runDu('33600000108', 'aucune');
+    const lu = await pool.query<{ current_node: string }>('select current_node from workflow_runs where id = $1', [id]);
+    const courant = lu.rows[0]!.current_node;
+    const etat = { currentNode: courant, status: 'waiting' as const, resumeAt: new Date(Date.now() + 60_000) };
+    // Le run est encore là où on le croit : l'écriture passe.
+    expect(await store.setStateSiEncoreSur(tenantId, id, courant, etat)).toBe(true);
+
+    // Puis le run est tué, comme le ferait un opérateur qui lance un scénario depuis l'Inbox.
+    await store.setState(id, { currentNode: null, status: 'done' });
+    expect(await store.setStateSiEncoreSur(tenantId, id, courant, etat)).toBe(false);
+    const apres = await pool.query<{ status: string; resume_at: Date | null }>(
+      'select status, resume_at from workflow_runs where id = $1', [id],
+    );
+    expect(apres.rows[0]?.status).toBe('done');
+    expect(apres.rows[0]?.resume_at).toBeNull();
+  });
+
+  it('🔴 setStateSiEncoreSur d un AUTRE tenant n ecrit rien (isolation)', async () => {
+    const id = await runDu('33600000109', 'aucune');
+    const lu = await pool.query<{ current_node: string }>('select current_node from workflow_runs where id = $1', [id]);
+    const courant = lu.rows[0]!.current_node;
+    const autre = await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-qt-autre') returning id`);
+    const autreId = autre.rows[0]!.id;
+    expect(await store.setStateSiEncoreSur(autreId, id, courant, { currentNode: courant, status: 'waiting' })).toBe(false);
+    await pool.query('delete from tenants where id = $1', [autreId]);
+  });
+
   it('répondre efface l’échéance : `setState` l’écrit SANS coalesce', async () => {
     // Sans ça, le balayeur réveillerait un parcours déjà reparti et enverrait la branche « pas de réponse »
     // à quelqu'un qui vient justement de répondre.

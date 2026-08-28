@@ -1424,3 +1424,122 @@ describe('envoyerBlocDepuisAgent : walk + apply sans run (tâche 16)', () => {
     expect(calls).toEqual([]);
   });
 });
+
+/**
+ * Tâche 17 : la reprise d'un bloc agent sur échéance d'inactivité.
+ *
+ * Rien de neuf dans le mécanisme : `resume` sait déjà sortir par le handle `timeout` quand le repos qui a
+ * expiré était un `waiting`. Ce qui est neuf, c'est qu'une SESSION est en jeu, et qu'elle doit se clore.
+ */
+describe('resume : échéance d inactivité sur un bloc agent (tâche 17)', () => {
+  const SESSION17 = { id: 's17', tenantId: 't1', runId: 'r1', agentId: 'ag1', nodeId: 'a', waId: '33600', tours: 3, appelsOutils: 0, coutMicroEur: 0, status: 'en_cours' as const };
+
+  // agent 'a' avec DEUX sorties : une arête LIBRE vers 'libre', et le handle `timeout` vers 'fin'.
+  const avecTimeout: WorkflowGraph = {
+    nodes: [
+      n('a', 'agent', { agentId: 'ag1' }),
+      n('libre', 'quick_message', { body: 'la mauvaise branche' }),
+      // Un TEMPLATE et non un message rapide : il attend sur lui-meme, ce qui rend la position
+      // atteinte observable. Un message rapide sans bouton continue et clot le parcours (lecon de la tache 7).
+      n('fin', 'template', { templateName: 'relance', language: 'fr' }),
+    ],
+    edges: [e('e1', 'a', 'libre'), eh('e2', 'a', 'fin', 'timeout')],
+  };
+
+  const fake17 = (over: Partial<WorkflowExecutorDeps> = {}, session: typeof SESSION17 | null = SESSION17) => {
+    const clotures: Array<{ id: string; status: string; sortie?: string }> = [];
+    const store = {
+      byRun: async () => session,
+      clore: async (_t: string, id: string, status: string, sortie?: string) => { clotures.push({ id, status, ...(sortie ? { sortie } : {}) }); },
+    } as unknown as WorkflowExecutorDeps['agentSessions'];
+    return { clotures, over: { agentSessions: store, isWindowOpen: async () => true, ...over } };
+  };
+
+  const runEnAttente = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'a', status: 'waiting' as const };
+
+  it('🔴 sort par le handle « timeout », JAMAIS par l arête libre', async () => {
+    // Le « successeur » d'un bloc agent n'a aucun sens : c'est la réponse qui décide de la suite. Prendre la
+    // première arête venue enverrait un contact silencieux dans la branche du premier câblage.
+    const { over } = fake17();
+    const { ex, runs, calls } = make(avecTimeout, over);
+    runs.run = { ...runEnAttente, lastMessageId: null };
+    expect(await ex.resume(runEnAttente)).toBe(true);
+    expect(calls).toEqual(['tpl:relance']);
+    expect(runs.run).toMatchObject({ currentNode: 'fin' });
+  });
+
+  it('🔴 clôt la session en « inactivite » : sinon elle reste vivante et orpheline POUR TOUJOURS', async () => {
+    // Rien ne ramasse une session `en_cours`. Pire, l'index partiel « une seule session vivante par
+    // parcours » la ferait RÉUTILISER si le scénario repasse sur un bloc agent, avec ses tours et son coût
+    // déjà consommés : l'agent serait muet dès le premier tour.
+    const { clotures, over } = fake17();
+    const { ex } = make(avecTimeout, over);
+    await ex.resume(runEnAttente);
+    expect(clotures).toEqual([{ id: 's17', status: 'inactivite', sortie: 'timeout' }]);
+  });
+
+  it('sortie « timeout » NON câblée : le parcours se clôt, la session est close, et la main est rendue', async () => {
+    const seul: WorkflowGraph = { nodes: [n('a', 'agent', { agentId: 'ag1' })], edges: [] };
+    const rendus: string[] = [];
+    const { clotures, over } = fake17({
+      releaseToMba: async (_t: string, w: string) => { rendus.push(w); },
+      mbaActifPour: async () => true,
+    });
+    const { ex, runs } = make(seul, over);
+    runs.run = { ...runEnAttente, lastMessageId: null };
+    expect(await ex.resume(runEnAttente)).toBe(false);
+    expect(runs.run).toMatchObject({ currentNode: null, status: 'done' });
+    expect(clotures).toEqual([{ id: 's17', status: 'inactivite', sortie: 'timeout' }]);
+    expect(rendus).toEqual(['33600']); // l'agent retenait le fil, il faut le rendre
+  });
+
+  it('🔴 fil repris par un humain à l échéance : le run meurt ET la session est close', async () => {
+    // Le cas le PLUS probable, trouvé en revue : c'est justement la reprise par un opérateur qui fait taire
+    // le contact, donc qui déclenche l'échéance. Avant la tâche 17 ce chemin était inatteignable (un run sur
+    // un bloc agent n'avait pas de `resume_at`, donc le balayeur ne le voyait pas) : la tâche l'ouvre, et
+    // sans clôture la session restait vivante pour toujours.
+    const { clotures, over } = fake17({ mayAct: async () => false });
+    const { ex, runs } = make(avecTimeout, over);
+    runs.run = { ...runEnAttente, lastMessageId: null };
+    expect(await ex.resume(runEnAttente)).toBe(false);
+    expect(runs.run).toMatchObject({ currentNode: null, status: 'done' });
+    // `erreur` et non `inactivite` : le parcours meurt pour une raison qui n'a rien à voir avec le silence.
+    expect(clotures).toEqual([{ id: 's17', status: 'erreur' }]);
+  });
+
+  it('🔴 scénario supprimé sous les pieds du parcours : le run meurt ET la session est close', async () => {
+    const { clotures, over } = fake17();
+    const { ex } = make(avecTimeout, { ...over, getGraph: async () => null });
+    expect(await ex.resume(runEnAttente)).toBe(false);
+    expect(clotures).toEqual([{ id: 's17', status: 'erreur' }]);
+  });
+
+  it('un réveil de bloc ATTENTE ne touche à aucune session (statut sleeping, pas waiting)', async () => {
+    // Garde de non-régression : la clôture ne doit se déclencher que sur une échéance, pas sur tout réveil.
+    const g: WorkflowGraph = {
+      nodes: [n('w', 'wait', { delay: 1, unit: 'hours' }), n('q', 'quick_message', { body: 'apres' })],
+      edges: [e('e1', 'w', 'q')],
+    };
+    const { clotures, over } = fake17();
+    const { ex } = make(g, over);
+    await ex.resume({ id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'w', status: 'sleeping' });
+    expect(clotures).toEqual([]);
+  });
+
+  it('une échéance sur un bloc QUESTION ne clôt rien : ce run n a pas de session vivante', async () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('q', 'question', { body: 'un choix ?', buttonLabel: 'Voir', rows: [{ title: 'A' }] }),
+        n('fin', 'quick_message', { body: 'pas de reponse' }),
+      ],
+      edges: [eh('e1', 'q', 'fin', 'timeout')],
+    };
+    // La règle n'est pas « un bloc agent », c'est « ce run a-t-il une session vivante ». Un parcours posé
+    // sur une question n'en a pas : `byRun` rend null, et rien n'est clos.
+    const { clotures, over } = fake17({}, null);
+    const { ex, calls } = make(g, over);
+    await ex.resume({ id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'q', status: 'waiting' });
+    expect(calls).toEqual(['qm:pas de reponse']);
+    expect(clotures).toEqual([]);
+  });
+});
