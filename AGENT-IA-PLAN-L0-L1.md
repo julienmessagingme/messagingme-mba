@@ -2174,11 +2174,11 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 |---|---|---|
 | **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit 6dca192, 2026-08-28) |
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit e9e2c73, 2026-08-28) |
-| **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit HASH19C, 2026-08-28) |
+| **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit c978e69, 2026-08-28) |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | à faire |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
 
-### Tranche 19c : l'onglet outils -- ✅ FAIT (commit HASH19C, 2026-08-28)
+### Tranche 19c : l'onglet outils -- ✅ FAIT (commit c978e69, 2026-08-28)
 
 **Ce que ça débloque.** `agent_tools` restait vide, donc l'agent ne pouvait ni terminer par une sortie, ni
 escalader, ni envoyer un bloc, ni chercher dans sa base de connaissance. Tout le lot 16 était écrit et
