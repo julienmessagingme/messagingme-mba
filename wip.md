@@ -6,7 +6,7 @@ Le plan, l etat tache par tache et le **registre des dettes** vivent dans
 [AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D1, D2, D3, D4 et D6 sont fermees**. Reste **D5** (les
 blocs agent invisibles d Analytics).
 
-## A DEPLOYER : le lot L2, le connecteur API du client
+## DEPLOYE le 2026-08-28 sur `05f791d` : le lot L2, le connecteur API du client
 
 Plan execute : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf taches, quatre decisions tranchees par Julien
 et retenues telles quelles. Un agent peut desormais interroger le systeme d un client par une API HTTP que le
@@ -18,8 +18,19 @@ fournisseur de modele), alors qu un connecteur sert d abord a repondre « ou en 
 vient maintenant du contexte du tour, ou il est authentifie par la signature du webhook Meta. Le fixe des tests
 portait `wa_id`, ce que la production n a jamais eu : il a ete recale sur la vraie projection.
 
-⚠️ **Migration 0088 NON appliquee en production.** Sequence : `compose build mba-api` AVANT
-`compose run --rm --no-deps mba-api npm run migrate`, puis `up -d --build`. **Prochaine libre = 0089.**
+✅ **Migration 0088 appliquee**, sequence tenue : `build mba-api`, verification que la 0088 est DANS l image,
+`migrate` (« 1 migration appliquee »), verification en base (les deux tables, la colonne `source_id`, les deux
+contraintes), puis `up -d --build`. **Prochaine libre = 0089.**
+
+Verifie APRES deploiement : les trois conteneurs sains et rattaches a `mcp-robot_default`, zero redemarrage,
+l accueil, `/workflows` et `/agents` en 200, la route `/agent-sources` montee (401 sans jeton) et
+`POST .../tools/connecteur` montee (401 sans jeton). Le webhook Meta repond 403 sur un jeton faux et sur un
+POST non signe, par le chemin public reel (`/api/backend/webhooks/meta`).
+
+⚠️ **Une fenetre de 968 ms d erreurs de proxy pendant la recreation** (`mba-web` -> `mba-api`, ECONNREFUSED,
+20:01:41,744 a 20:01:42,712), le temps que l API se mette a ecouter. Les livraisons Meta tombees dans cette
+seconde sont rejouees par Meta. C est le cout normal d un `up -d --build` ; le noter pour ne pas le confondre
+avec un incident la prochaine fois qu on lit ces logs.
 
 ⚠️ **Rien n est branche tant qu un client n a pas declare de source.** Le lot n active rien tout seul : sans
 source, l onglet Outils est exactement ce qu il etait.
