@@ -2116,7 +2116,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 # Phase L1-D, le front
 
-## Tâche 18 : le bloc agent dans le builder — ✅ FAIT (commit COMMIT18, 2026-08-28)
+## Tâche 18 : le bloc agent dans le builder — ✅ FAIT (commit 796b0b4, 2026-08-28)
 
 🔴 **Le bug que la revue a trouvé, et il tenait en deux clics.** Un bloc agent SANS agent est un passe-plat
 (décision de la tâche 7 : rendre la main à un agent qui n'existe pas figerait le parcours). Il suivait
