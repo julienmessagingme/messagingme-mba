@@ -37,6 +37,14 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /**
+     * Le corps de la réponse, tel quel.
+     *
+     * Certaines routes rendent une erreur STRUCTURÉE en plus de son message : le blocage d'activation d'un
+     * agent liste ce qui manque et dans quel onglet le corriger. Sans ce champ, l'écran ne pourrait afficher
+     * que « agent incomplet », c'est-à-dire un refus sans mode d'emploi.
+     */
+    public readonly corps?: unknown,
   ) {
     super(message);
   }
@@ -89,7 +97,7 @@ async function attempt<T>(path: string, init: RequestInit): Promise<T> {
   if (!res.ok) {
     const msg = (body as { error?: string } | null)?.error
       ?? (langue() === 'en' ? `Error ${res.status}` : `Erreur ${res.status}`);
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, msg, body);
   }
   return body as T;
 }

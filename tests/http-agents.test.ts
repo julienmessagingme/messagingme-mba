@@ -183,6 +183,18 @@ describe('routes agents : modification', () => {
     expect(cap.patches).toEqual([]);
   });
 
+  it('🔴 un patch de fiche ne transmet QUE les clés mentionnées', async () => {
+    // La fusion jsonb du store ne protège que les clés ABSENTES du patch. Si la route en ajoutait (c'est ce
+    // que faisait `ficheAgentSchema.partial()`, dont le `.default()` survit au `.partial()`), la fusion
+    // n'aurait plus rien à protéger et enregistrer l'objectif effacerait le ton et toutes les règles d'arrêt.
+    const { cap, srv } = app();
+    await srv.inject({
+      method: 'PATCH', url: `/tenants/t1/agents/${AG1}`, ...h(adminTok),
+      payload: { contenu: { objectif: 'Cerner le besoin.' }, ficheVersionAttendue: 1 },
+    });
+    expect(Object.keys(cap.patches[0]!.patch.contenu ?? {})).toEqual(['objectif']);
+  });
+
   it('un agent inconnu rend 404, pas une écriture silencieuse', async () => {
     const { srv } = app();
     expect((await srv.inject({ method: 'PATCH', url: `/tenants/t1/agents/${INCONNU}`, ...h(adminTok), payload: { label: 'X' } })).statusCode).toBe(404);

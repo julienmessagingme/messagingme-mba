@@ -41,15 +41,19 @@ export const sortieAgentSchema = z.object({
  *  dans une énumération trop large. */
 export const MAX_SORTIES = 12;
 
-export const ficheAgentSchema = z.object({
+/**
+ * Les champs de la fiche, SANS défaut. Les deux schémas ci-dessous en dérivent tous les deux, et c'est le
+ * seul moyen d'avoir une lecture et un patch qui ne divergent jamais sur les bornes.
+ */
+const CHAMPS = {
   /** Le nom que l'agent se donne dans la conversation. Vide -> il n'en donne aucun. */
-  nom: z.string().trim().max(80).default(''),
+  nom: z.string().trim().max(80),
   /** Ce que l'agent est là pour faire. C'est le champ qui porte le plus de sens pour le modèle. */
-  objectif: z.string().trim().max(4000).default(''),
-  ton: z.string().trim().max(1000).default(''),
-  personnalite: z.string().trim().max(1000).default(''),
+  objectif: z.string().trim().max(4000),
+  ton: z.string().trim().max(1000),
+  personnalite: z.string().trim().max(1000),
   /** Quand passer la main à un humain, en français, tel que le client le dirait. */
-  reglesTransfert: z.string().trim().max(4000).default(''),
+  reglesTransfert: z.string().trim().max(4000),
   /**
    * 🔴 CODES UNIQUES, exigé ICI parce que la LECTURE le suppose déjà : `sortiesDeLaFiche` écarte un doublon
    * en silence. Sans cette garde, l'écriture accepterait ce que la lecture jette, et la fiche cesserait de
@@ -57,8 +61,41 @@ export const ficheAgentSchema = z.object({
    * aussi.
    */
   sorties: z.array(sortieAgentSchema).max(MAX_SORTIES)
-    .refine((s) => new Set(s.map((x) => x.code)).size === s.length, 'codes de sortie en double')
-    .default([]),
+    .refine((s) => new Set(s.map((x) => x.code)).size === s.length, 'codes de sortie en double'),
+};
+
+/** La fiche COMPLÈTE, telle qu'on la LIT : chaque champ absent prend son défaut, ce qui rend une ligne
+ *  ancienne ou mal formée éditable au lieu de faire tomber l'écran. */
+export const ficheAgentSchema = z.object({
+  nom: CHAMPS.nom.default(''),
+  objectif: CHAMPS.objectif.default(''),
+  ton: CHAMPS.ton.default(''),
+  personnalite: CHAMPS.personnalite.default(''),
+  reglesTransfert: CHAMPS.reglesTransfert.default(''),
+  sorties: CHAMPS.sorties.default([]),
+});
+
+/**
+ * La fiche en PATCH : chaque champ optionnel et SANS DÉFAUT.
+ *
+ * 🔴 POURQUOI CE SECOND SCHÉMA EXISTE, et c'est un piège qui a déjà coûté une fois. `ficheAgentSchema
+ * .partial()` NE FAIT PAS ce qu'on croit : `.partial()` rend le champ optionnel, mais le `.default()` qui est
+ * DESSOUS s'applique quand même à l'absence. Un `{ objectif }` ressort donc en fiche ENTIÈRE, chaque autre
+ * champ rempli par son défaut. Écrit ensuite par la fusion jsonb (`fiche || $n`), il n'y a plus aucune clé
+ * absente à protéger : le ton, la personnalité et TOUTES les règles d'arrêt sont effacés, sans la moindre
+ * erreur. La correction de la tâche 19a (la fusion et le verrou de version) ne fermait donc pas le cas
+ * qu'elle visait, et rien ne le voyait : le formulaire renvoie toujours la fiche entière.
+ *
+ * `tests/agent-sorties-fiche.test.ts` ancre le comportement des DEUX schémas, précisément parce qu'ils se
+ * ressemblent assez pour qu'on reprenne le mauvais.
+ */
+export const fichePatchSchema = z.object({
+  nom: CHAMPS.nom.optional(),
+  objectif: CHAMPS.objectif.optional(),
+  ton: CHAMPS.ton.optional(),
+  personnalite: CHAMPS.personnalite.optional(),
+  reglesTransfert: CHAMPS.reglesTransfert.optional(),
+  sorties: CHAMPS.sorties.optional(),
 });
 
 export type FicheAgentContenu = z.infer<typeof ficheAgentSchema>;

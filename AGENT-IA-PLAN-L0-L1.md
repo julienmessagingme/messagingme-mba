@@ -2175,8 +2175,78 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | **19a** | Groupe de nav « AI Agent », CRUD serveur de la fiche, écran de réglage (identité et ton, objectif et transferts, périmètre et garde-fous, modèle), activation | ✅ FAIT (commit 6dca192, 2026-08-28) |
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit e9e2c73, 2026-08-28) |
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit c978e69, 2026-08-28) |
-| **19d** | La surface de construction conversationnelle (l'IA de setup) | à faire |
+| **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit HASH19D, 2026-08-28) |
 | **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | à faire |
+
+### Tranche 19d : la surface de construction conversationnelle -- ✅ FAIT (commit HASH19D, 2026-08-28)
+
+**Livré :** `src/agent/setup/` (le schéma de proposition et le diff, l'assemblage des messages, le lint), la
+route `src/http/agent-setup.ts`, l'onglet `web/components/AgentConstruction.tsx`, et le premier câblage réel
+du Vercel AI Gateway (`AI_GATEWAY_API_KEY`, `AGENT_SETUP_MODEL`).
+
+🔴 **LE DÉFAUT LE PLUS GRAVE DU LOT ENTIER A ÉTÉ TROUVÉ ICI, ET IL DATAIT DE LA TRANCHE 19a.**
+
+`ficheAgentSchema.partial()` NE REND PAS un objet partiel. `.partial()` rend le champ optionnel, mais le
+`.default()` qui est DESSOUS s'applique quand même à l'absence : un `{objectif}` ressortait en fiche ENTIÈRE,
+chaque autre champ rempli par son défaut. Écrit ensuite par la fusion jsonb (`fiche || $n::jsonb`), il n'y
+avait plus aucune clé absente à protéger. **Enregistrer l'objectif effaçait le ton, la personnalité et TOUTES
+les règles d'arrêt, sans la moindre erreur.**
+
+C'est exactement le défaut que la revue de 19a croyait avoir fermé par la fusion plus le verrou de version.
+La correction ne fermait pas le cas, et rien ne pouvait le voir : le formulaire renvoie toujours la fiche
+entière. Il a fallu une surface qui écrit PAR PETITES TOUCHES pour le faire sortir.
+
+`fiche.ts` porte maintenant `ficheAgentSchema` (lecture, avec défauts) et `fichePatchSchema` (patch,
+optionnel SANS défaut), construits sur des champs communs. Le piège est ancré par un test qui affirme le
+MAUVAIS comportement de `.partial()`, pour qu'on n'y retombe pas. Les deux autres usages de `.partial()` du
+dépôt portent sur des schémas sans défaut : ils ne sont pas concernés.
+
+⚠️ **La leçon, générale.** Un correctif qui vise un défaut se vérifie sur le défaut LUI-MÊME, pas sur le
+mécanisme qu'on lui oppose. La tâche 19a a testé la fusion et le verrou (qui marchent), jamais « un patch
+partiel laisse-t-il vraiment les autres clés tranquilles » (qui ne marchait pas).
+
+🔴 **Le défaut de cette tranche, trouvé par la revue : le lint se calculait sur l'état PÉRIMÉ.**
+
+Le corps d'un `PATCH` peut porter `contenu` ET `status: 'active'` ensemble, et le store applique les deux
+d'un coup. Linter l'état lu en base laissait donc vider l'objectif et activer l'agent dans la MÊME requête,
+c'est-à-dire contourner la garde en un appel. C'est une règle déjà écrite dans le `CLAUDE.md` du dépôt
+(« une garde de validation se calcule sur l'état EFFECTIF après écriture, `patch ?? courant` »), posée après
+un défaut du même genre sur la garde anti-boucle de l'analyse de conversation. Corrigé, et testé dans les
+DEUX sens : vider et activer ensemble est refusé, combler et activer ensemble passe (le second compte autant,
+c'est ce que fera l'assistant quand il proposera d'activer après une proposition).
+
+**Les cinq garde-fous du cadrage §5.9, et où ils vivent.**
+
+1. **Ce que l'assistant peut écrire est ÉNUMÉRÉ** (`propositionSchema`) : la fiche et les mots des outils
+   maison. Ni la mention légale d'IA, ni les plafonds, ni le modèle, ni le risque d'un outil, ni son
+   ACTIVATION. Écarté par `safeParse` sans faire échouer le tour : un modèle qui renvoie du bruit n'obtient
+   rien, il ne casse pas la conversation.
+2. **Aucune écriture silencieuse.** La route n'écrit RIEN. Elle rend une proposition et le diff qu'elle
+   produirait ; l'écriture passe par le `PATCH` et les routes d'outils, avec leurs verrous.
+3. **Le contexte part en bloc délimité**, et le contenu ne peut pas recréer le délimiteur. L'assistant lit ce
+   que le SITE du client a écrit (les fiches de la tranche 19b).
+4. **Le lint bloque l'activation**, sur des champs vides et jamais sur une qualité sémantique.
+5. **Le chat n'est jamais le seul chemin d'édition** : les six onglets de formulaire restent là.
+
+**Trois décisions de fond.**
+
+**L'assistant ne propose PAS de fiches de connaissance.** Une base de connaissance doit contenir ce que le
+client dit vraiment. Laisser un modèle en écrire retournerait le mécanisme anti-hallucination contre
+lui-même : l'agent citerait comme source une phrase inventée au moment du réglage.
+
+**La conversation n'est pas persistée.** Le client porte l'historique, le serveur relit la fiche à chaque
+tour. Pas de table de plus, et la synchronisation avec le formulaire est gratuite. Un admin pourrait forger
+un faux tour d'assistant : sans conséquence, il a déjà le droit d'écrire la fiche en direct.
+
+**Le modèle de l'IA de construction est SÉPARÉ de celui de l'agent** (`AGENT_SETUP_MODEL`). Celle-ci tourne
+rarement et joue le rôle le plus dur ; celui-là répond à chaque message d'un contact.
+
+🟡 **Les trois autres constats de la revue, corrigés.** L'application d'une proposition compose deux écritures
+sans transaction : un échec après que la fiche est écrite le DIT maintenant, et l'écran relit l'agent même en
+cas d'échec (sans quoi un second essai se faisait refuser en 409 sur un numéro de version périmé, pour une
+raison sans rapport avec la cause). Le même outil proposé deux fois est refusé. Et les MOTS ACTUELS des
+outils déjà posés partent dans le contexte, sans quoi le modèle réinventait une description que le client
+avait soignée.
 
 ### Tranche 19c : l'onglet outils -- ✅ FAIT (commit c978e69, 2026-08-28)
 

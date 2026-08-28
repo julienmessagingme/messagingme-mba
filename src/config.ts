@@ -200,6 +200,17 @@ export const schema = z.object({
   /** Id de modèle LLM (ex. claude-haiku-4-5 pour ce classifieur haut-volume, ou claude-opus-4-8 pour la qualité).
    *  À fixer au déploiement — JAMAIS d'id daté figé en dur. Vide -> analyse non activable. */
   LLM_MODEL: z.string().default(''),
+  /**
+   * Cle du Vercel AI Gateway, pour l agent IA et son assistant de construction. Vide -> la conversation de
+   * construction repond 503 (indisponible), aucun crash : meme patron que RESEND_API_KEY.
+   */
+  AI_GATEWAY_API_KEY: z.string().default(''),
+  /**
+   * Modele de l IA de CONSTRUCTION, a ne pas confondre avec celui d un agent. Celle-ci tourne rarement
+   * (reglage et optimisation) et joue le role le plus dur : elle merite un modele plus fort que le runtime.
+   * Vide -> repli sur LLM_MODEL.
+   */
+  AGENT_SETUP_MODEL: z.string().default(''),
   /** max_tokens de la réponse d'analyse (petit JSON). */
   LLM_MAX_TOKENS: z.coerce.number().default(1024),
   /** URL du connecteur mm-hubspot (POST /ingest). Vide -> le push d'analyse est INERTE (aucun job enfilé). */

@@ -83,6 +83,12 @@ export class GatewayChatClient {
     modele: string;
     messages: ChatMessage[];
     outils?: OutilExpose[];
+    /**
+     * Force l'appel de CET outil, par son nom. Sert à la sortie structurée : plutôt que de demander du JSON
+     * en prose et d'espérer, on déclare un outil dont les paramètres SONT le schéma attendu, et on oblige le
+     * modèle à l'appeler. Le fournisseur valide alors le schéma pour nous.
+     */
+    toolChoice?: string;
     /** Coupe l'appel. Sans lui, un fournisseur qui pend immobilise un slot de worker pendant des minutes. */
     signal?: AbortSignal;
   }): Promise<ReponseChat> {
@@ -97,6 +103,11 @@ export class GatewayChatClient {
             // le met à la racine de l'outil ; se tromper fait refuser le corps en 400.
             ...(input.outils?.length
               ? { tools: input.outils.map((o) => ({ type: 'function', function: { name: o.name, description: o.description, parameters: o.parameters } })) }
+              : {}),
+            // Forme Chat Completions du choix d'outil forcé. Ignoré si aucun outil n'est déclaré : envoyer
+            // `tool_choice` sans `tools` fait refuser le corps en 400 chez plusieurs fournisseurs.
+            ...(input.toolChoice && input.outils?.length
+              ? { tool_choice: { type: 'function', function: { name: input.toolChoice } } }
               : {}),
           },
           { authorization: `Bearer ${this.apiKey}` },

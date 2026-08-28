@@ -80,6 +80,7 @@ import { FetchTransport } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { PgToolCatalog } from './agent/catalog.pg';
+import { GatewayChatClient } from './agent/llm/chat-client';
 import { installGracefulShutdown } from './shutdown';
 import type { CountryCode } from 'libphonenumber-js';
 
@@ -138,6 +139,8 @@ async function main(): Promise<void> {
   const agentStore = new PgAgentStore(pool);
   const knowledgeStore = new PgKnowledgeStore(pool);
   const toolCatalog = new PgToolCatalog(pool);
+  // Vide -> la conversation de construction repond 503, aucun crash au boot.
+  const gateway = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
   const automationStore = new PgAutomationStore(pool);
   // Node « Envoi de mail » : boîtes SMTP + modèles (scopés tenant), résolveur de transport à cache par
   // tenant+compte (invalidé par les routes email à chaque écriture d'un compte).
@@ -625,6 +628,37 @@ async function main(): Promise<void> {
       // Le modèle d'un agent NEUF vient de la configuration serveur, pas du client : il choisira ensuite
       // dans l'écran de réglage. Vide en l'absence de configuration, la colonne l'accepte.
       modeleParDefaut: config.LLM_MODEL,
+      // Le blocage dur avant activation : il lit les TROIS sources (fiche, connaissance, outils actifs),
+      // parce qu un agent active est proposable dans un scenario, donc il finira par ecrire a de vrais clients.
+      etatPourLint: async (tenant, agentId) => {
+        const fiche = await agentStore.complet(tenant, agentId);
+        if (!fiche) return null;
+        const [fiches, outils] = await Promise.all([
+          knowledgeStore.lister(tenant, agentId),
+          toolCatalog.listActifs(tenant, agentId),
+        ]);
+        return { fiche: fiche.contenu, fichesConnaissance: fiches.length, outilsActifs: outils.length };
+      },
+    },
+    // L assistant de construction. Il ne peut ecrire NI la mention legale d IA, NI les plafonds, NI le
+    // modele, NI le risque ou l activation d un outil : il rend une proposition, le client l applique.
+    agentSetup: {
+      etatCourant: async (tenant, agentId) => {
+        const fiche = await agentStore.complet(tenant, agentId);
+        if (!fiche) return null;
+        const [outils, fiches] = await Promise.all([
+          toolCatalog.listToutes(tenant, agentId),
+          knowledgeStore.lister(tenant, agentId),
+        ]);
+        return {
+          label: fiche.label,
+          fiche: fiche.contenu,
+          outils: outils.map((o) => ({ handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser })),
+          titresConnaissance: fiches.map((f) => f.titre),
+        };
+      },
+      ...(gateway ? { completer: (i: Parameters<GatewayChatClient['completer']>[0]) => gateway.completer(i) } : {}),
+      modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
     },
     // Base de connaissance d'un agent : la seule source que l'agent a le droit d'utiliser. `fetchUrl` porte
     // la garde SSRF (le serveur vit dans le reseau Docker du VPS) et le plafond de taille.

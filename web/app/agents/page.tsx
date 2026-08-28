@@ -14,6 +14,9 @@ import {
 import { CodeSortieInput } from '@/components/AgentSorties';
 import { AgentConnaissance } from '@/components/AgentConnaissance';
 import { AgentOutils } from '@/components/AgentOutils';
+import { AgentConstruction } from '@/components/AgentConstruction';
+import { appliquerProposition, manquesDe, type ManqueFiche } from '@/lib/api-agent-setup';
+import { ApiError } from '@/lib/http';
 
 /**
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
@@ -24,9 +27,9 @@ import { AgentOutils } from '@/components/AgentOutils';
  * un interrupteur d'accueil comme l'agent de Meta, qui lui est unique par workspace.
  */
 
-type Onglet = 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele';
+type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele';
 
-const ONGLETS: Onglet[] = ['identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele'];
+const ONGLETS: Onglet[] = ['construction', 'identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele'];
 const lireOnglet = (v: string | null): Onglet => (ONGLETS as string[]).includes(v ?? '') ? (v as Onglet) : 'identite';
 
 export default function AgentsPage() {
@@ -46,6 +49,9 @@ function Ecran({ tenantId }: { tenantId: string }) {
   const [nouveau, setNouveau] = useState('');
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  // Ce qui manque pour ACTIVER, tel que le serveur le rend en 422. Séparé du message d'erreur : ce n'est pas
+  // une panne, c'est une liste de choses à faire, et chacune pointe l'onglet où elle se fait.
+  const [manques, setManques] = useState<ManqueFiche[]>([]);
 
   const charger = useCallback(async () => {
     // `tous: true` : c'est l'écran qui CRÉE les agents, il doit voir ses propres brouillons. Le builder, lui,
@@ -121,6 +127,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
     if (!ouvert || busy) return;
     setBusy(true);
     setErreur(null);
+    setManques([]);
     try {
       // Le verrou de version accompagne TOUT patch de fiche : sans lui, deux surfaces qui écrivent la même
       // clé se recouvrent en silence. Le serveur refuse en 409, et le message dit de recharger.
@@ -128,7 +135,11 @@ function Ecran({ tenantId }: { tenantId: string }) {
       setOuvert(await patchAgent(tenantId, ouvert.id, avecVerrou));
       await charger();
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save'));
+      // 422 sur une activation : l'agent est incomplet. On montre la LISTE, pas « agent incomplet », qui
+      // serait un refus sans mode d'emploi.
+      const liste = err instanceof ApiError && err.status === 422 ? manquesDe(err.corps) : [];
+      if (liste.length > 0) setManques(liste);
+      else setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save'));
     } finally {
       setBusy(false);
     }
@@ -159,10 +170,28 @@ function Ecran({ tenantId }: { tenantId: string }) {
           <h2 className="text-xl font-semibold tracking-tight text-ink-900">{ouvert.label}</h2>
         </div>
         {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}
+        {manques.length > 0 && (
+          <MbaNotice kind="warning" testid="agent-manques">
+            <span className="font-medium">{t('Cet agent ne peut pas encore être activé :', 'This agent cannot be activated yet:')}</span>
+            <span className="mt-1 block">
+              {manques.map((m) => (
+                <button
+                  key={m.message}
+                  data-testid={`agent-manque-${m.onglet}`}
+                  onClick={() => aller(ouvert.id, m.onglet)}
+                  className="block text-left underline decoration-dotted hover:decoration-solid"
+                >
+                  {m.message}
+                </button>
+              ))}
+            </span>
+          </MbaNotice>
+        )}
         <MbaTabs
           active={onglet}
           onSelect={(k) => aller(ouvert.id, lireOnglet(k))}
           tabs={[
+            { key: 'construction', label: t('Construire en parlant', 'Build by talking') },
             { key: 'identite', label: t('Identité et ton', 'Identity and tone') },
             { key: 'objectif', label: t('Objectif et transferts', 'Objective and handovers') },
             { key: 'connaissance', label: t('Base de connaissance', 'Knowledge base') },
@@ -171,6 +200,25 @@ function Ecran({ tenantId }: { tenantId: string }) {
             { key: 'modele', label: t('Modèle', 'Model') },
           ]}
         />
+        {/* La conversation n'ecrit RIEN toute seule : elle rend une proposition, et c'est cet ecran qui
+            l'applique, par les memes routes que le formulaire et avec le meme verrou de version. */}
+        {onglet === 'construction' && (
+          <AgentConstruction
+            tenantId={tenantId}
+            agentId={ouvert.id}
+            onApplique={async (p) => {
+              try {
+                await appliquerProposition(tenantId, ouvert.id, p, ouvert.ficheVersion);
+              } finally {
+                // Relu MÊME en cas d'échec, et c'est le point : un échec partiel (la fiche écrite, un outil
+                // refusé) laisse le numéro de version périmé en mémoire, et un second essai se ferait alors
+                // refuser en 409 pour une raison qui n'a rien à voir avec la cause réelle.
+                setOuvert(await getAgent(tenantId, ouvert.id));
+                await charger();
+              }
+            }}
+          />
+        )}
         {onglet === 'identite' && <OngletIdentite agent={ouvert} busy={busy} onSave={enregistrer} />}
         {onglet === 'objectif' && <OngletObjectif agent={ouvert} busy={busy} onSave={enregistrer} />}
         {/* La connaissance vit dans SA table, pas dans la fiche jsonb : ce panneau a donc ses propres appels

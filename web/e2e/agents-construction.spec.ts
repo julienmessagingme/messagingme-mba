@@ -1,0 +1,187 @@
+import { test, expect } from '@playwright/test';
+
+/**
+ * Onglet CONSTRUIRE EN PARLANT, et le blocage d'activation qui va avec.
+ *
+ * Ce qu'on vérifie vraiment ici : l'assistant ne change RIEN tout seul (chaque proposition passe par un diff
+ * que le client garde ou jette), et un agent incomplet ne peut pas être activé, avec la LISTE de ce qui
+ * manque plutôt qu'un refus sans mode d'emploi.
+ */
+const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
+const AG = '11111111-1111-4111-8111-111111111111';
+
+const FICHE = { nom: '', objectif: 'Aider.', ton: '', personnalite: '', reglesTransfert: '', sorties: [] };
+const AGENT = {
+  id: AG, label: 'Conseiller séjours', status: 'draft',
+  mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-test',
+  maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30000, inactiviteMinutes: 30,
+  contactInconnu: 'lecture_seule', contenu: FICHE, ficheVersion: 4,
+};
+
+const PROPOSITION = {
+  message: 'Je propose de préciser l’objectif et d’ajouter une règle d’arrêt.',
+  proposition: {
+    fiche: { objectif: 'Cerner le besoin de séjour puis proposer un rendez-vous.', sorties: [{ code: 'rdv_pris', label: 'Rendez-vous pris' }] },
+    outils: [],
+  },
+  changements: [
+    { champ: 'fiche.objectif', label: 'Objectif de l’agent', avant: 'Aider.', apres: 'Cerner le besoin de séjour puis proposer un rendez-vous.' },
+    { champ: 'fiche.sorties', label: 'Règles d’arrêt', avant: '', apres: 'rdv_pris : Rendez-vous pris' },
+  ],
+  usage: { tokensIn: 800, tokensOut: 90 },
+};
+
+type Appel = { method: string; url: string; body: unknown };
+
+async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean } = {}) {
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+  await page.route('**/api/backend/**', async (route) => {
+    const req = route.request();
+    const url = req.url();
+    const method = req.method();
+    const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    if (/\/setup$/.test(url)) {
+      appels.push({ method, url, body: req.postDataJSON() });
+      const r = opts.setup ?? { status: 200, body: PROPOSITION };
+      return json(r.body, r.status);
+    }
+    if (/\/tools/.test(url)) {
+      if (method === 'GET') return json({ outils: [], catalogue: [] });
+      if (opts.outilsEnEchec) return json({ error: 'un outil de cet agent porte déjà ce nom' }, 409);
+      return json({ outil: { id: 'o1' } }, method === 'POST' ? 201 : 200);
+    }
+    if (/\/knowledge/.test(url)) return json({ fiches: [] });
+    if (new RegExp(`/agents/${AG}$`).test(url)) {
+      if (method === 'PATCH') {
+        const corps = (req.postDataJSON() ?? {}) as Record<string, unknown>;
+        appels.push({ method, url, body: corps });
+        if (corps.status === 'active' && opts.activation) return json(opts.activation.body, opts.activation.status);
+        return json({ agent: { ...AGENT, ...corps } });
+      }
+      return json({ agent: AGENT });
+    }
+    if (/\/agents(\?|$)/.test(url)) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+    if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+    return json({});
+  });
+}
+
+test.describe('Agents IA : construire en parlant', () => {
+  test('🔴 l assistant PROPOSE, et rien ne s écrit avant « Garder »', async ({ page }) => {
+    // C'est le seul point de cet écran qui ne se négocie pas. Écrire en silence (ce que fait le GPT Builder)
+    // ferait un réglage que personne ne peut relire ni défaire.
+    const appels: Appel[] = [];
+    await mock(page, appels);
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+
+    await expect(page.getByTestId('setup-vide')).toBeVisible();
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes de séjour.');
+    await page.getByTestId('setup-envoyer').click();
+
+    await expect(page.getByTestId('setup-diff')).toBeVisible();
+    await expect(page.getByTestId('setup-diff-fiche.objectif')).toContainText('Cerner le besoin de séjour');
+    // Le AVANT est montré barré : le client voit ce qu'il perd, pas seulement ce qu'il gagne.
+    await expect(page.getByTestId('setup-diff-fiche.objectif')).toContainText('Aider.');
+    // Et surtout : AUCUN patch n'est encore parti.
+    expect(appels.filter((a) => a.method === 'PATCH')).toHaveLength(0);
+  });
+
+  test('« Garder » applique par le PATCH, avec le verrou de version', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels);
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes.');
+    await page.getByTestId('setup-envoyer').click();
+    await page.getByTestId('setup-garder').click();
+
+    await expect.poll(
+      () => appels.some((a) => a.method === 'PATCH' && (a.body as { ficheVersionAttendue?: number })?.ficheVersionAttendue === 4),
+      { timeout: 5000 },
+    ).toBe(true);
+    // Le patch ne porte QUE ce que la proposition mentionne.
+    const patch = appels.find((a) => a.method === 'PATCH')!.body as { contenu?: Record<string, unknown> };
+    expect(Object.keys(patch.contenu ?? {}).sort()).toEqual(['objectif', 'sorties']);
+  });
+
+  test('« Jeter » n écrit rien et fait disparaître le diff', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels);
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes.');
+    await page.getByTestId('setup-envoyer').click();
+    await page.getByTestId('setup-jeter').click();
+
+    await expect(page.getByTestId('setup-diff')).toHaveCount(0);
+    expect(appels.filter((a) => a.method === 'PATCH')).toHaveLength(0);
+  });
+
+  test('une proposition sans effet le DIT, au lieu d un bouton qui ne ferait rien', async ({ page }) => {
+    await mock(page, [], { setup: { status: 200, body: { ...PROPOSITION, changements: [] } } });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Rien à changer ?');
+    await page.getByTestId('setup-envoyer').click();
+    await expect(page.getByTestId('setup-sans-changement')).toBeVisible();
+    await expect(page.getByTestId('setup-garder')).toHaveCount(0);
+  });
+
+  test('une panne de l assistant est ANNONCÉE, pas avalée', async ({ page }) => {
+    await mock(page, [], { setup: { status: 503, body: { error: 'assistant de construction indisponible (aucun modèle configuré)' } } });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Bonjour');
+    await page.getByTestId('setup-envoyer').click();
+    await expect(page.getByTestId('setup-erreur')).toContainText('indisponible');
+  });
+
+  test('🔴 un échec APRÈS l écriture de la fiche le DIT, au lieu d une erreur muette', async ({ page }) => {
+    // Ces écritures ne sont pas dans une transaction : la fiche part par une route, les outils par une autre.
+    // Sans ce message, le client réessaierait « Garder » et se ferait refuser en 409 sur un numéro de version
+    // périmé, c'est-à-dire une erreur qui ne parle pas du tout de ce qui s'est passé.
+    const appels: Appel[] = [];
+    await mock(page, appels, {
+      setup: {
+        status: 200,
+        body: {
+          ...PROPOSITION,
+          proposition: {
+            fiche: { objectif: 'Cerner le besoin.' },
+            outils: [{ handler: 'poser_tag', description: 'Tague le contact.', nePasUtiliser: 'Pas de tag inventé.' }],
+          },
+        },
+      },
+      outilsEnEchec: true,
+    });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('Mon agent qualifie les demandes.');
+    await page.getByTestId('setup-envoyer').click();
+    await page.getByTestId('setup-garder').click();
+
+    await expect(page.getByTestId('setup-erreur')).toContainText('La fiche est enregistrée, mais un outil n’a pas pu l’être');
+    // La fiche, elle, est bien partie : le message ne ment pas.
+    expect(appels.some((a) => a.method === 'PATCH' && (a.body as { contenu?: unknown })?.contenu !== undefined)).toBe(true);
+  });
+
+  test('🔴 un agent incomplet ne s active pas, et l écran DIT ce qui manque', async ({ page }) => {
+    // Un refus sans mode d'emploi laisserait le client chercher. Chaque manque est un lien vers l'onglet où
+    // il se comble.
+    await mock(page, [], {
+      activation: {
+        status: 422,
+        body: {
+          error: 'agent incomplet',
+          manques: [
+            { onglet: 'connaissance', message: 'La base de connaissance est vide : l’agent transférerait toutes les questions de fond.' },
+            { onglet: 'outils', message: 'Aucun outil actif : l’agent peut parler mais ne peut rien faire, pas même terminer.' },
+          ],
+        },
+      },
+    });
+    await page.goto(`/agents?id=${AG}&tab=identite`);
+    await page.getByTestId('agent-activer').click();
+
+    await expect(page.getByTestId('agent-manques')).toBeVisible();
+    await expect(page.getByTestId('agent-manque-connaissance')).toBeVisible();
+    // Le lien mène à l'onglet où ça se corrige.
+    await page.getByTestId('agent-manque-outils').click();
+    await expect(page).toHaveURL(/tab=outils/);
+  });
+});

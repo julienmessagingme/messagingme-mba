@@ -18,6 +18,7 @@ import { registerFlows } from './http/flows';
 import { registerAgents } from './http/agents';
 import { registerAgentKnowledge } from './http/agent-knowledge';
 import { registerAgentTools } from './http/agent-tools';
+import { registerAgentSetup } from './http/agent-setup';
 import { registerMedia } from './http/media';
 import { registerTags } from './http/tags';
 import { registerFields } from './http/fields';
@@ -67,6 +68,7 @@ import type { FlowRouteDeps } from './http/flows';
 import type { AgentsRouteDeps } from './http/agents';
 import type { AgentKnowledgeRouteDeps } from './http/agent-knowledge';
 import type { AgentToolsRouteDeps } from './http/agent-tools';
+import type { AgentSetupRouteDeps } from './http/agent-setup';
 import type { MediaRouteDeps } from './http/media';
 import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
@@ -131,6 +133,7 @@ export interface ServerDeps {
   agents?: AgentsRouteDeps;
   agentKnowledge?: AgentKnowledgeRouteDeps;
   agentTools?: AgentToolsRouteDeps;
+  agentSetup?: AgentSetupRouteDeps;
   /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
   flows?: FlowRouteDeps;
   /** Upload d'image (headers de cartes carousel) — réservé aux admins. */
@@ -302,6 +305,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.agents) registerAgents(app, deps.agents, requireAdmin);
   if (deps.agentKnowledge) registerAgentKnowledge(app, deps.agentKnowledge, requireAdmin);
   if (deps.agentTools) registerAgentTools(app, deps.agentTools, requireAdmin);
+  if (deps.agentSetup) registerAgentSetup(app, deps.agentSetup, requireAdmin);
   if (deps.media) registerMedia(app, deps.media, requireAdmin);
   if (deps.tags) registerTags(app, deps.tags, requireAdmin);
   if (deps.fields) registerFields(app, deps.fields, requireAdmin);

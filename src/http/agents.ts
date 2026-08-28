@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import type { AgentComplet, AgentResume, PatchAgent } from '../agent/agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from '../agent/agent-store';
-import { ficheAgentSchema } from '../agent/fiche';
+import { fichePatchSchema } from '../agent/fiche';
+import { manquesAvantActivation, type EtatPourLint } from '../agent/setup/lint';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 
 export interface AgentsRouteDeps {
@@ -15,6 +16,11 @@ export interface AgentsRouteDeps {
   remove(tenantId: string, id: string): Promise<boolean>;
   /** Modèle par défaut d'un agent neuf. Vient de la configuration serveur, pas du client. */
   modeleParDefaut: string;
+  /**
+   * L'état à opposer au lint d'ACTIVATION. Absent, l'activation n'est pas contrôlée : c'est le montage des
+   * tests de routes voisins, jamais la production.
+   */
+  etatPourLint?(tenantId: string, agentId: string): Promise<EtatPourLint | null>;
 }
 
 /**
@@ -57,9 +63,10 @@ const patchSchema = z.object({
   budgetMicroEur: z.number().int().min(1).max(100_000_000).optional(),
   inactiviteMinutes: z.number().int().min(1).max(1440).optional(),
   contactInconnu: z.enum(['aucun_outil', 'lecture_seule', 'tous']).optional(),
-  // `.partial()` : le patch de la fiche est une FUSION. Sans ça, `ficheAgentSchema` remplirait chaque champ
-  // absent par son défaut, et enregistrer l'objectif effacerait le ton, les règles et toutes les sorties.
-  contenu: ficheAgentSchema.partial().optional(),
+  // 🔴 `fichePatchSchema` et NON `ficheAgentSchema.partial()`. Le second remplit chaque champ absent par son
+  // défaut (le `.default()` survit au `.partial()`), et la fusion jsonb n'aurait alors plus aucune clé
+  // absente à protéger : enregistrer l'objectif effacerait le ton, les règles et toutes les sorties.
+  contenu: fichePatchSchema.optional(),
   /** Version lue au chargement. Fournie -> l'écriture est refusée en 409 si la fiche a bougé entre-temps. */
   ficheVersionAttendue: z.number().int().min(1).optional(),
 });
@@ -127,6 +134,23 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, guar
     // Une version seule ne modifie rien : elle accompagne un patch, elle n'en est pas un.
     const { ficheVersionAttendue: _v, ...champs } = parse.data;
     if (Object.keys(champs).length === 0) return reply.code(400).send({ error: 'aucun champ à modifier' });
+    // 🔴 Le blocage dur du cadrage : on ne rend pas un agent proposable dans un scénario tant qu'il lui
+    // manque de quoi tenir sa promesse. Sur des CHAMPS VIDES, jamais sur une qualité sémantique, et sur
+    // l'ACTIVATION seulement : un brouillon se remplit dans n'importe quel ordre, et la conversation de
+    // construction procède justement par petites touches.
+    if (parse.data.status === 'active' && deps.etatPourLint) {
+      const etat = await deps.etatPourLint(tenant, agentId);
+      if (!etat) return reply.code(404).send({ error: 'agent introuvable' });
+      // 🔴 SUR L'ÉTAT EFFECTIF APRÈS ÉCRITURE, jamais sur celui qu'on vient de lire. Le corps peut porter
+      // `contenu` ET `status: 'active'` dans la MÊME requête, et le store applique les deux d'un coup :
+      // linter l'état d'avant laisserait vider l'objectif et activer dans le même geste, c'est-à-dire
+      // contourner la garde en une requête. C'est la règle du CLAUDE.md (« une garde de validation se
+      // calcule sur l'état effectif, `patch ?? courant` »), et elle vaut aussi quand le patch est un jsonb.
+      // La fusion rejouée ici est la même que celle du SQL : superficielle, clé par clé.
+      const manques = manquesAvantActivation({ ...etat, fiche: { ...etat.fiche, ...(parse.data.contenu ?? {}) } });
+      // 422 et non 500 : c'est une chose que le client doit lire et corriger, pas un incident.
+      if (manques.length > 0) return reply.code(422).send({ error: 'agent incomplet', manques });
+    }
     try {
       const agent = await deps.patch(tenant, agentId, parse.data);
       if (!agent) return reply.code(404).send({ error: 'agent introuvable' });
