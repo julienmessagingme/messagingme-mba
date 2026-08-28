@@ -2176,9 +2176,9 @@ remplit la fiche en discutant. La dernière est une feature à elle seule (appel
 | **19b** | Onglet base de connaissance : les fiches, leur édition, le scraping cadré | ✅ FAIT (commit e9e2c73, 2026-08-28) |
 | **19c** | Onglet outils : `agent_tools`, l'activation par un humain, le drapeau d'autonomie | ✅ FAIT (commit c978e69, 2026-08-28) |
 | **19d** | La surface de construction conversationnelle (l'IA de setup) | ✅ FAIT (commit fa32a18, 2026-08-28) |
-| **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | ✅ FAIT (commit HASH19E, 2026-08-28) |
+| **19e** | Onglet tester : parler à l'agent depuis la console avant de l'activer | ✅ FAIT (commit 013fe61, 2026-08-28) |
 
-### Tranche 19e : l'onglet tester, et LE CERVEAU RÉEL -- ✅ FAIT (commit HASH19E, 2026-08-28)
+### Tranche 19e : l'onglet tester, et LE CERVEAU RÉEL -- ✅ FAIT (commit 013fe61, 2026-08-28)
 
 **Elle construit bien plus que son titre.** Un panneau de test qui n'appellerait pas d'outils ne testerait
 rien, puisque c'est là que se joue le comportement d'un agent. Cette tranche écrit donc la BOUCLE DE
