@@ -209,7 +209,7 @@ l'IA choisit la famille.
 |---|---|
 | &laquo; qu'il envoie la fiche produit, la photo, le formulaire &raquo; | déclencher un bloc de votre scénario |
 | &laquo; qu'il lance le parcours de prise de rendez-vous &raquo; | déclencher un scénario complet, avec ses images et ses boutons |
-| &laquo; qu'il aille voir où en est la commande &raquo; | un connecteur vers votre système (API ou MCP, déjà branché dans Tools) |
+| &laquo; qu'il aille voir où en est la commande &raquo; | un connecteur vers votre système, que vous branchez dans l'onglet **Outils de votre agent** (API aujourd'hui ; MCP plus tard) |
 | &laquo; qu'il tague, remplisse une fiche, passe la main &raquo; | inclus d'office |
 
 Les deux premières lignes n'existent nulle part ailleurs : l'agent peut déclencher un bloc ou un

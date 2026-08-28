@@ -73,9 +73,11 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   chose).
 - 🔵 **L7 : URL MCP arbitraire par tenant.** Décision commerciale, pas technique.
 
-⚠️ **Le document produit promet déjà L2 dans son tableau des outils** (« un connecteur vers votre système (API
-ou MCP, déjà branché dans Tools) »). Cette ligne n'est pas livrable : à retirer ou à annoter avant de montrer
-le document à un client.
+⚠️ **PIÈGE DE VOCABULAIRE, vécu le 2026-08-28.** La console a un menu **Tools** dans la barre de gauche (il ne
+contient que les Webhooks entrants) ET un onglet **Outils** DANS un agent. Le connecteur vit dans le second,
+jamais dans le premier. Le document produit disait « déjà branché dans Tools », ce que tout lecteur mappe sur
+le menu : Julien a cherché là et n'a rien vu. La ligne nomme désormais le vrai endroit. Si la confusion revient,
+la vraie correction est de RENOMMER l'un des deux, pas de réexpliquer.
 
 ## Ouvert par la tranche 19c du bloc agent IA (2026-08-28)
 
