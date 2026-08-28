@@ -3,9 +3,29 @@
 ## EN COURS : le bloc agent IA (lots L0 et L1)
 
 Le plan, l etat tache par tache et le **registre des dettes** vivent dans
-[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D2, D3 et D4 sont fermees** : le cerveau reel existe
-(19e) et le tour de production est CABLE (tache 20). Restent **D1** (devise : le Gateway facture en dollars,
-la colonne est en micro-euros), **D5** (les blocs agent invisibles d Analytics) et **D6** (la migration).
+[AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D2, D3, D4 et D6 sont fermees**. Restent **D1** (devise)
+et **D5** (les blocs agent invisibles d Analytics).
+
+## DEPLOYE le 2026-08-28 sur `a325844` (54 commits, migration 0086 appliquee)
+
+Sequence tenue : `git pull`, `build mba-api`, verification que 0086 est DANS l image, `migrate`
+(« 1 migration appliquee »), verification des cinq tables `agent*` en base, puis `up -d --build`.
+Les trois conteneurs sont sains et rattaches a `mcp-robot_default`, l accueil et `/agents` repondent 200,
+`mba-api:8095/health` repond depuis le reseau interne, aucune erreur en trois minutes de logs.
+
+🔴 **LE BLOC AGENT EST DEPLOYE MAIS INERTE, ET C EST VOULU.** `AI_GATEWAY_API_KEY` n est pas dans le
+`.env.prod` : le worker le DIT au demarrage (« agent-turn: file NON consommee ») et la file n est pas
+consommee. Conséquences tant que la cle n est pas posee :
+
+- l assistant de construction et le bac a sable repondent **503** ;
+- un agent ACTIVE et pose dans un scenario laisserait le contact **sans reponse** : le tour serait enfile et
+  personne ne le consommerait. Le run reste `waiting`, rien ne casse, mais rien ne repond.
+
+Donc : ne pas poser de bloc agent dans un scenario vivant avant d avoir mis la cle.
+
+⚠️ **Et poser la cle rend D1 vivante** : le Gateway facture en DOLLARS, la colonne est `budget_micro_eur`.
+Le plafond de depense d un agent est alors faux d un facteur de change. Decision de facturation, a trancher
+par Julien avant qu un agent parle a un vrai contact.
 
 ⚠️ **Migration 0086 non appliquee en production** (dette D6). Elle passe AVANT tout deploiement de ce lot,
 et APRES un `compose build`.
