@@ -18,6 +18,7 @@ import { registerFlows } from './http/flows';
 import { registerAgents } from './http/agents';
 import { registerAgentKnowledge } from './http/agent-knowledge';
 import { registerAgentTools } from './http/agent-tools';
+import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
 import { registerAgentSetup } from './http/agent-setup';
 import { registerAgentTest } from './http/agent-test';
 import { registerMedia } from './http/media';
@@ -135,6 +136,7 @@ export interface ServerDeps {
   agents?: AgentsRouteDeps;
   agentKnowledge?: AgentKnowledgeRouteDeps;
   agentTools?: AgentToolsRouteDeps;
+  agentSources?: AgentSourcesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
   agentTest?: AgentTestRouteDeps;
   /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
@@ -308,6 +310,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.agents) registerAgents(app, deps.agents, requireAdmin);
   if (deps.agentKnowledge) registerAgentKnowledge(app, deps.agentKnowledge, requireAdmin);
   if (deps.agentTools) registerAgentTools(app, deps.agentTools, requireAdmin);
+  if (deps.agentSources) registerAgentSources(app, deps.agentSources, requireAdmin);
   if (deps.agentSetup) registerAgentSetup(app, deps.agentSetup, requireAdmin);
   if (deps.agentTest) registerAgentTest(app, deps.agentTest, requireAdmin);
   if (deps.media) registerMedia(app, deps.media, requireAdmin);

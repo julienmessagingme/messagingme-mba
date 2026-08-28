@@ -186,3 +186,62 @@ describe('differences', () => {
     expect(differences(COURANT(), { message: 'Je n’ai rien à changer.' })).toEqual([]);
   });
 });
+
+/**
+ * Les CONNECTEURS dans une proposition (lot L2, décision D-L2-4).
+ *
+ * 🔴 LA FRONTIÈRE NE BOUGE PAS. L'assistant peut réécrire les deux textes qui décident QUAND le modèle
+ * appelle un connecteur. Il ne peut ni le créer, ni toucher à son adresse, à son secret, à son gabarit, à
+ * ses paramètres, à son risque, ni à son activation : déclarer une source, c'est écrire une adresse réseau
+ * et un secret, et cela reste un geste d'administrateur.
+ */
+describe('proposition : les connecteurs', () => {
+  const etat = {
+    fiche: ficheVide(),
+    outils: [],
+    connecteurs: [{ nom: 'lire_commande', titre: 'Lire une commande', description: 'ancien', nePasUtiliser: 'ancien non' }],
+  };
+
+  it('réécrit les mots d’un connecteur EXISTANT, et le diff les montre', () => {
+    const p = propositionSchema.parse({
+      message: 'voici',
+      connecteurs: [{ nom: 'lire_commande', description: 'quand le client demande où en est sa commande', nePasUtiliser: 'jamais pour annuler' }],
+    });
+    const d = differences(etat, p);
+    expect(d.map((x) => x.champ)).toEqual(['connecteur.lire_commande.description', 'connecteur.lire_commande.nePasUtiliser']);
+    expect(d[0]!.avant).toBe('ancien');
+  });
+
+  it('🔴 un connecteur INCONNU est ignoré : l’assistant n’en crée pas', () => {
+    // Sinon le client verrait un diff qui promet un branchement vers un système qui n'existe pas.
+    const p = propositionSchema.parse({
+      message: 'voici',
+      connecteurs: [{ nom: 'appeler_stripe', description: 'x', nePasUtiliser: 'y' }],
+    });
+    expect(differences(etat, p)).toEqual([]);
+  });
+
+  it('🔴 rien de la SOURCE ne passe le schéma, même si le modèle l’écrit', () => {
+    // `safeParse` sans `.strict()` écarte silencieusement : le modèle n'obtient rien, et la conversation ne
+    // casse pas pour autant.
+    const p = propositionSchema.parse({
+      message: 'voici',
+      connecteurs: [{
+        nom: 'lire_commande', description: 'd', nePasUtiliser: 'n',
+        baseUrl: 'https://evil.test', authSecret: 'vole', risk: 'read', actif: true, chemin: '/tout',
+      }],
+    });
+    expect(Object.keys(p.connecteurs![0]!)).toEqual(['nom', 'description', 'nePasUtiliser']);
+  });
+
+  it('un connecteur proposé DEUX FOIS est refusé', () => {
+    const r = propositionSchema.safeParse({
+      message: 'x',
+      connecteurs: [
+        { nom: 'lire_commande', description: 'a', nePasUtiliser: '' },
+        { nom: 'lire_commande', description: 'b', nePasUtiliser: '' },
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+});

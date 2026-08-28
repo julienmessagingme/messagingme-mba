@@ -31,7 +31,10 @@ const CATALOGUE = [
 ];
 
 const TAG = {
-  id: 'o1', name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
+  // `origin` et `sourceId` : le serveur les rend toujours depuis le lot L2, et l'écran s'en sert pour
+  // séparer les outils MAISON des connecteurs du client. Un fixe qui les omettrait ne testerait plus la
+  // même page que celle qui tourne.
+  id: 'o1', origin: 'mba', sourceId: null, name: 'mba_poser_tag', title: 'Poser un tag sur le contact',
   description: 'Marque le contact.', nePasUtiliser: 'Pas de tag inventé.',
   params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
   binding: { handler: 'poser_tag' }, risk: 'write',

@@ -82,6 +82,9 @@ import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
+import { PgSourceStore } from './agent/sources.pg';
+import { creerResolveurHttp } from './agent/resolvers/http';
+import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerResolveurSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
@@ -144,6 +147,7 @@ async function main(): Promise<void> {
   const knowledgeStore = new PgKnowledgeStore(pool);
   const toolCatalog = new PgToolCatalog(pool);
   const credits = new PgCreditStore(pool);
+  const agentSources = new PgSourceStore(pool);
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
   const gateway = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
   const automationStore = new PgAutomationStore(pool);
@@ -666,7 +670,13 @@ async function main(): Promise<void> {
         return {
           label: fiche.label,
           fiche: fiche.contenu,
-          outils: outils.map((o) => ({ handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser })),
+          // Les outils MAISON, par leur handler : c est par lui que l assistant les designe.
+          outils: outils.filter((o) => o.origin === 'mba')
+            .map((o) => ({ handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser })),
+          // Les CONNECTEURS deja declares, par leur nom expose. L assistant peut en reecrire les MOTS, jamais
+          // en creer : declarer une source, c est ecrire une adresse reseau et un secret.
+          connecteurs: outils.filter((o) => o.origin !== 'mba')
+            .map((o) => ({ nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser })),
           titresConnaissance: fiches.map((f) => f.titre),
         };
       },
@@ -724,6 +734,10 @@ async function main(): Promise<void> {
     agentTools: {
       listToutes: (tenant, agentId) => toolCatalog.listToutes(tenant, agentId),
       ajouter: (tenant, agentId, outil) => toolCatalog.ajouter(tenant, agentId, outil),
+      // Lot L2 : un outil de connecteur, sur une source du tenant. La source est verifiee ICI (404) plutot
+      // que par la cle etrangere, qui leverait en 500.
+      ajouterConnecteur: (tenant, agentId, outil) => toolCatalog.ajouterConnecteur(tenant, agentId, outil),
+      sourceExiste: async (tenant, sourceId) => (await agentSources.parId(tenant, sourceId)) !== null,
       patch: (tenant, agentId, id, p) => toolCatalog.patch(tenant, agentId, id, p),
       activer: (tenant, agentId, id, actif, par) => toolCatalog.activer(tenant, agentId, id, actif, par),
       autonomie: (tenant, agentId, id, autonome, par) => toolCatalog.autonomie(tenant, agentId, id, autonome, par),
@@ -732,6 +746,44 @@ async function main(): Promise<void> {
       sortiesDeLAgent: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         return fiche ? fiche.contenu.sorties : null;
+      },
+    },
+    // Les SOURCES externes d outils (lot L2) : l adresse de base du systeme du client, son mode d
+    // authentification et son secret. Le secret est chiffre par le store, et aucune route ne le rend.
+    agentSources: {
+      lister: (tenant) => agentSources.lister(tenant),
+      parId: (tenant, id) => agentSources.parId(tenant, id),
+      creer: (tenant, input) => agentSources.creer(tenant, input),
+      patch: (tenant, id, p) => agentSources.patch(tenant, id, p),
+      supprimer: (tenant, id) => agentSources.supprimer(tenant, id),
+      /**
+       * EPROUVER une source : un appel reel, et le resultat ecrit sur la ligne.
+       *
+       * C est le seul moyen de voir un jeton mort AVANT qu un contact ne le decouvre : un jeton expire ne
+       * produit aucune erreur applicative cote client, l agent degrade en silence au milieu d une
+       * conversation. On passe par les MEMES gardes que le resolveur (`construireCible`), sinon l epreuve
+       * validerait une adresse que l appel refusera.
+       */
+      eprouver: async (tenant, id, chemin) => {
+        const src = await agentSources.pourAppel(tenant, id);
+        if (!src) return { ok: false, erreur: 'source introuvable' };
+        const cible = construireCible({ baseUrl: src.baseUrl, binding: { methode: 'GET', chemin }, args: {} });
+        if (!cible.ok) return { ok: false, erreur: cible.raison };
+        // MEME construction d en-tetes que l appel reel : une epreuve qui authentifierait autrement dirait
+        // « ca repond » d une source que les appels ne savent pas authentifier.
+        const headers = enTetesAuthSource(src);
+        try {
+          const res = await fetch(cible.url, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(10_000) });
+          const auth = res.status === 401 || res.status === 403;
+          const ok = res.ok;
+          await agentSources.marquerEpreuve(tenant, id, ok, auth ? 'authentification refusee' : `HTTP ${res.status}`);
+          return { ok, httpStatus: res.status, ...(ok ? {} : { erreur: auth ? 'authentification refusee' : `HTTP ${res.status}` }) };
+        } catch {
+          // Le message d exception n est PAS repasse : il peut porter l URL complete, donc parfois un jeton
+          // en parametre de requete sur un systeme mal concu.
+          await agentSources.marquerEpreuve(tenant, id, false, 'injoignable');
+          return { ok: false, erreur: 'systeme injoignable' };
+        }
       },
     },
     flows: {

@@ -899,6 +899,25 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   fenêtre au moment de la création, avec un bouton Copier : c'est le seul instant où elle existe. Une clé
   révoquée reste dans la liste, marquée comme telle.
 
+## Brancher vos outils : les connecteurs de l'agent IA (menu « AI Agent » > onglet Outils)
+
+- ✅ **Déclarer un système** (2026-08-28) : un nom, une adresse de base en HTTPS, et son mode
+  d'authentification (jeton, en-tête nommé, ou aucune). Le secret est chiffré chez nous et **n'est jamais
+  réaffiché** : un champ laissé vide veut dire « inchangé ».
+- ✅ **Éprouver la connexion** : un bouton, un chemin, et le verdict avec sa date. C'est le seul endroit où un
+  jeton expiré se voit AVANT qu'un contact ne le découvre : un jeton mort ne produit aucune erreur visible
+  côté client, l'agent se contenterait de ne plus savoir répondre.
+- ✅ **Poser un outil sur ce système** : une méthode, un chemin (`/commandes/{ref}`), les mots qui disent quand
+  l'appeler et quand ne pas l'appeler, et **les champs que l'agent aura le droit de lire**. Ces champs sont
+  obligatoires : la réponse de votre système ne part chez le fournisseur du modèle que par cette liste.
+- ✅ **Dire qui remplit chaque paramètre** : l'agent, le contact (son numéro, authentifié par WhatsApp), ou une
+  valeur fixe. **L'agent ne peut pas fabriquer un identifiant de client** : c'est ce qui empêche quelqu'un de
+  demander à votre agent la commande d'un autre.
+- ✅ Un outil de connecteur naît **inactif**, comme un outil maison : c'est un administrateur qui l'active
+  après l'avoir relu.
+- ⛔ **Pas encore : MCP** (les serveurs d'outils standardisés). La console les acceptera, aucun code ne les
+  sert aujourd'hui.
+
 ## Exploitation `/ops` (interne, hors console client)
 
 - ✅ **Console d'exploitation cross-tenant** `/ops` : vue **lecture seule** de TOUS les clients (protégée par

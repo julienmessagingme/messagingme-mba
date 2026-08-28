@@ -311,7 +311,13 @@ export async function executeTool(
   for (const p of params) {
     if (p.source === 'contact') {
       const chemin = p.contactPath ?? p.name;
-      args[p.name] = ctx.contact ? (ctx.contact[chemin] ?? null) : null;
+      // 🔴 LE NUMÉRO VIENT DU TOUR, PAS DE LA PROJECTION, et c'est la clé de voûte anti-IDOR d'un connecteur.
+      // Un connecteur sert d'abord à répondre « où en est MA commande » : la ressource est identifiée par le
+      // contact lui-même. Or la projection (`ctx.contact`) est bornée EXPRÈS et ne porte pas le numéro : elle
+      // part chez le fournisseur de modèle, et y verser la ligne brute enverrait le numéro, le BSUID et
+      // l'opt-in. Le lire là rendrait `null`, donc un appel de connecteur sans identifiant, c'est-à-dire sur
+      // la mauvaise ressource ou sur aucune. `ctx.waId` est authentifié par la signature du webhook Meta.
+      args[p.name] = chemin === 'wa_id' ? ctx.waId : (ctx.contact ? (ctx.contact[chemin] ?? null) : null);
     } else if (p.source === 'fixe') {
       args[p.name] = p.value ?? null;
     }

@@ -6,6 +6,24 @@ Le plan, l etat tache par tache et le **registre des dettes** vivent dans
 [AGENT-IA-PLAN-L0-L1.md](AGENT-IA-PLAN-L0-L1.md). **D1, D2, D3, D4 et D6 sont fermees**. Reste **D5** (les
 blocs agent invisibles d Analytics).
 
+## A DEPLOYER : le lot L2, le connecteur API du client
+
+Plan execute : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf taches, quatre decisions tranchees par Julien
+et retenues telles quelles. Un agent peut desormais interroger le systeme d un client par une API HTTP que le
+client declare lui-meme, sans qu aucune adresse ni aucun identifiant de ressource ne soit choisi par le modele.
+
+🔴 **Un trou trouve en ecrivant le plan, et ferme par la tache 4bis.** Un parametre `contactPath: 'wa_id'`
+recevait `null` : la projection du contact ne porte PAS le numero (volontairement, elle part chez le
+fournisseur de modele), alors qu un connecteur sert d abord a repondre « ou en est MA commande ». Le numero
+vient maintenant du contexte du tour, ou il est authentifie par la signature du webhook Meta. Le fixe des tests
+portait `wa_id`, ce que la production n a jamais eu : il a ete recale sur la vraie projection.
+
+⚠️ **Migration 0088 NON appliquee en production.** Sequence : `compose build mba-api` AVANT
+`compose run --rm --no-deps mba-api npm run migrate`, puis `up -d --build`. **Prochaine libre = 0089.**
+
+⚠️ **Rien n est branche tant qu un client n a pas declare de source.** Le lot n active rien tout seul : sans
+source, l onglet Outils est exactement ce qu il etait.
+
 ## DEPLOYE le 2026-08-28 : l agent a ses DEUX modeles, et le canevas ne ment plus
 
 **Les modeles (`e678377`).** Deux metiers, deux reglages, choisis au BANC contre le Gateway avec notre propre

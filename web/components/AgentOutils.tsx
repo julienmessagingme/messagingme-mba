@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { cardCls, inputCls, inputClsAuto } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
+import { AgentConnecteurs } from '@/components/AgentConnecteurs';
 import { normaliserNomOutil } from '@/lib/agent-outils';
 import {
   activerOutil, ajouterOutil, autonomieOutil, listOutils, patchOutil, retirerOutil,
@@ -73,7 +74,7 @@ export function AgentOutils({ tenantId, agentId }: { tenantId: string; agentId: 
         </p>
       )}
 
-      {(vue?.outils ?? []).map((o) => (
+      {(vue?.outils ?? []).filter((o) => o.origin === 'mba').map((o) => (
         <Outil
           key={o.id}
           outil={o}
@@ -86,6 +87,10 @@ export function AgentOutils({ tenantId, agentId }: { tenantId: string; agentId: 
         />
       ))}
 
+      {/* 🔴 DEUX SECTIONS DISTINCTES, et ce n'est pas cosmétique : le client ne doit pas confondre ce qu'on
+          GARANTIT (les outils maison, dont nous écrivons le comportement) et ce qu'il BRANCHE lui-même (son
+          système, dont nous ne savons rien). Les connecteurs vivent donc dans leur propre bloc, sous le
+          catalogue maison. */}
       {restants.length > 0 && (
         <div className={`${cardCls} flex flex-col gap-3`}>
           <p className="text-sm font-medium text-ink-700">{t('Donner un outil de plus', 'Give one more tool')}</p>
@@ -109,6 +114,11 @@ export function AgentOutils({ tenantId, agentId }: { tenantId: string; agentId: 
           ))}
         </div>
       )}
+
+      <div className="border-t border-ink-200 pt-4">
+        <p className="mb-2 text-sm font-semibold text-ink-800">{t('Vos connecteurs', 'Your connectors')}</p>
+        <AgentConnecteurs tenantId={tenantId} agentId={agentId} outils={vue?.outils ?? []} onChange={charger} />
+      </div>
     </div>
   );
 }

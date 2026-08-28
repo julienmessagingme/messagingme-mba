@@ -1,5 +1,9 @@
 # Plan d'exécution, agent IA lot L2 : le connecteur API du client
 
+> ## ✅ EXÉCUTÉ LE 2026-08-28. Les neuf tâches sont faites, les quatre décisions ont été retenues telles
+> quelles, et le lot est vert (typecheck, 2973 tests unitaires, 383 e2e). Ce qui a changé en chemin est noté
+> tâche par tâche ; le reste du document est le plan tel qu'il a été approuvé.
+
 > **Pour un exécutant agentique :** SOUS-SKILL REQUISE, utiliser `superpowers:subagent-driven-development`
 > (recommandé) ou `superpowers:executing-plans` pour exécuter tâche par tâche. Les étapes sont des cases
 > à cocher (`- [ ]`).
@@ -62,9 +66,10 @@ L1 a posé l'ossature de cette famille. La lire avant d'écrire une ligne, sinon
 
 ---
 
-## 🔴 LES QUATRE DÉCISIONS À TRANCHER AVANT DE COMMENCER
+## ✅ LES QUATRE DÉCISIONS, TRANCHÉES PAR JULIEN LE 2026-08-28
 
-Elles changent le code, pas seulement la doc. Ma recommandation est donnée ; c'est Julien qui tranche.
+Les quatre recommandations ci-dessous ont été **retenues telles quelles**. Elles sont donc le contrat de ce
+lot, et le code doit s'y conformer sans nouvelle discussion.
 
 **D-L2-1. Qui déclare le RISQUE d'un outil de connecteur ?** Pour un outil maison, le risque vient du
 catalogue et n'est pas modifiable (le client règle l'autonomie, pas la dangerosité). Un connecteur n'a pas de

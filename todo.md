@@ -1,5 +1,22 @@
 # todo.md — backlog
 
+## 🟠 SSRF par DNS rebinding : revalider l'IP RÉSOLUE avant l'appel (relevé à la revue du lot L2)
+
+`urlRecuperable` (`src/lib/page-distante.ts`) contrôle le NOM D'HÔTE, jamais l'adresse IP finalement résolue.
+Un administrateur de tenant peut donc déclarer un domaine à lui, passer la validation à l'écriture d'une source
+de connecteur, puis repointer son DNS vers `172.18.0.1` (les autres conteneurs) ou `169.254.169.254` (les
+métadonnées) : l'appel suivant résoudra la nouvelle adresse. Le pare-feu de l'hôte ne couvre pas ce chemin,
+puisque le trafic reste dans le réseau Docker et ne traverse jamais `ens3`.
+
+Le trou est ANCIEN (le scraper de connaissance le porte depuis toujours, et il est documenté dans le module),
+mais le lot L2 en change la conséquence : la réponse peut désormais repartir vers un contact WhatsApp par le
+filtre `outputPaths`. C'est un risque d'ADMINISTRATEUR (celui qui déclare la source), pas de contact ni de
+modèle.
+
+Fermeture : un dispatcher undici avec un `lookup` qui refuse les plages privées, posé sur les DEUX appelants
+(le résolveur de connecteur et `fetchUrlBorne`). À faire d'un bloc, avec un test qui pointe un domaine public
+vers `127.0.0.1` et vérifie le refus.
+
 ## 🟠 Joindre un FICHIER à un message rapide (demandé par Julien le 2026-08-28)
 
 Aujourd'hui un bloc « message rapide » ne porte qu'une IMAGE (`data.imageUrl`, champ partagé avec le bloc RCS).

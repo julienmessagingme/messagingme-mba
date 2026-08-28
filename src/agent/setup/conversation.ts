@@ -86,6 +86,25 @@ function outilsPoses(outils: ContexteConstruction['outils']): string {
   return ['Outils posés :', ...lignes].join('\n');
 }
 
+/**
+ * Les CONNECTEURS déjà déclarés par un administrateur (lot L2).
+ *
+ * 🔴 On les NOMME pour que l'assistant puisse en réécrire les mots, et on lui dit dans la même phrase qu'il
+ * ne peut pas en créer : sans cette limite écrite, il proposerait des connecteurs imaginaires, et le client
+ * verrait un diff qui promet un branchement qui n'existe pas.
+ */
+function connecteursPoses(connecteurs: NonNullable<ContexteConstruction['connecteurs']>): string {
+  if (connecteurs.length === 0) {
+    return 'Connecteurs vers le système du client : (aucun déclaré ; tu ne peux pas en créer, c’est un geste d’administrateur)';
+  }
+  const lignes = connecteurs.flatMap((c) => [
+    `  - ${c.nom} (${c.titre})`,
+    `    quand l'appeler : ${c.description || '(vide)'}`,
+    `    quand NE PAS l'appeler : ${c.nePasUtiliser || '(vide)'}`,
+  ]);
+  return ['Connecteurs déclarés (tu peux réécrire leurs mots, PAS en créer) :', ...lignes].join('\n');
+}
+
 /** L'état de l'agent, rendu lisible pour le modèle. */
 function etat(ctx: ContexteConstruction): string {
   const f = ctx.fiche;
@@ -98,6 +117,7 @@ function etat(ctx: ContexteConstruction): string {
     `Quand passer la main à un humain : ${f.reglesTransfert || '(vide)'}`,
     `Règles d'arrêt : ${f.sorties.length === 0 ? '(aucune)' : f.sorties.map((s) => `${s.code} (${s.label})`).join(', ')}`,
     outilsPoses(ctx.outils),
+    connecteursPoses(ctx.connecteurs ?? []),
     `Outils disponibles au catalogue : ${OUTILS_MAISON.map((o) => o.handler).join(', ')}`,
     `Fiches de connaissance (titres) : ${ctx.titresConnaissance.length === 0
       ? '(aucune, l’agent transférera toutes les questions de fond)'

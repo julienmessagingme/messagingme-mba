@@ -4,6 +4,8 @@ import type { Guard } from '../auth/middleware';
 import type { OutilComplet, PatchOutil } from '../agent/catalog';
 import { NomOutilDejaPris } from '../agent/catalog';
 import { OUTILS_MAISON, outilExpose, outilMaison, paramsInitiaux, type OutilExpose } from '../agent/outils-maison';
+import { CHAMPS_CONTACT_AUTORISES } from '../agent/champs-contact';
+import { risqueAuMoins, risqueSelonMethode, type MethodeConnecteur } from '../agent/http-cible';
 import type { SortieAgent } from '../agent/agent-store';
 import { scopeTenant, estUuid } from './scope';
 
@@ -30,6 +32,19 @@ export interface AgentToolsRouteDeps {
     handler: string; name: string; title: string; description: string; nePasUtiliser: string;
     params: unknown; risk: OutilComplet['risk'];
   }): Promise<OutilComplet | null>;
+  /**
+   * Déclare un outil de CONNECTEUR sur une source du tenant (lot L2).
+   *
+   * Séparée de `ajouter` exprès : l'ajout maison prend son `handler` dans le catalogue et refuse tout le
+   * reste, c'est sa garde. Les fusionner ferait une route dont la moitié des gardes ne s'appliquent qu'à la
+   * moitié des corps, et c'est ainsi qu'on finit par accepter un `handler` inventé.
+   */
+  ajouterConnecteur?(tenantId: string, agentId: string, outil: {
+    sourceId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; binding: { methode: string; chemin: string }; outputPaths: string[]; risk: OutilComplet['risk'];
+  }): Promise<OutilComplet | null>;
+  /** La source appartient-elle à ce tenant ? `false` -> 404, jamais une clé étrangère qui lève en 500. */
+  sourceExiste?(tenantId: string, sourceId: string): Promise<boolean>;
   patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
@@ -52,6 +67,40 @@ const patchSchema = z.object({
   enums: z.record(z.string(), z.array(z.string().trim().min(1).max(120)).max(50)).optional(),
 });
 const drapeauSchema = z.object({ valeur: z.boolean() });
+
+/**
+ * Un paramètre d'outil de connecteur.
+ *
+ * 🔴 `contactPath` est une liste FERMÉE (`src/agent/champs-contact.ts`). Un chemin libre ferait dériver un
+ * paramètre de n'importe quelle clé de la projection du contact, y compris d'une qu'on y ajouterait plus
+ * tard pour tout autre chose. Et c'est ce champ qui empêche le modèle de désigner la ressource d'un autre :
+ * `wa_id` vient du tour, authentifié par la signature du webhook Meta.
+ */
+const paramConnecteurSchema = z.object({
+  name: z.string().trim().regex(/^[a-z0-9_]{1,64}$/),
+  type: z.enum(['string', 'number', 'integer', 'boolean']),
+  source: z.enum(['modele', 'contact', 'fixe']),
+  description: TEXTE(500).optional(),
+  required: z.boolean().optional(),
+  enum: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  contactPath: z.enum(CHAMPS_CONTACT_AUTORISES).optional(),
+  value: z.union([z.string().max(200), z.number(), z.boolean()]).optional(),
+});
+
+const ajoutConnecteurSchema = z.object({
+  sourceId: z.string().uuid(),
+  name: NOM,
+  title: TEXTE(120).min(1),
+  description: TEXTE(2000).min(1),
+  nePasUtiliser: TEXTE(2000).min(1),
+  methode: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+  chemin: z.string().trim().min(1).max(500),
+  params: z.array(paramConnecteurSchema).max(20),
+  /** 🔴 NON VIDE (décision D-L2-2). La réponse appartient au client et part chez le fournisseur de modèle :
+   *  c'est ici, et seulement ici, que quelqu'un décide ce que l'agent a le droit d'en lire. */
+  outputPaths: z.array(z.string().trim().min(1).max(120)).min(1).max(20),
+  risk: z.enum(['read', 'write', 'irreversible']).optional(),
+});
 
 export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDeps, guard?: Guard): void {
   const opts = guard ? { preHandler: guard } : {};
@@ -113,6 +162,65 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
         nePasUtiliser: modele.nePasUtiliser.fr,
         params: paramsInitiaux(modele),
         risk: modele.risk,
+      });
+      if (!outil) return reply.code(404).send({ error: 'agent introuvable' });
+      const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
+      return reply.code(201).send({ outil: vue(outil, sorties) });
+    } catch (err) {
+      if (err instanceof NomOutilDejaPris) return reply.code(409).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  /**
+   * Déclarer un outil de CONNECTEUR sur une source (lot L2).
+   *
+   * Trois gardes, et elles sont toutes ici :
+   *  1. la SOURCE appartient au tenant (sinon 404), sans quoi la clé étrangère lèverait en 500 ;
+   *  2. le RISQUE dérive de la méthode et ne peut être que MONTÉ (décision D-L2-1) : un client qui déclare
+   *     `read` un `DELETE` désarmerait la garde d'autonomie sur une action irréversible ;
+   *  3. l'outil naît INACTIF, comme un outil maison : l'activation est un geste humain séparé, et la
+   *     migration 0086 refuse un actif sans activateur.
+   */
+  app.post(`${base}/connecteur`, opts, async (req, reply) => {
+    const ctx = contexte(req);
+    if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
+    if (!deps.ajouterConnecteur || !deps.sourceExiste) {
+      return reply.code(503).send({ error: 'les connecteurs ne sont pas disponibles sur cette instance' });
+    }
+    const parse = ajoutConnecteurSchema.safeParse(req.body ?? {});
+    if (!parse.success) {
+      return reply.code(400).send({ error: 'source, nom, mots, méthode, chemin et champs à lire requis' });
+    }
+    const d = parse.data;
+    if (!(await deps.sourceExiste(ctx.tenant, d.sourceId))) return reply.code(404).send({ error: 'source introuvable' });
+
+    const plancher = risqueSelonMethode(d.methode as MethodeConnecteur);
+    const risk = d.risk ?? plancher;
+    if (!risqueAuMoins(plancher, risk)) {
+      return reply.code(400).send({ error: `un appel ${d.methode} vaut au moins « ${plancher} » : le risque ne peut pas être abaissé` });
+    }
+    // Un paramètre `contact` sans chemin déclaré prendrait son propre nom comme clé (`executor.ts`), ce qui
+    // marche par accident quand le nom coïncide et échoue en silence sinon. On l'exige.
+    for (const p of d.params) {
+      if (p.source === 'contact' && !p.contactPath) {
+        return reply.code(400).send({ error: `le paramètre « ${p.name} » doit dire de quel champ du contact il vient` });
+      }
+      if (p.source === 'fixe' && p.value === undefined) {
+        return reply.code(400).send({ error: `le paramètre « ${p.name} » est fixe : sa valeur est requise` });
+      }
+    }
+    try {
+      const outil = await deps.ajouterConnecteur(ctx.tenant, ctx.agentId, {
+        sourceId: d.sourceId,
+        name: d.name,
+        title: d.title,
+        description: d.description,
+        nePasUtiliser: d.nePasUtiliser,
+        params: d.params,
+        binding: { methode: d.methode, chemin: d.chemin },
+        outputPaths: d.outputPaths,
+        risk,
       });
       if (!outil) return reply.code(404).send({ error: 'agent introuvable' });
       const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];

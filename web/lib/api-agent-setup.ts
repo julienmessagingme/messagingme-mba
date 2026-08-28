@@ -28,6 +28,8 @@ export interface PropositionConstruction {
     sorties?: SortieAgent[];
   };
   outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
+  /** Les MOTS de connecteurs DÉJÀ déclarés. L'assistant n'en crée jamais : voir l'application ci-dessous. */
+  connecteurs?: Array<{ nom: string; description: string; nePasUtiliser: string }>;
 }
 
 /** Une ligne du diff, telle que l'écran la montre. */
@@ -69,7 +71,8 @@ export async function appliquerProposition(
   if (ficheEcrite) {
     await patchAgent(tenantId, agentId, { contenu: proposition.fiche, ficheVersionAttendue: ficheVersion });
   }
-  if (proposition.outils.length === 0) return;
+  const connecteurs = proposition.connecteurs ?? [];
+  if (proposition.outils.length === 0 && connecteurs.length === 0) return;
   try {
     // Les outils posés sont relus MAINTENANT : la proposition a pu être calculée il y a plusieurs minutes, et
     // ajouter un outil qui existe déjà rendrait 409 sur un nom pris.
@@ -78,6 +81,18 @@ export async function appliquerProposition(
       const deja = poses.find((o) => String(o.binding.handler ?? '') === propose.handler);
       // Ajouté INACTIF, comme toujours : l'activation reste un geste humain, et l'assistant ne l'a pas.
       const cible = deja ?? await ajouterOutil(tenantId, agentId, propose.handler);
+      await patchOutil(tenantId, agentId, cible.id, {
+        description: propose.description,
+        nePasUtiliser: propose.nePasUtiliser,
+      });
+    }
+    // 🔴 LES CONNECTEURS SE PATCHENT, ILS NE SE CRÉENT PAS. Un nom inconnu est IGNORÉ, jamais créé : déclarer
+    // un connecteur, c'est écrire une adresse réseau et un secret, et cela reste un geste d'administrateur.
+    // Le serveur a déjà filtré les noms inconnus ; cette seconde ceinture tient si la proposition vieillit
+    // entre son calcul et le clic « Garder » (l'administrateur peut avoir retiré le connecteur entre-temps).
+    for (const propose of connecteurs) {
+      const cible = poses.find((o) => o.name === propose.nom && o.origin !== 'mba');
+      if (!cible) continue;
       await patchOutil(tenantId, agentId, cible.id, {
         description: propose.description,
         nePasUtiliser: propose.nePasUtiliser,

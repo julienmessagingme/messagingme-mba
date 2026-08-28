@@ -55,6 +55,8 @@ import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
+import { PgSourceStore } from './agent/sources.pg';
+import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { PgEmailAccountStore } from './email/account-store.pg';
@@ -911,6 +913,7 @@ async function main(): Promise<void> {
     const journalAppels = new PgJournalAppels(pool);
     const knowledgeStore = new PgKnowledgeStore(pool);
     const credits = new PgCreditStore(pool);
+    const agentSources = new PgSourceStore(pool);
 
     // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
     const escaladerVersHumain = creerEscaladeVersHumain({
@@ -950,7 +953,10 @@ async function main(): Promise<void> {
         // Le VRAI journal, contrairement au bac à sable : cette table est le grand livre de facturation
         // autant que la trace d'audit, et une session existe bien ici pour la référencer.
         journal: journalAppels,
-        resolveurs: { mba: resolveurMba },
+        // 🔴 Les deux familles qui EXISTENT. `mcp` n'a volontairement aucun résolveur : l'exécuteur refuse
+        // alors proprement (`erreur_protocole`) plutôt que d'appeler dans le vide. Le résolveur `http` relit
+        // sa source à chaque appel, donc une source désactivée cesse d'être appelée tout de suite.
+        resolveurs: { mba: resolveurMba, http: creerResolveurHttp({ sources: agentSources }) },
         compterAppel: (t, sessionId) => agentSessions.compterAppel(t, sessionId),
       },
       lireContact: async (t, waId) => {

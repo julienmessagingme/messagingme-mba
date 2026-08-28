@@ -21,7 +21,7 @@ const OUTIL: OutilDefini = {
     { name: 'wa_id', type: 'string', source: 'contact', contactPath: 'wa_id' },
     { name: 'boutique', type: 'string', source: 'fixe', value: 'FR-01' },
   ],
-  binding: { handler: 'peu_importe' },
+  binding: { handler: 'peu_importe' }, sourceId: null,
   outputPaths: [],
   risk: 'read',
   timeoutMs: 5_000,
@@ -36,7 +36,12 @@ const CTX: ContexteAppel = {
   runId: 'r1',
   workflowId: 'wf1',
   waId: '33600',
-  contact: { wa_id: '33600', prenom: 'Julien' },
+  // 🔴 LA PROJECTION RÉELLE, celle que `src/worker.ts` construit : `{ nom, tags, champs }`, et SURTOUT PAS le
+  // numéro. Elle part chez le fournisseur de modèle (`mba_lire_contact` la rend telle quelle), donc y verser
+  // la ligne brute enverrait le numéro, le BSUID et l'opt-in. Le fixe portait `wa_id` jusqu'au 2026-08-28, ce
+  // qui faisait passer des tests sur une forme que la production n'a jamais eue : c'est ainsi qu'un paramètre
+  // `contactPath: 'wa_id'` d'un connecteur aurait reçu `null` en vrai.
+  contact: { nom: 'Julien', tags: [], champs: {} },
   contactInconnu: 'lecture_seule',
   appelsRestants: 5,
   budgetRestantMicroEur: 10_000,
@@ -224,14 +229,34 @@ describe('tronc commun : valider et compléter (étapes 3 et 4)', () => {
     expect(vus[0]?.args).toEqual({}); // ni la valeur du modèle, ni une injection depuis une entrée illisible
   });
 
-  it('contact inconnu : un parametre « contact » est injecte a null, jamais laisse au modele', async () => {
+  it('🔴 le NUMÉRO vient du TOUR, pas de la projection : il est là même quand le contact est inconnu', async () => {
+    // La clé de voûte anti-IDOR d'un connecteur. Il sert d'abord à répondre « où en est MA commande » : la
+    // ressource est identifiée par le contact. La projection ne porte PAS le numéro (elle part chez le
+    // fournisseur de modèle), donc le lire là rendrait `null`, et l'appel partirait sans identifiant. Le
+    // numéro vient de `ctx.waId`, authentifié par la signature du webhook Meta, et le modèle ne le voit
+    // jamais : sa propre valeur (`33699999999`) est écrasée.
     const { deps, vus } = harnais();
     await executeTool(
       { name: OUTIL.name, argumentsJson: args({ reference: 'CMD-1', wa_id: '33699999999' }) },
       { ...CTX, contact: null, contactInconnu: 'tous' },
       deps,
     );
-    expect(vus[0]?.args).toEqual({ reference: 'CMD-1', wa_id: null, boutique: 'FR-01' });
+    expect(vus[0]?.args).toEqual({ reference: 'CMD-1', wa_id: '33600', boutique: 'FR-01' });
+  });
+
+  it('un AUTRE champ « contact » reste lu dans la projection, et vaut null si elle manque', async () => {
+    // La correction du numéro ne doit pas transformer tous les paramètres « contact » en valeurs du tour.
+    const parNom: OutilDefini = {
+      ...OUTIL,
+      params: [{ name: 'client', type: 'string', source: 'contact', contactPath: 'nom' }],
+    };
+    const { deps, vus } = harnais({ outil: parNom });
+    await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, CTX, deps);
+    expect(vus[0]?.args).toEqual({ client: 'Julien' });
+
+    const { deps: d2, vus: v2 } = harnais({ outil: parNom });
+    await executeTool({ name: OUTIL.name, argumentsJson: args({}) }, { ...CTX, contact: null, contactInconnu: 'tous' }, d2);
+    expect(v2[0]?.args).toEqual({ client: null });
   });
 });
 

@@ -1615,6 +1615,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/brain.gateway.ts` -> `penserTrace` | 🔴 LA boucle de raisonnement d'un agent : appel du modèle, exécution des outils, arrêt. Elle est l'APPELANT d'`executeTool`, et porte les trois responsabilités que sa JSDoc lui assignait (alerte sur `fatal`, plafonds recalculés À CHAQUE appel, résultat encadré en bloc délimité) | posée en tâche 19e, ferme la dette D3. Le bac à sable et le futur tour de production partagent cette boucle : un bac à sable qui n'exercerait pas le vrai chemin ne testerait rien |
 | `src/agent/prompt.ts` | 🔴 Le prompt système d'un agent (mention légale d'IA EN TÊTE, jamais absente) et `blocResultatOutil`, qui encadre ce qu'un outil rend avant de le remettre au modèle | posé en tâche 19e. Un résultat d'outil concaténé au prompt est une injection indirecte : le contenu vient d'une base de connaissance qu'un site tiers a remplie |
 | `src/agent/outils-maison.ts` | 🔴 Le CATALOGUE des outils maison (handler, mots, paramètres, risque) et `outilExpose`, qui construit ce que le modèle voit. C'est ici, et nulle part ailleurs, que l'énumération du paramètre `sortie` de `terminer` est posée, DÉRIVÉE de `agents.fiche.sorties` | posé en tâche 19c. La console ne peut pas inventer un `handler` (l'outil serait actif et refuserait à chaque appel), et recopier les codes de sortie dans `agent_tools.params` créerait une seconde vérité qui divergerait au premier ajout de règle |
+| `src/agent/http-cible.ts` -> `construireCible` | 🔴 L'URL FINALE d'un appel de connecteur (lot L2), et le risque qu'une méthode porte. Quatre gardes : adresse de base publique et HTTPS, valeurs de paramètres ENCODÉES, cible qui reste SOUS l'adresse de base (segment par segment), paramètre manquant = refus. Le serveur vit dans le réseau Docker du VPS : une adresse mal contrôlée fait d'un connecteur un lecteur de l'intérieur, et une valeur mal encodée fait d'un gabarit un IDOR | posé en tâche L2-3. La MÊME fonction sert la validation À L'ÉCRITURE d'une source (`src/http/agent-sources.ts`) : deux définitions de « adresse acceptable » finiraient par accepter à l'écriture ce que l'appel refuse |
+| `src/agent/champs-contact.ts` -> `CHAMPS_CONTACT_AUTORISES` | 🔴 Les seuls champs du contact dont un paramètre d'outil peut dériver. Liste FERMÉE : la projection du contact peut s'élargir, la surface offerte à un connecteur ne doit pas suivre toute seule | posé en tâche L2-4bis. `wa_id` y est mais ne vient PAS de la projection (qui ne le porte pas, exprès) : il vient du contexte du TOUR, authentifié par la signature du webhook Meta |
 | `src/agent/devise.ts` -> `microEurosDepuisDollars` / `eurosDepuisMicro` | 🔴 La conversion du coût d'un appel de modèle, en UN endroit. Le Gateway facture en DOLLARS, tous nos compteurs et tous nos plafonds sont en micro-euros. Le taux est un paramètre COMMERCIAL (`EUR_PER_USD`), pas un cours | posé en tâche 21, ferme la dette D1. Un taux absent ou aberrant retombe sur 1, JAMAIS sur zéro : un zéro rendrait toute consommation gratuite, donc désarmerait tous les plafonds en silence. `web/lib/agent-solde.ts` en porte le miroir d'affichage, dont `tests/agent-devise.test.ts` ancre la parité |
 | `src/agent/brain.ts` -> `TourInterrompu` | 🔴 Le contrat « un cerveau qui lève APRÈS avoir dépensé porte sa consommation dans l'erreur ». Ses deux appelants (le tour de production, le bac à sable) l'enregistrent avant de traiter l'échec | posé en tâche 21. Un tour fait plusieurs allers-retours facturés séparément : le cumul vivait DANS la boucle, donc une exception au deuxième appel emportait ce que le premier avait déjà coûté. **Un compteur de dépense ne vit jamais dans la portée qui peut lever** |
 | `src/workflow/executor.ts` -> `runEnAttenteSur` | « Le run en attente d'un contact ET le bloc qui l'attend, s'il est du type demandé » | 3 copies (reprises RCS, sortie d'agent, outil d'agent) |
@@ -1642,6 +1644,51 @@ refactor par expression régulière qui n'attend que `
 `
 ?
 `, et vérifier le compte de remplacements.
+
+## Le connecteur API d'un client (lot L2, livré le 2026-08-28)
+
+Une **source** (`agent_tool_sources`, migration 0088) porte l'adresse de base du système d'un client, son mode
+d'authentification et son secret chiffré. Un **outil de connecteur** (`agent_tools` avec `origin = 'http'` et
+`source_id`) est un gabarit de chemin sur cette source. Le résolveur `http` fait l'appel ; tout le reste (la
+validation des arguments, l'injection des paramètres non confiés au modèle, le budget de temps, le journal, la
+troncature) reste le tronc commun, exactement comme pour un outil maison.
+
+🔴 **Quatre gardes, et chacune répond à une façon précise de perdre.**
+
+1. **Le modèle ne choisit jamais une cible.** L'adresse est figée sur la source, le gabarit est écrit par un
+   administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse de base, segment par
+   segment, après encodage des valeurs. Une valeur contenant `/` ou `..` ne change donc pas de chemin.
+2. **Le `wa_id` vient du TOUR, pas de la projection du contact.** C'est ce qui permet de brancher une API par
+   contact (« où en est MA commande ») sans que le modèle puisse désigner quelqu'un d'autre. La projection est
+   bornée exprès et ne porte pas le numéro : elle part chez le fournisseur de modèle.
+3. **Le risque est DÉRIVÉ de la méthode HTTP** (`GET` -> read, `POST`/`PUT`/`PATCH` -> write, `DELETE` ->
+   irréversible) et ne peut être que MONTÉ. Un client qui déclarerait `read` un `DELETE` désarmerait la garde
+   d'autonomie sur une action irréversible.
+4. **Le filtre de sortie est obligatoire.** La réponse appartient au client et part chez le fournisseur de
+   modèle : `outputPaths` dit ce que l'agent a le droit de lire, et rien d'autre ne traverse. Sur un outil
+   maison, c'est nous qui écrivons la réponse ; ici, non.
+
+⚠️ **CE QUE LA GARDE D'ADRESSE NE COUVRE PAS : le DNS rebinding.** `urlRecuperable` valide le NOM D'HÔTE, pas
+l'adresse IP finalement résolue. Un administrateur de tenant peut donc déclarer un domaine à lui, passer la
+validation à l'écriture, puis repointer son DNS vers `172.18.0.1` ou `169.254.169.254` : l'appel suivant
+résoudrait la nouvelle adresse. La différence avec le scraper de connaissance, qui porte le même trou, est la
+CONSÉQUENCE : ici la réponse peut repartir vers un contact WhatsApp par `outputPaths`. Le pare-feu de l'hôte
+ne protège pas ce chemin (le trafic reste dans le réseau Docker, il ne traverse jamais `ens3`). La fermeture
+demande de revalider l'IP résolue juste avant l'appel (dispatcher undici) : c'est dans `todo.md`, et c'est un
+risque d'ADMINISTRATEUR, pas de contact.
+
+⚠️ **`redirect: 'error'`, contrairement au scraper de connaissance.** Une page publique redirige légitimement,
+une API de connecteur non : suivre la redirection rouvrirait la porte que la garde d'URL vient de fermer, le
+premier saut étant validé et le second pas.
+
+⚠️ **Le bac à sable SIMULE un connecteur.** Un essai depuis la console ne doit pas taper sur le système de
+production d'un client, même en lecture : il consommerait son quota, apparaîtrait dans ses journaux, et un
+connecteur mal déclaré (un `DELETE` là où le client voulait un `GET`) ferait un dégât réel pendant qu'on croit
+essayer.
+
+⚠️ **L'assistant de construction peut réécrire les MOTS d'un connecteur, jamais en créer un.** Déclarer une
+source, c'est écrire une adresse réseau et un secret : cela reste un geste d'administrateur, et le serveur
+filtre les noms inconnus avant même que la proposition n'atteigne l'écran.
 
 ## Banc de tool calling : le choix des deux modèles de l'agent (mesuré le 2026-08-28)
 

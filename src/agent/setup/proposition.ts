@@ -33,6 +33,23 @@ const outilProposeSchema = z.object({
   nePasUtiliser: z.string().trim().max(2000).default(''),
 });
 
+/**
+ * Les MOTS d'un outil de CONNECTEUR déjà déclaré (lot L2, décision D-L2-4).
+ *
+ * 🔴 LA FRONTIÈRE NE BOUGE PAS D'UN POUCE. L'assistant peut réécrire les deux textes qui décident QUAND le
+ * modèle appelle un connecteur ; il ne peut ni le créer, ni toucher à son adresse, à son secret, à son
+ * gabarit de chemin, à ses paramètres, à son risque ou à son activation. Déclarer une source, c'est écrire
+ * une adresse réseau et un secret : cela reste un geste d'administrateur.
+ *
+ * L'existence du `nom` n'est PAS vérifiable par ce schéma (il ne connaît pas les outils de cet agent) : elle
+ * l'est à l'APPLICATION, qui ne patche qu'un outil existant et n'en crée jamais.
+ */
+const connecteurProposeSchema = z.object({
+  nom: z.string().trim().regex(/^[a-z0-9_]{1,64}$/),
+  description: z.string().trim().min(1).max(2000),
+  nePasUtiliser: z.string().trim().max(2000).default(''),
+});
+
 export const propositionSchema = z.object({
   /** Ce que l'assistant dit au client, en clair. Toujours présent : une proposition sans explication est
    *  un diff que personne ne peut juger. */
@@ -46,10 +63,15 @@ export const propositionSchema = z.object({
   outils: z.array(outilProposeSchema).max(OUTILS_MAISON.length)
     .refine((o) => new Set(o.map((x) => x.handler)).size === o.length, 'un outil proposé deux fois')
     .optional(),
+  /** Les MOTS d'un connecteur DÉJÀ déclaré. Même exigence d'unicité, et pour la même raison. */
+  connecteurs: z.array(connecteurProposeSchema).max(20)
+    .refine((o) => new Set(o.map((x) => x.nom)).size === o.length, 'un connecteur proposé deux fois')
+    .optional(),
 });
 
 export type Proposition = z.infer<typeof propositionSchema>;
 export type OutilPropose = z.infer<typeof outilProposeSchema>;
+export type ConnecteurPropose = z.infer<typeof connecteurProposeSchema>;
 
 /** Nom de l'outil par lequel le modèle rend sa réponse. Forcé à l'appel : voir `toolChoice`. */
 export const OUTIL_PROPOSER = 'proposer';
@@ -90,6 +112,19 @@ export const SCHEMA_PROPOSITION = {
         },
       },
     },
+    connecteurs: {
+      type: 'array',
+      description: 'Les connecteurs DÉJÀ déclarés dont tu proposes de réécrire les mots. Tu ne peux pas en créer.',
+      items: {
+        type: 'object',
+        properties: {
+          nom: { type: 'string', description: 'le nom exact du connecteur déjà déclaré' },
+          description: { type: 'string', description: 'Quand l’appeler, avec un exemple de tournure du client.' },
+          nePasUtiliser: { type: 'string', description: 'Quand NE PAS l’appeler. Jamais vide.' },
+        },
+        required: ['nom', 'description', 'nePasUtiliser'],
+      },
+    },
     outils: {
       type: 'array',
       description: 'Les outils du catalogue que tu proposes, avec leurs mots.',
@@ -122,6 +157,9 @@ export interface EtatCourant {
   fiche: FicheAgentContenu;
   /** Les outils DÉJÀ posés sur l'agent, par handler, avec leurs mots actuels. */
   outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
+  /** Les CONNECTEURS déjà déclarés par un administrateur, par leur nom exposé. L'assistant ne peut proposer
+   *  que leurs mots, et seulement pour ceux-là : il n'en invente pas. */
+  connecteurs?: Array<{ nom: string; titre: string; description: string; nePasUtiliser: string }>;
 }
 
 const LABELS_FICHE: Record<string, string> = {
@@ -184,6 +222,29 @@ export function differences(courant: EtatCourant, proposition: Proposition): Cha
         label: `${prefixe} : quand NE PAS l’appeler`,
         avant: deja?.nePasUtiliser ?? '',
         apres: o.nePasUtiliser,
+      });
+    }
+  }
+
+  // Les CONNECTEURS : seulement ceux qui EXISTENT. Un nom inconnu est ignoré en silence, comme tout ce qui
+  // n'est pas au schéma : l'assistant n'obtient rien, et la conversation n'échoue pas pour autant.
+  for (const c of proposition.connecteurs ?? []) {
+    const deja = (courant.connecteurs ?? []).find((x) => x.nom === c.nom);
+    if (!deja) continue;
+    if (deja.description !== c.description) {
+      out.push({
+        champ: `connecteur.${c.nom}.description`,
+        label: `${deja.titre} : quand l’appeler`,
+        avant: deja.description,
+        apres: c.description,
+      });
+    }
+    if (deja.nePasUtiliser !== c.nePasUtiliser) {
+      out.push({
+        champ: `connecteur.${c.nom}.nePasUtiliser`,
+        label: `${deja.titre} : quand NE PAS l’appeler`,
+        avant: deja.nePasUtiliser,
+        apres: c.nePasUtiliser,
       });
     }
   }

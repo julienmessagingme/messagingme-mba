@@ -285,7 +285,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
   const OUTIL: OutilDefini = {
     id: 'o1', tenantId: 't1', agentId: 'ag1', origin: 'mba', name: 'mba_poser_tag',
     description: 'Tague.', params: [{ name: 'tag', type: 'string', source: 'modele', required: true }],
-    binding: { handler: 'poser_tag' }, outputPaths: [], risk: 'write',
+    binding: { handler: 'poser_tag' }, sourceId: null, outputPaths: [], risk: 'write',
     timeoutMs: 8000, maxBytes: 16384, autonome: false,
   };
 

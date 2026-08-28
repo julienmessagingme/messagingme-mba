@@ -24,6 +24,7 @@ const AG = '11111111-1111-4111-8111-111111111111';
 const OUT = '22222222-2222-4222-8222-222222222222';
 const AUTRE = '33333333-3333-4333-8333-333333333333';
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const SRC = '44444444-4444-4444-8444-444444444444';
 let adminTok = '';
 let agentTok = '';
 beforeAll(async () => {
@@ -37,7 +38,7 @@ const OUTIL: OutilComplet = {
   id: OUT, tenantId: 't1', agentId: AG, origin: 'mba', name: 'mba_terminer',
   title: 'Terminer', description: 'Termine la conversation.', nePasUtiliser: 'Pas pour escalader.',
   params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],
-  binding: { handler: 'terminer' }, outputPaths: [], risk: 'read',
+  binding: { handler: 'terminer' }, sourceId: null, outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false, actif: false, activeLe: null, autonomeLe: null,
 };
 
@@ -50,6 +51,7 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
     activations: [] as Array<{ tenant: string; id: string; actif: boolean; par: string }>,
     autonomies: [] as Array<{ tenant: string; id: string; autonome: boolean; par: string }>,
     retraits: [] as Array<{ tenant: string; id: string }>,
+    connecteurs: [] as Array<{ tenant: string; agentId: string; outil: Record<string, unknown> }>,
   };
   const deps: AgentToolsRouteDeps = {
     // `binding.handler` compte : c'est par lui que la route retrouve le modèle de catalogue de l'outil,
@@ -74,6 +76,12 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
       return id === OUT ? { ...OUTIL, autonome } : null;
     },
     retirer: async (tenant, _a, id) => { cap.retraits.push({ tenant, id }); return id === OUT; },
+    ajouterConnecteur: async (tenant, agentId, outil) => {
+      cap.connecteurs.push({ tenant, agentId, outil: outil as unknown as Record<string, unknown> });
+      if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
+      return agentId === AG ? { ...OUTIL, ...outil, origin: 'http', sourceId: outil.sourceId } : null;
+    },
+    sourceExiste: async (tenant, sourceId) => tenant === 't1' && sourceId === SRC,
     sortiesDeLAgent: async (_t, agentId) => (agentId === AG ? sorties : null),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentTools: deps }) };
@@ -261,5 +269,92 @@ describe('outils d’un agent : correction, retrait, isolation', () => {
     const { srv } = app();
     expect((await srv.inject({ method: 'GET', url: base('t1'), ...h(agentTok) })).statusCode).toBe(403);
     expect((await srv.inject({ method: 'PUT', url: `${base('t1')}/${OUT}/activation`, ...h(agentTok), payload: { valeur: true } })).statusCode).toBe(403);
+  });
+});
+
+/**
+ * Déclarer un outil de CONNECTEUR sur une source (lot L2).
+ *
+ * 🔴 Trois gardes, et elles ne sont nulle part ailleurs : la source appartient au tenant, le risque dérive de
+ * la méthode et ne peut être que MONTÉ, et le filtre de sortie est obligatoire. La dernière est celle qu'on
+ * oublierait : la réponse du connecteur appartient au client et part chez le fournisseur de modèle.
+ */
+describe('outils d’un agent : les connecteurs (L2)', () => {
+  const corps = (over: Record<string, unknown> = {}) => ({
+    sourceId: SRC, name: 'lire_commande', title: 'Lire une commande',
+    description: 'Donne le statut d’une commande.', nePasUtiliser: 'Jamais pour annuler.',
+    methode: 'GET', chemin: '/commandes/{ref}',
+    params: [{ name: 'ref', type: 'string', source: 'modele', required: true }],
+    outputPaths: ['statut'],
+    ...over,
+  });
+
+  it('déclare l’outil, INACTIF, avec son gabarit dans le binding', async () => {
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
+    expect(res.statusCode).toBe(201);
+    expect(cap.connecteurs[0]!.outil).toMatchObject({
+      sourceId: SRC, binding: { methode: 'GET', chemin: '/commandes/{ref}' }, outputPaths: ['statut'], risk: 'read',
+    });
+    // L'activation reste un geste humain séparé : la migration 0086 refuse un actif sans activateur.
+    expect(res.json().outil.actif).toBe(false);
+  });
+
+  it('🔴 une source d’un AUTRE tenant rend 404, et rien n’est écrit', async () => {
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ sourceId: AUTRE }) });
+    expect(res.statusCode).toBe(404);
+    expect(cap.connecteurs).toEqual([]);
+  });
+
+  it('🔴 le RISQUE ne peut pas être abaissé sous celui de la méthode', async () => {
+    // Un client qui déclare « read » un DELETE désarmerait la garde d'autonomie sur une action irréversible.
+    const { cap, srv } = app();
+    for (const [methode, risk] of [['DELETE', 'read'], ['DELETE', 'write'], ['POST', 'read']]) {
+      const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ methode, risk }) });
+      expect(res.statusCode, `${methode}/${risk}`).toBe(400);
+    }
+    expect(cap.connecteurs).toEqual([]);
+    // Le MONTER est permis : un GET peut interroger un système sensible.
+    const ok = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ methode: 'GET', risk: 'write' }) });
+    expect(ok.statusCode).toBe(201);
+    expect(cap.connecteurs[0]!.outil.risk).toBe('write');
+  });
+
+  it('🔴 sans champs à lire, c’est REFUSÉ : la réponse du client part chez le fournisseur de modèle', async () => {
+    const { cap, srv } = app();
+    for (const outputPaths of [[], undefined]) {
+      const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ outputPaths }) });
+      expect(res.statusCode, String(outputPaths)).toBe(400);
+    }
+    expect(cap.connecteurs).toEqual([]);
+  });
+
+  it('🔴 un `contactPath` HORS LISTE est refusé, et un paramètre « contact » doit le déclarer', async () => {
+    // La liste fermée empêche de dériver un paramètre d'une clé arbitraire de la projection du contact.
+    const { cap, srv } = app();
+    const hors = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: corps({ params: [{ name: 'x', type: 'string', source: 'contact', contactPath: 'email' }] }),
+    });
+    expect(hors.statusCode).toBe(400);
+    const sans = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: corps({ params: [{ name: 'x', type: 'string', source: 'contact' }] }),
+    });
+    expect(sans.statusCode).toBe(400);
+    expect(cap.connecteurs).toEqual([]);
+    const bon = await srv.inject({
+      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
+      payload: corps({ params: [{ name: 'client', type: 'string', source: 'contact', contactPath: 'wa_id' }] }),
+    });
+    expect(bon.statusCode).toBe(201);
+  });
+
+  it('réservé aux administrateurs, et le tenant de l’URL ne dépasse pas celui du jeton', async () => {
+    const { cap, srv } = app();
+    expect((await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(agentTok), payload: corps() })).statusCode).toBe(403);
+    expect((await srv.inject({ method: 'POST', url: `${base('t2')}/connecteur`, ...h(adminTok), payload: corps() })).statusCode).toBe(403);
+    expect(cap.connecteurs).toEqual([]);
   });
 });

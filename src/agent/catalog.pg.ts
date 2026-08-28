@@ -14,6 +14,7 @@ interface Ligne {
   description: string;
   params: unknown;
   binding: unknown;
+  source_id: string | null;
   output_paths: string[] | null;
   risk: OutilDefini['risk'];
   timeout_ms: number;
@@ -23,7 +24,7 @@ interface Ligne {
 
 /** Colonnes lues par les deux requêtes. Une seule liste : deux projections divergentes finiraient par ne plus
  *  rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution. */
-const COLONNES = `id, tenant_id, agent_id, origin, name, description, params, binding, output_paths,
+const COLONNES = `id, tenant_id, agent_id, origin, name, description, params, binding, source_id, output_paths,
                   risk, timeout_ms, max_bytes, autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
@@ -38,6 +39,9 @@ function versOutil(r: Ligne): OutilDefini {
     // `binding` est du jsonb, donc opaque : lu par le helper défensif maison plutôt qu'affirmé par un `as`.
     // Un scalaire ou un null donne un objet vide, et le résolveur refuse alors proprement.
     binding: asRecord(r.binding),
+    // La source vit sur la LIGNE, pas dans `binding` : elle est une clé étrangère, et la contrainte
+    // `agent_tools_origin_src_chk` la rend obligatoire dès que l'origine n'est pas `mba`.
+    sourceId: r.source_id,
     outputPaths: r.output_paths ?? [],
     risk: r.risk,
     timeoutMs: r.timeout_ms,
@@ -105,6 +109,36 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
         // `binding.handler` est ce qui donne son COMPORTEMENT à l'outil : le résolveur maison le lit là, et
         // jamais dans le nom exposé, que le client peut changer.
         JSON.stringify({ handler: outil.handler }),
+        outil.risk,
+      ],
+    ).catch(surNomDejaPris);
+    const r = res.rows[0];
+    return r ? versComplet(r) : null;
+  }
+
+  /**
+   * Un outil de CONNECTEUR (lot L2). `origin` vaut `'http'` en dur : comme pour les outils maison, le corps de
+   * la requête n'a rien à dire là-dessus.
+   *
+   * La SOURCE est vérifiée dans le même ordre que l'agent, par le `where exists` : une source d'un autre
+   * tenant ne produit aucune ligne plutôt qu'une violation de clé étrangère, donc un 404 plutôt qu'un 500.
+   */
+  async ajouterConnecteur(tenantId: string, agentId: string, outil: {
+    sourceId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; binding: { methode: string; chemin: string }; outputPaths: string[]; risk: RisqueOutil;
+  }): Promise<OutilComplet | null> {
+    const res = await this.pool.query<LigneAdmin>(
+      `insert into agent_tools
+         (tenant_id, agent_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, risk)
+       select $1, $2, 'http', $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::text[], $11
+        where exists (select 1 from agents where id = $2 and tenant_id = $1)
+          and exists (select 1 from agent_tool_sources where id = $3 and tenant_id = $1)
+       returning ${COLONNES_ADMIN}`,
+      [
+        tenantId, agentId, outil.sourceId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
+        JSON.stringify(outil.params ?? []),
+        JSON.stringify(outil.binding),
+        outil.outputPaths,
         outil.risk,
       ],
     ).catch(surNomDejaPris);

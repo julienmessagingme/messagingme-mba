@@ -39,8 +39,14 @@ export interface OutilExpose {
   };
 }
 
+export type OrigineOutil = 'mba' | 'http' | 'mcp';
+
 export interface OutilAgent {
   id: string;
+  /** D'où vient le comportement : `mba` = outil maison du catalogue, `http` = connecteur du client (L2). */
+  origin: OrigineOutil;
+  /** La source externe, pour un connecteur. `null` pour un outil maison. */
+  sourceId: string | null;
   name: string;
   title: string;
   description: string;
@@ -65,6 +71,25 @@ const base = (tenantId: string, agentId: string) => `/tenants/${tenantId}/agents
 export async function listOutils(tenantId: string, agentId: string): Promise<VueOutils> {
   const r = await request<Partial<VueOutils>>(base(tenantId, agentId));
   return { outils: r.outils ?? [], catalogue: r.catalogue ?? [] };
+}
+
+/**
+ * Déclare un outil de CONNECTEUR sur une source (lot L2).
+ *
+ * Route SÉPARÉE de l'ajout maison, exprès : l'ajout maison prend son `handler` dans le catalogue et refuse
+ * tout le reste, c'est sa garde. Le risque est DÉRIVÉ de la méthode côté serveur et ne peut être que monté.
+ */
+export async function ajouterConnecteur(tenantId: string, agentId: string, outil: {
+  sourceId: string; name: string; title: string; description: string; nePasUtiliser: string;
+  methode: string; chemin: string;
+  params: Array<{ name: string; type: string; source: string; description?: string; required?: boolean; contactPath?: string; value?: string | number | boolean }>;
+  outputPaths: string[];
+  risk?: RisqueOutil;
+}): Promise<OutilAgent> {
+  const r = await request<{ outil: OutilAgent }>(`${base(tenantId, agentId)}/connecteur`, {
+    method: 'POST', body: JSON.stringify(outil),
+  });
+  return r.outil;
 }
 
 /** Ajoute un outil du catalogue. Le titre, les mots, les paramètres et le RISQUE viennent du serveur. */

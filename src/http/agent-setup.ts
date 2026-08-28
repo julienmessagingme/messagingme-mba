@@ -102,7 +102,13 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     return reply.code(200).send({
       message: propose.data.message,
-      proposition: { fiche: propose.data.fiche ?? {}, outils: propose.data.outils ?? [] },
+      proposition: {
+        fiche: propose.data.fiche ?? {},
+        outils: propose.data.outils ?? [],
+        // Les connecteurs proposés sont filtrés sur ceux qui EXISTENT : l'assistant n'en crée pas, et un nom
+        // inventé ne doit pas atteindre l'application, qui tenterait un patch sur un outil inconnu.
+        connecteurs: (propose.data.connecteurs ?? []).filter((c) => (etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
+      },
       changements: differences(etat, propose.data),
       usage: { tokensIn: reponse.usage.tokensIn, tokensOut: reponse.usage.tokensOut },
     });

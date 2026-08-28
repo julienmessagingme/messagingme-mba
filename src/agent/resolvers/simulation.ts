@@ -47,8 +47,28 @@ function simule(quoi: string, details: Record<string, unknown> = {}): SortieReso
   };
 }
 
+/**
+ * Un CONNECTEUR en bac à sable : simulé, jamais appelé.
+ *
+ * 🔴 UN ESSAI DEPUIS LA CONSOLE NE DOIT PAS TAPER SUR LE SYSTÈME DE PRODUCTION D'UN CLIENT, même en lecture.
+ * Il consommerait son quota, apparaîtrait dans ses journaux, et un connecteur mal déclaré (un `DELETE` là où
+ * le client voulait un `GET`) ferait un dégât réel pendant qu'on croit essayer. Le bac à sable rend donc les
+ * champs DEMANDÉS avec une valeur d'exemple : le client voit exactement ce que l'agent recevra, sans l'appel.
+ */
+export function connecteurSimule(outil: { binding: Record<string, unknown>; outputPaths: string[] }): SortieResolveur {
+  const b = outil.binding as { methode?: unknown; chemin?: unknown };
+  const contenu: Record<string, unknown> = {};
+  for (const chemin of outil.outputPaths) contenu[chemin] = `exemple(${chemin})`;
+  return simule(
+    `l'appel ${String(b.methode ?? '?')} ${String(b.chemin ?? '?')} vers votre système`,
+    { champs: contenu },
+  );
+}
+
 export function creerResolveurSimulation(deps: DepsResolveurSimulation): ResolveurOutil {
   return async ({ outil, args, ctx }) => {
+    // Un outil de connecteur n'a pas de `handler` : il se reconnaît à son ORIGINE, et il est simulé en bloc.
+    if (outil.origin !== 'mba') return connecteurSimule(outil);
     const handler = String(outil.binding.handler ?? '').trim();
     switch (handler) {
       // ---------- Ceux qui tournent POUR DE VRAI ----------

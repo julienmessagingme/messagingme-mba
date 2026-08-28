@@ -31,6 +31,15 @@ export interface OutilDefini {
   params: unknown;
   /** Ce qui dit au résolveur quoi faire (`handler` pour `mba`, gabarit d'URL pour `http`...). Opaque ici. */
   binding: Record<string, unknown>;
+  /**
+   * La SOURCE externe de cet outil (`agent_tool_sources`, migration 0088), ou `null` pour un outil maison.
+   *
+   * 🔴 C'est elle qui porte l'adresse de base et le secret, donc la garde anti-SSRF : le résolveur `http` la
+   * relit à CHAQUE appel plutôt que de la figer, sinon une source désactivée continuerait d'être appelée
+   * jusqu'au prochain redémarrage. La contrainte `agent_tools_origin_src_chk` garantit qu'un outil non
+   * maison en a forcément une.
+   */
+  sourceId: string | null;
   /** Chemins d'extraction de la réponse. Vide = la réponse entière (bornée par `maxBytes`). */
   outputPaths: string[];
   risk: RisqueOutil;
