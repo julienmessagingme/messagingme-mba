@@ -1,4 +1,4 @@
-# CLAUDE.md — messagingme-mba
+# CLAUDE.md : messagingme-mba
 
 **Produit :** console SaaS plug-and-play qui déploie et pilote la stack native Meta pour
 WhatsApp (Cloud API + Marketing Messages API/MM Lite + Meta Business Agent) pour des clients.
@@ -44,9 +44,16 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
 ⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
 passer sur le VPS AVANT le déploiement (`sudo docker compose build mba-api` puis
-`sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`). Dernière appliquée :
-**0087** (le solde prépayé d'un workspace, passée le 2026-08-28). La migration **0088** (les sources externes d'outils, lot L2) est nouvelle, à appliquer à son déploiement. **Prochaine libre = 0089.**
-En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+`sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`).
+
+🔴 **CE FICHIER EST LA SEULE SOURCE DU COMPTEUR. Ne le recopiez nulle part.** Au 2026-08-29, trois autres
+documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 migrations (croire sa ligne
+menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
+recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
+
+**Dernière appliquée : 0088** (les sources externes d'outils, lot L2), passée le 2026-08-28 avec la séquence
+complète (build de l'image, vérification que la migration est DEDANS, `migrate`, vérification en base).
+**Prochaine libre = 0089.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
@@ -67,14 +74,14 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-- **[PLAN.md](PLAN.md) — le plan global, à lire en premier.** Audit de scalabilité et lot de
+- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Audit de scalabilité et lot de
   features séquencés ensemble en 6 blocs, avec les efforts et les décisions déjà tranchées.
-- [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) — le détail de chaque constat de l'audit
+- [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) : le détail de chaque constat de l'audit
   (référencé par `PLAN.md` sous la forme Bn). Verdict : pas prêt pour des dizaines de clients.
-- [documentation.md](documentation.md) — technique : archi, stack, schéma DB, env, patterns
-- [features.md](features.md) — fonctionnel : les features vues utilisateur, statut
-- [wip.md](wip.md) — ce sur quoi on bosse maintenant
-- [todo.md](todo.md) — backlog et historique des lots livrés
+- [documentation.md](documentation.md) : technique : archi, stack, schéma DB, env, patterns
+- [features.md](features.md) : fonctionnel : les features vues utilisateur, statut
+- [wip.md](wip.md) : ce sur quoi on bosse maintenant
+- [todo.md](todo.md) : backlog et historique des lots livrés
 
 ## Règles spécifiques au projet
 
@@ -85,19 +92,22 @@ qu'avant le premier envoi tracé.
 - **On vérifie contre des mocks des contrats Meta + des tests** (unitaires + intégration
   Supabase), pas contre le Meta live tant qu'on n'a pas de numéro branché. La chaîne tourne
   déjà end-to-end en **DRY_RUN** sur le déploiement ; l'envoi Meta réel se valide en live plus tard.
-- **Pas de tirets longs** dans la doc (« — » / « – » interdits).
+- **Pas de tirets longs** dans la doc (« : » / « : » interdits).
 - **Avant d'écrire un helper, regarder s'il existe déjà.** L'audit du 2026-08-18 a supprimé une centaine de
   copies de fonctions que le repo possédait déjà (dont `scopeTenant`, le contrôle d'accès tenant, présent dans
   22 fichiers de routes). Les points de passage obligés sont listés dans `documentation.md` (« Modules
   partagés ») : un fragment SQL, une classe Tailwind ou une normalisation de texte s'y importe, ne se recopie pas.
 - Git : rester sur `main`, committer sur `main`, push `origin`.
+- 🔴 **`gh run list` AVANT tout déploiement**, au même titre que `git log <déployé>..HEAD`. Un `npm test`
+  vert en local ne prouve que la moitié : les tests d’intégration ne tournent qu’en CI, sur un Postgres
+  jetable. Déployer sans avoir regardé le run, c’est déployer sans avoir vu la moitié des tests.
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)
 
 ### Automation (règles d'archi issues des revues, 2026-08-03)
 
-- **Prochaine migration libre = 0089.** Les migrations ne sont PAS auto-appliquées : construire l'image AVANT de
+- **Le compteur de migrations est plus haut, section Déploiement, et il n'est écrit qu'une fois.** Elles ne sont PAS auto-appliquées : construire l'image AVANT de
   migrer (une migration ajoutée après le dernier build est absente de l'image, et `migrate` répond « à jour »
   sans rien appliquer). Cf `DEPLOY.md`.
 - **L'émission d'un événement d'automation est gouvernée par le CHEMIN appelant, jamais par la dépendance

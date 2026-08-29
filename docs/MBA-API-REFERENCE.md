@@ -64,7 +64,7 @@ Et la source du message devient réglable :
 
 🔴 **`enabled` ne veut PAS dire « activer le handoff ».** L'agent décide de passer la main de lui-même, quel
 que soit ce réglage : la demande explicite d'un humain produit un `handoff_reason: customer_request`, MESURÉ
-sur notre numéro de test (cf `wip.md`). `enabled` décide seulement s'il **lâche vraiment le fil** ensuite.
+sur notre numéro de test (cf `documentation.md` §Journal des lots livrés). `enabled` décide seulement s'il **lâche vraiment le fil** ensuite.
 Donc `false` produit le pire cas : le client lit « un conseiller arrive » et **personne n'est prévenu**, le
 fil restant à MBA.
 

@@ -1,4 +1,109 @@
-# todo.md — backlog
+# todo.md : backlog
+
+## Audit de scalabilité du 2026-08-25 : les constats retenus (triés le 2026-08-29)
+
+L'audit complet reste `AUDIT-SCALE-2026-08-25.md`. Ce qui suit est le seul reste ACTIONNABLE après
+vérification dans le code : la journée 1 est faite (R2 expiration de job, R6 plafond du Retry-After,
+R3 alerte de file d'échec, J0 pool à 8), et R5, R6-découpage, J1, R12 et B3 vivent dans `PLAN.md`
+(5.3, 5.4, 5.5), pas ici. Les 23 jaunes de la §7 de l'audit ne sont volontairement PAS recopiés :
+aucun ne casse, ils se relisent à la source le jour où on ouvre le fichier concerné.
+
+- 🔴 **R1. Les huit commentaires qui promettent une garantie que `singletonKey` ne rend pas.**
+  `PgBossQueue.ensure()` (`src/queue/pgboss.ts:133`) crée les files sans `policy`, donc pg-boss retombe
+  sur `standard`, or TOUS les index uniques de déduplication par `singleton_key` exigent une autre policy.
+  Aucun `singletonKey` de ce dépôt n'a jamais dédupliqué quoi que ce soit. Le claim atomique par
+  destinataire tient (aucun contact ne reçoit deux messages), mais deux runs concurrents instancient
+  chacun leur limiteur en mémoire : le débit réel double, ce qui grille un numéro neuf en palier 250.
+  Commentaires à corriger : `src/http/campaigns.ts:379`, `src/campaign/enqueue.ts:5`,
+  `schedule-sweep.ts:24`, `webhook-feed.ts:40`, `retry-sweep.ts:24`, `src/http/v1-sends.ts:73` et `:244`,
+  `src/worker.ts:610`, `src/index.ts:895`. ⚠️ La policy d'une file est IMMUABLE après création : on ne
+  peut pas se contenter d'ajouter `policy` à `ensure()`. Le mécanisme de remplacement (table de verrous,
+  même patron qu'`api_idempotency`) est une décision, la vérité des commentaires ne l'est pas : la faire
+  d'abord, seule.
+
+- 🔴 **R4. Chaque déploiement gèle une campagne en cours, sans erreur visible.**
+  `installGracefulShutdown` (`src/shutdown.ts:5`) force `process.exit(1)` à 10 secondes, un run de deux
+  heures est donc tué en plein envoi. Le job reste `active` jusqu'à l'expiration de son propre timeout,
+  dimensionné en heures. Chaque interruption consomme un des cinq rejeux ; à la sixième la campagne reste
+  `running` POUR TOUJOURS (aucun balayage ne reprend une campagne `running` avec des destinataires en
+  attente). ⚠️ Relever le délai d'arrêt seul est INOPÉRANT : sans `stop_grace_period` dans
+  `docker-compose.yml`, Docker envoie SIGKILL vers 10 secondes de toute façon. Les deux vont ensemble,
+  plus le balayage de reprise qui manque.
+
+- 🔴 **R13. Une campagne lancée ne peut pas être arrêtée.**
+  Le `POST /campaigns/:id/stop` (`src/http/campaigns.ts:427`) ne sert QUE les campagnes au fil de l'eau
+  (`stopWebhookCampaign`, 404 partout ailleurs) : ce n'est pas une pause d'envoi. Et la boucle
+  (`src/campaign/engine.ts:202`) ne relit jamais le statut de la campagne, donc écrire `paused` en base
+  ne l'arrêterait pas. Une erreur de ciblage sur 5000 destinataires part jusqu'au bout. Correctif : route
+  de pause + relecture périodique du statut dans la boucle, à noyer dans le N+1 que le quality gate fait
+  déjà. La REPRISE après pause existe déjà côté store : la route complète un mécanisme à moitié câblé.
+
+- 🔴 **R10 + J2. Le rappel « avant date » peut partir deux ou trois fois, chez de vrais clients.**
+  La déduplication vit uniquement dans le balayage, jamais dans le runner : `src/automation/runner.ts:122`
+  saute volontairement l'anti-rebond pour `avant_date`, et `markFired` (`store.pg.ts:171`) écrit un
+  `on conflict do update` INCONDITIONNEL. Tant que l'événement publié n'est pas consommé, le balayage
+  suivant revoit le contact comme dû et republie. Seuil réel : une douzaine d'événements dans la minute,
+  ce que fabrique un client avec quinze rendez-vous à la même heure. Symptôme : des rappels WhatsApp
+  identiques, facturés, visibles du client, avec le risque de note de qualité Meta.
+  Le vrai verrou est un claim conditionnel sur le marqueur d'occurrence DANS le runner (`singletonKey`
+  ne sert à rien, cf. R1). ⚠️ Deux pièges : `markFired` a une SECONDE mission pour `avant_date` (écrire
+  le marqueur), et `date-sweep.ts:15-22` documente que si le scénario ne démarre pas le tir est annulé et
+  le balayage REPUBLIE, ce qui est le rattrapage voulu. Ne pas casser ça en posant le claim.
+
+- 🟠 **R9. Le mur de l'import CSV tombe au CHOIX du fichier, pas à l'import.**
+  L'aperçu (`web/lib/api.ts:248` vers `src/http/import.ts:119`) envoie le CSV ENTIER pour n'en extraire
+  que les en-têtes et quatre lignes, et la route d'import ne relève pas le `bodyLimit` global de 1 Mo
+  (`src/server.ts:207`), alors que flows, media, workflows et rcs le font. Au-delà d'environ 14 000 lignes
+  c'est un 413 avec le message anglais brut de Fastify. Deux correctifs courts : ne transmettre que les
+  premiers kilo-octets à l'aperçu, et poser un `bodyLimit` dédié avec un message explicite en français.
+  L'upsert par lots et la file pg-boss d'import sont VOLONTAIREMENT laissés : le nombre d'allers-retours
+  ne gêne personne au volume actuel, et le pool ne connaît pas de famine (une requête en vol par import).
+
+- 🟠 **R7. Le compteur de non-lus interroge la base pour chaque utilisateur, toutes les 30 secondes.**
+  `countUnread` (`src/inbox/store.pg.ts:330`) compte avec un `exists` corrélé sur TOUTES les conversations
+  du tenant, et l'index de `conversation_messages` ne porte pas `direction`. La pastille est montée sur
+  TOUTES les pages et pour tous les rôles (`web/components/AppShell.tsx:160`), donc les 25 utilisateurs
+  d'un même client font 25 fois la même requête. Un micro-cache serveur par tenant de 5 à 10 secondes les
+  mutualise en une seule. C'est le seul point de R7 retenu : la colonne `unread` dénormalisée, le jitter
+  et le delta `?after=` du fil sont laissés à l'audit, ils ne se paient qu'à la cible.
+
+- 🔲 **R11 + J3. Les deux prérequis à lever AVANT tout second worker** (sans objet aujourd'hui, le compose
+  fige une instance). `advance` (`src/workflow/executor.ts:1135`) lit le run puis écrit par un `setState`
+  inconditionnel : deux messages du même contact avancent le run deux fois. Le bon patron existe à côté
+  (`setStateSiEncoreSur`, `run-store.pg.ts:158`), il ne sert qu'au tour d'agent. ⚠️ Une course est
+  atteignable DÈS AUJOURD'HUI : le process API sur les rappels RCS (`src/index.ts:801`) pendant qu'un
+  webhook du même contact est traité par le worker. Et `PgWorkerHeartbeatStore.beat` écrit une ligne
+  unique `id = 'worker'` : à deux workers, un mort est masqué par le vivant.
+
+
+## Sorti de `wip.md` à sa vidange (2026-08-29)
+
+Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y faire : ce sont des choses à faire.
+
+- 🔴 **Faire tourner les deux clés d’API smsmode** qui ont circulé en clair pendant le chantier RCS. Aucune
+  autre trace de cette dette nulle part dans le dépôt.
+- 🔴 **Aucun workspace n’a de solde prépayé.** Conséquence directe et non évidente : les agents IA ne
+  démarrent pas et le bac à sable rend 409. Tant que personne n’a rechargé, tout le lot agent est inerte,
+  et l’écran ne dit pas « il faut créditer », il dit « solde épuisé ».
+- **`EUR_PER_USD` n’est pas posée dans `.env.prod`** : le défaut 0,92 de `src/config.ts` s’applique. C’est
+  un arbitrage commercial (marge sur la conversion), il attend Julien.
+- **Un message reste dans `webhook-dlq`** depuis l’incident du 2026-08-17, et **rien ne consomme cette file**.
+  Sans outil de rejeu, la seule reprise est de renvoyer le message. Un consommateur de rejeu manque.
+- **L’agent RCS est peut-être déposé en mode NON conversationnel** : le choix n’est pas modifiable après coup
+  et imposerait un redépôt. À vérifier avant de vendre du RCS conversationnel.
+- **Le cas GTFS / Auxerre** : ne jamais confier le paramètre `grille` au modèle. Prévoir un endpoint qui le
+  déduit côté serveur, avec un jeton dédié révocable.
+- **Excel et PDF vers des FAQ structurées** : décision en attente, l’analyse des parseurs est faite.
+- **L’écriture en observation depuis `/ops`** : volontairement hors lot, à trancher si le besoin revient.
+- **Astérisques sur les onze champs de l’éditeur de formulaire**, et la liste des vérifications visuelles.
+
+### À voir sur du VRAI trafic (rien de tout ça n’a encore tourné en vol)
+
+- le **bloc Question** : aucun contact n’a jamais reçu le menu WhatsApp qu’il produit ;
+- la **campagne au fil de l’eau** : aucun lead n’est passé par le webhook ;
+- la **chaîne RCS complète**, depuis le dernier déploiement ;
+- l’**agent IA** sur du trafic réel : une conversation tenue, un outil appelé, une sortie qui reprend le
+  scénario. Tout est testé contre des mocks, rien n’a parlé à un vrai contact.
 
 ## 🟠 SSRF par DNS rebinding : revalider l'IP RÉSOLUE avant l'appel (relevé à la revue du lot L2)
 
@@ -55,7 +160,7 @@ séquencement et le pourquoi de l'ordre sont en §7 de
 
 - ✅ **L2 : le connecteur API (HTTP) du client. LIVRÉ ET DÉPLOYÉ le 2026-08-28** (migration 0088 appliquée).
   Plan exécuté : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf tâches. Le système se déclare dans
-  **Tools > Connecteurs API**, l'agent n'y déclare que ses appels. Détail dans [wip.md](wip.md).
+  **Tools > Connecteurs API**, l'agent n'y déclare que ses appels. Détail dans [documentation.md](documentation.md) §Le connecteur API d’un client.
 - 🟠 **L3 : le « temps 2 ».** L'IA de construction relit les VRAIES conversations, le journal d'outils et le
   signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
   valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
@@ -448,53 +553,45 @@ Concerne les mesures par bloc, et probablement les autres agrégats datés d'Ana
   l'aperçu, un compteur y compterait des robots plutôt que des humains. Décision de Julien, ne pas rouvrir
   sans qu'il le demande.
 
-## ⚠️ AUDIT DE SCALABILITÉ (2026-07-18) — LIRE EN PREMIER
+## Les deux audits de scalabilité : lequel fait foi
 
-**`AUDIT-SCALE-2026-07-18.md`** : audit multi-agents des deux repos (10 dimensions, 117 constats,
-chacun passé devant des vérificateurs adverses, 189 agents). Verdict : **le produit ne peut PAS
-accueillir des dizaines de clients en l'état**. Trois bloquants mécaniques :
+⚠️ **`AUDIT-SCALE-2026-08-25.md` succède à celui de juillet et le supplante.** Quand les deux se recouvrent,
+celui d’août tranche : il re-statue les bloquants de juillet avec des mesures fraîches. Ce qui reste
+ACTIONNABLE des deux est en tête de ce fichier (section « Audit de scalabilité du 2026-08-25 ») et dans
+`PLAN.md`, dont les états ont été vérifiés item par item le 2026-08-29.
 
-1. **Le multi-tenant Meta n'est pas câblé.** Les 12 sites d'envoi utilisent `config.META_ACCESS_TOKEN`
-   (token global unique) ; le token business chiffré de chaque client est écrit en base mais
-   `decryptSecret` n'a **aucun appelant** en prod. « Chaque client connecte son numéro » est simulé.
-2. **Budget de connexions Postgres non borné** : jusqu'à 42 sessions demandées contre 15 au pooler
-   Supabase. C'est la cause du « internal error » du Dashboard, **déjà avec un seul client**.
-   mm-hubspot a codé la garde (`DB_POOL_MAX`/`PGBOSS_MAX`), mba non. Correctif : une demi-journée.
-3. **Un seul numéro par tenant, câblé en dur** (`getTenantPhoneNumberId` = `order by created_at limit 1`,
-   `conversations` sans `phone_number_id`). Deux numéros chez UN client cassent l'inbox.
-
-Le plan d'action ordonné (3 vagues, ~3 semaines pour les vagues 1 et 2) est en §7 du rapport.
-Les vagues 1 et 2 sont le minimum avant de vendre. §8 liste ce qui reste à trancher côté produit.
+Des trois « bloquants mécaniques » de juillet, deux sont corrigés (le token Meta par tenant, le budget de
+connexions Postgres) ; le troisième, un seul numéro par tenant, est `PLAN.md 5.4`.
 
 ## Plan des boucles feature-loop (ordre)
 
-1. ✅ **Loop 1 — Webhook receiver + file + idempotence** (le socle que tout consomme).
-2. ✅ **Loop 2 — Wrapper Cloud API + MM Lite** (send text/template, statuts, marketing_messages,
+1. ✅ **Loop 1 : Webhook receiver + file + idempotence** (le socle que tout consomme).
+2. ✅ **Loop 2 : Wrapper Cloud API + MM Lite** (send text/template, statuts, marketing_messages,
    erreurs + retries + throttling).
-3. ✅ **Loop 3 — Contacts BSUID-native + import CSV + user fields** (parsing, dédup, merge CTA).
-4. ✅ **Loop 4 — Moteur de campagne + garde-fous** (pacing, fréquence max, coupure quality rating).
-5. ✅ **Loop 5 — Adaptateurs Postgres + run E2E** (stores PG, services create/run, routes HTTP
+3. ✅ **Loop 3 : Contacts BSUID-native + import CSV + user fields** (parsing, dédup, merge CTA).
+4. ✅ **Loop 4 : Moteur de campagne + garde-fous** (pacing, fréquence max, coupure quality rating).
+5. ✅ **Loop 5 : Adaptateurs Postgres + run E2E** (stores PG, services create/run, routes HTTP
    import/campagne/run, worker campaign-run ; E2E CSV->campagne->envoi prouvé contre Supabase).
 
 Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **LIVE** sur
 `mba.messagingme.app` (1er envoi WhatsApp réel le 2026-07-06, numéro Zadarma).
 
-## Programme 16 features (2026-07-16) — lots restants
+## Programme 16 features (2026-07-16) : lots restants
 
-Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
-- ✅ **Lot 4b — fin du socle identifiants : FAIT (2026-07-16)** (codes des NODES mintés serveur + champs système
+Lots A-E LIVE (cf `documentation.md §Journal des lots livrés`). Restent, dans l'ordre recommandé :
+- ✅ **Lot 4b : fin du socle identifiants : FAIT (2026-07-16)** (codes des NODES mintés serveur + champs système
   déterministes + backfill, cf `.loop/lotF-identifiants-4b.md`). Reste le chantier DÉDIÉ **endpoints API publics**
   adressés par code (API keys, auth consommateur externe, scopes, rate limiting -> cadrage produit).
-- ✅ **Lot 6 — i18n anglais COMPLET : FAIT (2026-07-16)** (bug lang resync fermé, day/format locale-requis,
+- ✅ **Lot 6 : i18n anglais COMPLET : FAIT (2026-07-16)** (bug lang resync fermé, day/format locale-requis,
   toggle pré-login sur les 5 pages auth, cf `.loop/lotG-i18n-anglais.md`).
-- ✅ **Lot 7 — Flow avancé (#6b/#6c) : FAIT (2026-07-17)** : formulaires MULTI-ÉCRANS (onglets builder, ids
+- ✅ **Lot 7 : Flow avancé (#6b/#6c) : FAIT (2026-07-17)** : formulaires MULTI-ÉCRANS (onglets builder, ids
   `FORM`/`FORM_B`…, complete agrégé par refs globales, webhook INCHANGÉ), champs CONDITIONNELS (`visibleIf` ->
   propriété `visible`, sondé : champ masqué OMIS du payload, requis caché ne bloque pas), **fix node `flow`**
   (envoi interactif réel + garde fenêtre 24 h à 3 étages). Sondes LIVE avant plan + sonde committée
   `scripts/sonde-flow-live.mts` (générateur produit vs WABA réel). Cf `.loop/lot7-flow-avance.md`.
   ⚠️ Vérif Julien restante (V2) : scénario avec node Formulaire -> envoi réel reçu sur son WhatsApp,
   formulaire multi-écrans rempli -> champs contact + run avancé + carte inbox.
-- ✅ **Lot 8 — Campagne « une-page » : FAIT (2026-07-17, 5 phases LIVE)** : écran pleine largeur 2 étapes
+- ✅ **Lot 8 : Campagne « une-page » : FAIT (2026-07-17, 5 phases LIVE)** : écran pleine largeur 2 étapes
   (Préparation / Lancement), sources de destinataires (Liste de contacts requêtable par filtres / Import fichier
   + tag / HubSpot grisé), débit ajustable (mig 0033, timeout de job dimensionné), planification maintenant/plus
   tard (mig 0034, sweeper, annulable). Cf `.loop/lot8-campagne-une-page.md`. ⚠️ Vérif Julien restante (E1/V1) :
@@ -506,14 +603,15 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
   'opted_in' par défaut (conformité). + (todo #5-tail) proposer les internal names HubSpot dans les sélecteurs.
 - **Analytics palier L (suite #8)** : tracker les erreurs des envois Inbox/Workflow (colonnes d'erreur sur
   `conversation_messages` + toucher le handler de statuts webhook EN PROD, risqué → à froid).
-- ✅ **ConvAnalyzer light (Lot 9) : FAIT (2026-07-17)** — bloc « Conversations (analyse) » dans Analytics
+- ✅ **ConvAnalyzer light (Lot 9) : FAIT (2026-07-17)** : bloc « Conversations (analyse) » dans Analytics
   (quanti donut/barres + table quali filtrable -> inbox), sur le moteur Pièce 1 déjà actif. Cf
-  `.loop/lot9-convanalyzer.md`. **V2 (backlog)** : (a) **agent IA décisionnel** branché sur l'analyse
-  (déclencher une action HubSpot / dire au MBA de faire qqch) = le vrai objectif de Julien, à cadrer ;
+  `.loop/lot9-convanalyzer.md`. **V2 (backlog)** : ~~(a) agent IA décisionnel branché sur l’analyse~~ **FAIT AUTREMENT, et mieux**
+  (2026-08-03) : le déclencheur d’automation `conversation_analyzed` existe, donc une analyse démarre un scénario,
+  qui sait poser un tag, écrire dans HubSpot et envoyer. Restent ouverts :
   (b) enrichir le schéma d'analyse pour reprendre ce que le vrai convanalyzer a en plus (urgence graduée 0-5,
   score d'échec du bot, churn, clustering de sujets) ; (c) tendance temporelle stable (joindre
   `conversations.created_at`, pas `conversation_analysis.created_at` qui bouge à la ré-analyse).
-- ✅ **Palier 2 — champ booléen + consentement de flow : FAIT (2026-07-17)** : canonicalisation booléenne
+- ✅ **Palier 2 : champ booléen + consentement de flow : FAIT (2026-07-17)** : canonicalisation booléenne
   (`crm/fields.ts`, partagée fiche/import/webhook), OptIn de flow -> champ booléen choisi (défaut `whatsapp_optin`
   créé à la volée) ET flip `opt_in_status='opted_in'` (opt-out écrasé, décision Julien), garde double-consentement.
   Cf `.loop/palier2-consentement.md` + cadrage `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md`.
@@ -524,19 +622,17 @@ Lots A-E LIVE (cf `wip.md`). Restent, dans l'ordre recommandé :
 ## Décisions API/HubSpot tranchées (2026-07-17) -> paliers restants
 
 Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 validées par Julien). Paliers :
-- ✅ **Palier 3 (Phase A+B) — API publique v1 : FAIT (2026-07-17)** : clés d'API (`api_keys`, scopes
+- ✅ **Palier 3 (Phase A+B) : API publique v1 : FAIT (2026-07-17)** : clés d'API (`api_keys`, scopes
   contacts:write/sends:create, rôle synthétique 'api'), résolveur code+nom (409 ambigu), `POST /v1/contacts`
   (+ batch), `POST /v1/sends` (scénario + template, `Idempotency-Key` obligatoire + claim atomique, rapport
   skipped détaillé, upsert-then-send), `GET /v1/sends/:id`, CRUD clés admin. Migration 0035. Cf
   `.loop/palier3-api.md`. Reviewer sécurité : 🔴 double-envoi (idempotence libérée post-enqueue) trouvé + corrigé.
-  - ✅ **Phase B2 — cible node : FAITE (2026-07-18)** : `WorkflowExecutor.startFromNode` (garde 24 h de `start`
+  - ✅ **Phase B2 : cible node : FAITE (2026-07-18)** : `WorkflowExecutor.startFromNode` (garde 24 h de `start`
     conservée intacte), `PgInboxStore.getWindowOpenByWaIds` (fenêtre en lot, 1 requête), `Campaign.startNodeId`
     de bout en bout, branche `startWorkflowFromNode` du moteur, `POST /v1/sends` accepte `{node:'nod_...'}`.
     Hors fenêtre -> `skipped:{reason:'out_of_window'}`, jamais d'envoi. `createMissing` forcé à false et `params`
     refusé (400) sur cette cible. Aucune migration (0035 portait déjà la colonne). Reviewer PASS.
     Cf `.loop/palier3-b2-et-robustesse.md`.
-  - **Reste Phase C (différé)** : page web `/api-keys` (gestion des clés côté admin ; aujourd'hui via la route
-    admin/curl). + lien nav.
   - ✅ 🟡 **follow-up enqueue : FAIT (2026-07-18)** : retry borné (3 tentatives, backoff 100/300 ms) au lieu d'un
     sweeper. Motif : un sweeper qui ré-enfilerait les campagnes `draft` relancerait aussi les brouillons créés à
     la main dans l'UI et jamais lancés volontairement (= envois non désirés). L'idempotence reste scellée
@@ -558,7 +654,7 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
     (17 -> 60 tests verts). Reste à borner les pools de ce test précis, ou à le pointer sur une autre base.
 - ~~Palier 3 (ancien cadrage)~~ remplacé par l'entrée ci-dessus.
   Rappel de portée (fait) : `POST /v1/sends` scénario + template, node = fenêtre 24h uniquement (D-1, Phase B2).
-- 🔶 **Palier 4 — import listes HubSpot (Phase 0+1 FAITES 2026-07-18)** : toggle self-serve + re-consentement
+- 🔶 **Palier 4 : import listes HubSpot (Phase 0+1 FAITES 2026-07-18)** : toggle self-serve + re-consentement
   ciblé (`optional_scope=crm.lists.read`, mécanisme natif HubSpot, ne touche pas les autres portails). Phase 0
   (connecteur mm-hubspot) : client Lists (search/memberships/batch-read borné 5000), OAuth optional_scope +
   granted_scopes + garde anti-hijack, route service signée `/service/lists[/contacts]`. Phase 1 (mba) : toggle
@@ -577,12 +673,12 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
     (`HUBSPOT_SERVICE_URL=http://mm-hubspot-api:8096`), donc sans passer par NPM. Vérifié après bascule : public
     `/service/lists` -> 404, `/health` -> 200, `/ingest` -> 401 (inchangé), interne `/service/lists` -> 401
     (vivant, signature exigée).
-- **Palier 5 — échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions
+- **Palier 5 : échelle d'autonomie HubSpot (4 niveaux)** : curseur sur le dashboard (N1 suggère, N2 actions
   sûres, N3 Deal auto, N4 autonome), seuil de confiance interne calibré par niveau (D-8/D-9/D-10). 5a = N1-2 +
   curseur + setter `autonomy_level` ; 5b = N3 (Deal auto) après mesure.
 - **Drop différés** : rien (0030 a droppé `workflows.status` ; codes = additifs).
 
-## Suites des revues Automation (2026-08-03) — identifiées, NON traitées
+## Suites des revues Automation (2026-08-03) : identifiées, NON traitées
 
 Trois points relevés par les revues adversariales des lots E/E.2/F, jugés non bloquants et laissés de côté.
 Chacun est un compromis assumé, pas un oubli.
@@ -600,7 +696,7 @@ Chacun est un compromis assumé, pas un oubli.
 
 ## Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16)
 
-Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **0059**.
+Contexte et gotchas : `documentation.md §Journal des lots livrés`. ⚠️ Le compteur de migrations vit dans `CLAUDE.md`, pas ici : cette ligne a annoncé « 0059 » pendant trente migrations.
 
 - 🔴 **Le pilote OTP, avant toute construction.** Répondeur Zadarma sur un numéro DÉDIÉ, un OTP déclenché, et
   on regarde si Meta dicte son code à une machine ou raccroche. Aucun retour d'expérience publié : c'est la
@@ -621,9 +717,9 @@ Contexte et gotchas : `wip.md` §OTP automatique. Prochaine migration libre = **
   est donc vivante de bout en bout ; reste à l'éprouver sur le portail cobaye avec un deal dont le contact
   porte un numéro, et un scénario qui ouvre par un template.
 
-## Suite de l'audit anti-slop (2026-08-18) — 1 item sur 57
+## Suite de l'audit anti-slop (2026-08-18) : 1 item sur 57
 
-Les 6 rouges et 50 des 51 jaunes sont corrigés et déployés (cf. `wip.md`). Ne reste que celui-ci, laissé
+Les 6 rouges et 50 des 51 jaunes sont corrigés et déployés (cf. `AUDIT-ANTI-SLOP-2026-08-18.md`). Ne reste que celui-ci, laissé
 volontairement à l'arbitrage de Julien.
 
 - 🟡 **Découper `web/lib/api.ts`** (1325 lignes, 203 exports, une quinzaine de domaines) par domaine dans
@@ -632,7 +728,7 @@ volontairement à l'arbitrage de Julien.
   les imports du front, d'où l'arrêt : à faire dans un lot dédié, pas en fin de session. ⚠️ Reporter le
   `'use client'` de tête dans les modules qui touchent `session`/`window`.
 
-## MBA ouvert sur la France (2026-08-18) — ce que la doc fraîche impose d'instruire
+## MBA ouvert sur la France (2026-08-18) : ce que la doc fraîche impose d'instruire
 
 Contexte : `agent_eligibility` renvoie `is_eligible:true` sur `+33 5 25 68 03 01` (ToS acceptées par Julien),
 et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` neuve. Relevé complet :
@@ -660,7 +756,7 @@ et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` 
 - 🟢 **`agent_test` ne facture pas les jetons** (« Tokens consumed while testing through this endpoint are not
   billed »), écrit deux fois dans la page : la QA peut s'appuyer dessus sans compter.
 
-## Post-live — prochaines actions
+## Post-live : prochaines actions
 
 - 🟡 **Aucun outil de rejeu de la file d échecs (DLQ).** Un job en échec part dans `<file>-dlq`, que RIEN ne
   consomme : il y reste indéfiniment. Un message entrant y dort depuis le 2026-08-17. Une commande `/ops` qui
@@ -675,10 +771,6 @@ et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` 
   validés en live via l'app. Détails : `brain/PROJECTS.md` §Meta/WhatsApp.
 - ✅ **Placeholders demo supprimés (2026-07-08).** `demo-pn`/`demo-waba` (seed) traînaient sous le
   tenant réel et gagnaient le `order by created_at limit 1` -> 502 templates. DELETE des 2 lignes.
-- 🟡 **Robustesse `getTenantWabaId`/`getTenantPhoneNumberId`** : sélectionnent par
-  `order by created_at limit 1`. OK aujourd'hui (une seule vraie ligne), mais fragile si un 2e numéro
-  réel est onboardé (choix arbitraire) ou si un placeholder de seed réapparaît. À terme : filtrer sur
-  un critère de validité (id numérique / flag actif) plutôt que l'ordre d'insertion. Cf. LEARNINGS 2026-07-08.
 - **Template `mba_console_test`** (id `1507311428074574`, PENDING) : template de test créé pour prouver
   la feature. Supprimable depuis l'onglet Templates quand tu veux.
 - **Onboarding client (Embedded Signup)** : Facebook Login for Business (config_id) → bouton ES +
@@ -691,7 +783,7 @@ et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` 
   Alerte Telegram (`@Messagingmeapp_bot`, creds lus au runtime depuis `messagingme-pilot/config.json`)
   au moindre changement d'état (mur ToS levé → MBA ouvre FR). Log `.mba-eligibility.log`.
 
-## ✅ Suites revue templates + inbox — TOUT RÉSOLU (2026-07-08)
+## ✅ Suites revue templates + inbox : TOUT RÉSOLU (2026-07-08)
 
 - ✅ **Bouton URL dynamique** : `buildComponents` émet l'`example` bouton quand l'URL contient `{{n}}`.
 - ✅ **Types interactifs Flows** : `nfm_reply` capturé (corps + `response_json` en payload), réaction
@@ -702,7 +794,7 @@ et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` 
 - ✅ **Message Meta** : 502 tronqué à 200 car., espaces compactés.
 - ✅ **Templates list** : pagination complète (suit `paging.next`, cap 20 pages).
 
-## ✅ Sécurité / auth — RÉSOLU (était BLOQUANT à la revue Loops 3-5)
+## ✅ Sécurité / auth : RÉSOLU (était BLOQUANT à la revue Loops 3-5)
 
 Auth construite et déployée : login JWT (scrypt async, rate-limit, hash leurre anti-énumération),
 isolation tenant sur toutes les routes (tenant DÉRIVÉ du JWT, 403 si mismatch), RBAC (écritures
@@ -716,17 +808,11 @@ prod. Résidus non bloquants ci-dessous.
   réellement provisionné.
 - ✅ **Compte démo** `admin@demo.test` désactivé en prod (password_hash null, réversible).
 - ✅ **AUTH_SECRET** : boot prod échoue si absent/faible ; posé sur le VPS.
-- ⏳ **TLS pooler** (BLOQUÉ sur un fichier externe, pas de la flemme) : la vérif complète échoue
-  (chaîne self-signed du pooler Supabase) -> `DB_SSL_INSECURE=true` (chiffré mais non vérifié). Le
-  code est PRÊT (`DB_SSL_CA_FILE` -> vérif stricte, `pgSsl()`), il ne manque QUE la CA : la
-  télécharger dans le dashboard Supabase (Project Settings -> Database -> SSL Configuration ->
-  « Download certificate »), la monter dans le conteneur, poser `DB_SSL_CA_FILE=/chemin/ca.crt` et
-  retirer `DB_SSL_INSECURE`. Action Julien (accès dashboard).
 - ✅ **Unicité email** : tranché -> email GLOBAL insensible à la casse. Migration 0010 (index
   `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
   non-déterminisme multi-tenant.
 
-## ✅ Dashboard v2 — prix templates MARCHE EN PROD (corrigé 2026-07-10)
+## ✅ Dashboard v2 : prix templates MARCHE EN PROD (corrigé 2026-07-10)
 
 ⚠️ CORRECTION d'une conclusion erronée. J'avais écrit que `pricing_analytics` était bloqué par
 l'Advanced Access (403 #200). **C'était FAUX** : la sonde avait tourné avec le token du `.env` LOCAL,
@@ -739,7 +825,7 @@ App Review requis pour l'analytics de NOTRE WABA. Pas de dégradation « indispo
   sonde Meta doit tourner **dans le conteneur / avec le token de prod** (`docker cp` + `docker exec mba-api
   node ...`), jamais avec un scratch local, sinon faux négatifs (#200 « Provide valid app ID »).
 
-## Dette Feature 2 — Admin + RBAC (revue adversariale 2026-07-10)
+## Dette Feature 2 : Admin + RBAC (revue adversariale 2026-07-10)
 
 RBAC posé : rôles `admin`/`agent`, agent = inbox uniquement (garde serveur `makeRequireRole`
 sur tous les groupes sauf inbox + templates GET, source de vérité), onglet Admin (liste users,
@@ -747,7 +833,7 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
 (l'inbox agent en dépend) ; invariant « ≥1 admin/tenant » forcé EN BASE dans `setRole` (refus
 `last_admin` -> 409) ; tests agent->403 ajoutés sur contacts/import. Résidus non bloquants :
 
-- ✅ **JWT figé sur changement de rôle / révocation — RÉSOLU (2026-07-10)** : `requireAuth` relit
+- ✅ **JWT figé sur changement de rôle / révocation : RÉSOLU (2026-07-10)** : `requireAuth` relit
   l'état du compte EN BASE à chaque requête authentifiée (`getUserState` -> `PgUserStore.getAuthState`) :
   compte supprimé/révoqué -> 401 immédiat, rôle rafraîchi depuis la base. Un changement de rôle, une
   révocation ou une suppression prennent effet TOUT DE SUITE, plus de fenêtre de 12h. Coût : un lookup
@@ -771,9 +857,6 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
   `on conflict do nothing`). `insertRecipients` idem.
 - 🟡 **quality getRating** : lu à chaque destinataire (point-query PK). Mémoïser (TTL court) si la
   volumétrie l'exige. Dominé par l'appel Meta aujourd'hui -> laissé tel quel.
-- 🟡 **Stress-test concurrence** : le claim atomique (pending->sending) + `singletonKey` sont en place
-  et testés au niveau claim ; un test « 2 runs concurrents -> zéro double-envoi » sous vraie course
-  reste à ajouter (nice-to-have, pas un bug connu).
 
 ## Raffinement invariant admin (lot 6 P3, non bloquant)
 
@@ -783,10 +866,10 @@ acceptée). Non exploitable (self-block + un pending ne peut pas s'authentifier)
 ajouter `and password_hash is not null` aux 3 sous-requêtes pour qu'un admin invité jamais activé ne compte pas
 comme « admin actif ». Défense en profondeur, à faire à froid (touche du SQL d'invariant sécurité).
 
-## Refonte auth — ✅ FAITE (Lot 6, 2026-07-13)
+## Refonte auth : ✅ FAITE (Lot 6, 2026-07-13)
 
 Inscription libre + Google + invitations Resend + mot de passe perdu/reset/changement, tous LIVE. Détail :
-`wip.md §Lot 6`. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
+`documentation.md §Journal des lots livrés` §Lot 6. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
 
 ## Vérifier l'identité BSUID au 1er trafic réel (lot 4)
 
@@ -797,7 +880,7 @@ n'a pas commencé à remonter). Au 1er BSUID réel : (1) confirmer le format Met
 et est délivré ; (3) vérifier que la fiche auto-créée + le matching merge/tag/conversation collent au format
 réel. Cf `documentation.md §Identité`.
 
-## Suites builder Lot 5 — node à sorties par bouton (V2, non bloquant)
+## Suites builder Lot 5 : node à sorties par bouton (V2, non bloquant)
 
 Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeur) :
 - **Snapshot des boutons figé** : le node template mémorise `templateButtons` à la sélection. Si on ÉDITE
@@ -828,7 +911,6 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## Dette de la revue Loops 1-2
 
-- ⏳ **TLS Supabase** : idem « TLS pooler » ci-dessus (bloqué sur la CA à télécharger au dashboard).
 - ✅ **Test DLQ** : test d'intégration qui prouve job qui throw -> `<name>-dlq` (retryLimit
   configurable + `pullPending`, 1 seule tentative avec retryLimit:0).
 - ✅ **CI intégration** : job `integration` (service Postgres 16, `DB_SSL=off`, migrate +
@@ -863,14 +945,7 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## À durcir / suites (2026-07-15)
 
-- 🔒 **Durcir `/oauth/install?tenant=` du connecteur** : il fait aujourd'hui confiance à un **UUID de tenant nu**
-  (signé dans le state, mais l'UUID lui-même n'est pas prouvé). Un tiers qui connaîtrait l'UUID d'un autre tenant
-  pourrait relier SON portail HubSpot à ce tenant (détourner ses analyses). Inoffensif au pilote (1 tenant, UUID non
-  exposés, bouton rendu au seul admin du tenant). Quand multi-tenant : mba émet un **ticket signé court-lived** que
-  le connecteur vérifie, au lieu de l'UUID nu. (Repéré par le reviewer, sous le seuil bloquant.)
-- 📊 **Tracking réel de livraison des campagnes WORKFLOW** : remplacer le message_id synthétique `wf-<id>` par le vrai
-  wamid du 1er template (rapproché des webhooks de statut) -> funnel delivered/read non figé à 0. Limitation V1 connue.
-- ✅ **Bouton FLOW dans l'envoi workflow — FAIT (2026-07-16)** : `buildWorkflowTemplateComponents` génère désormais
+- ✅ **Bouton FLOW dans l'envoi workflow : FAIT (2026-07-16)** : `buildWorkflowTemplateComponents` génère désormais
   le composant `{sub_type:'flow', parameters:[{type:'action', action:{flow_token}}]}` par bouton FLOW (corrige #131009).
   Vérifié empiriquement contre la Cloud API. Détail : `CLAUDE.md` §Gotchas 2026-07-16.
 - ⚠️ **Variables de template non contiguës** (`{{1}}` + `{{3}}` sans `{{2}}`) : le front compte les positions distinctes
@@ -888,8 +963,6 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
   l'App Review Meta. Le garder tant que la review n'est pas passée (Meta peut re-tester).
 - 🌐 **i18n** : spot-check des chaînes visibles restées en français en mode EN (build vert + grep « aucune valeur
   backend traduite » OK, mais quelques chaînes rares ont pu être oubliées). Corriger au fil des retours de Julien.
-- 🔒 **Durcir `/oauth/install?tenant=` ES multi-tenant** : l'UUID tenant est nu dans le state (cf. plus bas, connecteur
-  mm-hubspot) ; même durcissement (ticket signé court-lived) côté ES quand multi-tenant.
 
 ## Bugs connus
 

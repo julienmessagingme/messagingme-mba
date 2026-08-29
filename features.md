@@ -1,4 +1,7 @@
-# features.md : fonctionnel
+⚠️ **Manager : un seul droit propre à ce jour** (2026-08-21). Il voit exactement la même chose
+qu'un agent (l'Inbox seule), mais il peut **affecter une conversation à un membre**, ce qu'un
+agent ne peut pas. Le reste des prérogatives d'un manager n'a pas encore été décidé, et l'écran
+d'invitation le dit noir sur blanc.
 
 Statut : 🔲 pas commencé · 🚧 en cours · ✅ live
 
@@ -9,9 +12,13 @@ mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas 
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Inbox · mini-CRM · Campagnes · Scénario · Automation · MBA (Guide / Paramètres) · Contenu (Templates / Formulaires / Blocs / Tags / Champs) · Tools (Webhooks) · Analytics (Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers (Documentation API / Clés d'API)** collé **en bas** de la barre.
-Les groupes **MBA**, **Contenu**, **Tools**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
-Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, Abonnement*, Billing*,
+Admin : **Accueil · Inbox · mini-CRM · Campagnes · Scénario · Automation · AI Agent (MBA, guide /
+MBA, paramètres / Other AI agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
+d'email / Messages RCS / Blocs / Tags / Champs) · Tools (Webhooks / Connecteurs API) · Analytics
+(Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers
+(Documentation API / Clés d'API)** collé **en bas** de la barre.
+Les groupes **AI Agent**, **Contenu**, **Tools**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
+Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, **Boîtes email**, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 - ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
   (mémorisé par navigateur, défaut français), **y compris les dates (« Today/Yesterday/12 July 2026 »), les
@@ -76,10 +83,18 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   si le filtre ramène plus de contacts que l'écran n'en montre, un lien **« Sélectionner les N contacts
   correspondants »** étend la sélection à tout le segment, re-résolu côté serveur au moment d'appliquer l'action
   (les lignes décochées entre-temps restent exclues). Le nombre exact n'est affiché **que lorsqu'un filtre est
-  posé** : sans filtre, la liste s'arrête à 500 et affiche « 500+ ». Puis un menu **« Action »** applique en masse :
-  **ajouter / retirer un tag**, **poser un champ** (une valeur sur toute la sélection), **supprimer**. La
-  suppression est **douce** (réversible en base, l'historique de campagnes est préservé) ; un contact supprimé
-  disparaît des listes ET n'est plus destinataire de campagne. Ré-importer son numéro le ressuscite.
+  posé** : sans filtre, la liste s'arrête à 500 et affiche « 500+ ».
+  Puis un menu **« Action »** applique en masse : **ajouter un tag**, **retirer un tag**,
+  **ajouter un champ** (une valeur sur toute la sélection), **passer en opt-in**, **passer en
+  opt-out**, **supprimer**.
+  **Passer en opt-in** rend la sélection destinataire des campagnes : à n'utiliser que si vous
+  détenez une preuve du consentement, l'écran le dit. **Passer en opt-out** exclut de toute
+  campagne, **y compris de celles déjà programmées**, sans toucher à la fiche ni à l'historique.
+  **Supprimer est IRRÉVERSIBLE et unique** (2026-08-19) : la fiche, la conversation dans l'Inbox,
+  ses messages et son analyse sont détruits d'un seul geste. Il a existé une suppression douce
+  qui gardait la conversation ; elle laissait le fil dans l'Inbox après coup, personne ne veut
+  supprimer un contact à moitié. Les compteurs de campagne restent justes, mais plus personne
+  n'est reconnaissable. Il faut **taper le mot SUPPRIMER** pour confirmer.
   Une action en masse (et l'import CSV) **ne déclenche aucun scénario** : poser un tag sur 5 000 contacts d'un coup
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
   **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
@@ -91,6 +106,17 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   passe par le MÊME enregistrement que l'import et que l'API publique : le numéro est donc normalisé pareil, et
   un numéro DÉJÀ connu met la fiche à jour au lieu d'en créer une seconde. L'écran le dit, plutôt que d'annoncer
   une création qui n'a pas eu lieu.
+- ✅ **Un contact qui écrit STOP est désabonné, sur les deux canaux** (2026-08-29). C'était vrai
+  en RCS depuis toujours et faux en WhatsApp, le canal principal : le même mot y laissait le
+  contact opt-in, et il recevait la campagne suivante. Le refus est maintenant enregistré comme
+  un opt-out, **avant** tout envoi, et **avant** l'avance d'un scénario ou le déclenchement d'une
+  automation. Il vaut aussi pour un contact **inconnu** dont le tout premier message est STOP,
+  cas le plus courant après une campagne. ⚠️ **Messages écrits seulement, et le mot doit
+  commencer le message** : un bouton porte son libellé dans le corps du message, et un bouton
+  « Stopper la simulation » désabonnerait quelqu'un qui voulait juste sortir d'un parcours ;
+  quant à « stop » cherché n'importe où, il attraperait « je ne peux pas m'arrêter là ». Un faux
+  positif ici coupe quelqu'un qui n'a rien demandé, et personne ne s'en aperçoit.
+
 - ✅ **Contacts / opt-in** : opt-in tracé, tags. **Identité = numéro OU BSUID** (compte WhatsApp d'un client qui
   n'a pas partagé son numéro, post-octobre) : le tableau porte **une colonne par identité** (Téléphone, BSUID,
   WhatsApp ID), chacune remplie quand elle existe, et la **fiche** affiche en sous-titre celle qui identifie le
@@ -126,7 +152,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   le champ**, sans attendre l'enregistrement du scénario. Les anciens blocs « ajout de tag » se comportent de la
   même façon. Dérivés des contacts + tags déclarés.
 - ✅ **Blocs** (menu Contenu, 2026-07-17) : liste à plat de TOUS les blocs de tous les scénarios, **filtrable par
-  type** (Envoi template / Message rapide / Formulaire / Action / Condition / Inbox ; les anciens blocs « Ajout de
+  type** (Envoi template / Message rapide / Question / Formulaire / Action / Condition / Attente / Assigner à un agent / Message RCS / Envoi de mail / Agent IA / Inbox ; les anciens blocs « Ajout de
   tag » et « Ajout de champ » n'ont plus de filtre dédié mais restent affichés avec leur libellé d'origine),
   présentée en colonnes **Type | Nom | Scénario | Code**. La colonne **Nom** affiche le **nom libre** donné au bloc
   dans le scénario (champ « Nom du bloc », optionnel, ex. « Relance J+3 »), à défaut un résumé automatique de son
@@ -273,6 +299,36 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   qui remplit les fiches, il faut le construire ici. Rien n'est supprimé automatiquement : un formulaire que
   Meta ne liste plus est signalé, la suppression reste une décision manuelle.
 
+## E-mail (menu Compte > Boîtes email, menu Contenu > Modèles d'email)
+
+Troisième canal, réservé aux scénarios : il n'existe ni campagne e-mail ni inbox e-mail. Un bloc
+de scénario envoie un mail à l'adresse portée par la fiche du contact.
+
+- ✅ **Connecter sa boîte** (menu **Compte** en haut à droite > **Boîtes email**, admin) : on
+  déclare une ou plusieurs boîtes SMTP (nom d'affichage, serveur, port, identifiant, mot de
+  passe, adresse d'expéditeur, nom d'expéditeur, adresse de réponse). Le mot de passe est
+  **chiffré chez nous et jamais réaffiché** : un champ laissé vide à l'édition veut dire
+  « inchangé ». Un bouton **« Tester »** envoie un vrai message à l'adresse de votre choix, ce
+  qui est le seul moyen de savoir qu'un mot de passe d'application est bon avant qu'un client
+  n'en fasse les frais.
+- ✅ **Écrire ses modèles** (menu **Contenu > Modèles d'email**) : un nom, un sujet, un corps,
+  au choix en **texte simple** ou en **HTML brut** (pour coller un mail préparé ailleurs). Le
+  sujet et le corps acceptent des **variables**, insérées par le **même bouton « + Variable »**
+  que les templates WhatsApp et les messages RCS, avec la même liste de champs de base et de
+  champs perso. On ne recopie jamais `{{prenom}}` à la main.
+- ✅ **Le bloc « Envoi de mail » dans un scénario** : il est présenté **à part dans la palette
+  et grisé tant qu'aucune boîte n'est connectée**, avec l'infobulle qui renvoie à Compte >
+  Boîtes email. Même doctrine que le bloc RCS : un bloc qui ne peut rien envoyer ne doit pas
+  être proposé comme s'il le pouvait.
+- ✅ **Jusqu'à 3 destinataires** (2026-08-25) : on choisit le champ qui porte l'adresse, et on
+  peut en ajouter deux autres. Le premier part en « À », les suivants **en copie cachée** : les
+  destinataires ne se voient pas entre eux.
+- ✅ **Le sélecteur de destinataire dit combien de fiches ont ce champ rempli**, par exemple
+  « Email (12/40 fiches) ». C'est ce qui distingue deux champs voisins dont l'un est vide
+  partout : brancher un bloc mail sur un champ vide, c'est n'envoyer aucun mail.
+- ✅ **Un échec n'interrompt JAMAIS le parcours** : le scénario continue. Les envois et les
+  échecs se comptent dans **Analytics > Mes tableaux**.
+
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
 - ✅ **Nouveau bloc « Question »** (2026-08-26) : poser une question au contact et **router sa réponse**.
@@ -364,16 +420,17 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   plutôt programmer la campagne avec « Plus tard »), et un scénario dont la branche prise déciderait de deux
   templates différents (impossible de savoir lequel paramétrer).
 
-- ✅ **Constructeur de workflow visuel** : graphe de blocs reliés par des flèches courbées (drag-and-drop),
-  `+` / ✕ sur chaque flèche pour insérer un bloc ou couper le lien, une rangée « + Créer un bloc » (un bouton
-  par type), panneau de config par bloc. Blocs proposés : **envoi de template**, **message rapide**,
-  **formulaire** (envoie un WhatsApp Flow), **Action** (tag / champ), **Condition** (aiguillage), **inbox**
-  (passe la main à un humain). Deux blocs **MBA** (envoi vers MBA, désactivation MBA) sont affichés en plus,
-  **grisés et non cliquables** tant que MBA n'est pas actif sur le numéro (2026-08-02). Les anciens blocs
-  « ajout de tag » et « ajout de champ » ne sont plus proposés à la création, mais ils restent lisibles et
-  modifiables sur les scénarios existants. (Éditeur React Flow.)
-  **Bouton « Auto-arranger »** (2026-07-28) : réaligne les blocs en couches horizontales lisibles en un clic
-  (les positions sont enregistrées par l'auto-save).
+- ✅ **Constructeur de workflow visuel** : (...) Blocs proposés : **Envoi template**, **Message
+  rapide**, **Question**, **Formulaire** (envoie un WhatsApp Flow), **Action** (tag / champ /
+  consentement), **Condition** (aiguillage), **Attente**, **Assigner à un agent** (passe la main
+  à un humain). Trois blocs sont présentés **à part et grisés** tant que ce qui les alimente
+  n'existe pas, chacun avec l'infobulle qui dit où l'activer : **Message RCS** (tant qu'aucun
+  agent RCS n'est déposé), **Envoi de mail** (tant qu'aucune boîte email n'est connectée) et
+  **Agent IA** (tant qu'aucun agent n'est actif). Les anciens blocs « ajout de tag » et « ajout
+  de champ » ne sont plus proposés à la création, mais restent lisibles et modifiables sur les
+  scénarios existants. Les deux blocs **MBA** (envoi vers MBA, désactivation MBA) ont été
+  **retirés du produit** : ils ne faisaient rien ; un ancien scénario qui en contient encore les
+  affiche sous le libellé « Bloc MBA (retiré) » et le moteur les traverse sans agir.
 - ✅ **Bloc « Action »** (2026-08-02) : un seul bloc pour agir sur la fiche du contact, avec 4 actions au choix :
   **ajouter un tag**, **retirer un tag**, **mettre à jour un champ** (valeur fixe, ou « maintenant » = la date et
   l'heure du passage du contact), **vider un champ**. Il remplace dans la palette les anciens blocs « ajout de
@@ -484,6 +541,15 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   colonne **« Envoyé le »** : date et heure d'envoi de chaque destinataire, ou « non envoyé ». Pour une campagne
   scénario, le template exact reçu par un contact donné se lit dans son fil de conversation, qui est la source
   fiable ; la campagne, elle, dit ce qu'elle a réellement fait, à savoir démarrer un scénario.
+- ✅ **Une campagne commencée se retrouve** (2026-08-21) : dès qu'on lui donne un nom, la
+  composition en cours est **enregistrée toute seule** en brouillon. Un bloc **« Brouillons en
+  cours »** apparaît en haut de la liste des campagnes, avec pour chaque ligne **« Reprendre »**
+  (l'écran de création rouvre exactement où on l'avait laissé : destinataires, message,
+  variables, débit) et **« Supprimer »**. Un brouillon n'est **pas** une campagne : il n'a ni
+  destinataire arrêté ni envoi possible, il ne compte dans aucun chiffre, et il n'apparaît pas
+  dans la corbeille des archivées. Un nom vide n'enregistre rien, pour ne pas semer des
+  brouillons fantômes.
+
 - ✅ **Archiver ou supprimer une campagne** (2026-07-20). Une campagne qui n'a **jamais rien envoyé** se
   **supprime** définitivement (confirmation). Toutes les autres s'**archivent** : elles disparaissent de la liste
   mais restent conservées, parce que leurs destinataires portent l'historique qui alimente les Analytics (le coût,
@@ -633,27 +699,61 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   personne ne voyait que le client attendait.
 - ✅ **Bouton « Rendre la main »** dans le fil, quand un opérateur détient la conversation. Le scénario
   repart immédiatement, sans attendre le délai.
-- ✅ **Délai de reprise réglable par espace** (page Accueil, en minutes). Passé ce délai sans que
-  personne ne rende la main, la conversation repart toute seule : un onglet fermé ou un opérateur parti
-  ne bloquent jamais un client indéfiniment. Vide = 2 heures. `0` = jamais de reprise automatique, la
-  main reste à l'opérateur jusqu'à ce qu'il la rende.
-- ✅ **Comportement au RETOUR, réglable** : juste sous le délai, on choisit ce que devient le fil à la reprise,
-  **« repart au scénario automatique »** (comportement historique) ou **« reste à traiter »** (l'humain garde la
-  main jusqu'à un « Rendre la main » explicite). Ce choix est **surchargeable conversation par conversation** :
-  un sélecteur « À la reprise : » en tête du fil permet de dire, pour ce client-là seulement, qu'il ne doit pas
-  retomber dans l'automatique. Un fil réglé sur « reste à traiter » n'est **jamais** rendu tout seul, le délai ne
-  s'y applique pas.
+- ✅ **Délai de reprise réglable** (menu **AI Agent > MBA, paramètres > Activation**, en minutes). Passé ce
+  délai sans que personne ne rende la main, la conversation repart toute seule : un onglet fermé ou un
+  opérateur parti ne bloquent jamais un client indéfiniment. Vide = 2 heures. `0` = jamais de reprise
+  automatique, la main reste à l’opérateur jusqu’à ce qu’il la rende. ⚠️ **Ce réglage vivait sur l’Accueil
+  jusqu’au 2026-08-18** : l’Accueil n’y renvoie plus que par un lien « Régler qui répond au client ».
+- 🗑️ **« Comportement au retour » : SUPPRIMÉ le 2026-08-18.** Il permettait de choisir, pour l’espace puis
+  conversation par conversation, si un fil repartait au scénario ou restait à traiter après une intervention.
+  Ni le réglage d’espace ni le sélecteur en tête de fil n’existent plus. Ce qui reste : le délai de reprise
+  ci-dessus, et le bouton « Rendre la main » du fil.
 - ✅ **Conversations** : réponse texte libre dans la fenêtre de service 24 h, et envoi d'un **template approuvé à
   tout moment** (bouton dédié à côté du champ de saisie). Hors fenêtre, le champ libre disparaît et le template
   devient le seul moyen de re-contacter, avec l'explication à l'écran. Le panneau d'envoi affiche l'aperçu
   WhatsApp, demande les variables une à une, et réclame une **URL publique** quand le template porte une image,
   une vidéo ou un document en en-tête. Formulaires Flow remplis affichés en clair, et **séparateurs de jour** dans
   le fil pour se repérer dans l'historique.
+- ✅ **Lancer un scénario sur la conversation ouverte** : à côté du champ de réponse, un bouton
+  démarre le scénario de son choix sur ce contact, sans passer par une campagne. L'écran dit
+  d'avance ce qui est possible : si le contact a écrit il y a moins de 24 h, **tous** les
+  scénarios peuvent partir ; sinon, seuls ceux qui ouvrent par un **template** ou par un
+  **message RCS**. Le bouton reste donc offert même fenêtre fermée, avec la liste réduite en
+  conséquence. Un second lancement à la main sur une conversation qui a déjà un parcours en
+  attente ne crée pas de doublon.
 - ✅ **Rafraîchissement automatique** : la liste (~15 s) et le fil ouvert (~4 s) se mettent à jour tout seuls,
   en pause quand l'onglet est masqué (reprise au retour). **Le fil ne « saute » pas** pendant qu'on lit
   l'historique (le scroll ne redescend que sur un vrai nouveau message).
 - ✅ **Pastille agent** : les bulles sortantes portent les **initiales de l'auteur** (survol = nom). Repli
   neutre pour les messages sans auteur (legacy / réponse auto).
+
+## Modération : signaler et bloquer
+
+- ✅ **Onglet « Signalées » dans l'Inbox** (2026-08-21), à côté de « Toutes » et « À traiter ».
+  L'analyse automatique des conversations pose un **constat d'injure** quand un message insulte
+  l'entreprise, et ce seul constat range la conversation ici. La consigne est volontairement
+  ÉTROITE : le mécontentement ordinaire, la réclamation, la colère d'un client lésé ne sont pas
+  des injures. Un critère large remplirait la liste de réclamations banales et plus personne ne
+  la lirait. ⚠️ **Ce n'est pas une alerte, c'est un rapport** : l'analyse ne tourne que lorsque la
+  conversation est retombée inactive, donc le signalement arrive 15 à 20 minutes après le message.
+  L'écran le dit quand la liste est vide, plutôt que de laisser croire à une panne.
+- ✅ **Le constat ne décide rien, c'est vous qui décidez** : l'analyse signale, elle ne bloque
+  jamais personne. Le blocage est un geste humain, pris depuis la **fiche du contact**, sous le
+  consentement (même famille de question : qu'a-t-on le droit d'envoyer à ce contact). Une
+  confirmation est demandée au blocage seulement, débloquer ne fait que remettre les choses en
+  place.
+- ✅ **Ce que le blocage arrête** : plus **aucun** envoi vers ce contact (il est écarté à la
+  source des campagnes, et les automations sont coupées à leur point d'entrée), et sa
+  conversation disparaît de l'Inbox. ⚠️ **Ce qu'il n'arrête pas** : ses messages entrants
+  continuent d'être **enregistrés**. Faire disparaître ce qu'il envoie ferait aussi disparaître
+  une résiliation ou une menace juridique sans que personne ne le sache. Ce qui s'arrête, c'est
+  ce qui PART.
+- ✅ **Écran « Contacts bloqués » dans Paramètres** : c'est la **seule** porte de sortie. Un
+  contact bloqué n'apparaît plus nulle part ailleurs, il serait donc introuvable sans cet écran.
+  La section se masque quand il n'y a personne, mais une erreur de lecture s'affiche : « je n'ai
+  pas pu lire la liste » n'est pas « il n'y a personne dedans ».
+- ✅ **Le blocage n'entache pas l'après** : rien n'est marqué comme déclenché sur un contact
+  bloqué, donc l'anti-rebond des automations ne le pénalise pas une fois débloqué.
 
 ## Analytics (menu Analytics)
 
@@ -673,6 +773,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   ne le fait pas bouger.
 - ✅ **Erreurs Meta par code ET par template** : breakdown des codes d'erreur (131049, 131047, 131026...) sur la
   période, avec libellé FR et volume, **filtrable par template** (menu « Tous les templates » / un template précis).
+**filtrable sur PLUSIEURS templates à la fois** (on les empile un par un, « Tous les templates »
+  quand la sélection est vide), les chiffres étant alors compilés sur la sélection.
   La période suit le sélecteur de plage global. (Portée : campagnes ; les envois Inbox/Workflow n'ont pas de suivi
   d'erreur, cf todo.)
 - ✅ **Graphe de coût estimé** : coût/jour (marketing + utility) sur la période, **filtrable par campagne
@@ -745,7 +847,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   Domaine `messagingme.app` **vérifié** (hors mode test) : les emails partent réellement (support, invitations,
   réinitialisation de mot de passe).
 
-## Accueil (clic logo)
+## Accueil (1re entrée du menu)
 
 - ✅ **Page d'accueil** `/accueil` (clic sur le logo, admin ; c'est aussi l'écran d'arrivée après connexion) :
   « Bonjour {prénom} », une **rangée de 4 chiffres sur 30 jours** (contacts, messages échangés, templates envoyés,
@@ -775,10 +877,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Relancer automatiquement les échecs** (interrupteur sur la carte MBA) : un envoi bloqué par une limite Meta est
   relancé le lendemain matin ; un numéro non délivrable est retenté une fois, puis marqué injoignable dans HubSpot au
   2e échec. Désactivable par espace.
-- ✅ **« À la reprise, le fil… »** (sous le délai de reprise) : choisir, pour tout l'espace, ce que devient une
-  conversation après l'intervention d'un opérateur. Soit elle **repart au scénario automatique** (comportement
-  historique), soit elle **reste à traiter** dans l'inbox jusqu'à ce qu'un humain rende la main. Surchargeable
-  conversation par conversation depuis le fil.
+- 🗑️ **« À la reprise, le fil… » : SUPPRIMÉ le 2026-08-18** (voir la section Inbox). Ce réglage d’espace
+  n’existe plus, et le sélecteur par conversation non plus.
 - ✅ **Onboarding « Connecter mon compte WhatsApp » (Embedded Signup)** : un espace **sans numéro rattaché** voit un
   bouton qui ouvre la **popup Meta** (Facebook Login for Business + config_id) ; le business choisit son compte + son
   numéro et le backend rattache tout (échange de code, webhooks, register). ✅ **LIVE et éprouvé de bout en bout
@@ -938,7 +1038,247 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   qu'un client ne doit jamais pouvoir créditer son propre compte. Borné à 1000 € par opération, et une note
   expliquant le mouvement est obligatoire. Rechargement à la main pour l'instant, sans paiement en ligne.
 
-## MBA (menu « MBA » : Guide / Paramètres)
+## Agent IA (menu « AI Agent » > Other AI agent)
+
+Un répondeur intelligent que le client construit lui-même et qu'il **pose là où il en a besoin**, dans un
+scénario. Ce n'est pas un cerveau global qui répond à tout : un agent ne parle QUE dans le bloc « Agent IA »
+où on l'a désigné, et nulle part ailleurs. Il complète le répondeur natif de Meta (menu MBA, juste au-dessus),
+il ne le remplace pas : les deux peuvent vivre sur le même numéro, et le client décide qui fait quoi.
+
+✅ **Livré et déployé** (2026-08-28) : la fiche, la base de connaissance, les outils, la construction en
+parlant, le bac à sable, le tour de production et le solde prépayé.
+⚠️ **Mais aucun espace n'a de crédit à ce jour**, et sans crédit un agent ne répond pas (voir « Le crédit »
+plus bas). ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
+réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario, tout cela reste à voir en vol.
+
+### Où l'agent parle : le bloc « Agent IA » d'un scénario
+
+- ✅ **Un bloc de plus dans le constructeur de scénario**, à côté du template, du message rapide et de la
+  question. On y choisit **quel agent tient la conversation**, et c'est tout ce qu'il y a à régler : le reste
+  vient de la fiche de l'agent.
+- ✅ **L'agent tient la conversation sur plusieurs tours.** Tant qu'il l'a, les réponses du contact lui
+  reviennent à LUI et le scénario n'avance pas. On n'en ressort que par une des sorties du bloc, jamais par
+  une sortie libre. Ses messages apparaissent dans le fil de l'Inbox comme n'importe quel autre.
+- ✅ **Le bloc est grisé tant qu'aucun agent n'est actif** (« Disponible dès qu'un agent IA est actif »), même
+  doctrine que les blocs RCS et Email. Un bloc agent sans agent derrière ne pourrait tenir aucune conversation.
+- ✅ **Un agent désactivé après coup est signalé sur le bloc** : « cet agent n'est plus actif, ce bloc ne
+  répondra pas tant qu'il ne l'est pas de nouveau ». Un bloc dont l'agent a été effacé laisse simplement passer
+  le parcours, il ne le bloque pas.
+- ✅ **Changer l'agent d'un bloc emporte les flèches de ses anciennes règles d'arrêt** : elles désignaient des
+  sorties que le nouvel agent n'a pas. L'éditeur le fait au moment du changement, pas en silence à
+  l'enregistrement.
+- ✅ **Si les règles d'arrêt de l'agent ont changé depuis que le bloc a été configuré**, l'éditeur le dit et
+  propose un bouton pour remettre le bloc à jour. Le bloc garde donc la liste avec laquelle il a été dessiné
+  tant que personne ne l'a relu.
+- ⚠️ **Un scénario qui COMMENCE par un bloc agent ne peut pas partir en campagne** : le premier message de
+  l'agent est un message libre, donc réservé aux contacts qui ont écrit dans les 24 h. Même règle que le
+  message rapide et le formulaire. Et un bloc agent placé après une attente de 24 h ou plus est signalé dans
+  l'éditeur, en nommant les deux blocs concernés : rien ne partirait.
+
+### Créer un agent, et ce que « activé » veut dire
+
+- ✅ **La liste des agents** (menu AI Agent > Other AI agent) : on crée un agent avec un **nom interne** (celui
+  que vous voyez dans la liste et dans le constructeur, jamais le contact). Chaque ligne porte sa pastille :
+  **Brouillon**, **Actif** ou **Désactivé**.
+- ✅ **Un agent naît en brouillon** : il n'apparaît dans le constructeur de scénario qu'une fois **activé**,
+  quand vous avez relu ce qu'il dira. Ici, « activé » ne veut pas dire « il répond à tout » (c'est le sens du
+  répondeur Meta), mais « il est proposable dans un scénario ».
+- ✅ **L'activation refuse un agent incomplet, et dit quoi faire.** Au lieu de « agent incomplet », l'écran
+  liste ce qui manque, et **chaque ligne est un lien vers l'onglet où ça se corrige** : objectif vide, aucune
+  règle de transfert, aucune règle d'arrêt, base de connaissance vide, aucun outil actif. Le blocage porte sur
+  des champs vides, jamais sur la qualité de ce qui est écrit.
+- ✅ **Supprimer un agent** emporte ses conversations, ses outils et sa base de connaissance, et les blocs de
+  scénario qui l'utilisent cessent de répondre. La confirmation le dit avant le clic.
+
+### Les huit onglets de sa fiche
+
+| Onglet | Ce qu'on y fait |
+|---|---|
+| **Construire en parlant** | Décrire son métier à un assistant, qui propose des réglages |
+| **Identité et ton** | Nom interne, nom donné au contact, ton, personnalité, mention d'IA |
+| **Objectif et transferts** | Ce qu'il est là pour faire, quand passer la main, ses règles d'arrêt |
+| **Base de connaissance** | Les fiches dont il a le droit de se servir pour répondre |
+| **Outils** | Ce qu'il a le droit de FAIRE, en plus de parler |
+| **Périmètre et garde-fous** | Ses plafonds, et ce qu'il peut faire face à un contact inconnu |
+| **Modèle** | Le moteur qui le fait parler, et le budget d'une conversation |
+| **Tester** | Lui parler avant de l'activer |
+
+- ✅ **Chaque champ s'enregistre à la sortie du champ**, comme les écrans MBA : pas de bouton par champ.
+  L'onglet et l'agent ouvert vivent dans l'adresse, donc une fiche se partage par un lien et un
+  rafraîchissement retrouve où on en était.
+- ✅ **Identité et ton** : le **nom interne** (le vôtre), le **nom donné au contact** (laissé vide, l'agent ne
+  s'en donne aucun), le **ton** (« vouvoiement, phrases courtes, pas d'emoji », écrit comme on le dirait à une
+  nouvelle recrue) et la **personnalité**.
+- ✅ **Objectif et transferts** : l'**objectif** est le champ qui pèse le plus sur ce que l'agent répondra, et
+  **quand passer la main à un humain** s'écrit en français ordinaire (« dès qu'on parle d'un remboursement,
+  ou si le contact s'énerve »).
+- ✅ **Périmètre et garde-fous** : **tours maximum** (1 à 20, 8 par défaut), **appels d'outils maximum** (0 à
+  60, 12 par défaut), **inactivité en minutes** (1 à 1440, 30 par défaut, au-delà le parcours part par « Pas de
+  réponse »), et **ce que l'agent a le droit de faire face à un contact inconnu du mini-CRM** : aucun outil,
+  outils de lecture seulement (le défaut), ou tous. Chaque champ dit ses bornes et refuse une saisie hors
+  clous plutôt que de la faire disparaître.
+- ✅ **Modèle** : le moteur qui fait parler l'agent, à ne changer que si on sait pourquoi, et le **budget d'une
+  conversation**. Budget épuisé, l'agent sort par « Plafond atteint ».
+
+### La base de connaissance : la seule chose dont il a le droit de se servir
+
+- ✅ **L'agent ne répond QUE d'après ces fiches.** Sur une question qu'aucune ne couvre, il n'invente pas : il
+  sort du bloc par « Aucune source ». C'est un mécanisme, pas une consigne au modèle. **Une base vide fait donc
+  un agent qui transfère tout**, et l'écran le dit en tête pour qu'on ne cherche pas l'erreur ailleurs.
+- ✅ **Lire une page de son site** : on colle une adresse, on lit la page une fois, et elle devient des fiches
+  découpées sur ses titres. L'agent ne relit pas le site à chaque question : c'est plus rapide, moins cher, et
+  surtout **une mauvaise réponse se corrige ici même**, en éditant la fiche.
+- ✅ **Relire la même adresse REMPLACE les fiches qu'elle avait produites**, et le prix est dit avant le clic :
+  vos corrections sur celles-là seront perdues. Les fiches venues d'ailleurs et celles écrites à la main ne
+  bougent pas.
+- ✅ **Le plafond est dit quand il mord** : au-delà de 40 fiches pour une page, la suite de la page n'a PAS été
+  lue, et l'écran le signale au lieu de laisser croire que tout le contenu est devenu une source.
+- ✅ **Écrire une fiche à la main** : un titre (la question ou le sujet) et une réponse, telle qu'on voudrait
+  la lire. Chaque fiche s'édite sur place.
+- ✅ **La provenance est sous chaque fiche** : « écrite à la main », ou « lue sur <adresse> le <date> (N
+  jours) ». Une fiche que personne n'a touchée depuis plus de **90 jours** porte une pastille « À relire ».
+  C'est la parade au défaut le plus courant du marché, le contenu périmé.
+
+### Les outils : ce que l'agent a le droit de FAIRE
+
+- ✅ **Un outil n'est utilisable qu'une fois ACTIVÉ à la main.** Tant qu'il ne l'est pas, l'agent ne sait même
+  pas qu'il existe. L'activation est un geste séparé de l'ajout, et elle garde le nom de qui l'a donnée.
+  ⚠️ **Sans aucun outil actif, l'agent peut parler mais ne peut rien faire, pas même terminer.**
+- ✅ **Sept outils maison** au catalogue, chacun étiqueté **lecture**, **écriture** ou **irréversible** :
+  - **Chercher dans la base de connaissance** (lecture) : à appeler avant toute question de fond.
+  - **Lire la fiche du contact** (lecture) : ce qu'on sait déjà de lui, son nom, ses champs. Jamais la fiche
+    de quelqu'un d'autre.
+  - **Poser un tag sur le contact** (écriture) : pour le retrouver dans le mini-CRM, ou déclencher une
+    automation.
+  - **Enregistrer une information sur le contact** (écriture) : écrire dans un champ, pour qu'un bloc plus
+    loin dans le scénario le réutilise.
+  - **Envoyer un bloc de votre scénario** (irréversible) : pousser une photo, un message, un formulaire que
+    vous avez dessinés. Le parcours ne bouge pas, l'agent garde la main.
+  - **Passer la main à un humain** (écriture) : voir plus bas.
+  - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie.
+- ✅ **Les mots d'un outil se règlent, et ils changent beaucoup son comportement** : « quand l'appeler » et
+  « quand NE PAS l'appeler » sont deux champs séparés, et ce sont eux que le modèle lit pour décider.
+  ⚠️ La clause « quand NE PAS l'appeler » **n'atteignait pas le modèle** jusqu'au 2026-08-29 : le client
+  faisait un travail sans effet sur le seul levier qui décide du déclenchement d'un outil. Corrigé.
+- ✅ **Les valeurs autorisées se listent**, outil par outil : les tags que cet agent peut poser, les champs
+  qu'il peut écrire, les codes de blocs qu'il peut envoyer. **Une liste vide ne restreint rien**, et l'écran
+  le dit en jaune : c'est ce qui empêche l'agent d'écrire dans le champ sur lequel une condition de votre
+  scénario branche.
+- ✅ **Une action irréversible demande une autorisation de plus** : sur « Envoyer un bloc », une case
+  « autoriser l'agent à faire ça SEUL ». Non cochée, l'action est refusée à chaque appel. Un message parti
+  chez un contact ne se rappelle pas, et il est facturé.
+- ✅ **« Voir ce que le modèle voit »** : chaque outil montre, à la demande, la forme exacte sous laquelle il
+  est proposé au modèle. Les mots du client pilotent un appel réel, il doit pouvoir les relire sous leur vraie
+  forme.
+- ✅ **Vos propres systèmes** (onglet Outils, en bas) : les connecteurs API déclarés une fois pour l'espace
+  dans **Tools > Connecteurs API** et partagés par tous vos agents. Ici on ne fait qu'une chose, dire quels
+  appels CET agent a le droit d'y faire. Détail dans la section « Brancher vos systèmes ».
+  ⚠️ **Rien n'est branché tant qu'un client n'a pas déclaré de système** : sans système, l'onglet Outils est
+  exactement ce qu'il était.
+  ⚠️ **Piège de vocabulaire** : le menu **Tools** de la barre de gauche et l'onglet **Outils** d'un agent ne
+  parlent pas de la même chose. Le système appartient à l'espace, l'appel appartient à l'agent.
+- ⛔ **Pas encore : MCP.** Aucun code ne sert cette famille aujourd'hui.
+
+### Les règles d'arrêt, et les sorties du bloc
+
+- ✅ **Une règle d'arrêt, c'est « quand l'agent a fini de faire ÇA, il sort par là ».** On lui donne un code
+  (normalisé sous vos yeux pendant la saisie) et un libellé lisible. **Chacune devient une sortie du bloc
+  agent** dans le constructeur, à relier vers la suite du parcours. **12 maximum** : au-delà le bloc devient
+  illisible et l'agent choisit mal.
+- ✅ **Cinq sorties automatiques**, toujours présentes sur le bloc, en plus des vôtres :
+  - ⏱ **Pas de réponse** : le contact s'est tu pendant le délai d'inactivité réglé sur la fiche.
+  - 📕 **Aucune source** : l'agent n'a rien trouvé dans sa base de connaissance. À brancher vers un humain ou
+    vers vos coordonnées.
+  - 🙋 **Transfert à un humain** : à brancher vers ce qui doit suivre (message d'attente, tag, fin de parcours).
+  - 🛑 **Plafond atteint** : tours, appels d'outils ou budget épuisés.
+  - 💥 **Échec technique** : le modèle ou un envoi a échoué. Prévoir un repli.
+- ⚠️ **Un agent sans aucune règle d'arrêt ne sortira que par ces cinq sorties automatiques.** L'éditeur le dit
+  sur le bloc, et l'onglet Outils le répète : l'outil « Terminer » est alors retiré au lieu d'être proposé
+  vide, pour que l'agent n'invente pas un code que le bloc ne dessine pas.
+- ✅ **Une sortie qui ne mène nulle part est signalée en rouge sur le bloc**, comme pour les autres blocs.
+
+### Le passage de main à un humain
+
+- ✅ **L'agent passe la main quand la demande sort de son périmètre, ou quand le contact le demande.** La
+  conversation remonte alors dans « À traiter » dans l'Inbox, la session de l'agent est close, et le parcours
+  repart par la sortie 🙋 « Transfert à un humain ».
+- ✅ **Une fois la main passée, l'agent ne reprend pas la parole tout seul.** C'est la différence avec un
+  simple changement d'étiquette : sans cela, l'humain aurait traité, puis l'agent aurait repris la
+  conversation qu'on venait de lui retirer.
+- ✅ **Quand un humain écrit dans le fil, le scénario et l'agent se taisent**, comme pour tous les autres blocs.
+
+### Construire son agent en parlant
+
+- ✅ **Un onglet où l'on décrit son métier**, avec deux exemples cliquables pour démarrer (« mon agent répond
+  aux questions sur nos séjours et prend des rendez-vous »). L'assistant fait d'abord **le tour du sujet** :
+  ce que l'agent est là pour faire, ce dont il ne parle jamais, à quoi ressemble une conversation qui finit
+  bien, ce qu'il doit faire quand il ne s'agit plus seulement de répondre, quand un humain reprend, et comment
+  il parle.
+- ✅ **Tant qu'un de ces points n'est pas tranché, il ne montre rien et le dit** : « encore 2 points à voir
+  avant que je vous montre ce que j'ai compris ». C'est ce qui l'empêche de combler les blancs à votre place.
+- ✅ **Il ne change RIEN tout seul.** Il propose, et l'écran affiche exactement ce que ça changerait, ligne par
+  ligne, avec la valeur d'avant barrée.
+- ✅ **Chaque règle se garde, se corrige sur place, ou se jette séparément** (2026-08-28, demande de Julien) :
+  « potentiellement le mec ne veut en changer qu'une et le reste lui convient ». Tout est gardé au départ, le
+  bouton dit combien de lignes partiront. Seules les règles d'arrêt se gardent ou se jettent en bloc, parce
+  qu'elles sont plusieurs dans une même ligne : elles se corrigent dans l'onglet Objectif.
+- ✅ **Tout ce qu'il écrit reste modifiable dans les autres onglets**, champ par champ. La conversation n'est
+  pas conservée : elle vit le temps de l'onglet, ce qu'elle produit vit dans la fiche.
+- ✅ **Ce qu'il n'a pas le droit d'écrire** : la mention légale d'IA, les plafonds, le budget, le modèle, et
+  surtout **l'activation d'un outil**. Il peut proposer les mots d'un outil du catalogue ou d'un connecteur
+  déjà déclaré, jamais créer un système, une adresse ou un secret.
+- ⚠️ **Il inventait des réglages jusqu'au 2026-08-29**, et la cause était dans nos propres consignes, pas dans
+  le modèle : on lui ordonnait de déduire plutôt que de demander, et on lui imposait de remplir « quand ne pas
+  l'appeler » même quand personne n'en avait parlé. Corrigé dans les deux sens.
+
+### Le bac à sable : lui parler avant de l'activer
+
+- ✅ **Vous parlez au VRAI agent** : son objectif, son ton, ses outils, sa vraie base de connaissance. Ce qu'il
+  répond ici est ce qu'il répondra.
+- ✅ **Chaque appel d'outil est montré**, avec ce qu'il a demandé, s'il a réussi, et ce qu'il a reçu en retour.
+  Un panneau qui n'afficherait que la réponse laisserait régler à l'aveugle : on verrait une belle phrase sans
+  savoir si elle vient de la base de connaissance ou de l'imagination du modèle.
+- ✅ **Les actions qui touchent le monde réel sont simulées**, et c'est dit à chaque appel : poser un tag,
+  envoyer un bloc, passer la main. Il n'y a ni contact, ni conversation, ni parcours dans un test.
+- ✅ **La sortie est annoncée** quand l'agent en prend une : « l'agent est SORTI par X, dans un scénario c'est
+  cette branche qui prendrait la suite ».
+- ⚠️ **Un essai consomme du crédit pour de vrai** : le fournisseur facture un essai comme une conversation.
+  Sans crédit, le bac à sable refuse.
+
+### Le crédit et les plafonds
+
+- ✅ **Un solde prépayé par espace de travail**, affiché en haut de la liste des agents et libellé en euros.
+  Il descend à chaque tour, avec ce que le tour a réellement coûté.
+- ✅ **Trois états, et ils préviennent avant la panne** : le solde en clair, un avertissement sous **0,50 €**
+  (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
+  répondent plus et sortent par Plafond atteint »).
+- ✅ **Le rechargement se fait par nous, jamais par le client** : un client ne doit pas pouvoir créditer son
+  propre compte. À la main pour l'instant, sans paiement en ligne (voir la section `/ops`).
+- 🔴 **Aucun espace n'a de crédit aujourd'hui** (2026-08-28), et c'est le bon défaut : un crédit implicite
+  ferait payer une consommation que personne n'a autorisée. Conséquence concrète : **tant que personne n'a
+  rechargé, les agents ne démarrent pas et le bac à sable refuse**.
+- ✅ **Trois plafonds de conversation** en plus du solde, réglés sur la fiche (tours, appels d'outils, budget).
+  Le premier atteint fait sortir le parcours par 🛑 « Plafond atteint », qui est une sortie à brancher : c'est
+  un garde-fou, pas un réglage de confort.
+
+### La mention d'IA (obligation légale)
+
+- ✅ **Chaque agent porte une phrase qui annonce au contact qu'il parle à une IA**, partant avec le premier
+  message. Pré-remplie (« Vous échangez avec un assistant automatique. »), modifiable, mais **elle ne peut
+  jamais être vide** : c'est une obligation de l'AI Act (article 50).
+- ✅ **L'assistant de construction n'a pas le droit d'y toucher.** Une IA ne supprime pas la phrase qui annonce
+  qu'elle est une IA.
+
+### Ce qui n'est pas encore là
+
+- ⚠️ **Un bloc agent n'apparaît pas dans Analytics > Mes tableaux.** Les autres blocs qui envoient s'y
+  mesurent, pas celui-là. Aucune panne, mais rien à lire sur ce bloc pour l'instant : mesurer un contenu
+  produit au fil des tours est une question produit qui n'est pas tranchée.
+- ⛔ **Pas de connexion MCP** (les serveurs d'outils standardisés). Prévu, non développé.
+- ⛔ **Pas de « temps 2 »** : l'agent ne relit pas ses vraies conversations pour se corriger tout seul. Cela
+  n'a de valeur qu'une fois qu'il existe des conversations.
+
+## MBA, le répondeur de Meta (menu « AI Agent » > MBA, guide / MBA, paramètres)
 
 - ✅ **Page de guidage `/mba`** (2026-07-28) : page de contenu **côté client** (ton produit) qui explique
   l'**agent MBA** (le répondeur intelligent WhatsApp de Meta). Sections : ce qu'il fait (répond seul, passe la
@@ -948,13 +1288,20 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   sur mesure via accompagnement ; **vers votre CRM** = les conversations remontent, HubSpot dispo + lien vers son
   guide) ; **prérequis + transparence des coûts** ; encart **« bientôt configurable ici »**. Page de PRÉPARATION :
   la config live s'ouvrira quand Meta rendra l'agent disponible pour le numéro (gating vertical + ToS).
-- ✅ **Page « Paramètres de l'agent »** (2026-08) : l'écran de réglage complet de l'agent MBA, présenté en **aperçu
-  désactivé** tant que Meta n'a pas ouvert l'agent pour le numéro. On y voit d'avance tout ce qui sera réglable :
-  **activation & audience** (tout le monde, ou liste d'autorisation uniquement), **base de connaissance**
-  (informations business, FAQ, fichiers jusqu'à 100 Mo, sites web crawlés), **personnalité & compétences** (ton et
-  instructions), **liste d'autorisation**, **passage de main & relances**, et **tester l'agent**. Un bandeau explique
-  pourquoi c'est bloqué (les conditions Meta Business AI ne sont signables qu'à l'éligibilité, ouverte par secteur)
-  et renvoie au Guide.
+- ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
+  l'agent MBA, en **huit onglets**, branché pour de vrai sur la configuration Meta du numéro.
+  **Aperçu** (l'état de l'agent), **Activation** (qui parle au client, cf. ci-dessous),
+  **Business** (les informations de l'entreprise), **FAQ** (saisie question par question **et
+  import en masse** depuis un CSV, un Excel, un PDF ou une URL, avec aperçu avant écriture et
+  sans jamais dupliquer une question déjà posée), **Compétences** (le ton, les procédures et les
+  interdits, par exemple « ne jamais inventer un horaire »), **Fichiers** (jusqu'à 100 Mo de
+  documents de connaissance : PDF, Word, CSV, Excel), **Sites web** (les pages que l'agent va
+  lire) et **Tester** (un bac à sable où l'on parle à l'agent sans consommer de conversation
+  facturée).
+  Deux situations, deux bandeaux distincts, parce qu'elles ne se règlent pas au même endroit :
+  **aucun numéro rattaché** (renvoie à l'Accueil) et **Meta n'a pas encore ouvert l'agent sur ce
+  numéro** (renvoie au Guide ; Meta ouvre Business AI progressivement, par pays et par secteur, et
+  les conditions se signent dans WhatsApp Manager). Hors de ces deux cas, tout s'édite.
 
 - ✅ **Onglet « Activation »** (2026-08-21) : les deux réglages qui décident **qui parle au client**, réunis au
   même endroit, en deux questions. (1) *Quand le client demande un humain, ou que l'agent ne sait pas* : l'agent
@@ -973,46 +1320,50 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 ## Canal RCS (menu Contenu > Messages RCS, et canal de campagne)
 
+⚠️ **Tout ce chapitre est conditionnel.** Le canal RCS reste ÉTEINT tant qu’aucune clé d’API n’est posée sur
+l’Accueil : les briques RCS (le bloc du constructeur, le canal de campagne) restent visibles mais grisées, et
+aucun envoi n’est possible. Les points ci-dessous décrivent ce qui existe UNE FOIS la clé posée.
+
 Deuxième canal, à côté de WhatsApp. Les messages partent sous un **agent de marque** : le nom et le logo de
 l'entreprise s'affichent dans l'application Messages du destinataire, avec la pastille de vérification. Il n'y
 a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on écrit, on enregistre, on envoie.
 
-- **Activation** : sur la page d'accueil, sous le numéro WhatsApp. Un bouton « Activer le RCS » demande la clé
+- ✅ **Activation** : sur la page d'accueil, sous le numéro WhatsApp. Un bouton « Activer le RCS » demande la clé
   d'API du canal, la vérifie chez le fournisseur, et affiche ce à quoi elle donne droit (nom de l'agent, type
   de trafic, quotas). La clé n'est jamais réaffichée. Tant que le canal est éteint, les briques RCS restent
   visibles mais grisées.
-- **Bibliothèque (Contenu > Messages RCS)** : composer un message réutilisable. Un texte, une **image
+- ✅ **Bibliothèque (Contenu > Messages RCS)** : composer un message réutilisable. Un texte, une **image
   d'en-tête** facultative, des **variables** `{{prenom}}` remplacées par la fiche du contact à l'envoi, des
   **emojis**, et jusqu'à **11 boutons** (réponse, lien, appel). Aperçu en direct. Avec une image, le texte est
   limité à 2000 caractères au lieu de 3072.
-- **Six formes de bouton**, les mêmes dans la bibliothèque, la campagne et le scénario : **Réponse** (le
+- ✅ **Six formes de bouton**, les mêmes dans la bibliothèque, la campagne et le scénario : **Réponse** (le
   contact répond en un tap), **Lien**, **Appel**, **Agenda** (ajoute le rendez-vous à l'agenda du téléphone),
   **Voir un lieu** (l'ouvre sur sa carte) et **Demander sa position**. Seul un bouton Réponse ouvre une sortie
   à relier dans un scénario : les cinq autres agissent sur le téléphone ou sortent de la conversation, et ne
   renvoient rien qui permette de choisir une branche.
-- **Le visuel se téléverse depuis la console** : on choisit une image sur son ordinateur (JPEG, PNG ou GIF,
+- ✅ **Le visuel se téléverse depuis la console** : on choisit une image sur son ordinateur (JPEG, PNG ou GIF,
   2 Mo maximum) et l'adresse se remplit toute seule. Rien à héberger ailleurs, aucun lien à fabriquer. Le
   champ accepte quand même une adresse collée, pour ceux qui hébergent déjà leurs visuels sur leur propre site.
-- **L'allure des boutons se choisit en ajoutant un visuel, pas dans un réglage** : avec une image, ils
+- ✅ **L'allure des boutons se choisit en ajoutant un visuel, pas dans un réglage** : avec une image, ils
   s'affichent en **liste pleine largeur dans la carte** et y restent (4 maximum) ; sans image, en **petites
   pastilles** sous la bulle, qui disparaissent quand la conversation avance (11 maximum). C'est l'application
   Messages du destinataire qui décide, l'aperçu montre les deux formes telles qu'elles sortiront.
-- **Un rendez-vous propre à chaque contact** : les dates d'un bouton Agenda se prennent soit en dur, soit dans
+- ✅ **Un rendez-vous propre à chaque contact** : les dates d'un bouton Agenda se prennent soit en dur, soit dans
   un champ « date et heure » de la fiche. Un contact sans date perd le bouton, et reçoit quand même le message.
-- **Une position reçue** apparaît dans le fil avec ses coordonnées, un fichier avec son adresse.
-- **En campagne** : choisir « Un message RCS » comme contenu, partir d'un message de la bibliothèque ou écrire
+- ✅ **Une position reçue** apparaît dans le fil avec ses coordonnées, un fichier avec son adresse.
+- ✅ **En campagne** : choisir « Un message RCS » comme contenu, partir d'un message de la bibliothèque ou écrire
   directement. Les contacts sans numéro (identifiés par BSUID seulement) sont comptés « ignorés » avec leur
   motif : le RCS s'adresse à un numéro **mobile**, une ligne fixe ne peut pas le recevoir.
-- **En scénario** : le bloc « Message RCS » a deux sorties de livraison, **Envoyé** et **Non joignable**, plus
+- ✅ **En scénario** : le bloc « Message RCS » a deux sorties de livraison, **Envoyé** et **Non joignable**, plus
   une sortie par bouton réponse. Relier « Non joignable » à un envoi de template WhatsApp donne la cascade :
   le RCS d'abord, le WhatsApp pour ceux qu'il n'atteint pas.
-- **Réponses** : elles arrivent dans le fil du contact, au même endroit que WhatsApp, la bulle indiquant son
+- ✅ **Réponses** : elles arrivent dans le fil du contact, au même endroit que WhatsApp, la bulle indiquant son
   canal. Un bouton tapé fait avancer le scénario par la branche correspondante. Un contact qui répond **STOP**
   est désabonné du RCS, sans que cela touche son consentement WhatsApp.
-- **Envoyer un template depuis l'Inbox ne demande plus rien d'inutile** : les variables arrivent déjà
+- ✅ **Envoyer un template depuis l'Inbox ne demande plus rien d'inutile** : les variables arrivent déjà
   remplies avec les infos du contact (et le nom du champ à côté), et l'image d'en-tête définie sur le template
   part toute seule. On ne la redemande que si Meta ne la retrouve plus.
-- **Depuis l'Inbox** : le bouton 📱 envoie un message RCS de la bibliothèque au contact ouvert. Il est proposé
+- ✅ **Depuis l'Inbox** : le bouton 📱 envoie un message RCS de la bibliothèque au contact ouvert. Il est proposé
   même quand la fenêtre WhatsApp de 24 h est fermée, puisque le RCS n'a pas de fenêtre : c'est souvent le
   moyen le plus simple de reprendre contact. L'aperçu montre le message tel que le contact le verra, et un
   refus (canal éteint, contact désabonné) s'affiche avec sa raison.
@@ -1028,13 +1379,13 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
   un message rapide WhatsApp : répondre en RCS ne rouvre pas la fenêtre de 24 h de Meta.
 - ✅ **Un bloc RCS affiche enfin « délivré » et « lu »** (2026-08-25) dans Analytics > Mes tableaux. Les
   rapports de livraison du fournisseur alimentaient les résultats de campagne mais pas la mesure par bloc.
-- **Les variables s'insèrent comme dans un template WhatsApp** : bouton « + Variable », on choisit le champ,
+- ✅ **Les variables s'insèrent comme dans un template WhatsApp** : bouton « + Variable », on choisit le champ,
   et il apparaît comme une étiquette lisible dans le texte, pas comme des accolades.
-- **Le canal suit la conversation, pas le bloc.** Un scénario qui commence en RCS continue en RCS : si le
+- ✅ **Le canal suit la conversation, pas le bloc.** Un scénario qui commence en RCS continue en RCS : si le
   contact tape un bouton, le « message rapide » suivant part en RCS avec ses propres boutons. Pour basculer
   volontairement sur WhatsApp, il suffit de brancher un envoi de template : le parcours passe alors sur
   WhatsApp et y reste. Un **formulaire** WhatsApp fait exception, il n'existe pas en RCS ; l'éditeur le signale.
-- **Un scénario peut COMMENCER par un message RCS**, et se lancer même quand la fenêtre WhatsApp de 24 h est
+- ✅ **Un scénario peut COMMENCER par un message RCS**, et se lancer même quand la fenêtre WhatsApp de 24 h est
   fermée : le RCS n'a pas de fenêtre. Ce qui suit le bloc RCS part aussi, à une exception près que l'éditeur
   signale : un **formulaire** WhatsApp placé juste derrière ne partira que si le contact a écrit **sur
   WhatsApp** dans les 24 h, car répondre en RCS ne rouvre pas cette fenêtre.
@@ -1050,11 +1401,14 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
 
 ## À venir / hors périmètre
 
-- 🚧 **Onboarding guidé (Embedded Signup)** : bouton + popup + backend **construits et déployés** (OFF par défaut) ;
-  en attente de validation Meta (Tech Provider + App Review, soumis 2026-07-16). Option pool de numéros = plus tard.
-- 🚧 **Agent MBA** (auto-réponse IA, configuration LIVE) : bloqué par les ToS Meta Business AI (gating vertical).
-  Le menu **MBA** existe déjà, avec sa page **Guide** et sa page **Paramètres** (aperçu désactivé de tous les
-  réglages) ; ces réglages deviendront actifs à l'éligibilité du numéro.
+- 🔲 **Pool de numéros à l’embarquement** : plus tard. Le parcours Embedded Signup lui-même est **LIVE et
+  éprouvé depuis le 2026-08-17** (voir la section Accueil) : un vrai numéro d’un business tiers est passé
+  connecté et vérifié. Ce qui reste ouvert, c’est de proposer un numéro quand le client n’en a aucun.
+- 🚧 **Allumer l'agent MBA en production** : la configuration est LIVE (menu **AI Agent > MBA,
+  paramètres**, huit onglets branchés) et l'agent répond dans le bac à sable, mais Meta refuse de
+  l'activer sur le numéro tant qu'un **moyen de paiement** n'est pas posé sur le compte WhatsApp
+  Business. Le numéro de test est déjà dans la liste d'autorisation, l'activation se fait en une
+  commande le moment venu.
 - 🔲 **Abonnement / Billing** (Stripe) : menus câblés (désactivés), intégration hors lot.
 - 🔲 **Rapport mensuel auto** : score agent + stats campagnes.
 - Hors V1 (discipline anti tailor-made) : multicanal, segments avancés, A/B testing.
