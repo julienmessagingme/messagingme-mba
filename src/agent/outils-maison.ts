@@ -230,7 +230,26 @@ export interface OutilExpose {
 export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[]): OutilExpose | null {
   const params = paramsAvecDerivations(outil, sorties.map((s) => s.code));
   if (params === null) return null;
-  return { name: outil.name, description: outil.description, parameters: toolParamsToJsonSchema(params) };
+  return { name: outil.name, description: motsExposes(outil), parameters: toolParamsToJsonSchema(params) };
+}
+
+/**
+ * Les DEUX textes d'un outil, réunis en un seul, parce que la surface d'appel n'en accepte qu'un.
+ *
+ * 🔴 LA CLAUSE « QUAND NE PAS L'APPELER » N'ATTEIGNAIT PAS LE MODÈLE, jusqu'au 2026-08-29. La colonne existe
+ * depuis la migration 0086, la route l'exige pour un connecteur, l'écran l'affiche, l'IA de construction la
+ * rédige, et le CLAUDE.md dit d'elle qu'« elle évite les appels de trop ». Mais `outilExpose` ne construisait
+ * que la description, et la requête du runtime ne lisait même pas la colonne. Le client faisait donc un
+ * travail sans effet, sur le seul levier qui décide quand un outil se déclenche.
+ *
+ * ⚠️ Elle est séparée par une ligne et ANNONCÉE, pas simplement collée : deux paragraphes accolés se lisent
+ * comme une seule consigne, et une clause de refus noyée dans une description d'usage est une clause qu'un
+ * modèle applique mal. Vide, on n'écrit rien du tout : une rubrique vide est du contexte payé à chaque
+ * aller-retour pour dire qu'il n'y a rien à dire.
+ */
+function motsExposes(outil: OutilDefini): string {
+  const refus = outil.nePasUtiliser.trim();
+  return refus === '' ? outil.description : `${outil.description}\n\nNE PAS l’appeler : ${refus}`;
 }
 
 /** Les outils qu'on envoie au modèle. Ceux qui n'ont aucune valeur possible sont RETIRÉS, pas offerts vides. */

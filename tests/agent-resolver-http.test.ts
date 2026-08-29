@@ -21,7 +21,7 @@ const SOURCE: SourceAppel = {
 };
 
 const OUTIL: OutilDefini = {
-  id: 'to1', tenantId: 't1', agentId: 'ag1', origin: 'http', sourceId: 'src1',
+  id: 'to1', tenantId: 't1', agentId: 'ag1', origin: 'http', sourceId: 'src1', nePasUtiliser: '',
   name: 'lire_commande', description: 'lit une commande', params: [],
   binding: { methode: 'GET', chemin: '/commandes/{ref}' },
   outputPaths: ['statut', 'livraison.date'],

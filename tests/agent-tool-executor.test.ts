@@ -14,6 +14,7 @@ const OUTIL: OutilDefini = {
   tenantId: 't1',
   agentId: 'ag1',
   origin: 'mba',
+  nePasUtiliser: '',
   name: 'lire_commande',
   description: 'lit une commande',
   params: [

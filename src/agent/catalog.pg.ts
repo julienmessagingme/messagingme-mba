@@ -12,6 +12,7 @@ interface Ligne {
   origin: OutilDefini['origin'];
   name: string;
   description: string;
+  ne_pas_utiliser: string;
   params: unknown;
   binding: unknown;
   source_id: string | null;
@@ -24,8 +25,8 @@ interface Ligne {
 
 /** Colonnes lues par les deux requêtes. Une seule liste : deux projections divergentes finiraient par ne plus
  *  rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution. */
-const COLONNES = `id, tenant_id, agent_id, origin, name, description, params, binding, source_id, output_paths,
-                  risk, timeout_ms, max_bytes, autonome`;
+const COLONNES = `id, tenant_id, agent_id, origin, name, description, ne_pas_utiliser, params, binding,
+                  source_id, output_paths, risk, timeout_ms, max_bytes, autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
   return {
@@ -35,6 +36,9 @@ function versOutil(r: Ligne): OutilDefini {
     origin: r.origin,
     name: r.name,
     description: r.description,
+    // 🔴 LUE PAR LE RUNTIME depuis le 2026-08-29, et elle ne l'était pas. Elle vivait dans la seule
+    // projection d'administration, donc le modèle ne l'a jamais vue. Voir `OutilDefini.nePasUtiliser`.
+    nePasUtiliser: r.ne_pas_utiliser,
     params: r.params,
     // `binding` est du jsonb, donc opaque : lu par le helper défensif maison plutôt qu'affirmé par un `as`.
     // Un scalaire ou un null donne un objet vide, et le résolveur refuse alors proprement.
@@ -225,11 +229,11 @@ function surNomDejaPris(err: unknown): never {
   throw err;
 }
 
-const COLONNES_ADMIN = `${COLONNES}, title, ne_pas_utiliser, actif, active_le, autonome_le`;
+// `ne_pas_utiliser` n'y est plus : elle est passée dans `COLONNES`, que le RUNTIME lit aussi.
+const COLONNES_ADMIN = `${COLONNES}, title, actif, active_le, autonome_le`;
 
 interface LigneAdmin extends Ligne {
   title: string;
-  ne_pas_utiliser: string;
   actif: boolean;
   active_le: Date | null;
   autonome_le: Date | null;
@@ -239,7 +243,6 @@ function versComplet(r: LigneAdmin): OutilComplet {
   return {
     ...versOutil(r),
     title: r.title,
-    nePasUtiliser: r.ne_pas_utiliser,
     actif: r.actif,
     activeLe: r.active_le ? r.active_le.toISOString() : null,
     autonomeLe: r.autonome_le ? r.autonome_le.toISOString() : null,

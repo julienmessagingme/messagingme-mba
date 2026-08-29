@@ -27,6 +27,19 @@ export interface OutilDefini {
   /** Nom EXPOSÉ au modèle. */
   name: string;
   description: string;
+  /**
+   * La clause « quand NE PAS l'appeler ». EXPOSÉE AU MODÈLE, à la suite de la description.
+   *
+   * 🔴 ELLE NE L'ÉTAIT PAS, ET PERSONNE NE POUVAIT LE VOIR. Jusqu'au 2026-08-29, cette colonne ne vivait que
+   * dans la projection d'ADMINISTRATION : le runtime ne la lisait même pas, et `outilExpose` ne construisait
+   * que `{name, description, parameters}`. Or la colonne existe, la route l'exige pour un connecteur, l'écran
+   * l'affiche, l'assistant de construction la rédige, et le CLAUDE.md dit d'elle qu'« elle évite les appels
+   * de trop ». C'était donc du travail demandé au client sur le SEUL levier qui décide quand un outil se
+   * déclenche, et ce travail ne produisait rien.
+   *
+   * ⚠️ Elle est lue par le RUNTIME, elle appartient donc à `OutilDefini` et pas à `OutilComplet`.
+   */
+  nePasUtiliser: string;
   /** `agent_tools.params`, du jsonb donc OPAQUE : à lire par `paramsOutil` et rien d'autre. */
   params: unknown;
   /** Ce qui dit au résolveur quoi faire (`handler` pour `mba`, gabarit d'URL pour `http`...). Opaque ici. */
@@ -67,7 +80,6 @@ export interface ToolCatalog {
 /** Un outil tel que l'écran de réglage le montre : tout ce que le runtime lit, plus qui a autorisé quoi. */
 export interface OutilComplet extends OutilDefini {
   title: string;
-  nePasUtiliser: string;
   actif: boolean;
   /** `null` tant que personne ne l'a activé. La migration 0086 refuse `actif` sans lui. */
   activeLe: string | null;

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { OUTILS_MAISON, outilExpose, outilMaison, outilsExposes, paramsInitiaux } from '../src/agent/outils-maison';
 import { HANDLERS_MAISON } from '../src/agent/resolvers/mba';
 import type { OutilDefini } from '../src/agent/catalog';
@@ -15,7 +16,7 @@ import type { OutilDefini } from '../src/agent/catalog';
 
 const outil = (params: unknown, handler = 'terminer'): OutilDefini => ({
   id: 'o1', tenantId: 't1', agentId: 'a1', origin: 'mba', name: 'mba_terminer',
-  description: 'Termine.', params, binding: { handler }, sourceId: null, outputPaths: [], risk: 'read',
+  description: 'Termine.', params, binding: { handler }, sourceId: null, nePasUtiliser: '', outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false,
 });
 
@@ -99,6 +100,43 @@ describe('outilsExposes', () => {
     expect(outilsExposes([t], [])).toEqual([]);
     // Et l'outil revient dès qu'une règle existe : le retrait suit la fiche, il ne s'installe pas.
     expect(outilsExposes([t], [{ code: 'fini', label: 'Fini' }])).toHaveLength(1);
+  });
+
+  it('🔴 la clause « quand NE PAS l’appeler » ATTEINT le modèle, annoncée', () => {
+    // 🔴 ELLE NE L'ATTEIGNAIT PAS, jusqu'au 2026-08-29. La colonne existe depuis la migration 0086, la route
+    // l'EXIGE pour un connecteur, l'écran l'affiche, l'IA de construction la rédige, et le CLAUDE.md dit
+    // d'elle qu'« elle évite les appels de trop ». Mais `outilExpose` ne construisait que la description, et
+    // la requête du runtime ne lisait même pas la colonne. Le client faisait un travail sans aucun effet, sur
+    // le seul levier qui décide quand un outil se déclenche.
+    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
+    const avecClause = { ...tag, description: 'Tague un contact intéressé.', nePasUtiliser: 'Jamais sur un contact déjà tagué.' };
+    const [expose] = outilsExposes([avecClause], []);
+    expect(expose!.description).toContain('Tague un contact intéressé.');
+    expect(expose!.description).toContain('Jamais sur un contact déjà tagué.');
+    // Annoncée, pas collée : deux paragraphes accolés se lisent comme une seule consigne, et une clause de
+    // refus noyée dans une description d'usage est une clause qu'un modèle applique mal.
+    expect(expose!.description).toContain('NE PAS');
+    expect(expose!.description.indexOf('Tague un contact')).toBeLessThan(expose!.description.indexOf('Jamais sur'));
+  });
+
+  it('🔴 et la projection du RUNTIME lit bien la colonne, sinon la clause serait toujours vide', () => {
+    // L'exposition ci-dessus ne prouve que la moitié : elle part d'un objet en mémoire. En production, la
+    // clause vient de la base, et c'est précisément là qu'elle se perdait. `ne_pas_utiliser` ne vivait que
+    // dans la projection d'ADMINISTRATION ; la requête d'exécution ne la sélectionnait pas, donc la clause
+    // arrivait vide quoi qu'ait écrit le client, sans que rien ne le signale.
+    //
+    // Une lecture de la SOURCE plutôt qu'un test d'intégration : le `DATABASE_URL` local pointe sur la
+    // production, et cette garde doit tourner partout, y compris ici.
+    const sql = readFileSync(new URL('../src/agent/catalog.pg.ts', import.meta.url), 'utf8');
+    const colonnes = /const COLONNES = `([^`]+)`/.exec(sql);
+    expect(colonnes, 'la liste de colonnes du runtime a changé de forme dans src/agent/catalog.pg.ts').not.toBeNull();
+    expect(colonnes![1]).toContain('ne_pas_utiliser');
+  });
+
+  it('une clause VIDE n’ajoute aucune rubrique : on ne paie pas du contexte pour ne rien dire', () => {
+    const tag = outil([{ name: 'tag', type: 'string', source: 'modele', required: true }], 'poser_tag');
+    const [expose] = outilsExposes([{ ...tag, description: 'Tague.', nePasUtiliser: '   ' }], []);
+    expect(expose!.description).toBe('Tague.');
   });
 
   it('une liste vide REMPLIE PAR LE CLIENT ne retire rien : vide y veut dire « aucune restriction »', () => {
