@@ -4,6 +4,11 @@ Vue unique de tout ce qui reste, audit de scalabilité **et** lot de features co
 Source des constats : `AUDIT-SCALE-2026-07-18.md` (les références Bn et « Railway n » y renvoient).
 Ce fichier est la référence de séquencement. Le détail d'un constat se lit dans le rapport.
 
+🔴 **IL EXISTE UN SECOND AUDIT, PLUS RÉCENT : [AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md).** Il
+succède à celui de juillet et re-statue ses bloquants avec des mesures fraîches. **Quand les deux se
+recouvrent, celui d'août tranche.** Ce fichier-ci ne le savait pas, ce qui est la meilleure illustration de
+son problème : un document de séquencement qui ne se met pas à jour envoie travailler sur un état périmé.
+
 **Estimations** : développeur seul, à temps plein. « S » = moins d'une journée, « M » = 1 à 3 jours, « L » = une semaine.
 
 ---
@@ -69,7 +74,13 @@ livrés ET DÉPLOYÉS ; bloc **4 à 10/13** ; bloc A aux 3/5.
   - **4.4-A** ✅ déployé + vérifié : BACKEND_URL du front en `build.args` (le rewrite Next est gelé au build) au lieu du `environment:` no-op. Comportement VPS inchangé (/api/backend/health -> 200). **Option B (route handler proxy runtime) DIFFÉRÉE au groupe Railway** (proxy sur 100% du trafic live, à QA golden paths dans ce contexte).
   - **4.13-doc** ✅ : runbook DR écrit (DEPLOY.md §Restauration), ancré dans le code (3 schémas restaurés ensemble, migrations forward-only, gotcha ENCRYPTION_KEY, secrets hors base, 2 chemins de restore, remise en service). ⚠️ **DRILL + RPO/RTO réels À FAIRE par Julien** (accès dashboard Supabase pour relever le plan de backup + restore vers projet jetable ; non faisable en autonome, MCP Supabase non authentifié).
   - **RESTE (needs Julien / Railway)** : 4.13-drill (dashboard Supabase), puis **groupe Railway** : 4.4-B (proxy runtime), 4.2 (bind IPv6), 4.8 (advisory lock migrations) — à faire à la bascule Railway. Plans détaillés + vérifs : `.loop/bloc4.md` + `scratchpad/bloc4-plans.json` / `bloc4-verifs.json`.
-**Tous les items bloc 4 VPS-autonomes sont FAITS.** Reste : 4.13-drill (Julien/Supabase) + groupe Railway (4.4-B/4.2/4.8). Puis A.3/A.5 (attendent MBA), puis 5. ⚠️ Dernière migration = 0044, prochaine = 0045.
+**Tous les items bloc 4 VPS-autonomes sont FAITS.** Reste : 4.13-drill (Julien/Supabase) + groupe Railway (4.4-B/4.2/4.8). Puis A.3/A.5 (attendent MBA), puis 5.
+
+🔴 **~~Dernière migration = 0044, prochaine = 0045.~~ FAUX ET DANGEREUX, corrigé le 2026-08-29 : quarante-trois
+migrations de retard.** La dernière APPLIQUÉE est la **0087**, la **0088** attend son déploiement, et la
+**prochaine libre est la 0089**. Quelqu'un qui aurait cru cette ligne aurait écrit un fichier `0045_*.sql`
+par-dessus une migration existante. Le compteur de référence vit dans `CLAUDE.md` et `DEPLOY.md`, jamais ici :
+un numéro recopié dans un troisième document est un numéro qui dérive.
 
 ---
 
@@ -199,8 +210,8 @@ reste deux gestes d'hygiène, sans exploitation possible en l'état.
 |---|---|---|
 | 1.1 | `/oauth/install` acceptait un `?tenant=` arbitraire sans authentification | ✅ **FAIT, et en prod.** Le lien est émis par mba sur une route JWT admin (`src/http/hubspot-install.ts`, tenant pris par `scopeTenant`, jamais dans l'URL) et vérifié côté connecteur (HMAC, TTL 10 min, `timingSafeEqual`, fail-closed si le secret est vide). Le conteneur qui tourne sur le VPS porte bien `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT=false`. Test : `?tenant=nimporte-qui` rend 400. ⚠️ Le drapeau reste dans le code comme voie de retour : le reposer à `true` rouvrirait la faille à l'identique |
 | 1.2 | L'Embedded Signup réaffectait silencieusement un numéro d'un tenant à un autre | ✅ **FAIT, et en prod, les deux moitiés.** La garde `where tenant_id = excluded.tenant_id` est sur les trois tables (`es-store.pg.ts`), chacune suivie d'un `TenantConflictError` traduit en 409 AVANT tout appel Meta, le tout en transaction. Et la revalidation dans `campaignRunJob` existe et est câblée par le worker. 🔸 Seul déferrage assumé : la route admin de réaffectation VOULUE d'un numéro entre workspaces. C'est une feature d'exploitation, pas un trou |
-| 1.3 | `POST /card/action` : garde cross-portail contournable | 🟡 **La faille est fermée, un geste reste.** `portalId` est exigé (un doublon arrive en tableau, donc 400) et le filtre `hub_id` est poussé dans le SQL des deux routes, avec 404 uniforme (pas d'oracle). Mais le **fallback bearer `CARD_SECRET` est toujours dans le code** (`src/card/auth.ts`), et il court-circuite la signature HubSpot v3. Il est INERTE en prod (vérifié : la variable n'existe ni dans le conteneur ni dans `.env.prod`). Reste : le supprimer, une dizaine de lignes |
-| 1.4 | mm-hubspot sans CI ni remote GitHub, `DATABASE_URL` local sur la prod | 🟡 **Trois quarts faits.** Remote GitHub privé ✅, CI à deux jobs dont un Postgres jetable, et elle tourne vraiment (8 runs verts, les DEUX jobs) ✅, `throw` au lieu de `skipIf` quand `CI` est défini ✅. **PAS fait : sortir le run LOCAL de la base de prod.** Le `.env` de mm-hubspot pointe toujours sur le pooler de production, et rien ne l'empêche. Les dégâts sont bornés au préfixe `itest-`, mais c'est bien une écriture sur la base qui sert les clients. 🔴 **Le message du commit `43232c1` prétend le contraire** |
+| 1.3 | ~~`POST /card/action` : garde cross-portail contournable~~ | ✅ **FAIT EN ENTIER le 2026-08-29, déployé.** `portalId` exigé (un doublon arrive en tableau, donc 400), filtre `hub_id` poussé dans le SQL des deux routes avec 404 uniforme (pas d'oracle), **et le repli bearer `CARD_SECRET` est supprimé du code**, pas seulement de la production. Vérifié en prod : `/card/context` rend 401 sans signature, et 401 avec un faux bearer. `tests/card-auth.test.ts` interdit son retour |
+| 1.4 | ~~mm-hubspot sans CI ni remote GitHub, `DATABASE_URL` local sur la prod~~ | ✅ **FAIT EN ENTIER le 2026-08-29.** Remote GitHub privé, CI à deux jobs qui tourne vraiment, `throw` au lieu de `skipIf` en CI, **et surtout le dernier quart** : `tests/integration/env.ts` refuse désormais tout hôte qui n'est ni `localhost` ni `127.0.0.1`, dérogation explicite `ITEST_ALLOW_REMOTE=1`. Vérifié dans six directions, dont l'URL illisible (refusée, fail closed). ⚠️ Le commit `43232c1` prétendait ce travail fait : il ne l'était pas |
 
 ---
 
@@ -262,7 +273,7 @@ grille dit où il en est. Presque tout ce qui restait est du côté **connecteur
 | 4.8 | 🔴 PAS FAIT | Advisory lock autour de la boucle de `migrate.ts`, sortie en 0 si le verrou est pris, un seul service porteur. **Attend Railway** (sans réplique, le risque est nul) |
 | 4.9 | ✅ FAIT | Heartbeat worker, `/ops`, files 4 vers 8 avec source unique, alerte Telegram |
 | 4.10 | ✅ FAIT | Sweeper de statut et qualité des numéros, avec alertes |
-| 4.11 | 🟡 PARTIEL | Fait sur mba (CA bakée, `DB_SSL_INSECURE` retiré). Reste à faire la même chose **sur le connecteur**, qui tape le même pooler |
+| 4.11 | 🟡 PARTIEL, et c'est le plus gênant du bloc | Fait sur mba (CA bakée, `DB_SSL_INSECURE` retiré). **Pas du tout sur le connecteur** : mesuré le 2026-08-29 sur le VPS, `mm-hubspot` tourne toujours avec `DB_SSL_INSECURE=true`, donc son trafic Postgres est chiffré mais **non vérifié**, sans authentification du serveur. Et c'est le service qui manipule les jetons OAuth HubSpot déchiffrés. Le constat d'origine reste donc entièrement ouvert là où il compte le plus |
 | 4.12 | ✅ FAIT | `tsx` en dependencies dans les deux dépôts |
 | 4.13 | 🟡 PARTIEL | Le runbook est écrit (`DEPLOY.md`). **Le drill n'a jamais été fait** : RPO et RTO restent théoriques. Demande le dashboard Supabase, donc Julien |
 
@@ -346,13 +357,11 @@ existe (écrit et testé pour le RCS), ils ne sont simplement pas reliés sur le
 conformité, pas du confort, et l'audit prévenait déjà de le remonter en bloc 1 avant tout envoi marketing en
 volume. **À faire avant le prochain client, et avant toute campagne.**
 
-### 2. Deux gestes d'hygiène de sécurité, courts, sans exploitation possible aujourd'hui — S
+### ~~2. Deux gestes d'hygiène de sécurité~~ ✅ FAIT le 2026-08-29, déployé
 
-- **1.3** : supprimer le fallback bearer `CARD_SECRET` du connecteur. Inerte en prod, mais il revient vivant
-  le jour où quelqu'un repose la variable pour un debug curl.
-- **1.4** : refuser un `test:integration` local dont l'hôte de base n'est ni `localhost` ni `127.0.0.1`, sauf
-  drapeau explicite. Aujourd'hui rien n'empêche un run local d'écrire sur la base des clients, et le message
-  de commit qui prétend le contraire rend le piège pire, pas meilleur.
+Le **bloc 1 est clos en entier**, code et production. `CARD_SECRET` n'existe plus (vérifié en prod :
+`/card/context` rend 401 sans signature ET avec un faux bearer), et un `test:integration` local refuse
+désormais tout hôte distant. Détail dans le tableau du bloc 1.
 
 ### 3. Le connecteur est le parent pauvre de tout le durcissement — M
 
