@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../llm/chat-client';
 import { OUTILS_MAISON } from '../outils-maison';
+import { neutraliserDelimiteurs } from '../bloc-donnees';
 import { ordreDuJour } from './couverture';
 import type { EtatCourant } from './proposition';
 
@@ -26,9 +27,15 @@ export const MAX_TOURS_HISTORIQUE = 20;
 export const MAX_CARACTERES_MESSAGE = 4000;
 const MAX_TITRES_CONNAISSANCE = 60;
 
-/** Neutralise toute ligne qui tenterait de refermer le bloc de données depuis l'intérieur. */
+/**
+ * Neutralise toute ligne qui tenterait de refermer le bloc de données depuis l'intérieur.
+ *
+ * ⚠️ La règle vit dans `../bloc-donnees` et PAS ici. Elle était écrite deux fois, ici et dans le prompt de
+ * l'agent, et les deux copies portaient le MÊME défaut : un seul passage de remplacement, que le contenu
+ * pouvait défaire en doublant le délimiteur. Voir ce module pour la mesure.
+ */
 function sansDelimiteur(texte: string): string {
-  return texte.split(DEBUT).join('<<<').split(FIN).join('>>>');
+  return neutraliserDelimiteurs(texte, DEBUT, FIN);
 }
 
 /**

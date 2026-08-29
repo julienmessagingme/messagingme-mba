@@ -185,6 +185,10 @@ function borner(valeur: unknown, maxBytes: number): { contenu: unknown; taille: 
 /** Sentinelle de la course de l'étape 6. Un résolveur qui ignore son `AbortSignal` est coupé quand même. */
 const ECHEANCE = Symbol('echeance');
 
+/** Plafond du message d'exception ÉCRIT EN JOURNAL. Le distant peut l'écrire, et une ligne de journal n'a pas
+ *  à porter son corps de réponse entier. Ce que reçoit le modèle est borné à part, par `max_bytes`. */
+const MAX_RAISON_JOURNAL = 2000;
+
 export async function executeTool(
   appel: { name: string; argumentsJson: string },
   ctx: ContexteAppel,
@@ -381,10 +385,21 @@ export async function executeTool(
   } catch (err) {
     // Un résolveur qui LÈVE est un cas nominal ici : réseau coupé, réponse illisible, refus distant. Le
     // modèle reçoit la raison et peut se corriger, le tour continue.
+    //
+    // 🔴 MAIS CE MESSAGE PEUT ÊTRE ÉCRIT PAR LE DISTANT, et ce retour court-circuitait l'étape 7. Un
+    // résolveur qui laisse remonter une erreur du serveur d'en face (une erreur JSON-RPC, un corps d'API
+    // recopié dans un `Error`) faisait entrer ce texte dans le prompt SANS plafond de taille. Inoffensif tant
+    // que les résolveurs attrapent tout eux-mêmes, ce qu'ils font aujourd'hui ; mais compter là-dessus, c'est
+    // faire dépendre une garde du prompt de la discipline de chaque résolveur, y compris celui qu'on n'a pas
+    // encore écrit. On borne donc ici, comme à l'étape 7.
+    //
+    // `extraire` n'est PAS appliqué : `output_paths` décrit la forme d'une réponse RÉUSSIE, la chercher dans
+    // une enveloppe d'erreur ne rendrait jamais rien et effacerait la raison.
     const raison = err instanceof Error ? err.message : String(err);
-    await clore(journalId, 'erreur_outil', { erreur: raison });
+    const { contenu: borne } = borner({ erreur: raison }, outil.maxBytes);
+    await clore(journalId, 'erreur_outil', { erreur: raison.slice(0, MAX_RAISON_JOURNAL) });
     await compter();
-    return { status: 'erreur_outil', contenu: { erreur: raison } };
+    return { status: 'erreur_outil', contenu: borne };
   } finally {
     if (minuteur) clearTimeout(minuteur);
   }

@@ -60,9 +60,12 @@ séquencement et le pourquoi de l'ordre sont en §7 de
   signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
   valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
 - 🟠 **L4 : MCP en jeton statique, sur allowlist.** Couvre 70 % du parc mesuré pour un quart du prix de
-  l'OAuth. **Décision produit à trancher avant** (D3 du cadrage) : allowlist de serveurs validés par nous, ou
-  URL libre saisie par le client. Recommandation tenue : allowlist par défaut, URL libre derrière un drapeau
-  par tenant.
+  l'OAuth. **Le plan d'exécution est écrit : [AGENT-IA-PLAN-L4.md](AGENT-IA-PLAN-L4.md)** (5 tâches, une
+  colonne de migration au plus, zéro dépendance nouvelle). Il tranche la question qui commandait tout le
+  reste : le schéma d'un outil MCP est TRADUIT dans notre modèle à la déclaration, jamais transmis tel quel,
+  ce qui fait tomber la moitié du lot et récupère au passage la garde anti-IDOR que MCP ne fournit pas.
+  **Deux décisions attendent Julien** : D3 (allowlist seule, l'URL libre restant à L7), et d'où vient le
+  `risk` d'un outil MCP, puisque le plancher dérivé de la méthode HTTP n'existe pas ici.
 - 🔵 **L6 : MCP OAuth.** Quatre à huit fois le coût de L4, et le coût n'est pas dans le développement mais
   dans la SUPERVISION : un jeton mort ne produit aucune erreur applicative, l'agent dégrade en silence au
   milieu d'une conversation. Premier serveur à brancher : Linear. Le pire premier candidat : HubSpot (la
@@ -77,6 +80,32 @@ le **système** (adresse, authentification, secret) se déclare dans **Tools > C
 bibliothèque du workspace où plusieurs agents puisent ; l'**appel** que tel agent a le droit de faire se
 déclare dans son onglet Outils. Si la confusion revient malgré ça, la correction est de RENOMMER l'un des
 deux, pas de réexpliquer.
+
+## 🔴 À TRANCHER : une règle d'arrêt nommée `humain` fabrique deux poignées identiques (2026-08-29)
+
+Trouvé en instruisant le correctif du bloc Question, **pas encore déclenché**, mais atteignable dès qu'un
+client nomme une règle d'arrêt d'une certaine façon.
+
+Le bloc agent dessine ses sorties en deux séries : celles que le client déclare, en `sortie:<code>`
+([WorkflowBuilder.tsx](web/components/WorkflowBuilder.tsx), `sortiesDuBloc`), puis celles que la plateforme
+pose toujours (`AGENT_SORTIES_RESERVEES` dans [nodeMeta.ts](web/lib/nodeMeta.ts)), dont les poignées sont
+`sortie:humain`, `sortie:sans_source`, `sortie:plafond` et `sortie:echec`. Un code client valant `humain`,
+`sans_source`, `plafond` ou `echec` produit donc **deux `Handle` de même identifiant**. React Flow retient le
+premier (`getHandle`), donc la seconde ligne tire sa flèche depuis celle du haut, et les deux s'affichent
+reliées. C'est exactement la famille du défaut corrigé le 2026-08-29, et `humain` est un nom parfaitement
+naturel pour une règle d'arrêt.
+
+`sortiesDuBloc` ne filtre que les codes vides. La liste réservée existe côté serveur
+([src/agent/sorties.ts](src/agent/sorties.ts)), et la parité code front / serveur a déjà ses tests
+(`tests/web-agent-code-sortie-parity.test.ts`).
+
+**Le choix est produit, pas technique**, d'où le report :
+- soit **refuser le code à l'enregistrement** (`ficheAgentSchema` réserve les quatre noms). Propre, mais une
+  fiche existante qui porte déjà `humain` ne s'enregistrerait plus, et il faudrait le dire au client ;
+- soit **fusionner à l'affichage** : une règle client `humain` et la sortie réservée « Transfert à un humain »
+  veulent dire la même chose, donc une seule ligne. Rien ne casse, mais la ligne du client disparaît du
+  canevas sans explication ;
+- soit **refuser à l'enregistrement ET absorber l'existant** à l'affichage. Le plus complet, le plus cher.
 
 ## Ouvert par la tranche 19c du bloc agent IA (2026-08-28)
 

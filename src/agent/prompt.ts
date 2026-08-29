@@ -1,4 +1,5 @@
 import type { FicheAgentContenu } from './fiche';
+import { blocDelimite } from './bloc-donnees';
 
 /**
  * Le prompt système d'un agent, dérivé de sa fiche.
@@ -75,12 +76,15 @@ const FIN_RESULTAT = 'FIN_RESULTAT_OUTIL>>>';
  * Encadre ce qu'un outil a rendu, avant de le remettre au modèle.
  *
  * 🔴 C'EST LA DETTE D3(c), ET C'EST UNE RÈGLE DU DÉPÔT. Un résultat d'outil concaténé au prompt est une
- * injection indirecte : le contenu vient d'une base de connaissance qu'un site tiers a remplie, ou demain
- * d'un connecteur HTTP dont personne ne contrôle la réponse. Le bloc ne protège que si son délimiteur ne
- * peut pas être recréé par le contenu, donc ce qui y ressemble est neutralisé avant l'assemblage.
+ * injection indirecte : le contenu vient d'une base de connaissance qu'un site tiers a remplie, ou d'un
+ * connecteur HTTP dont personne ne contrôle la réponse. Le bloc ne protège que si son délimiteur ne peut pas
+ * être recréé par le contenu, donc ce qui y ressemble est neutralisé avant l'assemblage.
+ *
+ * ⚠️ La neutralisation vit dans `bloc-donnees.ts` et PAS ici : elle était écrite deux fois, ici et dans la
+ * conversation de construction, et les deux copies portaient le même défaut (un seul passage de
+ * remplacement, que le contenu pouvait défaire). Voir ce module pour la mesure.
  */
 export function blocResultatOutil(contenu: unknown): string {
   const texte = typeof contenu === 'string' ? contenu : JSON.stringify(contenu ?? null);
-  const propre = texte.split(DEBUT_RESULTAT).join('<<<').split(FIN_RESULTAT).join('>>>');
-  return `${DEBUT_RESULTAT}\n${propre}\n${FIN_RESULTAT}`;
+  return blocDelimite(DEBUT_RESULTAT, FIN_RESULTAT, texte);
 }

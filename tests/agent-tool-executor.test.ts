@@ -352,6 +352,23 @@ describe('tronc commun : journaliser, appeler, assainir, clore (étapes 5 à 8)'
     expect(journal[0]?.tailleReponse).toBeGreaterThan(2000);
   });
 
+  it('🔴 le message d une EXCEPTION est borne lui aussi, avant de partir au modele', async () => {
+    // Le retour du `catch` court-circuitait l'etape 7 : le message d'un resolveur qui leve entrait dans le
+    // prompt sans plafond. Inoffensif tant que chaque resolveur attrape tout lui-meme, mais c'est faire
+    // dependre une garde du prompt de la discipline de chaque resolveur, y compris celui qu'on n'a pas encore
+    // ecrit. Or un resolveur MCP (lot L4) laissera remonter des erreurs JSON-RPC dont le message est ECRIT
+    // PAR LE SERVEUR D EN FACE.
+    const { deps, journal } = harnais({
+      outil: { ...OUTIL, maxBytes: 256 },
+      resolveur: async () => { throw new Error('C'.repeat(5000)); },
+    });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, deps);
+    expect(r.status).toBe('erreur_outil');
+    expect(Buffer.byteLength(JSON.stringify(r.contenu), 'utf8')).toBeLessThanOrEqual(256);
+    // Le journal aussi est borne : une ligne de journal n'a pas a porter un corps de reponse entier.
+    expect(String(journal[0]?.erreur ?? '').length).toBeLessThanOrEqual(2000);
+  });
+
   it('le compteur d appels de la session est incremente sur un appel servi', async () => {
     // Sans lui, le plafond d'appels lu par `runTurn` d'un tour sur l'autre serait décoratif.
     const { deps, compteur } = harnais();

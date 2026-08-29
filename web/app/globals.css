@@ -55,9 +55,16 @@ body {
  * puisque la sortie libre est la DERNIÈRE ligne. Personne ne peut viser une cible de 5,7 px à la souris.
  *
  * La parade n'est pas de grossir le point (il en deviendrait illisible et masquerait le libellé de la ligne),
- * c'est de lui donner une zone de PRISE invisible de la taille de sa ligne. `inset: -8px` sur un point de
- * 10 px rend une zone de 26 px, soit exactement la hauteur d'une ligne de sortie : chaque point possède sa
- * ligne, aucune zone morte entre deux, aucun débordement sur la ligne voisine.
+ * c'est de lui donner une zone de PRISE invisible de la taille de sa ligne. Chaque point possède ainsi sa
+ * ligne, sans zone morte entre deux ni débordement sur la voisine.
+ *
+ * 🔴 LE CHIFFRE EXACT, ET IL A ÉTÉ CORRIGÉ LE 2026-08-29. Une ligne de sortie mesure 24 px, pas 26 :
+ * `py-1` (4 + 4) + la boîte de ligne de `text-[10px]` (15 px, la préflight Tailwind posant `line-height: 1.5`
+ * SANS unité, donc indépendante du glyphe) + `border-t` (1). Mesuré dans le DOM : centres de poignées à
+ * 421,21 / 445,21 / 469,21, soit un pas de 24,00 px. `inset: -8px` sur un point de 10 px rendait donc une
+ * zone de 26 px, en RECOUVREMENT de 2 px avec la voisine, et dans cette bande c'est la poignée du BAS qui
+ * gagne (elle est plus loin dans l'arbre). Viser le haut d'une ligne pouvait donc attraper la ligne
+ * suivante, sans que rien ne le signale. `inset: -7px` rend 24 px, exactement le pas.
  *
  * ⚠️ Le pseudo-élément n'entre PAS dans `getBoundingClientRect` de la poignée : React Flow continue donc
  * d'ancrer la flèche sur le point visible, et seule la surface cliquable change.
@@ -68,6 +75,6 @@ body {
 [data-canevas-edition] .react-flow__handle::after {
   content: '';
   position: absolute;
-  inset: -8px;
+  inset: -7px;
   border-radius: 9999px;
 }
