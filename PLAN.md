@@ -37,11 +37,11 @@ et dont **deux sont fermées en production**.
 Chaque item a été rouvert et jugé **dans le code**, pas sur son message de commit. Les états portés dans les
 tableaux ci-dessous viennent de cette revue. Résultat d'ensemble, sur les 32 items techniques :
 
-| État | Nombre | Ce que ça veut dire |
+| État | À la revue | Après le bloc 1, clos le même jour |
 |---|---|---|
-| ✅ FAIT | 14 | vérifié dans le code, et pour la plupart en production |
-| 🟡 PARTIEL | 12 | le cœur est fait, un sous-item reste |
-| 🔴 PAS FAIT | 6 | intact |
+| ✅ FAIT | 14 | **16** |
+| 🟡 PARTIEL | 12 | **10** |
+| 🔴 PAS FAIT | 6 | 6 |
 
 **Deux documents mentaient, et c'est le résultat le plus utile de cette revue :**
 
