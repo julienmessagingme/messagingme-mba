@@ -29,6 +29,7 @@ import { runHandoffSweep } from './mba/handoff-sweep';
 import { lireHandoffEnabled, ecrireHandoffEnabled } from './mba/handoff';
 import { PgFlowStore } from './flow/store.pg';
 import { PgContactStore } from './crm/contact-store.pg';
+import { SOURCE_STOP_WHATSAPP } from './crm/consentement';
 import { PgUserFieldStore } from './crm/field-store.pg';
 import {
   ensureFieldByKey,
@@ -362,6 +363,11 @@ async function main(): Promise<void> {
       // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le
       // message. Un identifiant hors scenario (inbox, campagne) ne cree rien.
       nodeEventStore,
+      // 🔴 OPT-OUT PAR MOT-CLE sur WhatsApp (STOP, desabonner...). Le RCS le faisait depuis toujours, pas
+      // WhatsApp : un contact qui repondait STOP restait `opted_in` et recevait la campagne suivante. La
+      // source `whatsapp_stop` distingue ce refus de ceux poses a la main dans le mini-CRM, ce qui compte
+      // le jour ou il faut prouver d ou vient un desabonnement.
+      (tenant, waId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP),
     );
   });
 

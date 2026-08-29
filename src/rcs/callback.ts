@@ -254,7 +254,6 @@ export function apercuMo(mo: RcsMo): string {
   return mo.text ?? `[${mo.kind}]`;
 }
 
-export function estDemandeArret(texte: string | null): boolean {
-  if (!texte) return false;
-  return /^\s*(stop|stopper|unsubscribe|desabonner|désabonner|arret|arrêt)\b/i.test(texte.trim());
-}
+// 🔴 `estDemandeArret` a DÉMÉNAGÉ le 2026-08-29 vers `src/crm/consentement.ts`. Il ne servait qu'au RCS parce
+// qu'il vivait ici, et c'est exactement ce qui a produit l'asymétrie : STOP désabonnait en RCS et ne faisait
+// rien en WhatsApp. Le prédicat appartient au consentement, pas au canal.

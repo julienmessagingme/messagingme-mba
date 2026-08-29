@@ -81,6 +81,28 @@ bibliothèque du workspace où plusieurs agents puisent ; l'**appel** que tel ag
 déclare dans son onglet Outils. Si la confusion revient malgré ça, la correction est de RENOMMER l'un des
 deux, pas de réexpliquer.
 
+## L'API publique v1 ne sait pas dire « désabonné » (reste du 5.1, 2026-08-29)
+
+La moitié conformité du 5.1 est faite : un STOP en WhatsApp désabonne désormais, comme en RCS. Reste la
+moitié API : un client dont le CRM sait que quelqu'un s'est désinscrit ne peut pas nous le dire par
+`/v1/contacts`, qui ne produit que `opted_in` ou `unknown`.
+
+🔴 **Et ça ne se règle PAS en réinterprétant `optIn: false`.** Deux raisons trouvées en regardant le code :
+
+1. `optIn: false` veut dire aujourd'hui « non renseigné ». Lui donner le sens « désabonné » réécrirait le sens
+   des payloads que les intégrations envoient déjà, et pourrait désabonner en masse sur un sync ordinaire.
+   Il faut un champ EXPLICITE (`optOut: true`), additif.
+2. Le champ ne peut pas passer par l'upsert. `upsertByPhoneReturningId` porte
+   `opt_in_status = case when excluded.opt_in_status = 'opted_in' then 'opted_in' else contacts.opt_in_status end`,
+   c'est-à-dire qu'il ne sait que **promouvoir**. C'est une bonne garde (un sync n'écrase jamais un
+   consentement), et elle rend l'opt-out impossible par ce chemin **par construction**. Il faut donc une
+   seconde écriture après l'upsert, sur l'identifiant rendu, comme le fait la route `PATCH` de la fiche.
+
+À faire avec son entrée de journal d'audit (`contact.optout`, source `api`), comme les trois autres chemins.
+
+**Ce n'est pas une brèche de conformité** : le refus exprimé À NOUS est désormais honoré, et l'opérateur a
+déjà trois chemins pour désabonner (fiche, action en masse, bloc « Action »). C'est un trou d'intégration.
+
 ## 🔴 À TRANCHER : une règle d'arrêt nommée `humain` fabrique deux poignées identiques (2026-08-29)
 
 Trouvé en instruisant le correctif du bloc Question, **pas encore déclenché**, mais atteignable dès qu'un

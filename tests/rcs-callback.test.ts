@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import {
-  parseRcsDlr, parseRcsMo, estDlr, statutDepuisSmsmode, estDemandeArret, urlRappelRcs, apercuMo,
+  parseRcsDlr, parseRcsMo, estDlr, statutDepuisSmsmode, urlRappelRcs, apercuMo,
 } from '../src/rcs/callback';
 import type { RcsDlr, RcsMo } from '../src/rcs/callback';
 
@@ -231,15 +231,6 @@ describe('Lecture des rappels smsmode', () => {
       expect(() => parseRcsMo(brut)).not.toThrow();
     }
     expect(parseRcsMo({ messageId: 'x', body: { type: 'TEXT' } })).toBeNull(); // sans expediteur : rien a rattacher
-  });
-
-  it('reconnait un STOP en tete de message, et PAS un stop au milieu d une phrase', () => {
-    for (const t of ['STOP', 'stop', ' Stop ', 'stop svp', 'désabonner', 'unsubscribe']) {
-      expect(estDemandeArret(t)).toBe(true);
-    }
-    for (const t of ['je ne peux pas stopper la', 'non stop merci ?', null, '']) {
-      expect(estDemandeArret(t)).toBe(false);
-    }
   });
 
   it('construit une adresse de rappel qui passe par la reecriture du front', () => {

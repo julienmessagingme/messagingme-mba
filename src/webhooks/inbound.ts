@@ -5,6 +5,7 @@
  */
 
 import { FLOW_REF_KEY } from '../meta/flow-json';
+import { estDemandeArret } from '../crm/consentement';
 import { asArray, asRecord } from './json';
 
 export interface InboundMessage {
@@ -198,12 +199,40 @@ export function extractFlowCompletions(payload: unknown): FlowCompletion[] {
  *  consommé par le déclencheur d'automation `new_contact`. `void` reste accepté (câblages qui ne le disent pas). */
 export type InboundContactUpsert = (tenantId: string, m: InboundMessage) => Promise<void | 'created' | 'updated' | 'skipped'>;
 
+/** Enregistre le refus d'un contact qui a écrit STOP. Rend l'identifiant touché, `null` si aucune fiche. */
+export type InboundOptOut = (tenantId: string, waId: string) => Promise<string | null>;
+
 /**
  * Mappe chaque message entrant à son tenant et l'enregistre. Si `upsertContact` est fourni, crée/rafraîchit
  * la fiche contact AVANT `recordInbound` (pour que la conversation se lie au contact). L'auto-création est
  * ISOLÉE (best-effort) : un échec ne casse pas l'enregistrement inbox (cœur du webhook).
+ *
+ * 🔴 L'OPT-OUT PAR MOT-CLÉ, AJOUTÉ LE 2026-08-29, ET C'EST DE LA CONFORMITÉ. Le RCS désabonnait sur STOP
+ * depuis toujours ; WhatsApp, le canal principal, ne le faisait PAS. Un contact qui répondait STOP restait
+ * `opted_in` et recevait la campagne suivante. Il existait bien un contournement (câbler soi-même une
+ * automation à mot-clé vers le bloc « Action »), mais le respect d'un refus ne peut pas dépendre de ce que
+ * chaque client aura pensé à configurer.
+ *
+ * ⚠️ DEUX POINTS D'ORDRE, ET AUCUN N'EST ARBITRAIRE.
+ *
+ * 1. L'opt-out passe APRÈS l'upsert, alors que le RCS le fait en premier. `setOptInByWaId` est merge-only :
+ *    elle n'écrit que sur une fiche EXISTANTE. Le faire avant laisserait donc sans effet le cas qui compte le
+ *    plus, celui du contact inconnu dont le tout premier message est STOP : il serait créé juste après, et
+ *    créé `opted_in`. L'intention du RCS (« que rien qui puisse échouer ne passe avant ») est préservée
+ *    autrement : l'upsert est déjà isolé dans son propre `try`, donc son échec n'empêche pas la tentative.
+ *
+ * 2. Mais il passe AVANT tout ce qui envoie. Le handler appelle `processInbound` avant l'avance de scénario
+ *    et avant les automations : le refus est donc enregistré avant qu'une seule réponse ne parte.
+ *
+ * ⚠️ SEULEMENT LES MESSAGES TEXTE, comme en RCS. Un bouton porte son libellé dans `body` : un bouton
+ * « Stopper la simulation » désabonnerait quelqu'un qui voulait juste sortir d'un parcours.
  */
-export async function processInbound(payload: unknown, store: InboxStore, upsertContact?: InboundContactUpsert): Promise<void> {
+export async function processInbound(
+  payload: unknown,
+  store: InboxStore,
+  upsertContact?: InboundContactUpsert,
+  optOut?: InboundOptOut,
+): Promise<void> {
   for (const m of extractInbound(payload)) {
     const tenantId = await store.phoneNumberTenant(m.phoneNumberId);
     if (!tenantId) continue;
@@ -213,6 +242,18 @@ export async function processInbound(payload: unknown, store: InboxStore, upsert
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('processInbound: auto-création contact ignorée:', err instanceof Error ? err.message : err);
+      }
+    }
+    if (optOut && m.type === 'text' && estDemandeArret(m.body)) {
+      try {
+        const touche = await optOut(tenantId, m.waId);
+        if (!touche) {
+          // eslint-disable-next-line no-console
+          console.error(`STOP WhatsApp reçu de ${m.waId} (${tenantId}) sans fiche contact : rien à désabonner`);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('processInbound: opt-out ignoré:', err instanceof Error ? err.message : err);
       }
     }
     await store.recordInbound(tenantId, m);
