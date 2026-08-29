@@ -1785,7 +1785,13 @@ Vue chronologique par lot. La vue thématique correspondante est dans les sectio
 - **État HubSpot d'un numéro = lecture CROSS-SCHEMA** : mba lit `mmhs.tenant_portals`/`mmhs.portals` (schéma du
   connecteur mm-hubspot, même Supabase) via `getHubspotPortal` (best-effort, catch -> non connecté, jamais de 500).
   Le toggle par-numéro (`phone_numbers.hubspot_connected`) gate le push d'analyse. Bouton « Connecter HubSpot » =
-  lien `mm-hubspot.messagingme.app/oauth/install?tenant=<tenantId>`.
+  lien d'installation **SIGNÉ**, obtenu par `POST /tenants/:tenantId/hubspot/install-link` (route admin, JWT ;
+  le tenant vient du jeton, jamais de l'URL) et consommé par le connecteur en `/oauth/install?t=<jeton>`.
+  ⚠️ **La forme `?tenant=<tenantId>` documentée ici jusqu'au 2026-08-29 NE MARCHE PLUS**, et c'est voulu :
+  elle acceptait n'importe quel identifiant sans authentification, donc n'importe qui pouvait relier SON
+  portail HubSpot au workspace d'un client (faille 1.1 de `PLAN.md`, fermée). Le jeton est un HMAC à durée de
+  vie de 10 minutes ; l'ancienne forme ne survit que derrière `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT`, à
+  `false` en production, et la reposer à `true` rouvrirait la faille à l'identique.
 
 ### Gotchas / décisions (2026-07-16)
 - **Campagne workflow : 3 pannes SILENCIEUSES fermées** (le « envoyé mais rien reçu » persistant). (a) **Cap fréquence 24h RETIRÉ** : `DEFAULT_THRESHOLDS.frequencyWindowMs=0` + garde `t.frequencyWindowMs > 0` (court-circuit, aucune requête). Un garde-fou qui laissait un destinataire `pending` en silence pendant que la campagne se marquait `completed` = panne invisible ; plomberie fréquence conservée + testée (fenêtre >0 la réactive). (b) **Indice de template périmé → 0 destinataire** : un hint `{field, nom}` fantôme mappait `{{1}}` sur un champ inexistant ; le `<select>` affichait « Nom » mais gardait le sel fantôme -> tous sautés. Fix front `selForSource` (coerce un champ inconnu → `sys:name`) + option de garde + campagne 0 destinataire = avertissement ROUGE. (c) **Bouton FLOW à l'envoi (#131009)** : un template à bouton **FLOW** (NAVIGATE) part rejeté sans son composant bouton ; Meta exige `{type:'button', sub_type:'flow', index, parameters:[{type:'action', action:{flow_token}}]}` avec `flow_token` NON vide. mba corrèle la réponse par `_ref` baké dans le flow_json, donc le flow_token peut être n'importe quelle valeur unique (`worker` passe `${waId}-${Date.now()}`). **Vérifié empiriquement contre la Cloud API** avant de coder. Détail transversal : `brain/LEARNINGS.md` 2026-07-16.

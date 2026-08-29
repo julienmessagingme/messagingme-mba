@@ -14,13 +14,44 @@ Pour une session qui démarre sans contexte.
 
 1. **`docs/MBA-ARCHITECTURE.md`** (10 min). Ce que MBA implique pour notre code, et pourquoi le
    chantier n° 1 se construit sans attendre Meta. C'est le document qui donne le sens du reste.
-2. **Ce fichier**, section « Bloc 1 » (le prochain chantier), puis 3, 4, 5.
+2. **Ce fichier**, la section **« PAR QUOI REPRENDRE »** tout en bas. C'est la seule liste à jour de ce
+   qui reste. Les blocs 1 à 5 plus haut sont l'HISTORIQUE : chaque ligne y porte désormais son état
+   vérifié, mais on n'y entre que pour comprendre un item, pas pour choisir quoi faire.
 3. **`docs/MBA-API-REFERENCE.md`** seulement quand on code un appel MBA. 3 700 lignes, à consulter
    par chapitre, jamais en entier.
 
 Ne PAS relire `AUDIT-SCALE-2026-07-18.md` en entier : les constats qui restent sont déjà résumés ici.
 
-**État au 2026-07-24** : blocs 0, 2, **3** et **1** livrés ET DÉPLOYÉS ; bloc **4 à 10/13** ; bloc A aux 3/5.
+## 🔴 REVUE DU 2026-08-29 : ce document mentait, et voici l'état vérifié
+
+Cinq semaines sans mise à jour. Les **tableaux** des blocs 1 à 5 présentaient encore comme « à faire » des
+items livrés et déployés depuis. La consigne de lecture envoyait droit dessus (« section Bloc 1, le prochain
+chantier »), c'est-à-dire vers quatre failles de sécurité annoncées « exploitables aujourd'hui, sur la prod »
+et dont **deux sont fermées en production**.
+
+Chaque item a été rouvert et jugé **dans le code**, pas sur son message de commit. Les états portés dans les
+tableaux ci-dessous viennent de cette revue. Résultat d'ensemble, sur les 32 items techniques :
+
+| État | Nombre | Ce que ça veut dire |
+|---|---|---|
+| ✅ FAIT | 14 | vérifié dans le code, et pour la plupart en production |
+| 🟡 PARTIEL | 12 | le cœur est fait, un sous-item reste |
+| 🔴 PAS FAIT | 6 | intact |
+
+**Deux documents mentaient, et c'est le résultat le plus utile de cette revue :**
+
+- le **tableau du Bloc 3** présentait ses trois items comme à faire ; ils sont faits depuis la migration 0042.
+  L'en-tête, lui, disait vrai. Deux récits d'état dans le même fichier, c'est un de trop ;
+- le **message du commit `43232c1`** (mm-hubspot) affirme « fin du foot-gun base de prod » et « ce garde-fou
+  évite qu'un run local écrive dessus ». **C'est faux** : le garde-fou posé ne couvre que le cas inverse (la CI
+  sans base). Un `npm run test:integration` lancé en local écrit toujours sur la base de production. Voir 1.4.
+
+Et une doc périmée trouvée au passage : `documentation.md:1788` décrit encore le lien d'installation
+`mm-hubspot.messagingme.app/oauth/install?tenant=<tenantId>`, qui **ne fonctionne plus** (c'est précisément la
+faille 1.1, fermée). Quelqu'un qui suit cette ligne conclura que le connecteur est cassé.
+
+**État au 2026-07-24** (conservé tel quel, il reste le meilleur récit du COMMENT) : blocs 0, 2, **3** et **1**
+livrés ET DÉPLOYÉS ; bloc **4 à 10/13** ; bloc A aux 3/5.
 
 **TOUT est en production et vérifié** (mba VPS = commit `385ec01`, migrations 0042/0043/0044 appliquées, `APP_DATABASE_URL`=6543 + `DB_SSL_CA_FILE` posées, DB_SSL_INSECURE retiré ; mm-hubspot VPS = `d27ba3f`, dépôt GitHub privé). Détail :
 - **Bloc 3** ✅ déployé : migration 0042 (index), frein débit 30/min actif (worker redéployé), CI web.
@@ -159,16 +190,17 @@ d'introduire, et deux tests qui étaient des faux témoins. Tests : 875 -> 886.
 
 ---
 
-## Bloc 1 : sécurité, à fermer avant tout nouveau client (2 à 3 jours)
+## ✅ Bloc 1 : sécurité. Les quatre failles sont FERMÉES en production (revue 2026-08-29)
 
-Ces quatre points sont exploitables aujourd'hui, sur la prod.
+⚠️ Ce bloc annonçait quatre points « exploitables aujourd'hui, sur la prod ». **Aucun ne l'est plus.** Il
+reste deux gestes d'hygiène, sans exploitation possible en l'état.
 
-| # | Action | Constat | Effort |
-|---|---|---|---|
-| 1.1 | `/oauth/install` accepte un `?tenant=` arbitraire **sans authentification** : qui connaît l'identifiant d'un client peut lier son propre portail HubSpot à ce client, et lui servir ses listes de contacts. Faire générer le lien par mba sur une route JWT, jeton court signé, consommé au callback | B5b | M |
-| 1.2 | L'Embedded Signup réaffecte silencieusement un numéro d'un tenant à un autre (`on conflict do update set tenant_id` sans condition). Ajouter la garde `where tenant_id = excluded.tenant_id`, 409 explicite, chemin admin séparé pour la migration voulue. Revalider l'appartenance dans `campaignRunJob` | B5a | S |
-| 1.3 | `POST /card/action` : garde cross-portail contournable en omettant ou en **dupliquant** `portalId`. Pousser le filtre `hub_id` dans le SQL, exiger `portalId`, supprimer le fallback bearer `CARD_SECRET` | B5c | S |
-| 1.4 | mm-hubspot n'a **ni CI ni remote GitHub**, et son `DATABASE_URL` local pointe sur le pooler de **production** où un test fait `delete from conversations`. Pousser sur GitHub, copier la CI de mba, sortir les tests d'intégration de la base de prod, `throw` au lieu de `skipIf` quand `CI` est défini | §5 | S |
+| # | Action | État vérifié le 2026-08-29 |
+|---|---|---|
+| 1.1 | `/oauth/install` acceptait un `?tenant=` arbitraire sans authentification | ✅ **FAIT, et en prod.** Le lien est émis par mba sur une route JWT admin (`src/http/hubspot-install.ts`, tenant pris par `scopeTenant`, jamais dans l'URL) et vérifié côté connecteur (HMAC, TTL 10 min, `timingSafeEqual`, fail-closed si le secret est vide). Le conteneur qui tourne sur le VPS porte bien `HUBSPOT_INSTALL_ALLOW_LEGACY_TENANT=false`. Test : `?tenant=nimporte-qui` rend 400. ⚠️ Le drapeau reste dans le code comme voie de retour : le reposer à `true` rouvrirait la faille à l'identique |
+| 1.2 | L'Embedded Signup réaffectait silencieusement un numéro d'un tenant à un autre | ✅ **FAIT, et en prod, les deux moitiés.** La garde `where tenant_id = excluded.tenant_id` est sur les trois tables (`es-store.pg.ts`), chacune suivie d'un `TenantConflictError` traduit en 409 AVANT tout appel Meta, le tout en transaction. Et la revalidation dans `campaignRunJob` existe et est câblée par le worker. 🔸 Seul déferrage assumé : la route admin de réaffectation VOULUE d'un numéro entre workspaces. C'est une feature d'exploitation, pas un trou |
+| 1.3 | `POST /card/action` : garde cross-portail contournable | 🟡 **La faille est fermée, un geste reste.** `portalId` est exigé (un doublon arrive en tableau, donc 400) et le filtre `hub_id` est poussé dans le SQL des deux routes, avec 404 uniforme (pas d'oracle). Mais le **fallback bearer `CARD_SECRET` est toujours dans le code** (`src/card/auth.ts`), et il court-circuite la signature HubSpot v3. Il est INERTE en prod (vérifié : la variable n'existe ni dans le conteneur ni dans `.env.prod`). Reste : le supprimer, une dizaine de lignes |
+| 1.4 | mm-hubspot sans CI ni remote GitHub, `DATABASE_URL` local sur la prod | 🟡 **Trois quarts faits.** Remote GitHub privé ✅, CI à deux jobs dont un Postgres jetable, et elle tourne vraiment (8 runs verts, les DEUX jobs) ✅, `throw` au lieu de `skipIf` quand `CI` est défini ✅. **PAS fait : sortir le run LOCAL de la base de prod.** Le `.env` de mm-hubspot pointe toujours sur le pooler de production, et rien ne l'empêche. Les dégâts sont bornés au préfixe `itest-`, mais c'est bien une écriture sur la base qui sert les clients. 🔴 **Le message du commit `43232c1` prétend le contraire** |
 
 ---
 
@@ -196,21 +228,43 @@ Arbitrages déjà tranchés par Julien le 2026-07-18, intégrés ci-dessous.
 
 ---
 
-## Bloc 3 : fin de la vague 1 de l'audit (2 jours)
+## ✅ Bloc 3 : FAIT en entier (vérifié le 2026-08-29), déployé
 
-| # | Action | Constat | Effort |
-|---|---|---|---|
-| 3.1 | Deux index : `contacts(tenant_id, created_at desc)` et `conversation_messages(created_at)`, plus les index de clés étrangères manquants. Les deux index existants sur `contacts` sont **partiels**, donc un `where tenant_id = $1` seul fait un seq scan tous tenants confondus | B8c | S |
-| 3.2 | Câbler le rate limiter manquant du worker : une campagne à `ratePerMinute: null` envoie aujourd'hui sans aucun frein | B4 | S |
-| 3.3 | Job CI pour `web/` : `tsc --noEmit` et `build`. Aujourd'hui la CI ne compile jamais le frontend, la première personne à voir une erreur de type est le build Docker de production. Installer eslint, ou supprimer le script `lint` mort et les `eslint-disable` qui ne désactivent rien | §5 | S |
+C'est ce tableau qui a menti le plus longtemps : il présentait ses trois items comme à faire alors qu'ils
+étaient livrés.
+
+| # | Action | État vérifié le 2026-08-29 |
+|---|---|---|
+| 3.1 | Les index manquants | ✅ Migration `0042_scale_indexes.sql`, six index, dont les deux nommés par l'item |
+| 3.2 | Rate limiter du worker | ✅ Point de résolution unique `resolveRatePerMinute` (`src/campaign/pacing.ts`), défaut serveur à 30/min, et le MÊME calcul sert au dimensionnement de l'expiration du job, ce qui évite le désalignement pacing / run-job |
+| 3.3 | Job CI pour `web/` | ✅ Le front est compilé et buildé par la CI |
 
 ---
 
-## Bloc 4 : avant la bascule Railway (8 à 12 jours)
+## Bloc 4 : avant la bascule Railway. 6 faits, 5 partiels, 2 intacts (revue 2026-08-29)
 
 Verdict Railway : **pas prêt**, mais les blocages sont peu nombreux et identifiés. Les deux services
 sont fondamentalement portables (pas d'écriture disque, `PORT` lu de l'environnement, SIGTERM géré,
 sweepers sûrs en multi-réplique).
+
+**État vérifié le 2026-08-29.** Le tableau détaillé qui suit décrit ce que chaque item DEMANDAIT ; cette
+grille dit où il en est. Presque tout ce qui restait est du côté **connecteur** ou attend Railway.
+
+| # | État | Ce qui reste, s'il reste quelque chose |
+|---|---|---|
+| 4.1 | 🟡 PARTIEL | Le cœur est déployé (dormant). Reste : exposer `token_status` dans la réponse de statut de compte et l'afficher, et faire persister le `paused` de run-job (sinon une campagne bloquée par un jeton mort reste `running` en silence) |
+| 4.2 | 🔴 PAS FAIT | Remplacer `'0.0.0.0'` par `'::'` dans les deux `index.ts`, puis rebasculer le healthcheck du compose sur `localhost`. **Attend la bascule Railway** |
+| 4.3 | ✅ FAIT | Pool applicatif en mode transaction via `APP_DATABASE_URL`, pg-boss reste en session |
+| 4.4 | ✅ FAIT | `BACKEND_URL` en `build.args`. Reste seulement l'option B (proxy runtime), différée au groupe Railway |
+| 4.5 | ✅ FAIT | Anti-rejeu HMAC (`v1=<ts>.<nonce>.<hex>`), vérifié de bout en bout |
+| 4.6 | 🟡 PARTIEL | Le cœur est fait (plafond de login par `ip::email`). Reste : borner `trustProxy` sur mba après vérification de la chaîne Cloudflare vers NPM vers Next, remplacer le `trustProxy: true` du connecteur, et porter les compteurs en base pour le multi-réplique |
+| 4.7 | 🟡 PARTIEL | Fait sur mba (`/live` + `/health` avec `select 1` et 503). **Pas sur le connecteur**, dont le `/health` répond 200 même base morte : il ne dit donc rien de son état |
+| 4.8 | 🔴 PAS FAIT | Advisory lock autour de la boucle de `migrate.ts`, sortie en 0 si le verrou est pris, un seul service porteur. **Attend Railway** (sans réplique, le risque est nul) |
+| 4.9 | ✅ FAIT | Heartbeat worker, `/ops`, files 4 vers 8 avec source unique, alerte Telegram |
+| 4.10 | ✅ FAIT | Sweeper de statut et qualité des numéros, avec alertes |
+| 4.11 | 🟡 PARTIEL | Fait sur mba (CA bakée, `DB_SSL_INSECURE` retiré). Reste à faire la même chose **sur le connecteur**, qui tape le même pooler |
+| 4.12 | ✅ FAIT | `tsx` en dependencies dans les deux dépôts |
+| 4.13 | 🟡 PARTIEL | Le runbook est écrit (`DEPLOY.md`). **Le drill n'a jamais été fait** : RPO et RTO restent théoriques. Demande le dashboard Supabase, donc Julien |
 
 | # | Action | Constat | Effort |
 |---|---|---|---|
@@ -234,7 +288,24 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 
 ---
 
-## Bloc 5 : après, par ordre de valeur
+## Bloc 5 : après, par ordre de valeur. 1 fait, 7 partiels, 4 intacts (revue 2026-08-29)
+
+**État vérifié le 2026-08-29**, avant le tableau d'origine qui dit ce que chaque item demandait.
+
+| # | État | Ce qui reste |
+|---|---|---|
+| 5.1 | 🟡 PARTIEL | 🔴 **Le plus important du bloc, et c'est de la conformité.** Le chemin d'écriture existe, mais **la détection de STOP / DESABONNER dans le WhatsApp entrant n'est pas branchée**. Le prédicat est déjà écrit et testé pour le RCS : il s'importe, il ne se recopie pas |
+| 5.2 | 🟡 PARTIEL | `webhook_events` toujours jamais purgée et sans `tenant_id`, donc effacement RGPD structurellement impossible. Plus la rétention configurable sur les conversations et analyses |
+| 5.3 | 🟡 PARTIEL | La file `agent-turn` a apporté une partie du mécanisme. Reste : `groupId = tenantId` à l'enfilage, découper `campaign-run` en lots, et surtout **déplacer le throttle au niveau du NUMÉRO** |
+| 5.4 | 🔴 PAS FAIT | L'item entier. Bloquant dès qu'un client veut un second numéro |
+| 5.5 | 🔴 PAS FAIT | L'item entier. Aggravant intact : l'erreur Meta de plafond n'est ni retryable ni terminale |
+| 5.6 | 🟡 PARTIEL | L'extraction est faite (audit du 2026-08-18). Reste : remplacer le repli de `scope.ts` par un refus, et rendre la garde de boot exhaustive **par construction** plutôt qu'énumérée à la main, puisque c'est l'énumération manuelle qui a laissé passer les trous |
+| 5.7 | 🔴 PAS FAIT | `schemaVersion` dans le contrat vers le connecteur, et zod sur les VALEURS d'enum |
+| 5.8 | 🟡 PARTIEL | Pagination Contacts non exposée (ou au minimum dire que la liste est tronquée à 500), `AbortController`, et un `catch` silencieux à remplacer par un état d'erreur affiché |
+| 5.9 | 🔴 PAS FAIT | Et légèrement empiré : la divergence de `ssl.ts` fait que le durcissement de 4.11 ne protège pas le connecteur |
+| 5.10 | ✅ FAIT | Code mort nettoyé et les quatre commentaires mensongers corrigés |
+| 5.11 | 🟡 PARTIEL | Le travail a changé de fichier sans être fait. Le volume à extraire du worker a été multiplié par près de 8 |
+| 5.12 | 🟡 PARTIEL | Préalable jamais fait, et il bloque aussi 4.13 : relever le plan Supabase réel au dashboard |
 
 | # | Action | Constat | Effort |
 |---|---|---|---|
@@ -260,6 +331,60 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 - **Un template Marketing FR à variable** à faire approuver.
 - **Les vérifications visuelles accumulées** (Palier 3 B2, Palier 2, Lots 7, 8 et 9), détaillées dans `todo.md`, plus les 8 items du bloc 2 livrés le 2026-07-20 et jamais vus à l'écran.
 - **MBA** : accepter les Terms of Service Meta Business Agent dans WhatsApp Manager le jour où l'onglet apparaît, et les Tech Provider ToS dans le portail développeur. Rien de tout ceci n'est faisable par API, et les deux veilles alertent sur Telegram quand ça bouge.
+
+---
+
+## 🔴 PAR QUOI REPRENDRE (revue du 2026-08-29)
+
+Ordonné par **valeur réelle**, pas par numéro. C'est la seule liste à suivre ; les blocs ci-dessus sont
+l'historique.
+
+### 1. Conformité, et c'est le seul vrai trou qui reste : l'opt-out WhatsApp (5.1) — M
+
+Un contact qui écrit STOP n'est **pas** désinscrit. Le chemin d'écriture existe, le prédicat de détection
+existe (écrit et testé pour le RCS), ils ne sont simplement pas reliés sur le canal WhatsApp. C'est de la
+conformité, pas du confort, et l'audit prévenait déjà de le remonter en bloc 1 avant tout envoi marketing en
+volume. **À faire avant le prochain client, et avant toute campagne.**
+
+### 2. Deux gestes d'hygiène de sécurité, courts, sans exploitation possible aujourd'hui — S
+
+- **1.3** : supprimer le fallback bearer `CARD_SECRET` du connecteur. Inerte en prod, mais il revient vivant
+  le jour où quelqu'un repose la variable pour un debug curl.
+- **1.4** : refuser un `test:integration` local dont l'hôte de base n'est ni `localhost` ni `127.0.0.1`, sauf
+  drapeau explicite. Aujourd'hui rien n'empêche un run local d'écrire sur la base des clients, et le message
+  de commit qui prétend le contraire rend le piège pire, pas meilleur.
+
+### 3. Le connecteur est le parent pauvre de tout le durcissement — M
+
+Trois items ont été faits sur mba et **jamais portés sur mm-hubspot**, alors qu'il tape la même base et sert
+les mêmes clients : **4.7** (son `/health` ment, il répond 200 base morte), **4.11** (pas de vérification TLS
+du pooler), **4.6b** (`trustProxy: true`). Les trois se traitent en une passe, dans un seul dépôt.
+
+### 4. Ce qui attend Julien et rien d'autre — S de temps, mais bloquant
+
+- **4.13-drill et 5.12** : relever le plan de backup au dashboard Supabase. Ce seul relevé débloque le RPO
+  réel, le drill de restauration, ET la décision de sortir du plan partagé. Trois items pour un login.
+- **H1, H2, H3** : Phase 3 HubSpot, App Review Meta, template Marketing FR. Aucun code.
+
+### 5. Ce qui attend la bascule Railway, et seulement elle
+
+**4.2** (bind IPv6) et **4.8** (advisory lock de migration). Sans réplique et sans réseau privé IPv6, ni l'un
+ni l'autre ne protège de quoi que ce soit aujourd'hui. Les faire maintenant serait du travail rangé d'avance.
+
+### 6. Le reste, par valeur décroissante
+
+**5.2** (rétention et purge, RGPD structurel), **5.6** (garde de boot exhaustive par construction), **5.4**
+(multi-numéro, bloquant dès qu'un client en veut deux), **5.3** (throttle au niveau du numéro), **5.5**, puis
+**5.7**, **5.8**, **5.9**, **5.11**.
+
+### Ce qui ne devrait PLUS être fait
+
+- **H4, les vérifications visuelles accumulées.** Un écran regardé ne laisse aucune trace : l'item est
+  invérifiable par construction et il ne se videra jamais. À reconstruire depuis ce qui reste réellement
+  ouvert dans `todo.md`, ou à supprimer.
+- **La route admin de réaffectation d'un numéro** (le reste de 1.2). Elle est listée comme un item de
+  sécurité alors que la faille est fermée : c'est une feature d'exploitation, à traiter comme telle, le jour
+  où quelqu'un en a besoin.
 
 ---
 
