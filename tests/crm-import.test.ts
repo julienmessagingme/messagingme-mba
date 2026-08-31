@@ -120,6 +120,17 @@ describe('importContacts', () => {
     expect(contacts.byPhone.size).toBe(1);
   });
 
+  it('fichier entièrement invalide -> le COMPTE est exact, la liste d\'erreurs est plafonnée', async () => {
+    // Depuis que la route accepte 8 Mo, un fichier sans aucun téléphone produirait autant d'entrées que de
+    // lignes, soit une réponse de plusieurs mégaoctets pour un écran qui n'en affiche que cinq.
+    const contacts = new FakeContactStore();
+    const userFields = new FakeFieldStore();
+    const rows = Array.from({ length: 300 }, () => ({ tel: '', nom: 'X', ville: '', interne: '' }));
+    const report = await importContacts({ rows, mapping, tenantId: 't1', optIn: false }, { contacts, userFields });
+    expect(report.skipped).toBe(300);
+    expect(report.errors).toHaveLength(100);
+  });
+
   it('aucune ligne valide -> AUCUN lot envoyé (pas de requête vide)', async () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();

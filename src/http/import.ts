@@ -76,9 +76,11 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
   const guard = requireAuth ? { preHandler: requireAuth } : {};
   const journal = makeJournal(deps.audit);
   // Le CSV COMPLET transite dans le corps : le plafond global de 1 Mo tombait vers 14 000 lignes, en anglais
-  // et sans dire quoi faire. 8 Mo, soit environ 150 000 contacts, très au-delà de tout import réel. Pas plus :
-  // le corps est parsé D'UN BLOC (mesuré : ~100 ms pour 5 Mo ici, quelques centaines de ms sur le VPS), et
-  // pendant ce temps l'API ne répond à personne d'autre.
+  // et sans dire quoi faire. 8 Mo, soit environ 150 000 contacts, très au-delà de tout import réel. Pas plus,
+  // pour deux raisons MESURÉES le 2026-08-31 : le corps est parsé D'UN BLOC (~100 ms pour 5,4 Mo ici, donc
+  // quelques centaines de ms sur le VPS) et pendant ce temps l'API ne répond à personne d'autre ; et 8 Mo de
+  // CSV pèsent ~150 Mo de tas une fois en objets (le conteneur en occupe 130 au repos, sans plafond mémoire,
+  // sur un VPS qui a 17 Go libres : ça passe, mais ce n'est pas une marge à dépenser sans compter).
   const optsImport = { ...guard, bodyLimit: 8 * 1024 * 1024 };
   // L'aperçu, lui, ne reçoit plus que la TÊTE du fichier (cf. `TETE_APERCU_CARACTERES` côté console) : il
   // n'en faut pas plus pour les en-têtes et quatre lignes d'exemple. Le plafond reste large devant cette tête

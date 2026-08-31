@@ -16,7 +16,7 @@ import { cacheCourt } from '../lib/cache-court';
  * ENTRANT, qui arrive dans le worker (autre process, autre cache) : au pire 5 s sur une pastille déjà relue
  * toutes les 30 s.
  */
-export const COMPTEURS_TTL_MS = 5_000;
+const COMPTEURS_TTL_MS = 5_000;
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
 export interface OutboundTemplate {

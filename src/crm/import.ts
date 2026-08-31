@@ -93,6 +93,14 @@ export interface ImportDeps {
 export async function importContacts(input: ImportInput, deps: ImportDeps): Promise<ImportReport> {
   const report: ImportReport = { created: 0, updated: 0, skipped: 0, errors: [] };
   const cols = Object.entries(input.mapping.columns);
+  /**
+   * Une erreur par ligne rejetée, PLAFONNÉE. Depuis que la route accepte 8 Mo, un fichier dont aucune ligne
+   * n'a de téléphone produirait 150 000 entrées, donc une réponse de plusieurs mégaoctets pour un écran qui
+   * n'en affiche que cinq. Le COMPTE (`skipped`), lui, reste exact : c'est lui qui dit l'ampleur.
+   */
+  const signaler = (line: number, reason: string): void => {
+    if (report.errors.length < 100) report.errors.push({ line, reason });
+  };
 
   // 1) Enregistrer une fois les champs perso mappés qui n'existent pas encore, et repérer
   //    les collisions (plusieurs en-têtes -> même clé) pour les signaler (perte silencieuse).
@@ -105,7 +113,7 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
   }
   for (const [key, headers] of keyToHeaders) {
     if (headers.length > 1) {
-      report.errors.push({ line: 1, reason: `colonnes fusionnées sur la clé "${key}": ${headers.join(', ')}` });
+      signaler(1, `colonnes fusionnées sur la clé "${key}": ${headers.join(', ')}`);
     }
   }
   // On garde la DÉFINITION (type inclus), pas juste la clé : elle sert à canonicaliser chaque valeur selon
@@ -151,13 +159,13 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     const line = i + 2; // en-tête = ligne 1, 1re donnée = ligne 2
     if (!phoneRaw) {
       report.skipped += 1;
-      report.errors.push({ line, reason: 'pas de téléphone' });
+      signaler(line, 'pas de téléphone');
       continue;
     }
     const p = normalizePhone(phoneRaw, deps.defaultCountry ?? 'FR');
     if (!p.e164) {
       report.skipped += 1;
-      report.errors.push({ line, reason: p.error ?? 'téléphone invalide' });
+      signaler(line, p.error ?? 'téléphone invalide');
       continue;
     }
 
