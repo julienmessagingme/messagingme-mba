@@ -91,7 +91,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   détenez une preuve du consentement, l'écran le dit. **Passer en opt-out** exclut de toute
   campagne, **y compris de celles déjà programmées**, sans toucher à la fiche ni à l'historique.
   **Supprimer est IRRÉVERSIBLE et unique** (2026-08-19) : la fiche, la conversation dans l'Inbox,
-  ses messages et son analyse sont détruits d'un seul geste. Il a existé une suppression douce
+  ses messages, son analyse **et les événements bruts reçus de Meta la concernant** (2026-08-31) sont
+  détruits d'un seul geste. Ces événements bruts, qui portent le texte de ce que la personne a écrit, sont
+  par ailleurs **effacés automatiquement au bout de 30 jours**, qu'on vous le demande ou non. Il a existé une suppression douce
   qui gardait la conversation ; elle laissait le fil dans l'Inbox après coup, personne ne veut
   supprimer un contact à moitié. Les compteurs de campagne restent justes, mais plus personne
   n'est reconnaissable. Il faut **taper le mot SUPPRIMER** pour confirmer.
