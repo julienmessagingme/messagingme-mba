@@ -51,10 +51,10 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0091** (`agent_setup_conversations.bascules`, les moments de bascule un par un),
+**Dernière appliquée : 0092** (`conversation_messages_unread_idx`, l'index partiel des messages ENTRANTS, R7),
 passée le 2026-08-31 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0092.** En pratique on applique aussi via `npm run
-migrate` en local (même Supabase prod).
+`migrate`, vérification en base : l'index est bien listé par `pg_indexes`). **Prochaine libre = 0093.** En
+pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut

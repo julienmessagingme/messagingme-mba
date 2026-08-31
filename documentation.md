@@ -2080,7 +2080,7 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
-## DEPLOYE le 2026-08-31 : R9 et R7, les deux derniers oranges de l'audit (migration 0092)
+## DEPLOYE le 2026-08-31 sur `434d875` : R9 et R7, les deux derniers oranges de l'audit (migration 0092)
 
 ### R9. Le mur de l'import CSV tombait au CHOIX du fichier, pas à l'import
 
