@@ -79,10 +79,17 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Audit de scalabilité et lot de
-  features séquencés ensemble en 6 blocs, avec les efforts et les décisions déjà tranchées.
+- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Sa section **« LE PROGRAMME »** (arrêtée le
+  2026-08-31) est LA liste à suivre : sept lots dans l'ordre, avec le piège de chacun. Tout ce qui la précède
+  est l'historique.
+- [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md) :
+  la synthèse des trois audits, source du programme. ⚠️ Ses constats factuels ont été **revérifiés un par un
+  dans le code** le 2026-08-31 (aucun faux, un sous-estimé) ; ses PRIORITÉS, elles, ont été retriées avec
+  Julien. En cas d'écart, c'est `PLAN.md` qui fait foi.
+- [AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md) : plus aucun rouge ni orange (clos le 2026-08-31).
+  ⚠️ Sa **§7, 23 jaunes**, n'a jamais été ouverte : c'est la dette de performance encore intacte.
 - [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) : le détail de chaque constat de l'audit
-  (référencé par `PLAN.md` sous la forme Bn). Verdict : pas prêt pour des dizaines de clients.
+  (référencé par `PLAN.md` sous la forme Bn). Supplanté par celui d'août quand les deux se recouvrent.
 - [documentation.md](documentation.md) : technique : archi, stack, schéma DB, env, patterns
 - [features.md](features.md) : fonctionnel : les features vues utilisateur, statut
 - [wip.md](wip.md) : ce sur quoi on bosse maintenant

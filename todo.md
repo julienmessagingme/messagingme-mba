@@ -1,5 +1,19 @@
 # todo.md : backlog
 
+## 🔴 Ce qu'on exécute est dans `PLAN.md`, section « LE PROGRAMME » (arrêtée le 2026-08-31)
+
+Sept lots dans l'ordre : (1) codes de plafond Meta, claim atomique de l'avance, recherche de connaissance
+mutualisée, refus du 2e numéro · (2) rétention des conversations, 12 mois · (3) registre de tâches du worker ·
+(4) throttle partagé par numéro · (5) campagnes en lots courts puis concurrence · (6) `CampaignCreateForm` puis
+files webhook séparées · (7) `WorkflowBuilder` puis versions publiées de scénarios.
+
+Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
+ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.
+
+**Deux décisions produit tranchées le 2026-08-31** : **un seul numéro WhatsApp par client** (le chantier
+multi-numéro sort du plan, remplacé par un refus explicite du second) et **conversations gardées 12 mois**
+(plancher de 3 mois donné par Julien, quadruplé parce que l'effacement est irréversible).
+
 ## Audit de scalabilité du 2026-08-25 : les constats retenus (triés le 2026-08-29)
 
 L'audit complet reste `AUDIT-SCALE-2026-08-25.md`. Ce qui suit est le seul reste ACTIONNABLE après

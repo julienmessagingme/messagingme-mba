@@ -1,13 +1,19 @@
-# PLAN.md : plan global (au 2026-07-21)
+# PLAN.md : plan global (programme arrêté le 2026-08-31)
 
-Vue unique de tout ce qui reste, audit de scalabilité **et** lot de features confondus.
-Source des constats : `AUDIT-SCALE-2026-07-18.md` (les références Bn et « Railway n » y renvoient).
-Ce fichier est la référence de séquencement. Le détail d'un constat se lit dans le rapport.
+Ce fichier est la référence de SÉQUENCEMENT. Ce qu'on exécute est la section **« LE PROGRAMME »**, sept lots
+dans l'ordre ; tout ce qui la précède est l'historique, gardé pour son récit.
 
-🔴 **IL EXISTE UN SECOND AUDIT, PLUS RÉCENT : [AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md).** Il
-succède à celui de juillet et re-statue ses bloquants avec des mesures fraîches. **Quand les deux se
-recouvrent, celui d'août tranche.** Ce fichier-ci ne le savait pas, ce qui est la meilleure illustration de
-son problème : un document de séquencement qui ne se met pas à jour envoie travailler sur un état périmé.
+**Les quatre sources de constats**, par ordre d'autorité quand elles se recouvrent :
+[AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md) (la
+plus récente, et ses constats ont été REVÉRIFIÉS dans le code), puis
+[AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md), puis
+[AUDIT-ANTI-SLOP-2026-08-18.md](AUDIT-ANTI-SLOP-2026-08-18.md), puis `AUDIT-SCALE-2026-07-18.md` (les
+références Bn et « Railway n » y renvoient).
+
+🔴 **Un document de séquencement qui ne se met pas à jour envoie travailler sur un état périmé.** Ce fichier
+l'a fait pendant cinq semaines (revue du 2026-08-29 ci-dessous), puis de nouveau pendant deux jours (il
+annonçait R4, R10, R9, R7 ouverts alors qu'ils étaient déployés). Quand un lot est fini, sa ligne bouge ICI,
+le jour même.
 
 **Estimations** : développeur seul, à temps plein. « S » = moins d'une journée, « M » = 1 à 3 jours, « L » = une semaine.
 
@@ -19,9 +25,9 @@ Pour une session qui démarre sans contexte.
 
 1. **`docs/MBA-ARCHITECTURE.md`** (10 min). Ce que MBA implique pour notre code, et pourquoi le
    chantier n° 1 se construit sans attendre Meta. C'est le document qui donne le sens du reste.
-2. **Ce fichier**, la section **« PAR QUOI REPRENDRE »** tout en bas. C'est la seule liste à jour de ce
-   qui reste. Les blocs 1 à 5 plus haut sont l'HISTORIQUE : chaque ligne y porte désormais son état
-   vérifié, mais on n'y entre que pour comprendre un item, pas pour choisir quoi faire.
+2. **Ce fichier**, la section **« LE PROGRAMME »** (arrêté le 2026-08-31). C'est la seule liste à suivre,
+   avec ses sept lots dans l'ordre. Les blocs 0 à 5 plus haut sont l'HISTORIQUE : chaque ligne y porte son
+   état vérifié, mais on n'y entre que pour comprendre un item, jamais pour choisir quoi faire.
 3. **`docs/MBA-API-REFERENCE.md`** seulement quand on code un appel MBA. 3 700 lignes, à consulter
    par chapitre, jamais en entier.
 
@@ -345,10 +351,74 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 
 ---
 
-## 🔴 PAR QUOI REPRENDRE (revue du 2026-08-29)
+## 🔴 LE PROGRAMME (arrêté le 2026-08-31 avec Julien) — c'est LA liste à suivre
 
-Ordonné par **valeur réelle**, pas par numéro. C'est la seule liste à suivre ; les blocs ci-dessus sont
-l'historique.
+Les blocs 0 à 5 plus haut sont l'HISTORIQUE. Ce programme-ci est ce qu'on exécute, dans cet ordre.
+
+**Origine.** Les trois audits (`AUDIT-SCALE-2026-07-18`, `AUDIT-ANTI-SLOP-2026-08-18`,
+`AUDIT-SCALE-2026-08-25`) plus la synthèse `AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md`, dont **chaque
+constat factuel a été revérifié dans le code le 2026-08-31** (codes Meta, limiteur par run, absence de
+concurrence sur `campaign-run`, `setStateSiEncoreSur` à un seul appelant, absence de version de graphe, file
+`webhook` unique, heartbeat à ligne unique, `GET /nodes`, recherche de connaissance dupliquée, tailles de
+fichiers). Aucun constat faux trouvé, et un sous-estimé : les codes de plafond Meta ne sont pas « non
+classés », ils tombent dans le défaut TERMINAL, donc ils brûlent les destinataires.
+
+### 🔴 Deux règles de méthode, tranchées par Julien le 2026-08-31
+
+1. **On ne conditionne PAS ces chantiers à l'arrivée des clients.** J'avais proposé des déclencheurs (« à la
+   première campagne de 2 000 destinataires ») ; Julien a tranché l'inverse, et son argument est le bon : un
+   quota par numéro ou un claim atomique **se posent à froid**. Sous charge, avec des clients qui râlent,
+   c'est une opération à cœur ouvert. Le commercial est son terrain, pas une condition technique.
+2. **Un refactor n'est pas de la vélocité, c'est du temps de diagnostic quand ça pète.** Un fichier de 1 686
+   lignes à 48 états se paie au pire moment, pas au moment tranquille. Les refactors sont donc des LOTS à part
+   entière, placés AVANT le chantier qui touche le même fichier. ⚠️ Ce qui reste non négociable : **un refactor
+   et un changement de comportement ne partent jamais dans le même commit** — sinon on ne sait pas lequel des
+   deux a cassé.
+
+| Lot | Contenu | Migration | Ce que ça achète |
+|---|---|---|---|
+| **1** | Codes de plafond Meta + pause · claim atomique de l'avance · recherche de connaissance mutualisée · refus explicite du 2e numéro | non | Ce qui casse AUJOURD'HUI |
+| **2** | Rétention des conversations et analyses (12 mois) | oui | Ferme 5.2 pour de bon |
+| **3** | Registre de tâches du `worker.ts`, `register*Jobs` | non | Ranger AVANT d'y ajouter files et timers (lots 5 et 6) |
+| **4** | Throttle partagé par numéro, sur les 4 chemins d'envoi | à voir | Le prérequis de TOUTE concurrence |
+| **5** | Campagnes en lots courts, puis `groupId` + concurrence | non | Une campagne cesse d'être un job de 3 h |
+| **6** | Découpage de `CampaignCreateForm`, puis files webhook séparées | non | L'entrant cesse d'attendre derrière les accusés |
+| **7** | Extraction du `WorkflowBuilder`, puis versions publiées de scénarios | oui | Modifier un scénario cesse de changer les parcours en cours |
+
+**En fil de l'eau, quand le fichier est déjà ouvert** : découpage de `web/lib/api.ts` derrière un barrel, et
+les index des jaunes de la §7 de l'audit du 25 août — dont le `regexp_replace` NON INDEXABLE de la résolution
+`wa_id -> contact`, qui est le chemin le plus chaud du produit (chaque message entrant y passe).
+
+**Le niveau « deux workers »** est largement fermé par les lots 4, 5 et 6. Ce qui restera : heartbeat par
+INSTANCE (aujourd'hui une ligne unique `id='worker'`, donc un worker mort est masqué par un vivant), advisory
+lock des migrations, audit des sweepers, et recalcul du budget de connexions (les pools se multiplient par le
+nombre de process). Une demi-session, le jour où un deuxième worker est voulu.
+
+### Détail des lots, et le piège de chacun
+
+- **Lot 1.** Les codes `130429` et `131048` sont absents des deux listes de `src/meta/errors.ts`, donc traités
+  par le défaut « 4xx sans code connu = terminal » : un plafond Meta ne ralentit pas la campagne, il **échoue
+  définitivement chaque destinataire restant**. Le claim d'avance : `setStateSiEncoreSur` existe, est testé, et
+  n'a qu'UN appelant (le tour d'agent) ; les huit écritures de l'exécuteur passent par `setState`, un `update
+  where id` nu. La course API/worker est atteignable dès aujourd'hui sur les rappels RCS. La recherche de
+  connaissance est recopiée à l'identique entre production et bac à sable, et leurs erreurs ont déjà divergé :
+  c'est le garde-fou anti-hallucination.
+- **Lot 2.** 12 mois, pas 3 : Julien a donné un PLANCHER de 3 mois (RGPD), et l'effacement est irréversible.
+  Quatre fois le plancher, une variable d'environnement pour descendre, dans ce sens-là sans danger.
+- **Lot 4.** Le limiteur est instancié PAR RUN (`run-job.ts`) : deux campagnes du même numéro ont deux budgets.
+  Et les envois inbox, scénario et automation n'ont **aucun** limiteur. Version mono-worker d'abord (registre
+  en mémoire par `phone_number_id`) ; distribué seulement au deuxième worker.
+- **Lot 5.** `queue.work('campaign-run')` ne passe AUCUNE option : un job traite sa campagne jusqu'à
+  épuisement, soit 2 h 47 pour 5 000 destinataires à 30/min. Viser une DURÉE de lot bornée, pas un nombre fixe.
+- **Lot 7.** `workflow_runs` porte `workflow_id` et `current_node`, jamais une version : modifier un bloc
+  change les parcours déjà démarrés. Version partagée référencée, jamais une copie du graphe par run.
+
+---
+
+## Ce qui reste HORS programme, et l'historique des reprises précédentes
+
+Le programme ci-dessus est la liste à suivre. Ce qui suit est ce qui n'y entre pas (parce que ça n'attend que
+Julien, ou une bascule d'infrastructure), plus les reprises précédentes gardées pour leur récit.
 
 ### ~~1. Conformité : l'opt-out WhatsApp (5.1)~~ ✅ FAIT le 2026-08-29, déployé
 
@@ -370,11 +440,15 @@ Le **bloc 1 est clos en entier**, code et production. `CARD_SECRET` n'existe plu
 `/card/context` rend 401 sans signature ET avec un faux bearer), et un `test:integration` local refuse
 désormais tout hôte distant. Détail dans le tableau du bloc 1.
 
-### 3. Le connecteur est le parent pauvre de tout le durcissement — M
+### ~~3. Le connecteur est le parent pauvre du durcissement~~ ✅ FAIT le 2026-08-31, déployé
 
-Trois items ont été faits sur mba et **jamais portés sur mm-hubspot**, alors qu'il tape la même base et sert
-les mêmes clients : **4.7** (son `/health` ment, il répond 200 base morte), **4.11** (pas de vérification TLS
-du pooler), **4.6b** (`trustProxy: true`). Les trois se traitent en une passe, dans un seul dépôt.
+Les trois items faits sur mba et jamais portés sur mm-hubspot sont fermés en une passe : **4.7** (son `/health`
+rendait 200 base morte, il rend 503, et `/live` prend le rôle de cible de redémarrage), **4.11** (CA du pooler
+bakée dans son image, `DB_SSL_INSECURE` retiré du `.env.prod` — il a tourné SIX SEMAINES en chiffré mais non
+vérifié, sur le service qui manipule les jetons OAuth HubSpot déchiffrés), **4.6b** (`trustProxy: true` retiré :
+rien ne lisait `req.ip`, donc zéro changement de comportement). Plus `npm ci --omit=dev`.
+⚠️ Il reste UN trou du même type là-bas, consigné dans le `todo.md` du connecteur : son transport HTTP n'a
+aucun plafond de temps, alors que mba a fermé le sien le même jour.
 
 ### 4. Ce qui attend Julien et rien d'autre — S de temps, mais bloquant
 
@@ -389,9 +463,11 @@ ni l'autre ne protège de quoi que ce soit aujourd'hui. Les faire maintenant ser
 
 ### 6. Le reste, par valeur décroissante
 
-**5.2-reste** (rétention des conversations, dès que le nombre de jours est tranché), **5.6** (garde de boot exhaustive par construction), **5.4**
-(multi-numéro, bloquant dès qu'un client en veut deux), **5.3** (throttle au niveau du numéro), **5.5**, puis
-**5.7**, **5.8**, **5.9**, **5.11**.
+⚠️ Ces numéros sont désormais REPRIS par le programme ci-dessus, qui fait foi : **5.2-reste** = lot 2,
+**5.3** = lot 4, **5.5** = lot 1, **5.4** = tranché (un seul numéro par client, donc refus explicite, lot 1),
+**5.11** = lots 3, 6 et 7. Restent hors programme, par valeur décroissante : **5.6** (garde de boot exhaustive
+par construction), **5.7** (`schemaVersion` du contrat vers le connecteur), **5.8** (pagination et
+`AbortController` côté front), **5.9** (modules infra communs aux deux dépôts).
 
 ### Ce qui ne devrait PLUS être fait
 
@@ -404,11 +480,22 @@ ni l'autre ne protège de quoi que ce soit aujourd'hui. Les faire maintenant ser
 
 ---
 
-## Décisions produit à trancher
+## Décisions produit
+
+### ✅ Tranchées par Julien le 2026-08-31
+
+1. **UN SEUL numéro WhatsApp par client.** Le chantier multi-numéro (5.4, effort L) sort du plan. À la place,
+   un **refus explicite** du second numéro, avec un message clair, dans le lot 1 : aujourd'hui il serait
+   accepté et fusionnerait des conversations en silence. À rouvrir si le produit vend un jour le multi-numéro,
+   et la liste des chemins à propager est dans le §A8 de la synthèse du 2026-08-31.
+2. **Conversations gardées AU MOINS 3 mois** (plancher donné par Julien, motif RGPD). Retenu : **12 mois par
+   défaut**, quatre fois le plancher, parce que l'effacement est irréversible et qu'un an est la durée
+   défendable devant une DSI. Variable d'environnement : descendre est sans danger, c'est l'inverse qui ne se
+   rattrape pas.
+
+### Encore à trancher
 
 Elles changent le coût, pas la faisabilité.
 
-1. **Plusieurs numéros par tenant, oui ou non ?** Si oui, 5.4 coûte L. Si non, c'est S : il suffit de refuser proprement le second numéro au lieu de le casser en silence.
-2. **Quelle rétention par défaut**, et est-ce contractuel ou réglable par client ?
-3. **Le cap anti-répétition marketing** (désactivé en dur depuis le 2026-07-15) reste-t-il la politique des 30 clients ? Si tu le réactives, crée l'index d'abord, sinon la garde coûte plus cher que l'envoi qu'elle protège.
+1. **Le cap anti-répétition marketing** (désactivé en dur depuis le 2026-07-15) reste-t-il la politique des 30 clients ? Si tu le réactives, crée l'index d'abord, sinon la garde coûte plus cher que l'envoi qu'elle protège.
 4. **Le segment CRM qui alimente l'allowlist MBA** : quels critères (tags, opt-in, origine CTWA, ancienneté) et qui a le droit de les modifier ? C'est la brique qui rend `ALLOWLISTED_ONLY` utilisable, et Meta n'en fournit aucun équivalent. À cadrer avant de coder l'écran, pas pendant.
