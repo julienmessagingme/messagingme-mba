@@ -63,4 +63,12 @@ export interface RunReport {
   failed: number;
   paused: boolean;
   reason?: string;
+  /**
+   * Le run s'est arrêté sur sa DURÉE MAXIMALE, et il reste des destinataires en attente (lot 5).
+   *
+   * Distinct de `paused` : personne n'a rien décidé, la campagne reste `running`, et l'appelant la réenfile
+   * pour continuer. C'est ce qui empêche une campagne de 5 000 destinataires d'occuper la file pendant près
+   * de trois heures pendant que celles des autres clients attendent.
+   */
+  reste?: boolean;
 }

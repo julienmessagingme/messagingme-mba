@@ -2,9 +2,11 @@ import { campaignJobExpireSeconds, resolveRatePerMinute } from './pacing';
 
 export interface ScheduleSweepDeps {
   /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. */
-  listDue(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>>;
+  listDue(): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>>;
   /** Enfile le run avec le timeout dimensionné. ⚠️ NON idempotent : deux appels = deux jobs (cf. `enqueue.ts`). */
-  enqueueRun(campaignId: string, expireInSeconds: number): Promise<void>;
+  /** `tenantId` porte le GROUPE de la file (lot 5) : sans lui, une campagne programmée échapperait au
+   *  plafond de concurrence par espace, et un client pourrait occuper toute la file en programmant. */
+  enqueueRun(campaignId: string, tenantId: string, expireInSeconds: number): Promise<void>;
   /** Passe la campagne 'scheduled' -> 'running' (garde status, anti-re-liste). Idempotent. */
   markRunning(campaignId: string): Promise<boolean>;
   /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. MÊME valeur qu'au worker et à
@@ -37,6 +39,7 @@ export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise
     try {
       await deps.enqueueRun(
         c.id,
+        c.tenantId,
         campaignJobExpireSeconds(c.pendingCount, resolveRatePerMinute(c.ratePerMinute, deps.defaultRatePerMinute ?? 0)),
       );
       await deps.markRunning(c.id);

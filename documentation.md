@@ -2080,6 +2080,44 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : LOT 5 du programme, campagnes en lots courts et concurrence (aucune migration)
+
+**Le problème** : `queue.work('campaign-run')` ne passait AUCUNE option, donc aucune concurrence, et un job
+traitait sa campagne **jusqu'à épuisement**. 5 000 destinataires à 30/min, c'est 2 h 47 pendant lesquelles la
+file ne sert personne d'autre. La campagne d'un client bloquait littéralement celles de tous les autres.
+
+**Une DURÉE, pas un nombre de destinataires.** Le run s'arrête entre deux destinataires au bout de
+`CAMPAIGN_RUN_MAX_MS` (2 min), rend `reste: true`, et le job le réenfile. Un nombre fixe serait faux des deux
+côtés : à 1/min un lot de 100 durerait plus d'une heure, à 80/min une minute. C'est le temps d'occupation de
+la file qu'on borne.
+
+🔴 **Deux gardes qui font la différence entre un découpage et une boucle infinie.**
+1. La sortie n'est prise que si du travail a DÉJÀ été fait (`traites > 0`). Sans ça, une durée mal réglée
+   ferait un run qui n'envoie rien, se réenfile, n'envoie rien... pour l'éternité, en tournant à plein régime.
+2. La campagne reste `running` : ce n'est pas une pause, personne n'a rien décidé. Le statut n'est pas
+   réécrit, exactement comme pour l'arrêt du service.
+
+Et la relance se fait **après avoir rendu le verrou**, sinon le job suivant se heurterait à lui et se
+contenterait de demander un rerun, ce qui rallongerait le trajet pour rien.
+
+**La concurrence, désormais sûre.** `concurrency: 4` avec `groupConcurrency: 1`, le groupe étant l'ESPACE :
+quatre runs en parallèle, mais un seul par client. Un client n'attend plus la campagne d'un autre, et deux
+campagnes du même client restent sérialisées (elles partagent de toute façon un seul numéro, donc un seul
+budget d'envoi). 🔴 **Ceci n'est sûr QUE parce que le lot 4 est en place** : sans frein partagé par numéro,
+deux runs en parallèle doubleraient le débit réel, ce que Meta observe et sanctionne.
+
+**La garde statique a payé, deux fois.** Elle exigeait déjà que tout enfilement de `campaign-run` porte son
+expiration ; elle exige maintenant qu'il porte son GROUPE. Elle a immédiatement trouvé **trois enfilements
+sans groupe** : les campagnes programmées, le lancement manuel et le renvoi d'un destinataire. Chacun aurait
+échappé au plafond par espace, c'est-à-dire aurait permis à un seul client d'occuper toute la file, ce que
+la concurrence est précisément censée empêcher.
+
+`enqueueCampaignRun` prend désormais un objet plutôt que quatre paramètres positionnels : à ce nombre on
+finit par en inverser deux, et une inversion entre le compte et le débit ne se voit que sur une campagne
+longue. `getRunSizing` et `listDueScheduled` rendent le `tenantId` au même endroit que le dimensionnement,
+pour ne pas payer une seconde requête à chaque relance.
+
+---
 ## DEPLOYE le 2026-08-31 : LOT 4 du programme, le débit partagé par NUMÉRO (aucune migration)
 
 Le seul frein d'envoi du dépôt était instancié **par run de campagne** : deux campagnes du même numéro avaient

@@ -258,15 +258,18 @@ export class PgCampaignRepo {
   }
 
   /** Débit choisi + nb de destinataires EN ATTENTE : dimensionne le timeout du job de run (pacing.ts). */
-  async getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null> {
-    const res = await this.pool.query<{ rate_per_minute: number | null; pending: string }>(
-      `select c.rate_per_minute,
+  async getRunSizing(campaignId: string): Promise<{ tenantId: string; ratePerMinute: number | null; pendingCount: number } | null> {
+    // `tenant_id` est rendu ICI parce que tout enfilement de run en a besoin : c'est lui le GROUPE de la file
+    // (lot 5), celui sur lequel la concurrence par espace s'applique. Le lire au même endroit que le
+    // dimensionnement évite une seconde requête à chaque relance.
+    const res = await this.pool.query<{ tenant_id: string; rate_per_minute: number | null; pending: string }>(
+      `select c.tenant_id, c.rate_per_minute,
               (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
        from campaigns c where c.id = $1`,
       [campaignId],
     );
     const r = res.rows[0];
-    return r ? { ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) } : null;
+    return r ? { tenantId: r.tenant_id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) } : null;
   }
 
   /** Programme une campagne pour un lancement futur (scopé tenant). Seul un brouillon ou une campagne en pause
@@ -292,15 +295,15 @@ export class PgCampaignRepo {
 
   /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. Le sweeper les
    *  enfile puis les passe en 'running'. Cross-tenant (le sweeper tourne pour tous). */
-  async listDueScheduled(now: Date = new Date()): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
-    const res = await this.pool.query<{ id: string; rate_per_minute: number | null; pending: string }>(
-      `select c.id, c.rate_per_minute,
+  async listDueScheduled(now: Date = new Date()): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>> {
+    const res = await this.pool.query<{ id: string; tenant_id: string; rate_per_minute: number | null; pending: string }>(
+      `select c.id, c.tenant_id, c.rate_per_minute,
               (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
        from campaigns c
        where c.status = 'scheduled' and c.scheduled_at <= $1`,
       [now.toISOString()],
     );
-    return res.rows.map((r) => ({ id: r.id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
+    return res.rows.map((r) => ({ id: r.id, tenantId: r.tenant_id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
   }
 
   /** Passe une campagne programmée en 'running' (claim du sweeper, garde `status='scheduled'` anti-double).
@@ -697,16 +700,16 @@ export class PgCampaignRepo {
    * `webhook_id is not null`). Le garder à côté ferait deux requêtes par minute pour une seule question, et
    * l'ancien ne savait pas voir qu'un run tournait déjà : il empilait un job de plus à chaque passage.
    */
-  async listCampagnesGelees(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
-    const res = await this.pool.query<{ id: string; rate_per_minute: number | null; pending: string }>(
-      `select c.id, c.rate_per_minute,
+  async listCampagnesGelees(): Promise<Array<{ id: string; tenantId: string; ratePerMinute: number | null; pendingCount: number }>> {
+    const res = await this.pool.query<{ id: string; tenant_id: string; rate_per_minute: number | null; pending: string }>(
+      `select c.id, c.tenant_id, c.rate_per_minute,
               (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
        from campaigns c
        where c.status = 'running'
          and exists (select 1 from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')
          and not exists (select 1 from campaign_run_locks l where l.campaign_id = c.id and l.expires_at > now())`,
     );
-    return res.rows.map((r) => ({ id: r.id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
+    return res.rows.map((r) => ({ id: r.id, tenantId: r.tenant_id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
   }
 
   /**

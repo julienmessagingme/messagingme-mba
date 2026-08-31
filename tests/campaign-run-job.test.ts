@@ -575,3 +575,43 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     expect(report).toMatchObject({ sent: 1 });
   });
 });
+
+/**
+ * LOTS COURTS (lot 5 du programme, 2026-08-31) : quand le run rend la main sur sa durée, c'est le job qui le
+ * REPART. Sans cette relance, la campagne attendrait le balayage de reprise (une minute) entre chaque lot,
+ * ce qui rallongerait une campagne de plusieurs heures d'autant de minutes qu'elle a de lots.
+ */
+describe('campaignRunJob : un lot qui rend la main se réenfile', () => {
+  it('🔴 rapport avec `reste` -> relance, APRÈS avoir rendu le verrou', async () => {
+    const relances: string[] = [];
+    const verrou = new VerrouFake('jeton-1', false);
+    const rapport = await campaignRunJob(
+      { campaignId: 'c1' },
+      avecVerrou(verrou, {
+        getCampaign: async () => campaign,
+        // Deux destinataires, et le moteur s'arrête sur sa durée dès le PREMIER traité : il en reste un.
+        recipients: new FakeRecipients([
+          { id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' },
+          { id: 'r2', contactId: 'y', toE164: '+33622', resolvedParams: [], status: 'pending' },
+        ]),
+        dureeMaxMs: 1,
+        now: (() => { let t = 1_000; return () => { t += 10_000; return t; }; })(),
+      }, relances),
+    );
+    expect(rapport.reste).toBe(true);
+    expect(relances).toEqual(['c1']);
+    // 🔴 L'ORDRE compte : le verrou est rendu AVANT la relance, sinon le job suivant se heurterait à lui et
+    // se contenterait de demander un rerun, ce qui rallongerait le trajet pour rien.
+    expect(verrou.rendus).toEqual([{ campaignId: 'c1', holder: 'jeton-1' }]);
+  });
+
+  it('un run qui va au bout ne se relance PAS', async () => {
+    const relances: string[] = [];
+    const rapport = await campaignRunJob(
+      { campaignId: 'c1' },
+      avecVerrou(new VerrouFake('jeton-1', false), { getCampaign: async () => campaign }, relances),
+    );
+    expect(rapport.reste).toBeUndefined();
+    expect(relances).toEqual([]);
+  });
+});

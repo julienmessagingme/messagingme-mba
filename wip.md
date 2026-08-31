@@ -12,12 +12,12 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS : lot 5 du programme (`PLAN.md` § LE PROGRAMME)
+## EN COURS : lot 6 du programme (`PLAN.md` § LE PROGRAMME)
 
-Campagnes en LOTS COURTS : un run réclame un lot borné, le traite, se réenfile s'il reste du travail. Une
-campagne cesse d'être un job de trois heures (5 000 destinataires à 30/min = 2 h 47 aujourd'hui, pendant
-lesquelles la file ne sert personne d'autre). Puis `groupId` et la concurrence, désormais protégée par le
-frein par numéro du lot 4.
+Découpage de `CampaignCreateForm` (1 686 lignes, 48 états), puis séparation des files webhook : les messages
+ENTRANTS d'un côté, les accusés de livraison de l'autre. Une rafale d'accusés de campagne ne doit pas
+retarder la prise en charge d'un message de client. Les fonctions `register*Jobs` du worker viennent avec,
+c'est le lot qui ajoute des files.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 

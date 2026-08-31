@@ -164,6 +164,29 @@ export const schema = z.object({
    * `0` retire le frein. À n'utiliser que pour reproduire un incident.
    */
   PHONE_RATE_PER_MINUTE_MAX: z.coerce.number().default(80),
+  /**
+   * Durée maximale d'un run de campagne avant qu'il rende la main et se réenfile (lot 5). 2 minutes.
+   *
+   * Le but n'est pas d'aller plus vite, c'est de rendre la file ÉQUITABLE : sans découpage, un job traitait
+   * sa campagne jusqu'à épuisement, soit 2 h 47 pour 5 000 destinataires à 30/min, pendant lesquelles les
+   * campagnes des autres clients attendaient. Une DURÉE et non un nombre de destinataires : à 1/min un lot de
+   * 100 durerait plus d'une heure, à 80/min une minute.
+   *
+   * Le prix : un aller-retour de file entre deux lots (la cadence de `campaign-run` est de 5 s), soit
+   * quelques minutes ajoutées sur une campagne de plusieurs heures. `0` retire le découpage.
+   */
+  CAMPAIGN_RUN_MAX_MS: z.coerce.number().default(2 * 60 * 1000),
+  /**
+   * Nombre de runs de campagne traités EN PARALLÈLE par le worker, et plafond par ESPACE (lot 5).
+   *
+   * 🔴 La concurrence n'est sûre QUE parce que le lot 4 est en place : sans un frein partagé par numéro, deux
+   * campagnes en parallèle doubleraient le débit réel du numéro. Ne pas relever l'un sans l'autre.
+   *
+   * Le plafond par espace reste à 1 : un client n'a qu'un numéro (décision produit du 2026-08-31), donc deux
+   * de ses campagnes en parallèle ne gagneraient rien et se disputeraient le même budget. La concurrence sert
+   * à ce qu'un client n'attende pas la campagne d'un AUTRE.
+   */
+  CAMPAIGN_RUN_CONCURRENCY: z.coerce.number().default(4),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

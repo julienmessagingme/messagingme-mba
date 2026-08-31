@@ -140,6 +140,18 @@ export interface EngineDeps {
    */
   arretDemande?: () => boolean;
   /**
+   * Durée maximale d'un run avant qu'il rende la main (lot 5). Au-delà, le run s'arrête ENTRE deux
+   * destinataires, rend `reste: true`, et l'appelant le réenfile. La campagne reste `running` : personne n'a
+   * rien décidé, c'est un découpage du travail, pas une pause.
+   *
+   * Une DURÉE et non un nombre de destinataires : à 1/min un lot de 100 durerait plus d'une heure, à 80/min
+   * il durerait une minute. C'est le temps d'occupation de la file qu'on veut borner, pas le compte.
+   *
+   * Absente OU <= 0 -> aucun découpage, comportement d'avant (fixtures de test, e2e). Les deux formes
+   * disent la même chose, et `0` est celle qu'on écrit dans l'environnement pour retirer le découpage.
+   */
+  dureeMaxMs?: number;
+  /**
    * Repousse l'échéance du bail du verrou d'exécution. `false` = on ne le tient plus, il faut s'arrêter.
    *
    * Appelé à la même cadence que la relecture de statut. Sans ce renouvellement, le bail devrait couvrir la
@@ -247,9 +259,26 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // on vient d'écrire `running` deux lignes plus haut, relire tout de suite ne pourrait rien apprendre.
   const pasDeControle = deps.statusPollMs ?? DEFAULT_STATUS_POLL_MS;
   let dernierControle = now();
+  // Horloge du LOT : un run travaille au plus `dureeMaxMs`, puis rend la main et se fait réenfiler.
+  const debutDuLot = now();
 
   for (const r of pending) {
     if (r.status === 'sent') continue; // idempotence défensive
+
+    // 🔴 DURÉE MAXIMALE DU LOT (lot 5). Sans elle, un job traitait sa campagne jusqu'à épuisement : 5 000
+    // destinataires à 30/min, c'est 2 h 47 pendant lesquelles la file `campaign-run` ne sert PERSONNE
+    // d'autre. On s'arrête donc entre deux destinataires, exactement comme pour l'arrêt du service : rien
+    // n'est réservé, rien n'est envoyé, le suivant reste `pending`.
+    //
+    // ⚠️ Le test est placé APRÈS le premier tour de boucle par construction (il compare à `debutDuLot`), et
+    // surtout la sortie n'est prise QUE si du travail a déjà été fait (`report.sent + report.failed +
+    // report.skipped > 0`). Sans cette condition, une durée mal réglée ferait un run qui n'envoie rien et se
+    // réenfile en boucle, c'est-à-dire une file qui tourne à vide pour l'éternité.
+    const traites = report.sent + report.failed + report.skipped;
+    if (deps.dureeMaxMs !== undefined && deps.dureeMaxMs > 0 && traites > 0 && now() - debutDuLot >= deps.dureeMaxMs) {
+      report.reste = true;
+      return report;
+    }
 
     // ARRÊT DU PROCESS (SIGTERM). Testé à chaque tour, avant toute réservation : le destinataire suivant
     // n'est ni claimé ni envoyé, et il reste `pending` pour la reprise. Le statut n'est PAS réécrit.

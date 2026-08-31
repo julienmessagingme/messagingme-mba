@@ -103,8 +103,8 @@ describe('alignement pacing / run-job (pas de rejeu parallèle)', () => {
  * que ça : le job expirait en plein envoi, pg-boss le rejouait, et le run reparti en parallèle appliquait SON
  * propre limiteur de débit. Le débit réel doublait.
  */
-describe('câblage : tout enfilement de campaign-run est dimensionné', () => {
-  it("aucun `enqueue('campaign-run', ...)` du dépôt n'omet expireInSeconds", async () => {
+describe('câblage : tout enfilement de campaign-run est dimensionné ET groupé', () => {
+  it("aucun `enqueue('campaign-run', ...)` du dépôt n'omet son expiration ni son groupe", async () => {
     const { readFileSync, readdirSync, statSync } = await import('node:fs');
     const { join } = await import('node:path');
     const racine = new URL('../src/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -127,10 +127,14 @@ describe('câblage : tout enfilement de campaign-run est dimensionné', () => {
       // sur une ligne). `enqueueCampaignRun`, lui, dimensionne par construction : il n'est pas concerné.
       for (const m of src.matchAll(/\.enqueue\(\s*'campaign-run'[^\n]*/g)) {
         vus += 1;
-        if (!m[0].includes('expireInSeconds')) fautifs.push(`${f.split('src')[1]} : ${m[0].trim()}`);
+        if (!m[0].includes('expireInSeconds')) fautifs.push(`expiration absente -> ${f.split('src')[1]} : ${m[0].trim()}`);
+        // 🔴 Et le GROUPE, ajouté au lot 5 : un enfilement sans groupe échappe au plafond de concurrence par
+        // espace, donc un seul client peut occuper toute la file. Une campagne programmée y est passée à
+        // travers exactement comme ça, jusqu'à ce que ce test le dise.
+        if (!m[0].includes('groupId')) fautifs.push(`groupe absent -> ${f.split('src')[1]} : ${m[0].trim()}`);
       }
     }
     expect(vus, 'le test doit VRAIMENT trouver des enfilements, sinon il ne prouve rien').toBeGreaterThan(0);
-    expect(fautifs, 'un enfilement de campaign-run sans expireInSeconds retombe sur 15 min et se fait rejouer en parallèle').toEqual([]);
+    expect(fautifs, 'un enfilement de campaign-run doit porter SON EXPIRATION (sinon rejeu parallèle) et SON GROUPE (sinon un client occupe toute la file)').toEqual([]);
   });
 });

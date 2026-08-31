@@ -59,7 +59,8 @@ export interface V1SendsRouteDeps {
   createContactByPhone(tenantId: string, phoneE164: string): Promise<{ id: string }>;
   listContactsForBuildByIds(tenantId: string, ids: string[]): Promise<BuildContact[]>;
   createSend(input: V1SendCreateInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }>;
-  enqueue(campaignId: string, pendingCount: number, ratePerMinute: number | null): Promise<void>;
+  /** `tenantId` porte le GROUPE de la file (lot 5) : la concurrence des runs est plafonnée par espace. */
+  enqueue(campaignId: string, tenantId: string, pendingCount: number, ratePerMinute: number | null): Promise<void>;
   idempotencyClaim(tenantId: string, key: string): Promise<IdempotencyClaim>;
   idempotencyComplete(tenantId: string, key: string, sendId: string, response: unknown): Promise<void>;
   idempotencyRelease(tenantId: string, key: string): Promise<void>;
@@ -252,7 +253,7 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     for (let attempt = 0; attempt < ENQUEUE_MAX_ATTEMPTS; attempt += 1) {
       try {
-        await deps.enqueue(report.sendId, report.recipientCount, ratePerMinute);
+        await deps.enqueue(report.sendId, tenantId, report.recipientCount, ratePerMinute);
         break;
       } catch (err) {
         const last = attempt === ENQUEUE_MAX_ATTEMPTS - 1;

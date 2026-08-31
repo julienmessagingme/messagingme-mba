@@ -70,6 +70,10 @@ export interface RunJobDeps extends Pick<
   };
   /** L'arrêt du service a-t-il été demandé (SIGTERM) ? Absent = le run va jusqu'au bout, comme avant. */
   arretDemande?: () => boolean;
+  /** Durée maximale d'un run avant qu'il rende la main et se réenfile (lot 5). Absente -> aucun découpage. */
+  dureeMaxMs?: number;
+  /** Horloge du moteur. Injectée par les tests pour éprouver la coupure de lot sans attendre. */
+  now?: () => number;
 }
 
 
@@ -178,6 +182,8 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
     ...(deps.arretDemande ? { arretDemande: deps.arretDemande } : {}),
+    ...(deps.dureeMaxMs !== undefined ? { dureeMaxMs: deps.dureeMaxMs } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
   };
 
   const serialisation = deps.serialisation;
@@ -215,6 +221,11 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
       renouvelerVerrou: () => serialisation.verrou.renouveler(campaignId, campaign.tenantId, jeton),
     });
     await rendreLeVerrou(true);
+    // Le lot s'est arrêté sur sa durée : il reste du travail, on repart. APRÈS avoir rendu le verrou, sinon
+    // le job suivant se heurterait à lui et se contenterait de demander une relance, ce qui rallongerait le
+    // trajet pour rien. `relancer` ne réenfile que s'il reste vraiment des destinataires en attente : deux
+    // relances concurrentes ne font donc pas clignoter le statut de la campagne.
+    if (rapport.reste) await serialisation.relancer(campaignId);
     return rapport;
   } catch (err) {
     // Le verrou est rendu même sur échec, sinon la campagne resterait bloquée jusqu'au bout de son bail. Sans

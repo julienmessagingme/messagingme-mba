@@ -388,7 +388,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // `Queue.enqueue`, où le `singletonKey` qu'on croyait protecteur a été retiré). Le claim atomique par
     // destinataire reste le seul garde-fou, et il ne garantit que l'absence de double-envoi, pas le débit.
     try {
-      await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
+      // `groupId` = l'espace : le plafond de concurrence par espace de la file s'applique aussi au lancement
+      // manuel, sinon un client qui clique quatre fois occupe les quatre places (lot 5).
+      await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });
     } catch (err) {
       // L'enfilement a échoué APRÈS la levée de pause : on la RÉTABLIT. Sans ça la campagne resterait affichée
       // « en cours » sans qu'aucun job ne tourne, et « Reprendre » ne s'affiche pas sur une campagne en cours :
@@ -419,7 +421,8 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const expireInSeconds = sizing
       ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
       : undefined;
-    await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
+    // Même groupe que partout ailleurs : un renvoi de destinataire ne doit pas échapper au plafond par espace.
+    await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });
     return reply.code(202).send({ enqueued: true, recipientId });
   });
 

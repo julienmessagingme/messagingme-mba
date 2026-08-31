@@ -228,7 +228,7 @@ async function main(): Promise<void> {
     insertRecipient: (campaignId, r) => repo.insertWebhookRecipient(campaignId, r),
     // Un seul arrivant enfilé : `pendingCount` à 1 suffit à dimensionner l'expiration du job, et le débit
     // résolu est le MÊME que celui du run réel (sinon pg-boss rejouerait le job en parallèle).
-    enqueueRun: (c) => enqueueCampaignRun(queue, c.id, 1, resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE)),
+    enqueueRun: (c) => enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: 1, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) }),
   };
 
   // Automations (Lot E) : un événement (message entrant) démarre un scénario. Réutilise TEL QUEL l'exécuteur
@@ -392,6 +392,13 @@ async function main(): Promise<void> {
   // tuait le run en plein envoi et la campagne se figeait sans la moindre erreur visible.
   let arretDemande = false;
 
+  // Concurrence de la file de campagnes (lot 5) : plusieurs runs EN PARALLÈLE, mais un seul par ESPACE
+  // (`localGroupConcurrency: 1`, le groupe étant le tenant, posé à l'enfilement). Un client n'attend donc plus
+  // la campagne d'un AUTRE, et deux campagnes du même client restent sérialisées — elles partagent de toute
+  // façon un seul numéro, donc un seul budget d'envoi.
+  //
+  // 🔴 Ceci n'est sûr QUE parce que le frein par numéro du lot 4 est en place. Sans lui, deux runs en
+  // parallèle doubleraient le débit réel du numéro, ce que Meta observe et sanctionne.
   await queue.work('campaign-run', async (data) => {
     await campaignRunJob(data, {
       getCampaign: (id) => repo.getCampaign(id),
@@ -399,6 +406,8 @@ async function main(): Promise<void> {
       recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
       arretDemande: () => arretDemande,
+      // Le run rend la main au bout de ce délai et se réenfile : la file reste équitable entre clients.
+      dureeMaxMs: config.CAMPAIGN_RUN_MAX_MS,
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
       // Frein par défaut des campagnes sans ratePerMinute (0 = opt-out). Injecté ICI seulement : les tests de
@@ -421,7 +430,7 @@ async function main(): Promise<void> {
         relancer: async (id) => {
           const sizing = await repo.getRunSizing(id);
           if (!sizing || sizing.pendingCount === 0) return;
-          await enqueueCampaignRun(queue, id, sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE));
+          await enqueueCampaignRun(queue, { campaignId: id, tenantId: sizing.tenantId, pendingCount: sizing.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) });
         },
       },
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
@@ -464,7 +473,7 @@ async function main(): Promise<void> {
       // Journalise le template envoyé (campagne DIRECTE) dans le fil de conversation.
       recordOutbound: (tenant, waId, msg) => inboxStore.recordOutboundByWaId(tenant, waId, msg),
     });
-  });
+  }, { concurrency: config.CAMPAIGN_RUN_CONCURRENCY, groupConcurrency: 1 });
 
   // File analyze-conversation (Pièce 1). INERTE tant que CONVERSATION_ANALYSIS_ENABLED != 'true' : aucun worker,
   // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).
@@ -611,7 +620,7 @@ async function main(): Promise<void> {
     try {
       const n = await runCampaignScheduleSweep({
         listDue: () => repo.listDueScheduled(),
-        enqueueRun: (id, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds }),
+        enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
         markRunning: (id) => repo.markScheduledRunning(id),
         defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
         onError: (m, err) => {
@@ -656,7 +665,7 @@ async function main(): Promise<void> {
       const gelees = await repo.listCampagnesGelees();
       for (const c of gelees) {
         try {
-          await enqueueCampaignRun(queue, c.id, c.pendingCount, resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE));
+          await enqueueCampaignRun(queue, { campaignId: c.id, tenantId: c.tenantId, pendingCount: c.pendingCount, resolvedRatePerMinute: resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE) });
         } catch (err) {
           // Par campagne : une file qui refuse un job ne doit pas empêcher les autres de repartir.
           // eslint-disable-next-line no-console
@@ -730,12 +739,14 @@ async function main(): Promise<void> {
           // ce chemin, qui n'en passait simplement pas.
           enqueueRun: async (id) => {
             const sizing = await repo.getRunSizing(id);
-            await enqueueCampaignRun(
-              queue,
-              id,
-              sizing?.pendingCount ?? 0,
-              resolveRatePerMinute(sizing?.ratePerMinute ?? null, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
-            );
+            // Campagne introuvable (supprimée entre la liste et la relance) : rien à réenfiler.
+            if (!sizing) return;
+            await enqueueCampaignRun(queue, {
+              campaignId: id,
+              tenantId: sizing.tenantId,
+              pendingCount: sizing.pendingCount,
+              resolvedRatePerMinute: resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
+            });
           },
           flagUnreachable: async (tenantId, e164) => {
             await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);

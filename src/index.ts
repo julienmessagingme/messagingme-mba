@@ -1188,8 +1188,13 @@ async function main(): Promise<void> {
         createContactByPhone: (tenant, phone) => contactStore.upsertByPhoneReturningId({ tenantId: tenant, phoneE164: phone, profileName: null, fields: {}, optInStatus: 'unknown' }),
         listContactsForBuildByIds: (tenant, ids) => repo.listContactsForBuildByIds(tenant, ids),
         createSend: (input, recipients) => repo.createWithRecipients(input, recipients),
-        enqueue: (campaignId, count, rate) =>
-          enqueueCampaignRun(queue, campaignId, count, resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE)),
+        enqueue: (campaignId, tenantId, count, rate) =>
+          enqueueCampaignRun(queue, {
+            campaignId,
+            tenantId,
+            pendingCount: count,
+            resolvedRatePerMinute: resolveRatePerMinute(rate, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
+          }),
         idempotencyClaim: (tenant, key) => idempotencyStore.claim(tenant, key),
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),

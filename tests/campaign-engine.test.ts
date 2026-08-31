@@ -875,3 +875,71 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     expect(recipients.relaches).toEqual([]);
   });
 });
+
+/**
+ * LOTS COURTS (lot 5 du programme, 2026-08-31).
+ *
+ * Sans découpage, un job traitait sa campagne jusqu'à épuisement : 5 000 destinataires à 30/min, c'est 2 h 47
+ * pendant lesquelles la file `campaign-run` ne sert PERSONNE d'autre. Le run rend désormais la main sur une
+ * DURÉE, et l'appelant le réenfile.
+ */
+describe('runCampaign : lots bornés par la durée', () => {
+  /** Horloge qui avance de `pas` à chaque lecture : la durée est donc franchie après quelques appels. */
+  const horloge = (pas: number) => {
+    let t = 1_000_000_000;
+    return () => { t += pas; return t; };
+  };
+
+  it('🔴 le run s’arrête sur sa durée, annonce qu’il RESTE du travail, et ne touche pas au statut', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    const campaigns = new FakeCampaigns();
+    // 10 s par lecture d'horloge, durée max 1 ms : la sortie tombe dès que du travail a été fait.
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, dureeMaxMs: 1, now: horloge(10_000) }));
+
+    expect(report.reste).toBe(true);
+    expect(report.paused).toBe(false); // ce n'est PAS une pause : personne n'a rien décidé
+    expect(report.sent).toBeGreaterThanOrEqual(1);
+    expect(report.sent).toBeLessThan(3); // ...et tout n'est pas parti
+    // La campagne reste `running` : pas de `completed`, pas de `paused`. C'est ce qui permet de la reprendre.
+    expect(campaigns.statuses).toEqual(['running']);
+  });
+
+  it('🔴 la sortie n’est JAMAIS prise avant d’avoir traité quelqu’un (sinon la file tourne à vide)', async () => {
+    // Un run qui sortirait AVANT d'avoir envoyé quoi que ce soit se réenfilerait sans fin, sans jamais
+    // progresser : une file qui tourne à vide pour l'éternité. La garde est `traites > 0`.
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const report = await runCampaign(campaign, deps({ recipients, sender, dureeMaxMs: 1, now: horloge(10_000) }));
+    expect(report.sent).toBe(1); // le premier destinataire part TOUJOURS
+    expect(report.reste).toBe(true); // et c'est seulement APRÈS que le lot rend la main
+  });
+
+  it('durée à 0 = découpage RETIRÉ (même sens que dans l’environnement), pas « couper tout de suite »', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const report = await runCampaign(campaign, deps({ recipients, sender, dureeMaxMs: 0, now: horloge(10_000) }));
+    expect(report.sent).toBe(2);
+    expect(report.reste).toBeUndefined();
+  });
+
+  it('sans durée injectée -> aucun découpage (comportement d’avant, e2e et fixtures)', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, now: horloge(10_000) }));
+    expect(report.sent).toBe(3);
+    expect(report.reste).toBeUndefined();
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  it('durée NON atteinte -> la campagne va au bout et se termine', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, dureeMaxMs: 10 * 60_000, now: horloge(1) }));
+    expect(report.sent).toBe(2);
+    expect(report.reste).toBeUndefined();
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+});
