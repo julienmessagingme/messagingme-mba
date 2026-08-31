@@ -56,9 +56,10 @@ conversations), passée le 2026-08-31 avec la séquence complète (build de l'im
 migration est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0095.** En pratique on applique
 aussi via `npm run migrate` en local (même Supabase prod).
 
-⚠️ **Cette migration-là ÉTAIT bloquante pour le déploiement** : le code écrit `phone_number_id` à chaque
-webhook entrant. Déployer avant de migrer aurait fait échouer TOUS les entrants, exactement l'incident du
-2026-08-17. C'est le cas d'école de la règle ci-dessus.
+⚠️ **0094 n'est qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit `phone_number_id` à
+chaque webhook entrant, et déployer avant de migrer aurait fait échouer TOUS les entrants, exactement
+l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessus : le type de la migration décide de
+l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
