@@ -86,6 +86,9 @@ test.describe('Agents IA : la fiche', () => {
     await mockAgents(page, patches);
     await page.goto('/agents');
     await page.getByTestId('agent-ligne-ag1').click();
+    // L'onglet d'entrée est « Construire en parlant » depuis le 2026-08-31 : un test qui édite les champs de
+    // la fiche doit DIRE qu'il va sur « Identité et ton », comme le ferait un utilisateur.
+    await page.getByTestId('mba-tab-identite').click();
 
     await page.getByTestId('agent-nom').fill('Léa');
     await page.getByTestId('agent-ton').click(); // sortie du champ précédent
@@ -151,6 +154,9 @@ test.describe('Agents IA : la fiche', () => {
     await mockAgents(page, patches);
     await page.goto('/agents');
     await page.getByTestId('agent-ligne-ag1').click();
+    // L'onglet d'entrée est « Construire en parlant » depuis le 2026-08-31 : un test qui édite les champs de
+    // la fiche doit DIRE qu'il va sur « Identité et ton », comme le ferait un utilisateur.
+    await page.getByTestId('mba-tab-identite').click();
 
     await page.getByTestId('agent-nom').fill('Léa');
     await page.getByTestId('agent-ton').click();
@@ -172,6 +178,7 @@ test.describe('Agents IA : la fiche', () => {
     });
     await page.goto('/agents');
     await page.getByTestId('agent-ligne-ag1').click();
+    await page.getByTestId('mba-tab-identite').click();
     await page.getByTestId('agent-nom').fill('Léa');
     await page.getByTestId('agent-ton').click();
 
