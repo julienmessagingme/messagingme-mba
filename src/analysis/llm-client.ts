@@ -1,4 +1,4 @@
-import { FetchTransport, withRetry, parseRetryAfter, type HttpTransport } from '../meta/http';
+import { FetchTransport, withRetry, parseRetryAfter, type HttpTransport, HTTP_TIMEOUT_MODELE_MS } from '../meta/http';
 import { LlmApiError } from '../llm/errors';
 
 /** Prompt structuré (system + user) attendu par un LLM de chat. */
@@ -37,7 +37,8 @@ export class AnthropicClient implements LlmClient {
     private readonly apiKey: string,
     private readonly model: string,
     private readonly maxTokens: number,
-    private readonly transport: HttpTransport = new FetchTransport(),
+    // Plafond LARGE : un modele a le droit d'etre lent la ou Meta n'en a pas le droit (cf. meta/http.ts).
+    private readonly transport: HttpTransport = new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
   ) {}
 
   async complete(prompt: LlmPrompt): Promise<string> {

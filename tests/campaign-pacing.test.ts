@@ -92,3 +92,45 @@ describe('alignement pacing / run-job (pas de rejeu parallèle)', () => {
     expect(campaignJobExpireSeconds(1000, resolveRatePerMinute(null, 30))).toBe(campaignJobExpireSeconds(1000, 30));
   });
 });
+
+/**
+ * Le dimensionnement ne sert à rien s'il n'est pas BRANCHÉ. Ce test-ci lit le câblage réel, faute de pouvoir
+ * instancier le worker dans un test unitaire : sa fonction `main()` n'est atteignable par aucun test.
+ *
+ * Le trou qu'il ferme, relevé par l'audit du 2026-08-25 et resté ouvert jusqu'au 2026-08-31 : le `retry-sweep`
+ * était le SEUL enfileur de `campaign-run` à ne passer aucun dimensionnement. Il retombait donc sur le défaut
+ * de 15 minutes de la file, alors qu'une relance de plus de ~450 destinataires (à 30/min) dure plus longtemps
+ * que ça : le job expirait en plein envoi, pg-boss le rejouait, et le run reparti en parallèle appliquait SON
+ * propre limiteur de débit. Le débit réel doublait.
+ */
+describe('câblage : tout enfilement de campaign-run est dimensionné', () => {
+  it("aucun `enqueue('campaign-run', ...)` du dépôt n'omet expireInSeconds", async () => {
+    const { readFileSync, readdirSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const racine = new URL('../src/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+
+    const fichiers: string[] = [];
+    const parcourir = (dir: string): void => {
+      for (const e of readdirSync(dir)) {
+        const p = join(dir, e);
+        if (statSync(p).isDirectory()) parcourir(p);
+        else if (p.endsWith('.ts')) fichiers.push(p);
+      }
+    };
+    parcourir(racine);
+
+    const fautifs: string[] = [];
+    let vus = 0;
+    for (const f of fichiers) {
+      const src = readFileSync(f, 'utf8');
+      // Un appel d'enfilement de cette file, avec ce qui suit sur la même ligne (les appels du dépôt tiennent
+      // sur une ligne). `enqueueCampaignRun`, lui, dimensionne par construction : il n'est pas concerné.
+      for (const m of src.matchAll(/\.enqueue\(\s*'campaign-run'[^\n]*/g)) {
+        vus += 1;
+        if (!m[0].includes('expireInSeconds')) fautifs.push(`${f.split('src')[1]} : ${m[0].trim()}`);
+      }
+    }
+    expect(vus, 'le test doit VRAIMENT trouver des enfilements, sinon il ne prouve rien').toBeGreaterThan(0);
+    expect(fautifs, 'un enfilement de campaign-run sans expireInSeconds retombe sur 15 min et se fait rejouer en parallèle').toEqual([]);
+  });
+});

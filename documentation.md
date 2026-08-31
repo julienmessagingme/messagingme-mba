@@ -2080,6 +2080,48 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : les deux restes du lot « journée 1 » (aucune migration)
+
+Deux chemins que le correctif voisin ne couvrait PAS, malgré ce que son intitulé laissait croire.
+
+### Un appel sortant n'avait aucun plafond de temps
+
+Le plafonnement du `Retry-After` bornait l'attente ENTRE deux tentatives, jamais la durée d'UNE requête. Un
+fournisseur qui accepte la connexion et ne répond jamais immobilisait donc le job jusqu'au défaut d'undici, de
+l'ordre de cinq minutes. Sur la file `webhook`, sérialisée (`batchSize: 1`), c'est l'entrant de TOUS les
+clients qui s'arrête derrière un seul appel pendu.
+
+`FetchTransport` porte désormais un plafond **par instance** : 30 s pour un fournisseur d'API ordinaire (Meta,
+HubSpot, dont les réponses se comptent en centaines de millisecondes), **120 s pour un modèle de langage**, qui
+a le droit d'être lent. Un plafond unique aurait forcément été faux pour l'un des deux.
+
+🔴 **Trois choses font la correction, et il en manquait une à l'énoncé de l'audit.**
+1. Le dépassement est **rejouable** (`HttpTimeoutError.retryable`), sinon un silence transitoire ferait échouer
+   un envoi parfaitement rejouable. Ce que ça coûte, écrit noir sur blanc dans le code : la requête est PARTIE,
+   donc un serveur qui répond après 30 s peut recevoir le même envoi deux fois. Le dépôt acceptait déjà ce
+   risque (`ECONNRESET` est rejoué), et le plafond généreux est ce qui le garde théorique.
+2. L'échéance de **l'APPELANT est prioritaire et n'est jamais convertie**. Le cerveau d'un agent passe la
+   sienne : son abandon est une décision (« je n'ai plus le temps »), pas une panne. La convertir en erreur
+   rejouable multiplierait sa limite de temps par le nombre de tentatives. C'est pour ça que le typage passe
+   par une erreur À NOUS plutôt que par un test de `TimeoutError` dans `isRetryable`, qui aurait attrapé les
+   deux cas sans les distinguer.
+3. Le plafond couvre aussi la **lecture du corps**. Sans le test ajouté dans le `catch` de `res.json()`,
+   l'abandon y était ravalé et l'appel rendait `{ status: 200, json: null }` : un SUCCÈS au corps vide.
+
+### Le retry-sweep enfilait sans dimensionner
+
+C'était le SEUL enfileur de `campaign-run` à passer par `queue.enqueue` nu : il retombait sur le défaut de 15
+minutes, alors qu'une relance de plus de ~450 destinataires (à 30/min) dure plus longtemps. Le job expirait en
+plein envoi, pg-boss le rejouait, et le run reparti en parallèle appliquait SON propre limiteur de débit : le
+débit réel doublait. Le plafond de 23 h posé par le lot « journée 1 » ne protégeait pas ce chemin, qui n'en
+passait simplement pas.
+
+Le câblage passe par `enqueueCampaignRun` avec le sizing relu, comme les trois autres appelants. La garde est
+un test STATIQUE (`tests/campaign-pacing.test.ts`) : aucun `enqueue('campaign-run', ...)` du dépôt ne peut
+omettre `expireInSeconds`. Un test de comportement était impossible, le câblage vivant dans le `main()` du
+worker, que rien n'atteint.
+
+---
 ## DEPLOYE le 2026-08-31 sur `434d875` : R9 et R7, les deux derniers oranges de l'audit (migration 0092)
 
 ### R9. Le mur de l'import CSV tombait au CHOIX du fichier, pas à l'import

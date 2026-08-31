@@ -16,18 +16,81 @@ export interface HttpTransport {
   post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse>;
 }
 
+/**
+ * Délai maximum d'un appel sortant quand l'appelant n'en impose pas.
+ *
+ * 30 s pour un fournisseur d'API ordinaire (Meta, HubSpot) : leurs réponses se comptent en centaines de
+ * millisecondes, une seconde au pire. Ce plafond ne coupe donc jamais un appel sain, il ne coupe qu'un
+ * SILENCE. 120 s pour un modèle de langage, qui a le droit d'être lent (une analyse de conversation longue,
+ * un tour d'agent avec outils), et dont les appelants du chemin conversationnel imposent de toute façon leur
+ * propre échéance, plus courte.
+ */
+export const HTTP_TIMEOUT_DEFAUT_MS = 30_000;
+export const HTTP_TIMEOUT_MODELE_MS = 120_000;
+
+/**
+ * Notre propre plafond a coupé l'appel. `retryable` parce qu'un silence est le cas transitoire par
+ * excellence : refuser de rejouer ferait échouer des envois parfaitement rejouables (c'est la mise en garde
+ * explicite de l'audit du 2026-08-25).
+ *
+ * ⚠️ Ce que ça coûte, et qu'il faut savoir : la requête est PARTIE. Si le serveur l'a traitée puis a mis plus
+ * de 30 s à répondre, le rejeu la traite une seconde fois, donc potentiellement un message WhatsApp envoyé
+ * deux fois. Le dépôt acceptait déjà ce risque (`ECONNRESET` est rejoué et peut survenir après émission) ; le
+ * plafond généreux est ce qui le garde théorique.
+ */
+export class HttpTimeoutError extends Error {
+  readonly retryable = true;
+  constructor(url: string, timeoutMs: number) {
+    // L'URL est tronquée : celles de Meta portent des identifiants, et ce message finit dans les journaux.
+    super(`délai dépassé (${timeoutMs} ms) sur ${url.split('?')[0]}`);
+    this.name = 'HttpTimeoutError';
+  }
+}
+
+/** Notre plafond a-t-il coupé cet appel ? `AbortSignal.timeout` fait rejeter `fetch` avec un `TimeoutError`. */
+function estAbandon(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
 export class FetchTransport implements HttpTransport {
+  /**
+   * ⚠️ Le délai est PAR INSTANCE, pas global : un client de modèle se construit avec
+   * `new FetchTransport(HTTP_TIMEOUT_MODELE_MS)`. Un plafond unique serait forcément faux pour l'un des deux
+   * usages, trop court pour un modèle ou inutilement long pour Meta.
+   */
+  constructor(private readonly timeoutMs: number = HTTP_TIMEOUT_DEFAUT_MS) {}
+
   async post(url: string, body: unknown, headers: Record<string, string>, opts?: { signal?: AbortSignal }): Promise<HttpResponse> {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body: JSON.stringify(body),
-      ...(opts?.signal ? { signal: opts.signal } : {}),
-    });
+    // 🔴 Sans plafond, un fournisseur qui accepte la connexion et ne répond jamais immobilise le job (donc le
+    // slot de worker) jusqu'au défaut d'undici, de l'ordre de cinq minutes. Sur la file `webhook`, sérialisée,
+    // c'est l'entrant de TOUS les clients qui s'arrête derrière un seul appel pendu.
+    //
+    // L'échéance de l'APPELANT est prioritaire et laissée intacte : quand le cerveau d'un agent passe la
+    // sienne, son abandon est une DÉCISION (« je n'ai plus le temps »), qu'il ne faut surtout pas convertir en
+    // erreur rejouable, sinon la limite de temps serait multipliée par le nombre de tentatives.
+    const notre = opts?.signal === undefined;
+    const signal = opts?.signal ?? AbortSignal.timeout(this.timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (err) {
+      if (notre && estAbandon(err)) throw new HttpTimeoutError(url, this.timeoutMs);
+      throw err;
+    }
     let json: unknown = null;
     try {
       json = await res.json();
-    } catch {
+    } catch (err) {
+      // 🔴 Distinguer « corps illisible » de « corps COUPÉ ». Le plafond couvre aussi la lecture du corps : un
+      // serveur qui envoie ses en-têtes puis se tait fait échouer ici. Sans ce test, le `catch` avalait
+      // l'abandon et l'appel rendait `{ status: 200, json: null }`, c'est-à-dire un SUCCÈS au corps vide.
+      if (notre && estAbandon(err)) throw new HttpTimeoutError(url, this.timeoutMs);
       json = null;
     }
     const respHeaders: Record<string, string> = {};

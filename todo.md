@@ -372,24 +372,15 @@ de piloter la fenêtre 24 h de Meta ; un besoin « dernier contact tous canaux �
 
 Ce qui reste ouvert est plus bas, section « Étanchéité des canaux : ce que le lot a volontairement laissé ».
 
-## Laissé ouvert par le lot « Journée 1 » de l'audit de scalabilité (2026-08-25)
+## ✅ Laissé ouvert par le lot « Journée 1 », puis FAIT le 2026-08-31
 
-Ces deux points ont été VOLONTAIREMENT écartés du lot pour ne pas le faire déborder. Ils sont consignés ici
-plutôt que perdus : chacun est un chemin que le correctif voisin ne couvre PAS, malgré ce que son intitulé
-laisse croire.
+Les deux chemins que le correctif voisin ne couvrait pas sont fermés : le **plafond de temps d'un appel
+sortant** (30 s pour une API ordinaire, 120 s pour un modèle, l'échéance de l'appelant restant prioritaire) et
+le **dimensionnement de l'enfilement du retry-sweep**. Détail et pièges dans `documentation.md` §Journal des
+lots livrés.
 
-- 🔴 **`FetchTransport.post` n'a AUCUN timeout HTTP** (`src/meta/http.ts:13`). Le plafonnement du
-  `Retry-After` borne l'attente ENTRE deux tentatives, pas la durée d'UNE requête : une connexion qui reste
-  ouverte sans répondre bloque toujours le job de la file `webhook`, donc l'inbox de tous les tenants.
-  ⚠️ Ajouter `AbortSignal.timeout(...)` oblige à classer `TimeoutError` dans `isRetryable`
-  (`src/meta/http.ts:59`), sinon un timeout deviendrait terminal par défaut et ferait échouer des envois
-  parfaitement rejouables.
-- 🔴 **Le retry-sweep enfile `campaign-run` SANS `expireInSeconds`** (`src/worker.ts:560`). C'est le seul
-  appelant de cette file qui ne passe aucun dimensionnement : il retombe donc sur le défaut de 15 minutes, et
-  une relance de plus d'environ 450 destinataires (à 30/min) expire en cours de route puis est rejouée en
-  parallèle, ce qui double le débit réel. Le plafond de 23 h posé par ce lot ne protège PAS ce chemin, qui
-  n'en passe simplement pas. Correctif d'une ligne : réutiliser `enqueueCampaignRun` avec le sizing relu par
-  `getRunSizing`, comme le fait déjà la route de renvoi d'un destinataire (`src/http/campaigns.ts:373-377`).
+⚠️ **Le même trou de plafond existe dans le connecteur** (`mm-hubspot/src/http/transport.ts`), consigné dans
+le `todo.md` de CE dépôt-là.
 
 ## Ouvert par le lot « webhooks entrants » (2026-08-23)
 

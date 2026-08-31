@@ -723,7 +723,21 @@ async function main(): Promise<void> {
           list131026SecondFail: () => repo.listRetry131026SecondFail(),
           resetForRetry: (id) => repo.resetForRetry(id),
           markUnreachableDone: (id) => repo.markUnreachableDone(id),
-          enqueueRun: (id) => queue.enqueue('campaign-run', { campaignId: id }),
+          // 🔴 DIMENSIONNER l'expiration, comme les trois autres enfileurs de cette file. Cet appel était le
+          // SEUL à passer par `queue.enqueue` nu : il retombait donc sur le défaut de 15 minutes, alors qu'une
+          // relance de plus de ~450 destinataires (à 30/min) dure plus longtemps que ça. Le job expirait en
+          // plein envoi, pg-boss le rejouait, et le run reparti en parallèle appliquait SON propre limiteur de
+          // débit : le débit réel doublait. Le plafond de 23 h posé par le lot « journée 1 » ne protégeait pas
+          // ce chemin, qui n'en passait simplement pas.
+          enqueueRun: async (id) => {
+            const sizing = await repo.getRunSizing(id);
+            await enqueueCampaignRun(
+              queue,
+              id,
+              sizing?.pendingCount ?? 0,
+              resolveRatePerMinute(sizing?.ratePerMinute ?? null, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE),
+            );
+          },
           flagUnreachable: async (tenantId, e164) => {
             await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);
           },
