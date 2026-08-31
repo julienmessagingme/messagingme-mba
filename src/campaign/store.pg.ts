@@ -715,6 +715,36 @@ export class PgCampaignRepo {
   }
 
   /**
+   * ARRÊTE une campagne en cours d'envoi. Bornée à `running` et au tenant : false = rien fait (elle n'envoyait
+   * pas, ou elle n'est pas à lui). Le run en vol le voit à sa prochaine relecture de statut (`runCampaign`,
+   * quelques secondes) et sort ; les destinataires non traités restent `pending`.
+   *
+   * `paused` et pas `completed` : c'est une SUSPENSION, et « Reprendre » repart exactement là où on s'est
+   * arrêté. À ne pas confondre avec `stopWebhookCampaign` juste au-dessus, qui est un arrêt DÉFINITIF et ne
+   * concerne que les campagnes au fil de l'eau, lesquelles n'ont aucun autre point final.
+   */
+  async pauseCampaign(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set status = 'paused' where id = $1 and tenant_id = $2 and status = 'running'`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Lève la pause AVANT d'enfiler le run de reprise. Sans cette écriture, le job refuserait de démarrer une
+   * campagne en pause (garde de `campaignRunJob`) et « Reprendre » ne reprendrait rien. Bornée à `paused` :
+   * sur un brouillon ou une campagne déjà en cours, c'est un no-op, et l'appeler sans condition est donc sûr.
+   */
+  async resumeCampaign(campaignId: string, tenantId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update campaigns set status = 'running' where id = $1 and tenant_id = $2 and status = 'paused'`,
+      [campaignId, tenantId],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Une campagne ENCORE VIVANTE se nourrit-elle de ce webhook ? Interroge la route de suppression d'un
    * webhook : la laisser passer transformerait la campagne en coquille « en cours » qui ne recevrait plus
    * jamais rien, sans le moindre signal.
@@ -850,6 +880,15 @@ export class PgCampaignStore implements CampaignStore {
   constructor(private readonly pool: Pool) {}
   async setStatus(campaignId: string, status: CampaignStatus): Promise<void> {
     await this.pool.query(`update campaigns set status = $2 where id = $1`, [campaignId, status]);
+  }
+
+  /** Statut courant, scopé tenant. Sert au run pour voir qu'un opérateur l'a mis en pause. */
+  async getStatus(campaignId: string, tenantId: string): Promise<CampaignStatus | null> {
+    const res = await this.pool.query<{ status: CampaignStatus }>(
+      `select status from campaigns where id = $1 and tenant_id = $2`,
+      [campaignId, tenantId],
+    );
+    return res.rows[0]?.status ?? null;
   }
 }
 

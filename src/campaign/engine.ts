@@ -44,6 +44,15 @@ export interface RecipientStore {
 
 export interface CampaignStore {
   setStatus(campaignId: string, status: Campaign['status']): Promise<void>;
+  /**
+   * Relit le statut COURANT de la campagne en base, pour que le run puisse s'arrêter quand un opérateur la met
+   * en pause pendant l'envoi. Scopé tenant comme toute lecture (le pooler est superuser, la RLS ne joue pas).
+   * `null` = campagne introuvable, traité comme « rien à décider », le run continue.
+   *
+   * OPTIONNEL : absent, le run va jusqu'au bout comme avant. Les fixtures de test et l'e2e n'ont donc rien à
+   * câbler ; la production l'injecte, sans quoi la pause serait un bouton sans effet.
+   */
+  getStatus?(campaignId: string, tenantId: string): Promise<CampaignStatus | null>;
 }
 
 export interface FrequencyStore {
@@ -116,7 +125,17 @@ export interface EngineDeps {
   ) => Promise<void>;
   now?: () => number;
   thresholds?: GuardrailThresholds;
+  /**
+   * Écart minimal entre deux relectures du statut de la campagne (ms). Le contrôle est cadencé par le TEMPS et
+   * non par le nombre de destinataires traités : une campagne à 1 message/minute mettrait sinon des heures à
+   * voir la pause, alors qu'un opérateur qui coupe un mauvais ciblage veut que ça s'arrête tout de suite. Ainsi
+   * le délai de réaction est le même pour toutes (quelques secondes) et le coût est borné, quel que soit le débit.
+   */
+  statusPollMs?: number;
 }
+
+/** Défaut du pas de relecture du statut : au pire une requête indexée toutes les 5 s par run en cours. */
+const DEFAULT_STATUS_POLL_MS = 5_000;
 
 
 const DEFAULT_THRESHOLDS: GuardrailThresholds = {
@@ -137,6 +156,11 @@ const DEFAULT_THRESHOLDS: GuardrailThresholds = {
  * en `sending`, jamais re-listé donc jamais ré-envoyé). Pause et arrête si le quality gate
  * déclenche. Le skip de fréquence est TRANSITOIRE : non persisté, le destinataire reste
  * `pending` et sera ré-évalué au prochain run (fenêtre expirée -> envoyé).
+ *
+ * ARRÊT DEMANDÉ PENDANT L'ENVOI : la boucle relit périodiquement le statut de la campagne et sort dès qu'il
+ * n'est plus `running`. C'est ce qui rend la pause réelle : sans cette relecture, écrire `paused` en base
+ * n'arrêtait rien et une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout. Les destinataires
+ * non traités restent `pending`, donc « Reprendre » repart exactement là où on s'est arrêté.
  */
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {
   const now = deps.now ?? (() => Date.now());
@@ -198,8 +222,28 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     return report;
   }
 
+  // Horloge du contrôle d'arrêt. Partie à MAINTENANT, donc la première relecture n'a lieu qu'un pas plus tard :
+  // on vient d'écrire `running` deux lignes plus haut, relire tout de suite ne pourrait rien apprendre.
+  const pasDeControle = deps.statusPollMs ?? DEFAULT_STATUS_POLL_MS;
+  let dernierControle = now();
+
   for (const r of pending) {
     if (r.status === 'sent') continue; // idempotence défensive
+
+    // ARRÊT DEMANDÉ ? Contrôlé AVANT le claim et avant toute attente de cadence : un destinataire vu après la
+    // pause ne doit être ni réservé ni envoyé. On NE réécrit PAS le statut en sortant : l'état voulu est déjà
+    // en base, c'est l'opérateur qui l'y a mis, et le réécrire écraserait sa décision.
+    // Appel de MÉTHODE, jamais une référence déliée (`const f = deps.campaigns.getStatus`) : `PgCampaignStore`
+    // lit `this.pool`, et une fonction détachée de son objet perdrait son `this`.
+    if (deps.campaigns.getStatus && now() - dernierControle >= pasDeControle) {
+      dernierControle = now();
+      const courant = await deps.campaigns.getStatus(campaign.id, campaign.tenantId);
+      if (courant !== null && courant !== 'running') {
+        report.paused = true;
+        report.reason = courant === 'paused' ? 'campagne mise en pause pendant l\'envoi' : `campagne passée en « ${courant} » pendant l'envoi`;
+        return report;
+      }
+    }
 
     // Quality gate : notion META (rating du numéro WABA). Sur un canal sans numéro Meta, il n'y a rien à
     // interroger, et l'interroger quand même appellerait Graph avec un phoneNumberId vide.

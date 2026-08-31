@@ -570,6 +570,13 @@ export function archiveCampaign(tenantId: string, campaignId: string): Promise<{
 export function stopCampaign(tenantId: string, campaignId: string): Promise<{ stopped: boolean }> {
   return request(`/tenants/${tenantId}/campaigns/${campaignId}/stop`, { method: 'POST' });
 }
+/**
+ * SUSPEND un envoi en cours. Ce qui est déjà parti reste parti ; l'envoi s'interrompt dans les secondes qui
+ * suivent, et « Reprendre » repart au destinataire suivant. 409 si la campagne n'était pas en cours d'envoi.
+ */
+export function pauseCampaign(tenantId: string, campaignId: string): Promise<{ paused: boolean }> {
+  return request(`/tenants/${tenantId}/campaigns/${campaignId}/pause`, { method: 'POST' });
+}
 /** Sort une campagne de l'archive. */
 export function unarchiveCampaign(tenantId: string, campaignId: string): Promise<{ archived: boolean }> {
   return request(`/tenants/${tenantId}/campaigns/${campaignId}/unarchive`, { method: 'POST' });

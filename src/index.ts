@@ -258,6 +258,11 @@ async function main(): Promise<void> {
       // que pour le numéro Meta et l'agent RCS, sur la troisième porte d'entrée possible des destinataires.
       webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
       stopWebhookCampaign: (id, tenant) => repo.stopWebhookCampaign(id, tenant),
+      // Arrêt d'urgence d'un envoi en cours, et son pendant : la reprise lève la pause avant d'enfiler le run.
+      // Les deux vont ensemble, câbler l'un sans l'autre donne soit un bouton sans effet, soit une campagne
+      // qu'on ne peut plus relancer.
+      pauseCampaign: (id, tenant) => repo.pauseCampaign(id, tenant),
+      resumeCampaign: (id, tenant) => repo.resumeCampaign(id, tenant),
       getRunSizing: (id) => repo.getRunSizing(id),
       scheduleCampaign: (id, tenant, when) => repo.scheduleCampaign(id, tenant, when),
       cancelSchedule: (id, tenant) => repo.cancelSchedule(id, tenant),

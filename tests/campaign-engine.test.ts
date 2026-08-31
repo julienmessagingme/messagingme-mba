@@ -658,3 +658,76 @@ describe('runCampaign : campagne alimentée par un webhook', () => {
     expect(campaigns.statuses).toEqual(['running', 'paused']);
   });
 });
+
+/**
+ * ARRÊT D'URGENCE (R13). Avant ce lot, écrire `paused` en base n'arrêtait rien : la boucle ne relisait jamais
+ * le statut, donc une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout.
+ *
+ * `FakeCampaigns` ne porte PAS `getStatus` : c'est voulu. Toute la suite ci-dessus s'exécute donc sans la
+ * moindre relecture, ce qui vérifie au passage que la dépendance optionnelle absente laisse le comportement
+ * historique intact.
+ */
+class FakeCampaignsRelisibles implements CampaignStore {
+  readonly statuses: string[] = [];
+  /** Statuts servis à la relecture, dans l'ordre. Le dernier vaut pour toutes les relectures suivantes. */
+  constructor(private readonly file: Array<Campaign['status']>) {}
+  readonly lues: Array<{ id: string; tenantId: string }> = [];
+  async setStatus(_id: string, status: string): Promise<void> {
+    this.statuses.push(status);
+  }
+  async getStatus(campaignId: string, tenantId: string): Promise<Campaign['status'] | null> {
+    this.lues.push({ id: campaignId, tenantId });
+    return this.file[Math.min(this.lues.length - 1, this.file.length - 1)] ?? null;
+  }
+}
+
+describe('runCampaign : arrêt demandé pendant l’envoi', () => {
+  it('🔴 la campagne passée en pause pendant le run S’ARRÊTE : les destinataires suivants ne sont ni claimés ni envoyés', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    // running au 1er contrôle, paused ensuite. statusPollMs: 0 -> un contrôle par destinataire (horloge figée).
+    const campaigns = new FakeCampaignsRelisibles(['running', 'paused']);
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns, statusPollMs: 0 }));
+    expect(report).toMatchObject({ sent: 1, paused: true });
+    expect(report.reason).toContain('pause');
+    expect(sender.calls).toEqual(['+33611']);
+    expect(recipients.claimed).toEqual(['r1']); // r2 et r3 restent `pending` -> « Reprendre » repart là
+    // Le statut N'EST PAS réécrit en sortant : `paused` est la décision de l'opérateur, la réécrire l'écraserait
+    // (et `completed` mentirait sur une campagne dont il reste des destinataires).
+    expect(campaigns.statuses).toEqual(['running']);
+    expect(campaigns.lues).toEqual([{ id: 'c1', tenantId: 't1' }, { id: 'c1', tenantId: 't1' }]);
+  });
+
+  it('contrôle en sens inverse : statut resté `running` -> la campagne va jusqu’au bout et se termine', async () => {
+    const sender = new FakeSender();
+    const campaigns = new FakeCampaignsRelisibles(['running']);
+    const report = await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
+      sender, campaigns, statusPollMs: 0,
+    }));
+    expect(report).toMatchObject({ sent: 2, paused: false });
+    expect(sender.calls).toEqual(['+33611', '+33622']);
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  it('campagne DISPARUE en cours de route (relecture null) : le run continue, on n’invente pas un arrêt', async () => {
+    const campaigns = new FakeCampaignsRelisibles([null as unknown as Campaign['status']]);
+    const report = await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611')]),
+      campaigns, statusPollMs: 0,
+    }));
+    expect(report).toMatchObject({ sent: 1, paused: false });
+  });
+
+  it('🔴 le contrôle est cadencé par le TEMPS, pas par destinataire : horloge figée -> aucune relecture', async () => {
+    // Sans cadence, ce serait une requête par destinataire, soit 5 000 sur une grosse campagne. Avec une
+    // cadence en NOMBRE de destinataires, une campagne à 1 msg/min mettrait des heures à voir la pause.
+    const campaigns = new FakeCampaignsRelisibles(['paused']);
+    const report = await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]),
+      campaigns, // pas de statusPollMs -> défaut 5 s, et `deps()` fige l'horloge : le pas n'est jamais atteint
+    }));
+    expect(campaigns.lues).toEqual([]);
+    expect(report.sent).toBe(3);
+  });
+});

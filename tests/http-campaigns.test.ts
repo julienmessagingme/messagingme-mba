@@ -76,6 +76,12 @@ interface Deps {
   /** stopWebhookCampaign renvoie ce booléen (défaut true). */
   stopOk?: boolean;
   stopCalls?: Array<{ id: string; tenant: string }>;
+  /** pauseCampaign renvoie ce booléen (défaut true : la campagne était bien en cours d'envoi). */
+  pauseOk?: boolean;
+  /** Journal ORDONNÉ des écritures de statut et de l'enfilement : c'est l'ordre qui porte la garantie. */
+  pauseCalls?: string[];
+  /** Ne câble NI pause NI reprise : reproduit une instance d'avant l'arrêt d'urgence. */
+  sansPause?: boolean;
   /** Brouillons de COMPOSITION. Absent -> les routes ne sont pas montées (dépendance optionnelle). */
   drafts?: CampaignRouteDeps['drafts'];
 }
@@ -92,6 +98,10 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       ...(d.sansWebhook ? {} : {
         webhookUsableByTenant: async () => d.webhookOk ?? true,
         stopWebhookCampaign: async (id: string, tenant: string) => { d.stopCalls?.push({ id, tenant }); return d.stopOk ?? true; },
+      }),
+      ...(d.sansPause ? {} : {
+        pauseCampaign: async (id: string, tenant: string) => { d.pauseCalls?.push(`pause:${id}:${tenant}`); return d.pauseOk ?? true; },
+        resumeCampaign: async (id: string, tenant: string) => { d.pauseCalls?.push(`resume:${id}:${tenant}`); return true; },
       }),
       // Workflow non détenu -> null (comme un getById cross-tenant) ; sinon le graphe (override ou défaut).
       getWorkflowGraph: async () => (d.ownsWorkflow === false ? null : (d.workflowGraph ?? TEMPLATE_ENTRY_GRAPH)),
@@ -750,6 +760,93 @@ describe('POST /tenants/:tenantId/campaigns/:id/stop', () => {
     const app = appWith(new FakeRepo(contacts), {});
     const res = await app.inject({ method: 'POST', url: '/tenants/t2/campaigns/known/stop', ...auth() });
     expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+});
+
+describe('POST /tenants/:tenantId/campaigns/:id/pause (arrêt d’urgence d’un envoi en cours)', () => {
+  it('suspend la campagne en cours, scopée au tenant du jeton', async () => {
+    const pauseCalls: string[] = [];
+    const app = appWith(new FakeRepo(contacts), { pauseCalls });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ paused: true, campaignId: 'known' });
+    expect(pauseCalls).toEqual(['pause:known:t1']);
+    await app.close();
+  });
+
+  it("🔴 campagne qui n'envoie pas -> 409, PAS 404 : « pas à toi » et « pas dans le bon état » sont deux choses", async () => {
+    const app = appWith(new FakeRepo(contacts), { pauseOk: false });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...auth() });
+    expect(res.statusCode).toBe(409);
+    await app.close();
+  });
+
+  it("campagne d'un autre espace -> 404, et on ne l'a jamais suspendue", async () => {
+    const pauseCalls: string[] = [];
+    const app = appWith(new FakeRepo(contacts), { pauseCalls, campaignTenant: 't2' });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...auth() });
+    expect(res.statusCode).toBe(404);
+    expect(pauseCalls).toEqual([]);
+    await app.close();
+  });
+
+  it('réservée aux admins, et le tenant de l’URL ne peut pas désigner l’espace d’un autre', async () => {
+    const app = appWith(new FakeRepo(contacts), {});
+    expect((await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...asAgent() })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url: '/tenants/t2/campaigns/known/pause', ...auth() })).statusCode).toBe(403);
+    await app.close();
+  });
+});
+
+describe('reprise après pause : POST /run lève la pause AVANT d’enfiler', () => {
+  it('🔴 la levée de pause précède l’enfilement (sinon le job refuserait de démarrer et « Reprendre » ne reprendrait rien)', async () => {
+    const pauseCalls: string[] = [];
+    const q = new FakeQueue();
+    // Le journal mêle les deux natures d'appel pour que l'ORDRE soit vérifiable : c'est lui la garantie.
+    const app = appWith(new FakeRepo(contacts), {
+      pauseCalls,
+      queue: new Proxy(q, {
+        get(cible, prop, recepteur) {
+          if (prop !== 'enqueue') return Reflect.get(cible, prop, recepteur) as unknown;
+          return async (...args: Parameters<FakeQueue['enqueue']>) => {
+            pauseCalls.push('enqueue');
+            await q.enqueue(...args);
+          };
+        },
+      }),
+    });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(202);
+    expect(pauseCalls).toEqual(['resume:known:t1', 'enqueue']);
+    await app.close();
+  });
+
+  it("🔴 enfilement en échec APRÈS la levée : la pause est RÉTABLIE, sinon la campagne reste « en cours » sans job et l'opérateur n'a plus de bouton", async () => {
+    const pauseCalls: string[] = [];
+    const app = appWith(new FakeRepo(contacts), {
+      pauseCalls,
+      queue: new Proxy(new FakeQueue(), {
+        get(cible, prop, recepteur) {
+          if (prop !== 'enqueue') return Reflect.get(cible, prop, recepteur) as unknown;
+          return async () => { throw new Error('pool pg saturé'); };
+        },
+      }),
+    });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(500);
+    expect(pauseCalls).toEqual(['resume:known:t1', 'pause:known:t1']);
+    await app.close();
+  });
+
+  it('instance sans arrêt d’urgence câblé : le lancement marche exactement comme avant', async () => {
+    const q = new FakeQueue();
+    const app = appWith(new FakeRepo(contacts), { queue: q, sansPause: true });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(202);
+    expect(q.enqueued).toHaveLength(1);
+    // Et la route de pause n'est alors qu'un refus net, jamais un « suspendu » mensonger.
+    expect((await app.inject({ method: 'POST', url: '/tenants/t1/campaigns/known/pause', ...auth() })).statusCode).toBe(404);
     await app.close();
   });
 });

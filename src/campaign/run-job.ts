@@ -74,6 +74,19 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     return { sent: 0, skipped: 0, failed: 0, paused: false, reason: "campagne au fil de l'eau arrêtée" };
   }
 
+  // Campagne MISE EN PAUSE. Un job a pu être enfilé avant la pause et ne démarrer qu'après (la file ne
+  // déduplique rien, cf. `Queue.enqueue` : plusieurs peuvent même attendre). L'exécuter la RESSUSCITERAIT,
+  // puisque le moteur remet toute campagne en `running` à son démarrage : l'envoi repartirait alors que
+  // l'opérateur vient de le couper, ce qui est exactement ce que la pause doit empêcher. La reprise est donc
+  // EXPLICITE : `POST /run` repasse la campagne en `running` AVANT d'enfiler son job.
+  //
+  // Conséquence voulue, sur un chemin qui n'est pas celui de l'opérateur : le balayage d'auto-relance (F6)
+  // n'insiste plus sur une campagne en pause. Il la relançait, le quality gate la remettait aussitôt en pause,
+  // et la relance était perdue. Elle attend maintenant une reprise décidée.
+  if (campaign.status === 'paused') {
+    return { sent: 0, skipped: 0, failed: 0, paused: true, reason: 'campagne en pause' };
+  }
+
   // Garde d'appartenance du numéro (optionnelle, injectée en prod par le worker). Si le numéro a été réaffecté à un
   // autre tenant depuis la création de la campagne, on n'envoie RIEN et on remonte la raison dans le rapport (pas de
   // colonne dédiée) plutôt que d'envoyer depuis un numéro qui n'est plus le nôtre.

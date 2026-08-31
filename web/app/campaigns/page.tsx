@@ -22,6 +22,7 @@ import {
   archiveCampaign,
   unarchiveCampaign,
   stopCampaign,
+  pauseCampaign,
   deleteCampaign,
   getTemplateStats,
   type CampaignSummary,
@@ -210,6 +211,24 @@ function CampaignsInner({ session }: { session: Session }) {
     if (!ok) return;
     await mutateAndReload(c.id, () => stopCampaign(session.tenantId, c.id), t('Arrêt impossible', 'Stop failed'));
   }
+  /**
+   * SUSPEND un envoi en cours : c'est le geste d'urgence quand on s'aperçoit qu'on vise mal. Sans confirmation,
+   * justement parce qu'il est urgent et réversible (« Reprendre » repart au destinataire suivant). Ce qui est
+   * déjà parti reste parti : aucun message WhatsApp livré ne se rappelle.
+   *
+   * On ne referme PAS le panneau de détail (contrairement à `mutateAndReload`) : c'est là qu'on lit combien
+   * sont partis avant la coupure, et c'est la première chose qu'on veut voir.
+   */
+  async function pause(c: CampaignSummary) {
+    setError(null);
+    try {
+      await pauseCampaign(session.tenantId, c.id);
+      await reload();
+      if (detail?.id === c.id) await openDetail(c.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Suspension impossible', 'Pause failed'));
+    }
+  }
   async function remove(c: CampaignSummary) {
     const ok = window.confirm(t(
       `Supprimer définitivement « ${c.name} » ? Cette campagne n'a jamais rien envoyé, elle sera effacée pour de bon.`,
@@ -383,6 +402,19 @@ function CampaignsInner({ session }: { session: Session }) {
                         className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
                       >
                         {c.status === 'paused' ? t('Reprendre', 'Resume') : t('Lancer', 'Launch')}
+                      </button>
+                    )}
+                    {/* ARRÊT D'URGENCE d'un envoi en cours. Jusqu'ici une campagne lancée n'avait aucun frein :
+                        une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout. L'envoi s'arrête
+                        dans les secondes qui suivent, et le bouton devient « Reprendre » (statut en pause). */}
+                    {c.status === 'running' && (
+                      <button
+                        onClick={() => pause(c)}
+                        data-testid="campaign-pause"
+                        title={t('L\'envoi s\'arrête dans quelques secondes. Ce qui est déjà parti reste parti.', 'Sending stops within seconds. What has already gone out stays out.')}
+                        className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                      >
+                        {t('Mettre en pause', 'Pause')}
                       </button>
                     )}
                     {/* Seul point final d'une campagne au fil de l'eau : elle n'en a aucun par elle-même.

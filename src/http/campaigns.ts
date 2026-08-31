@@ -44,6 +44,10 @@ export interface CampaignRouteDeps {
   webhookUsableByTenant?(webhookId: string, tenantId: string): Promise<boolean>;
   /** Arrête une campagne au fil de l'eau (scopée tenant) : elle cesse de prendre les arrivants. */
   stopWebhookCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
+  /** Suspend une campagne EN COURS d'envoi (scopée tenant, `running` uniquement). false = elle n'envoyait pas. */
+  pauseCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
+  /** Lève la pause avant d'enfiler le run de reprise (`paused` uniquement, no-op ailleurs). */
+  resumeCampaign?(campaignId: string, tenantId: string): Promise<boolean>;
   /** Dimensionnement du job de run : débit choisi + nb de destinataires en attente. null si campagne absente.
    *  Sert à calculer l'expireInSeconds du job (éviter qu'un run throttlé long expire et soit rejoué en parallèle). */
   getRunSizing(campaignId: string): Promise<{ ratePerMinute: number | null; pendingCount: number } | null>;
@@ -376,10 +380,22 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const expireInSeconds = sizing
       ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
       : undefined;
+    // REPRISE d'une campagne en pause : la pause est levée AVANT l'enfilement, parce que le job refuse de
+    // démarrer une campagne en pause (garde de `campaignRunJob`, qui empêche un job enfilé avant la pause de la
+    // ressusciter). No-op sur un brouillon, donc l'appel est inconditionnel.
+    await deps.resumeCampaign?.(campaignId, authTenant);
     // ⚠️ Deux POST /run concurrents empilent DEUX jobs, et les deux tourneront : rien ne déduplique ici (cf.
     // `Queue.enqueue`, où le `singletonKey` qu'on croyait protecteur a été retiré). Le claim atomique par
     // destinataire reste le seul garde-fou, et il ne garantit que l'absence de double-envoi, pas le débit.
-    await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
+    try {
+      await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
+    } catch (err) {
+      // L'enfilement a échoué APRÈS la levée de pause : on la RÉTABLIT. Sans ça la campagne resterait affichée
+      // « en cours » sans qu'aucun job ne tourne, et « Reprendre » ne s'affiche pas sur une campagne en cours :
+      // l'opérateur serait coincé. `pauseCampaign` est bornée à `running`, elle ne touche donc pas un brouillon.
+      await deps.pauseCampaign?.(campaignId, authTenant);
+      throw err;
+    }
     return reply.code(202).send({ enqueued: true, campaignId });
   });
 
@@ -405,6 +421,33 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       : undefined;
     await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
     return reply.code(202).send({ enqueued: true, recipientId });
+  });
+
+  /**
+   * SUSPEND une campagne en cours d'envoi. C'est le bouton d'arrêt d'urgence d'un mauvais ciblage : jusqu'ici
+   * une campagne lancée partait jusqu'à son dernier destinataire, quoi qu'il arrive.
+   *
+   * Ce qui est déjà parti reste parti (rien ne rappelle un message WhatsApp livré). Le run en vol sort à sa
+   * prochaine relecture de statut, quelques secondes plus tard, et les destinataires non traités restent
+   * `pending` : « Reprendre » repart exactement là.
+   *
+   * 404 « inconnue » et 409 « n'envoie pas » sont DISTINCTS : contrôler l'appartenance d'abord est la seule
+   * façon honnête de séparer « pas à toi » de « pas dans le bon état », comme pour l'archivage plus bas.
+   */
+  app.post('/tenants/:tenantId/campaigns/:campaignId/pause', guard, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    const { campaignId } = req.params as { campaignId: string };
+    if (!deps.pauseCampaign) return reply.code(404).send({ error: 'campagne non suspendable' });
+    if (!(await deps.campaignBelongsTo(campaignId, tenant))) {
+      return reply.code(404).send({ error: 'campagne inconnue' });
+    }
+    const ok = await deps.pauseCampaign(campaignId, tenant);
+    // 409 et pas 5xx : c'est un message destiné à l'opérateur, et Cloudflare remplace le corps de toute réponse
+    // 5xx par sa propre page d'erreur (il ne verrait alors qu'un mur, jamais la raison).
+    if (!ok) return reply.code(409).send({ error: "campagne non suspendable (elle n'est pas en cours d'envoi)" });
+    return reply.code(200).send({ paused: true, campaignId });
   });
 
   // Annule une campagne programmée : elle repasse en brouillon (le job différé n'a jamais été enfilé, rien à tuer).

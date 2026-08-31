@@ -395,3 +395,43 @@ describe('campaignRunJob : campagne au fil de l eau arrêtée', () => {
     expect(sender.calls).toEqual(['+33611']);
   });
 });
+
+/**
+ * PAUSE (R13). Le moteur remet toute campagne en `running` à son démarrage : sans cette garde, un job enfilé
+ * AVANT la pause et démarré après la ressusciterait, et l'envoi que l'opérateur vient de couper repartirait.
+ * Le cas est atteignable : la file ne déduplique rien, plusieurs `campaign-run` peuvent attendre (cf. R1).
+ */
+describe('campaignRunJob : campagne en pause', () => {
+  it("🔴 refuse de démarrer, n'envoie RIEN et ne la remet pas en cours", async () => {
+    const sender = new FakeSender();
+    const enPause: Campaign = { ...campaign, status: 'paused' };
+    const statuts: string[] = [];
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => enPause,
+        senderFor: async () => sender,
+        recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
+        campaigns: { setStatus: async (_id, s) => { statuts.push(s); } },
+      }),
+    );
+    expect(report).toMatchObject({ sent: 0, paused: true, reason: 'campagne en pause' });
+    expect(sender.calls).toEqual([]);
+    expect(statuts).toEqual([]);
+  });
+
+  it('contrôle : la MÊME campagne en `running` part normalement (la garde ne déborde pas)', async () => {
+    const sender = new FakeSender();
+    const enCours: Campaign = { ...campaign, status: 'running' };
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => enCours,
+        senderFor: async () => sender,
+        recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
+      }),
+    );
+    expect(report).toMatchObject({ sent: 1, paused: false });
+    expect(sender.calls).toEqual(['+33611']);
+  });
+});
