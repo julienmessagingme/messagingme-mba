@@ -382,7 +382,7 @@ classés », ils tombent dans le défaut TERMINAL, donc ils brûlent les destina
 | ~~**3**~~ ✅ | Registre de tâches du `worker.ts` | non | **FAIT le 2026-08-31.** Les `register*Jobs` sont reportées au lot 6, qui est celui qui ajoute des files |
 | ~~**4**~~ ✅ | Throttle partagé par numéro, sur les 4 chemins d'envoi | non | **FAIT le 2026-08-31**, posé en UN point (`clientForTenant`). Budget par PROCESS : le partager vraiment est le prérequis du 2e worker |
 | ~~**5**~~ ✅ | Campagnes en lots courts, puis `groupId` + concurrence | non | **FAIT le 2026-08-31.** Lots bornés par la DURÉE (2 min), concurrence 4 avec un run par espace |
-| **6** | Découpage de `CampaignCreateForm`, puis files webhook séparées | non | L'entrant cesse d'attendre derrière les accusés |
+| ~~**6**~~ ✅ | Files webhook séparées, et `useCampagneReferences` sorti de `CampaignCreateForm` | non | **FAIT le 2026-08-31.** Les accusés ont leur file. Trois découpages du formulaire refusés avec argument (cf. `documentation.md`) |
 | **7** | Extraction du `WorkflowBuilder`, puis versions publiées de scénarios | oui | Modifier un scénario cesse de changer les parcours en cours |
 
 **En fil de l'eau, quand le fichier est déjà ouvert** : découpage de `web/lib/api.ts` derrière un barrel, et

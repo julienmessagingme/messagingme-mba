@@ -61,7 +61,8 @@ import {
 } from '@/lib/api';
 import { SYSTEM_FIELDS, customFieldsOnly, isSystemFieldKey, systemFieldExample, varCountOf } from '@/lib/fields';
 import { filtersActive } from '@/lib/contact-filters';
-import { firstTemplateOf, isCampaignEligible } from '@/lib/campaign-eligibility';
+import { firstTemplateOf } from '@/lib/campaign-eligibility';
+import { useCampagneReferences } from '@/lib/use-campagne-references';
 /**
  * D'où viennent les destinataires. `crm` et `file` désignent une liste FIGÉE ; `hubspot` aussi, ailleurs.
  * `webhook` est d'une autre nature : il n'y a pas de liste du tout, les destinataires arrivent au fil de
@@ -126,14 +127,23 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [rcsAgents, setRcsAgents] = useState<RcsAgent[]>([]);
   const [rcsMessages, setRcsMessages] = useState<RcsMessage[]>([]);
   const [workflowId, setWorkflowId] = useState('');
-  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   // Nombre TOTAL de scénarios du tenant, avant le filtre d'éligibilité campagne : sans lui, « aucun scénario »
   // s'afficherait alors qu'il en existe (mais qu'aucun ne démarre par un template), message faux et déroutant.
-  const [workflowsTotal, setWorkflowsTotal] = useState(0);
   // Message bloquant si le workflow choisi n'OUVRE pas par un envoi de template (pas de cible au mapping).
   const [wfError, setWfError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Références de l'écran (templates, scénarios, champs, tags, réglages), extraites dans leur propre concern
+   * (lot 6, 2026-08-31). C'était un chargement cohérent qui n'interagit avec aucun état de SAISIE : huit
+   * états, un effet et un rechargement en moins ici. Les zones de rendu et l'enregistrement du brouillon,
+   * eux, ne s'extraient pas de cette façon (ils liraient quinze à vingt états), cf. `use-campagne-references`.
+   */
+  const {
+    templates, workflows, workflowsTotal, userFields, tags, loadingRefs,
+    hubspotListsEnabled, hubspotPaused, reloadTemplates,
+  } = useCampagneReferences(tenantId, setError);
   const [ok, setOk] = useState<string | null>(null);
   // Débit d'envoi (« vitesse du canon ») : jauge TOUJOURS active, 1..80 messages/min (plafond WhatsApp), défaut 60.
   // On protège la réputation du numéro d'entrée de jeu plutôt que d'envoyer au max par défaut.
@@ -174,16 +184,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   // Références chargées une fois (indépendamment du polling des campagnes) : templates, scénarios, champs, tags.
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   // Création d'un template SANS quitter la campagne en cours. `submittedTemplate` retient ce qui vient d'être
   // soumis : le formulaire se referme, mais la confirmation doit survivre pour expliquer l'attente Meta.
   const [creatingTemplate, setCreatingTemplate] = useState(false);
   const [submittedTemplate, setSubmittedTemplate] = useState<CreatedTemplate | null>(null);
   /** Une vérification de statut est en vol. Sert à ce qu'un clic produise TOUJOURS quelque chose à l'écran. */
   const [verifEnCours, setVerifEnCours] = useState(false);
-  const [userFields, setUserFields] = useState<UserFieldDef[]>([]);
-  const [tags, setTags] = useState<TagCount[]>([]);
-  const [loadingRefs, setLoadingRefs] = useState(true);
 
   /**
    * Brouillon de COMPOSITION : l'identifiant du brouillon qui porte cette campagne en cours d'écriture.
@@ -205,10 +211,8 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   // d'une autre nature puisqu'il n'y a AUCUNE liste, seulement des arrivants au fil de l'eau.
   const [source, setSource] = useState<SourceDestinataires>('crm');
   // Toggle « Campagnes via données HubSpot » (réglé sur l'accueil) : gate le 3e bouton de source.
-  const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
   // Campagnes via listes HubSpot en pause (F3-b, flag tenant campaignsPaused) : on grise la source HubSpot pour ne
   // pas envoyer l'admin vers un panneau vide pendant la pause.
-  const [hubspotPaused, setHubspotPaused] = useState(false);
   // Source WEBHOOK : l'adresse choisie, et les adresses disponibles. Chargées PARESSEUSEMENT (à la première
   // ouverture du panneau) : la majorité des campagnes ne sont pas au fil de l'eau, elles n'ont pas à payer
   // cet appel. `null` = pas encore chargées, ce qui n'est pas la même chose que « aucune adresse ».
@@ -234,56 +238,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (!phoneNumberId && numbers[0]) setPhoneNumberId(numbers[0].id);
   }, [numbers, phoneNumberId]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      // getSettings lancé EN PARALLÈLE mais DÉCOUPLÉ du Promise.all (all-or-nothing) : un hoquet sur les réglages
-      // ne doit pas vider templates/scénarios ; le toggle HubSpot reste false par défaut. `.catch(->null)` isole l'échec.
-      const settingsPromise = getSettings(tenantId).catch(() => null);
-      try {
-        const [tpl, w, uf, tg] = await Promise.all([listTemplates(tenantId), listWorkflows(tenantId), listUserFields(tenantId), listTags(tenantId)]);
-        if (!alive) return;
-        setTemplates(tpl.templates.filter((x) => x.status === 'APPROVED'));
-        // Le sélecteur ne propose QUE les scénarios lançables en broadcast (ce qui OUVRE = un template configuré). Depuis
-        // le Lot D, un scénario peut légitimement démarrer autrement (formulaire, message rapide) : il reste
-        // valide, mais réservé aux déclenchements en fenêtre garantie, donc hors campagne. Même filtre APPROVED
-        // que les templates : ne jamais proposer ce qui ne partira pas.
-        setWorkflows(w.workflows.filter((x) => isCampaignEligible(x.graph)));
-        setWorkflowsTotal(w.workflows.length);
-        setUserFields(uf.fields);
-        setTags(tg.tags);
-      } catch {
-        // silencieux : l'erreur de création reste affichée si l'envoi échoue
-      } finally {
-        if (alive) setLoadingRefs(false);
-      }
-      const cfg = await settingsPromise;
-      if (alive && cfg) { setHubspotListsEnabled(cfg.hubspotListsEnabled); setHubspotPaused(cfg.campaignsPaused); }
-    })();
-    return () => { alive = false; };
-  }, [tenantId]);
 
-  // Recharge la SEULE liste des templates (après une création inline, ou pour vérifier une approbation Meta).
-  // Même filtre APPROVED que le chargement initial : le select ne doit jamais proposer un template inenvoyable.
-  //
-  // Rend la liste COMPLÈTE, statuts non approuvés compris. Le filtre est bon pour le sélecteur, mais il
-  // effaçait la seule information qu'on venait chercher : sans les lignes PENDING, « toujours en revue » et
-  // « approuvé » se ressemblaient trait pour trait, et le bouton avait l'air cassé.
-  //
-  // `silencieux` : l'echec d'un SONDAGE de fond ne doit pas afficher d'erreur de formulaire. L'utilisateur
-  // n'a rien demande, il remplit sa campagne, et un message rouge qui apparait tout seul toutes les 15 s
-  // ferait croire a un probleme de SA saisie. Seul le clic explicite parle.
-  const reloadTemplates = useCallback(async (silencieux = false): Promise<TemplateSummary[]> => {
-    try {
-      const tpl = await listTemplates(tenantId);
-      const tous = Array.isArray(tpl?.templates) ? tpl.templates : [];
-      setTemplates(tous.filter((x) => x.status === 'APPROVED'));
-      return tous;
-    } catch (err) {
-      if (!silencieux) setError(err instanceof Error ? err.message : t('Rafraîchissement impossible', 'Refresh failed'));
-      return [];
-    }
-  }, [tenantId, t]);
 
   /**
    * Redemande à Meta où en est le template qu'on vient de soumettre, et REPORTE son statut à l'écran.

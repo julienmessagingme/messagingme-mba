@@ -12,12 +12,12 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS : lot 6 du programme (`PLAN.md` § LE PROGRAMME)
+## EN COURS : rien
 
-Découpage de `CampaignCreateForm` (1 686 lignes, 48 états), puis séparation des files webhook : les messages
-ENTRANTS d'un côté, les accusés de livraison de l'autre. Une rafale d'accusés de campagne ne doit pas
-retarder la prise en charge d'un message de client. Les fonctions `register*Jobs` du worker viennent avec,
-c'est le lot qui ajoute des files.
+Les lots 1 à 6 du programme (`PLAN.md` § LE PROGRAMME) sont livrés et déployés le 2026-08-31. Reste le
+lot 7 : extraction du `WorkflowBuilder`, puis les VERSIONS PUBLIÉES de scénarios (brouillon éditable /
+version publiée immuable, runs épinglés). C'est le seul lot du programme qui demande une migration et une
+décision de sémantique (que fait un retour arrière ?).
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 

@@ -2109,6 +2109,31 @@ qui exige que toute file de `BASE_QUEUES` ait un `queue.work` dans le worker a �
 déclaration a été ajoutée, avant même que le consommateur soit écrit. C'est exactement le trou qu'il existe
 pour fermer (`agent-turn` avait vécu plusieurs jours déclarée et non consommée).
 
+### `CampaignCreateForm` : une extraction, et le refus argumenté des autres
+
+1 686 lignes et 48 états. **`useCampagneReferences` est sorti** (`web/lib/use-campagne-references.ts`) :
+templates, scénarios, champs, tags, réglages de l'espace, plus leur indicateur d'attente et le rechargement
+des templates. Huit états, un effet et un `useCallback` en moins dans le composant, qui tombe à 1 641 lignes
+et 40 états.
+
+🔴 **Le critère du choix est celui de l'audit lui-même** : « une extraction mécanique ne réduit pas la
+complexité d'état ». Ce bloc-ci est une concern COHÉRENTE (un chargement, ses données, son attente) qui
+n'interagit avec AUCUN état de saisie. Les trois autres découpages proposés ne le sont pas :
+
+- **les zones de rendu** (Destinataires, Message) lisent et écrivent quinze à vingt états chacune : en faire
+  des composants demanderait autant de props, c'est-à-dire déplacer la complexité, pas la réduire ;
+- **l'enregistrement du brouillon** construit son état à partir d'une vingtaine de champs de saisie : le
+  passer en `hook` produirait exactement le « hook opaque à 48 états » que l'audit interdit ;
+- **le réducteur de lancement** vaut d'être fait, mais l'audit demande d'abord des tests sur l'hydratation,
+  l'autosauvegarde, le changement de type de contenu et le double clic de lancement. Ces tests-là sont le
+  vrai préalable, et ils sont un lot en soi.
+
+⚠️ `onErreur` est passé en dépendance EXPLICITE au hook, plutôt qu'un `setError` interne : sinon l'écran
+aurait deux endroits où il affiche ses erreurs, dont un invisible depuis le formulaire.
+
+Vérifié par les **18 tests E2E de campagne** (brouillons, contacts dégradés, template créé à la volée avec son
+sondage d'approbation, filtre de scénarios, RCS), tous verts après extraction.
+
 ### Ce qui NE sera PAS fait, et pourquoi
 
 Les fonctions `register*Jobs` du worker, reportées du lot 3, **ne seront pas écrites**. L'audit demandait de
