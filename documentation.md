@@ -2080,6 +2080,35 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : LOT 3 du programme, le registre des tâches du worker (aucune migration)
+
+Refactor **neutre en comportement**, sauf sur un point qui est une correction de bug, dit plus bas.
+
+Le worker programmait dix-sept `setInterval` et devait les arrêter **une par une**, à la main, dans son arrêt
+propre. Ce couplage a exactement le défaut qu'on attend de lui : on oublie. Deux tâches y avaient déjà
+échappé historiquement (le code le disait dans un commentaire), et **les deux balayages de rétention ajoutés
+le jour même** n'y étaient pas non plus, découverts en écrivant le registre. Un oubli ne casse rien tout de
+suite (les minuteries sont `unref`) : il se voit à l'arrêt, quand une passe part pendant qu'on ferme le pool,
+et laisse une erreur à chaque déploiement.
+
+`src/worker/taches.ts` : programmer et arrêter deviennent le MÊME geste. `taches.arreterTout()` remplace les
+dix-sept `clearInterval`, et les quatre variables `let ...Sweeper` des tâches conditionnelles disparaissent.
+
+🔴 **Le bug trouvé en écrivant le test, et corrigé ici.** `setInterval(() => void f())` laisse un rejet NON
+RATTRAPÉ si `f` rejette, et depuis Node 15 un rejet non rattrapé **tue le process**. Chaque balayage attrape
+déjà ses erreurs, mais rien ne le garantissait : il suffisait que le `catch` lui-même échoue (l'alerte
+Telegram qui lève) pour que le worker meure en silence, sans autre trace qu'un redémarrage. Le registre
+enveloppe donc chaque passe. C'est le seul écart de comportement du lot, et il va dans le sens de la survie.
+
+⚠️ **Ce que le registre ne fait PAS** : lancer la première passe. Les appelants qui balayent au démarrage
+gardent leur `void passe()` là où ils l'écrivaient. Le rendre implicite ferait démarrer quinze balayages qui
+ne le faisaient pas, c'est-à-dire un changement de comportement caché dans un refactor.
+
+**La seconde moitié de l'item (les fonctions `register*Jobs`) est reportée au lot 6**, et c'est la logique de
+l'audit lui-même : elle sert « avant d'y ajouter de nouvelles files », or c'est le lot 6 qui en ajoute (en
+séparant les entrants des accusés). L'extraire maintenant serait un gros diff sans utilisateur.
+
+---
 ## DEPLOYE le 2026-08-31 : LOT 2 du programme, la rétention des conversations (migration 0094)
 
 La moitié restante de 5.2. Les conversations, leurs messages et leur analyse qualitative étaient gardés POUR

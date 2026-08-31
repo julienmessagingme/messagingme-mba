@@ -16,14 +16,14 @@ describe('câblage des purges de rétention', () => {
     expect(worker, 'aucun appel à purgeOlderThan : la rétention de webhook_events ne tourne plus')
       .toMatch(/purgeOlderThan\(\s*config\.WEBHOOK_EVENTS_RETENTION_DAYS\s*\)/);
     expect(worker, 'le balayage doit être PROGRAMMÉ, pas seulement appelé une fois au démarrage')
-      .toMatch(/webhookEventsSweeper\s*=\s*setInterval/);
+      .toMatch(/taches\.programmer\('retention-evenements-meta'/);
   });
 
   it('le worker purge RÉELLEMENT les conversations périmées, sur la rétention configurée', () => {
     expect(worker, 'aucun appel à purgeConversationsOlderThan : la rétention des conversations ne tourne plus')
       .toMatch(/purgeConversationsOlderThan\(\s*config\.CONVERSATION_RETENTION_DAYS\s*\)/);
     expect(worker, 'le balayage doit être PROGRAMMÉ, pas seulement appelé une fois au démarrage')
-      .toMatch(/conversationSweeper\s*=\s*setInterval/);
+      .toMatch(/taches\.programmer\('retention-conversations'/);
     expect(worker, "un échec de purge doit ALERTER").toMatch(/alert\('sweeper:conversation-retention'/);
   });
 

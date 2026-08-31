@@ -89,6 +89,7 @@ import type { Campaign } from './campaign/types';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
+import { registreDeTaches } from './worker/taches';
 
 async function main(): Promise<void> {
   // Le worker est la SEULE instance qui supervise (défaut pg-boss conservé) : c'est lui qui dépile, donc lui qui
@@ -141,8 +142,10 @@ async function main(): Promise<void> {
     }
   };
   await beat(true);
-  const heartbeat = setInterval(() => void beat(false), config.HEARTBEAT_INTERVAL_MS);
-  heartbeat.unref();
+  // Registre des tâches périodiques : programmer et arrêter deviennent le MÊME geste. Avant, dix-sept
+  // minuteries étaient arrêtées une par une dans l'arrêt propre, et trois y avaient déjà échappé.
+  const taches = registreDeTaches();
+  taches.programmer('heartbeat', config.HEARTBEAT_INTERVAL_MS, () => beat(false));
 
   // File webhook (Loop 1). Le PgRecipientStore applique les statuts de livraison ; le
   // PgInboxStore enregistre les messages entrants (réponses / taps de boutons) en conversations ;
@@ -460,8 +463,6 @@ async function main(): Promise<void> {
 
   // File analyze-conversation (Pièce 1). INERTE tant que CONVERSATION_ANALYSIS_ENABLED != 'true' : aucun worker,
   // aucun balayage, aucun appel LLM, zéro coût. Le déclencheur (balayage d'inactivité) est REMPLAÇABLE (temps réel plus tard).
-  let analysisSweeper: NodeJS.Timeout | null = null;
-  let catchupSweeper: NodeJS.Timeout | null = null;
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
     const analysisStore = new PgConversationAnalysisStore(pool);
     const llmClient = createLlmClient(
@@ -517,8 +518,7 @@ async function main(): Promise<void> {
         }
       };
       void catchupSweep();
-      catchupSweeper = setInterval(() => void catchupSweep(), config.HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS);
-      catchupSweeper.unref();
+      taches.programmer('hubspot-rattrapage', config.HUBSPOT_CATCHUP_SWEEP_INTERVAL_MS, catchupSweep);
     }
     const pushAnalyzed = makeOnAnalyzed({
       enabled: pushEnabled,
@@ -579,8 +579,7 @@ async function main(): Promise<void> {
         onError: (m, err) => console.error(`${m}:`, err instanceof Error ? err.message : err),
       });
     void analysisSweep();
-    analysisSweeper = setInterval(() => void analysisSweep(), config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS);
-    analysisSweeper.unref();
+    taches.programmer('analyse-conversations', config.CONVERSATION_ANALYSIS_SWEEP_INTERVAL_MS, analysisSweep);
   }
 
   // Sweeper : récupère périodiquement les destinataires bloqués en 'sending'.
@@ -596,8 +595,7 @@ async function main(): Promise<void> {
     }
   };
   void sweep();
-  const sweeper = setInterval(() => void sweep(), config.RECLAIM_INTERVAL_MS);
-  sweeper.unref();
+  taches.programmer('reclaim', config.RECLAIM_INTERVAL_MS, sweep);
 
   // Sweeper de PLANIFICATION : enfile les campagnes programmées dues (scheduled_at <= maintenant). Miroir du
   // sweeper d'analyse. Toutes les 60 s (granularité suffisante pour un lancement programmé). C'est `markRunning`
@@ -628,8 +626,7 @@ async function main(): Promise<void> {
     }
   };
   void scheduleSweep();
-  const scheduleSweeper = setInterval(() => void scheduleSweep(), 60_000);
-  scheduleSweeper.unref();
+  taches.programmer('campagnes-programmees', 60_000, scheduleSweep);
 
   /**
    * 🔴 BALAYAGE DE REPRISE : relance toute campagne GELÉE (R4).
@@ -670,8 +667,7 @@ async function main(): Promise<void> {
     }
   };
   void repriseSweep();
-  const repriseSweeper = setInterval(() => void repriseSweep(), 60_000);
-  repriseSweeper.unref();
+  taches.programmer('campagnes-gelees', 60_000, repriseSweep);
 
   // Sweeper de RÉVEIL : reprend les parcours endormis sur un bloc « Attente » arrivé à échéance. Même patron
   // que le sweeper de planification. La granularité du délai vaut cet intervalle : une attente de 5 min repart
@@ -702,8 +698,7 @@ async function main(): Promise<void> {
     }
   };
   void wakeSweep();
-  const wakeSweeper = setInterval(() => void wakeSweep(), config.WORKFLOW_WAKE_SWEEP_INTERVAL_MS);
-  wakeSweeper.unref();
+  taches.programmer('reveil-parcours', config.WORKFLOW_WAKE_SWEEP_INTERVAL_MS, wakeSweep);
 
   // Auto-relance des échecs (F6) : 131049 (fenêtre matinale Europe/Paris, 1 relance) + 131026 (1 relance puis
   // injoignable dans HubSpot au 2e échec). Gaté par le canal service (le flag injoignable en dépend) : monté seulement
@@ -712,7 +707,6 @@ async function main(): Promise<void> {
     const h = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }).format(new Date(nowMs)));
     return h >= 8 && h < 12; // « début de journée »
   };
-  let retrySweeper: NodeJS.Timeout | undefined;
   if (config.HUBSPOT_SERVICE_URL) {
     const retrySweep = async (): Promise<void> => {
       try {
@@ -751,8 +745,7 @@ async function main(): Promise<void> {
       }
     };
     void retrySweep();
-    retrySweeper = setInterval(() => void retrySweep(), config.AUTO_RETRY_SWEEP_INTERVAL_MS);
-    retrySweeper.unref();
+    taches.programmer('auto-relance-echecs', config.AUTO_RETRY_SWEEP_INTERVAL_MS, retrySweep);
   }
 
   // Sweeper de CONTRÔLE : rend la main au scénario quand plus personne ne s'occupe d'une conversation.
@@ -783,8 +776,7 @@ async function main(): Promise<void> {
     }
   };
   void controlSweep();
-  const controlSweeper = setInterval(() => void controlSweep(), config.CONTROL_SWEEP_INTERVAL_MS);
-  controlSweeper.unref();
+  taches.programmer('reprise-controle', config.CONTROL_SWEEP_INTERVAL_MS, controlSweep);
 
   // Passage de main de l'agent selon les heures d'ouverture. Meta n'a AUCUNE notion d'horaires : sans ce
   // balayage, un agent qui passe la main la passe aussi à 3 h du matin, et le client lit « un conseiller
@@ -810,8 +802,7 @@ async function main(): Promise<void> {
     }
   };
   void handoffSweep();
-  const handoffSweeper = setInterval(() => void handoffSweep(), config.CONTROL_SWEEP_INTERVAL_MS);
-  handoffSweeper.unref();
+  taches.programmer('handoff-mba', config.CONTROL_SWEEP_INTERVAL_MS, handoffSweep);
 
   // Sweeper d'idempotence API : purge les clés Idempotency-Key plus vieilles que 24h (fenêtre de dédup).
   const idempotencyStore = new PgApiIdempotencyStore(pool);
@@ -828,8 +819,7 @@ async function main(): Promise<void> {
     }
   };
   void idempotencySweep();
-  const idempotencySweeper = setInterval(() => void idempotencySweep(), 60 * 60 * 1000);
-  idempotencySweeper.unref();
+  taches.programmer('idempotence-api', 60 * 60 * 1000, idempotencySweep);
 
   // RGPD : le dernier payload d'un webhook entrant est du JSON TIERS, donc potentiellement des données
   // personnelles qu'on n'a pas demandées. Il n'existe que pour construire le mapping dans l'écran et pour
@@ -846,8 +836,7 @@ async function main(): Promise<void> {
     }
   };
   void webhookPayloadSweep();
-  const webhookPayloadSweeper = setInterval(() => void webhookPayloadSweep(), 6 * 60 * 60 * 1000);
-  webhookPayloadSweeper.unref();
+  taches.programmer('retention-payloads-webhooks', 6 * 60 * 60 * 1000, webhookPayloadSweep);
 
   // RGPD, et croissance non bornée (PLAN.md 5.2) : `webhook_events` garde le payload COMPLET de chaque
   // événement Meta reçu depuis le premier jour, donc le texte des messages entrants et le numéro de qui
@@ -868,8 +857,7 @@ async function main(): Promise<void> {
     }
   };
   void webhookEventsSweep();
-  const webhookEventsSweeper = setInterval(() => void webhookEventsSweep(), 60 * 60 * 1000);
-  webhookEventsSweeper.unref();
+  taches.programmer('retention-evenements-meta', 60 * 60 * 1000, webhookEventsSweep);
 
   // RGPD (PLAN.md 5.2, lot 2) : les CONVERSATIONS et, par cascade, leurs messages et leur analyse
   // qualitative. C'est la rétention la plus lourde de conséquence du dépôt, parce qu'elle efface du contenu
@@ -890,8 +878,7 @@ async function main(): Promise<void> {
     }
   };
   void conversationSweep();
-  const conversationSweeper = setInterval(() => void conversationSweep(), 6 * 60 * 60 * 1000);
-  conversationSweeper.unref();
+  taches.programmer('retention-conversations', 6 * 60 * 60 * 1000, conversationSweep);
 
   // Déclencheur « X avant la date d'un champ » : le seul qui ne répond pas à un événement mais à
   // l'écoulement du temps. Il PUBLIE dans la file, il ne démarre rien : le scénario part par le chemin
@@ -917,8 +904,7 @@ async function main(): Promise<void> {
     }
   };
   void dateSweep();
-  const dateSweeper = setInterval(() => void dateSweep(), config.AUTOMATION_DATE_SWEEP_INTERVAL_MS);
-  dateSweeper.unref();
+  taches.programmer('automations-avant-date', config.AUTOMATION_DATE_SWEEP_INTERVAL_MS, dateSweep);
 
   // Sorti de la garde META_ACCESS_TOKEN ci-dessous : la surveillance des files ne touche pas Meta, et un
   // déploiement sans token Meta ne doit pas devenir aveugle aux messages perdus.
@@ -952,8 +938,7 @@ async function main(): Promise<void> {
     }
   };
   void dlqSweepGarde();
-  const dlqSweeper = setInterval(() => void dlqSweepGarde(), 5 * 60_000);
-  dlqSweeper.unref();
+  taches.programmer('files-echec', 5 * 60_000, dlqSweepGarde);
 
   // Sweeper de STATUT/QUALITÉ des numéros (item 4.10). Le pull live n'était branché QUE dans la route Accueil :
   // quality_rating/status ne se rafraîchissaient qu'à l'ouverture de la page par un admin. Ce balayage les
@@ -961,7 +946,6 @@ async function main(): Promise<void> {
   // qualité rouge. Palliatif par polling (le temps réel = webhook quality, non câblé, cf. migration 0004).
   // GATE : sans token Meta global, aucun pull possible (mêmes conditions que la route, index.ts) -> pas de sweep
   // (évite un faux « AUTH » sur un client vide en dev/test). alertedPhones dédup par TRANSITION (perdu au restart).
-  let statusSweeper: NodeJS.Timeout | null = null;
   if (config.META_ACCESS_TOKEN) {
     const alertedPhones = new Map<string, PhoneProblem>();
     const statusSweep = async (): Promise<void> => {
@@ -993,8 +977,7 @@ async function main(): Promise<void> {
       }
     };
     void statusSweep();
-    statusSweeper = setInterval(() => void statusSweep(), config.PHONE_STATUS_SWEEP_INTERVAL_MS);
-    statusSweeper.unref();
+    taches.programmer('statut-numeros', config.PHONE_STATUS_SWEEP_INTERVAL_MS, statusSweep);
   }
 
 
@@ -1127,23 +1110,9 @@ async function main(): Promise<void> {
   }
 
   installGracefulShutdown(async () => {
-    clearInterval(heartbeat);
-    clearInterval(sweeper);
-    clearInterval(scheduleSweeper);
-    if (retrySweeper) clearInterval(retrySweeper);
-    clearInterval(controlSweeper);
-    clearInterval(handoffSweeper);
-    clearInterval(idempotencySweeper);
-    clearInterval(webhookPayloadSweeper);
-    clearInterval(dlqSweeper);
-    clearInterval(repriseSweeper);
-    // `wakeSweeper` manquait aussi ici, depuis son introduction : corrigé au passage, c'est la ligne voisine
-    // et le même oubli, une passe dédiée coûterait plus que la correction.
-    clearInterval(wakeSweeper);
-    clearInterval(dateSweeper);
-    if (analysisSweeper) clearInterval(analysisSweeper);
-    if (catchupSweeper) clearInterval(catchupSweeper);
-    if (statusSweeper) clearInterval(statusSweeper);
+    // UNE ligne, et plus une par minuterie : c'est ce qui rend l'oubli impossible. Trois tâches avaient
+    // échappé à l'ancienne liste, dont les deux rétentions ajoutées le jour même de ce refactor.
+    taches.arreterTout();
     await queue.stop();
     await pool.end();
   }, undefined, () => {
