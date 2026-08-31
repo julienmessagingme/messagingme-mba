@@ -9,7 +9,7 @@ import {
 } from '../agent/setup/piece-jointe';
 import { construireMessages, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
-import { agendaEffectif, fusionner, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
+import { agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
 import { ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { scopeTenant, estUuid } from './scope';
 
@@ -105,7 +105,7 @@ function avancement(etat: EntretienComplet): { manquants: string[]; total: numbe
   const manquants = manquesDeCouverture(etat);
   return {
     manquants,
-    total: agendaEffectif(etat.reponses).length,
+    total: agendaEffectif(etat).length,
     pointOuvert: prochainPoint(etat)?.code ?? null,
   };
 }
@@ -284,6 +284,9 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      *    prétend en connaître la réponse. La couverture cesse d'être une déclaration pour devenir un fait.
      */
     const reponses = fusionner(avant.reponses, propose.data.reponses);
+    // Les BASCULES vivent à part : elles sont une LISTE (un moment, une action, un moyen), pas une réponse à
+    // un point. C'est ce qui permet de les prendre une par une au lieu de les écraser l'une sur l'autre.
+    const listeBascules = fusionnerBascules(avant.bascules ?? [], propose.data.bascules ?? []);
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
       ? [...avant.poses, pointDuTour.code]
       : avant.poses;
@@ -300,13 +303,14 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * bien la suivante, pas celle à laquelle il vient de répondre. Et on la note POSÉE, puisqu'on vient de la
      * poser : sans ça, le tour d'après la reposerait.
      */
-    const ouvertApres = prochainPoint({ poses, reponses });
+    const ouvertApres = prochainPoint({ poses, reponses, bascules: listeBascules });
     const relance = ouvertApres && !poseUneQuestion(propose.data.message) ? ouvertApres : null;
     const message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
 
     const apres: EntretienComplet = {
       messages: [...historique, { role: 'assistant', content: message }],
       reponses,
+      bascules: listeBascules,
       poses: relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses,
     };
     await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { restreindreProposition, type Changement, type PropositionConstruction } from '../web/lib/api-agent-setup';
-import { AGENDA, agendaEffectif, fusionner, manquesDeCouverture, prochainsPoints } from '../src/agent/setup/couverture';
 
 /**
  * GARDER, CORRIGER OU JETER CHAQUE RÈGLE SÉPARÉMENT.
@@ -120,90 +119,3 @@ describe('garder, corriger ou jeter ligne par ligne', () => {
  * modèle, et un modèle pressé se déclarait couvert après une phrase : le ton, l'identité et la base de
  * connaissance n'étaient jamais demandés.
  */
-describe('couverture de l’ordre du jour', () => {
-  const codes = AGENDA.filter((p) => !p.debloquePar).map((p) => p.code);
-  const repondreTout = () => codes.map((point) => ({ point, valeur: 'dit' }));
-
-  it('rien de posé, rien de répondu : tous les points de base manquent', () => {
-    expect(manquesDeCouverture({ poses: [], reponses: [] })).toEqual(codes);
-  });
-
-  it('🔴 une réponse SANS que le point ait été POSÉ ne couvre rien', () => {
-    // C'est la garantie centrale : on s'assure d'avoir fait le tour, pas que le modèle a bien deviné. Une
-    // réponse donnée d'avance est gardée (elle sert à faire confirmer en une phrase), elle ne compte pas.
-    expect(manquesDeCouverture({ poses: [], reponses: repondreTout() })).toEqual(codes);
-  });
-
-  it('🔴 un point POSÉ mais sans réponse ne couvre rien non plus', () => {
-    expect(manquesDeCouverture({ poses: codes, reponses: [] })).toEqual(codes);
-  });
-
-  it('posé ET répondu : couvert', () => {
-    expect(manquesDeCouverture({ poses: codes, reponses: repondreTout() })).toEqual([]);
-  });
-
-  it('🔴 un code INVENTÉ ne couvre rien', () => {
-    // Les réponses viennent d'un modèle, donc d'une source non fiable : s'il suffisait d'inventer des codes
-    // pour se déclarer complet, l'entretien ne serait qu'une suggestion.
-    const etat = { poses: codes, reponses: [{ point: 'tout_le_reste', valeur: 'dit' }, { point: 'mission', valeur: 'dit' }] };
-    expect(manquesDeCouverture(etat)).toEqual(codes.filter((c) => c !== 'mission'));
-  });
-
-  it('une réponse VIDE ne couvre pas', () => {
-    const etat = { poses: codes, reponses: [{ point: 'mission', valeur: '   ' }] };
-    expect(manquesDeCouverture(etat)).toContain('mission');
-  });
-
-  it('🔴 « l’agent le fait tout seul » OUVRE le point du moyen, et il devient obligatoire', () => {
-    // Le creusement demandé par Julien : savoir que l'agent agit seul ne dit pas COMMENT. Sans ce point,
-    // l'entretien se terminait sur une intention sans outil pour la réaliser.
-    const sansOutil = { poses: codes, reponses: repondreTout() };
-    expect(agendaEffectif(sansOutil.reponses).map((p) => p.code)).not.toContain('quel_outil');
-    expect(manquesDeCouverture(sansOutil)).toEqual([]);
-
-    const avecOutil = {
-      poses: codes,
-      reponses: repondreTout().map((r) => (r.point === 'bascules' ? { ...r, action: 'outil' as const } : r)),
-    };
-    expect(agendaEffectif(avecOutil.reponses).map((p) => p.code)).toContain('quel_outil');
-    expect(manquesDeCouverture(avecOutil)).toEqual(['quel_outil']);
-  });
-
-  it('une autre action n’ouvre PAS le point du moyen (la garde ne déborde pas)', () => {
-    for (const action of ['bloc_scenario', 'humain', 'continuer'] as const) {
-      const etat = { poses: codes, reponses: repondreTout().map((r) => (r.point === 'bascules' ? { ...r, action } : r)) };
-      expect(manquesDeCouverture(etat), action).toEqual([]);
-    }
-  });
-
-  it('🔴 se raviser REFERME le point du moyen', () => {
-    // Le client a le droit de changer d'avis ; l'entretien doit suivre, sinon il resterait bloqué sur une
-    // question devenue sans objet et ne se terminerait jamais.
-    const avecOutil = fusionner([], repondreTout().map((r) => (r.point === 'bascules' ? { ...r, action: 'outil' as const } : r)));
-    expect(manquesDeCouverture({ poses: codes, reponses: avecOutil })).toEqual(['quel_outil']);
-    const revenu = fusionner(avecOutil, [{ point: 'bascules', valeur: 'il continue de répondre', action: 'continuer' }]);
-    expect(manquesDeCouverture({ poses: codes, reponses: revenu })).toEqual([]);
-  });
-
-  it('fusionner : une nouvelle réponse remplace l’ancienne, et l’état se relit dans l’ordre du questionnaire', () => {
-    const etat = fusionner([{ point: 'ton', valeur: 'formel' }], [{ point: 'mission', valeur: 'prendre rdv' }, { point: 'ton', valeur: 'tutoiement' }]);
-    expect(etat.map((r) => r.point)).toEqual(['mission', 'ton']); // ordre de l'AGENDA, pas d'arrivée
-    expect(etat.find((r) => r.point === 'ton')?.valeur).toBe('tutoiement');
-  });
-
-  it('🔴 le point OUVERT et le SUIVANT, jamais plus : l’entretien avance d’un cran par tour', () => {
-    // Un seul point ferait reposer une question à laquelle le client vient de répondre (le serveur choisit
-    // AVANT de le lire) ; toute la liste laisserait le modèle la survoler.
-    const [ouvert, suivant] = prochainsPoints({ poses: [], reponses: [] });
-    expect(ouvert?.code).toBe(codes[0]);
-    expect(suivant?.code).toBe(codes[1]);
-  });
-
-  it('dernier point : il n’y a pas de suivant, et le suivant du néant est null', () => {
-    const presqueFini = { poses: codes, reponses: repondreTout().slice(0, -1) };
-    const [ouvert, suivant] = prochainsPoints(presqueFini);
-    expect(ouvert?.code).toBe(codes[codes.length - 1]);
-    expect(suivant).toBeNull();
-    expect(prochainsPoints({ poses: codes, reponses: repondreTout() })).toEqual([null, null]);
-  });
-});

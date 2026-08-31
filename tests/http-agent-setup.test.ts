@@ -33,11 +33,11 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 /** Les points de BASE, tirés de la source : une liste recopiée ici finirait par diverger. */
-const BASE = AGENDA.filter((p) => !p.debloquePar).map((p) => p.code);
+const BASE = AGENDA.map((p) => p.code);
 const toutesLesReponses = () => BASE.map((point) => ({ point, valeur: 'ce qu’il a dit' }));
 
 /** Un entretien DÉJÀ MENÉ : tous les points de base posés et répondus. */
-const ENTRETIEN_FINI: EntretienComplet = { messages: [], poses: [...BASE], reponses: toutesLesReponses() };
+const ENTRETIEN_FINI: EntretienComplet = { messages: [], poses: [...BASE], reponses: toutesLesReponses(), bascules: [] };
 
 class FakeEntretiens implements EntretienStore {
   constructor(private etat: EntretienComplet | null = null) {}
@@ -215,26 +215,53 @@ describe('conversation de construction', () => {
     expect(cap.appels).toHaveLength(0);
   });
 
-  it('🔴 « l’agent le fait tout seul » OUVRE le point du moyen, et l’entretien ne peut pas finir sans', async () => {
-    // Julien, 2026-08-31 : « si c'est l'agent qui peut le faire lui-même, il faut que l'agent creuse et
-    // demande, ben comment l'agent fait dans ces cas là ? ». Le creusement est mécanique, pas une consigne.
+  it('🔴 CHAQUE moment cité ouvre SA question, et l’entretien ne peut pas finir sans', async () => {
+    // Julien, 2026-08-31 : « il faut que tu prennes 1 par 1, je dis bien 1 par 1 ». Il avait cité deux moments
+    // dans la même phrase (prendre rendez-vous -> un outil ; donner l'adresse -> un scénario) et le second
+    // écrasait le premier, parce que le point `bascules` ne portait QU'UNE action.
     const r = reponse(JSON.stringify({
-      message: 'Compris.',
-      reponses: [{ point: 'bascules', valeur: 'il prend le rendez-vous', action: 'outil' }],
+      message: 'Compris, on va les prendre un par un ?',
+      reponses: [],
+      bascules: [
+        { moment: 'le client veut prendre rendez-vous' },
+        { moment: 'il demande où se trouve la concession' },
+      ],
       fiche: { objectif: 'x' },
     }));
-    const res = await app({ reponse: r, entretien: ENTRETIEN_FINI }).srv
-      .inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    const a = app({ reponse: r, entretien: ENTRETIEN_FINI });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(res.statusCode).toBe(200);
-    expect(res.json().couverture.manquants).toEqual(['quel_outil']);
-    expect(res.json().couverture.total).toBe(BASE.length + 1);
-    expect(res.json().changements).toEqual([]); // le diff reste retenu tant qu'on n'a pas le moyen
+    // Les DEUX moments ouvrent leur question, aucun n'écrase l'autre.
+    expect(res.json().couverture.manquants).toEqual(['bascule_1_action', 'bascule_2_action']);
+    expect(res.json().couverture.total).toBe(BASE.length + 2);
+    expect(res.json().changements).toEqual([]); // le diff reste retenu tant qu'il en reste
+    // Et les bascules sont PERSISTÉES : c'est ce qui permet de les reprendre une par une au tour d'après.
+    expect(a.entretiens.ecrits.at(-1)!.bascules.map((b) => b.moment)).toEqual([
+      'le client veut prendre rendez-vous',
+      'il demande où se trouve la concession',
+    ]);
+  });
+
+  it('🔴 « il appelle un outil » ouvre la question du MOYEN : lequel ?', async () => {
+    // « L'agent le fait tout seul » n'est pas une réponse, c'est le début d'une question.
+    const avecAction: EntretienComplet = {
+      messages: [], poses: [...BASE, 'bascule_1_action'], reponses: toutesLesReponses(),
+      bascules: [{ moment: 'le client veut prendre rendez-vous' }],
+    };
+    const r = reponse(JSON.stringify({
+      message: 'Très bien. Par quel moyen ?',
+      reponses: [],
+      bascules: [{ moment: 'le client veut prendre rendez-vous', action: 'outil_api' }],
+    }));
+    const res = await app({ reponse: r, entretien: avecAction }).srv
+      .inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.json().couverture.manquants).toEqual(['bascule_1_moyen']);
   });
 
   it('🔴 un code de point INVENTÉ ne débloque rien', async () => {
     // Les réponses viennent d'un modèle, donc d'une source non fiable. Un code hors ordre du jour est ignoré ;
     // s'il passait, il suffirait d'en inventer neuf pour contourner l'entretien.
-    const fini: EntretienComplet = { messages: [], poses: [...BASE], reponses: toutesLesReponses().slice(0, -1) };
+    const fini: EntretienComplet = { messages: [], poses: [...BASE], reponses: toutesLesReponses().slice(0, -1), bascules: [] };
     const r = reponse(JSON.stringify({
       message: 'Voilà.',
       reponses: [{ point: 'tout_le_reste', valeur: 'oui' }],
@@ -266,7 +293,7 @@ describe('conversation de construction', () => {
   it('GET rend l’entretien déjà tenu, et son avancement', async () => {
     const etat: EntretienComplet = {
       messages: [{ role: 'user', content: 'Bonjour' }, { role: 'assistant', content: 'À quoi sert-il ?' }],
-      poses: ['mission'], reponses: [],
+      poses: ['mission'], reponses: [], bascules: [],
     };
     const res = await app({ entretien: etat }).srv.inject({ method: 'GET', url: url('t1'), ...h(adminTok) });
     expect(res.statusCode).toBe(200);

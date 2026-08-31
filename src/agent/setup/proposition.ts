@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { fichePatchSchema, type FicheAgentContenu } from '../fiche';
 import { OUTILS_MAISON } from '../outils-maison';
-import { ACTIONS, CODES_POINTS } from './couverture';
+import { ACTIONS, CHOIX_ACTION, CODES_POINTS } from './couverture';
 
 /**
  * Ce que l'IA de construction a le DROIT de proposer, et le diff qu'on montre au client.
@@ -70,9 +70,21 @@ export const propositionSchema = z.object({
     point: z.string().trim().max(64),
     /** Vide = rien retenu pour ce point. Toléré plutôt que refusé : voir la doctrine ci-dessus. */
     valeur: z.string().trim().max(2000).default(''),
-    /** Ce que l'agent FAIT (points de bascule). C'est elle qui ouvre un point de creusement. */
-    action: z.enum(ACTIONS).optional(),
   })).max(CODES_POINTS.length * 2).default([]),
+  /**
+   * 🔴 LES MOMENTS DE BASCULE, UN PAR UN. C'est une LISTE et pas un champ, parce qu'il y en a autant que le
+   * client en cite. Le modèle précédent portait UNE action sur le point `bascules` : Julien en a donné deux
+   * dans la même phrase (prendre un rendez-vous -> un outil ; donner l'adresse d'une concession -> un
+   * scénario), et le second écrasait le premier en silence.
+   *
+   * ⚠️ `moment` est la CLÉ d'appariement. Le modèle doit le rendre à l'IDENTIQUE d'un tour à l'autre quand il
+   * complète une bascule déjà connue, sinon il en crée une nouvelle au lieu de compléter l'ancienne.
+   */
+  bascules: z.array(z.object({
+    moment: z.string().trim().min(1).max(400),
+    action: z.enum(ACTIONS).optional(),
+    moyen: z.string().trim().max(2000).optional(),
+  })).max(24).default([]),
   /** Les champs de fiche proposés. PARTIEL au sens strict : le modèle ne touche qu'à ce dont il parle, et
    *  les champs absents restent ABSENTS (voir `fichePatchSchema`, qui n'applique aucun défaut). */
   fiche: fichePatchSchema.optional(),
@@ -119,6 +131,24 @@ export const SCHEMA_PROPOSITION = {
   type: 'object',
   properties: {
     message: { type: 'string', description: 'Ce que tu dis au client, en français, bref.' },
+    bascules: {
+      type: 'array',
+      description: 'Les moments où l’agent doit faire autre chose que répondre, un par entrée. Reprends le '
+        + '`moment` À L’IDENTIQUE quand tu complètes une bascule déjà citée, sinon tu en crées une nouvelle.',
+      items: {
+        type: 'object',
+        properties: {
+          moment: { type: 'string', description: 'Le moment, dans les mots du client. Ex. « le client veut prendre rendez-vous ».' },
+          action: {
+            type: 'string',
+            enum: [...ACTIONS],
+            description: `Ce que l’agent fait à ce moment-là, et SEULEMENT si le client l’a tranché : ${CHOIX_ACTION.map((c) => `${c.action} = ${c.libelle}`).join(' ; ')}.`,
+          },
+          moyen: { type: 'string', description: 'Le moyen concret (quel scénario, quel connecteur, quoi d’autre), si le client l’a dit.' },
+        },
+        required: ['moment'],
+      },
+    },
     reponses: {
       type: 'array',
       description: 'Ce que le client vient de DIRE, rattaché aux points de l’ordre du jour. N’y mets que ce '
@@ -234,7 +264,9 @@ function texteSorties(sorties: FicheAgentContenu['sorties']): string {
  * l'habitude que ce diff existe pour empêcher. C'est aussi ce qui fait qu'une proposition sans effet rend
  * une liste vide, donc un écran qui dit « rien à changer » plutôt qu'un bouton qui n'aurait rien fait.
  */
-export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'reponses'>): Changement[] {
+// `reponses` et `bascules` sont l'état de l'ENTRETIEN, pas une proposition d'écriture : le diff ne les
+// regarde pas, et les exclure du type le dit plutôt que de compter sur la discipline de l'appelant.
+export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'reponses' | 'bascules'>): Changement[] {
   const out: Changement[] = [];
 
   for (const [cle, valeur] of Object.entries(proposition.fiche ?? {})) {

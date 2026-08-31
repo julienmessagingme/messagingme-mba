@@ -34,8 +34,40 @@
  * n'est pas un point de bascule, c'est le travail normal de l'agent. Sans cette valeur, le modèle inventerait
  * une action pour un moment qui n'en demande aucune, ce qu'il faisait avant le 2026-08-28.
  */
-export const ACTIONS = ['outil', 'bloc_scenario', 'humain', 'continuer'] as const;
+export const ACTIONS = ['scenario', 'outil_api', 'outil_mcp', 'humain', 'continuer', 'autre'] as const;
 export type Action = (typeof ACTIONS)[number];
+
+/**
+ * Le questionnaire montré au client pour UNE bascule. Julien, 2026-08-31 : « il faut que tu prennes 1 par 1,
+ * je dis bien 1 par 1, et que tu poses les questions sous forme de questionnaire avec des choix ».
+ *
+ * ⚠️ `humain` et `continuer` ne figuraient pas dans sa liste, et sont gardés quand même : ce sont DEUX réponses
+ * qu'il avait lui-même exigées le 2026-08-28 (« si le mec continue de poser des questions ben tu continues de
+ * répondre »). Les retirer rouvrirait le défaut qu'on venait de fermer, celui de l'action inventée faute de
+ * pouvoir dire « rien de spécial ».
+ *
+ * ⚠️ `outil_mcp` est proposé alors que MCP N'EST PAS ENCORE CÂBLÉ (lot L4, non développé). C'est assumé : le
+ * client doit pouvoir dire son intention, et l'assistant a pour consigne de préciser que ce sera à brancher.
+ * Le taire donnerait un questionnaire qui ment par omission ; le proposer sans le dire promettrait un
+ * branchement inexistant.
+ */
+export const CHOIX_ACTION: ReadonlyArray<{ action: Action; libelle: string }> = [
+  { action: 'scenario', libelle: 'créer et lancer un scénario' },
+  { action: 'outil_api', libelle: 'appeler un outil branché par API (un connecteur que vous avez déclaré)' },
+  { action: 'outil_mcp', libelle: 'appeler un outil branché par MCP (pas encore disponible : ce serait à brancher)' },
+  { action: 'humain', libelle: 'passer la main à un humain' },
+  { action: 'continuer', libelle: 'rien de particulier, il continue simplement à répondre' },
+  { action: 'autre', libelle: 'autre chose' },
+];
+
+/** Les actions qui appellent un MOYEN concret. `humain` a son propre point, `continuer` ne demande rien. */
+const DEMANDE_UN_MOYEN = new Set<Action>(['scenario', 'outil_api', 'outil_mcp', 'autre']);
+
+/** Le questionnaire, tel qu'il part dans le prompt et dans la question de repli. */
+export function questionnaireAction(moment: string): string {
+  const lignes = CHOIX_ACTION.map((c, i) => `${i + 1}) ${c.libelle}`).join('\n');
+  return [`Quand ${moment}, que doit faire l’agent ?`, lignes].join('\n');
+}
 
 export interface Point {
   code: string;
@@ -51,10 +83,12 @@ export interface Point {
   /** Possibilités à montrer au client pour qu'il tranche au lieu de rédiger. Ce sont des EXEMPLES à
    *  transposer dans son métier, jamais un menu à réciter (cf. le mandat). */
   pistes?: string[];
-  /** Ce point n'entre à l'ordre du jour QUE si un autre point a livré cette action. C'est le creusement. */
-  debloquePar?: { point: string; action: Action };
-  /** Le modèle doit rendre une `action` typée pour ce point, pas seulement du texte. */
-  attendUneAction?: true;
+  /**
+   * Ce point COLLECTE une liste de moments, et chaque moment ouvre ensuite ses propres questions. C'est le
+   * creusement, et il est devenu une BOUCLE le 2026-08-31 : il n'y a pas « un » moment de bascule avec « une »
+   * action, il y en a autant que le client en cite, chacun avec la sienne.
+   */
+  collecteDesMoments?: true;
 }
 
 /**
@@ -92,19 +126,11 @@ export const AGENDA: Point[] = [
   },
   {
     code: 'bascules',
-    question: 'À quel moment doit-il faire autre chose que répondre, et que doit-il faire à ce moment-là ?',
-    aObtenir: 'les moments où il doit faire autre chose que répondre, ET CE QU’IL FAIT à ce moment-là',
-    pistes: ['appeler un outil', 'envoyer un bloc du scénario', 'passer la main à un humain', 'continuer simplement à répondre'],
-    attendUneAction: true,
-  },
-  {
-    // 🔴 LE CREUSEMENT. « L'agent le fait tout seul » n'est pas une réponse : c'est le début d'une question.
-    code: 'quel_outil',
-    question: 'Concrètement, par quel moyen l’agent fait-il cela tout seul ?',
-    aObtenir: 'CONCRÈTEMENT, par quel moyen l’agent fait ce qu’il vient de dire qu’il ferait seul : quel outil '
-      + 'du catalogue, ou quel connecteur déjà déclaré. Si rien de ce qui existe ne convient, dis-le clairement '
-      + 'plutôt que d’inventer un outil : ce sera à câbler avant que l’agent puisse le faire',
-    debloquePar: { point: 'bascules', action: 'outil' },
+    question: 'À quels moments votre agent doit-il faire autre chose que répondre ? Citez-les, on les prendra un par un.',
+    aObtenir: 'la LISTE des moments où il doit faire autre chose que répondre. Ne demande PAS encore ce qu’il '
+      + 'y fait : on prendra chaque moment un par un juste après',
+    pistes: ['le client veut prendre rendez-vous', 'il demande où vous êtes', 'il faut qualifier son besoin'],
+    collecteDesMoments: true,
   },
   {
     code: 'humain',
@@ -137,8 +163,22 @@ export interface Reponse {
   point: string;
   /** Ce que le client a dit, dans les mots de l'assistant. Vide = rien de retenu, donc rien de couvert. */
   valeur: string;
-  /** Pour les points qui en attendent une (`bascules`) : ce que l'agent FAIT. C'est elle qui débloque un suivi. */
+}
+
+/**
+ * UN moment où l'agent doit faire autre chose que répondre, et ce qu'il y fait.
+ *
+ * 🔴 C'est une LISTE, et c'est tout l'objet du changement du 2026-08-31. Le modèle précédent portait UNE action
+ * sur le point `bascules` : Julien en a cité deux dans la même phrase (prendre un rendez-vous -> un outil ;
+ * donner l'adresse d'une concession -> un scénario), et le second écrasait le premier en silence.
+ */
+export interface Bascule {
+  /** Le moment, dans les mots du client. Sert de CLÉ (on apparie là-dessus) et d'intitulé de question. */
+  moment: string;
+  /** Ce que l'agent y fait. Absent = pas encore tranché, c'est la prochaine question. */
   action?: Action;
+  /** Le moyen concret (quel scénario, quel connecteur, quoi d'autre). Absent quand l'action n'en demande pas. */
+  moyen?: string;
 }
 
 /** L'état de l'entretien, tel que le serveur le tient. */
@@ -146,6 +186,8 @@ export interface EtatEntretien {
   /** Les points DÉJÀ POSÉS au client. Un point jamais posé n'est jamais couvert, même répondu d'avance. */
   poses: string[];
   reponses: Reponse[];
+  /** Les moments de bascule et leur traitement. Vide tant que le point `bascules` n'a rien donné. */
+  bascules?: Bascule[];
 }
 
 /** Une réponse est retenue si elle porte un code connu et un contenu. Le reste vient d'un modèle, donc d'une
@@ -154,28 +196,82 @@ function retenues(reponses: readonly Reponse[]): Reponse[] {
   return reponses.filter((r) => PAR_CODE.has(r.point) && r.valeur.trim() !== '');
 }
 
+/** Les bascules réellement exploitables : un moment non vide. Le reste vient d'un modèle. */
+function bascules(etat: EtatEntretien): Bascule[] {
+  return (etat.bascules ?? []).filter((b) => b.moment.trim() !== '');
+}
+
+/** Codes des points ENGENDRÉS par une bascule. L'index les rend stables tant que la liste ne se réordonne
+ *  pas, ce que `fusionnerBascules` garantit (appariement par moment, ajout en fin). */
+const codeAction = (i: number): string => `bascule_${i + 1}_action`;
+const codeMoyen = (i: number): string => `bascule_${i + 1}_moyen`;
+
+/** Le libellé d'une action, pour le prompt et l'écran. */
+export function libelleAction(action: Action): string {
+  return CHOIX_ACTION.find((c) => c.action === action)?.libelle ?? action;
+}
+
 /**
- * L'ordre du jour EFFECTIF : les points de base, plus les suivis que les réponses déjà données ont ouverts.
+ * L'ordre du jour EFFECTIF : les points de base, plus DEUX points par bascule citée (que fait-on ? par quel
+ * moyen ?), insérés juste après le point qui les a fait naître.
  *
- * Un suivi non débloqué n'est pas « optionnel », il n'EXISTE pas : il ne compte ni dans le total affiché au
- * client, ni dans ce qui reste à faire. C'est ce qui permet d'annoncer honnêtement « encore deux points » à
- * un client dont l'agent n'appellera jamais d'outil.
+ * 🔴 C'est ici que « un par un » devient un fait et non une consigne. Une bascule sans action engendre sa
+ * question ; une action qui appelle un moyen engendre la sienne ; et l'entretien ne peut pas se terminer tant
+ * qu'il en reste une. Le total annoncé au client GRANDIT donc à mesure qu'il cite des moments, ce qui est
+ * honnête : il ne pouvait pas savoir combien il en aurait avant de les avoir dits.
  */
-export function agendaEffectif(reponses: readonly Reponse[]): Point[] {
-  const gardees = retenues(reponses);
-  return AGENDA.filter((p) => {
-    if (!p.debloquePar) return true;
-    return gardees.some((r) => r.point === p.debloquePar!.point && r.action === p.debloquePar!.action);
+export function agendaEffectif(etat: EtatEntretien): Point[] {
+  const liste = bascules(etat);
+  const engendres: Point[] = [];
+  liste.forEach((b, i) => {
+    engendres.push({
+      code: codeAction(i),
+      question: questionnaireAction(b.moment),
+      aObtenir: `ce que l’agent fait quand « ${b.moment} », parmi les choix proposés`,
+    });
+    if (b.action && DEMANDE_UN_MOYEN.has(b.action)) {
+      engendres.push({
+        code: codeMoyen(i),
+        question: `Pour « ${b.moment} » : ${moyenDemande(b.action)}`,
+        aObtenir: `le moyen CONCRET pour « ${b.moment} » (${libelleAction(b.action)})`,
+      });
+    }
   });
+  const out: Point[] = [];
+  for (const p of AGENDA) {
+    out.push(p);
+    if (p.collecteDesMoments) out.push(...engendres);
+  }
+  return out;
+}
+
+/** La question du moyen, selon l'action choisie. Chacune appelle une précision différente. */
+function moyenDemande(action: Action): string {
+  if (action === 'scenario') return 'quel scénario doit-il lancer, ou que doit contenir ce scénario ?';
+  if (action === 'outil_api') return 'quel connecteur API doit-il appeler ? S’il n’existe pas encore, dites ce qu’il devrait faire.';
+  if (action === 'outil_mcp') return 'quel outil MCP, et sur quel serveur ? (MCP n’est pas encore branché : ce sera à câbler.)';
+  return 'que doit-il faire exactement ?';
 }
 
 /** Ce qui reste à couvrir, dans l'ordre. Un point compte comme couvert s'il a été POSÉ **et** répondu. */
 export function manquesDeCouverture(etat: EtatEntretien): string[] {
   const poses = new Set(etat.poses);
   const repondus = new Set(retenues(etat.reponses).map((r) => r.point));
-  return agendaEffectif(etat.reponses)
+  const liste = bascules(etat);
+  // Une question engendrée est « répondue » quand la bascule porte le champ correspondant : elle ne passe pas
+  // par `reponses`, sinon la même information vivrait à deux endroits et finirait par diverger.
+  liste.forEach((b, i) => {
+    if (b.action) repondus.add(codeAction(i));
+    if (b.moyen && b.moyen.trim() !== '') repondus.add(codeMoyen(i));
+  });
+  return agendaEffectif(etat)
     .filter((p) => !(poses.has(p.code) && repondus.has(p.code)))
     .map((p) => p.code);
+}
+
+/** Tous les points de l'ordre du jour effectif, par code. */
+function parCode(etat: EtatEntretien): Map<string, Point> {
+  return new Map(agendaEffectif(etat).map((p) => [p.code, p]));
 }
 
 /**
@@ -186,7 +282,7 @@ export function manquesDeCouverture(etat: EtatEntretien): string[] {
  */
 export function prochainPoint(etat: EtatEntretien): Point | null {
   const manquants = manquesDeCouverture(etat);
-  return manquants.length === 0 ? null : PAR_CODE.get(manquants[0]!) ?? null;
+  return manquants.length === 0 ? null : parCode(etat).get(manquants[0]!) ?? null;
 }
 
 /**
@@ -199,23 +295,45 @@ export function prochainPoint(etat: EtatEntretien): Point | null {
  */
 export function prochainsPoints(etat: EtatEntretien): [Point | null, Point | null] {
   const manquants = manquesDeCouverture(etat);
-  return [PAR_CODE.get(manquants[0] ?? '') ?? null, PAR_CODE.get(manquants[1] ?? '') ?? null];
+  const par = parCode(etat);
+  return [par.get(manquants[0] ?? '') ?? null, par.get(manquants[1] ?? '') ?? null];
 }
 
 /**
  * Fusionne les réponses d'un tour dans l'état. Une nouvelle réponse REMPLACE l'ancienne du même point : le
  * client a le droit de se raviser, et l'entretien doit suivre plutôt que garder sa première idée.
- *
- * ⚠️ Se raviser peut REFERMER un suivi : passer `bascules` de « appeler un outil » à « continuer à répondre »
- * retire `quel_outil` de l'ordre du jour, et la réponse qu'on y avait déjà notée devient sans objet. On la
- * garde en base sans la compter (elle redeviendrait juste si le client revenait en arrière), et
- * `agendaEffectif` fait le tri : c'est lui la source de vérité, pas la liste des réponses.
  */
 export function fusionner(etat: readonly Reponse[], nouvelles: readonly Reponse[]): Reponse[] {
   const par = new Map(etat.map((r) => [r.point, r]));
   for (const r of retenues(nouvelles)) par.set(r.point, r);
   // Ordre de l'AGENDA, pas ordre d'arrivée : l'état se relit comme le questionnaire, en base comme au prompt.
   return AGENDA.map((p) => par.get(p.code)).filter((r): r is Reponse => r !== undefined);
+}
+
+/**
+ * Fusionne les bascules d'un tour.
+ *
+ * 🔴 APPARIEMENT PAR MOMENT, ET AJOUT EN FIN. C'est ce qui rend les codes engendrés (`bascule_2_action`…)
+ * stables d'un tour à l'autre : si la liste se réordonnait, un point noté POSÉ désignerait soudain une autre
+ * bascule, et on reposerait une question déjà tranchée en croyant en poser une neuve.
+ *
+ * Un champ ABSENT d'une nouvelle version ne l'efface pas : le modèle rend souvent la bascule entière alors
+ * qu'il n'a appris que son action, et effacer le reste ferait perdre un moyen déjà donné.
+ */
+export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly Bascule[]): Bascule[] {
+  const out = etat.map((b) => ({ ...b }));
+  for (const n of nouvelles) {
+    const moment = n.moment.trim();
+    if (moment === '') continue;
+    const deja = out.find((b) => b.moment.trim().toLowerCase() === moment.toLowerCase());
+    if (!deja) {
+      out.push({ moment, ...(n.action ? { action: n.action } : {}), ...(n.moyen ? { moyen: n.moyen } : {}) });
+      continue;
+    }
+    if (n.action) deja.action = n.action;
+    if (n.moyen && n.moyen.trim() !== '') deja.moyen = n.moyen;
+  }
+  return out;
 }
 
 /**
@@ -226,18 +344,23 @@ export function fusionner(etat: readonly Reponse[], nouvelles: readonly Reponse[
  * revenir sur un point si la suite le contredit.
  */
 export function ordreDuJour(etat: EtatEntretien): string {
-  const gardees = new Map(retenues(etat.reponses).map((r) => [r.point, r]));
+  const gardees = new Map(retenues(etat.reponses).map((r) => [r.point, r.valeur]));
+  // Ce qu'on sait des points ENGENDRÉS ne vit pas dans `reponses` mais sur la bascule elle-même : on le
+  // reprojette ici pour que le modèle voie l'ordre du jour d'un seul tenant.
+  bascules(etat).forEach((b, i) => {
+    if (b.action) gardees.set(codeAction(i), libelleAction(b.action));
+    if (b.moyen && b.moyen.trim() !== '') gardees.set(codeMoyen(i), b.moyen);
+  });
   const poses = new Set(etat.poses);
-  const effectif = agendaEffectif(etat.reponses);
+  const effectif = agendaEffectif(etat);
   const large = Math.max(...effectif.map((p) => p.code.length));
   return effectif
     .map((p) => {
-      const r = gardees.get(p.code);
-      const etatDuPoint = r === undefined
+      const su = gardees.get(p.code);
+      const etatDuPoint = su === undefined
         ? 'À POSER'
         : poses.has(p.code) ? 'couvert' : 'répondu d’avance, À FAIRE CONFIRMER';
-      const su = r ? ` -> « ${r.valeur} »${r.action ? ` [${r.action}]` : ''}` : '';
-      return `  ${p.code.padEnd(large)} [${etatDuPoint}] : ${p.aObtenir}${su}`;
+      return `  ${p.code.padEnd(large)} [${etatDuPoint}] : ${p.aObtenir}${su ? ` -> « ${su} »` : ''}`;
     })
     .join('\n');
 }

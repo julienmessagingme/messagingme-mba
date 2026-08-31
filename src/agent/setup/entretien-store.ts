@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ACTIONS, type Reponse } from './couverture';
+import { ACTIONS, type Bascule, type Reponse } from './couverture';
 import { MAX_CARACTERES_MESSAGE, MAX_TOURS_HISTORIQUE } from './conversation';
 
 /**
@@ -21,25 +21,37 @@ export interface EntretienComplet {
   messages: TourEntretien[];
   reponses: Reponse[];
   poses: string[];
+  /** Les moments de bascule et leur traitement. À part des `reponses` parce que c'est une LISTE : il y a
+   *  autant de moments que le client en cite, chacun avec sa propre action et son propre moyen. */
+  bascules: Bascule[];
 }
 
 /** Un entretien vierge. C'est aussi ce qu'on rend d'un état illisible : on ne bloque jamais l'écran. */
-export const ENTRETIEN_VIERGE: EntretienComplet = { messages: [], reponses: [], poses: [] };
+export const ENTRETIEN_VIERGE: EntretienComplet = { messages: [], reponses: [], poses: [], bascules: [] };
 
 const tourSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().max(MAX_CARACTERES_MESSAGE),
 });
 
+/** Plafond du nombre de moments de bascule. Chacun engendre DEUX questions : au-delà, l'entretien cesserait
+ *  d'être un entretien. Un client qui en a davantage les regroupe, ou les ajoute ensuite à la main. */
+export const MAX_BASCULES = 12;
+
 const etatSchema = z.object({
   messages: z.array(tourSchema).max(MAX_TOURS_HISTORIQUE * 2).default([]),
   reponses: z.array(z.object({
     point: z.string().max(64),
     valeur: z.string().max(2000),
-    action: z.enum(ACTIONS).optional(),
   })).max(64).default([]),
   poses: z.array(z.string().max(64)).max(64).default([]),
+  bascules: z.array(z.object({
+    moment: z.string().max(400),
+    action: z.enum(ACTIONS).optional(),
+    moyen: z.string().max(2000).optional(),
+  })).max(MAX_BASCULES).default([]),
 });
+
 
 /** Relit un état stocké. Illisible -> entretien vierge, jamais une exception. */
 export function lireEtat(brut: unknown): EntretienComplet {

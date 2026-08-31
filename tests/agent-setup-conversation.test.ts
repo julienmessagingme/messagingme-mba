@@ -39,7 +39,7 @@ describe('construireMessages', () => {
     // finirait par diverger de celle sur laquelle la route se ferme, et l'entretien s'arrêterait sur un point
     // dont le modèle n'a jamais entendu parler.
     const mandat = construireMessages(CTX(), [{ role: 'user', content: 'Bonjour' }], VIERGE)[0]!.content ?? '';
-    for (const p of AGENDA.filter((x) => !x.debloquePar)) expect(mandat, p.code).toContain(p.code);
+    for (const p of AGENDA) expect(mandat, p.code).toContain(p.code);
   });
 
   it('🔴 le mandat n’ordonne plus de DEVINER ce que le client n’a pas dit', () => {
