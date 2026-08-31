@@ -95,11 +95,18 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 ## Relevé au lot « entretien de construction » (2026-08-31)
 
-- 🔴 **Deux failles HAUTES dans les dépendances transitives de Fastify**, vues en passant à `npm audit` :
-  `fast-uri` (confusion d'hôte par antislash) et `find-my-way` (déni de service HTTP/2). **Elles sont
-  ANTÉRIEURES à ce lot** (les deux paquets ajoutés, `unpdf` et `fflate`, n'ont aucune dépendance), et
-  `npm audit fix` annonce un correctif disponible. Non fait ici : ça touche le verrou de dépendances en
-  largeur, et d'autres sessions travaillent dans ce dépôt. À faire dans sa propre passe, avec la CI comme juge.
+- 🔴 **Le Dockerfile embarque les OUTILS DE TEST dans l'image de production.** `npm ci` sans `--omit=dev` :
+  `vitest` et `vite` sont dans le conteneur qui tourne (vérifié le 2026-08-31). Deux conséquences. La visible :
+  les cinq alertes `npm audit` restantes (dont une critique) portent toutes sur cette chaîne, et sont donc
+  techniquement expédiées en production, même si rien ne les y rend exploitable (aucun serveur de
+  développement n'y tourne). L'invisible : l'image porte des dizaines de paquets qui n'ont rien à y faire.
+  Le correctif tient en un mot dans le `Dockerfile`, mais il change la FORME du déploiement : l'application
+  tourne via `tsx` en conteneur, il faut donc prouver que rien du chemin d'exécution ne dépend d'un paquet de
+  développement avant de l'appliquer. À faire dans sa propre passe, avec un `compose run npm run migrate` et
+  un démarrage d'API comme preuve.
+  (Les deux failles HAUTES des briques de Fastify, elles, sont FERMÉES le 2026-08-31 : `fast-uri` et
+  `find-my-way` sont montées dans les intervalles déjà autorisés, `package.json` inchangé, et
+  `npm audit --omit=dev` rend 0 vulnérabilité.)
 - ⚠️ **L'entretien à neuf points n'a jamais été mené en vrai.** Toute la mécanique est testée contre des
   doubles ; personne n'a encore vu le modèle formuler les neuf questions à la suite, ni le creusement
   `quel_outil` se déclencher sur une vraie conversation. C'est le premier essai à faire, et il demande un
