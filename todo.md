@@ -78,7 +78,10 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
   et imposerait un redépôt. À vérifier avant de vendre du RCS conversationnel.
 - **Le cas GTFS / Auxerre** : ne jamais confier le paramètre `grille` au modèle. Prévoir un endpoint qui le
   déduit côté serveur, avec un jeton dédié révocable.
-- **Excel et PDF vers des FAQ structurées** : décision en attente, l’analyse des parseurs est faite.
+- **Excel (`.xlsx`) en pièce jointe** : toujours ÉCARTÉ, et c'est une décision reconduite le 2026-08-31. Les
+  deux bibliothèques npm restent mauvaises (`xlsx` figé en 0.18.5 avec une CVE de pollution de prototype,
+  `exceljs` énorme). Le PDF et le Word, eux, sont faits (`unpdf` et `fflate`, zéro dépendance transitive).
+  Un client avec un tableur exporte en CSV, qui passe.
 - **L’écriture en observation depuis `/ops`** : volontairement hors lot, à trancher si le besoin revient.
 - **Astérisques sur les onze champs de l’éditeur de formulaire**, et la liste des vérifications visuelles.
 
@@ -89,6 +92,26 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 - la **chaîne RCS complète**, depuis le dernier déploiement ;
 - l’**agent IA** sur du trafic réel : une conversation tenue, un outil appelé, une sortie qui reprend le
   scénario. Tout est testé contre des mocks, rien n’a parlé à un vrai contact.
+
+## Relevé au lot « entretien de construction » (2026-08-31)
+
+- 🔴 **Deux failles HAUTES dans les dépendances transitives de Fastify**, vues en passant à `npm audit` :
+  `fast-uri` (confusion d'hôte par antislash) et `find-my-way` (déni de service HTTP/2). **Elles sont
+  ANTÉRIEURES à ce lot** (les deux paquets ajoutés, `unpdf` et `fflate`, n'ont aucune dépendance), et
+  `npm audit fix` annonce un correctif disponible. Non fait ici : ça touche le verrou de dépendances en
+  largeur, et d'autres sessions travaillent dans ce dépôt. À faire dans sa propre passe, avec la CI comme juge.
+- ⚠️ **L'entretien à neuf points n'a jamais été mené en vrai.** Toute la mécanique est testée contre des
+  doubles ; personne n'a encore vu le modèle formuler les neuf questions à la suite, ni le creusement
+  `quel_outil` se déclencher sur une vraie conversation. C'est le premier essai à faire, et il demande un
+  workspace crédité (voir plus haut : aucun ne l'est).
+- ⚠️ **La lecture d'image n'a été prouvée que par une sonde**, avec un pixel de test. Aucune vraie grille de
+  tarifs photographiée n'est encore passée par la chaîne complète.
+- **Vérification visuelle du tchat** (fil, bulles, indicateur de frappe, trombone) : à faire à l'œil, aucun
+  test ne la remplace.
+- **La liste déroulante d'actions SUR une règle affichée** (scénario / API / MCP), demandée le 2026-08-28,
+  reste non faite SOUS CETTE FORME. Le besoin est en grande partie couvert autrement depuis le 2026-08-31 :
+  le point `quel_outil` de l'entretien pose la question au bon endroit, c'est-à-dire dans la QUESTION et non
+  sur une ligne de diff dont ça changerait la clé. À rouvrir seulement si l'usage montre que ça manque encore.
 
 ## 🟠 SSRF par DNS rebinding : revalider l'IP RÉSOLUE avant l'appel (relevé à la revue du lot L2)
 

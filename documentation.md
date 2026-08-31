@@ -325,7 +325,14 @@ Voir `.env.example` / `.env.prod.example`. Clés : `PORT`, `META_APP_SECRET` (si
 **`WEBHOOK_IN_RATE_LIMIT_MAX`** / **`WEBHOOK_IN_RATE_LIMIT_WINDOW_MS`** (débit d'UN webhook entrant, défaut
 120 par minute) et **`WEBHOOK_PAYLOAD_RETENTION_DAYS`** (défaut 7, purge du dernier payload).
 Côté agent IA : **`AI_GATEWAY_API_KEY`** (vide -> la file `agent-turn` n'est pas consommée, l'assistant de
-construction et le bac à sable répondent 503), **`AGENT_SETUP_MODEL`**, **`AGENT_MODEL`** et **`EUR_PER_USD`**.
+construction et le bac à sable répondent 503), **`AGENT_SETUP_MODEL`**, **`AGENT_MODEL`**,
+**`AGENT_VISION_MODEL`** et **`EUR_PER_USD`**.
+🔴 **`AGENT_VISION_MODEL` est SÉPARÉ de `AGENT_SETUP_MODEL`, et ce n'est pas de la précaution : c'est mesuré.**
+Sonde de la Gateway avec la clé de production le 2026-08-31 : `zai/glm-4.7`, le modèle d'entretien, REFUSE une
+part `image_url` avec un **400 au corps vide**. Les réutiliser aurait livré une pièce jointe image morte, avec
+une erreur que personne n'aurait su relier à sa cause. `google/gemini-2.5-flash` la lit (vérifié : il a décrit
+le pixel de test), c'est la valeur posée en production. Vide → les images sont refusées explicitement, sans
+aucun appel ; les documents texte, PDF et Word passent quand même, ils n'ont besoin d'aucun modèle.
 ⚠️ Poser la clé SANS les deux modèles est refusé au boot : le code retomberait sur `LLM_MODEL`, qui est
 l'identifiant de l'ANALYSE de conversation servie EN DIRECT par Anthropic, là où le Gateway attend un
 identifiant préfixé par son fournisseur. Rien ne le signalerait à la création d'un agent, et chaque tour
@@ -2047,7 +2054,44 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
-## 2026-08-31 : le SERVEUR conduit l'entretien de construction (migration 0090)
+## DEPLOYE le 2026-08-29 : le bloc Question, des sorties qu'on voyait sans pouvoir les relier
+
+Symptôme rapporté par Julien : « certains boutons de réponses restent rouges et je ne peux pas les relier […]
+puis je vais dans l'inbox et je reviens et là je peux les relier ».
+
+🔴 **Cause racine, lue dans `@xyflow/system` 0.0.79.** React Flow garde les positions des poignées EN CACHE
+(`node.internals.handleBounds`) et ne les remesure que si la taille EXTÉRIEURE du bloc change, ou sur ordre
+(`updateNodeInternals`). Or `onPointerDown` commence par résoudre la poignée de départ DANS CE CACHE, et sort
+**en silence** si elle n'y est pas : le point se voit, se survole, et le glisser ne commence jamais. Passer par
+l'inbox remontait le composant, donc vidait le cache, d'où le contournement que Julien avait trouvé seul.
+
+Ce qui rendait le cache faux : `handleSig`, une signature ÉCRITE À LA MAIN censée reproduire le JSX, qui avait
+déjà dérivé à deux endroits. Une ligne de menu au libellé VIDE compte dans `rows` mais ne dessine aucune
+poignée ; taper son libellé en ajoute une sans changer ni la signature ni la hauteur du bloc. Idem pour un
+bouton qui passe de « lien » à « réponse rapide ». Dans les deux cas, la poignée naissait morte.
+
+**Le correctif ne répare pas les deux cas, il supprime la classe entière** : la signature est désormais LUE
+DANS LE DOM (les poignées réellement présentes, dans leur ordre), c'est-à-dire la même chose que React Flow
+mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plus tard est couvert d'avance.
+Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
+
+---
+## DEPLOYE le 2026-08-31 sur `b058eaa` : le SERVEUR conduit l'entretien de construction (migration 0090)
+
+✅ **Migration 0090 appliquée**, séquence tenue : `build mba-api`, vérification que la 0090 est **DANS l'image**,
+`migrate`, vérification EN BASE (six colonnes, la clé primaire, les deux clés étrangères, `0090` en tête de
+`schema_migrations`), puis `up -d --build`. Un second déploiement `--force-recreate` a suivi pour
+`AGENT_VISION_MODEL` (un `.env.prod` modifié n'est relu qu'à la recréation). **Prochaine libre = 0091.**
+
+Vérifié APRÈS déploiement : trois conteneurs sains sur `mcp-robot_default`, **zéro redémarrage**, aucune erreur
+dans les journaux. Par le chemin PUBLIC : l'accueil et `/agents` en 200 ; les quatre nouvelles routes montées et
+gardées (**401 sans jeton**, pas 404) : `GET`, `POST` et `DELETE` sur `/setup`, et `POST /setup/piece-jointe`.
+`AGENT_VISION_MODEL` relu depuis l'intérieur du conteneur.
+
+⚠️ **La CI a attrapé ce qu'une passe locale partielle avait manqué** : le changement d'onglet d'entrée faisait
+tomber trois tests de `agents-fiche.spec.ts`, qui comptaient sur l'ancien défaut. Ils cliquent maintenant
+l'onglet, comme le ferait un utilisateur. Leçon rejouée : après un changement de NAVIGATION, la suite e2e se
+lance en ENTIER, pas sur le seul fichier touché.
 
 ### 🔴 Le défaut n'était pas la liste des points, c'était QUI CONDUIT
 
