@@ -312,7 +312,7 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 | # | État | Ce qui reste |
 |---|---|---|
 | 5.1 | 🟡 PARTIEL | La moitié CONFORMITÉ est faite le 2026-08-29 : un STOP en WhatsApp désabonne, par le prédicat partagé `src/crm/consentement.ts`. Reste la moitié INTÉGRATION : `/v1/contacts` ne sait toujours pas dire « désabonné » (il faut un champ `optOut` explicite ET une seconde écriture après l'upsert, qui ne sait que promouvoir). Détail dans `todo.md` |
-| 5.2 | 🟡 PARTIEL | **La partie structurelle est FAITE le 2026-08-31** (migration 0093) : `webhook_events` porte le numéro destinataire, donc son espace ; purge par rétention de 30 j ; et la purge par contact l'efface, scopée au tenant. Reste la rétention des CONVERSATIONS et analyses, qui attend UN NOMBRE DE JOURS de Julien (décision produit n°2 plus bas) |
+| 5.2 | ✅ CLOS le 2026-08-31 | `webhook_events` porte le numéro destinataire donc son espace, purge à 30 j, et la purge par contact l'efface en restant scopée au tenant (0093). Les CONVERSATIONS, leurs messages et leur analyse sont purgés à 365 j, par les cascades en base (0094). Reste hors de cet item : la routine d'effacement par contact existait déjà (`purgeMany`) |
 | 5.3 | 🟡 PARTIEL | La file `agent-turn` a apporté une partie du mécanisme. Reste : `groupId = tenantId` à l'enfilage, découper `campaign-run` en lots, et surtout **déplacer le throttle au niveau du NUMÉRO** |
 | 5.4 | 🔴 PAS FAIT | L'item entier. Bloquant dès qu'un client veut un second numéro |
 | 5.5 | 🔴 PAS FAIT | L'item entier. Aggravant intact : l'erreur Meta de plafond n'est ni retryable ni terminale |

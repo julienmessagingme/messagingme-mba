@@ -2200,9 +2200,8 @@ inattribuables, et c'est la rétention qui s'en occupe.
 **Ce qui n'est PAS couvert, et c'est écrit dans le code** : les lignes d'avant 0093 (sans discriminant) et les
 payloads `messaging_handovers` (qui ne portent ni `from` ni `recipient_id`, mais pas de texte non plus).
 
-**Reste de 5.2, et il attend une décision** : la rétention des CONVERSATIONS et des analyses. Le mécanisme est
-le même, il manque un nombre de jours, qui est un arbitrage produit (`PLAN.md` §Décisions produit, point 2) :
-contractuel ou réglable par client, et combien.
+**Reste de 5.2** : la rétention des CONVERSATIONS et des analyses, faite le même jour dans le lot 2 (365 j,
+migration 0094). 5.2 est clos.
 
 ---
 ## DEPLOYE le 2026-08-31 sur `5456d14` : les deux restes du lot « journée 1 » (aucune migration)
