@@ -305,7 +305,7 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 
 | # | État | Ce qui reste |
 |---|---|---|
-| 5.1 | 🟡 PARTIEL | 🔴 **Le plus important du bloc, et c'est de la conformité.** Le chemin d'écriture existe, mais **la détection de STOP / DESABONNER dans le WhatsApp entrant n'est pas branchée**. Le prédicat est déjà écrit et testé pour le RCS : il s'importe, il ne se recopie pas |
+| 5.1 | 🟡 PARTIEL | La moitié CONFORMITÉ est faite le 2026-08-29 : un STOP en WhatsApp désabonne, par le prédicat partagé `src/crm/consentement.ts`. Reste la moitié INTÉGRATION : `/v1/contacts` ne sait toujours pas dire « désabonné » (il faut un champ `optOut` explicite ET une seconde écriture après l'upsert, qui ne sait que promouvoir). Détail dans `todo.md` |
 | 5.2 | 🟡 PARTIEL | `webhook_events` toujours jamais purgée et sans `tenant_id`, donc effacement RGPD structurellement impossible. Plus la rétention configurable sur les conversations et analyses |
 | 5.3 | 🟡 PARTIEL | La file `agent-turn` a apporté une partie du mécanisme. Reste : `groupId = tenantId` à l'enfilage, découper `campaign-run` en lots, et surtout **déplacer le throttle au niveau du NUMÉRO** |
 | 5.4 | 🔴 PAS FAIT | L'item entier. Bloquant dès qu'un client veut un second numéro |
@@ -356,13 +356,13 @@ Un contact qui écrit STOP est désinscrit. Le prédicat de détection existait 
 il n'était simplement pas relié au canal WhatsApp ; il vit maintenant dans `src/crm/consentement.ts`, partagé
 par les deux canaux.
 
-### 1-bis. L'audit du 25 août : quatre constats encore ouverts
+### ~~1-bis. L'audit du 25 août~~ ✅ CLOS le 2026-08-31 : plus aucun rouge ni orange
 
-**R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué), **R1-bis** (le verrou d'exécution par
-campagne, qui ferme l'amplification du balayage fil de l'eau) et **R13** (arrêter une campagne lancée) sont
-faits le 2026-08-31. Restent **R4** (un déploiement gèle une campagne en cours), **R10+J2** (le rappel « avant
-date » peut partir deux ou trois fois), **R9** (le mur de l'import CSV), **R7** (le compteur de non-lus).
-La liste vivante est en tête de [todo.md](todo.md), pas ici.
+R1, R1-bis, R13, R4, R10+J2, R9 et R7 sont faits et déployés. Restent R11+J3, sans objet tant qu'un seul
+worker tourne, et **les 23 jaunes de sa §7, qui n'ont jamais été ouverts** : ils se relisent à la source,
+c'est la seule liste de dette de performance encore intacte de cet audit. Deux leviers ont été laissés
+sciemment avec leur condition de réouverture (file d'import, colonne `unread` dénormalisée), en tête de
+[todo.md](todo.md), qui est la liste vivante. Pas ici.
 
 ### ~~2. Deux gestes d'hygiène de sécurité~~ ✅ FAIT le 2026-08-29, déployé
 
