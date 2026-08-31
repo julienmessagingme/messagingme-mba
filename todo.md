@@ -8,32 +8,14 @@ R3 alerte de file d'échec, J0 pool à 8), et R5, R6-découpage, J1, R12 et B3 v
 (5.3, 5.4, 5.5), pas ici. Les 23 jaunes de la §7 de l'audit ne sont volontairement PAS recopiés :
 aucun ne casse, ils se relisent à la source le jour où on ouvre le fichier concerné.
 
-**Faits le 2026-08-31 :** **R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué : douze commentaires
-corrigés et le paramètre inerte retiré), **R1-bis** (le verrou d'exécution par campagne, migration 0089, qui
-ferme aussi l'amplification du balayage fil de l'eau que R1 avait mise au jour) et **R13** (arrêter une
-campagne lancée : pause, garde au démarrage du job, reprise explicite). Détail dans `documentation.md`
-§Journal des lots livrés.
+**Faits le 2026-08-31 :** **R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué), **R1-bis** (le
+verrou d'exécution par campagne, migration 0089), **R13** (arrêter une campagne lancée), **R4** (un
+déploiement ne gèle plus une campagne : balayage de reprise, bail court renouvelé, drapeau d'arrêt,
+`stop_grace_period`) et **R10 + J2** (le rappel « avant date » ne part plus deux fois : claim conditionnel sur
+le marqueur d'occurrence, dans le runner). Détail dans `documentation.md` §Journal des lots livrés.
 
-- 🔴 **R4. Chaque déploiement gèle une campagne en cours, sans erreur visible.**
-  `installGracefulShutdown` (`src/shutdown.ts:5`) force `process.exit(1)` à 10 secondes, un run de deux
-  heures est donc tué en plein envoi. Le job reste `active` jusqu'à l'expiration de son propre timeout,
-  dimensionné en heures. Chaque interruption consomme un des cinq rejeux ; à la sixième la campagne reste
-  `running` POUR TOUJOURS (aucun balayage ne reprend une campagne `running` avec des destinataires en
-  attente). ⚠️ Relever le délai d'arrêt seul est INOPÉRANT : sans `stop_grace_period` dans
-  `docker-compose.yml`, Docker envoie SIGKILL vers 10 secondes de toute façon. Les deux vont ensemble,
-  plus le balayage de reprise qui manque.
-
-- 🔴 **R10 + J2. Le rappel « avant date » peut partir deux ou trois fois, chez de vrais clients.**
-  La déduplication vit uniquement dans le balayage, jamais dans le runner : `src/automation/runner.ts:122`
-  saute volontairement l'anti-rebond pour `avant_date`, et `markFired` (`store.pg.ts:171`) écrit un
-  `on conflict do update` INCONDITIONNEL. Tant que l'événement publié n'est pas consommé, le balayage
-  suivant revoit le contact comme dû et republie. Seuil réel : une douzaine d'événements dans la minute,
-  ce que fabrique un client avec quinze rendez-vous à la même heure. Symptôme : des rappels WhatsApp
-  identiques, facturés, visibles du client, avec le risque de note de qualité Meta.
-  Le vrai verrou est un claim conditionnel sur le marqueur d'occurrence DANS le runner (`singletonKey`
-  ne sert à rien, cf. R1). ⚠️ Deux pièges : `markFired` a une SECONDE mission pour `avant_date` (écrire
-  le marqueur), et `date-sweep.ts:15-22` documente que si le scénario ne démarre pas le tir est annulé et
-  le balayage REPUBLIE, ce qui est le rattrapage voulu. Ne pas casser ça en posant le claim.
+**Il ne reste donc que deux constats, tous deux 🟠**, plus R11+J3 qui est sans objet tant qu'un seul worker
+tourne.
 
 - 🟠 **R9. Le mur de l'import CSV tombe au CHOIX du fichier, pas à l'import.**
   L'aperçu (`web/lib/api.ts:248` vers `src/http/import.ts:119`) envoie le CSV ENTIER pour n'en extraire

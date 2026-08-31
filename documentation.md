@@ -2076,6 +2076,62 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 sur `a737edf` : R4 et R10 de l'audit (aucune migration)
+
+### R4. Un déploiement gelait une campagne en cours, sans erreur visible
+
+Le worker est tué en plein envoi à chaque `up -d` : SIGKILL vers 10 s, un run de deux heures n'a aucune
+chance. Rien ne reprenait ensuite la campagne. Chaque interruption consommait un rejeu pg-boss, et **à la
+sixième elle était figée pour toujours**. Mesure du jour : ce seul lot a déclenché le cas cinq fois.
+
+🔴 **Le correctif n'est PAS d'attendre la fin d'un run**, c'est de le rendre REPRENABLE. Quatre pièces, et une
+seule est la garantie :
+
+- **Le balayage de reprise** (`listCampagnesGelees`) relance toute campagne `running` qui a du travail et
+  AUCUN run vivant. C'est la garantie, parce qu'elle rattrape aussi les arrêts qu'aucun signal ne précède
+  (SIGKILL, panne, OOM). « Aucun run vivant » se lit sur le verrou d'exécution de R1-bis.
+- ⚠️ **Il REMPLACE le balayage du fil de l'eau**, qui n'en était qu'un cas particulier (les campagnes nourries
+  par un webhook) et qui, lui, ne savait pas voir qu'un run tournait déjà : il empilait un job de plus par
+  minute. Deux balayages pour une seule question, dont un faux.
+- 🔴 **Le bail du verrou devient COURT (2 min) et RENOUVELÉ**, et ce raisonnement REMPLACE celui écrit le
+  matin même. Le bail était alors calé sur l'expiration du job pg-boss, dimensionnée en heures, au motif que
+  les deux mécanismes devaient lâcher prise ensemble. C'était juste pour un bail qu'on ne renouvelle pas, et
+  **faux dès qu'on veut reprendre** : le verrou d'un process mort serait resté « vivant » pendant des heures,
+  et le balayage aurait sagement attendu. Un renouvellement refusé arrête le run (on ne tient plus le verrou).
+- **Un drapeau d'arrêt**, lu à chaque destinataire, laisse le run sortir à la frontière d'un envoi et rendre
+  son verrou. ⚠️ Le statut n'est **pas** réécrit : la campagne reste `running`, personne n'a rien décidé, et la
+  marquer `paused` exigerait un geste humain pour repartir.
+- **`stop_grace_period: 30s`** dans le compose, au-dessus du filet de 25 s du shutdown. ⚠️ Les deux vont
+  ENSEMBLE : relever l'un sans l'autre ne change rien. Et ce n'est PAS la garantie, seulement le confort du cas
+  courant : un run throttlé peut dormir jusqu'à une minute dans son limiteur avant de relire le drapeau.
+
+### R10 + J2. Le rappel « avant date » pouvait partir deux ou trois fois
+
+La déduplication vivait UNIQUEMENT dans le balayage, qui lit le marqueur d'occurrence avant de publier. Tant
+que l'événement publié n'était pas consommé, le balayage suivant revoyait le contact comme dû et **republiait
+la même échéance**. Un client avec quinze rendez-vous à la même heure suffit à faire prendre du retard à la
+file. Symptôme : deux, parfois trois rappels WhatsApp **identiques, facturés, visibles du client**, avec le
+risque de note de qualité Meta.
+
+`markFired` devient un **claim conditionnel** quand un marqueur est donné : la garantie descend du balayage au
+RUNNER, seul endroit atomique.
+
+- ⚠️ **SANS marqueur, l'écriture reste inconditionnelle.** Tous les autres déclencheurs y écrivent
+  `fired_for = null`, et `null is distinct from null` est faux : rendre ce cas conditionnel aurait fait
+  échouer TOUT déclenchement répété, sur toutes les automations du produit.
+- ⚠️ **Le rattrapage du balayage n'est pas cassé.** Quand le scénario ne démarre pas, `clearFired` efface le
+  marqueur et la tentative suivante regagne le claim. C'est le comportement voulu, documenté dans
+  `date-sweep.ts` : un fil momentanément tenu par un opérateur doit pouvoir laisser passer le rappel une
+  minute plus tard.
+
+### Ce que la CI a attrapé, et que rien en local ne pouvait voir
+
+Mes tests d'intégration du claim empruntaient une automation qu'un test précédent du même fichier
+**supprime** : l'ordre d'exécution décidait du résultat. Le job `integration` ne tourne qu'en CI (le
+`DATABASE_URL` local est la production), donc c'est elle, et elle seule, qui pouvait le voir. Un test qui
+dépend de ce qu'un autre a laissé n'est pas un test, c'est un pari.
+
+---
 ## DEPLOYE le 2026-08-31 sur `b058eaa` : le SERVEUR conduit l'entretien de construction (migration 0090)
 
 ✅ **Migration 0090 appliquée**, séquence tenue : `build mba-api`, vérification que la 0090 est **DANS l'image**,
