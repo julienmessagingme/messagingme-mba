@@ -377,7 +377,7 @@ classés », ils tombent dans le défaut TERMINAL, donc ils brûlent les destina
 
 | Lot | Contenu | Migration | Ce que ça achète |
 |---|---|---|---|
-| **1** | Codes de plafond Meta + pause · claim atomique de l'avance · recherche de connaissance mutualisée · refus explicite du 2e numéro | non | Ce qui casse AUJOURD'HUI |
+| ~~**1**~~ ✅ | Codes de plafond Meta + pause · écriture d'avance conditionnelle · recherche de connaissance mutualisée · refus explicite du 2e numéro | non | **FAIT le 2026-08-31.** Détail et limites dans `documentation.md` §Journal |
 | **2** | Rétention des conversations et analyses (12 mois) | oui | Ferme 5.2 pour de bon |
 | **3** | Registre de tâches du `worker.ts`, `register*Jobs` | non | Ranger AVANT d'y ajouter files et timers (lots 5 et 6) |
 | **4** | Throttle partagé par numéro, sur les 4 chemins d'envoi | à voir | Le prérequis de TOUTE concurrence |

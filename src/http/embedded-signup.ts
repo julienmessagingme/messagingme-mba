@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { TenantConflictError } from '../account/es-store.pg';
+import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-store.pg';
 import { scopeTenant, nonEmpty } from './scope';
 
 export interface EmbeddedSignupRouteDeps {
@@ -137,6 +137,13 @@ export function registerEmbeddedSignup(app: FastifyInstance, deps: EmbeddedSignu
     } catch (err) {
       if (err instanceof TenantConflictError) {
         return reply.code(409).send({ error: 'ce numéro ou ce WABA est déjà rattaché à un autre workspace' });
+      }
+      // Un seul numéro par workspace. Le message dit CE QUI EST DÉJÀ LÀ et quoi faire : sans ça, l'opérateur
+      // conclut à une panne et recommence. 409 et non 5xx, sinon Cloudflare remplace le corps par sa page.
+      if (err instanceof SecondNumeroRefuseError) {
+        return reply.code(409).send({
+          error: `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour en connecter un autre, crée un second espace, ou détache d'abord le numéro actuel.`,
+        });
       }
       throw err;
     }

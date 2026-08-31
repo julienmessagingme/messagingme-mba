@@ -155,12 +155,16 @@ export class PgWorkflowRunStore {
    * C'est le pendant, côté ÉCRITURE, de la garde que le tour applique déjà en lecture : « le run attend-il
    * toujours sur CE bloc ». Même motif de verrou optimiste que `prendreLeTour` et `claimDueQuestions`.
    */
-  async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string, state: RunState): Promise<boolean> {
+  async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState): Promise<boolean> {
     const res = await this.pool.query(
       `update workflow_runs set current_node = $4, status = $5,
               last_message_id = coalesce($6, last_message_id), resume_at = $7,
               channel = coalesce($8, channel), updated_at = now()
-        where id = $1 and tenant_id = $2 and status = 'waiting' and current_node = $3`,
+        -- « is not distinct from » et non « = » : un run peut légitimement attendre AVEC current_node à
+        -- null (parcours sans position, clôture). Avec « = », null = null vaut NULL, donc la garde ne
+        -- trouvait jamais la ligne et l'écriture était silencieusement PERDUE. Pour toute valeur non nulle,
+        -- les deux opérateurs sont identiques : la garde n'est pas affaiblie.
+        where id = $1 and tenant_id = $2 and status = 'waiting' and current_node is not distinct from $3`,
       [id, tenantId, nodeId, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null],
     );
     return (res.rowCount ?? 0) > 0;

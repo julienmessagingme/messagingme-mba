@@ -9,9 +9,36 @@ export interface MetaErrorBody {
   error_user_msg?: string;
 }
 
+/**
+ * Codes de PLAFOND DU NUMÉRO : Meta refuse temporairement, et son refus vise le numéro émetteur, pas le
+ * destinataire. `130429` = plafond de débit, `131048` = plafond lié à la qualité (« spam rate limit »).
+ *
+ * 🔴 Ils n'étaient dans AUCUNE des deux listes ci-dessous, donc traités par le défaut « 4xx sans code connu =
+ * terminal » : un plafond ne ralentissait pas une campagne, il faisait échouer DÉFINITIVEMENT le destinataire
+ * en cours, puis le suivant, puis les 4 998 autres. Une campagne pouvait ainsi brûler toute son audience sur
+ * une limite temporaire, sans qu'aucun de ces contacts ne soit joignable à nouveau sans intervention.
+ *
+ * Ils sont désormais rejouables (c'est la vérité : l'attente les résout), et le moteur de campagne les
+ * reconnaît EN PLUS comme un plafond de numéro, pour mettre la campagne en pause au lieu d'insister
+ * destinataire par destinataire. Les deux lectures sont complémentaires, cf. `estPlafondNumero`.
+ *
+ * ⚠️ `131056` reste à part : c'est un plafond de la PAIRE (trop de messages entre ce numéro et CE contact).
+ * Rejouable, mais il ne dit rien du numéro, donc il ne doit pas mettre la campagne en pause.
+ */
+export const CODES_PLAFOND_NUMERO = new Set<number>([130429, 131048]);
+
+/**
+ * Cette erreur dit-elle que le NUMÉRO est plafonné ? Le moteur de campagne s'en sert pour rendre le
+ * destinataire à la file et mettre la campagne en pause, plutôt que de le compter en échec : il n'a rien fait
+ * de mal, et le suivant échouerait pour la même raison.
+ */
+export function estPlafondNumero(err: unknown): boolean {
+  return err instanceof MetaApiError && err.code !== undefined && CODES_PLAFOND_NUMERO.has(err.code);
+}
+
 // Premier jeu de codes (extensible, à affiner avec la doc Meta live).
 // Transitoires : rejouables tels quels.
-const RETRYABLE_CODES = new Set<number>([1, 2, 4, 131016, 131026, 131056, 133016]);
+const RETRYABLE_CODES = new Set<number>([1, 2, 4, 130429, 131016, 131026, 131048, 131056, 133016]);
 // Terminaux : rejouer ne sert à rien (param invalide, hors fenêtre, marché bloqué, auth).
 const TERMINAL_CODES = new Set<number>([100, 190, 131047, 131049, 131051, 131052, 131053]);
 

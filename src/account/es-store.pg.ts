@@ -15,6 +15,31 @@ export class TenantConflictError extends Error {
 }
 
 /**
+ * Le workspace a DÉJÀ un numéro, et le produit n'en accepte qu'un (décision de Julien, 2026-08-31).
+ *
+ * 🔴 Ce refus n'est pas une limitation arbitraire, c'est la seule réponse HONNÊTE que le code sache donner
+ * aujourd'hui. Le modèle de données suppose un fil par `(tenant_id, wa_id)` : `conversations`,
+ * `workflow_runs`, les automations, l'inbox et les analytics ne portent PAS `phone_number_id`. Rattacher un
+ * second numéro ne créerait donc pas un second canal, ça FUSIONNERAIT les deux : la même personne écrivant aux
+ * deux numéros du client tomberait dans une seule conversation, et un parcours démarré sur l'un répondrait sur
+ * l'autre. Silencieusement.
+ *
+ * ⚠️ Lever cette limite ne consiste PAS à supprimer ce test. La liste des chemins à propager est au §A8 de
+ * `AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md` : propagation de `phone_number_id`, unicité
+ * `(tenant_id, phone_number_id, wa_id)`, migration des conversations existantes, portée du consentement,
+ * numéro par défaut, throttle et palier par numéro. C'est un chantier, pas un drapeau.
+ */
+export class SecondNumeroRefuseError extends Error {
+  constructor(
+    readonly dejaRattache: string,
+    readonly refuse: string,
+  ) {
+    super(`ce workspace a déjà le numéro ${dejaRattache} : un seul numéro par workspace`);
+    this.name = 'SecondNumeroRefuseError';
+  }
+}
+
+/**
  * Persistance de l'Embedded Signup : rattache le WABA + le numéro au workspace, et conserve le token
  * business (chiffré EN AMONT par l'appelant, jamais en clair ici) dans `waba_credentials`.
  *
@@ -44,6 +69,17 @@ export class PgEmbeddedSignupStore {
         [input.wabaId, input.tenantId],
       );
       if ((wabaRes.rowCount ?? 0) === 0) throw new TenantConflictError('waba', input.wabaId);
+
+      // UN SEUL numéro par workspace (cf. `SecondNumeroRefuseError`, qui porte le pourquoi). Le test est fait
+      // DANS la transaction, donc sur un état cohérent avec l'insertion qui suit, et il ignore le numéro
+      // qu'on est en train de rattacher : re-jouer l'Embedded Signup sur le MÊME numéro reste idempotent,
+      // c'est un cas normal (l'opérateur recommence après un avertissement).
+      const dejaLa = await client.query<{ id: string }>(
+        `select id from phone_numbers where tenant_id = $1 and id <> $2 limit 1`,
+        [input.tenantId, input.phoneNumberId],
+      );
+      const existant = dejaLa.rows[0];
+      if (existant) throw new SecondNumeroRefuseError(existant.id, input.phoneNumberId);
       // display/verified : fournis quand le GET du numéro a réussi ; sinon on GARDE l'existant (coalesce),
       // le pull de statut du dashboard enrichira.
       const phoneRes = await client.query(

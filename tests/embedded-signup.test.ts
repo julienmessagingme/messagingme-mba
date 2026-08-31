@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
-import { TenantConflictError } from '../src/account/es-store.pg';
+import { TenantConflictError, SecondNumeroRefuseError } from '../src/account/es-store.pg';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -109,6 +109,27 @@ describe('POST /embedded-signup/complete', () => {
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(409);
     // le conflit interrompt AVANT les étapes suivantes : rien n'est abonné, registré, ni sauvegardé.
+    expect(cap.subscribed).toHaveLength(0);
+    expect(cap.registered).toHaveLength(0);
+    expect(cap.saved).toHaveLength(0);
+    await server.close();
+  });
+
+  /**
+   * UN SEUL numéro par espace (décision produit du 2026-08-31). Le message compte autant que le refus : sans
+   * lui, l'opérateur conclut à une panne de l'embarquement et recommence en boucle.
+   */
+  it('second numéro sur le MÊME workspace -> 409, un message qui NOMME le numéro déjà là et dit quoi faire', async () => {
+    const { server, cap } = app({
+      link: async () => { throw new SecondNumeroRefuseError('pn-deja', 'pn-nouveau'); },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(409);
+    const message = res.json<{ error: string }>().error;
+    expect(message).toContain('pn-deja');
+    expect(message).toContain('un seul numéro WhatsApp');
+    expect(message).toMatch(/second espace|détache/);
+    // Comme pour le conflit inter-workspace : rien n'est abonné, registré ni sauvegardé derrière un refus.
     expect(cap.subscribed).toHaveLength(0);
     expect(cap.registered).toHaveLength(0);
     expect(cap.saved).toHaveLength(0);

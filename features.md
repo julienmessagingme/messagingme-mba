@@ -653,6 +653,13 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   pilote 2026-07-15) : c'est l'opérateur qui choisit ses destinataires, un saut silencieux laissait des contacts
   « en attente » sans explication. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise en pause
   montre **« Reprendre »** (relance les destinataires restants) ; une campagne terminée ou en échec n'a pas de bouton.
+- ✅ **Un plafond WhatsApp met la campagne en pause au lieu de brûler l'audience** (2026-08-31). Quand Meta
+  refuse temporairement parce que le NUMÉRO a atteint une limite (débit, ou restriction liée à la qualité), la
+  campagne se met en pause avec la raison affichée, et **le destinataire en cours retourne dans la file**.
+  Avant, ce refus temporaire était traité comme un échec définitif : le contact en cours était marqué en échec,
+  puis le suivant, puis tous les autres, et une campagne pouvait perdre toute son audience restante sur une
+  limite qui serait retombée d'elle-même. Une fois la limite passée, **« Reprendre » repart d'où ça s'est
+  arrêté**, sans avoir perdu personne.
 - ✅ **Arrêter un envoi en cours** (2026-08-31). Une campagne en cours porte un bouton **« Mettre en pause »**.
   C'est le geste d'urgence quand on s'aperçoit qu'on a mal ciblé : sans lui, une campagne lancée partait jusqu'à
   son dernier destinataire, quoi qu'on fasse. Pas de confirmation à cliquer, justement parce que c'est urgent
@@ -912,6 +919,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   essai déjà abouti côté Meta, ça marche quand même. Avant, il était bloqué sans recours, avec un message qui
   l'invitait à réessayer alors que réessayer ne pouvait rien changer. Il n'a rien à ressaisir et pas de nouvel
   OTP à donner : il choisit le compte et le numéro existants.
+- ✅ **Un espace pilote UN numéro WhatsApp, et le second est refusé clairement** (2026-08-31). Tenter d'en
+  connecter un second affiche : quel numéro est déjà là, et quoi faire (créer un second espace, ou détacher
+  l'actuel). Avant, le second était accepté et **fusionnait** les deux : la même personne écrivant aux deux
+  numéros tombait dans une seule conversation, et un parcours démarré sur l'un pouvait répondre sur l'autre,
+  sans que rien ne le signale. Un refus explicite vaut mieux qu'une fonctionnalité qui a l'air de marcher.
 - ✅ **Les messages d'erreur de l'embarquement sont enfin lisibles** : quand Meta refuse, on affiche SON motif
   (code expiré, compte non partagé, plusieurs numéros à départager) au lieu d'un « Erreur 502 » opaque.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.

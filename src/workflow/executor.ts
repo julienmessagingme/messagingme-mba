@@ -47,6 +47,13 @@ export interface WorkflowExecutorDeps {
     start(tenantId: string, workflowId: string, waId: string, contactId: string | null, state: RunState): Promise<{ id: string }>;
     findWaitingByWaId(tenantId: string, waId: string): Promise<WorkflowRunRow | null>;
     setState(id: string, state: RunState): Promise<void>;
+    /**
+     * Écriture CONDITIONNELLE : n'écrit que si le run attend TOUJOURS sur `nodeId`. `false` = il a bougé
+     * entre-temps, donc quelqu'un d'autre l'a fait avancer, et notre écriture serait un retour en arrière.
+     *
+     * OPTIONNELLE : absente -> `setState` inconditionnel, comportement d'avant (fixtures de test).
+     */
+    setStateSiEncoreSur?(tenantId: string, id: string, nodeId: string | null, state: RunState): Promise<boolean>;
   };
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   /** Pose un tag. Renvoie idéalement `true` si le tag était RÉELLEMENT nouveau : c'est cette information qui
@@ -1135,6 +1142,34 @@ export class WorkflowExecutor {
   async advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null, canalRetour: RunChannel = 'whatsapp'): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
+
+    /**
+     * Écriture de l'état, CONDITIONNÉE au fait que le run n'a pas bougé pendant qu'on travaillait.
+     *
+     * 🔴 Ce que ça ferme. Deux avances peuvent se chevaucher DÈS AUJOURD'HUI, avec un seul worker : le
+     * process API traite certains retours RCS pendant que le worker traite un webhook du même contact. Les
+     * deux lisent le run sur le bloc N, calculent chacun leur suite, et écrivaient tous les deux : le dernier
+     * gagnait, en écrasant `current_node`. Un parcours pouvait ainsi REVENIR sur un bloc déjà franchi, et
+     * rejouer sa branche au message suivant. Silencieusement.
+     *
+     * ⚠️ CE QUE ÇA NE FERME PAS, et il ne faut pas se raconter le contraire : les envois du perdant sont
+     * DÉJÀ PARTIS quand on arrive ici. Cette garde protège l'ÉTAT, pas les effets. Fermer le double envoi
+     * demande un claim pris AVANT les envois (donc un statut transitoire, donc une migration) et des clés
+     * d'idempotence sur les effets : c'est un lot à part, cf. `PLAN.md` et le §A4 de la synthèse du
+     * 2026-08-31. On journalise donc les avances perdues, parce qu'on ne peut pas corriger ce qu'on ne voit pas.
+     */
+    const ecrire = async (state: RunState): Promise<boolean> => {
+      if (!this.deps.runs.setStateSiEncoreSur) {
+        await this.deps.runs.setState(run.id, state);
+        return true;
+      }
+      const ecrit = await this.deps.runs.setStateSiEncoreSur(tenantId, run.id, run.currentNode, state);
+      if (!ecrit) {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow ${run.workflowId}: avance PERDUE pour ${waId} (run ${run.id}), le parcours a bougé depuis le bloc ${run.currentNode ?? 'null'} pendant le traitement du message ${messageId}`);
+      }
+      return ecrit;
+    };
     // Le fil est-il encore à nous ? Placé APRÈS la recherche du run pour ne pas payer une requête sur les
     // messages qui n'attendent aucun parcours (le cas le plus fréquent). Le run reste `waiting` : le gel
     // est transitoire, il repart tout seul dès que le contrôle revient (fin d'échange humain, ou garde-fou
@@ -1208,7 +1243,7 @@ export class WorkflowExecutor {
         // un humain et on laisse une trace.
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: run ${run.id} sur un bloc agent sans session vivante, remonté en inbox`);
-        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox', lastMessageId: messageId });
+        await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
         if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
         return;
       }
@@ -1234,7 +1269,7 @@ export class WorkflowExecutor {
       // reste `waiting` SUR le bloc, c'est ce qui permet à `findWaitingByWaId` de le retrouver au message
       // suivant. Et `lastMessageId` est persisté ICI : sans lui la dédup at-least-once ne protège plus, et un
       // rejeu enfilerait un second tour, donc un second appel modèle facturé.
-      await this.deps.runs.setState(run.id, {
+      await ecrire({
         currentNode: run.currentNode,
         status: 'waiting',
         lastMessageId: messageId,
@@ -1276,7 +1311,7 @@ export class WorkflowExecutor {
       // main à l'agent de Meta en silence masquerait un trou de montage, et une sortie d'escalade non câblée
       // enverrait le contact au bot générique au lieu d'alerter un opérateur.
       const boutonSansSuite = typeof buttonPayload === 'string' && /^(btn:|card:|row:|sortie:)/.test(buttonPayload);
-      await this.deps.runs.setState(run.id, { currentNode: null, status: 'done', lastMessageId: messageId });
+      await ecrire({ currentNode: null, status: 'done', lastMessageId: messageId });
       if (boutonSansSuite) {
         // eslint-disable-next-line no-console
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
@@ -1296,12 +1331,12 @@ export class WorkflowExecutor {
       // eslint-disable-next-line no-console
       console.error(`workflow ${run.workflowId}: envoi refusé pour ${waId} : ${refus}`);
       if (partis === 0) {
-        await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox', lastMessageId: messageId });
+        await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
         if (this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
         return;
       }
     }
-    await this.deps.runs.setState(run.id, { ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
+    await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
     if (rest.status === 'inbox' && this.deps.escalateToHuman) await this.deps.escalateToHuman(tenantId, waId);
     // Chaîne terminée sans attendre de choix : l'agent reprend. `waiting` garde la main (le scénario attend un
     // bouton), `inbox` la donne à un humain : ni l'un ni l'autre ne relâche.

@@ -1,6 +1,6 @@
 import type { ResolveurOutil, SortieResolveur } from '../executor';
-import { ficheEstPertinente, type KnowledgeStore } from '../knowledge';
-import { SORTIE_SANS_SOURCE } from '../sorties';
+import type { KnowledgeStore } from '../knowledge';
+import { chercherConnaissance } from './connaissance';
 
 /**
  * Le résolveur du BAC À SABLE : celui qui sert quand le client parle à son agent depuis la console.
@@ -23,12 +23,6 @@ export interface DepsResolveurSimulation {
   /** La base de connaissance, la VRAIE : c'est elle qu'on teste. */
   connaissance: KnowledgeStore;
 }
-
-/** Mêmes bornes que le résolveur de production (`resolvers/mba.ts`) : le bac à sable doit rendre au modèle
- *  exactement ce que la production lui rendrait, sans quoi il ne teste pas la même chose. */
-const FICHES_RENDUES = 3;
-const CORPS_MAX = 2_000;
-const REQUETE_MAX = 512;
 
 function texte(args: Record<string, unknown>, cle: string): string {
   const v = args[cle];
@@ -74,22 +68,12 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
       // ---------- Ceux qui tournent POUR DE VRAI ----------
 
       case 'chercher_connaissance': {
-        const requete = texte(args, 'requete').slice(0, REQUETE_MAX);
+        const requete = texte(args, 'requete');
         if (requete === '') return { ok: false, contenu: { erreur: 'parametre « requete » manquant' }, erreur: 'requete manquante' };
-        const fiches = await deps.connaissance.chercher(ctx.tenantId, ctx.agentId, requete, FICHES_RENDUES);
-        const retenues = fiches.filter(ficheEstPertinente);
-        // Même verdict qu'en production, y compris la SORTIE : c'est le garde-fou anti-hallucination, et un
-        // bac à sable qui l'adoucirait laisserait croire que l'agent sait répondre là où il transférera.
-        if (retenues.length === 0) return { contenu: { aucune_source: true }, sortie: SORTIE_SANS_SOURCE };
-        return {
-          contenu: {
-            sources: retenues.map((f) => ({
-              titre: f.titre,
-              contenu: f.corps.length > CORPS_MAX ? `${f.corps.slice(0, CORPS_MAX)}...` : f.corps,
-              url: f.sourceUrl,
-            })),
-          },
-        };
+        // MÊME verdict qu'en production, sortie comprise : c'est le garde-fou anti-hallucination, et un bac à
+        // sable qui l'adoucirait laisserait croire que l'agent sait répondre là où il transférera. La règle est
+        // partagée (`resolvers/connaissance.ts`), elle n'est plus recopiée ici.
+        return chercherConnaissance(deps.connaissance, ctx, requete);
       }
 
       // Aucun contact dans un bac à sable, et c'est la vérité : le dire permet d'éprouver ce que l'agent fait

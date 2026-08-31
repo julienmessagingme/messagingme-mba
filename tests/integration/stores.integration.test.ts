@@ -30,7 +30,7 @@ import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
 import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { resolveScenario } from '../../src/ids/resolve';
 import { PgTenantSettingsStore, DEFAULT_TIMEZONE, DEFAULT_BUSINESS_HOURS } from '../../src/settings/store.pg';
-import { PgEmbeddedSignupStore, TenantConflictError } from '../../src/account/es-store.pg';
+import { PgEmbeddedSignupStore, TenantConflictError, SecondNumeroRefuseError } from '../../src/account/es-store.pg';
 import { PgPhoneStatusStore } from '../../src/account/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
@@ -1423,12 +1423,16 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
   it('PgEmbeddedSignupStore : refuse de réaffecter un numéro/WABA à un autre workspace (TenantConflictError, ligne inchangée)', async () => {
     const es = new PgEmbeddedSignupStore(pool);
+    // ⚠️ Espace DÉDIÉ pour A, et non l'espace partagé du fichier : depuis la règle « un seul numéro par
+    // espace » (2026-08-31), l'espace partagé porte déjà `pn-red`, et le rattachement serait refusé pour
+    // cette raison-là au lieu de la raison testée ici.
+    const a = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-a') returning id`)).rows[0]!.id;
     const other = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-other') returning id`)).rows[0]!.id;
     const wabaId = 'waba-es-conflict';
     const pnId = 'pn-es-conflict';
     try {
       // Tenant A rattache le numéro : OK.
-      await es.linkTenant({ tenantId, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33500000000', verifiedName: 'A' });
+      await es.linkTenant({ tenantId: a, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33500000000', verifiedName: 'A' });
       // Tenant B tente de le réclamer : REFUS (pas de réaffectation silencieuse).
       await expect(
         es.linkTenant({ tenantId: other, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33511111111', verifiedName: 'B' }),
@@ -1437,24 +1441,57 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       const row = (await pool.query<{ tenant_id: string; display_phone_number: string }>(
         `select tenant_id, display_phone_number from phone_numbers where id = $1`, [pnId],
       )).rows[0]!;
-      expect(row.tenant_id).toBe(tenantId);
+      expect(row.tenant_id).toBe(a);
       expect(row.display_phone_number).toBe('+33500000000');
-      // Ré-onboarding LÉGITIME (même tenant A) : conflit d'id mais même tenant -> la garde laisse passer (rowCount 1),
-      // pas de TenantConflictError, et le display est bien mis à jour. C'est le point subtil de la garde `where`.
-      await es.linkTenant({ tenantId, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33522222222', verifiedName: 'A2' });
+      // Ré-onboarding LÉGITIME (même tenant A, MÊME numéro) : conflit d'id mais même tenant -> la garde laisse
+      // passer (rowCount 1), pas de TenantConflictError, et le display est bien mis à jour. C'est le point
+      // subtil de la garde `where`. La règle « un seul numéro » ne s'y oppose pas non plus : elle ignore le
+      // numéro en cours de rattachement, sinon recommencer l'embarquement serait impossible.
+      await es.linkTenant({ tenantId: a, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33522222222', verifiedName: 'A2' });
       const reonboard = (await pool.query<{ tenant_id: string; display_phone_number: string }>(
         `select tenant_id, display_phone_number from phone_numbers where id = $1`, [pnId],
       )).rows[0]!;
-      expect(reonboard.tenant_id).toBe(tenantId);
+      expect(reonboard.tenant_id).toBe(a);
       expect(reonboard.display_phone_number).toBe('+33522222222');
       // saveCredentials refuse aussi pour un autre tenant.
-      await es.saveCredentials(wabaId, tenantId, 'enc-A', null);
+      await es.saveCredentials(wabaId, a, 'enc-A', null);
       await expect(es.saveCredentials(wabaId, other, 'enc-B', null)).rejects.toBeInstanceOf(TenantConflictError);
     } finally {
       await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
       await pool.query('delete from phone_numbers where id = $1', [pnId]);
       await pool.query('delete from waba where id = $1', [wabaId]);
-      await pool.query('delete from tenants where id = $1', [other]);
+      await pool.query('delete from tenants where id = any($1::uuid[])', [[a, other]]);
+    }
+  });
+
+  /**
+   * UN SEUL numéro par espace (décision produit du 2026-08-31). Ce n'est pas une limitation arbitraire : le
+   * modèle suppose un fil par `(tenant_id, wa_id)`, sans `phone_number_id`, donc un second numéro
+   * FUSIONNERAIT les deux canaux au lieu d'en créer un second, en silence.
+   */
+  it('PgEmbeddedSignupStore : un SECOND numéro sur le même espace est refusé, et le premier reste intact', async () => {
+    const es = new PgEmbeddedSignupStore(pool);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-mono') returning id`)).rows[0]!.id;
+    const wabaId = 'waba-es-mono';
+    try {
+      await es.linkTenant({ tenantId: t, wabaId, phoneNumberId: 'pn-mono-1', displayPhoneNumber: '+33500000201', verifiedName: 'Un' });
+
+      const err = await es
+        .linkTenant({ tenantId: t, wabaId, phoneNumberId: 'pn-mono-2', displayPhoneNumber: '+33500000202', verifiedName: 'Deux' })
+        .then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(SecondNumeroRefuseError);
+      expect((err as SecondNumeroRefuseError).dejaRattache).toBe('pn-mono-1');
+
+      // 🔴 Le refus est TRANSACTIONNEL : le second numéro n'existe pas, et le premier n'a pas bougé.
+      const lignes = (await pool.query<{ id: string; display_phone_number: string }>(
+        `select id, display_phone_number from phone_numbers where tenant_id = $1 order by id`, [t],
+      )).rows;
+      expect(lignes).toHaveLength(1);
+      expect(lignes[0]).toMatchObject({ id: 'pn-mono-1', display_phone_number: '+33500000201' });
+    } finally {
+      await pool.query('delete from phone_numbers where tenant_id = $1', [t]);
+      await pool.query('delete from waba where id = $1', [wabaId]);
+      await pool.query('delete from tenants where id = $1', [t]);
     }
   });
 

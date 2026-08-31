@@ -43,6 +43,7 @@ class FakeRecipients implements RecipientStore {
   async claim(): Promise<boolean> {
     return true;
   }
+  async relacher(): Promise<void> {}
   async markResult(id: string, r: { status: 'sent' | 'failed' | 'skipped' }): Promise<void> {
     this.results.set(id, { status: r.status });
   }
@@ -534,7 +535,7 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
       { campaignId: 'c1' },
       avecVerrou(verrou, {
         getCampaign: async () => campaign,
-        recipients: { listPending: async () => { throw new Error('base indisponible'); }, claim: async () => true, markResult: async () => {} },
+        recipients: { listPending: async () => { throw new Error('base indisponible'); }, claim: async () => true, relacher: async () => {}, markResult: async () => {} },
       }, relances),
     )).rejects.toThrow('base indisponible');
     expect(verrou.rendus).toEqual([{ campaignId: 'c1', holder: 'jeton-1' }]);

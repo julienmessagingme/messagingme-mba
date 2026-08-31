@@ -18,8 +18,12 @@ class FakeSender implements MessageSender {
   readonly marketingParams: MarketingParams[] = [];
   readonly templateCalls: string[] = [];
   failFor: Set<string> = new Set();
+  /** Destinataires sur lesquels Meta repond un PLAFOND DU NUMERO (130429 par defaut). */
+  plafondFor: Set<string> = new Set();
+  codePlafond = 130429;
   async sendMarketing(p: MarketingParams): Promise<SendResult> {
     const to = p.to ?? p.recipient ?? '';
+    if (this.plafondFor.has(to)) throw new MetaApiError(400, { code: this.codePlafond, message: 'rate limit hit' });
     if (this.failFor.has(to)) throw new MetaApiError(400, { code: 131049, message: 'blocked' });
     this.calls.push(to);
     this.marketingCalls.push(to);
@@ -27,6 +31,7 @@ class FakeSender implements MessageSender {
     return { messageId: `m-${to}` };
   }
   async sendTemplate(to: string, _tpl: TemplateSpec): Promise<SendResult> {
+    if (this.plafondFor.has(to)) throw new MetaApiError(400, { code: this.codePlafond, message: 'rate limit hit' });
     if (this.failFor.has(to)) throw new MetaApiError(400, { code: 131049, message: 'blocked' });
     this.calls.push(to);
     this.templateCalls.push(to);
@@ -48,6 +53,11 @@ class FakeRecipients implements RecipientStore {
     if (this.claimFails.has(id)) return false;
     this.claimed.push(id);
     return true;
+  }
+  /** Destinataires RENDUS a la file (l'inverse de claim). Le plafond de numero est le seul a s'en servir. */
+  readonly relaches: string[] = [];
+  async relacher(id: string): Promise<void> {
+    this.relaches.push(id);
   }
   async markResult(
     id: string,
@@ -793,5 +803,75 @@ describe('runCampaign : arrêt du service et bail du verrou', () => {
     expect(report).toMatchObject({ sent: 0, paused: true });
     expect(report.reason).toContain('verrou');
     expect(sender.calls).toEqual([]);
+  });
+});
+
+/**
+ * PLAFOND DU NUMÉRO (lot 1 du programme, 2026-08-31). `130429` et `131048` n'étaient dans aucune des deux
+ * listes de `src/meta/errors.ts`, donc traités par le défaut « 4xx sans code connu = terminal ». Une limite
+ * TEMPORAIRE brûlait donc l'audience restante d'une campagne, destinataire par destinataire, définitivement.
+ */
+describe('runCampaign : plafond du numéro chez Meta', () => {
+  it('🔴 met la campagne en PAUSE et rend le destinataire à la file, au lieu de le brûler', async () => {
+    const sender = new FakeSender();
+    sender.plafondFor.add('+33622');
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+
+    expect(report.paused).toBe(true);
+    expect(report.reason).toContain('plafond Meta');
+    expect(report.failed).toBe(0); // personne n'est en échec : le refus visait le NUMÉRO
+    expect(recipients.results.get('r2')).toBeUndefined(); // r2 n'est ni sent, ni failed
+    expect(recipients.relaches).toEqual(['r2']); // il est RENDU à la file
+    expect(campaigns.statuses).toEqual(['running', 'paused']);
+  });
+
+  it('🔴 le reste de l’audience n’est PAS parcouru : le suivant échouerait pareil', async () => {
+    const sender = new FakeSender();
+    sender.plafondFor.add('+33622');
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    await runCampaign(campaign, deps({ recipients, sender }));
+    // r1 est parti, r2 a heurté le plafond, r3 n'a même pas été tenté.
+    expect(sender.calls).toEqual(['+33611']);
+    expect(recipients.claimed).toEqual(['r1', 'r2']);
+  });
+
+  it('131048 (plafond de qualité) se comporte comme 130429', async () => {
+    const sender = new FakeSender();
+    sender.codePlafond = 131048;
+    sender.plafondFor.add('+33611');
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    expect(report.paused).toBe(true);
+    expect(recipients.relaches).toEqual(['r1']);
+    expect(campaigns.statuses).toEqual(['running', 'paused']);
+  });
+
+  it('⚠️ 131056 (plafond de la PAIRE) reste un échec de destinataire, PAS une pause', async () => {
+    // Il dit « trop de messages entre ce numéro et CE contact ». Mettre la campagne en pause pour un seul
+    // contact arrêterait 5 000 envois légitimes.
+    const sender = new FakeSender();
+    sender.codePlafond = 131056;
+    sender.plafondFor.add('+33611');
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    expect(report.paused).toBe(false);
+    expect(report.failed).toBe(1);
+    expect(report.sent).toBe(1); // r2 est parti : la campagne a continué
+    expect(recipients.relaches).toEqual([]);
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  it('une erreur ORDINAIRE reste un échec de destinataire (aucune régression)', async () => {
+    const sender = new FakeSender();
+    sender.failFor.add('+33611');
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
+    const report = await runCampaign(campaign, deps({ recipients, sender }));
+    expect(report).toMatchObject({ sent: 1, failed: 1, paused: false });
+    expect(recipients.results.get('r1')).toMatchObject({ status: 'failed', errorCode: 131049 });
+    expect(recipients.relaches).toEqual([]);
   });
 });

@@ -975,6 +975,20 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
     return res.rowCount ?? 0;
   }
 
+  /**
+   * Rend un destinataire RÉSERVÉ à la file : l'inverse exact de `claim`, pour un cas et un seul, le plafond
+   * de numéro. Le contact n'a rien fait de mal et aucun message n'est parti : le compter en échec le rendrait
+   * injoignable sans intervention, et le laisser en `sending` le ferait attendre le balayage de récupération.
+   *
+   * Scopé sur `status = 'sending'` : on ne ressuscite jamais un destinataire déjà envoyé ou déjà en échec.
+   */
+  async relacher(id: string): Promise<void> {
+    await this.pool.query(
+      `update campaign_recipients set status = 'pending', claimed_at = null where id = $1 and status = 'sending'`,
+      [id],
+    );
+  }
+
   async markResult(
     id: string,
     r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },

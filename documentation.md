@@ -2080,6 +2080,72 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : LOT 1 du programme, quatre choses qui cassaient déjà (aucune migration)
+
+### Un plafond Meta brûlait l'audience restante d'une campagne
+
+`130429` (plafond de débit) et `131048` (plafond lié à la qualité) n'étaient dans AUCUNE des deux listes de
+`src/meta/errors.ts`, donc traités par le défaut « 4xx sans code connu = terminal ». Un refus TEMPORAIRE, qui
+vise le NUMÉRO, faisait donc échouer définitivement le destinataire en cours, puis le suivant, puis tous les
+autres. Les contacts brûlés n'étaient plus joignables sans intervention (un destinataire `failed` n'est pas
+repris par un relancement).
+
+Trois pièces : les codes sont **rejouables** (c'est la vérité, l'attente les résout, et c'est ce qu'il faut
+pour un envoi unitaire depuis l'inbox ou un scénario) ; le moteur de campagne les reconnaît EN PLUS comme un
+plafond de numéro (`estPlafondNumero`) et met la campagne **en pause** ; et le destinataire est **rendu à la
+file** (`relacher`, l'inverse exact de `claim`) au lieu d'être compté en échec.
+
+⚠️ `131056` est délibérément EXCLU : c'est un plafond de la PAIRE (trop de messages entre ce numéro et CE
+contact). Le confondre avec les autres arrêterait 5 000 envois légitimes pour un seul contact. Un test garde
+cette distinction dans les deux sens.
+
+### L'avance d'un scénario écrivait sans condition
+
+`setStateSiEncoreSur` existait, était testé, et n'avait qu'UN appelant (le tour d'agent) : les cinq écritures
+de `advance` passaient par `setState`, un `update where id` nu. Or deux avances peuvent se chevaucher **dès
+aujourd'hui, avec un seul worker** : le process API traite certains retours RCS pendant que le worker traite un
+webhook du même contact. Les deux lisaient le run sur le même bloc, et le dernier écrivait : `current_node`
+pouvait REVENIR sur un bloc déjà franchi, et rejouer sa branche au message suivant.
+
+Les cinq écritures passent par une fermeture `ecrire()` conditionnée au bloc **de départ**, et une avance
+perdue est JOURNALISÉE (on ne corrige pas ce qu'on ne voit pas).
+
+🔴 **Ce que ça ne ferme PAS, et c'est écrit dans le code** : les envois du perdant sont déjà partis quand la
+garde le refuse. Cette garde protège l'ÉTAT, pas les effets. Fermer le double envoi demande un claim pris
+AVANT les envois (donc un statut transitoire, donc une migration) plus des clés d'idempotence : c'est un lot à
+part. Ne pas lire cette garde comme « l'avance est atomique ».
+
+⚠️ Piège trouvé en chemin : la garde SQL disait `current_node = $3`. Un run peut légitimement attendre avec
+`current_node` à null, et `null = null` vaut NULL : l'écriture aurait été silencieusement perdue. C'est
+désormais `is not distinct from`, identique pour toute valeur non nulle.
+
+### Le garde-fou anti-hallucination vivait en double
+
+La recherche de connaissance était recopiée à l'identique entre le résolveur de PRODUCTION et celui du BAC À
+SABLE, et leurs erreurs avaient déjà divergé. Or le bac à sable n'a de valeur que s'il rend EXACTEMENT ce que
+la production rendrait : plus indulgent, il laisse croire qu'un agent sait répondre là où il transférera.
+
+La règle vit dans `src/agent/resolvers/connaissance.ts`. Ce qui reste chez chaque appelant est le message
+d'erreur d'une requête vide, que les deux surfaces n'expriment pas dans la même forme, et qui n'est pas une
+règle métier. Un test de PARITÉ compare les deux sorties (il ne relit pas le code : il tient même si quelqu'un
+dé-mutualisait, tant que les deux restent d'accord).
+
+### Un second numéro était accepté et fusionnait les canaux
+
+Décision produit du 2026-08-31 : **un seul numéro WhatsApp par espace**. Le refus est posé DANS la transaction
+de rattachement, et il ignore le numéro en cours de rattachement (recommencer l'embarquement reste possible).
+Le message nomme le numéro déjà présent et dit quoi faire, en 409 (un 5xx serait remplacé par la page
+Cloudflare).
+
+⚠️ Ce refus n'est pas une limitation arbitraire : le modèle suppose un fil par `(tenant_id, wa_id)` et ne
+porte pas `phone_number_id` sur `conversations`, `workflow_runs`, les automations ni les analytics. Lever la
+limite ne consiste donc PAS à supprimer le test ; la liste des chemins est au §A8 de la synthèse du 2026-08-31.
+
+**Un test d'intégration existant a dû être corrigé** : il rattachait son numéro à l'espace partagé du fichier,
+qui en portait déjà un depuis un test précédent. Il aurait échoué pour la nouvelle raison au lieu de celle
+qu'il teste. Il a désormais son espace dédié.
+
+---
 ## DEPLOYE le 2026-08-31 sur `5456d14` : la rétention des événements Meta bruts (migration 0093, PLAN.md 5.2)
 
 `webhook_events` gardait le payload COMPLET de chaque événement Meta reçu **depuis le premier jour** : le

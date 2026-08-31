@@ -27,6 +27,7 @@ class FakeRecipients implements RecipientStore {
   async claim(): Promise<boolean> {
     return true;
   }
+  async relacher(): Promise<void> {}
   async markResult(id: string, r: { status: 'sent' | 'failed' | 'skipped' }): Promise<void> {
     this.results.set(id, { status: r.status });
   }

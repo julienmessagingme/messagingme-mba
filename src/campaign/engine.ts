@@ -5,7 +5,7 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
-import { MetaApiError } from '../meta/errors';
+import { MetaApiError, estPlafondNumero } from '../meta/errors';
 import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
 
@@ -36,6 +36,11 @@ export interface RecipientStore {
    * envoyé qu'une fois malgré runs concurrents et replays pg-boss.
    */
   claim(id: string): Promise<boolean>;
+  /**
+   * Rend un destinataire réservé à la file (`sending` -> `pending`), l'inverse exact de `claim`. Un seul
+   * appelant : le plafond de numéro, où le contact n'a rien fait de mal et où aucun message n'est parti.
+   */
+  relacher(id: string): Promise<void>;
   markResult(
     id: string,
     r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
@@ -371,6 +376,23 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     } catch (err) {
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
       const errorCode = err instanceof MetaApiError && typeof err.code === 'number' ? err.code : undefined;
+
+      // 🔴 PLAFOND DU NUMÉRO : le refus de Meta ne vise pas CE contact, il vise le numéro émetteur. Le compter
+      // en échec serait deux fois faux : il n'a rien fait, et il deviendrait injoignable sans intervention
+      // (un destinataire `failed` n'est pas repris par un relancement). Surtout, le suivant échouerait pour
+      // exactement la même raison, et le suivant encore : sans cette branche, une limite TEMPORAIRE brûlait
+      // toute l'audience restante de la campagne. On rend donc le destinataire à la file et on s'arrête.
+      //
+      // La pause est le bon geste, et pas seulement l'arrêt du run : elle empêche le balayage de reprise de
+      // relancer la campagne dans la minute, contre un plafond qui n'est pas encore retombé.
+      if (estPlafondNumero(err)) {
+        await deps.recipients.relacher(r.id);
+        report.paused = true;
+        report.reason = `plafond Meta atteint sur le numéro (${errorCode}) : campagne mise en pause, aucun destinataire perdu`;
+        await deps.campaigns.setStatus(campaign.id, 'paused');
+        return report;
+      }
+
       await deps.recipients.markResult(r.id, { status: 'failed', error: msg, ...(errorCode !== undefined ? { errorCode } : {}) });
       report.failed += 1;
       continue;
