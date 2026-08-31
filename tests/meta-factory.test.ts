@@ -88,3 +88,68 @@ describe('MetaClientFactory (B1 : câblage par tenant)', () => {
     expect(invalidated).toEqual(['wA']); // un token révoqué détecté sur un envoi workflow s'auto-invalide aussi
   });
 });
+
+/**
+ * FREIN PAR NUMÉRO (lot 4 du programme, 2026-08-31).
+ *
+ * 🔴 C'est ICI que le lot se joue, et pas dans l'arbitre. L'arbitre seul ne freine rien : c'est le fait que
+ * la fabrique donne à CHAQUE client la porte de SON numéro qui fait qu'une campagne, un scénario, une
+ * automation et une réponse d'inbox se partagent un budget. Un jour où cette ligne saute, l'arbitre continue
+ * de rendre des portes que plus personne n'acquiert, et rien ne le signale.
+ */
+describe('MetaClientFactory : le frein par numéro est réellement câblé', () => {
+  function arbitreEspion() {
+    const demandes: string[] = [];
+    const acquisitions: string[] = [];
+    const portes = new Map<string, { acquire: () => Promise<void> }>();
+    return {
+      demandes,
+      acquisitions,
+      arbitre: {
+        pour(pn: string) {
+          demandes.push(pn);
+          let p = portes.get(pn);
+          if (!p) { p = { acquire: async () => { acquisitions.push(pn); } }; portes.set(pn, p); }
+          return p;
+        },
+      },
+    };
+  }
+
+  it('🔴 envoyer consomme la porte DU NUMÉRO', async () => {
+    const t = new FakeTransport();
+    const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
+    const espion = arbitreEspion();
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre });
+
+    const client = await f.clientForTenant('t1', 'pn-42');
+    await client.sendText('33600000001', 'bonjour');
+    await client.sendText('33600000002', 'bonjour');
+
+    expect(espion.demandes).toEqual(['pn-42']); // la porte est demandée à la construction du client
+    expect(espion.acquisitions).toEqual(['pn-42', 'pn-42']); // et acquise à CHAQUE envoi
+  });
+
+  it('🔴 deux clients du MÊME numéro partagent la même porte (campagne + inbox = un seul budget)', async () => {
+    const t = new FakeTransport();
+    const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
+    const espion = arbitreEspion();
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre });
+
+    // Deux constructions distinctes, comme le font le moteur de campagne et la route d'inbox.
+    const campagne = await f.senderForTenant('t1', 'pn-42');
+    const inbox = await f.clientForTenant('t1', 'pn-42');
+    await campagne.sendTemplate('33600000001', { name: 'promo', language: 'fr' });
+    await inbox.sendText('33600000002', 'je vous réponds');
+
+    // Les DEUX envois ont consommé le budget du même numéro : c'est exactement ce qui manquait.
+    expect(espion.acquisitions).toEqual(['pn-42', 'pn-42']);
+  });
+
+  it('sans arbitre injecté (fixtures de test) -> aucun frein, comportement d’avant', async () => {
+    const t = new FakeTransport();
+    const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
+    const client = await factory(r, t).clientForTenant('t1', 'pn-42');
+    await expect(client.sendText('33600000001', 'bonjour')).resolves.toMatchObject({ messageId: 'wamid.ok' });
+  });
+});

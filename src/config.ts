@@ -151,6 +151,19 @@ export const schema = z.object({
    * raconté) sont alors gardées pour toujours.
    */
   CONVERSATION_RETENTION_DAYS: z.coerce.number().default(365),
+  /**
+   * Plafond d'envois par minute et PAR NUMÉRO, tous chemins confondus (campagne, scénario, automation,
+   * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
+   *
+   * 80 par défaut, et le chiffre n'est pas arbitraire : c'est le débit maximum qu'une campagne peut CHOISIR
+   * dans l'écran (1 à 80/min). Le plafond du numéro ne bride donc jamais une campagne seule, il empêche
+   * seulement DEUX campagnes du même numéro d'en faire 160, et fait payer les envois d'inbox et de scénario
+   * sur le même budget. Le relever au-delà de ce que Meta tolère pour le palier du numéro ne rend rien plus
+   * rapide : Meta répond alors 130429, et depuis le lot 1 la campagne se met en pause.
+   *
+   * `0` retire le frein. À n'utiliser que pour reproduire un incident.
+   */
+  PHONE_RATE_PER_MINUTE_MAX: z.coerce.number().default(80),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

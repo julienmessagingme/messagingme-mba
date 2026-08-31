@@ -1,5 +1,5 @@
 import type { HttpTransport, RetryOpts } from './http';
-import { withRetry, RateLimiter, parseRetryAfter } from './http';
+import { withRetry, RateLimiter, type PorteDeDebit, parseRetryAfter } from './http';
 import { MetaApiError } from './errors';
 import type { MetaErrorBody } from './errors';
 import { messagingTarget } from './types';
@@ -12,7 +12,7 @@ export interface MetaClientOpts {
   phoneNumberId: string;
   version?: string;
   baseUrl?: string;
-  rateLimiter?: RateLimiter;
+  rateLimiter?: PorteDeDebit;
   retry?: RetryOpts;
   /**
    * Router les envois marketing par l'endpoint MM Lite `/marketing_messages` (true) ou par
@@ -42,7 +42,7 @@ export class MetaClient {
   private readonly phoneNumberId: string;
   private readonly base: string;
   private readonly version: string;
-  private readonly rateLimiter: RateLimiter | undefined;
+  private readonly rateLimiter: PorteDeDebit | undefined;
   private readonly retry: RetryOpts | undefined;
   private readonly marketingViaLite: boolean;
 

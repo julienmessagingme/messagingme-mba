@@ -2080,6 +2080,41 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : LOT 4 du programme, le débit partagé par NUMÉRO (aucune migration)
+
+Le seul frein d'envoi du dépôt était instancié **par run de campagne** : deux campagnes du même numéro avaient
+deux budgets, et 30/min configurés en faisaient 60. Les trois autres chemins d'envoi (réponse d'inbox, message
+de scénario, automation) n'avaient **aucun** frein. Le débit réel d'un numéro n'était donc borné par rien,
+alors que c'est lui que Meta observe et sur lequel il fonde la qualité et les paliers.
+
+**Le point de pose est ce qui fait la valeur du lot.** `MetaClientFactory.clientForTenant` est l'endroit où
+les quatre chemins se rejoignent : campagne, scénario, automation et inbox y construisent tous leur client.
+Une ligne y injecte la porte du numéro, `MetaClient.call` l'acquiert avant chaque appel `messages`, et un
+chemin d'envoi FUTUR en hérite sans que personne y pense. Aucun appelant n'a été modifié.
+
+**L'arbitre ne remplace pas le débit par campagne, il s'y ajoute, en série.** Le débit de campagne dit « à
+quelle vitesse je veux que CETTE campagne parte » (1 à 80/min, c'est une fonctionnalité de l'écran) ;
+l'arbitre dit « ce numéro ne dépassera jamais ça ». D'où le défaut de `PHONE_RATE_PER_MINUTE_MAX` à **80** :
+c'est exactement le maximum qu'une campagne peut choisir, donc une campagne seule n'est jamais bridée, et deux
+campagnes se partagent 80 au lieu d'en faire 160.
+
+🔴 **Ce que ça ne fait PAS.** Le budget est en mémoire, donc **par process** : l'API et le worker en ont
+chacun un. Le worker porte tout le volume ; l'API ne porte que les envois d'un humain dans l'inbox, à cadence
+humaine. Le pire cas théorique est deux fois le plafond. Rendre le budget réellement partagé (base, ou
+affectation exclusive d'un numéro à un worker) est le **prérequis du second worker**, pas de celui-ci.
+
+Le RCS n'est pas concerné : il ne passe pas par Meta et a ses propres quotas fournisseur. Les mélanger ferait
+qu'une campagne RCS ralentirait WhatsApp sans raison.
+
+⚠️ Effet de bord assumé : quand une campagne tourne à plein régime, une réponse d'opérateur peut attendre son
+tour (au plus l'intervalle du numéro, 750 ms à 80/min). Donner la priorité aux messages humains est un
+raffinement séparé, noté dans la synthèse (§A2).
+
+**Un détail de couches, corrigé au passage** : `MetaClientOpts.rateLimiter` était typé sur la CLASSE
+`RateLimiter`. L'interface `PorteDeDebit` est désormais déclarée dans `meta/http.ts`, la couche la plus basse,
+pour que le client Meta n'ait rien à importer de la couche campagne.
+
+---
 ## DEPLOYE le 2026-08-31 : LOT 3 du programme, le registre des tâches du worker (aucune migration)
 
 Refactor **neutre en comportement**, sauf sur un point qui est une correction de bug, dit plus bas.

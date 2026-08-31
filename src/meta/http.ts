@@ -183,7 +183,17 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): 
 }
 
 /** Limiteur de débit à intervalle minimal (throttle des envois par numéro). */
-export class RateLimiter {
+/**
+ * Une porte de débit : « attends ton tour ». Déclarée ICI, dans la couche la plus basse, parce que le client
+ * Meta en dépend et qu'il ne doit rien importer de la couche campagne. `RateLimiter` la satisfait, l'arbitre
+ * par numéro aussi, et `RateGate` (campagne) a la même forme : le typage structurel les rend interchangeables
+ * sans qu'aucune couche n'ait à connaître l'autre.
+ */
+export interface PorteDeDebit {
+  acquire(): Promise<void>;
+}
+
+export class RateLimiter implements PorteDeDebit {
   private nextAllowed = 0;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;

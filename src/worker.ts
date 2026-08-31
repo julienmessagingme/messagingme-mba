@@ -79,6 +79,7 @@ import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { MetaClientFactory } from './meta/factory';
+import { arbitreDeDebit } from './meta/arbitre-debit';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { decryptSecret } from './crypto/secretbox';
@@ -182,6 +183,10 @@ async function main(): Promise<void> {
     transport,
     version: config.META_GRAPH_VERSION,
     marketingViaLite: config.META_MM_LITE === 'true',
+    // Frein PAR NUMÉRO, partagé par tout ce qui envoie depuis lui (lot 4). Instancié ICI, donc un par
+    // process : le budget n'est pas partagé entre l'API et le worker, et `arbitre-debit.ts` dit pourquoi
+    // c'est acceptable aujourd'hui et pourquoi ça ne le sera plus au second worker.
+    arbitreDebit: arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
   });
 
   // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).

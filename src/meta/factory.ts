@@ -7,6 +7,7 @@ import { MbaClient } from '../mba/client';
 import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
 import type { MetaCredentialsResolver } from './credentials';
+import type { ArbitreDeDebit } from './arbitre-debit';
 
 /**
  * Fabrique de clients Meta PAR TENANT (B1). Elle résout le token du tenant (résolveur, avec repli sur le token
@@ -25,6 +26,14 @@ export interface MetaClientFactoryOpts {
   transport: HttpTransport;
   version: string;
   marketingViaLite: boolean;
+  /**
+   * Arbitre de débit PAR NUMÉRO (lot 4). Injecté ici parce que c'est le point où les quatre chemins d'envoi
+   * se rejoignent : campagne, scénario, automation et réponse d'inbox construisent tous leur client par
+   * `clientForTenant`. Un chemin d'envoi futur en hérite donc sans que personne y pense.
+   *
+   * OPTIONNEL : absent -> aucun frein par numéro, comportement d'avant (fixtures de test).
+   */
+  arbitreDebit?: ArbitreDeDebit;
 }
 
 export class MetaClientFactory {
@@ -44,6 +53,10 @@ export class MetaClientFactory {
       phoneNumberId,
       version: this.o.version,
       marketingViaLite: this.o.marketingViaLite,
+      // La porte du NUMÉRO, partagée par tout ce qui envoie depuis lui. `MetaClient.call` l'acquiert avant
+      // chaque appel `messages`, et seulement celui-là : lire un template ou téléverser un média ne consomme
+      // pas le budget d'envoi.
+      ...(this.o.arbitreDebit ? { rateLimiter: this.o.arbitreDebit.pour(phoneNumberId) } : {}),
     });
     return this.guard(client, wabaId);
   }

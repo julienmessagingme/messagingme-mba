@@ -380,7 +380,7 @@ classés », ils tombent dans le défaut TERMINAL, donc ils brûlent les destina
 | ~~**1**~~ ✅ | Codes de plafond Meta + pause · écriture d'avance conditionnelle · recherche de connaissance mutualisée · refus explicite du 2e numéro | non | **FAIT le 2026-08-31.** Détail et limites dans `documentation.md` §Journal |
 | ~~**2**~~ ✅ | Rétention des conversations et analyses (365 j) | 0094 | **FAIT le 2026-08-31.** 5.2 est clos |
 | ~~**3**~~ ✅ | Registre de tâches du `worker.ts` | non | **FAIT le 2026-08-31.** Les `register*Jobs` sont reportées au lot 6, qui est celui qui ajoute des files |
-| **4** | Throttle partagé par numéro, sur les 4 chemins d'envoi | à voir | Le prérequis de TOUTE concurrence |
+| ~~**4**~~ ✅ | Throttle partagé par numéro, sur les 4 chemins d'envoi | non | **FAIT le 2026-08-31**, posé en UN point (`clientForTenant`). Budget par PROCESS : le partager vraiment est le prérequis du 2e worker |
 | **5** | Campagnes en lots courts, puis `groupId` + concurrence | non | Une campagne cesse d'être un job de 3 h |
 | **6** | Découpage de `CampaignCreateForm`, puis files webhook séparées | non | L'entrant cesse d'attendre derrière les accusés |
 | **7** | Extraction du `WorkflowBuilder`, puis versions publiées de scénarios | oui | Modifier un scénario cesse de changer les parcours en cours |

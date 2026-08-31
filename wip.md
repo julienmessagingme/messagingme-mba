@@ -12,11 +12,12 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS : lot 4 du programme (`PLAN.md` § LE PROGRAMME)
+## EN COURS : lot 5 du programme (`PLAN.md` § LE PROGRAMME)
 
-Throttle partagé par NUMÉRO, sur les quatre chemins d'envoi (campagne, scénario, automation, inbox). Le
-limiteur est aujourd'hui instancié PAR RUN de campagne : deux campagnes du même numéro ont deux budgets, et
-les trois autres chemins n'en ont aucun. C'est le prérequis d'activer la concurrence au lot 5.
+Campagnes en LOTS COURTS : un run réclame un lot borné, le traite, se réenfile s'il reste du travail. Une
+campagne cesse d'être un job de trois heures (5 000 destinataires à 30/min = 2 h 47 aujourd'hui, pendant
+lesquelles la file ne sert personne d'autre). Puis `groupId` et la concurrence, désormais protégée par le
+frein par numéro du lot 4.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 
