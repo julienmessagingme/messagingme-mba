@@ -8,18 +8,22 @@ R3 alerte de file d'échec, J0 pool à 8), et R5, R6-découpage, J1, R12 et B3 v
 (5.3, 5.4, 5.5), pas ici. Les 23 jaunes de la §7 de l'audit ne sont volontairement PAS recopiés :
 aucun ne casse, ils se relisent à la source le jour où on ouvre le fichier concerné.
 
-- 🔴 **R1. Les huit commentaires qui promettent une garantie que `singletonKey` ne rend pas.**
-  `PgBossQueue.ensure()` (`src/queue/pgboss.ts:133`) crée les files sans `policy`, donc pg-boss retombe
-  sur `standard`, or TOUS les index uniques de déduplication par `singleton_key` exigent une autre policy.
-  Aucun `singletonKey` de ce dépôt n'a jamais dédupliqué quoi que ce soit. Le claim atomique par
-  destinataire tient (aucun contact ne reçoit deux messages), mais deux runs concurrents instancient
-  chacun leur limiteur en mémoire : le débit réel double, ce qui grille un numéro neuf en palier 250.
-  Commentaires à corriger : `src/http/campaigns.ts:379`, `src/campaign/enqueue.ts:5`,
-  `schedule-sweep.ts:24`, `webhook-feed.ts:40`, `retry-sweep.ts:24`, `src/http/v1-sends.ts:73` et `:244`,
-  `src/worker.ts:610`, `src/index.ts:895`. ⚠️ La policy d'une file est IMMUABLE après création : on ne
-  peut pas se contenter d'ajouter `policy` à `ensure()`. Le mécanisme de remplacement (table de verrous,
-  même patron qu'`api_idempotency`) est une décision, la vérité des commentaires ne l'est pas : la faire
-  d'abord, seule.
+**Faits le 2026-08-31 :** **R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué : douze commentaires
+corrigés et le paramètre inerte retiré) et **R13** (arrêter une campagne lancée : pause, garde au démarrage du
+job, reprise explicite). Détail dans `documentation.md` §Journal des lots livrés. Ce que R1 laissait ouvert
+est repris ci-dessous sous R1-bis, avec l'amplification qu'il a mise au jour.
+
+- 🔴 **R1-bis. Le verrou applicatif qui remplace le `singletonKey` inexistant.** R1 est fait (2026-08-31) :
+  la vérité est rétablie et le paramètre inerte retiré, détail dans `documentation.md`. Reste la DÉCISION du
+  mécanisme, que R1 laissait ouverte : une table de verrous, même patron qu'`api_idempotency` (la policy d'une
+  file pg-boss est immuable après création, on ne peut donc pas passer par elle).
+  🔴 **La découverte la plus grave de R1 est là :** le balayage « fil de l'eau » (`filDeLEauSweep`,
+  `src/worker.ts`) se croyait un rattrapage de jobs avalés ; il **empile en fait un run de plus par minute**
+  tant que la campagne a des destinataires en attente, alors qu'un run tourne déjà. Un envoi throttlé d'une
+  heure finirait à **soixante runs concurrents**, chacun avec son limiteur de débit en mémoire. Aucun contact
+  ne recevrait deux fois (le claim tient), mais le débit réel serait soixante fois l'annoncé, ce qui grille un
+  numéro neuf en palier 250. **Ça n'a jamais mordu : aucune campagne au fil de l'eau n'a encore tourné en
+  production.** C'est donc à faire AVANT la première.
 
 - 🔴 **R4. Chaque déploiement gèle une campagne en cours, sans erreur visible.**
   `installGracefulShutdown` (`src/shutdown.ts:5`) force `process.exit(1)` à 10 secondes, un run de deux
@@ -29,14 +33,6 @@ aucun ne casse, ils se relisent à la source le jour où on ouvre le fichier con
   attente). ⚠️ Relever le délai d'arrêt seul est INOPÉRANT : sans `stop_grace_period` dans
   `docker-compose.yml`, Docker envoie SIGKILL vers 10 secondes de toute façon. Les deux vont ensemble,
   plus le balayage de reprise qui manque.
-
-- 🔴 **R13. Une campagne lancée ne peut pas être arrêtée.**
-  Le `POST /campaigns/:id/stop` (`src/http/campaigns.ts:427`) ne sert QUE les campagnes au fil de l'eau
-  (`stopWebhookCampaign`, 404 partout ailleurs) : ce n'est pas une pause d'envoi. Et la boucle
-  (`src/campaign/engine.ts:202`) ne relit jamais le statut de la campagne, donc écrire `paused` en base
-  ne l'arrêterait pas. Une erreur de ciblage sur 5000 destinataires part jusqu'au bout. Correctif : route
-  de pause + relecture périodique du statut dans la boucle, à noyer dans le N+1 que le quality gate fait
-  déjà. La REPRISE après pause existe déjà côté store : la route complète un mécanisme à moitié câblé.
 
 - 🔴 **R10 + J2. Le rappel « avant date » peut partir deux ou trois fois, chez de vrais clients.**
   La déduplication vit uniquement dans le balayage, jamais dans le runner : `src/automation/runner.ts:122`

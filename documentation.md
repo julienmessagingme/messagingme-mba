@@ -2047,6 +2047,69 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## 2026-08-31 : R1 et R13 de l'audit du 25 août (aucune migration)
+
+⏳ **Commité sur `main`, PAS ENCORE DÉPLOYÉ** au moment où ces lignes sont écrites. Aucune migration, donc le
+déploiement est un `git pull` + `up -d --build` ordinaire, mais `web/` change (bouton de pause), donc le build
+de l'image web est nécessaire.
+
+### 🔴 R1. `singletonKey` n'a JAMAIS dédupliqué quoi que ce soit dans ce dépôt
+
+Douze commentaires (l'audit en comptait huit) promettaient « un seul job vivant par campagne / par
+conversation » sur la foi d'un `singletonKey`. **Lu dans la source de pg-boss 12.25.1 :** la déduplication sur
+`singleton_key` ne passe que par des index uniques **partiels**, tous filtrés sur une policy de file
+(`job_i1` short, `job_i2` singleton, `job_i3` stately, `job_i6` exclusive, `job_i8` key_strict_fifo,
+`migrationStore.js`). Or `PgBossQueue.ensure()` crée les files sans `policy`, donc en `standard`
+(`manager.js` : `options.policy || QUEUE_POLICIES.standard`), où aucun de ces index ne s'applique. Le
+paramètre était accepté, écrit en base, et ignoré.
+
+⚠️ **Et on ne peut pas rattraper en ajoutant `policy`** : pg-boss refuse tout changement après création
+(« queue policy cannot be changed after creation »), et les files de la production existent déjà. Il faudrait
+de nouvelles files, donc de nouveaux noms, donc abandonner les jobs en vol.
+
+Le paramètre a été **retiré de l'interface `Queue`** : un commentaire dérive, un type non. Ce que la vérité
+rétablie change concrètement :
+
+- l'enfilement d'un `campaign-run` n'est **pas** idempotent. Ce qui empêche le double-run d'une campagne
+  programmée, c'est `markRunning` (la garde sur le statut, qui la retire de la liste des dues), pas la file ;
+- le claim atomique par destinataire garantit qu'**aucun contact ne reçoit deux fois**, il ne garantit **pas
+  le débit** : N runs concurrents instancient N limiteurs en mémoire et envoient à N fois la cadence annoncée.
+  C'est ce qui grille un numéro neuf en palier 250 ;
+- 🔴 **le balayage « fil de l'eau » se justifiait par un mécanisme inverse du réel.** Son commentaire disait
+  rattraper les arrivants dont le job avait été « avalé » par le `singletonKey`. Rien n'avalait rien : l'effet
+  réel est qu'il **empile un run de plus par minute** tant que la campagne a des destinataires en attente,
+  alors qu'un run tourne déjà. Un envoi throttlé d'une heure finirait à soixante runs concurrents. Aucune
+  campagne au fil de l'eau n'a encore tourné en production, donc ça n'a jamais mordu. Le verrou applicatif de
+  remplacement (patron `api_idempotency`) reste à décider, cf. `todo.md`.
+
+### R13. Arrêter une campagne lancée
+
+Trois pièces, chacune nécessaire, aucune ne suffit seule :
+
+1. **Le moteur relit le statut dans sa boucle** (`runCampaign`) et sort dès qu'il n'est plus `running`. Cadencé
+   par le **temps** (5 s, `statusPollMs`) et non par un nombre de destinataires : une campagne à 1 msg/min
+   mettrait sinon des heures à voir la pause. Le contrôle passe **avant le claim**, et la sortie **ne réécrit
+   pas** le statut (ce serait écraser la décision de l'opérateur, et `completed` mentirait).
+2. **Le job refuse de démarrer une campagne en pause** (`campaignRunJob`). Sans cette garde, un job enfilé avant
+   la pause la ressusciterait, puisque le moteur remet toute campagne en `running` à son démarrage. Le cas est
+   atteignable précisément parce que la file ne déduplique rien (R1). Conséquence voulue : l'auto-relance F6
+   n'insiste plus sur une campagne en pause, elle attend une reprise décidée.
+3. **La reprise est explicite** : `POST /run` lève la pause **avant** d'enfiler, et la **rétablit** si
+   l'enfilement échoue. Sans ce rétablissement, la campagne resterait affichée « en cours » sans qu'aucun job
+   ne tourne, et « Reprendre » ne s'affiche pas sur une campagne en cours : l'opérateur serait coincé.
+
+Route `POST /tenants/:tenantId/campaigns/:campaignId/pause`, admin, scopée tenant. **404 « pas à toi » et 409
+« n'envoie pas » sont distincts** (contrôle d'appartenance d'abord), et jamais 5xx : Cloudflare remplace le
+corps de toute réponse 5xx par sa page d'erreur.
+
+⚠️ **Piège rencontré, et attrapé par le test :** l'engine appelait la relecture par une référence déliée
+(`const f = deps.campaigns.getStatus`), ce qui perd le `this` et aurait cassé `PgCampaignStore` en production
+(`this.pool` indéfini). Une méthode d'un store injecté s'appelle **sur son objet**, jamais détachée.
+
+Les trois gardes sont vérifiées **dans les deux sens** : retirée une à une, chacune fait échouer un test avec
+son symptôme exact (3 envoyés au lieu de 1, 1 au lieu de 0, pause non rétablie).
+
+---
 ## DEPLOYE le 2026-08-28 sur `05f791d` : le lot L2, le connecteur API du client
 
 Plan execute : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf taches, quatre decisions tranchees par Julien

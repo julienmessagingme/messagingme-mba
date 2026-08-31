@@ -350,12 +350,20 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 Ordonné par **valeur réelle**, pas par numéro. C'est la seule liste à suivre ; les blocs ci-dessus sont
 l'historique.
 
-### 1. Conformité, et c'est le seul vrai trou qui reste : l'opt-out WhatsApp (5.1) — M
+### ~~1. Conformité : l'opt-out WhatsApp (5.1)~~ ✅ FAIT le 2026-08-29, déployé
 
-Un contact qui écrit STOP n'est **pas** désinscrit. Le chemin d'écriture existe, le prédicat de détection
-existe (écrit et testé pour le RCS), ils ne sont simplement pas reliés sur le canal WhatsApp. C'est de la
-conformité, pas du confort, et l'audit prévenait déjà de le remonter en bloc 1 avant tout envoi marketing en
-volume. **À faire avant le prochain client, et avant toute campagne.**
+Un contact qui écrit STOP est désinscrit. Le prédicat de détection existait déjà (écrit et testé pour le RCS),
+il n'était simplement pas relié au canal WhatsApp ; il vit maintenant dans `src/crm/consentement.ts`, partagé
+par les deux canaux.
+
+### 1-bis. L'audit du 25 août : cinq constats encore ouverts
+
+**R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué) et **R13** (arrêter une campagne lancée) sont
+faits le 2026-08-31. Restent **R1-bis** (le verrou applicatif de remplacement, et l'amplification du balayage
+fil de l'eau que R1 a mise au jour : soixante runs concurrents sur un envoi throttlé d'une heure, à faire avant
+la première campagne au fil de l'eau), **R4** (un déploiement gèle une campagne en cours), **R10+J2** (le rappel
+« avant date » peut partir deux ou trois fois), **R9** (le mur de l'import CSV), **R7** (le compteur de non-lus).
+La liste vivante est en tête de [todo.md](todo.md), pas ici.
 
 ### ~~2. Deux gestes d'hygiène de sécurité~~ ✅ FAIT le 2026-08-29, déployé
 

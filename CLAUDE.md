@@ -120,6 +120,13 @@ qu'avant le premier envoi tracé.
 - **Toute nouvelle file pg-boss doit entrer dans `BASE_QUEUES`** (`src/queue/names.ts`), sinon elle est
   invisible de `/ops` et sa DLQ n'est surveillée par personne. Le test `tests/queue-names.test.ts` dérive la
   liste des `queue.work(...)` du worker et casse si on l'oublie.
+- 🔴 **AUCUNE file de ce dépôt ne déduplique quoi que ce soit.** Elles sont créées sans `policy`, donc en
+  `standard`, et pg-boss n'y applique aucun index unique sur `singleton_key` (vérifié dans sa source le
+  2026-08-31 ; le paramètre `singletonKey`, qui n'a jamais rien fait, a été retiré). N'écrivez jamais de code
+  ni de commentaire qui compte sur « un seul job vivant par clé » : deux enfilements = deux jobs qui tournent.
+  La policy étant IMMUABLE après création, on ne peut pas non plus la rattraper sur les files existantes. La
+  seule garantie réelle sur les campagnes est le claim atomique par destinataire, qui protège du double-envoi,
+  PAS du débit. Le verrou applicatif de remplacement est à faire, cf. `todo.md` R1-bis.
 - **Une garde de validation se calcule sur l'état EFFECTIF après écriture** (`patch ?? courant`), jamais sur le
   corps de la requête : sinon elle ne ferme qu'un sens (cf. la garde anti-boucle de « conversation analysée »).
 

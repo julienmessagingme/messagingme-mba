@@ -58,6 +58,13 @@ avec les choix tires du catalogue reel. Non fait dans ce lot.
 
 Aucune migration. La route de setup n ecrit toujours rien.
 
+## 2026-08-31 : R1 et R13 de l'audit, faits et commités, EN ATTENTE DE DÉPLOIEMENT
+
+Le fond, les gotchas et la vérification dans les deux sens sont dans
+[documentation.md](documentation.md) §Journal des lots livrés. Ce qui reste ici, c'est la seule chose à faire :
+**déployer** (aucune migration ; `web/` change, donc l'image web doit être rebâtie). Ce qui reste ouvert de R1
+est passé dans [todo.md](todo.md) sous R1-bis.
+
 ## EN COURS : le bloc agent IA (lots L0 et L1)
 
 Le plan, l etat tache par tache et le **registre des dettes** vivent dans

@@ -644,9 +644,20 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   un opt-in explicite passe), coupure automatique sur quality rating rouge ou taux d'échec trop haut, claim
   atomique anti double-envoi, idempotence. Le plafond anti-répétition par contact est **désactivé** (décision
   pilote 2026-07-15) : c'est l'opérateur qui choisit ses destinataires, un saut silencieux laissait des contacts
-  « en attente » sans explication. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise en pause par
-  le quality gate montre **« Reprendre »** (relance les destinataires restants) ; une campagne en cours /
-  terminée / en échec n'a pas de bouton.
+  « en attente » sans explication. **« Lancer »** n'apparaît que sur un brouillon ; une campagne mise en pause
+  montre **« Reprendre »** (relance les destinataires restants) ; une campagne terminée ou en échec n'a pas de bouton.
+- ✅ **Arrêter un envoi en cours** (2026-08-31). Une campagne en cours porte un bouton **« Mettre en pause »**.
+  C'est le geste d'urgence quand on s'aperçoit qu'on a mal ciblé : sans lui, une campagne lancée partait jusqu'à
+  son dernier destinataire, quoi qu'on fasse. Pas de confirmation à cliquer, justement parce que c'est urgent
+  et que c'est réversible.
+  - **Ce qui est déjà parti reste parti** : aucun message WhatsApp livré ne se rappelle. Le compteur de la
+    campagne dit exactement combien sont partis avant la coupure.
+  - **L'envoi s'arrête dans les secondes qui suivent**, pas instantanément : l'envoi en cours va au bout de son
+    destinataire courant, puis s'interrompt.
+  - **« Reprendre » repart exactement là** où on s'est arrêté : les destinataires non traités sont restés en
+    attente, personne n'est envoyé deux fois.
+  - À ne pas confondre avec **« Arrêter »**, qui n'existe que sur une campagne au fil de l'eau et qui est
+    définitif : la pause est une suspension, l'arrêt est un point final.
 - ✅ **Coût estimé par campagne** : « ≈ X (devise du compte) » par campagne + total, dérivé du tarif Meta
   (pricing_analytics) × nb envoyés facturables. « indisponible » si le prix Meta ne remonte pas (jamais 0).
 - ✅ **Les templates avec un VISUEL d'en-tête partent correctement** (2026-08-17). WhatsApp exige que l'image
