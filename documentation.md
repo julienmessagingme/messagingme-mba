@@ -2080,7 +2080,7 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
-## DEPLOYE le 2026-08-31 : la rétention des événements Meta bruts (migration 0093, PLAN.md 5.2)
+## DEPLOYE le 2026-08-31 sur `5456d14` : la rétention des événements Meta bruts (migration 0093, PLAN.md 5.2)
 
 `webhook_events` gardait le payload COMPLET de chaque événement Meta reçu **depuis le premier jour** : le
 texte des messages entrants et le numéro de la personne qui écrit. Aucune purge, aucun index de date, et
@@ -2113,7 +2113,7 @@ le même, il manque un nombre de jours, qui est un arbitrage produit (`PLAN.md` 
 contractuel ou réglable par client, et combien.
 
 ---
-## DEPLOYE le 2026-08-31 : les deux restes du lot « journée 1 » (aucune migration)
+## DEPLOYE le 2026-08-31 sur `5456d14` : les deux restes du lot « journée 1 » (aucune migration)
 
 Deux chemins que le correctif voisin ne couvrait PAS, malgré ce que son intitulé laissait croire.
 
