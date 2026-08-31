@@ -2080,6 +2080,39 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : la rétention des événements Meta bruts (migration 0093, PLAN.md 5.2)
+
+`webhook_events` gardait le payload COMPLET de chaque événement Meta reçu **depuis le premier jour** : le
+texte des messages entrants et le numéro de la personne qui écrit. Aucune purge, aucun index de date, et
+surtout **aucun discriminant d'espace**. C'était la dernière table du dépôt à garder une trace nominative hors
+de portée de la purge par contact.
+
+🔴 **Le discriminant est la partie qui ne se rattrape pas.** Une ligne écrite sans lui n'est attribuable à
+personne, pour toujours : le payload de Meta ne porte pas d'identifiant d'espace, seulement le numéro
+DESTINATAIRE (`value.metadata.phone_number_id`), que `phone_numbers` rattache à son tenant. C'est pour ça que
+la colonne est posée maintenant plutôt qu'au moment où on en aura besoin. Les lignes antérieures restent
+inattribuables, et c'est la rétention qui s'en occupe.
+
+**Trois pièces.**
+1. **Le numéro destinataire suit l'événement** depuis `parseWebhook` jusqu'à l'insertion (`phoneNumberId`).
+2. **Une purge par rétention**, `WEBHOOK_EVENTS_RETENTION_DAYS` (30 jours), balayée toutes les heures avec
+   alerte Telegram en cas d'échec. L'effacement est BORNÉ par passage (50 000 lignes) : une première purge sur
+   une table qui n'en a jamais eu peut viser des millions de lignes, et un `delete` unique tiendrait un verrou
+   et gonflerait le WAL d'un coup. ⚠️ `0` désactive la purge, et le test d'intégration verrouille ce sens-là :
+   à `0` elle ne doit RIEN toucher, surtout pas tout effacer (`make_interval(days => 0)` viserait tout).
+3. **L'effacement par personne** : `purgeMany` efface désormais les événements Meta de la personne, visée par
+   `payload->>'from'` (message entrant, echo) ou `payload->>'recipient_id'` (statut de livraison). 🔴 Scopé au
+   tenant par le numéro destinataire : la même personne peut écrire à deux de nos clients, et purger chez l'un
+   ne doit pas toucher au journal de l'autre. Un test d'intégration pose exactement ce cas.
+
+**Ce qui n'est PAS couvert, et c'est écrit dans le code** : les lignes d'avant 0093 (sans discriminant) et les
+payloads `messaging_handovers` (qui ne portent ni `from` ni `recipient_id`, mais pas de texte non plus).
+
+**Reste de 5.2, et il attend une décision** : la rétention des CONVERSATIONS et des analyses. Le mécanisme est
+le même, il manque un nombre de jours, qui est un arbitrage produit (`PLAN.md` §Décisions produit, point 2) :
+contractuel ou réglable par client, et combien.
+
+---
 ## DEPLOYE le 2026-08-31 : les deux restes du lot « journée 1 » (aucune migration)
 
 Deux chemins que le correctif voisin ne couvrait PAS, malgré ce que son intitulé laissait croire.

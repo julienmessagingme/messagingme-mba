@@ -26,6 +26,7 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
   const WA_ID = '33600000901'; // le MÊME numéro, tel que Meta le renvoie : sans « + ». Tout le bug est là.
   let contactId = '';
   let convId = '';
+  let autreTenantId = '';
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
@@ -77,10 +78,40 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
       `insert into workflow_node_events (tenant_id, workflow_id, node_id, wa_id, kind) values ($1, $2, 'n1', $3, 'sent')`,
       [tenantId, workflowId, WA_ID],
     );
+
+    // `webhook_events` : le payload BRUT de Meta, donc le TEXTE du message et le numéro de qui l'écrit.
+    // On pose les DEUX formes (message entrant par `from`, statut de livraison par `recipient_id`) sur le
+    // numéro de CE tenant, plus une troisième ligne sur le numéro d'un AUTRE tenant, avec le même wa_id :
+    // c'est elle qui prouve que l'effacement reste cloisonné.
+    await pool.query(`insert into waba (id, tenant_id, name) values ('itest-waba-purge', $1, 'w')`, [tenantId]);
+    await pool.query(
+      `insert into phone_numbers (id, waba_id, tenant_id, display_phone_number) values ('itest-pn-purge', 'itest-waba-purge', $1, '+33525680299')`,
+      [tenantId],
+    );
+    autreTenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-purge-voisin') returning id`)).rows[0]!.id;
+    await pool.query(`insert into waba (id, tenant_id, name) values ('itest-waba-voisin', $1, 'w')`, [autreTenantId]);
+    await pool.query(
+      `insert into phone_numbers (id, waba_id, tenant_id, display_phone_number) values ('itest-pn-voisin', 'itest-waba-voisin', $1, '+33525680298')`,
+      [autreTenantId],
+    );
+    await pool.query(
+      `insert into webhook_events (source, meta_message_id, payload, phone_number_id) values
+         ('messages', $1, $2::jsonb, 'itest-pn-purge'),
+         ('statuses', $3, $4::jsonb, 'itest-pn-purge'),
+         ('messages', $5, $6::jsonb, 'itest-pn-voisin')`,
+      [
+        `wam-itest-ev-1`, JSON.stringify({ from: WA_ID, id: 'wam-1', text: { body: 'je raconte ma vie' } }),
+        `wam-itest-ev-2`, JSON.stringify({ recipient_id: WA_ID, id: 'wam-2', status: 'delivered' }),
+        `wam-itest-ev-3`, JSON.stringify({ from: WA_ID, id: 'wam-3', text: { body: 'chez le voisin' } }),
+      ],
+    );
   });
 
   afterAll(async () => {
+    // `webhook_events` ne dépend d'aucun tenant en cascade (c'est tout le sujet) : on l'efface par ses ids.
+    await pool.query(`delete from webhook_events where meta_message_id like 'wam-itest-ev-%'`);
     if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    if (autreTenantId) await pool.query('delete from tenants where id = $1', [autreTenantId]);
     await pool.query(`delete from rcs_capabilities_cache where agent_id = $1`, ['itest-agent']);
     await pool.end();
   });
@@ -137,6 +168,25 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect(restantes.rowCount).toBe(1);
     expect(restantes.rows[0]!.wa_id).toBe('anonyme');
     expect(restantes.rows[0]!.wa_id).not.toContain('600000901');
+  });
+
+  /**
+   * `webhook_events` garde le payload BRUT de Meta : le texte du message entrant et le numéro de qui l'écrit.
+   * C'était la DERNIÈRE table du dépôt à garder une trace nominative hors de portée de cette purge, faute de
+   * discriminant d'espace (PLAN.md 5.2, fermé par la migration 0093).
+   */
+  it('🔴 les événements Meta bruts de la personne sont effacés (message ENTRANT et statut de livraison)', async () => {
+    const restants = await pool.query<{ meta_message_id: string }>(
+      `select meta_message_id from webhook_events where phone_number_id = 'itest-pn-purge'`,
+    );
+    expect(restants.rowCount).toBe(0);
+  });
+
+  it('🔴 mais PAS ceux d’un autre espace, même pour la même personne (cloisonnement)', async () => {
+    // La même personne peut écrire à deux de nos clients. Purger chez l'un ne doit pas toucher au journal de
+    // l'autre : sans le filtre par numéro destinataire, l'effacement se ferait par wa_id, donc partout.
+    const voisin = await pool.query(`select 1 from webhook_events where phone_number_id = 'itest-pn-voisin'`);
+    expect(voisin.rowCount).toBe(1);
   });
 
   it('purger deux fois ne compte pas deux fois (anonymized_at fait garde)', async () => {

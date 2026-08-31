@@ -839,6 +839,27 @@ export class PgContactStore implements ContactStore {
         );
       }
 
+      // `webhook_events` garde le payload BRUT de chaque événement Meta : le TEXTE du message entrant et le
+      // numéro de qui l'écrit. C'était la dernière table du dépôt à garder une trace nominative hors de portée
+      // de cette purge, faute de discriminant d'espace (PLAN.md 5.2, migration 0093).
+      //
+      // La personne est visée par `from` (message entrant, echo de MBA) ou `recipient_id` (statut de
+      // livraison). L'effacement reste SCOPÉ AU TENANT par le numéro destinataire : la même personne peut
+      // écrire à deux de nos clients, et purger chez l'un ne doit pas toucher au journal de l'autre.
+      //
+      // ⚠️ Deux limites, assumées et couvertes par la rétention : les lignes écrites AVANT la migration 0093
+      // n'ont pas de `phone_number_id`, donc ne sont attribuables à personne et ne sont pas visées ici ; et
+      // les payloads `messaging_handovers` ne portent ni `from` ni `recipient_id` (ils n'ont pas de texte,
+      // seulement des identifiants d'application).
+      if (waIdsAAnonymiser.length > 0) {
+        await client.query(
+          `delete from webhook_events
+            where (payload->>'from' = any($2::text[]) or payload->>'recipient_id' = any($2::text[]))
+              and phone_number_id in (select id from phone_numbers where tenant_id = $1)`,
+          [tenantId, waIdsAAnonymiser],
+        );
+      }
+
       // Quantitatif préservé : la ligne de campagne reste (statut, horodatage, livraison), son numéro et ses
       // variables résolues partent. `resolved_params` porte les valeurs injectées dans le template, donc
       // typiquement le prénom.

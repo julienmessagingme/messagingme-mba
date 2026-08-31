@@ -333,8 +333,10 @@ Conversions API, ce qui laisse l'algorithme optimiser la diffusion de la pub. C'
 concret pour un client qui fait de l'acquisition.
 
 Deux précautions connues : `ctwa_clid` arrive parfois VIDE, et il n'est transmis que sur le premier message.
-Il n'est pas recopié sur la fiche contact aujourd'hui, mais il n'est pas perdu : le corps brut de chaque
-webhook reste dans `webhook_events.payload`, sans purge.
+Il n'est pas recopié sur la fiche contact aujourd'hui. ⚠️ **Le repli « on le retrouvera dans le payload brut »
+a une DATE DE PÉREMPTION depuis le 2026-08-31** : `webhook_events` est purgée à 30 jours (rétention RGPD,
+migration 0093). Au-delà, le `ctwa_clid` d'un lead est définitivement perdu. Le jour où on referme la boucle
+d'attribution, il faut donc le recopier sur la fiche contact À LA RÉCEPTION.
 
 ## Étanchéité des canaux : ce que le lot du 2026-08-25 a volontairement laissé
 

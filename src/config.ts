@@ -129,6 +129,14 @@ export const schema = z.object({
   WEBHOOK_IN_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
   /** Jours de conservation du dernier payload d'un webhook entrant. Voir la note RGPD de la migration 0074. */
   WEBHOOK_PAYLOAD_RETENTION_DAYS: z.coerce.number().default(7),
+  /**
+   * Jours de conservation des ÉVÉNEMENTS Meta bruts (`webhook_events`), qui portent le texte des messages
+   * entrants et le numéro de qui écrit. 30 jours : bien au-delà de la fenêtre d'idempotence (quelques
+   * minutes) et de tout débogage d'incident réaliste, bien en deçà d'une conservation « pour toujours », qui
+   * était l'état jusqu'au 2026-08-31. `0` désactive la purge, et c'est un choix qu'il faut assumer : la table
+   * se remet alors à croître sans fin. Cf. migration 0093 et PLAN.md 5.2.
+   */
+  WEBHOOK_EVENTS_RETENTION_DAYS: z.coerce.number().default(30),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

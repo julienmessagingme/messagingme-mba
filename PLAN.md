@@ -306,7 +306,7 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 | # | État | Ce qui reste |
 |---|---|---|
 | 5.1 | 🟡 PARTIEL | La moitié CONFORMITÉ est faite le 2026-08-29 : un STOP en WhatsApp désabonne, par le prédicat partagé `src/crm/consentement.ts`. Reste la moitié INTÉGRATION : `/v1/contacts` ne sait toujours pas dire « désabonné » (il faut un champ `optOut` explicite ET une seconde écriture après l'upsert, qui ne sait que promouvoir). Détail dans `todo.md` |
-| 5.2 | 🟡 PARTIEL | `webhook_events` toujours jamais purgée et sans `tenant_id`, donc effacement RGPD structurellement impossible. Plus la rétention configurable sur les conversations et analyses |
+| 5.2 | 🟡 PARTIEL | **La partie structurelle est FAITE le 2026-08-31** (migration 0093) : `webhook_events` porte le numéro destinataire, donc son espace ; purge par rétention de 30 j ; et la purge par contact l'efface, scopée au tenant. Reste la rétention des CONVERSATIONS et analyses, qui attend UN NOMBRE DE JOURS de Julien (décision produit n°2 plus bas) |
 | 5.3 | 🟡 PARTIEL | La file `agent-turn` a apporté une partie du mécanisme. Reste : `groupId = tenantId` à l'enfilage, découper `campaign-run` en lots, et surtout **déplacer le throttle au niveau du NUMÉRO** |
 | 5.4 | 🔴 PAS FAIT | L'item entier. Bloquant dès qu'un client veut un second numéro |
 | 5.5 | 🔴 PAS FAIT | L'item entier. Aggravant intact : l'erreur Meta de plafond n'est ni retryable ni terminale |
@@ -389,7 +389,7 @@ ni l'autre ne protège de quoi que ce soit aujourd'hui. Les faire maintenant ser
 
 ### 6. Le reste, par valeur décroissante
 
-**5.2** (rétention et purge, RGPD structurel), **5.6** (garde de boot exhaustive par construction), **5.4**
+**5.2-reste** (rétention des conversations, dès que le nombre de jours est tranché), **5.6** (garde de boot exhaustive par construction), **5.4**
 (multi-numéro, bloquant dès qu'un client en veut deux), **5.3** (throttle au niveau du numéro), **5.5**, puis
 **5.7**, **5.8**, **5.9**, **5.11**.
 

@@ -13,6 +13,14 @@ export interface WebhookEvent {
   dedupKey: string;
   /** L'objet événement brut (message, statut, echo, handover). */
   data: unknown;
+  /**
+   * Numéro Meta DESTINATAIRE de l'événement (`value.metadata.phone_number_id`), quand Meta le donne.
+   *
+   * C'est le seul rattachement à un espace que porte un payload Meta : `phone_numbers` fait le lien. Il est
+   * remonté ici pour être STOCKÉ avec l'événement, faute de quoi une ligne de `webhook_events` n'est
+   * attribuable à personne et ne peut donc jamais être effacée sur demande (PLAN.md 5.2).
+   */
+  phoneNumberId?: string;
 }
 
 /** Sérialisation canonique (clés triées) -> hash insensible à l'ordre des clés. */
@@ -53,6 +61,9 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
       const change = asRecord(changeRaw);
       const field = typeof change['field'] === 'string' ? (change['field'] as string) : '';
       const value = asRecord(change['value']);
+      // Lu UNE fois par `change` : tous les événements qu'il porte visent le même numéro.
+      const pnId = asRecord(value['metadata'])['phone_number_id'];
+      const meta = typeof pnId === 'string' && pnId !== '' ? { phoneNumberId: pnId } : {};
 
       // Messages entrants.
       for (const msgRaw of asArray(value['messages'])) {
@@ -62,6 +73,7 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
           source: 'messages',
           dedupKey: id ? `msg:${id}` : hash('messages', msg),
           data: msg,
+          ...meta,
         });
       }
 
@@ -76,6 +88,7 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
           source: 'statuses',
           dedupKey: id && status ? `status:${id}:${status}` : hash('statuses', st),
           data: st,
+          ...meta,
         });
       }
 
@@ -87,6 +100,7 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
           source: 'standby',
           dedupKey: id ? `standby:${id}` : hash('standby', echo),
           data: echo,
+          ...meta,
         });
       }
 
@@ -98,6 +112,7 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
           source: 'messaging_handovers',
           dedupKey: hash('messaging_handovers', value),
           data: value,
+          ...meta,
         });
       }
     }

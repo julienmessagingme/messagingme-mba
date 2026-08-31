@@ -849,6 +849,28 @@ async function main(): Promise<void> {
   const webhookPayloadSweeper = setInterval(() => void webhookPayloadSweep(), 6 * 60 * 60 * 1000);
   webhookPayloadSweeper.unref();
 
+  // RGPD, et croissance non bornée (PLAN.md 5.2) : `webhook_events` garde le payload COMPLET de chaque
+  // événement Meta reçu depuis le premier jour, donc le texte des messages entrants et le numéro de qui
+  // écrit. Elle n'a jamais eu de purge. Elle ne sert qu'à l'idempotence (fenêtre de quelques minutes) et au
+  // débogage d'un incident ; passé la rétention, elle ne garde plus que des données personnelles.
+  //
+  // Toutes les heures et non toutes les six : la première purge d'une table qui n'en a jamais eu s'étale sur
+  // plusieurs passages (l'effacement est borné pour ne pas tenir un verrou ni gonfler le WAL d'un coup).
+  const webhookEventsSweep = async (): Promise<void> => {
+    try {
+      const n = await eventStore.purgeOlderThan(config.WEBHOOK_EVENTS_RETENTION_DAYS);
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`webhook-events-sweep: ${n} événement(s) Meta effacé(s) (rétention ${config.WEBHOOK_EVENTS_RETENTION_DAYS} j)`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('webhook-events-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:webhook-events', `webhook-events-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void webhookEventsSweep();
+  const webhookEventsSweeper = setInterval(() => void webhookEventsSweep(), 60 * 60 * 1000);
+  webhookEventsSweeper.unref();
+
   // Déclencheur « X avant la date d'un champ » : le seul qui ne répond pas à un événement mais à
   // l'écoulement du temps. Il PUBLIE dans la file, il ne démarre rien : le scénario part par le chemin
   // commun, donc avec les mêmes garde-fous que les autres déclencheurs.

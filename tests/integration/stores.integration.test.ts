@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { ALL_QUEUES } from '../../src/queue/names';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
+import { PgEventStore } from '../../src/webhooks/store';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
 import { PgUserStore } from '../../src/user/store.pg';
 import { PgTrackedLinkStore } from '../../src/links/tracked-links.pg';
@@ -160,6 +161,34 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   it('PgContactStore.upsertManyByPhone : lot vide -> aucune requête, aucun résultat', async () => {
     const store = new PgContactStore(pool);
     expect(await store.upsertManyByPhone({ tenantId, optInStatus: 'unknown', contacts: [] })).toEqual([]);
+  });
+
+  /**
+   * Rétention de `webhook_events` (PLAN.md 5.2). La table gardait le payload complet de chaque événement Meta
+   * depuis le premier jour, sans aucune purge : le texte des messages entrants et le numéro de qui écrit,
+   * pour toujours.
+   */
+  it('PgEventStore.purgeOlderThan : efface le vieux, garde le récent, et ne fait RIEN à 0', async () => {
+    const store = new PgEventStore(pool);
+    const vieux = 'wam-itest-retention-vieux';
+    const recent = 'wam-itest-retention-recent';
+    await pool.query(
+      `insert into webhook_events (source, meta_message_id, payload, received_at) values
+         ('messages', $1, '{"from":"33600000999"}'::jsonb, now() - interval '45 days'),
+         ('messages', $2, '{"from":"33600000999"}'::jsonb, now())`,
+      [vieux, recent],
+    );
+    try {
+      // 0 = purge désactivée : elle ne doit toucher à RIEN, pas tout effacer.
+      expect(await store.purgeOlderThan(0)).toBe(0);
+      expect((await pool.query(`select 1 from webhook_events where meta_message_id = $1`, [vieux])).rowCount).toBe(1);
+
+      expect(await store.purgeOlderThan(30)).toBeGreaterThanOrEqual(1);
+      expect((await pool.query(`select 1 from webhook_events where meta_message_id = $1`, [vieux])).rowCount).toBe(0);
+      expect((await pool.query(`select 1 from webhook_events where meta_message_id = $1`, [recent])).rowCount).toBe(1);
+    } finally {
+      await pool.query(`delete from webhook_events where meta_message_id in ($1, $2)`, [vieux, recent]);
+    }
   });
 
   it('PgContactStore.upsertFromInbound : crée par numéro OU BSUID, expose le bsuid, opt-in unknown (pas de consentement)', async () => {

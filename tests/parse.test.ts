@@ -69,3 +69,44 @@ describe('parseWebhook', () => {
     expect(parseWebhook(null)).toHaveLength(0);
   });
 });
+
+/**
+ * Le numéro DESTINATAIRE est le seul rattachement à un espace que porte un payload Meta. Il est remonté pour
+ * être STOCKÉ avec l'événement : sans lui, une ligne de `webhook_events` n'est attribuable à personne et ne
+ * peut donc jamais être effacée sur demande (PLAN.md 5.2, migration 0093).
+ */
+describe('parseWebhook : le numéro destinataire suit l’événement', () => {
+  const value = (extra: Record<string, unknown>) => ({ metadata: { display_phone_number: '+33525680250', phone_number_id: 'pn-42' }, ...extra });
+
+  it('message entrant, statut, echo et handover portent tous le phone_number_id', () => {
+    const ev = parseWebhook({
+      entry: [{ changes: [
+        { field: 'messages', value: value({ messages: [{ id: 'wamid.A' }] }) },
+        { field: 'statuses', value: value({ statuses: [{ id: 'wamid.A', status: 'sent' }] }) },
+        { field: 'messages', value: value({ message_echoes: [{ id: 'wamid.E' }] }) },
+        { field: 'messaging_handovers', value: value({ control_passed: {} }) },
+      ] }],
+    });
+    expect(ev).toHaveLength(4);
+    for (const e of ev) expect(e.phoneNumberId).toBe('pn-42');
+  });
+
+  it('métadonnées absentes ou vides -> pas de champ inventé', () => {
+    const sans = parseWebhook({ entry: [{ changes: [{ field: 'messages', value: { messages: [{ id: 'wamid.A' }] } }] }] });
+    expect(sans[0]?.phoneNumberId).toBeUndefined();
+    const vide = parseWebhook({
+      entry: [{ changes: [{ field: 'messages', value: { metadata: { phone_number_id: '' }, messages: [{ id: 'wamid.A' }] } }] }],
+    });
+    expect(vide[0]?.phoneNumberId).toBeUndefined();
+  });
+
+  it('deux numéros dans le même lot -> chaque événement garde le SIEN', () => {
+    const ev = parseWebhook({
+      entry: [
+        { changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'pn-A' }, messages: [{ id: 'wamid.A' }] } }] },
+        { changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'pn-B' }, messages: [{ id: 'wamid.B' }] } }] },
+      ],
+    });
+    expect(ev.map((e) => e.phoneNumberId)).toEqual(['pn-A', 'pn-B']);
+  });
+});
