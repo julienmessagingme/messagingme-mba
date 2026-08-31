@@ -168,12 +168,29 @@ export class PgAutomationStore {
    * rendez-vous reporté sans rappel, en silence. Absent -> la colonne est remise à null, ce qui est le
    * comportement de tous les autres déclencheurs.
    */
-  async markFired(automationId: string, waId: string, marqueur?: string): Promise<void> {
-    await this.pool.query(
+  /**
+   * 🔴 CLAIM CONDITIONNEL QUAND UN MARQUEUR EST DONNÉ (R10). Rend `false` si le marqueur stocké est DÉJÀ
+   * celui-ci : un autre tour a tiré pour cette même occurrence, il ne faut pas tirer une seconde fois.
+   *
+   * Ce qu'il répare : la déduplication du rappel « avant date » vivait UNIQUEMENT dans le balayage, qui lit
+   * `fired_for` avant de publier. Tant que l'événement publié n'était pas consommé, le balayage suivant
+   * revoyait le contact comme dû et republiait. Un client avec quinze rendez-vous à la même heure fabrique
+   * assez d'événements pour que la file prenne du retard : deux, parfois trois rappels WhatsApp IDENTIQUES,
+   * facturés, visibles du client, avec le risque de note de qualité Meta. La garantie descend donc du
+   * balayage au RUNNER, c'est-à-dire au seul endroit qui soit atomique.
+   *
+   * ⚠️ SANS marqueur (tous les déclencheurs sauf `avant_date`), l'écriture reste INCONDITIONNELLE et rend
+   * toujours `true`. La rendre conditionnelle là aussi casserait l'anti-boucle : `fired_for` y vaut toujours
+   * `null`, `null is distinct from null` est faux, et plus AUCUN déclenchement répété ne passerait.
+   */
+  async markFired(automationId: string, waId: string, marqueur?: string): Promise<boolean> {
+    const res = await this.pool.query(
       `insert into automation_fires (automation_id, wa_id, fired_at, fired_for) values ($1, $2, now(), $3)
-       on conflict (automation_id, wa_id) do update set fired_at = now(), fired_for = excluded.fired_for`,
+       on conflict (automation_id, wa_id) do update set fired_at = now(), fired_for = excluded.fired_for
+       where $3::text is null or automation_fires.fired_for is distinct from excluded.fired_for`,
       [automationId, waId, marqueur ?? null],
     );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /**

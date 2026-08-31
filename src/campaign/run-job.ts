@@ -9,8 +9,8 @@ import type {
   EngineDeps,
 } from './engine';
 import { RateLimiter } from '../meta/http';
-import { resolveRatePerMinute, campaignJobExpireSeconds } from './pacing';
-import type { CampaignRunLock } from './run-lock';
+import { resolveRatePerMinute } from './pacing';
+import { BAIL_SECONDES, type CampaignRunLock } from './run-lock';
 import { TokenInvalidError } from '../meta/credentials';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
@@ -68,6 +68,8 @@ export interface RunJobDeps extends Pick<
     /** Relance un run : le verrou a coalescé du travail refusé pendant qu'on le tenait. */
     relancer(campaignId: string): Promise<void>;
   };
+  /** L'arrêt du service a-t-il été demandé (SIGTERM) ? Absent = le run va jusqu'au bout, comme avant. */
+  arretDemande?: () => boolean;
 }
 
 
@@ -175,17 +177,16 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(deps.getTemplateHeaderMedia ? { getTemplateHeaderMedia: deps.getTemplateHeaderMedia } : {}),
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
+    ...(deps.arretDemande ? { arretDemande: deps.arretDemande } : {}),
   };
 
   const serialisation = deps.serialisation;
   if (!serialisation) return runCampaign(campaign, optionsMoteur);
 
-  // BAIL dimensionné sur la MÊME estimation que l'expiration du job pg-boss. C'est délibéré : les deux
-  // mécanismes doivent lâcher prise au même moment. Un bail plus court laisserait un second run démarrer sous
-  // le premier ; un bail plus long laisserait la campagne verrouillée après un `up -d` qui a tué le worker en
-  // plein envoi, alors que pg-boss, lui, rejoue déjà le job.
-  const bailSecondes = campaignJobExpireSeconds(await serialisation.enAttente(campaignId), rate);
-  const jeton = await serialisation.verrou.acquire(campaignId, campaign.tenantId, bailSecondes);
+  // BAIL COURT, renouvelé pendant le run (cf. `BAIL_SECONDES`). Un process tué libère donc la campagne en deux
+  // minutes, et le balayage de reprise peut la relancer. Un bail long l'aurait gelée pendant des heures, ce
+  // qui est précisément le défaut R4 qu'on ferme ici.
+  const jeton = await serialisation.verrou.acquire(campaignId, campaign.tenantId, BAIL_SECONDES);
   if (jeton === null) {
     // Un run vivant tient le verrou. On ne lève PAS : le travail sera fait, par lui ou par la relance qu'il
     // déclenchera en sortant. Lever ferait rejouer ce job par pg-boss, qui se heurterait au même verrou, cinq
@@ -209,7 +210,10 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
   };
 
   try {
-    const rapport = await runCampaign(campaign, optionsMoteur);
+    const rapport = await runCampaign(campaign, {
+      ...optionsMoteur,
+      renouvelerVerrou: () => serialisation.verrou.renouveler(campaignId, campaign.tenantId, jeton),
+    });
     await rendreLeVerrou(true);
     return rapport;
   } catch (err) {

@@ -13,6 +13,7 @@ import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/type
 import { MetaApiError } from '../src/meta/errors';
 import { TokenInvalidError } from '../src/meta/credentials';
 import { campaignJobExpireSeconds } from '../src/campaign/pacing';
+import { BAIL_SECONDES } from '../src/campaign/run-lock';
 
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
@@ -454,6 +455,9 @@ class VerrouFake {
     this.rendus.push({ campaignId: _c, holder });
     return { rerunDemande: this.rerun };
   }
+  /** Le renouvellement REUSSIT par defaut : un fake qui echouerait ferait sortir tous les runs des tests. */
+  renouvelle = 0;
+  async renouveler(): Promise<boolean> { this.renouvelle += 1; return true; }
 }
 function avecVerrou(verrou: VerrouFake, over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }, relances: string[] = [], enAttente = 0): RunJobDeps {
   return deps({
@@ -498,14 +502,17 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     expect(verrou.rendus).toEqual([{ campaignId: 'c1', holder: 'jeton-1' }]);
   });
 
-  it('le bail est dimensionné sur les destinataires en attente, comme l’expiration du job', async () => {
-    // 1000 en attente au débit par défaut (opt-out -> plancher d'estimation 30/min) : bien au-delà du
-    // plancher de 15 min, sinon le bail tomberait en plein envoi et un second run démarrerait dessous.
+  it('🔴 le bail est COURT et CONSTANT : c’est ce qui rend une campagne reprenable après un worker tué', async () => {
+    // Ce test affirmait l'inverse jusqu'au 2026-08-31 : le bail était calé sur l'expiration du job pg-boss,
+    // dimensionnée en HEURES. Juste pour un bail qu'on ne renouvelle pas, et faux dès qu'on veut REPRENDRE une
+    // campagne interrompue (R4) : le verrou d'un process mort serait resté « vivant » des heures, et le
+    // balayage de reprise aurait sagement attendu. Court + renouvelé, un process tué libère en deux minutes.
     const verrou = new VerrouFake('jeton-1');
     await campaignRunJob({ campaignId: 'c1' }, avecVerrou(verrou, { getCampaign: async () => campaign }, [], 1000));
     expect(verrou.acquis[0]).toMatchObject({ campaignId: 'c1', tenantId: 't1' });
-    expect(verrou.acquis[0]!.leaseSeconds).toBe(campaignJobExpireSeconds(1000, 0));
-    expect(verrou.acquis[0]!.leaseSeconds).toBeGreaterThan(900);
+    expect(verrou.acquis[0]!.leaseSeconds).toBe(BAIL_SECONDES);
+    // Et il ne dépend PAS du nombre de destinataires : mille en attente n'y changent rien.
+    expect(verrou.acquis[0]!.leaseSeconds).toBeLessThan(campaignJobExpireSeconds(1000, 0));
   });
 
   it('🔴 relance demandée pendant le run -> UN relancement, pour le travail que ce run n’a pas vu', async () => {
@@ -539,6 +546,7 @@ describe('campaignRunJob : un seul run vivant par campagne', () => {
     const verrouCasse = {
       acquire: async () => 'jeton-1',
       release: async () => { throw new Error('base indisponible'); },
+      renouveler: async () => true,
     };
     const report = await campaignRunJob(
       { campaignId: 'c1' },

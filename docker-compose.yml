@@ -9,6 +9,10 @@ services:
     container_name: mba-api
     env_file: .env.prod
     restart: unless-stopped
+    # 🔴 Docker envoie SIGKILL 10 s après le SIGTERM par défaut. Un travail en cours n'avait donc aucune chance
+    # de sortir proprement. 30 s laisse au filet de 25 s de `installGracefulShutdown` le temps de servir.
+    # ⚠️ Les deux vont ENSEMBLE : relever l'un sans l'autre ne change rien du tout.
+    stop_grace_period: 30s
     # Healthcheck sur /live (LIVENESS, zéro DB) et NON /health (readiness) : une panne DB transitoire ou le
     # cold-start EMAXCONNSESSION (cf. DEPLOY.md) ferait boucler un restart si on ciblait /health. wget = busybox
     # (node:22-alpine, pas de curl). ⚠️ 127.0.0.1 et NON localhost : busybox wget résout localhost en ::1 (IPv6),
@@ -30,6 +34,11 @@ services:
     command: ["npx", "tsx", "src/worker.ts"]
     env_file: .env.prod
     restart: unless-stopped
+    # 🔴 LE POINT QUI COMPTE POUR R4. C'est ici que tournent les runs de campagne : sans ce délai, un
+    # déploiement les tuait en plein envoi (SIGKILL à 10 s, un run de deux heures n'a aucune chance), et la
+    # campagne restait `running` sans que rien ne la reprenne. ⚠️ Ce délai seul ne suffit PAS : la garantie est
+    # le balayage de reprise du worker, qui rattrape aussi les arrêts brutaux (panne, OOM, SIGKILL).
+    stop_grace_period: 30s
     networks: [mcp-robot_default]
 
   mba-web:

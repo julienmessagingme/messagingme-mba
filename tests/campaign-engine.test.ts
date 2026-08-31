@@ -731,3 +731,67 @@ describe('runCampaign : arrêt demandé pendant l’envoi', () => {
     expect(report.sent).toBe(3);
   });
 });
+
+/**
+ * R4 : UN DÉPLOIEMENT NE DOIT PLUS GELER UNE CAMPAGNE.
+ *
+ * Le worker est tué en plein envoi à chaque `up -d` (SIGKILL vers 10 s, un run de deux heures n'a aucune
+ * chance). Le moteur doit donc savoir sortir proprement, SANS toucher au statut : la campagne reste `running`
+ * avec ses destinataires en attente, et le balayage de reprise la relance au redémarrage. La marquer `paused`
+ * demanderait un geste humain pour repartir, alors que personne n'a rien décidé.
+ */
+describe('runCampaign : arrêt du service et bail du verrou', () => {
+  it('🔴 arrêt demandé : le destinataire suivant n’est NI claimé NI envoyé, et le statut n’est pas réécrit', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    const campaigns = new FakeCampaigns();
+    let arret = false;
+    const report = await runCampaign(campaign, deps({
+      recipients, sender, campaigns,
+      // On coupe APRÈS le premier envoi, comme un SIGTERM en plein run.
+      arretDemande: () => { const v = arret; arret = true; return v; },
+    }));
+    expect(report).toMatchObject({ sent: 1, paused: true });
+    expect(report.reason).toContain('arrêt du service');
+    expect(sender.calls).toEqual(['+33611']);
+    expect(recipients.claimed).toEqual(['r1']); // r2 et r3 restent `pending` pour la reprise
+    // 🔴 `running` et RIEN d'autre : ni `completed` (il reste du monde), ni `paused` (personne n'a décidé).
+    expect(campaigns.statuses).toEqual(['running']);
+  });
+
+  it('contrôle : sans arrêt demandé, le run va jusqu’au bout (la garde ne déborde pas)', async () => {
+    const sender = new FakeSender();
+    const report = await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
+      sender, arretDemande: () => false,
+    }));
+    expect(report).toMatchObject({ sent: 2, paused: false });
+  });
+
+  it('🔴 le bail du verrou est RENOUVELÉ à la cadence de la relecture de statut', async () => {
+    // Sans renouvellement, le bail devrait couvrir la durée entière du run (des heures) et un worker tué
+    // bloquerait la reprise pendant tout ce temps : c'est exactement le gel que R4 supprime.
+    let renouvellements = 0;
+    const campaigns = new FakeCampaignsRelisibles(['running']);
+    const report = await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
+      campaigns, statusPollMs: 0,
+      renouvelerVerrou: async () => { renouvellements += 1; return true; },
+    }));
+    expect(report.sent).toBe(2);
+    expect(renouvellements).toBe(2);
+  });
+
+  it('🔴 bail PERDU : le run s’arrête, sinon deux runs enverraient en parallèle', async () => {
+    const sender = new FakeSender();
+    const campaigns = new FakeCampaignsRelisibles(['running']);
+    const report = await runCampaign(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]),
+      sender, campaigns, statusPollMs: 0,
+      renouvelerVerrou: async () => false,
+    }));
+    expect(report).toMatchObject({ sent: 0, paused: true });
+    expect(report.reason).toContain('verrou');
+    expect(sender.calls).toEqual([]);
+  });
+});

@@ -681,17 +681,30 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Campagnes au fil de l'eau qui ont des destinataires EN ATTENTE. Filet du balayeur, pour l'arrivant dont
-   * l'enfilement immédiat a ÉCHOUÉ. Un run déjà en vol ne gêne pas : le verrou d'exécution (`run-lock.ts`)
-   * écarte le job en trop. Voir la note complète sur `filDeLEauSweep`, `src/worker.ts`.
+   * 🔴 LES CAMPAGNES GELÉES : `running`, du travail en attente, et AUCUN run vivant.
+   *
+   * C'est le correctif R4, et c'est le seul qui garantisse quelque chose. Un déploiement tue le worker en
+   * plein envoi (SIGKILL vers 10 s, un run de deux heures n'a aucune chance) ; sans ce balayage la campagne
+   * restait `running` avec ses destinataires en attente, et PLUS RIEN ne la reprenait. Chaque interruption
+   * consommait un rejeu pg-boss, et à la sixième elle était figée pour toujours, sans la moindre erreur
+   * visible.
+   *
+   * « Aucun run vivant » se lit sur le verrou d'exécution (`campaign_run_locks`, R1-bis) : c'est lui qui
+   * distingue une campagne abandonnée d'une campagne qui envoie tranquillement. Le bail étant COURT et
+   * renouvelé, un process mort le laisse expirer en deux minutes, et la campagne redevient reprenable.
+   *
+   * ⚠️ Ce balayage REMPLACE celui du fil de l'eau, qui n'en était qu'un cas particulier (les campagnes
+   * `webhook_id is not null`). Le garder à côté ferait deux requêtes par minute pour une seule question, et
+   * l'ancien ne savait pas voir qu'un run tournait déjà : il empilait un job de plus à chaque passage.
    */
-  async listWebhookCampaignsWithPending(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
+  async listCampagnesGelees(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
     const res = await this.pool.query<{ id: string; rate_per_minute: number | null; pending: string }>(
       `select c.id, c.rate_per_minute,
               (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as pending
        from campaigns c
-       where c.webhook_id is not null and c.status = 'running'
-         and exists (select 1 from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')`,
+       where c.status = 'running'
+         and exists (select 1 from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')
+         and not exists (select 1 from campaign_run_locks l where l.campaign_id = c.id and l.expires_at > now())`,
     );
     return res.rows.map((r) => ({ id: r.id, ratePerMinute: r.rate_per_minute, pendingCount: Number(r.pending) }));
   }

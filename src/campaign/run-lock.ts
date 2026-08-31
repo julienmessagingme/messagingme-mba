@@ -18,6 +18,21 @@ import type { Pool } from 'pg';
  * d'empêcher les enfilements en double, on empêche les exécutions en double. C'est la même différence qu'entre
  * verrouiller toutes les portes et verrouiller le coffre.
  */
+/**
+ * Durée du bail, en secondes.
+ *
+ * 🔴 COURT ET RENOUVELÉ, et ce raisonnement REMPLACE celui du 2026-08-31 matin. Le bail était alors calé sur
+ * l'expiration du job pg-boss (dimensionnée en HEURES), au motif que les deux mécanismes devaient lâcher prise
+ * ensemble. C'était juste pour un bail qu'on ne renouvelle pas, et faux dès qu'on veut REPRENDRE une campagne
+ * après un worker tué (R4) : le verrou d'un process mort serait resté « vivant » pendant des heures, et le
+ * balayage de reprise aurait sagement attendu, ce qui est exactement le gel qu'on cherche à supprimer.
+ *
+ * Deux minutes, renouvelées à chaque relecture de statut du moteur (toutes les 5 s). Un process tué libère
+ * donc la campagne en deux minutes au pire. L'expiration du job pg-boss reste la borne EXTÉRIEURE, elle n'a
+ * pas à être la même valeur.
+ */
+export const BAIL_SECONDES = 120;
+
 export interface CampaignRunLock {
   /**
    * Tente de prendre le verrou. Retourne le jeton de garde si on l'a, `null` si un run vivant le tient (et
@@ -30,6 +45,12 @@ export interface CampaignRunLock {
    * la relance, et nous n'avons rien supprimé.
    */
   release(campaignId: string, tenantId: string, holder: string): Promise<{ rerunDemande: boolean }>;
+  /**
+   * Repousse l'échéance du bail. `false` = on ne le tient PLUS (bail écoulé, repris par un autre) : l'appelant
+   * doit alors s'arrêter, sinon deux runs de la même campagne tourneraient en parallèle, ce que tout ce
+   * fichier existe pour empêcher.
+   */
+  renouveler(campaignId: string, tenantId: string, holder: string): Promise<boolean>;
 }
 
 export class PgCampaignRunLock implements CampaignRunLock {
@@ -59,6 +80,17 @@ export class PgCampaignRunLock implements CampaignRunLock {
       [campaignId, tenantId],
     );
     return null;
+  }
+
+  async renouveler(campaignId: string, tenantId: string, holder: string): Promise<boolean> {
+    // Le JETON dans la clause : si notre bail a expiré et qu'un autre run a repris le verrou, on ne repousse
+    // pas le SIEN, et on apprend qu'on ne tient plus rien.
+    const res = await this.pool.query(
+      `update campaign_run_locks set expires_at = now() + make_interval(secs => $4)
+       where campaign_id = $1 and tenant_id = $2 and holder = $3`,
+      [campaignId, tenantId, holder, BAIL_SECONDES],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   async release(campaignId: string, tenantId: string, holder: string): Promise<{ rerunDemande: boolean }> {

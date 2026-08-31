@@ -126,6 +126,22 @@ export interface EngineDeps {
   now?: () => number;
   thresholds?: GuardrailThresholds;
   /**
+   * L'arrêt a-t-il été demandé (SIGTERM) ? Lu à CHAQUE destinataire : c'est une lecture en mémoire, elle ne
+   * coûte rien, et un run qui s'arrête vite est un déploiement qui ne gèle rien.
+   *
+   * 🔴 En sortant par là, on NE TOUCHE PAS au statut : la campagne reste `running` avec ses destinataires en
+   * attente, et le balayage de reprise la relance au redémarrage. La marquer `paused` demanderait un geste
+   * humain pour repartir, alors que personne n'a rien décidé : c'est un déploiement, pas une décision.
+   */
+  arretDemande?: () => boolean;
+  /**
+   * Repousse l'échéance du bail du verrou d'exécution. `false` = on ne le tient plus, il faut s'arrêter.
+   *
+   * Appelé à la même cadence que la relecture de statut. Sans ce renouvellement, le bail devrait couvrir la
+   * durée entière du run (des heures), et un worker tué bloquerait la reprise pendant tout ce temps.
+   */
+  renouvelerVerrou?: () => Promise<boolean>;
+  /**
    * Écart minimal entre deux relectures du statut de la campagne (ms). Le contrôle est cadencé par le TEMPS et
    * non par le nombre de destinataires traités : une campagne à 1 message/minute mettrait sinon des heures à
    * voir la pause, alors qu'un opérateur qui coupe un mauvais ciblage veut que ça s'arrête tout de suite. Ainsi
@@ -230,6 +246,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   for (const r of pending) {
     if (r.status === 'sent') continue; // idempotence défensive
 
+    // ARRÊT DU PROCESS (SIGTERM). Testé à chaque tour, avant toute réservation : le destinataire suivant
+    // n'est ni claimé ni envoyé, et il reste `pending` pour la reprise. Le statut n'est PAS réécrit.
+    if (deps.arretDemande?.()) {
+      report.paused = true;
+      report.reason = 'arrêt du service pendant l’envoi ; la campagne reprendra au redémarrage';
+      return report;
+    }
+
     // ARRÊT DEMANDÉ ? Contrôlé AVANT le claim et avant toute attente de cadence : un destinataire vu après la
     // pause ne doit être ni réservé ni envoyé. On NE réécrit PAS le statut en sortant : l'état voulu est déjà
     // en base, c'est l'opérateur qui l'y a mis, et le réécrire écraserait sa décision.
@@ -237,6 +261,13 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     // lit `this.pool`, et une fonction détachée de son objet perdrait son `this`.
     if (deps.campaigns.getStatus && now() - dernierControle >= pasDeControle) {
       dernierControle = now();
+      // Le bail se renouvelle à la MÊME cadence, et un renouvellement refusé arrête le run : on ne tient plus
+      // le verrou, donc un autre run peut déjà avoir démarré, et continuer doublerait le débit.
+      if (deps.renouvelerVerrou && !(await deps.renouvelerVerrou())) {
+        report.paused = true;
+        report.reason = 'verrou d’exécution perdu (bail écoulé) ; un autre run a repris la campagne';
+        return report;
+      }
       const courant = await deps.campaigns.getStatus(campaign.id, campaign.tenantId);
       if (courant !== null && courant !== 'running') {
         report.paused = true;

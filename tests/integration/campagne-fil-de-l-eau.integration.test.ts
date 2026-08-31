@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
+import { PgCampaignRunLock } from '../../src/campaign/run-lock';
 import { PgCampaignRepo } from '../../src/campaign/store.pg';
 import { PgWebhookStore } from '../../src/webhook-entrant/store.pg';
 
@@ -122,13 +123,43 @@ describe.skipIf(!url)('campagne alimentée par un webhook', () => {
     expect(await repo.contactForBuildByWaId(tenantId, '33600000085')).toBeNull();
   });
 
-  it('listWebhookCampaignsWithPending ne rend que celles qui ont vraiment quelqu’un en attente', async () => {
-    const avec = await campagne('running');
-    const sans = await campagne('running');
-    await repo.insertWebhookRecipient(avec, { contactId, toE164: phone, resolvedParams: [], statut: 'pending' });
-    const ids = (await repo.listWebhookCampaignsWithPending()).map((c) => c.id);
-    expect(ids).toContain(avec);
-    expect(ids).not.toContain(sans);
+  /**
+   * 🔴 LE BALAYAGE DE REPRISE (R4), qui a REMPLACÉ celui du fil de l'eau : celui-ci n'en était qu'un cas
+   * particulier, et il ne savait pas voir qu'un run tournait déjà.
+   */
+  it('🔴 listCampagnesGelees : `running` + du travail + AUCUN run vivant', async () => {
+    const gelee = await campagne('running');
+    const sansTravail = await campagne('running');
+    const enCours = await campagne('running');
+    await repo.insertWebhookRecipient(gelee, { contactId, toE164: phone, resolvedParams: [], statut: 'pending' });
+    await repo.insertWebhookRecipient(enCours, { contactId, toE164: phone, resolvedParams: [], statut: 'pending' });
+    // `enCours` tient un verrou VIVANT : elle envoie, on ne la relance surtout pas.
+    const verrou = new PgCampaignRunLock(pool);
+    const jeton = await verrou.acquire(enCours, tenantId, 300);
+    expect(jeton).not.toBeNull();
+
+    const ids = (await repo.listCampagnesGelees()).map((c: { id: string }) => c.id);
+    expect(ids).toContain(gelee);
+    expect(ids).not.toContain(sansTravail); // rien en attente
+    expect(ids).not.toContain(enCours); // un run la tient
+
+    // 🔴 Et un verrou dont le BAIL EST ÉCOULÉ ne protège plus : c'est exactement le cas du worker tué en plein
+    // envoi, celui que R4 doit rattraper. Sans ça la campagne resterait gelée jusqu'à l'expiration du bail.
+    await pool.query(`update campaign_run_locks set expires_at = now() - interval '1 second' where campaign_id = $1`, [enCours]);
+    expect((await repo.listCampagnesGelees()).map((c: { id: string }) => c.id)).toContain(enCours);
+    await verrou.release(enCours, tenantId, jeton!);
+  });
+
+  it('🔴 renouveler repousse le bail, et le jeton de garde protège celui d’un autre', async () => {
+    const id = await campagne('running');
+    const verrou = new PgCampaignRunLock(pool);
+    const jeton = (await verrou.acquire(id, tenantId, 1))!;
+    expect(await verrou.renouveler(id, tenantId, jeton)).toBe(true);
+    // Un jeton qui n'est pas le nôtre ne repousse rien : sinon un run mort prolongerait le bail d'un vivant.
+    expect(await verrou.renouveler(id, tenantId, 'pas-le-bon-jeton')).toBe(false);
+    await verrou.release(id, tenantId, jeton);
+    // Verrou rendu : plus rien à renouveler.
+    expect(await verrou.renouveler(id, tenantId, jeton)).toBe(false);
   });
 
   it('🔴 stopWebhookCampaign : ferme la campagne, scopée au tenant, et seulement si elle est vivante', async () => {

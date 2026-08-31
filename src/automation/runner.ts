@@ -30,8 +30,12 @@ export interface AutomationRunnerDeps {
    * `marqueur` retient POUR QUELLE occurrence on a tiré. Seul `avant_date` s'en sert : une date qui change
    * est une occurrence neuve, et le balayage a besoin de distinguer « déjà tiré » de « déjà tiré POUR CETTE
    * date », sans quoi un rendez-vous reporté ne redonnerait aucun rappel.
+   *
+   * 🔴 AVEC un marqueur, c'est un CLAIM : `false` = ce marqueur était déjà en place, un autre tour a tiré pour
+   * cette occurrence, il ne faut pas tirer. C'est ce qui empêche un rappel de partir deux fois (R10). Sans
+   * marqueur, l'écriture est inconditionnelle et rend toujours `true`.
    */
-  markFired(automationId: string, waId: string, marqueur?: string): Promise<void>;
+  markFired(automationId: string, waId: string, marqueur?: string): Promise<boolean>;
   /**
    * Annule le déclenchement enregistré. Appelé quand le scénario n'a PAS démarré (`false`) : dans ce cas rien
    * n'a été envoyé (les gardes de l'exécuteur agissent AVANT tout envoi), donc consommer l'anti-rebond
@@ -162,7 +166,20 @@ export async function runAutomations(tenantId: string, ev: AutomationEvent, deps
 
       // Anti-boucle : on marque AVANT de démarrer, pour qu'un scénario qui repose lui-même le déclencheur ne
       // reboucle pas même si le démarrage lève une exception à mi-chemin (un envoi a pu partir).
-      await deps.markFired(a.id, ev.waId, ev.kind === 'avant_date' ? ev.valeur : undefined);
+      //
+      // 🔴 ET C'EST UN CLAIM pour `avant_date` (R10). Le balayage publie tant que le marqueur n'est pas posé ;
+      // si la file prend du retard, il republie la MÊME échéance, et sans ce claim les deux événements
+      // partaient. Un client avec quinze rendez-vous à la même heure suffisait à le déclencher, et le
+      // symptôme était deux rappels WhatsApp identiques, facturés, chez un vrai client.
+      //
+      // ⚠️ Le rattrapage du balayage n'est PAS cassé : quand le scénario ne démarre pas, `clearFired` efface
+      // le marqueur juste en dessous, donc la tentative suivante regagne le claim. C'est le comportement
+      // voulu, documenté dans `date-sweep.ts`.
+      if (!(await deps.markFired(a.id, ev.waId, ev.kind === 'avant_date' ? ev.valeur : undefined))) {
+        // eslint-disable-next-line no-console
+        console.log(`automation ${a.id} : rappel déjà tiré pour cette échéance chez ${ev.waId}, ignoré`);
+        continue;
+      }
       const issue = await deps.startWorkflow(tenantId, a.workflowId, ev.waId, a.startNodeId, windowOpen);
       // `false` OU une chaîne (la raison du refus) = PAS parti. Tester la simple vérité JS comptait une
       // chaîne comme un succès : le tir restait marqué et l'anti-rebond avalait en silence la prochaine

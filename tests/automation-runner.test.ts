@@ -39,7 +39,7 @@ function make(rows: AutomationRow[], over: Partial<AutomationRunnerDeps> = {}): 
   const deps: AutomationRunnerDeps = {
     listEnabled: async () => rows,
     lastFiredAt: async () => null,
-    markFired: async (id) => { trace.fired.push(id); },
+    markFired: async (id) => { trace.fired.push(id); return true; },
     clearFired: async (id) => { trace.cleared.push(id); },
     hasWaitingRun: async () => false,
     evalContext: async () => { trace.ctxCalls += 1; return ctx(); },
@@ -129,7 +129,7 @@ describe('runAutomations', () => {
   it('le tir est marqué AVANT le démarrage : un scénario qui échoue ne reboucle pas', async () => {
     const order: string[] = [];
     const { deps } = make([auto()], {
-      markFired: async () => { order.push('fired'); },
+      markFired: async () => { order.push('fired'); return true; },
       startWorkflow: async () => { order.push('started'); throw new Error('scénario cassé'); },
     });
     expect(await runAutomations('t1', MSG, deps)).toBe(0); // l'échec n'est pas compté comme un démarrage
@@ -283,6 +283,62 @@ describe('runAutomations : contact bloqué', () => {
     // Une instance dont le store n'expose pas la modération ne doit pas se retrouver à tout bloquer.
     const { deps, trace } = make([auto()]);
     expect(await runAutomations('t1', MSG, deps)).toBe(1);
+    expect(trace.started).toHaveLength(1);
+  });
+});
+
+/**
+ * R10 : LE RAPPEL « AVANT DATE » NE PART PLUS DEUX FOIS.
+ *
+ * 🔴 CE QUE ÇA RÉPARE. La déduplication vivait UNIQUEMENT dans le balayage, qui lit le marqueur d'occurrence
+ * avant de publier. Tant que l'événement publié n'était pas consommé, le balayage suivant revoyait le contact
+ * comme dû et republiait. Un client avec quinze rendez-vous à la même heure suffit à faire prendre du retard à
+ * la file : deux, parfois trois rappels WhatsApp IDENTIQUES, facturés, visibles du client, avec le risque de
+ * note de qualité Meta. La garantie descend donc au RUNNER, seul endroit atomique.
+ */
+describe('runAutomations : le claim d’occurrence (avant_date)', () => {
+  const AVANT_DATE: AutomationEvent = { kind: 'avant_date', waId: '33611', valeur: '2026-09-04', automationId: 'a1' };
+  const autoDate = () => auto({ triggerKind: 'avant_date', triggerConfig: { fieldKey: 'rdv', delai: '1j' } });
+
+  it('🔴 claim REFUSÉ : le scénario ne démarre pas, et rien n’est envoyé une seconde fois', async () => {
+    const { deps, trace } = make([autoDate()], { markFired: async () => false });
+    expect(await runAutomations('t1', AVANT_DATE, deps)).toBe(0);
+    expect(trace.started).toEqual([]);
+    // Et on n'efface RIEN : le marqueur appartient au tour qui a gagné le claim, l'effacer le priverait de sa
+    // protection et rouvrirait exactement le doublon qu'on ferme.
+    expect(trace.cleared).toEqual([]);
+  });
+
+  it('contrôle : claim GAGNÉ -> le scénario démarre normalement', async () => {
+    const { deps, trace } = make([autoDate()]);
+    expect(await runAutomations('t1', AVANT_DATE, deps)).toBe(1);
+    expect(trace.started).toHaveLength(1);
+  });
+
+  it('🔴 le marqueur d’occurrence est bien la VALEUR de la date, pas juste « déjà tiré »', async () => {
+    // Sans lui, un rendez-vous REPORTÉ ne redonnerait aucun rappel : c'est la même ligne en base.
+    const vus: Array<string | undefined> = [];
+    const { deps } = make([autoDate()], { markFired: async (_id, _wa, m) => { vus.push(m); return true; } });
+    await runAutomations('t1', AVANT_DATE, deps);
+    expect(vus).toEqual(['2026-09-04']);
+  });
+
+  it('🔴 le RATTRAPAGE du balayage n’est pas cassé : scénario non démarré -> le marqueur est effacé', async () => {
+    // C'est le comportement voulu, documenté dans `date-sweep.ts` : un fil momentanément tenu par un opérateur
+    // doit pouvoir laisser passer le rappel une minute plus tard. Le claim ne doit pas le condamner.
+    const { deps, trace } = make([autoDate()], { startWorkflow: async () => false });
+    expect(await runAutomations('t1', AVANT_DATE, deps)).toBe(0);
+    expect(trace.fired).toEqual(['a1']);
+    expect(trace.cleared).toEqual(['a1']);
+  });
+
+  it('🔴 un déclencheur ORDINAIRE n’est pas soumis au claim : il n’a pas de marqueur', async () => {
+    // Le rendre conditionnel là aussi casserait l'anti-boucle : `fired_for` y vaut toujours null, et plus
+    // aucun déclenchement répété ne passerait.
+    const vus: Array<string | undefined> = [];
+    const { deps, trace } = make([auto()], { markFired: async (_id, _wa, m) => { vus.push(m); return true; } });
+    expect(await runAutomations('t1', MSG, deps)).toBe(1);
+    expect(vus).toEqual([undefined]);
     expect(trace.started).toHaveLength(1);
   });
 });

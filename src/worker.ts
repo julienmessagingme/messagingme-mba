@@ -378,12 +378,19 @@ async function main(): Promise<void> {
   const senderFor = async (campaign: Campaign): Promise<MessageSender> =>
     dryRun ? dryRunSender : metaFactory.senderForTenant(campaign.tenantId, campaign.phoneNumberId);
 
+  // 🔴 DRAPEAU D'ARRÊT (R4). Levé par SIGTERM, lu par le moteur à CHAQUE destinataire : un run de campagne
+  // s'arrête alors à la frontière d'un envoi, rend son verrou, et laisse la campagne `running` avec ses
+  // destinataires en attente. Le balayage de reprise la relance au redémarrage. Sans lui, un déploiement
+  // tuait le run en plein envoi et la campagne se figeait sans la moindre erreur visible.
+  let arretDemande = false;
+
   await queue.work('campaign-run', async (data) => {
     await campaignRunJob(data, {
       getCampaign: (id) => repo.getCampaign(id),
       senderFor,
       recipients: recipientStore,
       campaigns: new PgCampaignStore(pool),
+      arretDemande: () => arretDemande,
       frequency: new PgFrequencyStore(pool),
       quality: new PgQualityProvider(pool),
       // Frein par défaut des campagnes sans ratePerMinute (0 = opt-out). Injecté ICI seulement : les tests de
@@ -625,44 +632,46 @@ async function main(): Promise<void> {
   scheduleSweeper.unref();
 
   /**
-   * FILET des campagnes au fil de l'eau : relance celles qui ont des destinataires en attente.
+   * 🔴 BALAYAGE DE REPRISE : relance toute campagne GELÉE (R4).
    *
-   * L'arrivant est déjà enfilé au moment où il arrive ; ce balayage rattrape le cas où CET enfilement a
-   * échoué (il est attrapé et journalisé par campagne, la campagne resterait sinon avec des destinataires en
-   * attente et personne pour les prendre). Coût : une requête indexée par minute, et zéro enfilement quand
-   * rien n'attend.
+   * Une campagne est gelée quand elle est `running`, qu'il lui reste des destinataires en attente, et qu'AUCUN
+   * run ne tourne. C'est ce qui arrive à chaque déploiement : le worker est tué en plein envoi (SIGKILL vers
+   * 10 s, un run de deux heures n'a aucune chance), et plus rien ne la reprenait. Chaque interruption
+   * consommait un rejeu pg-boss ; à la sixième la campagne était figée POUR TOUJOURS, sans la moindre erreur
+   * visible. C'est le constat R4 de l'audit du 25 août, et c'est ce balayage qui le ferme.
    *
-   * ⚠️ Ce balayage enfile SANS SE DEMANDER si un run tourne déjà, et c'est assumé : le verrou d'exécution
-   * (`run-lock.ts`) écarte le job en trop et note qu'il faudra relancer, ce que le run en cours fait en
-   * sortant. Le tri se fait donc à l'exécution, pas à l'enfilement.
+   * « Aucun run ne tourne » se lit sur le verrou d'exécution, dont le bail est court et renouvelé : un process
+   * mort le laisse expirer en deux minutes.
    *
-   * 🔴 Ce raisonnement N'ÉTAIT PAS VRAI avant le 2026-08-31. Le motif d'origine créditait un `singletonKey`
-   * qui n'a jamais rien dédupliqué (cf. `Queue.enqueue`), et l'effet réel était l'inverse du rattrapage
-   * annoncé : un run de plus EMPILÉ par minute tant qu'il restait des destinataires en attente, soit soixante
-   * runs concurrents sur un envoi throttlé d'une heure, chacun avec son limiteur de débit en mémoire. Aucune
-   * campagne au fil de l'eau n'ayant encore tourné en production, ça n'a jamais mordu.
+   * ⚠️ Il REMPLACE le balayage du fil de l'eau, qui n'en était qu'un cas particulier (les campagnes nourries
+   * par un webhook). L'ancien ne savait pas voir qu'un run tournait déjà et empilait un job de plus par
+   * minute ; celui-ci ne relance que ce qui est réellement à l'arrêt.
+   *
+   * Coût : une requête indexée par minute, et zéro enfilement quand rien n'est gelé.
    */
-  const filDeLEauSweep = async (): Promise<void> => {
+  const repriseSweep = async (): Promise<void> => {
     try {
-      const enAttente = await repo.listWebhookCampaignsWithPending();
-      for (const c of enAttente) {
+      const gelees = await repo.listCampagnesGelees();
+      for (const c of gelees) {
         try {
           await enqueueCampaignRun(queue, c.id, c.pendingCount, resolveRatePerMinute(c.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE));
         } catch (err) {
-          // Par campagne : une file qui refuse un job ne doit pas empêcher les autres campagnes de repartir.
+          // Par campagne : une file qui refuse un job ne doit pas empêcher les autres de repartir.
           // eslint-disable-next-line no-console
-          console.error(`fil-de-l-eau: enfilement impossible pour ${c.id}`, err instanceof Error ? err.message : err);
+          console.error(`reprise: enfilement impossible pour ${c.id}`, err instanceof Error ? err.message : err);
         }
       }
+      // eslint-disable-next-line no-console
+      if (gelees.length > 0) console.log(`reprise: ${gelees.length} campagne(s) relancée(s) après interruption`);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('fil-de-l-eau erreur:', err instanceof Error ? err.message : err);
-      alert('sweeper:fil-de-l-eau', `balayage des campagnes au fil de l'eau en échec : ${err instanceof Error ? err.message : err}`);
+      console.error('reprise erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:reprise', `balayage de reprise des campagnes en échec : ${err instanceof Error ? err.message : err}`);
     }
   };
-  void filDeLEauSweep();
-  const filDeLEauSweeper = setInterval(() => void filDeLEauSweep(), 60_000);
-  filDeLEauSweeper.unref();
+  void repriseSweep();
+  const repriseSweeper = setInterval(() => void repriseSweep(), 60_000);
+  repriseSweeper.unref();
 
   // Sweeper de RÉVEIL : reprend les parcours endormis sur un bloc « Attente » arrivé à échéance. Même patron
   // que le sweeper de planification. La granularité du délai vaut cet intervalle : une attente de 5 min repart
@@ -1069,6 +1078,7 @@ async function main(): Promise<void> {
     clearInterval(idempotencySweeper);
     clearInterval(webhookPayloadSweeper);
     clearInterval(dlqSweeper);
+    clearInterval(repriseSweeper);
     // `wakeSweeper` manquait aussi ici, depuis son introduction : corrigé au passage, c'est la ligne voisine
     // et le même oubli, une passe dédiée coûterait plus que la correction.
     clearInterval(wakeSweeper);
@@ -1078,6 +1088,10 @@ async function main(): Promise<void> {
     if (statusSweeper) clearInterval(statusSweeper);
     await queue.stop();
     await pool.end();
+  }, undefined, () => {
+    // Levé AVANT toute fermeture : le run en cours a ainsi le temps de sortir proprement pendant qu'on ferme
+    // le reste, au lieu de se faire couper la file sous les pieds.
+    arretDemande = true;
   });
 
   const files = [

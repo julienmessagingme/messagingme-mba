@@ -96,4 +96,55 @@ describe.skipIf(!url)('automations possédées par un webhook : hors de portée 
     expect((await store.getById(idNormale, tenantId))?.name).toBe('Mot-clé rdv (modifié)');
     expect(await store.remove(idNormale, tenantId)).toBe(true);
   });
+  /**
+   * 🔴 R10 : LE CLAIM D'OCCURRENCE, EN SQL.
+   *
+   * C'est ici que vit la correction ; le reste n'est que du câblage. La déduplication du rappel « avant date »
+   * vivait uniquement dans le balayage, qui lit le marqueur avant de publier : tant que l'événement n'était pas
+   * consommé, le balayage suivant republiait la MÊME échéance et le rappel partait deux fois, facturé, chez un
+   * vrai client.
+   */
+  describe('markFired : claim conditionnel sur le marqueur d’occurrence', () => {
+    const wa = '33600000777';
+
+    it('🔴 le MÊME marqueur ne passe qu’UNE fois', async () => {
+      await pool.query(`delete from automation_fires where automation_id = $1`, [idNormale]);
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(true);
+      // Le second tour, celui que le balayage a republié parce que la file avait pris du retard.
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(false);
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(false);
+    });
+
+    it('🔴 un marqueur DIFFÉRENT passe : un rendez-vous reporté redonne son rappel', async () => {
+      await pool.query(`delete from automation_fires where automation_id = $1`, [idNormale]);
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(true);
+      expect(await store.markFired(idNormale, wa, '2026-09-11')).toBe(true);
+      // Et l'ancien marqueur ne « revient » pas : c'est le nouveau qui est en place.
+      expect(await store.markFired(idNormale, wa, '2026-09-11')).toBe(false);
+    });
+
+    it('🔴 SANS marqueur, l’écriture reste INCONDITIONNELLE : l’anti-boucle n’est pas cassé', async () => {
+      // `fired_for` y vaut toujours null, et `null is distinct from null` est faux : rendre ce cas conditionnel
+      // aurait fait échouer TOUT déclenchement répété, sur tous les autres types d'automation.
+      await pool.query(`delete from automation_fires where automation_id = $1`, [idNormale]);
+      expect(await store.markFired(idNormale, wa)).toBe(true);
+      expect(await store.markFired(idNormale, wa)).toBe(true);
+      expect(await store.markFired(idNormale, wa)).toBe(true);
+    });
+
+    it('🔴 clearFired rend le claim : c’est ce qui préserve le rattrapage du balayage', async () => {
+      // Quand le scénario ne démarre pas, rien n'est parti : la tentative suivante doit pouvoir regagner le
+      // claim, sinon un fil momentanément tenu par un opérateur condamnerait le rappel pour de bon.
+      await pool.query(`delete from automation_fires where automation_id = $1`, [idNormale]);
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(true);
+      await store.clearFired(idNormale, wa);
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(true);
+    });
+
+    it('le marqueur est par CONTACT : deux contacts à la même échéance tirent chacun le leur', async () => {
+      await pool.query(`delete from automation_fires where automation_id = $1`, [idNormale]);
+      expect(await store.markFired(idNormale, wa, '2026-09-04')).toBe(true);
+      expect(await store.markFired(idNormale, '33600000778', '2026-09-04')).toBe(true);
+    });
+  });
 });
