@@ -1099,7 +1099,9 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   règle de transfert, aucune règle d'arrêt, base de connaissance vide, aucun outil actif. Le blocage porte sur
   des champs vides, jamais sur la qualité de ce qui est écrit.
 - ✅ **Supprimer un agent** emporte ses conversations, ses outils et sa base de connaissance, et les blocs de
-  scénario qui l'utilisent cessent de répondre. La confirmation le dit avant le clic.
+  scénario qui l'utilisent cessent de répondre. La confirmation le dit avant le clic. Le bouton est **sur
+  chaque ligne de la liste** (2026-08-31) autant que dans la fiche : jeter un agent d'essai n'oblige plus à
+  entrer dedans d'abord.
 
 ### Les huit onglets de sa fiche
 
@@ -1220,21 +1222,37 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
 
 ### Construire son agent en parlant
 
-- ✅ **Un onglet où l'on décrit son métier**, avec deux exemples cliquables pour démarrer (« mon agent répond
-  aux questions sur nos séjours et prend des rendez-vous »). L'assistant fait d'abord **le tour du sujet** :
-  ce que l'agent est là pour faire, ce dont il ne parle jamais, à quoi ressemble une conversation qui finit
-  bien, ce qu'il doit faire quand il ne s'agit plus seulement de répondre, quand un humain reprend, et comment
-  il parle.
+- ✅ **C'est le PREMIER onglet d'un agent** (2026-08-31) : on ouvre une conversation, pas un formulaire vide.
+  Deux exemples cliquables pour démarrer (« il répond aux questions sur nos séjours et prend des rendez-vous »).
+- ✅ **L'assistant fait le tour du sujet en NEUF points**, dans cet ordre : ce que l'agent est là pour faire,
+  ce dont il ne parle jamais, **d'où viennent ses réponses de fond**, à quoi ressemble une conversation qui
+  finit bien, ce qu'il doit faire quand il ne s'agit plus seulement de répondre, quand un humain reprend,
+  **sous quel nom il se présente**, et comment il parle. Une question à la fois, avec des possibilités à
+  choisir plutôt qu'une page blanche.
+- ✅ **Il pose vraiment toutes les questions** (2026-08-31). Avant, il décidait lui-même de ce qu'il avait
+  couvert, et il sautait régulièrement le ton, l'identité et la base de connaissance. Un point n'est
+  maintenant considéré comme vu que s'il vous a été **réellement posé**. Si vous y aviez déjà répondu en
+  racontant votre métier, il ne repose pas la question : il vous demande de confirmer en une phrase.
+- ✅ **Il creuse quand vous dites que l'agent agit seul** (2026-08-31). Répondre « il prend le rendez-vous
+  lui-même » ouvre une question de plus : **par quel moyen ?** Quel outil, quel connecteur. L'entretien ne peut
+  pas se terminer sans, et si rien de ce qui existe ne convient, il le dit au lieu d'inventer un outil.
 - ✅ **Tant qu'un de ces points n'est pas tranché, il ne montre rien et le dit** : « encore 2 points à voir
   avant que je vous montre ce que j'ai compris ». C'est ce qui l'empêche de combler les blancs à votre place.
+- ✅ **La conversation est CONSERVÉE** (2026-08-31) : on quitte l'onglet, on revient, elle est là, avec
+  l'avancement de l'entretien. Un bouton **« Recommencer »** l'efface et repart de zéro, sans toucher à ce qui
+  a déjà été enregistré dans les autres onglets.
+- ✅ **On peut joindre un document ou une image** (2026-08-31) : txt, csv, markdown, PDF, Word, et les images
+  (JPEG, PNG, GIF, WebP). Le texte en est extrait et **découpé en fiches de connaissance**, relisibles et
+  modifiables dans l'onglet Base de connaissance. Une image est lue par l'IA, qui en relève le texte : une
+  photo d'une grille de tarifs devient des fiches. Un fichier sans texte lisible (un PDF scanné, par exemple)
+  le dit clairement au lieu d'annoncer un import réussi. 8 Mo par document, 5 Mo par image.
 - ✅ **Il ne change RIEN tout seul.** Il propose, et l'écran affiche exactement ce que ça changerait, ligne par
   ligne, avec la valeur d'avant barrée.
 - ✅ **Chaque règle se garde, se corrige sur place, ou se jette séparément** (2026-08-28, demande de Julien) :
   « potentiellement le mec ne veut en changer qu'une et le reste lui convient ». Tout est gardé au départ, le
   bouton dit combien de lignes partiront. Seules les règles d'arrêt se gardent ou se jettent en bloc, parce
   qu'elles sont plusieurs dans une même ligne : elles se corrigent dans l'onglet Objectif.
-- ✅ **Tout ce qu'il écrit reste modifiable dans les autres onglets**, champ par champ. La conversation n'est
-  pas conservée : elle vit le temps de l'onglet, ce qu'elle produit vit dans la fiche.
+- ✅ **Tout ce qu'il écrit reste modifiable dans les autres onglets**, champ par champ.
 - ✅ **Ce qu'il n'a pas le droit d'écrire** : la mention légale d'IA, les plafonds, le budget, le modèle, et
   surtout **l'activation d'un outil**. Il peut proposer les mots d'un outil du catalogue ou d'un connecteur
   déjà déclaré, jamais créer un système, une adresse ou un secret.

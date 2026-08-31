@@ -2047,6 +2047,86 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## 2026-08-31 : le SERVEUR conduit l'entretien de construction (migration 0090)
+
+### 🔴 Le défaut n'était pas la liste des points, c'était QUI CONDUIT
+
+Le modèle choisissait sa question suivante et **déclarait lui-même** ce qu'il avait couvert ; le serveur ne
+faisait que compter. Rien n'était déterministe, et ça se voyait à l'usage : le ton, l'identité et la base de
+connaissance n'étaient jamais demandés, et « l'agent le fait tout seul » passait pour une réponse complète.
+
+L'inversion : **l'ordre du jour et la couverture sont des faits du serveur** (`src/agent/setup/couverture.ts`).
+Le modèle formule la question qu'on lui désigne et extrait la réponse ; il ne décide plus de rien. Trois
+mécanismes portent la garantie, et aucun n'est une consigne :
+
+- 🔴 **Un point n'est couvert que s'il a été POSÉ au client**, pas seulement si le modèle prétend en connaître
+  la réponse. C'est ce qui garantit qu'on a fait le tour et pas que le modèle a bien deviné. Une réponse donnée
+  d'avance est gardée : le tour venu, on la fait **confirmer** en une phrase plutôt que de reposer la question,
+  ce qui rend l'entretien court sans rien sauter.
+- 🔴 **Le prompt reçoit DEUX points, l'ouvert et le suivant.** Structurel : le serveur choisit la question
+  AVANT de lire la réponse, il ne peut donc pas savoir que le dernier message y répond déjà. Un seul point
+  ferait repiétiner ; toute la liste laisserait le modèle la survoler. Deux, pas un de plus.
+- 🔴 **Le creusement est mécanique.** Répondre « il appelle un outil » à `bascules` **ouvre** le point
+  `quel_outil`, qui n'existait pas avant, et l'entretien ne peut plus se terminer sans. Se raviser le referme.
+  C'est la demande de Julien : « si c'est l'agent qui peut le faire lui-même, il faut que l'agent creuse et
+  demande, ben comment l'agent fait dans ces cas là ? ».
+
+L'ordre du jour passe de six à neuf points, **de la substance vers la surface** : on ne demande le ton et
+l'identité qu'une fois qu'on sait ce que l'agent fait, sinon on décore une coquille.
+
+⚠️ **Le vieux garde-fou « au moins deux messages du client » a été RETIRÉ.** C'était un pis-aller qui compensait
+une couverture déclarée par le modèle. Elle ne l'est plus, et garder les deux aurait fait croire que le second
+portait quelque chose.
+
+### La persistance n'est pas qu'un confort
+
+Table `agent_setup_conversations`. Elle rend la conversation reprenable au retour sur l'onglet, ce que Julien
+demandait, **mais c'est surtout elle qui rend la couverture calculable côté serveur** : sans état, la couverture
+ne pouvait qu'être recalculée à partir de ce que le modèle voulait bien annoncer.
+
+Conséquence de sécurité au passage : le navigateur n'envoie plus l'historique mais **un** message. Un historique
+forgé ne peut donc plus faire croire à l'assistant qu'il a déjà tout demandé. Un bouton « Recommencer » évite
+que la persistance devienne une prison.
+
+### Les pièces jointes
+
+`src/agent/setup/piece-jointe.ts`. Un document joint devient des **fiches de connaissance**.
+
+- **Le type vient de la SIGNATURE du fichier**, jamais du MIME déclaré : même doctrine que `src/rcs/image.ts`,
+  et elle mord autant ici, puisque ce texte finit dans le prompt d'un agent qui parle à de vrais contacts. Un
+  ZIP quelconque ne passe pas pour un `.docx` (on exige son `word/document.xml`), et un binaire ne passe pas
+  pour du texte (UTF-8 valide, sans octet nul).
+- 🔴 **Le texte est DÉCOUPÉ, jamais avalé d'un bloc.** C'est la leçon déjà écrite dans `scrape.ts` : la
+  recherche mesure « combien de termes de la question se retrouvent dans la fiche », donc un document entier
+  dans une seule fiche contient à peu près tous les mots du métier, devient pertinent pour n'importe quelle
+  question, et **rend la garde anti-hallucination inopérante sans qu'aucun test ne le voie**. Un PDF de
+  quarante pages est le pire cas de ce défaut. Les plafonds sont ceux de l'import de page web, importés et non
+  recopiés.
+- ⚠️ **Un test a attrapé un vrai défaut d'implémentation** : une section plus longue que le plafond était
+  TRONQUÉE, et tout le reste perdu en silence, le client croyant son document importé. Elle est maintenant
+  découpée en « suite 2 », « suite 3 », et le test compare les caractères non blancs de bout en bout.
+- **Une image est lue UNE SEULE FOIS**, au moment où elle est jointe, par un appel vision qui en relève le
+  texte. Aucune image ne circule dans l'entretien persisté : l'y garder ferait grossir une ligne jsonb de
+  plusieurs méga et referait payer sa lecture à chaque tour.
+- ⚠️ **`ChatMessage` n'a PAS été élargi** pour ça. L'essai (`content: string | Part[]`) a fait sortir une
+  dizaine d'endroits qui lisent ce champ comme une chaîne, dans le runtime de l'agent et ses tests, pour un
+  besoin qu'aucun n'a. Un type `ChatMessageImage` séparé, accepté en union par `completer`, laisse tout
+  l'existant intact.
+- **Deux dépendances neuves**, toutes deux SANS dépendance transitive (le dépôt en compte onze) : `unpdf`
+  (importé dynamiquement, pour ne pas faire payer pdf.js au démarrage de l'API) et `fflate` (dézippage du
+  `.docx`). `xlsx` reste écarté, comme décidé auparavant : les deux bibliothèques npm sont mauvaises.
+- **Écrire directement n'est pas une entorse au « rien ne s'écrit sans un clic ».** Ce diff protège contre ce
+  que le MODÈLE propose ; ici c'est le client qui téléverse son propre document, et le geste EST le
+  consentement. Même doctrine que l'import d'une page de son site, qui écrit aussi ses fiches directement.
+
+### Écran
+
+« Construire en parlant » devient l'onglet d'**entrée** (l'ordre des onglets le disait déjà, le défaut ouvrait
+le formulaire). Un agent se supprime **depuis la liste**. Et la conversation ressemble à un tchat : fil de
+hauteur fixe, descente automatique, première bulle qui interroge au lieu d'expliquer, zone de texte
+multi-ligne (Entrée envoie, Maj+Entrée va à la ligne), indicateur de frappe.
+
+---
 ## DEPLOYE le 2026-08-31 sur `3a708ce` : R1, R1-bis et R13 de l'audit du 25 août (migration 0089)
 
 ✅ **Migration 0089 appliquée**, séquence tenue : `build mba-api`, vérification que la 0089 est **DANS l'image**

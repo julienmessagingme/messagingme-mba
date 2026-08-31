@@ -687,6 +687,9 @@ async function main(): Promise<void> {
           titresConnaissance: fiches.map((f) => f.titre),
         };
       },
+      // Les PIECES JOINTES ecrivent des fiches de connaissance, par le MEME store que l onglet Connaissance :
+      // ce que le client joint est ensuite relisible et modifiable la-bas, comme une page importee.
+      creerFiche: (tenant, agentId, fiche) => knowledgeStore.creer(tenant, agentId, fiche),
       // L entretien est TENU PAR LE SERVEUR : c est lui qui rend la conversation persistante entre deux
       // visites de l onglet, et surtout qui rend la sequence des questions deterministe (la couverture
       // cesse d etre une declaration du modele pour devenir un fait).

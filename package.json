@@ -20,6 +20,7 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "fastify": "^5.2.0",
+    "fflate": "^0.8.3",
     "jose": "^6.2.3",
     "libphonenumber-js": "^1.13.8",
     "nodemailer": "^9.0.5",
@@ -28,6 +29,7 @@
     "pg-boss": "^12.25.1",
     "secure-json-parse": "^4.1.0",
     "tsx": "^4.19.2",
+    "unpdf": "^1.8.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

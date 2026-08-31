@@ -2,7 +2,11 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { parse as secureJsonParse } from 'secure-json-parse';
 import type { Guard } from '../auth/middleware';
-import type { ChatMessage, ReponseChat, OutilExpose } from '../agent/llm/chat-client';
+import type { ChatMessage, ChatMessageImage, ReponseChat, OutilExpose } from '../agent/llm/chat-client';
+import { octetsDepuisDataUrl } from '../rcs/image';
+import {
+  extraireTexte, reconnaitre, texteEnFiches, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
+} from '../agent/setup/piece-jointe';
 import { construireMessages, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
 import { agendaEffectif, fusionner, manquesDeCouverture, prochainPoint } from '../agent/setup/couverture';
@@ -33,11 +37,16 @@ import { scopeTenant, estUuid } from './scope';
 export interface AgentSetupRouteDeps {
   /** L'état courant de l'agent, ou `null` s'il n'existe pas ou appartient à un autre tenant. */
   etatCourant(tenantId: string, agentId: string): Promise<ContexteConstruction | null>;
+  /**
+   * Écrit une fiche de connaissance. Sert aux PIÈCES JOINTES : un document joint devient des fiches, c'est
+   * tout l'intérêt de pouvoir en joindre un. Absente, la route de pièce jointe n'est pas montée.
+   */
+  creerFiche?(tenantId: string, agentId: string, fiche: { titre: string; corps: string }): Promise<unknown>;
   /** L'entretien persisté. ABSENT : la route répond 503 plutôt que de retomber sur un entretien sans mémoire,
    *  qui redeviendrait non déterministe sans que personne ne le voie. */
   entretiens?: EntretienStore;
   /** Appel du modèle. Injecté pour rester testable sans réseau ; absent, la route répond 503. */
-  completer?(input: { modele: string; messages: ChatMessage[]; outils: OutilExpose[]; toolChoice: string; signal: AbortSignal }): Promise<ReponseChat>;
+  completer?(input: { modele: string; messages: Array<ChatMessage | ChatMessageImage>; outils: OutilExpose[]; toolChoice: string; signal: AbortSignal }): Promise<ReponseChat>;
   /** Modèle de l'IA de CONSTRUCTION. À ne pas confondre avec celui de l'agent : celui-ci tourne rarement et
    *  joue le rôle le plus dur, celui-là répond à chaque message d'un contact. */
   modele: string;
@@ -46,6 +55,38 @@ export interface AgentSetupRouteDeps {
 const corpsSchema = z.object({
   message: z.string().trim().min(1).max(MAX_CARACTERES_MESSAGE),
 });
+
+const pieceSchema = z.object({
+  /** Le nom du fichier, qui sert de TITRE par défaut aux fiches. Il n'est jamais interprété comme un chemin
+   *  ni comme un type : la nature du fichier vient de sa signature. */
+  nom: z.string().trim().min(1).max(200),
+  dataUrl: z.string().min(1),
+});
+
+/** Ce qu'on demande au modèle vision. Le cadre compte : sans lui, il RACONTE l'image au lieu de la relever, et
+ *  une base de connaissance faite de descriptions ne répond à aucune question de contact. */
+const CONSIGNE_IMAGE = 'Relève TOUT le texte lisible de cette image, tel quel, en gardant sa structure (titres, '
+  + 'listes, tableaux ligne par ligne). Ne commente pas, n’interprète pas, n’invente aucune valeur illisible : '
+  + 'si un passage est flou, écris [illisible]. Si l’image ne contient aucun texte, décris en une phrase ce '
+  + 'qu’elle montre, sans plus.';
+
+/** Lit une image par le modèle et rend son texte. Isolé pour que la route reste lisible. */
+async function lireImage(deps: AgentSetupRouteDeps, dataUrl: string, nom: string): Promise<string | null> {
+  const r = await deps.completer!({
+    modele: deps.modele,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: `${CONSIGNE_IMAGE}\n\nNom du fichier : ${nom}` },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ],
+    }],
+    outils: [],
+    toolChoice: '',
+    signal: AbortSignal.timeout(DELAI_MS),
+  });
+  return r.texte;
+}
 
 /** Un tour de construction est un appel de modèle, pas une requête de base : il faut le borner ici aussi. */
 const DELAI_MS = 45_000;
@@ -100,6 +141,76 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     if (!ctx) return;
     await ctx.entretiens.effacer(ctx.tenant, ctx.agentId);
     return reply.code(200).send({ efface: true, couverture: avancement(ENTRETIEN_VIERGE) });
+  });
+
+  /**
+   * UNE PIÈCE JOINTE, transformée en fiches de connaissance.
+   *
+   * Julien, 2026-08-31 : « il faut aussi qu'on puisse rajouter des pièces jointes (images, documents, …) dans
+   * la conversation (notamment pour rajouter des base de connaissance) ». Un client arrive avec ses procédures
+   * déjà écrites ; les retaper fiche par fiche est exactement le travail qu'on lui promet d'éviter.
+   *
+   * 🔴 CE QUE LA ROUTE ÉCRIT, ET POURQUOI CE N'EST PAS UNE ENTORSE au « rien ne s'écrit sans un clic ». Ce
+   * diff-là protège contre ce que le MODÈLE propose ; ici c'est le CLIENT qui téléverse son propre document,
+   * délibérément, et le geste EST le consentement. Même doctrine que l'import d'une page de son site, qui
+   * écrit lui aussi ses fiches directement. Tout reste relisible et modifiable dans l'onglet Connaissance.
+   *
+   * 🔴 UNE IMAGE EST LUE UNE SEULE FOIS, ICI. Elle part au modèle vision au moment où elle est jointe, et ce
+   * qu'on en garde est du TEXTE. La garder pour les tours suivants ferait grossir l'entretien de plusieurs
+   * méga et referait payer sa lecture à chaque tour.
+   *
+   * `bodyLimit` dédié : les octets transitent en base64 (+33 %), comme pour l'upload média.
+   */
+  const optsPiece = { ...opts, bodyLimit: Math.ceil(TAILLE_DOCUMENT_MAX * 1.4) };
+  app.post('/tenants/:tenantId/agents/:agentId/setup/piece-jointe', optsPiece, async (req, reply) => {
+    const ctx = await ouvrir(req, reply);
+    if (!ctx) return;
+    if (!deps.creerFiche) return reply.code(503).send({ error: 'pièces jointes indisponibles sur ce serveur' });
+    const parse = pieceSchema.safeParse(req.body ?? {});
+    if (!parse.success) return reply.code(400).send({ error: 'nom et dataUrl requis' });
+
+    const bytes = octetsDepuisDataUrl(parse.data.dataUrl);
+    if (!bytes) return reply.code(400).send({ error: 'fichier illisible (data URL base64 attendu)' });
+    const reconnu = reconnaitre(bytes);
+    // 415 et pas 400 : le corps est bien formé, c'est le TYPE du contenu qu'on refuse. Et le refus se fonde
+    // sur la signature réelle, jamais sur l'extension du nom, qui ne prouve rien.
+    if (!reconnu) {
+      return reply.code(415).send({ error: 'format non accepté (texte, CSV, PDF, Word, ou image JPEG/PNG/GIF/WebP)' });
+    }
+    const plafond = reconnu.nature === 'image' ? TAILLE_IMAGE_MAX : TAILLE_DOCUMENT_MAX;
+    if (bytes.length > plafond) {
+      return reply.code(413).send({ error: `fichier trop lourd (${Math.round(plafond / 1024 / 1024)} Mo maximum pour ce type)` });
+    }
+
+    let texte: string | null;
+    if (reconnu.nature === 'image') {
+      if (!deps.completer || deps.modele.trim() === '') {
+        return reply.code(503).send({ error: 'lecture d’image indisponible (aucun modèle configuré)' });
+      }
+      try {
+        texte = await lireImage(deps, parse.data.dataUrl, parse.data.nom);
+      } catch (err) {
+        return reply.code(502).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
+      }
+    } else {
+      texte = await extraireTexte(bytes, reconnu.nature);
+    }
+    if (texte === null || texte.trim() === '') {
+      // 422 : le fichier est d'un type accepté mais ne porte aucun texte exploitable (PDF scanné, image sans
+      // écriture, document vide). Le dire est plus utile qu'un succès à zéro fiche, que le client lirait
+      // comme un import réussi.
+      return reply.code(422).send({ error: 'aucun texte lisible dans ce fichier (un PDF scanné, par exemple, n’en contient pas)' });
+    }
+
+    const fiches = texteEnFiches(texte, parse.data.nom);
+    if (fiches.length === 0) return reply.code(422).send({ error: 'ce fichier est trop court pour faire une fiche' });
+    for (const f of fiches) await deps.creerFiche(ctx.tenant, ctx.agentId, f);
+
+    return reply.code(201).send({
+      fiches: fiches.length,
+      titres: fiches.map((f) => f.titre),
+      nature: reconnu.nature,
+    });
   });
 
   app.post('/tenants/:tenantId/agents/:agentId/setup', opts, async (req, reply) => {

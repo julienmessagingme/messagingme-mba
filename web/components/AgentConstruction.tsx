@@ -5,7 +5,8 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import {
-  parlerAuConstructeur, lireEntretien, effacerEntretien, restreindreProposition,
+  parlerAuConstructeur, lireEntretien, effacerEntretien, joindrePiece, restreindreProposition,
+  TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
   type Changement, type PropositionConstruction, type TourConstruction,
 } from '@/lib/api-agent-setup';
 
@@ -98,6 +99,48 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
       setBusy(false);
     }
   }, [busy, tenantId, agentId, t]);
+
+  /**
+   * Joint un document ou une image. Le serveur en tire du texte et l'écrit en fiches de connaissance ; on
+   * enchaîne ensuite un message ORDINAIRE pour que l'assistant en tienne compte, plutôt que d'ajouter un
+   * chemin spécial dans la boucle de conversation.
+   */
+  async function joindre(fichier: File) {
+    if (busy) return;
+    const image = fichier.type.startsWith('image/');
+    const plafond = image ? TAILLE_IMAGE_MAX : TAILLE_DOCUMENT_MAX;
+    // Contrôle LOCAL du poids, en plus de celui du serveur : téléverser 30 Mo pour se faire refuser après
+    // l'attente est une mauvaise expérience, et le corps est bloqué en amont par la limite de la route.
+    if (fichier.size > plafond) {
+      setErreur(t(
+        `« ${fichier.name} » est trop lourd (${Math.round(plafond / 1024 / 1024)} Mo maximum).`,
+        `“${fichier.name}” is too large (${Math.round(plafond / 1024 / 1024)} MB maximum).`,
+      ));
+      return;
+    }
+    setBusy(true);
+    setErreur(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const lecteur = new FileReader();
+        lecteur.onerror = () => reject(new Error('lecture impossible'));
+        lecteur.onload = () => resolve(String(lecteur.result));
+        lecteur.readAsDataURL(fichier);
+      });
+      // Le nom du fichier SANS son extension : il devient le titre par défaut des fiches, et « guide.pdf »
+      // ferait un titre qui parle de format plutôt que de contenu.
+      const nom = fichier.name.replace(/\.[a-z0-9]{1,8}$/i, '').trim() || fichier.name;
+      const r = await joindrePiece(tenantId, agentId, nom, dataUrl);
+      setBusy(false);
+      await envoyer(t(
+        `J’ai joint « ${nom} » : ${r.fiches} fiche${r.fiches > 1 ? 's' : ''} ajoutée${r.fiches > 1 ? 's' : ''} à la base de connaissance (${r.titres.slice(0, 5).join(', ')}).`,
+        `I attached “${nom}”: ${r.fiches} card${r.fiches > 1 ? 's' : ''} added to the knowledge base (${r.titres.slice(0, 5).join(', ')}).`,
+      ));
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Pièce jointe refusée', 'Attachment refused'));
+      setBusy(false);
+    }
+  }
 
   async function recommencer() {
     if (busy) return;
@@ -232,6 +275,31 @@ export function AgentConstruction({ tenantId, agentId, onApplique }: {
         </div>
 
         <div className="flex items-end gap-2 border-t border-ink-200 px-3 py-3">
+          {/* Le TROMBONE. Un client arrive avec ses procédures déjà écrites ; les retaper fiche par fiche est
+              exactement le travail qu'on lui promet d'éviter. Ce qu'il joint devient de la connaissance, et
+              reste relisible dans l'onglet Base de connaissance. */}
+          <label
+            data-testid="setup-joindre"
+            title={t('Joindre un document ou une image (il rejoint la base de connaissance)', 'Attach a document or image (it joins the knowledge base)')}
+            className={`mb-0.5 grid h-[42px] w-[42px] shrink-0 cursor-pointer place-items-center rounded-lg border border-ink-300 text-base text-ink-600 hover:bg-ink-50 ${busy || !charge ? 'pointer-events-none opacity-40' : ''}`}
+          >
+            <span aria-hidden>📎</span>
+            <span className="sr-only">{t('Joindre un fichier', 'Attach a file')}</span>
+            <input
+              data-testid="setup-fichier"
+              type="file"
+              className="hidden"
+              accept=".txt,.md,.csv,.pdf,.docx,text/plain,text/csv,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/gif,image/webp"
+              disabled={busy || !charge}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                // Le champ est REMIS À ZÉRO : sans ça, rejoindre deux fois le même fichier ne déclencherait
+                // aucun `change` la seconde fois, et le client croirait l'écran bloqué.
+                e.target.value = '';
+                if (f) void joindre(f);
+              }}
+            />
+          </label>
           {/* Une zone de texte, pas un champ d'une ligne : on décrit son métier en trois phrases, pas en six
               mots. Entrée envoie, Maj+Entrée va à la ligne, comme partout ailleurs. */}
           <textarea

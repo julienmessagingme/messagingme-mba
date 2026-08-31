@@ -4,7 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentSetupRouteDeps } from '../src/http/agent-setup';
-import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
+import type { ChatMessage, ChatMessageImage, ReponseChat } from '../src/agent/llm/chat-client';
 import { OUTIL_PROPOSER } from '../src/agent/setup/proposition';
 import { AGENDA } from '../src/agent/setup/couverture';
 import type { EntretienComplet, EntretienStore } from '../src/agent/setup/entretien-store';
@@ -65,8 +65,10 @@ function app(opts: {
   sansClient?: boolean;
   sansEntretiens?: boolean;
   entretien?: EntretienComplet | null;
+  sansFiches?: boolean;
+  fiches?: Array<{ titre: string; corps: string }>;
 } = {}) {
-  const cap = { appels: [] as Array<{ modele: string; messages: ChatMessage[]; toolChoice: string }> };
+  const cap = { appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }> };
   const entretiens = new FakeEntretiens(opts.entretien ?? null);
   const deps: AgentSetupRouteDeps = {
     etatCourant: async (_t, agentId) => (agentId === AG
@@ -78,6 +80,9 @@ function app(opts: {
       }
       : null),
     ...(opts.sansEntretiens ? {} : { entretiens }),
+    ...(opts.sansFiches ? {} : {
+      creerFiche: async (_t: string, _a: string, f: { titre: string; corps: string }) => { opts.fiches?.push(f); return f; },
+    }),
     ...(opts.sansClient ? {} : {
       completer: async (i) => {
         cap.appels.push({ modele: i.modele, messages: i.messages, toolChoice: i.toolChoice });
@@ -339,6 +344,100 @@ describe('conversation de construction', () => {
     expect((await srv.inject({ method: 'GET', url: url('t2'), ...h(adminTok) })).statusCode).toBe(403);
     expect((await srv.inject({ method: 'DELETE', url: url('t2'), ...h(adminTok) })).statusCode).toBe(403);
     expect(cap.appels).toHaveLength(0);
+  });
+
+  /**
+   * LES PIÈCES JOINTES. Le type est décidé par la SIGNATURE du fichier, jamais par ce que le navigateur
+   * déclare : ce texte finit dans la base de connaissance, donc dans le prompt d'un agent qui parle à de vrais
+   * contacts. Le découpage, lui, est prouvé dans `tests/agent-piece-jointe.test.ts`.
+   */
+  describe('pièce jointe', () => {
+    const urlPiece = (tenant: string, agentId = AG) => `${url(tenant, agentId)}/piece-jointe`;
+    const dataUrl = (contenu: string, mime = 'text/plain') => `data:${mime};base64,${Buffer.from(contenu, 'utf8').toString('base64')}`;
+    const document = ['Nos horaires', 'La piscine est ouverte de 9h à 20h tous les jours, sauf le mardi.'].join('\n');
+
+    it('un document devient des fiches de connaissance, écrites par le store de l’onglet Connaissance', async () => {
+      const fiches: Array<{ titre: string; corps: string }> = [];
+      const res = await app({ fiches }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok),
+        payload: { nom: 'Guide séjours', dataUrl: dataUrl(document) },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().fiches).toBe(1);
+      expect(res.json().nature).toBe('texte');
+      expect(fiches[0]!.titre).toBe('Nos horaires');
+      expect(fiches[0]!.corps).toContain('9h à 20h');
+    });
+
+    it('🔴 un fichier qui MENT sur son type est refusé en 415, et rien n’est écrit', async () => {
+      const fiches: Array<{ titre: string; corps: string }> = [];
+      // Un exécutable Windows présenté comme un PDF : c'est la signature qui tranche, pas le MIME déclaré.
+      const exe = `data:application/pdf;base64,${Buffer.from([0x4d, 0x5a, 0x90, 0x00]).toString('base64')}`;
+      const res = await app({ fiches }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'facture.pdf', dataUrl: exe },
+      });
+      expect(res.statusCode).toBe(415);
+      expect(fiches).toEqual([]);
+    });
+
+    it('un fichier sans texte exploitable rend 422, pas un succès à zéro fiche', async () => {
+      // Un succès muet se lirait comme un import réussi : le client croirait ses procédures en base.
+      const res = await app().srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'vide', dataUrl: dataUrl('   ') },
+      });
+      expect(res.statusCode).toBe(422);
+    });
+
+    it('🔴 une IMAGE est lue par le modèle, UNE fois, et ce qu’on garde est du texte', async () => {
+      // Aucune image ne doit circuler dans l'entretien persisté : elle ferait grossir une ligne jsonb de
+      // plusieurs méga et referait payer sa lecture à chaque tour.
+      const fiches: Array<{ titre: string; corps: string }> = [];
+      const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64')}`;
+      const a = app({
+        fiches,
+        reponse: {
+          texte: ['Tarifs 2026', 'Entrée simple 6 euros, abonnement mensuel 45 euros, carte dix entrées 50 euros.'].join('\n'),
+          appelsOutils: [], finish: 'stop', usage: { tokensIn: 900, tokensOut: 40, coutDollars: 0.002 }, generationId: 'g',
+        },
+      });
+      const res = await a.srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'photo tarifs', dataUrl: png },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().nature).toBe('image');
+      expect(fiches[0]!.corps).toContain('45 euros');
+      // UN seul appel, et il porte bien l'image en part multimodale.
+      expect(a.cap.appels).toHaveLength(1);
+      const contenu = a.cap.appels[0]!.messages[0]!.content;
+      expect(Array.isArray(contenu)).toBe(true);
+      expect(JSON.stringify(contenu)).toContain('image_url');
+      expect(a.entretiens.ecrits).toEqual([]); // rien n'entre dans l'entretien persisté
+    });
+
+    it('sans modèle, une image est refusée en 503 ; un document texte passe quand même', async () => {
+      // La lecture d'image dépend du modèle, l'extraction d'un document non : les deux ne tombent pas ensemble.
+      const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
+      const sansModele = app({ sansModele: true });
+      expect((await sansModele.srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'x', dataUrl: png } })).statusCode).toBe(503);
+      const doc = await app({ sansModele: true }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Guide', dataUrl: dataUrl(document) },
+      });
+      expect(doc.statusCode).toBe(201);
+    });
+
+    it('sans écriture de fiche câblée, la route rend 503 plutôt qu’un import qui ne stocke rien', async () => {
+      const res = await app({ sansFiches: true }).srv.inject({
+        method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Guide', dataUrl: dataUrl(document) },
+      });
+      expect(res.statusCode).toBe(503);
+    });
+
+    it('scopée au tenant du jeton et aux administrateurs', async () => {
+      const p = { nom: 'Guide', dataUrl: dataUrl(document) };
+      expect((await app().srv.inject({ method: 'POST', url: urlPiece('t2'), ...h(adminTok), payload: p })).statusCode).toBe(403);
+      expect((await app().srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(agentTok), payload: p })).statusCode).toBe(403);
+      expect((await app().srv.inject({ method: 'POST', url: urlPiece('t1', 'pas-un-uuid'), ...h(adminTok), payload: p })).statusCode).toBe(404);
+    });
   });
 
   it('réservée aux administrateurs, sur les TROIS routes', async () => {

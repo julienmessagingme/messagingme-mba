@@ -148,6 +148,36 @@ export async function lireEntretien(
   return request(`/tenants/${tenantId}/agents/${agentId}/setup`);
 }
 
+/**
+ * Plafonds de poids d'une pièce jointe, en octets.
+ *
+ * ⚠️ Ils DOUBLENT ceux de `src/agent/setup/piece-jointe.ts`, et `tests/web-piece-jointe-parity.test.ts` casse
+ * s'ils divergent. L'écran doit annoncer le même chiffre que celui sur lequel le serveur refuse : sinon on
+ * promet 20 Mo et on rend un 413 que personne ne comprend.
+ */
+export const TAILLE_DOCUMENT_MAX = 8 * 1024 * 1024;
+export const TAILLE_IMAGE_MAX = 5 * 1024 * 1024;
+
+/** Ce que le serveur a fait d'une pièce jointe. */
+export interface PieceJointeImportee {
+  fiches: number;
+  titres: string[];
+  nature: 'texte' | 'pdf' | 'docx' | 'image';
+}
+
+/**
+ * Joint un document ou une image : le serveur en tire du texte et l'écrit en fiches de connaissance.
+ *
+ * Le fichier part en data URL base64, comme l'upload média : le dépôt n'a pas de gestionnaire multipart, et en
+ * ajouter un pour une route ne se justifierait pas.
+ */
+export function joindrePiece(tenantId: string, agentId: string, nom: string, dataUrl: string): Promise<PieceJointeImportee> {
+  return request(`/tenants/${tenantId}/agents/${agentId}/setup/piece-jointe`, {
+    method: 'POST',
+    body: JSON.stringify({ nom, dataUrl }),
+  });
+}
+
 /** Repart de zéro. Un entretien qui a mal tourné doit pouvoir se jeter sans supprimer l'agent. */
 export async function effacerEntretien(tenantId: string, agentId: string): Promise<{ efface: boolean; couverture: Couverture }> {
   return request(`/tenants/${tenantId}/agents/${agentId}/setup`, { method: 'DELETE' });

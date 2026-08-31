@@ -35,6 +35,24 @@ export interface ChatMessage {
   tool_call_id?: string;
 }
 
+/**
+ * Un message qui porte une IMAGE, forme multimodale de Chat Completions.
+ *
+ * 🔴 Type SÉPARÉ, et `ChatMessage` n'est PAS élargi. Élargir `content` en `string | Part[]` a été essayé le
+ * 2026-08-31 : le compilateur a immédiatement sorti une dizaine d'endroits qui lisent ce champ comme une
+ * chaîne, dans le runtime de l'agent et ses tests, pour un besoin qu'AUCUN d'eux n'a. Un `ChatMessage[]`
+ * reste assignable au tableau d'union ci-dessous, donc rien de l'existant ne bouge.
+ *
+ * Il ne sert qu'à la lecture d'une pièce jointe image par l'assistant de construction : elle est lue UNE fois,
+ * au moment où le client la joint, et ce qu'on en tire est du TEXTE. Aucune image ne circule dans un tour
+ * d'agent ni dans l'entretien persisté ; l'y garder ferait grossir une ligne jsonb de plusieurs méga et
+ * referait payer la lecture à chaque tour.
+ */
+export interface ChatMessageImage {
+  role: 'user';
+  content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
+}
+
 /** Un outil exposé au modèle. `parameters` est un JSON Schema déjà formé (sa dérivation est la tâche 15). */
 export interface OutilExpose {
   name: string;
@@ -93,7 +111,8 @@ export class GatewayChatClient {
 
   async completer(input: {
     modele: string;
-    messages: ChatMessage[];
+    /** Un `ChatMessage[]` ordinaire convient : l'union n'existe que pour la lecture d'une image. */
+    messages: Array<ChatMessage | ChatMessageImage>;
     outils?: OutilExpose[];
     /**
      * Force l'appel de CET outil, par son nom. Sert à la sortie structurée : plutôt que de demander du JSON

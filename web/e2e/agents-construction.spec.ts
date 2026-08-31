@@ -33,13 +33,17 @@ const PROPOSITION = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean } = {}) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    if (/\/setup\/piece-jointe$/.test(url)) {
+      appels.push({ method, url, body: req.postDataJSON() });
+      return json(opts.pieceJointe ?? { fiches: 1, titres: ['Doc'], nature: 'texte' }, 201);
+    }
     if (/\/setup$/.test(url)) {
       // Depuis le 2026-08-31 l'entretien est TENU PAR LE SERVEUR : le GET l'hydrate à l'ouverture de
       // l'onglet, le POST envoie UN message, le DELETE recommence. Sans ce GET, l'écran resterait bloqué sur
@@ -284,6 +288,29 @@ test.describe('Agents IA : construire en parlant', () => {
     await page.getByTestId(`agent-ligne-${AG}`).click();
     await expect(page).toHaveURL(/tab=construction/);
     await expect(page.getByTestId('setup-saisie')).toBeVisible();
+  });
+
+  test('🔴 une PIÈCE JOINTE devient de la connaissance, et l assistant en est informé', async ({ page }) => {
+    // Julien, 2026-08-31 : « il faut aussi qu'on puisse rajouter des pièces jointes (images, documents, …)
+    // dans la conversation (notamment pour rajouter des base de connaissance) ». Un client arrive avec ses
+    // procédures déjà écrites ; les retaper fiche par fiche est le travail qu'on lui promet d'éviter.
+    const appels: Appel[] = [];
+    await mock(page, appels, { pieceJointe: { fiches: 3, titres: ['Nos horaires', 'Nos tarifs', 'L acces'], nature: 'texte' } });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+
+    await page.getByTestId('setup-fichier').setInputFiles({
+      name: 'Guide sejours.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(['Nos horaires', 'La piscine ouvre a 9h.'].join('\n'), 'utf8'),
+    });
+
+    // Le fichier part en data URL, sous un nom SANS son extension (il devient le titre par defaut des fiches).
+    await expect.poll(() => appels.some((a) => /piece-jointe$/.test(a.url))).toBe(true);
+    const envoi = appels.find((a) => /piece-jointe$/.test(a.url))!.body as { nom: string; dataUrl: string };
+    expect(envoi.nom).toBe('Guide sejours');
+    expect(envoi.dataUrl.startsWith('data:')).toBe(true);
+    // Et l assistant est informe par un message ORDINAIRE : pas de chemin special dans la conversation.
+    await expect(page.getByTestId('setup-tour-user')).toContainText('3 fiches ajoutées');
   });
 
   test('🔴 un agent se supprime DEPUIS LA LISTE, sans avoir à entrer dedans', async ({ page }) => {
