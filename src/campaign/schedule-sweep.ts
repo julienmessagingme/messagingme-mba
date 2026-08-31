@@ -3,7 +3,7 @@ import { campaignJobExpireSeconds, resolveRatePerMinute } from './pacing';
 export interface ScheduleSweepDeps {
   /** Campagnes programmées DUES (scheduled_at <= maintenant) + leur dimensionnement de run. */
   listDue(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>>;
-  /** Enfile le run (singletonKey = campaignId côté impl -> idempotent) avec le timeout dimensionné. */
+  /** Enfile le run avec le timeout dimensionné. ⚠️ NON idempotent : deux appels = deux jobs (cf. `enqueue.ts`). */
   enqueueRun(campaignId: string, expireInSeconds: number): Promise<void>;
   /** Passe la campagne 'scheduled' -> 'running' (garde status, anti-re-liste). Idempotent. */
   markRunning(campaignId: string): Promise<boolean>;
@@ -21,10 +21,14 @@ export interface ScheduleSweepDeps {
  * Balaie les campagnes programmées dues et lance leur run. Pattern miroir du sweeper d'analyse.
  *
  * ENQUEUE PUIS markRunning (dans cet ordre) : si l'enqueue échoue, la campagne RESTE 'scheduled' et sera
- * reprise au tour suivant (pas de statut 'running' orphelin sans job). L'enqueue est idempotent (singletonKey =
- * campaignId dédup côté file) ET le run-job repasse lui-même la campagne en 'running' à son démarrage : même si
- * markRunning échoue, il n'y a jamais de double-run (le claim atomique par destinataire tranche) ni de blocage.
- * Un échec par campagne n'interrompt pas le balayage. Retourne le nombre de campagnes enfilées.
+ * reprise au tour suivant (pas de statut 'running' orphelin sans job). Et le run-job repasse lui-même la
+ * campagne en 'running' à son démarrage : même si markRunning échoue, rien ne se bloque.
+ *
+ * ⚠️ Ce qui empêche le double-run, c'est `markRunning` (garde sur le statut, la campagne cesse d'être listée),
+ * PAS l'enfilement : l'enqueue n'est pas idempotent, deux appels empilent deux jobs qui tourneront tous les
+ * deux. Le commentaire d'origine créditait un `singletonKey` qui ne dédupliquait rien (cf. `Queue.enqueue`).
+ * Le claim atomique par destinataire garantit qu'aucun contact ne reçoit deux fois, il ne garantit pas le
+ * débit. Un échec par campagne n'interrompt pas le balayage. Retourne le nombre de campagnes enfilées.
  */
 export async function runCampaignScheduleSweep(deps: ScheduleSweepDeps): Promise<number> {
   const due = await deps.listDue();

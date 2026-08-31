@@ -130,6 +130,18 @@ export class PgBossQueue implements Queue {
     this.started = false;
   }
 
+  /**
+   * ⚠️ Les files sont créées SANS `policy`, donc en `standard` (pg-boss 12 : `manager.js`, `options.policy ||
+   * QUEUE_POLICIES.standard`). Conséquence à connaître avant d'écrire quoi que ce soit qui compte dessus :
+   * en `standard`, AUCUNE déduplication n'a lieu, ni par `singleton_key` ni autrement. Les index uniques qui
+   * la rendraient (`job_i1`, `job_i2`, `job_i3`, `job_i6`, `job_i8`) sont tous partiels et filtrés sur une
+   * autre policy que `standard`.
+   *
+   * 🔴 Et on ne peut PAS régler ça en ajoutant `policy` ici : pg-boss refuse tout changement de policy après
+   * création (« queue policy cannot be changed after creation »), et les files de la production existent
+   * déjà. Il faudrait de nouvelles files, donc de nouveaux noms, donc abandonner les jobs en vol. La
+   * déduplication qui manque passera par un verrou applicatif, cf. `Queue.enqueue`.
+   */
   private async ensure(name: string): Promise<void> {
     if (this.ensured.has(name)) return;
     const dlq = dlqName(name); // convention -dlq partagée avec src/queue/names.ts (source unique, cf. /ops)
@@ -145,14 +157,13 @@ export class PgBossQueue implements Queue {
   async enqueue(
     name: string,
     data: unknown,
-    opts?: { singletonKey?: string; expireInSeconds?: number; groupId?: string },
+    opts?: { expireInSeconds?: number; groupId?: string },
   ): Promise<void> {
     await this.ensure(name);
     // `expireInSeconds` PAR JOB (prime sur la policy de file) : dimensionne la durée max d'un run de campagne
     // throttlé sur son travail réel, sinon un run long expirerait et serait rejoué en parallèle.
     // `groupId` -> `group.id` : porte le tenant, sur lequel `work` applique un plafond de concurrence par groupe.
     await this.boss.send(name, data as object, {
-      ...(opts?.singletonKey ? { singletonKey: opts.singletonKey } : {}),
       ...(opts?.expireInSeconds ? { expireInSeconds: opts.expireInSeconds } : {}),
       ...(opts?.groupId ? { group: { id: opts.groupId } } : {}),
     });

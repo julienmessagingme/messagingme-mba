@@ -681,9 +681,11 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Campagnes au fil de l'eau qui ont des destinataires EN ATTENTE. Filet du balayeur : l'enfilement immédiat
-   * d'un arrivant peut être avalé par le `singletonKey` si un run est déjà en vol, et le destinataire
-   * resterait alors en attente jusqu'à l'arrivant suivant. Ici, il repart au tour d'après.
+   * Campagnes au fil de l'eau qui ont des destinataires EN ATTENTE. Filet du balayeur, pour l'arrivant dont
+   * l'enfilement immédiat a ÉCHOUÉ. ⚠️ Le motif d'origine invoquait un enfilement « avalé par le
+   * `singletonKey` » quand un run est en vol : aucune déduplication n'existe, et l'effet réel du balayage est
+   * l'inverse (il empile un run de plus par minute). Voir la note complète sur `filDeLEauSweep`,
+   * `src/worker.ts`.
    */
   async listWebhookCampaignsWithPending(): Promise<Array<{ id: string; ratePerMinute: number | null; pendingCount: number }>> {
     const res = await this.pool.query<{ id: string; rate_per_minute: number | null; pending: string }>(

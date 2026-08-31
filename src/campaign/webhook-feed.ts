@@ -37,7 +37,7 @@ export interface WebhookFeedDeps {
     campaignId: string,
     r: { contactId: string; toE164: string; resolvedParams: string[]; statut: 'pending' | 'skipped'; motif?: string },
   ): Promise<boolean>;
-  /** Enfile le run de la campagne (singletonKey côté impl). */
+  /** Enfile le run de la campagne. ⚠️ NON dédupliqué : un arrivant = un job, même run déjà en vol. */
   enqueueRun(campaign: Campaign): Promise<void>;
   now?: () => Date;
 }

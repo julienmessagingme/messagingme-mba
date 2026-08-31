@@ -8,7 +8,7 @@ export class FakeQueue implements Queue {
   public readonly enqueued: Array<{
     name: string;
     data: unknown;
-    opts?: { singletonKey?: string; expireInSeconds?: number; groupId?: string };
+    opts?: { expireInSeconds?: number; groupId?: string };
   }> = [];
   /** Trace des appels à `work` : rend le passthrough des options de concurrence OBSERVABLE en test. */
   public readonly workCalls: Array<{ name: string; opts?: { concurrency?: number; groupConcurrency?: number } }> = [];
@@ -20,7 +20,7 @@ export class FakeQueue implements Queue {
   async enqueue(
     name: string,
     data: unknown,
-    opts?: { singletonKey?: string; expireInSeconds?: number; groupId?: string },
+    opts?: { expireInSeconds?: number; groupId?: string },
   ): Promise<void> {
     this.enqueued.push({ name, data, ...(opts ? { opts } : {}) });
   }

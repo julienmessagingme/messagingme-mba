@@ -482,7 +482,10 @@ async function main(): Promise<void> {
       const catchupSweep = async (): Promise<void> => {
         try {
           const tenants = await analysisStore.listTenantsReadyForCatchup();
-          for (const tenantId of tenants) await queue.enqueue('hubspot-catchup', { tenantId }, { singletonKey: `catchup:${tenantId}` });
+          // ⚠️ Aucune dédup de file (cf. `Queue.enqueue`) : ce balayage peut enfiler un rattrapage pour un
+          // tenant qui en a déjà un en vol. Sans dommage ici, le job relit l'état frais et re-pousse ce qui
+          // reste marqué, mais ce n'est pas gratuit (appels connecteur redondants).
+          for (const tenantId of tenants) await queue.enqueue('hubspot-catchup', { tenantId });
           // eslint-disable-next-line no-console
           if (tenants.length > 0) console.log(`hubspot-catchup-sweep: ${tenants.length} tenant(s) relancé(s)`);
         } catch (err) {
@@ -532,7 +535,7 @@ async function main(): Promise<void> {
     };
 
     const onConversationReady = (conversationId: string, tenantId: string): Promise<void> =>
-      queue.enqueue('analyze-conversation', { conversationId, tenantId }, { singletonKey: conversationId });
+      queue.enqueue('analyze-conversation', { conversationId, tenantId });
     await queue.work('analyze-conversation', (data) =>
       analyzeConversationJob(data, {
         store: analysisStore,
@@ -575,13 +578,15 @@ async function main(): Promise<void> {
   sweeper.unref();
 
   // Sweeper de PLANIFICATION : enfile les campagnes programmées dues (scheduled_at <= maintenant). Miroir du
-  // sweeper d'analyse. Toutes les 60 s (granularité suffisante pour un lancement programmé). singletonKey +
-  // markRunning garantissent un enqueue exactement-une-fois même avec deux instances worker.
+  // sweeper d'analyse. Toutes les 60 s (granularité suffisante pour un lancement programmé). C'est `markRunning`
+  // SEUL (garde sur le statut) qui empêche de re-lister la campagne au tour d'après : l'enfilement, lui, ne
+  // déduplique rien (cf. `Queue.enqueue`). Entre l'enqueue et le markRunning, une seconde instance worker
+  // enfilerait donc un second run. Sans objet aujourd'hui (le compose fige une instance), à revoir avec R11.
   const scheduleSweep = async (): Promise<void> => {
     try {
       const n = await runCampaignScheduleSweep({
         listDue: () => repo.listDueScheduled(),
-        enqueueRun: (id, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { singletonKey: id, expireInSeconds }),
+        enqueueRun: (id, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds }),
         markRunning: (id) => repo.markScheduledRunning(id),
         defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
         onError: (m, err) => {
@@ -607,10 +612,19 @@ async function main(): Promise<void> {
   /**
    * FILET des campagnes au fil de l'eau : relance celles qui ont des destinataires en attente.
    *
-   * L'arrivant est déjà enfilé au moment où il arrive. Mais `singletonKey` refuse un second job tant que le
-   * run précédent de la même campagne est en vol : un contact arrivé pendant un envoi verrait donc son job
-   * avalé, et resterait en attente jusqu'à l'arrivant SUIVANT, qui peut ne jamais venir. Ce balayage le
-   * reprend au tour d'après. Coût : une requête indexée par minute, et zéro enfilement quand rien n'attend.
+   * L'arrivant est déjà enfilé au moment où il arrive ; ce balayage rattrape le cas où CET enfilement a
+   * échoué (il est attrapé et journalisé par campagne, la campagne resterait sinon avec des destinataires en
+   * attente et personne pour les prendre). Coût : une requête indexée par minute, et zéro enfilement quand
+   * rien n'attend.
+   *
+   * 🔴 Le motif d'origine était faux : il disait que `singletonKey` refusait un second job tant qu'un run
+   * était en vol, donc que l'arrivant survenu pendant un envoi voyait son job « avalé ». Aucune déduplication
+   * n'a jamais eu lieu (cf. `Queue.enqueue`). L'inversion est fâcheuse : au lieu de rattraper des jobs avalés,
+   * ce balayage EMPILE un run de plus par minute tant que la campagne a des destinataires en attente, alors
+   * qu'un run tourne déjà. Un envoi throttlé d'une heure se retrouve avec soixante runs concurrents, chacun
+   * avec son limiteur de débit en mémoire. Aucune campagne au fil de l'eau n'a encore tourné en production,
+   * donc ça n'a jamais mordu ; c'est l'amplification la plus grave que la découverte de R1 met au jour, et
+   * elle attend le verrou applicatif (`todo.md`).
    */
   const filDeLEauSweep = async (): Promise<void> => {
     try {
@@ -684,7 +698,7 @@ async function main(): Promise<void> {
           list131026SecondFail: () => repo.listRetry131026SecondFail(),
           resetForRetry: (id) => repo.resetForRetry(id),
           markUnreachableDone: (id) => repo.markUnreachableDone(id),
-          enqueueRun: (id) => queue.enqueue('campaign-run', { campaignId: id }, { singletonKey: id }),
+          enqueueRun: (id) => queue.enqueue('campaign-run', { campaignId: id }),
           flagUnreachable: async (tenantId, e164) => {
             await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);
           },

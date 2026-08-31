@@ -376,9 +376,10 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const expireInSeconds = sizing
       ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
       : undefined;
-    // singletonKey = campaignId : deux POST /run concurrents n'empilent pas deux jobs pour
-    // la même campagne (le claim par destinataire est le garde-fou primaire, ceci le double).
-    await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });
+    // ⚠️ Deux POST /run concurrents empilent DEUX jobs, et les deux tourneront : rien ne déduplique ici (cf.
+    // `Queue.enqueue`, où le `singletonKey` qu'on croyait protecteur a été retiré). Le claim atomique par
+    // destinataire reste le seul garde-fou, et il ne garantit que l'absence de double-envoi, pas le débit.
+    await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
     return reply.code(202).send({ enqueued: true, campaignId });
   });
 
@@ -402,7 +403,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     const expireInSeconds = sizing
       ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute ?? 0))
       : undefined;
-    await deps.queue.enqueue('campaign-run', { campaignId }, { singletonKey: campaignId, ...(expireInSeconds ? { expireInSeconds } : {}) });
+    await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}) });
     return reply.code(202).send({ enqueued: true, recipientId });
   });
 

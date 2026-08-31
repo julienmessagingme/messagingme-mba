@@ -21,7 +21,7 @@ export interface RetrySweepDeps {
   resetForRetry(id: string): Promise<boolean>;
   /** Clôt un destinataire injoignable (terminal). À appeler APRÈS le flag HubSpot réussi. */
   markUnreachableDone(id: string): Promise<boolean>;
-  /** Enfile un campaign-run (singletonKey = campaignId côté impl). */
+  /** Enfile un campaign-run. ⚠️ NON dédupliqué : un run par destinataire relancé (cf. `enqueue.ts`). */
   enqueueRun(campaignId: string): Promise<void>;
   /** Marque le contact injoignable dans HubSpot (best-effort ; throw -> on ne clôt pas, réessayé au tour suivant). */
   flagUnreachable(tenantId: string, e164: string): Promise<void>;

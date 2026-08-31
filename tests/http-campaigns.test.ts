@@ -349,14 +349,13 @@ describe('POST /tenants/:tenantId/campaigns', () => {
 });
 
 describe('POST /campaigns/:campaignId/run', () => {
-  it('campagne du tenant -> 202 + job campaign-run enqueué (singletonKey + expire dimensionné)', async () => {
+  it('campagne du tenant -> 202 + job campaign-run enqueué (expire dimensionné)', async () => {
     const q = new FakeQueue();
     const app = appWith(new FakeRepo(contacts), { queue: q });
     const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
     expect(res.statusCode).toBe(202);
     expect(q.enqueued).toHaveLength(1);
     expect(q.enqueued[0]).toMatchObject({ name: 'campaign-run', data: { campaignId: 'known' } });
-    expect(q.enqueued[0]?.opts?.singletonKey).toBe('known');
     expect(q.enqueued[0]?.opts?.expireInSeconds).toBe(900); // 0 pending -> plancher 15 min
     await app.close();
   });
@@ -520,7 +519,6 @@ describe('POST /campaigns/:cid/recipients/:rid/retry (F7)', () => {
     expect(res.json<{ enqueued: boolean; recipientId: string }>()).toEqual({ enqueued: true, recipientId: 'r1' });
     expect(q.enqueued).toHaveLength(1);
     expect(q.enqueued[0]).toMatchObject({ name: 'campaign-run', data: { campaignId: 'known' } });
-    expect(q.enqueued[0]?.opts?.singletonKey).toBe('known');
     await app.close();
   });
 

@@ -892,7 +892,7 @@ async function main(): Promise<void> {
       // NO-OP si le pipeline analyse/push est inerte (mêmes conditions que le worker qui consomme la file).
       enqueueHubspotCatchup: async (tenant) => {
         if (!(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '')) return;
-        await queue.enqueue('hubspot-catchup', { tenantId: tenant }, { singletonKey: `catchup:${tenant}` });
+        await queue.enqueue('hubspot-catchup', { tenantId: tenant });
       },
       getHubspotPortal: (tenant) => phoneStatusStore.getHubspotPortal(tenant),
       // Déconnexion complète (candidat 2) : appel service signé vers mm-hubspot (unlink + révocation token). Monté

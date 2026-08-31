@@ -70,7 +70,8 @@ export interface V1SendsRouteDeps {
 
 const MAX_RECIPIENTS = 50;
 const MAX_SKIPPED_REPORT = 200;
-/** Retry borné de l'enqueue (idempotent par singletonKey) : 3 tentatives, backoff court entre chacune. */
+/** Retry borné de l'enqueue : 3 tentatives, backoff court entre chacune. Cf. la note au call site sur ce qui
+ *  rend ce retry sûr (ce n'est PAS une déduplication de file). */
 const ENQUEUE_MAX_ATTEMPTS = 3;
 const ENQUEUE_RETRY_DELAYS_MS = [100, 300];
 const CATEGORIES: readonly string[] = ['marketing', 'utility'];
@@ -230,8 +231,8 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
       );
       report.sendId = send.campaignId;
       // SCELLE l'idempotence AVANT l'enqueue : sans ça, un échec de complete APRÈS un enqueue réussi
-      // ferait release -> un retry recréerait une 2e campagne (nouveau campaignId, singletonKey inutile)
-      // et renverrait les messages EN DOUBLE. Sceller ici garantit qu'un retry rejoue ce rapport (même
+      // ferait release -> un retry recréerait une 2e campagne (nouveau campaignId, donc aucune dédup de file
+      // n'aurait pu l'attraper) et renverrait les messages EN DOUBLE. Sceller ici garantit qu'un retry rejoue ce rapport (même
       // campaignId) sans jamais réémettre. Échec avant scellement -> release + throw (retry propre).
       await deps.idempotencyComplete(tenantId, idemKey, send.campaignId, report);
     } catch (err) {
@@ -240,10 +241,14 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, gu
     }
 
     // Idempotence scellée, DÉFINITIVEMENT : aucun chemin ci-dessous ne release (un release ici ferait
-    // recréer une 2e campagne au retry client = messages en DOUBLE). enqueue est idempotent
-    // (singletonKey=campaignId), donc le RETENTER est sans risque : on couvre le hoquet transitoire de la
-    // file (pool pg saturé) au lieu de laisser une campagne draft jamais lancée. Échec persistant -> 201 +
-    // log fort : sous-envoi assumé, jamais de sur-envoi.
+    // recréer une 2e campagne au retry client = messages en DOUBLE). On RETENTE l'enfilement pour couvrir le
+    // hoquet transitoire de la file (pool pg saturé) au lieu de laisser une campagne draft jamais lancée.
+    // Échec persistant -> 201 + log fort : sous-envoi assumé, jamais de sur-envoi.
+    //
+    // ⚠️ Ce qui rend le retry sûr, c'est le claim atomique par destinataire, PAS une déduplication de file :
+    // il n'y en a aucune (cf. `Queue.enqueue`). Si un enfilement avait commité avant de lever, la tentative
+    // suivante empilerait un SECOND run de la même campagne. Aucun contact ne recevrait deux fois, mais les
+    // deux runs additionneraient leurs débits. Borné à 3 tentatives, sur un chemin d'échec rare.
     const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     for (let attempt = 0; attempt < ENQUEUE_MAX_ATTEMPTS; attempt += 1) {
       try {

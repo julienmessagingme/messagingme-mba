@@ -30,8 +30,10 @@ export interface AnalysisSweepDeps {
  * échec PROPRE à une conversation est quasi impossible ; un échec réel est global (pg-boss/DB down) et fait alors
  * échouer aussi `claimForAnalysis`/`reclaimStaleQueued` (catch du haut), donc rien n'est re-réclamé en rafale. La
  * ré-tentative au tour suivant est le comportement voulu (le transient se résorbe). Et si l'insert du job avait
- * quand même commité avant que `send` ne lève, le `singletonKey = conversationId` (pg-boss) + l'idempotence du job
- * + la garde `reclaimQueued ... WHERE status='queued'` empêchent tout doublon ou écrasement d'un état déjà avancé.
+ * quand même commité avant que `send` ne lève, deux jobs d'analyse coexisteraient pour la même conversation : ce
+ * sont l'idempotence du job et la garde `reclaimQueued ... WHERE status='queued'` qui empêchent alors le doublon
+ * et l'écrasement d'un état déjà avancé. Rien ne vient de la file : elle ne déduplique pas (cf. `Queue.enqueue`,
+ * où le `singletonKey` que ce commentaire créditait a été retiré parce qu'il n'a jamais rien fait).
  */
 export async function runAnalysisSweep(deps: AnalysisSweepDeps): Promise<void> {
   const { store, enqueue, staleMs, inactivityMs, batch } = deps;
