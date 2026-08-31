@@ -95,18 +95,12 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 ## Relevé au lot « entretien de construction » (2026-08-31)
 
-- 🔴 **Le Dockerfile embarque les OUTILS DE TEST dans l'image de production.** `npm ci` sans `--omit=dev` :
-  `vitest` et `vite` sont dans le conteneur qui tourne (vérifié le 2026-08-31). Deux conséquences. La visible :
-  les cinq alertes `npm audit` restantes (dont une critique) portent toutes sur cette chaîne, et sont donc
-  techniquement expédiées en production, même si rien ne les y rend exploitable (aucun serveur de
-  développement n'y tourne). L'invisible : l'image porte des dizaines de paquets qui n'ont rien à y faire.
-  Le correctif tient en un mot dans le `Dockerfile`, mais il change la FORME du déploiement : l'application
-  tourne via `tsx` en conteneur, il faut donc prouver que rien du chemin d'exécution ne dépend d'un paquet de
-  développement avant de l'appliquer. À faire dans sa propre passe, avec un `compose run npm run migrate` et
-  un démarrage d'API comme preuve.
-  (Les deux failles HAUTES des briques de Fastify, elles, sont FERMÉES le 2026-08-31 : `fast-uri` et
-  `find-my-way` sont montées dans les intervalles déjà autorisés, `package.json` inchangé, et
-  `npm audit --omit=dev` rend 0 vulnérabilité.)
+- ✅ **Les deux failles HAUTES des briques de Fastify sont FERMÉES** (2026-08-31) : `fast-uri` 3.1.3 -> 3.1.6
+  et `find-my-way` 9.6.0 -> 9.9.0, dans les intervalles que Fastify autorisait déjà, donc `package.json`
+  inchangé. Et **l'image de production n'embarque plus les outils de test** : le `Dockerfile` fait désormais
+  `npm ci --omit=dev`, ce qui emporte `vitest` et toute sa chaîne (109 -> 76 paquets). `npm audit --omit=dev`
+  rend 0 vulnérabilité. Prouvé AVANT bascule sur l'image allégée : `migrate`, l'API qui répond sur `/live` et
+  `/health`, et le worker qui démarre avec ses sept files.
 - ⚠️ **L'entretien à neuf points n'a jamais été mené en vrai.** Toute la mécanique est testée contre des
   doubles ; personne n'a encore vu le modèle formuler les neuf questions à la suite, ni le creusement
   `quel_outil` se déclencher sur une vraie conversation. C'est le premier essai à faire, et il demande un
