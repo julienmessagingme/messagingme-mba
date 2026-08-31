@@ -19,6 +19,14 @@ describe('câblage des purges de rétention', () => {
       .toMatch(/webhookEventsSweeper\s*=\s*setInterval/);
   });
 
+  it('le worker purge RÉELLEMENT les conversations périmées, sur la rétention configurée', () => {
+    expect(worker, 'aucun appel à purgeConversationsOlderThan : la rétention des conversations ne tourne plus')
+      .toMatch(/purgeConversationsOlderThan\(\s*config\.CONVERSATION_RETENTION_DAYS\s*\)/);
+    expect(worker, 'le balayage doit être PROGRAMMÉ, pas seulement appelé une fois au démarrage')
+      .toMatch(/conversationSweeper\s*=\s*setInterval/);
+    expect(worker, "un échec de purge doit ALERTER").toMatch(/alert\('sweeper:conversation-retention'/);
+  });
+
   it('et il purge toujours les payloads dormants des webhooks entrants (l’autre rétention)', () => {
     expect(worker).toMatch(/purgeStalePayloads\(\s*config\.WEBHOOK_PAYLOAD_RETENTION_DAYS\s*\)/);
   });

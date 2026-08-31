@@ -378,7 +378,7 @@ classés », ils tombent dans le défaut TERMINAL, donc ils brûlent les destina
 | Lot | Contenu | Migration | Ce que ça achète |
 |---|---|---|---|
 | ~~**1**~~ ✅ | Codes de plafond Meta + pause · écriture d'avance conditionnelle · recherche de connaissance mutualisée · refus explicite du 2e numéro | non | **FAIT le 2026-08-31.** Détail et limites dans `documentation.md` §Journal |
-| **2** | Rétention des conversations et analyses (12 mois) | oui | Ferme 5.2 pour de bon |
+| ~~**2**~~ ✅ | Rétention des conversations et analyses (365 j) | 0094 | **FAIT le 2026-08-31.** 5.2 est clos |
 | **3** | Registre de tâches du `worker.ts`, `register*Jobs` | non | Ranger AVANT d'y ajouter files et timers (lots 5 et 6) |
 | **4** | Throttle partagé par numéro, sur les 4 chemins d'envoi | à voir | Le prérequis de TOUTE concurrence |
 | **5** | Campagnes en lots courts, puis `groupId` + concurrence | non | Une campagne cesse d'être un job de 3 h |
@@ -403,8 +403,9 @@ nombre de process). Une demi-session, le jour où un deuxième worker est voulu.
   where id` nu. La course API/worker est atteignable dès aujourd'hui sur les rappels RCS. La recherche de
   connaissance est recopiée à l'identique entre production et bac à sable, et leurs erreurs ont déjà divergé :
   c'est le garde-fou anti-hallucination.
-- **Lot 2.** 12 mois, pas 3 : Julien a donné un PLANCHER de 3 mois (RGPD), et l'effacement est irréversible.
-  Quatre fois le plancher, une variable d'environnement pour descendre, dans ce sens-là sans danger.
+- **Lot 2.** ✅ 365 jours, pas 90 : Julien a donné un PLANCHER de 3 mois (RGPD), et l'effacement est
+  irréversible. Quatre fois le plancher, `CONVERSATION_RETENTION_DAYS` pour descendre, dans ce sens-là sans
+  danger. Messages et analyse partent par les cascades en base, prouvé en intégration.
 - **Lot 4.** Le limiteur est instancié PAR RUN (`run-job.ts`) : deux campagnes du même numéro ont deux budgets.
   Et les envois inbox, scénario et automation n'ont **aucun** limiteur. Version mono-worker d'abord (registre
   en mémoire par `phone_number_id`) ; distribué seulement au deuxième worker.

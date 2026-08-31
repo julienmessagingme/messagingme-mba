@@ -51,9 +51,9 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0093** (`webhook_events.phone_number_id` + index de date, la rétention RGPD des
-événements Meta bruts), passée le 2026-08-31 avec la séquence complète (build de l'image, vérification que la
-migration est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0094.** En pratique on applique
+**Dernière appliquée : 0094** (`conversations_last_message_idx`, l'index du balayage de rétention des
+conversations), passée le 2026-08-31 avec la séquence complète (build de l'image, vérification que la
+migration est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0095.** En pratique on applique
 aussi via `npm run migrate` en local (même Supabase prod).
 
 ⚠️ **Cette migration-là ÉTAIT bloquante pour le déploiement** : le code écrit `phone_number_id` à chaque

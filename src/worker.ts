@@ -871,6 +871,28 @@ async function main(): Promise<void> {
   const webhookEventsSweeper = setInterval(() => void webhookEventsSweep(), 60 * 60 * 1000);
   webhookEventsSweeper.unref();
 
+  // RGPD (PLAN.md 5.2, lot 2) : les CONVERSATIONS et, par cascade, leurs messages et leur analyse
+  // qualitative. C'est la rétention la plus lourde de conséquence du dépôt, parce qu'elle efface du contenu
+  // que le client voit dans son inbox : d'où une durée quatre fois supérieure au plancher demandé, et un
+  // journal qui dit combien sont parties à chaque passage.
+  //
+  // Toutes les 6 heures : la rétention se compte en mois, la minute de balayage n'a aucune importance, et
+  // l'effacement est borné par passage de toute façon.
+  const conversationSweep = async (): Promise<void> => {
+    try {
+      const n = await inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS);
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`conversation-retention-sweep: ${n} conversation(s) effacée(s) (rétention ${config.CONVERSATION_RETENTION_DAYS} j)`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('conversation-retention-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:conversation-retention', `conversation-retention-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void conversationSweep();
+  const conversationSweeper = setInterval(() => void conversationSweep(), 6 * 60 * 60 * 1000);
+  conversationSweeper.unref();
+
   // Déclencheur « X avant la date d'un champ » : le seul qui ne répond pas à un événement mais à
   // l'écoulement du temps. Il PUBLIE dans la file, il ne démarre rien : le scénario part par le chemin
   // commun, donc avec les mêmes garde-fous que les autres déclencheurs.

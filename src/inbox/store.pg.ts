@@ -325,6 +325,38 @@ export class PgInboxStore implements InboxStore {
     }));
   }
 
+  /**
+   * Purge par RÉTENTION des conversations (PLAN.md 5.2, lot 2). Supprime celles dont la DERNIÈRE ACTIVITÉ est
+   * plus vieille que `days`, tous espaces confondus, comme les autres balayages d'entretien.
+   *
+   * 🔴 Ce que ça emporte, et c'est voulu : les MESSAGES et l'ANALYSE qualitative de la conversation partent
+   * avec elle, par les cascades déjà déclarées en base (migrations 0009 et 0027), donc en une seule commande
+   * atomique. L'analyse est le pire de ce qu'on garde : son `topic` et sa `justification` sont du texte libre
+   * produit par un modèle à partir de ce que la personne a raconté.
+   *
+   * Ce que ça n'emporte PAS : la FICHE du contact. Une conversation périmée n'est pas un contact supprimé.
+   * L'effacement d'une personne, lui, passe par `purgeMany` du store de contacts, qui anonymise en plus.
+   *
+   * ⚠️ `days <= 0` DÉSACTIVE la purge. Sans ce test, `make_interval(days => 0)` viserait tout ce qui est
+   * antérieur à maintenant, c'est-à-dire l'intégralité des conversations.
+   *
+   * Effacement BORNÉ par passage : une première purge sur une base qui n'en a jamais eu peut viser beaucoup
+   * de lignes, et un `delete` unique tiendrait un verrou et gonflerait le WAL d'un coup. Le balayage repasse.
+   */
+  async purgeConversationsOlderThan(days: number, maxParPassage = 500): Promise<number> {
+    if (days <= 0) return 0;
+    const res = await this.pool.query(
+      `delete from conversations
+        where id in (
+          select id from conversations
+           where last_message_at < now() - make_interval(days => $1)
+           limit $2
+        )`,
+      [Math.floor(days), Math.max(1, maxParPassage)],
+    );
+    return res.rowCount ?? 0;
+  }
+
   /** Nombre de conversations NON LUES du tenant (pastille du menu). Requête dédiée : le menu est monté sur
    *  toutes les pages, il ne doit pas rapatrier 100 conversations pour afficher un nombre. */
   async countUnread(tenantId: string): Promise<number> {

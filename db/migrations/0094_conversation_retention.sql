@@ -1,0 +1,14 @@
+-- 0094_conversation_retention.sql — rendre la rétention des conversations balayable (PLAN.md 5.2, lot 2).
+--
+-- La purge cherche les conversations dont la DERNIÈRE ACTIVITÉ est plus vieille que la rétention, tous
+-- espaces confondus. Les index existants sur `last_message_at` ne servent pas ce besoin : celui de 0069 est
+-- préfixé par `tenant_id` (donc inutilisable pour un balayage transverse) et celui de 0027 est partiel sur
+-- `analysis_status = 'pending'`.
+--
+-- Posé AVANT que la table grossisse : un balayage sans index deviendrait un parcours complet toutes les six
+-- heures, exactement au moment où la table justifie enfin une purge.
+--
+-- ⚠️ Aucune colonne ajoutée, aucune donnée touchée. La suppression elle-même s'appuie sur les cascades
+-- DÉJÀ déclarées : `conversation_messages` (0009) et `conversation_analysis` (0027) partent avec leur
+-- conversation, par la base et non par du code applicatif.
+create index if not exists conversations_last_message_idx on conversations (last_message_at);

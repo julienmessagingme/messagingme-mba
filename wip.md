@@ -12,10 +12,11 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS : lot 2 du programme (`PLAN.md` § LE PROGRAMME)
+## EN COURS : rien
 
-Rétention des conversations et des analyses, 12 mois (plancher de 3 donné par Julien, quadruplé parce que
-l'effacement est irréversible). Migration + balayage, sur le patron de la rétention de `webhook_events`.
+Les lots 1 et 2 du programme (`PLAN.md` § LE PROGRAMME) sont livrés et déployés le 2026-08-31. Le suivant est
+le **lot 3** : registre de tâches du `worker.ts`, sans changement de comportement, avant que les lots 5 et 6
+n'y ajoutent des files et des timers.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 

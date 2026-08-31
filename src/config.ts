@@ -137,6 +137,20 @@ export const schema = z.object({
    * se remet alors à croître sans fin. Cf. migration 0093 et PLAN.md 5.2.
    */
   WEBHOOK_EVENTS_RETENTION_DAYS: z.coerce.number().default(30),
+  /**
+   * Jours de conservation des CONVERSATIONS (et, par cascade, de leurs messages et de leur analyse
+   * qualitative). 365 par défaut.
+   *
+   * 🔴 Le chiffre est une DÉCISION, pas un réglage technique. Julien a donné un PLANCHER de 3 mois
+   * (2026-08-31, motif RGPD) ; on prend quatre fois ce plancher, parce que la suppression est IRRÉVERSIBLE et
+   * qu'un an est la durée qu'on défend sans hésiter devant une DSI. Descendre est sans danger, remonter ne
+   * ressuscite rien.
+   *
+   * `0` désactive la purge. C'est un choix qu'il faut assumer : les conversations et leurs analyses (qui
+   * portent un `topic` et une `justification` en texte libre produits à partir de ce que la personne a
+   * raconté) sont alors gardées pour toujours.
+   */
+  CONVERSATION_RETENTION_DAYS: z.coerce.number().default(365),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

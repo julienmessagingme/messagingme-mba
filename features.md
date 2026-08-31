@@ -100,6 +100,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   Une action en masse (et l'import CSV) **ne déclenche aucun scénario** : poser un tag sur 5 000 contacts d'un coup
   ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages facturés. Seul un tag posé sur
   **une** fiche la déclenche. Pour toucher une liste entière, c'est la campagne.
+- ✅ **Les conversations sont conservées un an** (2026-08-31). Passé douze mois sans le moindre message, une
+  conversation est effacée automatiquement, avec ses messages et son analyse qualitative. La **fiche du
+  contact reste** : c'est l'historique de discussion qui part, pas la personne. Avant, tout était gardé
+  indéfiniment. Cette durée est un réglage de la plateforme : elle peut être raccourcie, jamais rallongée
+  rétroactivement, puisque ce qui est effacé ne revient pas.
 - ✅ **UN seul geste pour ajouter des contacts** (2026-08-20) : un bouton **« + Rajouter des contacts »** ouvre
   un menu à deux choix, **Ajouter un contact** ou **Importer un CSV**. Avant, les deux boutons se disputaient la
   barre à poids égal, alors qu'on cherche d'abord « en ajouter », la façon venant ensuite.

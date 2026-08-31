@@ -2080,6 +2080,32 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : LOT 2 du programme, la rétention des conversations (migration 0094)
+
+La moitié restante de 5.2. Les conversations, leurs messages et leur analyse qualitative étaient gardés POUR
+TOUJOURS. L'analyse est le pire de ce qu'on garde : son `topic` et sa `justification` sont du texte libre
+produit par un modèle à partir de ce que la personne a raconté.
+
+**365 jours, et le chiffre est une décision, pas un réglage.** Julien a donné un PLANCHER de 3 mois
+(motif RGPD) ; on prend quatre fois ce plancher, parce que la suppression est IRRÉVERSIBLE et qu'un an est la
+durée qu'on défend sans hésiter devant une DSI. Descendre est sans danger, remonter ne ressuscite rien.
+
+**Ce que la purge emporte, et par quel mécanisme** : les messages et l'analyse partent avec la conversation
+**par les cascades DÉJÀ déclarées en base** (0009 et 0027), donc en une commande atomique, sans une ligne de
+code applicatif. C'est pour ça que le test est en INTÉGRATION : un faux store rendrait ce qu'on lui fait
+rendre, et le jour où une cascade manquerait, il resterait du texte libre orphelin et invisible.
+
+**Ce qu'elle n'emporte PAS** : la FICHE du contact. Une conversation périmée n'est pas un contact supprimé.
+L'effacement d'une personne reste `purgeMany`, qui anonymise en plus.
+
+⚠️ Deux gardes testées explicitement, dans ce sens-là : `0` DÉSACTIVE la purge (sans le test,
+`make_interval(days => 0)` viserait tout ce qui est antérieur à maintenant, donc TOUTES les conversations de
+TOUS les clients), et l'effacement est BORNÉ par passage (500), le balayage repassant toutes les 6 heures.
+
+La migration n'ajoute qu'un INDEX : les index existants sur `last_message_at` ne servaient pas ce besoin (celui
+de 0069 est préfixé par `tenant_id`, celui de 0027 est partiel sur `analysis_status = 'pending'`).
+
+---
 ## DEPLOYE le 2026-08-31 : LOT 1 du programme, quatre choses qui cassaient déjà (aucune migration)
 
 ### Un plafond Meta brûlait l'audience restante d'une campagne
