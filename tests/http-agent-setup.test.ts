@@ -66,6 +66,7 @@ function app(opts: {
   sansEntretiens?: boolean;
   entretien?: EntretienComplet | null;
   sansFiches?: boolean;
+  sansVision?: boolean;
   fiches?: Array<{ titre: string; corps: string }>;
 } = {}) {
   const cap = { appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }> };
@@ -95,6 +96,7 @@ function app(opts: {
       },
     }),
     modele: opts.sansModele ? '' : 'modele-de-construction',
+    ...(opts.sansVision ? {} : { modeleVision: 'modele-de-vision' }),
   };
   return { cap, entretiens, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentSetup: deps }) };
 }
@@ -414,15 +416,30 @@ describe('conversation de construction', () => {
       expect(a.entretiens.ecrits).toEqual([]); // rien n'entre dans l'entretien persisté
     });
 
-    it('sans modèle, une image est refusée en 503 ; un document texte passe quand même', async () => {
-      // La lecture d'image dépend du modèle, l'extraction d'un document non : les deux ne tombent pas ensemble.
+    it('🔴 sans modèle de VISION, une image est refusée en 503 ; un document passe quand même', async () => {
+      // Mesuré le 2026-08-31 : `zai/glm-4.7`, le modèle d'entretien de la production, REFUSE une part
+      // `image_url` avec un 400 au corps vide. Réutiliser le modèle d'entretien aurait livré une pièce jointe
+      // image morte, avec une erreur illisible. Les deux modèles sont donc distincts, et l'absence de vision
+      // ne fait pas tomber l'extraction d'un document, qui n'a besoin d'aucun modèle.
       const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
-      const sansModele = app({ sansModele: true });
-      expect((await sansModele.srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'x', dataUrl: png } })).statusCode).toBe(503);
-      const doc = await app({ sansModele: true }).srv.inject({
+      const sansVision = app({ sansVision: true });
+      const refus = await sansVision.srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'x', dataUrl: png } });
+      expect(refus.statusCode).toBe(503);
+      expect(refus.json().error).toContain('vision');
+      expect(sansVision.cap.appels).toHaveLength(0); // on n'appelle RIEN, on refuse d'emblée
+      const doc = await app({ sansVision: true }).srv.inject({
         method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Guide', dataUrl: dataUrl(document) },
       });
       expect(doc.statusCode).toBe(201);
+    });
+
+    it('🔴 l’image part au modèle de VISION, pas à celui de l’entretien', async () => {
+      const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
+      const a = app({
+        reponse: { texte: 'Tarifs : 45 euros par mois pour l abonnement mensuel complet.', appelsOutils: [], finish: 'stop', usage: { tokensIn: 9, tokensOut: 4, coutDollars: 0 }, generationId: 'g' },
+      });
+      await a.srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Grille', dataUrl: png } });
+      expect(a.cap.appels[0]!.modele).toBe('modele-de-vision');
     });
 
     it('sans écriture de fiche câblée, la route rend 503 plutôt qu’un import qui ne stocke rien', async () => {

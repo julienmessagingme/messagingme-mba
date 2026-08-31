@@ -50,6 +50,14 @@ export interface AgentSetupRouteDeps {
   /** Modèle de l'IA de CONSTRUCTION. À ne pas confondre avec celui de l'agent : celui-ci tourne rarement et
    *  joue le rôle le plus dur, celui-là répond à chaque message d'un contact. */
   modele: string;
+  /**
+   * Modèle qui LIT LES IMAGES jointes. Vide = les images sont refusées, les documents passent quand même.
+   *
+   * 🔴 Séparé du modèle d'entretien, et ce n'est pas de la précaution : mesuré le 2026-08-31, `zai/glm-4.7`
+   * (celui de la production) REFUSE une part `image_url` avec un 400 au corps vide. Réutiliser le modèle
+   * d'entretien aurait livré une pièce jointe image morte, avec une erreur illisible.
+   */
+  modeleVision?: string;
 }
 
 const corpsSchema = z.object({
@@ -71,9 +79,9 @@ const CONSIGNE_IMAGE = 'Relève TOUT le texte lisible de cette image, tel quel, 
   + 'qu’elle montre, sans plus.';
 
 /** Lit une image par le modèle et rend son texte. Isolé pour que la route reste lisible. */
-async function lireImage(deps: AgentSetupRouteDeps, dataUrl: string, nom: string): Promise<string | null> {
+async function lireImage(deps: AgentSetupRouteDeps, modele: string, dataUrl: string, nom: string): Promise<string | null> {
   const r = await deps.completer!({
-    modele: deps.modele,
+    modele,
     messages: [{
       role: 'user',
       content: [
@@ -184,11 +192,14 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     let texte: string | null;
     if (reconnu.nature === 'image') {
-      if (!deps.completer || deps.modele.trim() === '') {
-        return reply.code(503).send({ error: 'lecture d’image indisponible (aucun modèle configuré)' });
+      // Refus EXPLICITE plutôt qu'un appel voué à un 400 illisible : sans modèle de vision, on le dit, et les
+      // documents continuent de passer par ailleurs (ils n'ont besoin d'aucun modèle).
+      const vision = (deps.modeleVision ?? '').trim();
+      if (!deps.completer || vision === '') {
+        return reply.code(503).send({ error: 'lecture d’image indisponible sur ce serveur (aucun modèle de vision configuré) ; les documents texte, PDF et Word passent quand même' });
       }
       try {
-        texte = await lireImage(deps, parse.data.dataUrl, parse.data.nom);
+        texte = await lireImage(deps, vision, parse.data.dataUrl, parse.data.nom);
       } catch (err) {
         return reply.code(502).send({ error: `l’image n’a pas pu être lue : ${err instanceof Error ? err.message : 'erreur inconnue'}` });
       }

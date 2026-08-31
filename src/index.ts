@@ -696,6 +696,10 @@ async function main(): Promise<void> {
       entretiens: new PgEntretienStore(pool),
       ...(gateway ? { completer: (i: Parameters<GatewayChatClient['completer']>[0]) => gateway.completer(i) } : {}),
       modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
+      // Le modele de VISION est distinct : mesure du 2026-08-31, `zai/glm-4.7` (le modele d entretien de la
+      // production) refuse une part image en 400. Vide -> les images sont refusees explicitement, les
+      // documents continuent de passer.
+      modeleVision: config.AGENT_VISION_MODEL,
     },
     // Le BAC A SABLE : parler a son agent depuis la console avant de l activer. Il fait tourner le VRAI
     // cerveau (vrai prompt, vrais outils exposes, VRAIE recherche de connaissance), mais les outils a EFFET

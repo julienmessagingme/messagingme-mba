@@ -212,6 +212,19 @@ export const schema = z.object({
    */
   AGENT_SETUP_MODEL: z.string().default(''),
   /**
+   * Modèle qui LIT LES IMAGES jointes à la conversation de construction.
+   *
+   * 🔴 SÉPARÉ de `AGENT_SETUP_MODEL`, et mesuré le 2026-08-31 : `zai/glm-4.7`, le modèle d'entretien de la
+   * production, REFUSE une part `image_url` avec un 400 au corps vide. Réutiliser le modèle d'entretien aurait
+   * donc livré une pièce jointe image morte, en rendant une erreur que personne n'aurait su lire. Ce sont deux
+   * métiers différents : l'un mène un entretien en français sur des dizaines de tours, l'autre relève du texte
+   * sur une image, une fois. Rien n'oblige le même modèle à être bon aux deux, ni à être choisi pour les deux.
+   *
+   * VIDE = les images sont refusées explicitement (les documents, eux, continuent de passer : ils n'ont besoin
+   * d'aucun modèle). C'est un refus clair, pas une panne. Vérifié bon : `google/gemini-2.5-flash`.
+   */
+  AGENT_VISION_MODEL: z.string().default(''),
+  /**
    * Modele donne a un agent NEUF, c est-a-dire celui qui tournera a chaque message d un contact.
    *
    * 🔴 IL NE DOIT PAS RETOMBER SUR `LLM_MODEL`, et c est pour ca que cette variable existe. `LLM_MODEL` est
