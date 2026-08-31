@@ -11,28 +11,27 @@ aucun ne casse, ils se relisent à la source le jour où on ouvre le fichier con
 **Faits le 2026-08-31 :** **R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué), **R1-bis** (le
 verrou d'exécution par campagne, migration 0089), **R13** (arrêter une campagne lancée), **R4** (un
 déploiement ne gèle plus une campagne : balayage de reprise, bail court renouvelé, drapeau d'arrêt,
-`stop_grace_period`) et **R10 + J2** (le rappel « avant date » ne part plus deux fois : claim conditionnel sur
-le marqueur d'occurrence, dans le runner). Détail dans `documentation.md` §Journal des lots livrés.
+`stop_grace_period`), **R10 + J2** (le rappel « avant date » ne part plus deux fois : claim conditionnel sur
+le marqueur d'occurrence, dans le runner), puis **R9** (import CSV) et **R7** (compteurs de l'inbox). Détail
+dans `documentation.md` §Journal des lots livrés.
 
-**Il ne reste donc que deux constats, tous deux 🟠**, plus R11+J3 qui est sans objet tant qu'un seul worker
-tourne.
+**Il ne reste donc AUCUN constat rouge ni orange de cet audit.** R11+J3 reste ouvert, sans objet tant qu'un
+seul worker tourne, et deux leviers ont été laissés SCIEMMENT, avec leur condition de déclenchement :
 
-- 🟠 **R9. Le mur de l'import CSV tombe au CHOIX du fichier, pas à l'import.**
-  L'aperçu (`web/lib/api.ts:248` vers `src/http/import.ts:119`) envoie le CSV ENTIER pour n'en extraire
-  que les en-têtes et quatre lignes, et la route d'import ne relève pas le `bodyLimit` global de 1 Mo
-  (`src/server.ts:207`), alors que flows, media, workflows et rcs le font. Au-delà d'environ 14 000 lignes
-  c'est un 413 avec le message anglais brut de Fastify. Deux correctifs courts : ne transmettre que les
-  premiers kilo-octets à l'aperçu, et poser un `bodyLimit` dédié avec un message explicite en français.
-  L'upsert par lots et la file pg-boss d'import sont VOLONTAIREMENT laissés : le nombre d'allers-retours
-  ne gêne personne au volume actuel, et le pool ne connaît pas de famine (une requête en vol par import).
-
-- 🟠 **R7. Le compteur de non-lus interroge la base pour chaque utilisateur, toutes les 30 secondes.**
-  `countUnread` (`src/inbox/store.pg.ts:330`) compte avec un `exists` corrélé sur TOUTES les conversations
-  du tenant, et l'index de `conversation_messages` ne porte pas `direction`. La pastille est montée sur
-  TOUTES les pages et pour tous les rôles (`web/components/AppShell.tsx:160`), donc les 25 utilisateurs
-  d'un même client font 25 fois la même requête. Un micro-cache serveur par tenant de 5 à 10 secondes les
-  mutualise en une seule. C'est le seul point de R7 retenu : la colonne `unread` dénormalisée, le jitter
-  et le delta `?after=` du fil sont laissés à l'audit, ils ne se paient qu'à la cible.
+- **La file pg-boss d'import** (R9, point 4). Une fois l'écriture groupée par lots de 500, un fichier de
+  150 000 lignes, soit le plafond de corps de la route, tient en quelques centaines d'allers-retours : le
+  timeout de 100 s de Cloudflare n'est plus approché, et c'était toute la raison d'être de la file. La poser
+  coûterait une table de suivi, une file de plus, un écran qui interroge l'avancement, et un endroit où
+  garer 8 Mo de CSV (une charge de job pg-boss est une ligne jsonb, ce n'est pas cet endroit-là). **À
+  rouvrir si** un client importe régulièrement au-delà de la centaine de milliers de lignes.
+- **La colonne `unread` dénormalisée** (R7, point 3). Le comptage reste en O(conversations de l'espace),
+  mais l'index partiel (0092) le ramène à une sonde d'index par conversation, et le micro-cache le fait
+  payer une fois pour tous les utilisateurs d'un même client. La colonne serait le vrai O(1), au prix d'une
+  valeur maintenue à chaque écriture, donc capable de mentir. **À rouvrir si** un espace dépasse la dizaine
+  de milliers de conversations, ou si le comptage se voit dans les temps de réponse.
+- **Le polling du fil ouvert, toutes les 4 secondes**, reste la charge de lecture dominante de l'inbox, et
+  aucun des quatre correctifs de R7 ne la touche (l'audit ne le demandait pas non plus). Le vrai remède est
+  un delta `?after=` ou du SSE. **À rouvrir avant** de dépasser la dizaine de clients simultanément actifs.
 
 - 🔲 **R11 + J3. Les deux prérequis à lever AVANT tout second worker** (sans objet aujourd'hui, le compose
   fige une instance). `advance` (`src/workflow/executor.ts:1135`) lit le run puis écrit par un `setState`

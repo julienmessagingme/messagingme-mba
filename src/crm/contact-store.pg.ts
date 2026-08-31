@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { ContactStore, ContactUpsert } from './import';
+import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';
 
 export interface ContactRow {
@@ -133,8 +133,81 @@ export class PgContactStore implements ContactStore {
     return { id: row.id, created: row.created };
   }
 
+  /** Forme UN contact du même upsert. Sert aux tests d'intégration, qui vérifient les règles de fusion
+   *  (merge jsonb, opt-in qui ne régresse pas, union des tags) sur un contact à la fois. */
   async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> {
     return (await this.upsertByPhoneReturningId(c)).created ? 'created' : 'updated';
+  }
+
+  /**
+   * Upsert d'un LOT en UNE requête (AUDIT-SCALE-2026-08-25.md, R9). Mêmes règles d'écriture que
+   * `upsertByPhoneReturningId`, ligne pour ligne : fusion jsonb des champs, nom conservé s'il n'en arrive pas
+   * de nouveau, opt-in qui ne régresse jamais, union des tags, résurrection d'un contact supprimé.
+   *
+   * Le lot voyage en UN seul paramètre JSON (`jsonb_to_recordset`) plutôt qu'en trois tableaux parallèles :
+   * un tableau de fragments JSON devrait être échappé comme littéral de tableau Postgres, et la moindre
+   * valeur contenant une accolade ou une virgule y est un piège.
+   *
+   * 🔴 DÉDUPLICATION OBLIGATOIRE dans le lot : Postgres refuse qu'un `on conflict do update` touche deux fois
+   * la même ligne dans la même commande (« cannot affect row a second time »), et un CSV a des doublons. On
+   * fusionne donc les occurrences d'un même numéro AVANT d'écrire, sur la règle exacte qu'appliquait
+   * l'écriture ligne à ligne : la ligne suivante écrase les mêmes clés de champs, et un nom non vide gagne.
+   */
+  async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
+    if (lot.contacts.length === 0) return [];
+
+    const fusion = new Map<string, ContactDeLot>();
+    const premiereApparition = new Map<string, number>();
+    lot.contacts.forEach((c, i) => {
+      const deja = fusion.get(c.phoneE164);
+      if (!deja) {
+        fusion.set(c.phoneE164, { ...c, fields: { ...c.fields } });
+        premiereApparition.set(c.phoneE164, i);
+        return;
+      }
+      Object.assign(deja.fields, c.fields);
+      if (c.profileName !== null) deja.profileName = c.profileName;
+    });
+
+    const lignes = [...fusion.values()].map((c) => ({
+      phone: c.phoneE164,
+      nom: c.profileName,
+      champs: c.fields,
+    }));
+
+    const res = await this.pool.query<{ phone_e164: string; created: boolean }>(
+      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags)
+       -- Chaque paramètre est CASTÉ explicitement : dans un « insert ... select », Postgres ne déduit pas
+       -- toujours le type d'un paramètre depuis la colonne visée, et refuse alors la requête entière.
+       -- Alias « l » et non « t » : la clause de conflit plus bas utilise déjà « t » pour son unnest.
+       select $1::uuid, l.phone, l.nom, coalesce(l.champs, '{}'::jsonb), $2::text, $3::text, $4::text[]
+       from jsonb_to_recordset($5::jsonb) as l(phone text, nom text, champs jsonb)
+       on conflict (tenant_id, phone_e164) where phone_e164 is not null
+       do update set
+         fields = contacts.fields || excluded.fields,
+         profile_name = coalesce(excluded.profile_name, contacts.profile_name),
+         opt_in_status = case
+           when excluded.opt_in_status = 'opted_in' then 'opted_in'
+           else contacts.opt_in_status
+         end,
+         opt_in_source = coalesce(excluded.opt_in_source, contacts.opt_in_source),
+         tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
+         deleted_at = null,
+         updated_at = now()
+       returning phone_e164, (xmax = 0) as created`,
+      // `bsuid` n'est PAS dans les colonnes écrites : un import n'en porte jamais, et ne pas y toucher
+      // préserve l'identifiant d'un contact arrivé par l'inbound sans numéro partagé (même intention que le
+      // `coalesce` de l'upsert unitaire, obtenue ici en n'écrivant pas la colonne du tout).
+      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes)],
+    );
+
+    const creePar = new Map(res.rows.map((r) => [r.phone_e164, r.created] as const));
+    // Un numéro en double ne peut être « créé » qu'à sa PREMIÈRE apparition : les suivantes sont, comme
+    // avant, comptées en mises à jour. Sans ce test, un fichier qui répète cinq fois le même contact
+    // annoncerait cinq créations pour une seule personne.
+    return lot.contacts.map((c, i) =>
+      creePar.get(c.phoneE164) === true && premiereApparition.get(c.phoneE164) === i ? 'created' : 'updated',
+    );
   }
 
   /** Contact ACTIF par téléphone E.164 exact (tenant scopé). null si absent OU supprimé (soft-delete) : un

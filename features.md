@@ -128,6 +128,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   téléphone est normalisé en E.164 et **une colonne Téléphone est obligatoire** (c'est la clé du contact). On pose
   l'opt-in et des tags pour tout le lot, et l'import rend un compte rendu (créés / mis à jour / ignorés, avec le
   motif des lignes en erreur).
+  **Gros fichiers (2026-08-31)** : un CSV allant jusqu'à environ 150 000 contacts passe désormais en un seul
+  import, là où le choix du fichier échouait déjà vers 14 000 lignes. Au-delà d'environ 8 000 lignes, le nombre
+  de lignes annoncé avant l'import devient une **estimation**, affichée avec un « ≈ » (l'écran n'analyse plus
+  que le début du fichier) ; le compte rendu final, lui, reste exact. Un fichier encore plus gros est refusé par
+  un message **en français** qui dit quoi faire : le découper.
 - ✅ **Fiche contact éditable** : sur la fiche, on **modifie ou supprime** la valeur de chaque champ perso en
   place, et on édite le **Nom** et le **Prénom**. Le **téléphone et le BSUID restent en lecture seule** (ce sont
   les identités qui routent les messages WhatsApp). Un champ « orphelin » (dont la définition a été supprimée)
@@ -690,6 +695,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   compteur dit le vrai total.
 
 
+- ✅ **Les compteurs tiennent à plusieurs sur le même espace** (2026-08-31) : la pastille de non-lus et le
+  compteur « À traiter » sont calculés une fois pour tout l'espace pendant quelques secondes, au lieu d'une
+  fois par personne connectée. Rien ne change à l'écran, sauf que la console ne ralentit plus quand toute une
+  équipe l'ouvre en même temps. Ouvrir un fil éteint la pastille **immédiatement**, sans attendre.
 - ✅ **Qui répond à ce client, à cet instant** (2026-07-21). Une conversation appartient à un seul
   répondeur à la fois : le **scénario** (automatique), un **opérateur** (quelqu'un s'en occupe), ou
   demain l'**agent de Meta**. Un badge le dit dans la liste et dans le fil, et n'apparaît que quand ce

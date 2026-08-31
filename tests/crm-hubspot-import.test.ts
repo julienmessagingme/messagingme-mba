@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, flagContactUnreachable, ReconsentRequiredError, HubspotServiceError } from '../src/crm/hubspot-service';
 import { signRequest } from '../src/lib/signature';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
-import type { ContactStore, ContactUpsert } from '../src/crm/import';
+import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
 
@@ -18,7 +18,21 @@ class FakeTransport implements HttpTransport {
 }
 class FakeContactStore implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
-  async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> { this.upserts.push(c); return 'created'; }
+  async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
+    // Le lot est re-deplie en upserts unitaires : c'est cette forme que les tests inspectent.
+    for (const c of lot.contacts) {
+      this.upserts.push({
+        tenantId: lot.tenantId,
+        phoneE164: c.phoneE164,
+        profileName: c.profileName,
+        fields: c.fields,
+        optInStatus: lot.optInStatus,
+        ...(lot.optInSource ? { optInSource: lot.optInSource } : {}),
+        ...(lot.tags ? { tags: lot.tags } : {}),
+      });
+    }
+    return lot.contacts.map(() => 'created');
+  }
 }
 class FakeFieldStore implements UserFieldStore {
   readonly defs: UserFieldDef[] = [];

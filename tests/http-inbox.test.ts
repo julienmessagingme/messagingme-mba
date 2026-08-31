@@ -325,6 +325,39 @@ describe('inbox : conversations non lues', () => {
     await a.close();
   });
 
+  /**
+   * Micro-cache des compteurs (AUDIT-SCALE-2026-08-25.md, R7). Les 25 personnes d'un même client
+   * interrogent la pastille toutes les 30 s depuis toutes les pages : sans mutualisation, c'est 25 fois le
+   * même comptage sur TOUTES les conversations de l'espace.
+   */
+  it('plusieurs relectures rapprochées du compteur -> UN seul comptage en base', async () => {
+    let comptages = 0;
+    const a = app({ countUnread: async () => { comptages += 1; return 7; } });
+    const lire = async (): Promise<number> =>
+      (await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() })).json<{ count: number }>().count;
+    expect([await lire(), await lire(), await lire()]).toEqual([7, 7, 7]);
+    expect(comptages).toBe(1);
+    await a.close();
+  });
+
+  it('marquer un fil comme lu -> le compteur suivant RECOMPTE (la pastille retombe tout de suite)', async () => {
+    let restants = 7;
+    let comptages = 0;
+    const a = app({
+      countUnread: async () => { comptages += 1; return restants; },
+      markConversationRead: async () => { restants -= 1; },
+    });
+    const lire = async (): Promise<number> =>
+      (await a.inject({ method: 'GET', url: '/tenants/t1/conversations/unread-count', ...auth() })).json<{ count: number }>().count;
+    expect(await lire()).toBe(7);
+    expect((await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/read', ...auth() })).statusCode).toBe(200);
+    // Sans invalidation, l'écran afficherait encore 7 pendant toute la durée de vie du cache, alors que
+    // l'opérateur vient justement d'ouvrir le fil : le cache ferait le bug qu'il est censé ne pas créer.
+    expect(await lire()).toBe(6);
+    expect(comptages).toBe(2);
+    await a.close();
+  });
+
   it('POST read -> marque le fil lu, scopé au tenant du jeton', async () => {
     const lus: Array<[string, string]> = [];
     const a = app({ markConversationRead: async (t, c) => { lus.push([t, c]); } });

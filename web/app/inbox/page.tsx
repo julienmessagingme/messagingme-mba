@@ -11,6 +11,7 @@ import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
+import { repeterAvecGigue } from '@/lib/poll';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import {
@@ -226,9 +227,9 @@ function InboxInner({ session }: { session: Session }) {
   // reload immédiat au retour de focus. Réutilise l'endpoint existant, aucun changement backend.
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') void reload(); };
-    const id = setInterval(tick, 15000);
+    const arreter = repeterAvecGigue(tick, 15000);
     document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+    return () => { arreter(); document.removeEventListener('visibilitychange', tick); };
   }, [reload]);
 
   // Le filtre est appliqué par le SERVEUR (`reload` le passe en paramètre) : la liste reçue est déjà la bonne.
@@ -565,9 +566,9 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   // conversation (key=selected.id), donc l'interval se recrée proprement à chaque changement de conversation.
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') void load(); };
-    const id = setInterval(tick, 4000);
+    const arreter = repeterAvecGigue(tick, 4000);
     document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', tick); };
+    return () => { arreter(); document.removeEventListener('visibilitychange', tick); };
   }, [load]);
 
   useEffect(() => {

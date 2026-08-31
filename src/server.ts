@@ -222,6 +222,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     if (err instanceof FlowJsonInvalidError) {
       return reply.code(422).send({ error: err.message.slice(0, 200) });
     }
+    // Corps trop gros : Fastify répond « Request body is too large », en anglais et sans dire quoi faire.
+    // C'est le mur que rencontre un opérateur qui importe un gros CSV (AUDIT-SCALE-2026-08-25.md, R9) : le
+    // message doit être en français, et surtout dire l'issue (couper le fichier), pas seulement le refus.
+    if (err.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      return reply.code(413).send({ error: 'Fichier trop volumineux pour un seul envoi. Découpe-le en plusieurs fichiers plus petits et recommence.' });
+    }
     const code = err.statusCode ?? 500;
     // JOURNALISER AVANT DE MASQUER. Le corps renvoyé au client reste volontairement opaque sur les 5xx (pas
     // de fuite d'interne), mais l'exception doit laisser une trace exploitable côté serveur : sans ça, une

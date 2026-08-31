@@ -224,7 +224,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
         </button>
       </div>
       <p className="mt-1 text-xs text-ink-500">
-        {preview.headers.length} {t('colonnes', 'columns')} · {preview.rowCount} {t('lignes.', 'rows.')} <b>{t('Coche les colonnes à importer', 'Check the columns to import')}</b> {t('et associe chacune à un champ.', 'and map each one to a field.')} <b>{includedCount}</b> {t(`cochée${includedCount > 1 ? 's' : ''}`, 'checked')}.
+        {preview.headers.length} {t('colonnes', 'columns')} · {preview.estime ? '≈ ' : ''}{preview.rowCount} {t('lignes.', 'rows.')} <b>{t('Coche les colonnes à importer', 'Check the columns to import')}</b> {t('et associe chacune à un champ.', 'and map each one to a field.')} <b>{includedCount}</b> {t(`cochée${includedCount > 1 ? 's' : ''}`, 'checked')}.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -317,8 +317,8 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
         {busy
           ? t('Import en cours...', 'Importing...')
           : t(
-              `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`,
-              `Import ${includedCount} column${includedCount > 1 ? 's' : ''} and ${preview.rowCount} row${preview.rowCount > 1 ? 's' : ''}`,
+              `Importer ${includedCount} colonne${includedCount > 1 ? 's' : ''} et ${preview.estime ? '≈ ' : ''}${preview.rowCount} ligne${preview.rowCount > 1 ? 's' : ''}`,
+              `Import ${includedCount} column${includedCount > 1 ? 's' : ''} and ${preview.estime ? '≈ ' : ''}${preview.rowCount} row${preview.rowCount > 1 ? 's' : ''}`,
             )}
       </button>
     </section>

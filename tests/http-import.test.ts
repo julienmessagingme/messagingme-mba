@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { ContactStore, ContactUpsert } from '../src/crm/import';
+import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
 
@@ -20,9 +20,22 @@ const asAgent = () => ({ headers: { 'content-type': 'application/json', authoriz
 
 class FakeContacts implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
-  async upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'> {
-    this.upserts.push(c);
-    return 'created';
+  /** Nombre de lots recus : un import ne doit plus faire une requete par ligne (R9). */
+  lots = 0;
+  async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
+    this.lots += 1;
+    for (const c of lot.contacts) {
+      this.upserts.push({
+        tenantId: lot.tenantId,
+        phoneE164: c.phoneE164,
+        profileName: c.profileName,
+        fields: c.fields,
+        optInStatus: lot.optInStatus,
+        ...(lot.optInSource ? { optInSource: lot.optInSource } : {}),
+        ...(lot.tags ? { tags: lot.tags } : {}),
+      });
+    }
+    return lot.contacts.map(() => 'created');
   }
 }
 class FakeFields implements UserFieldStore {
@@ -341,6 +354,55 @@ Marc,0622222222`;
     const app = inject(new FakeContacts(), new FakeFields(), undefined, journal);
     expect((await app.inject({ method: 'POST', url: '/tenants/t1/contacts/import', ...auth(), payload: { csv: '' } })).statusCode).toBe(400);
     expect(journal).toEqual([]);
+    await app.close();
+  });
+});
+
+/**
+ * Le mur du volume (AUDIT-SCALE-2026-08-25.md, R9). Le plafond de corps GLOBAL est de 1 Mo et la route
+ * d'import ne le relevait pas : au-delà d'environ 14 000 lignes, l'opérateur recevait un 413 au message
+ * anglais brut de Fastify, sans savoir quoi faire. Deux garanties ici : la route d'import accepte
+ * beaucoup plus que le plafond global, et le refus, quand il tombe, est en français et dit l'issue.
+ */
+describe('import : plafond de corps dédié et refus lisible', () => {
+  /** CSV synthétique d'environ `mo` mégaoctets (en-tête + lignes de ~40 caractères). */
+  function gros(mo: number): string {
+    const lignes = ['Nom,Telephone'];
+    for (let i = 0; lignes.length * 26 < mo * 1024 * 1024; i += 1) {
+      lignes.push(`Nom${String(i).padStart(7, '0')},+336${String(i).padStart(8, '0')}`);
+    }
+    return lignes.join('\n');
+  }
+
+  it('CSV de 2 Mo -> importé (le plafond global de 1 Mo ne s\'applique plus à cette route)', async () => {
+    const contacts = new FakeContacts();
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      ...auth(),
+      payload: { csv: gros(2), optIn: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ created: number }>().created).toBeGreaterThan(50_000);
+    // Et l'écriture reste groupée : des dizaines de milliers de lignes, quelques centaines de requêtes.
+    expect(contacts.lots).toBeLessThan(200);
+    await app.close();
+  });
+
+  it('corps qui dépasse le plafond de l\'aperçu -> 413 avec un message EN FRANÇAIS qui dit quoi faire', async () => {
+    const app = inject(new FakeContacts(), new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import/preview',
+      ...auth(),
+      payload: { csv: gros(3) },
+    });
+    expect(res.statusCode).toBe(413);
+    const message = res.json<{ error: string }>().error;
+    expect(message).toContain('trop volumineux');
+    expect(message).toContain('Découpe');
+    expect(message).not.toContain('body'); // plus le « Request body is too large » de Fastify
     await app.close();
   });
 });

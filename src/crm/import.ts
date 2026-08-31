@@ -21,15 +21,50 @@ export interface ContactUpsert {
   bsuid?: string | null;
 }
 
+/**
+ * Ce qui VARIE d'une ligne à l'autre dans un import. L'espace, le consentement et les tags valent pour tout
+ * le lot : les répéter par ligne enverrait cinq mille fois la même valeur sur le fil.
+ */
+export interface ContactDeLot {
+  phoneE164: string;
+  profileName: string | null;
+  fields: Record<string, string>;
+}
+
+/** Un lot d'import : un espace, un consentement, un jeu de tags, et les gens. */
+export interface LotContacts {
+  tenantId: string;
+  /** Ces contacts sont-ils opt-in ? Vaut pour tout le lot (la case cochée à l'écran d'import). */
+  optInStatus: 'opted_in' | 'unknown';
+  optInSource?: string;
+  /** Tags appliqués à TOUS les contacts du lot (union avec l'existant, jamais d'écrasement). */
+  tags?: string[];
+  contacts: ContactDeLot[];
+}
+
 export interface ContactStore {
   /**
-   * Upsert par (tenant, téléphone). Retourne s'il a été créé ou mis à jour.
+   * Upsert d'un LOT de contacts par (tenant, téléphone), en UNE requête (AUDIT-SCALE-2026-08-25.md, R9).
+   *
    * ⚠️ `fields` est un PATCH À FUSIONNER (merge, pas replace) : côté SQL, faire
-   * `fields = contacts.fields || $new` (jsonb) pour ne PAS écraser les champs perso
-   * déjà présents et absents du CSV courant. Le CSV ne porte que les clés non vides.
+   * `fields = contacts.fields || excluded.fields` (jsonb) pour ne PAS écraser les champs perso déjà présents
+   * et absents du CSV courant. Le CSV ne porte que les clés non vides.
+   *
+   * Rend un résultat PAR CONTACT DONNÉ, dans l'ordre reçu : c'est ce qui permet au rapport d'import de
+   * compter juste, y compris quand le même numéro apparaît plusieurs fois dans le fichier (une seule
+   * création possible, les suivantes sont des mises à jour).
    */
-  upsertByPhone(c: ContactUpsert): Promise<'created' | 'updated'>;
+  upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>>;
 }
+
+/**
+ * Taille d'un lot d'upsert. 500 lignes en une requête plutôt qu'une requête par ligne : à 11 ms
+ * d'aller-retour mesurés vers le pooler, un fichier de 50 000 contacts passe de neuf minutes (donc un
+ * timeout Cloudflare à 100 s, et un opérateur qui voit une erreur pendant que le serveur travaille encore)
+ * à une centaine de requêtes. Pas 5000 : au-delà, un lot fait une requête énorme dont l'échec coûte cher à
+ * rejouer, sans gagner grand-chose sur le nombre d'allers-retours.
+ */
+const TAILLE_LOT = 500;
 
 export interface ImportInput {
   rows: Array<Record<string, string>>;
@@ -84,7 +119,9 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     }
   }
 
-  // 2) Traiter chaque ligne.
+  // 2) Traiter chaque ligne : validation ligne à ligne (elle produit le rapport d'erreurs), puis
+  //    accumulation. L'écriture, elle, se fait par LOTS plus bas.
+  const aEcrire: ContactDeLot[] = [];
   for (let i = 0; i < input.rows.length; i += 1) {
     const row = input.rows[i] ?? {};
     let phoneRaw = '';
@@ -124,17 +161,23 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
       continue;
     }
 
-    const res = await deps.contacts.upsertByPhone({
-      tenantId: input.tenantId,
-      phoneE164: p.e164,
-      profileName,
-      fields,
-      optInStatus: input.optIn ? 'opted_in' : 'unknown',
-      ...(input.optIn ? { optInSource: input.optInSource ?? 'csv_import' } : {}),
-      ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
-    });
-    if (res === 'created') report.created += 1;
-    else report.updated += 1;
+    aEcrire.push({ phoneE164: p.e164, profileName, fields });
+  }
+
+  // 3) Écrire par lots. Chaque lot est une requête indépendante : un échec en cours de route laisse en base
+  //    ce que les lots précédents ont écrit, exactement comme le faisait l'écriture ligne à ligne.
+  const commun = {
+    tenantId: input.tenantId,
+    optInStatus: (input.optIn ? 'opted_in' : 'unknown') as 'opted_in' | 'unknown',
+    ...(input.optIn ? { optInSource: input.optInSource ?? 'csv_import' } : {}),
+    ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
+  };
+  for (let d = 0; d < aEcrire.length; d += TAILLE_LOT) {
+    const res = await deps.contacts.upsertManyByPhone({ ...commun, contacts: aEcrire.slice(d, d + TAILLE_LOT) });
+    for (const r of res) {
+      if (r === 'created') report.created += 1;
+      else report.updated += 1;
+    }
   }
 
   return report;

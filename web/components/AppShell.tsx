@@ -8,6 +8,7 @@ import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
+import { repeterAvecGigue } from '@/lib/poll';
 
 type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'connecteurs' | 'parametres';
 
@@ -157,9 +158,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
         .catch(() => { /* pastille muette */ });
     };
     lire();
-    const id = setInterval(lire, UNREAD_POLL_MS);
+    const arreter = repeterAvecGigue(lire, UNREAD_POLL_MS);
     window.addEventListener(UNREAD_CHANGED_EVENT, lire);
-    return () => { alive = false; clearInterval(id); window.removeEventListener(UNREAD_CHANGED_EVENT, lire); };
+    return () => { alive = false; arreter(); window.removeEventListener(UNREAD_CHANGED_EVENT, lire); };
   }, [session]);
 
   useEffect(() => {

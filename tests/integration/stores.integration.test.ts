@@ -91,6 +91,77 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(byNone.some((r) => r.phoneE164 === phone)).toBe(false);
   });
 
+  /**
+   * Upsert par LOT (AUDIT-SCALE-2026-08-25.md, R9) : c'est le chemin d'écriture de TOUT import CSV depuis
+   * ce lot. Il doit se comporter exactement comme l'upsert unitaire, ligne pour ligne, et supporter les
+   * doublons du fichier, que Postgres refuserait autrement (« cannot affect row a second time »).
+   */
+  it('PgContactStore.upsertManyByPhone : mêmes règles que l\'unitaire (merge, opt-in, tags), en une requête', async () => {
+    const store = new PgContactStore(pool);
+    const nouveau = '+33600000201';
+    const existant = '+33600000202';
+    await store.upsertByPhone({ tenantId, phoneE164: existant, profileName: 'Léo', fields: { ville: 'Lyon' }, optInStatus: 'unknown', tags: ['ancien'] });
+
+    const res = await store.upsertManyByPhone({
+      tenantId,
+      optInStatus: 'opted_in',
+      optInSource: 'csv_import',
+      tags: ['salon-2026'],
+      contacts: [
+        { phoneE164: nouveau, profileName: 'Nina', fields: { ville: 'Paris' } },
+        { phoneE164: existant, profileName: null, fields: { age: '40' } },
+      ],
+    });
+    expect(res).toEqual(['created', 'updated']);
+
+    const lignes = (await pool.query<{ phone_e164: string; profile_name: string | null; fields: Record<string, unknown>; opt_in_status: string; opt_in_source: string | null; tags: string[] }>(
+      `select phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags from contacts
+        where tenant_id = $1 and phone_e164 = any($2::text[]) order by phone_e164`,
+      [tenantId, [nouveau, existant]],
+    )).rows;
+    const a = lignes.find((r) => r.phone_e164 === nouveau)!;
+    const b = lignes.find((r) => r.phone_e164 === existant)!;
+    expect(a).toMatchObject({ profile_name: 'Nina', opt_in_status: 'opted_in', opt_in_source: 'csv_import' });
+    expect(a.fields).toMatchObject({ ville: 'Paris' });
+    expect(b.fields).toMatchObject({ ville: 'Lyon', age: '40' }); // MERGE, pas replace
+    expect(b.profile_name).toBe('Léo'); // coalesce : le nom absent du CSV n'écrase rien
+    expect(b.opt_in_status).toBe('opted_in'); // promu par le lot
+    expect([...b.tags].sort()).toEqual(['ancien', 'salon-2026']); // union, rien perdu
+  });
+
+  it('PgContactStore.upsertManyByPhone : un numéro EN DOUBLE dans le lot -> une seule ligne, une seule création', async () => {
+    const store = new PgContactStore(pool);
+    const phone = '+33600000203';
+    // Postgres refuse qu'un `on conflict do update` touche deux fois la même ligne : sans déduplication
+    // préalable, cette requête LÈVE, et tout import contenant un doublon échouerait.
+    const res = await store.upsertManyByPhone({
+      tenantId,
+      optInStatus: 'unknown',
+      contacts: [
+        { phoneE164: phone, profileName: 'Julie', fields: { ville: 'Lyon' } },
+        { phoneE164: phone, profileName: 'Julie B', fields: { ville: 'Nice', age: '30' } },
+        { phoneE164: phone, profileName: null, fields: {} },
+      ],
+    });
+    // Une création (la 1re occurrence), les suivantes comptent en mises à jour : c'est ce que faisait
+    // l'écriture ligne à ligne, et le rapport d'import s'appuie dessus.
+    expect(res).toEqual(['created', 'updated', 'updated']);
+
+    const rows = (await pool.query<{ profile_name: string; fields: Record<string, unknown> }>(
+      `select profile_name, fields from contacts where tenant_id = $1 and phone_e164 = $2`,
+      [tenantId, phone],
+    )).rows;
+    expect(rows).toHaveLength(1);
+    // Fusion dans l'ordre du fichier : la ligne suivante écrase les mêmes clés, un nom non vide gagne.
+    expect(rows[0]!.profile_name).toBe('Julie B');
+    expect(rows[0]!.fields).toMatchObject({ ville: 'Nice', age: '30' });
+  });
+
+  it('PgContactStore.upsertManyByPhone : lot vide -> aucune requête, aucun résultat', async () => {
+    const store = new PgContactStore(pool);
+    expect(await store.upsertManyByPhone({ tenantId, optInStatus: 'unknown', contacts: [] })).toEqual([]);
+  });
+
   it('PgContactStore.upsertFromInbound : crée par numéro OU BSUID, expose le bsuid, opt-in unknown (pas de consentement)', async () => {
     const store = new PgContactStore(pool);
     // wa_id de 11 chiffres -> numéro. 2e message = update (pas de recréation), nom rafraîchi.

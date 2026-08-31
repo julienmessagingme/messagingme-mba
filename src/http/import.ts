@@ -75,6 +75,15 @@ export function mappingFromHeaders(headers: string[]): ColumnMapping {
 export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requireAuth?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
   const journal = makeJournal(deps.audit);
+  // Le CSV COMPLET transite dans le corps : le plafond global de 1 Mo tombait vers 14 000 lignes, en anglais
+  // et sans dire quoi faire. 8 Mo, soit environ 150 000 contacts, très au-delà de tout import réel. Pas plus :
+  // le corps est parsé D'UN BLOC (mesuré : ~100 ms pour 5 Mo ici, quelques centaines de ms sur le VPS), et
+  // pendant ce temps l'API ne répond à personne d'autre.
+  const optsImport = { ...guard, bodyLimit: 8 * 1024 * 1024 };
+  // L'aperçu, lui, ne reçoit plus que la TÊTE du fichier (cf. `TETE_APERCU_CARACTERES` côté console) : il
+  // n'en faut pas plus pour les en-têtes et quatre lignes d'exemple. Le plafond reste large devant cette tête
+  // (accents = 2 octets, échappement JSON) sans jamais laisser passer un fichier entier.
+  const optsApercu = { ...guard, bodyLimit: 2 * 1024 * 1024 };
 
   app.get('/tenants/:tenantId/contacts', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
@@ -116,7 +125,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
 
   // Aperçu : parse le CSV + propose un mapping (même parseCsv que l'import réel -> en-têtes
   // identiques, pas de désync). Le front affiche l'écran de mapping pré-rempli.
-  app.post('/tenants/:tenantId/contacts/import/preview', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/contacts/import/preview', optsApercu, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
@@ -134,7 +143,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
     });
   });
 
-  app.post('/tenants/:tenantId/contacts/import', guard, async (req, reply) => {
+  app.post('/tenants/:tenantId/contacts/import', optsImport, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;

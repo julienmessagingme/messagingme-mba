@@ -10,6 +10,7 @@
  */
 
 import { request, ApiError, BASE } from './http';
+import { teteCsv } from './csv';
 import type { UserFieldKind } from './field-kinds';
 
 export { ApiError, SESSION_EXPIRED_EVENT } from './http';
@@ -242,14 +243,20 @@ export interface ImportPreview {
   sampleRows: Array<Record<string, string>>;
   rowCount: number;
   mapping: ColumnMapping;
+  /** `rowCount` est-il une ESTIMATION ? (fichier trop gros pour être analysé en entier, cf. `teteCsv`). */
+  estime: boolean;
 }
 
-/** Aperçu : renvoie les colonnes détectées + un mapping suggéré (même parsing que l'import). */
-export function previewImport(tenantId: string, csv: string): Promise<ImportPreview> {
-  return request<ImportPreview>(`/tenants/${tenantId}/contacts/import/preview`, {
+/** Aperçu : renvoie les colonnes détectées + un mapping suggéré (même parsing que l'import), sur la seule
+ *  TÊTE du fichier. Le nombre de lignes est alors extrapolé au prorata des caractères, et signalé comme tel. */
+export async function previewImport(tenantId: string, csv: string): Promise<ImportPreview> {
+  const tete = teteCsv(csv);
+  const p = await request<Omit<ImportPreview, 'estime'>>(`/tenants/${tenantId}/contacts/import/preview`, {
     method: 'POST',
-    body: JSON.stringify({ csv }),
+    body: JSON.stringify({ csv: tete }),
   });
+  if (tete.length === csv.length) return { ...p, estime: false };
+  return { ...p, estime: true, rowCount: Math.round(p.rowCount * (csv.length / tete.length)) };
 }
 
 export function importCsv(

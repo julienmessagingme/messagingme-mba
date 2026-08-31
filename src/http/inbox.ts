@@ -5,6 +5,18 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
+import { cacheCourt } from '../lib/cache-court';
+
+/**
+ * Durée de vie du micro-cache des compteurs de l'inbox (AUDIT-SCALE-2026-08-25.md, R7).
+ *
+ * 5 secondes, et pas plus : c'est ce qui mutualise les 25 utilisateurs d'un même client sur une requête sans
+ * qu'aucun compteur ne devienne visiblement faux. Les écritures de l'inbox qui changent ces nombres
+ * invalident de toute façon la clé du tenant, donc le seul retard réellement possible est celui d'un message
+ * ENTRANT, qui arrive dans le worker (autre process, autre cache) : au pire 5 s sur une pastille déjà relue
+ * toutes les 30 s.
+ */
+export const COMPTEURS_TTL_MS = 5_000;
 
 /** Template à envoyer dans une conversation (hors fenêtre 24 h). */
 export interface OutboundTemplate {
@@ -133,6 +145,16 @@ export interface InboxRouteDeps {
  */
 export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requireAuth?: PreHandler): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  // Micro-cache des DEUX compteurs (R7). Instancié ici, donc un par serveur construit : deux instances de
+  // test ne se partagent rien, et il meurt avec le process.
+  const compteurs = cacheCourt<number>(COMPTEURS_TTL_MS);
+  const cleUnread = (tenant: string): string => `unread:${tenant}`;
+  const cleATraiter = (tenant: string): string => `todo:${tenant}`;
+  /** Une écriture vient de changer ce que les compteurs disent : les deux repartent en base au prochain appel. */
+  const invaliderCompteurs = (tenant: string): void => {
+    compteurs.invalider(cleUnread(tenant));
+    compteurs.invalider(cleATraiter(tenant));
+  };
 
   app.get('/tenants/:tenantId/conversations', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -167,7 +189,11 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   app.get('/tenants/:tenantId/conversations/todo-count', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ count: deps.countATraiter ? await deps.countATraiter(tenant) : 0 });
+    if (!deps.countATraiter) return reply.code(200).send({ count: 0 });
+    // ⚠️ `deps.countATraiter(...)` DANS la fermeture, jamais une référence détachée gardée de côté : un store
+    // de production y perdrait son `this` (leçon du verrou de campagne, 2026-08-27).
+    const count = await compteurs.lire(cleATraiter(tenant), () => deps.countATraiter!(tenant));
+    return reply.code(200).send({ count });
   });
 
   /**
@@ -178,7 +204,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
   app.get('/tenants/:tenantId/conversations/unread-count', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
-    return reply.code(200).send({ count: deps.countUnread ? await deps.countUnread(tenant) : 0 });
+    if (!deps.countUnread) return reply.code(200).send({ count: 0 });
+    const count = await compteurs.lire(cleUnread(tenant), () => deps.countUnread!(tenant));
+    return reply.code(200).send({ count });
   });
 
   /** Un opérateur vient d'OUVRIR le fil : il est lu. C'est le seul événement qui éteint la pastille. */
@@ -190,6 +218,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
     await deps.markConversationRead(tenant, conversationId);
+    // C'est LE geste que la pastille doit refléter tout de suite : l'écran relit le compteur dans la foulée,
+    // et sans cette invalidation il retomberait sur la valeur d'avant pendant toute la durée de vie du cache.
+    invaliderCompteurs(tenant);
     return reply.code(200).send({ ok: true });
   });
 
@@ -278,6 +309,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // L'opérateur prend le fil : le scénario cesse d'avancer sur ce contact, et une campagne ne l'écrasera
     // pas. Best-effort, APRÈS l'envoi réussi : un échec d'état ne doit pas faire croire à un message perdu.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
+    invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.recordOutbound(conversationId, text, messageId, 'text', null, null, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });
@@ -324,6 +356,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // L'opérateur prend le fil, comme sur une réponse texte. Best-effort et APRÈS l'envoi réussi : un échec
     // d'état ne doit pas faire croire à un message perdu.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
+    invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
     return reply.code(200).send({ messageId: issue.messageId });
   });
@@ -410,6 +443,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     });
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
+    invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });
@@ -458,6 +492,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     if (!deps.releaseControl) return reply.code(503).send({ error: 'reprise indisponible sur cette instance' });
     const owner = await deps.releaseControl(tenant, ctx.waId);
+    invaliderCompteurs(tenant); // le fil repart en automatique : il sort de « À traiter ».
     return reply.code(200).send({ controlOwner: owner });
   });
 

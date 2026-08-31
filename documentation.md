@@ -1652,6 +1652,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/devise.ts` -> `microEurosDepuisDollars` / `eurosDepuisMicro` | 🔴 La conversion du coût d'un appel de modèle, en UN endroit. Le Gateway facture en DOLLARS, tous nos compteurs et tous nos plafonds sont en micro-euros. Le taux est un paramètre COMMERCIAL (`EUR_PER_USD`), pas un cours | posé en tâche 21, ferme la dette D1. Un taux absent ou aberrant retombe sur 1, JAMAIS sur zéro : un zéro rendrait toute consommation gratuite, donc désarmerait tous les plafonds en silence. `web/lib/agent-solde.ts` en porte le miroir d'affichage, dont `tests/agent-devise.test.ts` ancre la parité |
 | `src/agent/brain.ts` -> `TourInterrompu` | 🔴 Le contrat « un cerveau qui lève APRÈS avoir dépensé porte sa consommation dans l'erreur ». Ses deux appelants (le tour de production, le bac à sable) l'enregistrent avant de traiter l'échec | posé en tâche 21. Un tour fait plusieurs allers-retours facturés séparément : le cumul vivait DANS la boucle, donc une exception au deuxième appel emportait ce que le premier avait déjà coûté. **Un compteur de dépense ne vit jamais dans la portée qui peut lever** |
 | `src/workflow/executor.ts` -> `runEnAttenteSur` | « Le run en attente d'un contact ET le bloc qui l'attend, s'il est du type demandé » | 3 copies (reprises RCS, sortie d'agent, outil d'agent) |
+| `src/lib/cache-court.ts` -> `cacheCourt` | Le micro-cache mémoire à durée de vie courte : durée de vie ET mutualisation des appels EN VOL, plus la garde d'identité qui empêche une valeur périmée de se ranger en cache après une invalidation. Posé en R7 pour les compteurs de l'inbox | posé le 2026-08-31. Un cache de compteur écrit à la main oublie l'un des trois, et devient le bug qu'il évitait |
+| `src/crm/import.ts` -> `ContactStore.upsertManyByPhone` | L'écriture d'un LOT de contacts (import CSV, listes HubSpot). L'upsert unitaire n'est plus le chemin d'import : une requête par ligne dépassait le timeout de Cloudflare | posé en R9. La déduplication du lot est DANS le store, pas chez l'appelant : c'est Postgres qui l'exige |
 
 **Front**
 
@@ -1661,6 +1663,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/normalize.ts` | `normalizeText` (minuscules, sans accents, espaces resserrés) |
 | `web/lib/fields.ts` | `fieldValue` (champ perso, casse insensible) et `varCountOf` (variables `{{n}}` distinctes) |
 | `web/components/Toggle.tsx` | L'interrupteur on/off de l'Accueil |
+| `web/lib/poll.ts` | `repeterAvecGigue` : la répétition périodique DÉSYNCHRONISÉE (±20 %). Tout nouveau polling passe par là, jamais par `setInterval` : sinon les onglets d'un même client rebattent ensemble |
+| `web/lib/csv.ts` -> `teteCsv` | La TÊTE d'un fichier envoyée à l'aperçu d'import (coupée sur une fin de ligne). Un aperçu qui transmet le fichier entier fait tomber le mur du volume au choix du fichier |
 | `web/components/PhoneFrame.tsx` | Le chrome « fenêtre WhatsApp » des aperçus |
 | `web/components/CampaignCreateForm.tsx` | L'assistant de création de campagne (extrait de la page, qui passait de 1637 à 486 lignes) |
 | `web/lib/workflow-sorties.ts` | 🔴 La SORTIE LIBRE d'un bloc (« toute autre réponse ») : nommée `libre` dans le canevas, et RIEN dans le graphe enregistré (contrat du moteur, `nextNodeSansHandle`). Traduction aux deux bords, plus `uneAreteParSortie`. Sans nom de poignée, React Flow ancrait cette flèche sur la PREMIÈRE sortie du bloc : elle se dessinait sur la ligne de la première réponse rapide, où une autre flèche part déjà (mesuré le 2026-08-28). Un patch d'arête du canevas passe TOUJOURS par ces deux fonctions |
@@ -2074,6 +2078,78 @@ bouton qui passe de « lien » à « réponse rapide ». Dans les deux cas, la p
 DANS LE DOM (les poignées réellement présentes, dans leur ordre), c'est-à-dire la même chose que React Flow
 mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plus tard est couvert d'avance.
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
+
+---
+## DEPLOYE le 2026-08-31 : R9 et R7, les deux derniers oranges de l'audit (migration 0092)
+
+### R9. Le mur de l'import CSV tombait au CHOIX du fichier, pas à l'import
+
+Trois choses, dans cet ordre de gravité.
+
+**1. L'aperçu envoyait le fichier ENTIER** pour n'en extraire que les en-têtes et quatre lignes d'exemple.
+C'était le premier mur, et le plus bête : avec le plafond de corps global de 1 Mo, choisir un fichier de plus
+de 14 000 lignes échouait avant tout import. Il ne part plus que la TÊTE, coupée sur une fin de ligne
+(`teteCsv`, `web/lib/csv.ts`, 512 000 caractères). Conséquence assumée : au-delà d'environ 8 000 lignes, le
+nombre affiché devient une ESTIMATION au prorata des caractères, signalée par un « ≈ » à l'écran. Un nombre
+approché sur un gros fichier vaut mieux qu'un refus, et sous le seuil il reste exact.
+
+**2. La route d'import ne relevait pas le plafond**, alors que flows, media, workflows et rcs le font. Elle
+est à 8 Mo (environ 150 000 contacts), l'aperçu à 2 Mo. Pourquoi pas plus : le corps est parsé D'UN BLOC, et
+pendant ce temps l'API ne répond à personne d'autre. **Mesuré ici** : 102 ms pour 5,4 Mo / 100 000 lignes,
+donc quelques centaines de millisecondes sur le VPS. C'est le vrai facteur limitant, pas la mémoire.
+
+**3. Le refus, quand il tombe, est en français.** Fastify répondait « Request body is too large ». Le message
+est traduit dans le gestionnaire d'erreurs GLOBAL (`src/server.ts`, sur `FST_ERR_CTP_BODY_TOO_LARGE`), donc
+toutes les routes à corps volumineux en profitent, pas seulement l'import.
+
+**Et l'écriture passe par lots de 500** (`upsertManyByPhone`, `src/crm/contact-store.pg.ts`) au lieu d'un
+aller-retour par ligne. À 11 ms d'aller-retour, 50 000 contacts passaient de neuf minutes, donc bien au-delà
+du timeout de 100 s de Cloudflare, à une centaine de requêtes.
+
+🔴 **Le piège du lot : Postgres refuse qu'un `on conflict do update` touche deux fois la même ligne** dans une
+même commande (« cannot affect row a second time »), et un CSV a des doublons. Le store DÉDUPLIQUE donc avant
+d'écrire, sur la règle exacte qu'appliquait l'écriture ligne à ligne (la ligne suivante écrase les mêmes clés,
+un nom non vide gagne), et ne compte qu'UNE création par numéro, à sa première apparition. Sans ça, un fichier
+répétant cinq fois le même contact annonçait cinq créations pour une personne, ou faisait échouer la requête.
+
+Deux détails de la requête qui coûtent cher à retrouver : le lot voyage en UN paramètre `jsonb`
+(`jsonb_to_recordset`) et non en tableaux parallèles, parce qu'un tableau de fragments JSON devrait être
+échappé comme littéral de tableau Postgres ; et chaque paramètre est CASTÉ explicitement, parce que dans un
+`insert ... select` le type d'un paramètre n'est pas toujours déduit de la colonne visée.
+
+**La file pg-boss d'import (point 4 de l'audit) n'est PAS faite, et c'est une décision** : après les lots, le
+timeout n'est plus approché. Condition de réouverture dans `todo.md`.
+
+### R7. Les compteurs de l'inbox, interrogés par chaque utilisateur en boucle
+
+La pastille de non-lus est montée sur TOUTES les pages et pour tous les rôles, relue toutes les 30 s, et
+`countUnread` compte avec un `exists` corrélé sur TOUTES les conversations de l'espace. Vingt-cinq
+utilisateurs d'un même client posaient vingt-cinq fois la même question, pour un nombre qui n'a pas bougé.
+
+**Micro-cache par espace, 5 secondes** (`src/lib/cache-court.ts`, câblé sur `unread-count` et `todo-count`).
+Deux mécanismes, et les deux comptent : la durée de vie absorbe le polling étalé, la mutualisation des appels
+EN VOL absorbe les arrivées simultanées, c'est-à-dire le rechargement collectif après un déploiement, qui est
+exactement le moment où ça fait mal.
+
+🔴 **Ce qu'un cache de compteur doit avoir pour ne pas devenir le bug qu'il évite** : une invalidation sur
+l'écriture qui le rend faux (marquer un fil comme lu, prendre ou rendre la main), ET une garde d'identité au
+moment d'écrire dans le cache. Sans la seconde, une invalidation qui tombe pendant qu'un comptage est en vol
+laisse le comptage d'AVANT se ranger en cache juste après : la pastille reste allumée alors que l'opérateur
+vient d'ouvrir le fil. Les deux sont testées, chacune vérifiée dans les deux sens.
+
+**Index partiel `conversation_messages_unread_idx` (migration 0092)**, sur les seuls messages entrants :
+l'index historique savait borner sur la date mais rapportait aussi les sortants de l'intervalle, que le moteur
+écartait ligne à ligne. Sur un contact qui vient de recevoir une campagne, cet intervalle est justement plein
+de sortants. ⚠️ Pas de `concurrently` : le runner enveloppe chaque migration dans une transaction, ce qui
+l'interdit. La table est petite aujourd'hui ; si elle grossit, créer les prochains index à la main.
+
+**Gigue sur les trois pollings** (`web/lib/poll.ts`, ±20 %, retirée après chaque exécution). Le nombre de
+requêtes ne change pas, leur RÉPARTITION si : `setInterval` fait battre tous les onglets ensemble pour
+toujours, et c'est la pointe qui sature, pas la moyenne.
+
+**Ce qui n'est PAS traité** : la colonne `unread` dénormalisée, et surtout le polling du fil ouvert toutes les
+4 secondes, qui reste la charge de lecture dominante et qu'aucun des quatre correctifs de l'audit ne touche.
+Conditions de réouverture dans `todo.md`.
 
 ---
 ## DEPLOYE le 2026-08-31 sur `a737edf` : R4 et R10 de l'audit (aucune migration)
