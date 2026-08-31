@@ -41,6 +41,11 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], opts
     const method = req.method();
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
     if (/\/setup$/.test(url)) {
+      // Depuis le 2026-08-31 l'entretien est TENU PAR LE SERVEUR : le GET l'hydrate à l'ouverture de
+      // l'onglet, le POST envoie UN message, le DELETE recommence. Sans ce GET, l'écran resterait bloqué sur
+      // « Chargement… » et rien ne serait cliquable.
+      if (method === 'GET') return json({ messages: [], couverture: { manquants: [], total: 9, pointOuvert: null } });
+      if (method === 'DELETE') return json({ efface: true, couverture: { manquants: [], total: 9, pointOuvert: null } });
       appels.push({ method, url, body: req.postDataJSON() });
       const r = opts.setup ?? { status: 200, body: PROPOSITION };
       return json(r.body, r.status);
@@ -52,6 +57,7 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], opts
     }
     if (/\/knowledge/.test(url)) return json({ fiches: [] });
     if (new RegExp(`/agents/${AG}$`).test(url)) {
+      if (method === 'DELETE') { appels.push({ method, url, body: null }); return json({ supprime: true }); }
       if (method === 'PATCH') {
         const corps = (req.postDataJSON() ?? {}) as Record<string, unknown>;
         appels.push({ method, url, body: corps });
@@ -234,5 +240,59 @@ test.describe('Agents IA : construire en parlant', () => {
     // Le lien mène à l'onglet où ça se corrige.
     await page.getByTestId('agent-manque-outils').click();
     await expect(page).toHaveURL(/tab=outils/);
+  });
+
+  test('🔴 l entretien est PERSISTANT : on rouvre l onglet et la conversation est là', async ({ page }) => {
+    // Julien, 2026-08-31 : « je veux que la conversation qui a été tenue préalablement soit persistante quand
+    // on revient plus tard sur l'onglet ». Avant, elle ne vivait que dans l'état du composant : passer par
+    // l'inbox et revenir effaçait tout, et le client recommençait un entretien déjà mené.
+    await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (/\/setup$/.test(req.url())) {
+        return json({
+          messages: [
+            { role: 'user', content: 'Mon agent qualifie les demandes de séjour.' },
+            { role: 'assistant', content: 'De quoi ne doit-il jamais parler ?' },
+          ],
+          couverture: { manquants: ['perimetre', 'connaissance'], total: 9, pointOuvert: 'perimetre' },
+        });
+      }
+      if (/\/tools/.test(req.url())) return json({ outils: [], catalogue: [] });
+      if (/\/knowledge/.test(req.url())) return json({ fiches: [] });
+      if (new RegExp(`/agents/${AG}$`).test(req.url())) return json({ agent: AGENT });
+      if (/\/agents(\?|$)/.test(req.url())) return json({ agents: [{ id: AG, label: 'Conseiller séjours', status: 'draft', sorties: [] }] });
+      return json({});
+    });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+
+    await expect(page.getByTestId('setup-tour-user')).toContainText('qualifie les demandes de séjour');
+    await expect(page.getByTestId('setup-tour-assistant')).toContainText('jamais parler');
+    // L'écran d'accueil ne s'affiche PAS par-dessus une conversation déjà tenue.
+    await expect(page.getByTestId('setup-vide')).toHaveCount(0);
+    // Et l'avancement de l'entretien est celui du serveur, pas un compte local.
+    await expect(page.getByTestId('setup-recommencer')).toBeVisible();
+  });
+
+  test('🔴 « Construire en parlant » est l onglet d ENTRÉE, pas « Identité et ton »', async ({ page }) => {
+    // Julien, 2026-08-31 : « je voudrais que la fenêtre Construire en parlant apparaisse en premier ». On
+    // tombait sur un formulaire vide, alors que tout l intérêt de cet écran est de ne pas avoir à savoir quoi
+    // y écrire.
+    await mock(page, []);
+    await page.goto('/agents');
+    await page.getByTestId(`agent-ligne-${AG}`).click();
+    await expect(page).toHaveURL(/tab=construction/);
+    await expect(page.getByTestId('setup-saisie')).toBeVisible();
+  });
+
+  test('🔴 un agent se supprime DEPUIS LA LISTE, sans avoir à entrer dedans', async ({ page }) => {
+    // Julien, 2026-08-31 : « il faut pouvoir supprimer un agent (quand on appuie sur other AI agent) ».
+    const appels: Appel[] = [];
+    await mock(page, appels);
+    page.on('dialog', (d) => void d.accept());
+    await page.goto('/agents');
+    await page.getByTestId(`agent-supprimer-${AG}`).click();
+    await expect.poll(() => appels.some((a) => a.method === 'DELETE')).toBe(true);
   });
 });

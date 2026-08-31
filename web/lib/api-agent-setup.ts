@@ -32,6 +32,19 @@ export interface PropositionConstruction {
   connecteurs?: Array<{ nom: string; description: string; nePasUtiliser: string }>;
 }
 
+/**
+ * L'avancement de l'entretien, tel que le SERVEUR le calcule.
+ *
+ * `total` est celui de l'ordre du jour EFFECTIF, pas de la liste complète : un agent qui n'appellera jamais
+ * d'outil n'a pas de point « quel outil », et l'écran ne doit pas annoncer une étape qui n'existera jamais.
+ */
+export interface Couverture {
+  manquants: string[];
+  total: number;
+  /** Le point sur lequel porte la question en cours. `null` = l'entretien est fini. */
+  pointOuvert?: string | null;
+}
+
 /** Une ligne du diff, telle que l'écran la montre. */
 export interface Changement {
   champ: string;
@@ -44,9 +57,9 @@ export interface ReponseConstruction {
   message: string;
   proposition: PropositionConstruction;
   changements: Changement[];
-  /** Les points du périmètre encore à couvrir. Non vide = l'assistant est ENCORE EN ENTRETIEN, et le serveur
-   *  a volontairement retenu le diff : on discute avant d'afficher ce qu'il a compris. */
-  couverture?: { manquants: string[]; total: number };
+  /** Les points de l'ordre du jour encore à couvrir. Non vide = l'assistant est ENCORE EN ENTRETIEN, et le
+   *  serveur a volontairement retenu le diff : on discute avant d'afficher ce qu'il a compris. */
+  couverture?: Couverture;
   usage: { tokensIn: number; tokensOut: number };
 }
 
@@ -117,12 +130,27 @@ export function restreindreProposition(
 }
 
 export async function parlerAuConstructeur(
-  tenantId: string, agentId: string, messages: TourConstruction[],
+  tenantId: string, agentId: string, message: string,
 ): Promise<ReponseConstruction> {
+  // On envoie UN message, pas l'historique : depuis le 2026-08-31 c'est le serveur qui tient l'entretien.
+  // Le renvoyer d'ici laissait la séquence des questions à la discrétion du modèle, et perdait la
+  // conversation au premier changement d'onglet.
   return request<ReponseConstruction>(`/tenants/${tenantId}/agents/${agentId}/setup`, {
     method: 'POST',
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ message }),
   });
+}
+
+/** L'entretien déjà tenu, pour rouvrir l'onglet là où on l'avait laissé. */
+export async function lireEntretien(
+  tenantId: string, agentId: string,
+): Promise<{ messages: TourConstruction[]; couverture: Couverture }> {
+  return request(`/tenants/${tenantId}/agents/${agentId}/setup`);
+}
+
+/** Repart de zéro. Un entretien qui a mal tourné doit pouvoir se jeter sans supprimer l'agent. */
+export async function effacerEntretien(tenantId: string, agentId: string): Promise<{ efface: boolean; couverture: Couverture }> {
+  return request(`/tenants/${tenantId}/agents/${agentId}/setup`, { method: 'DELETE' });
 }
 
 /**

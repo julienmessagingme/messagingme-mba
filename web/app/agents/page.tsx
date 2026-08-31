@@ -32,7 +32,12 @@ import { ApiError } from '@/lib/http';
 type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele' | 'tester';
 
 const ONGLETS: Onglet[] = ['construction', 'identite', 'objectif', 'connaissance', 'outils', 'perimetre', 'modele', 'tester'];
-const lireOnglet = (v: string | null): Onglet => (ONGLETS as string[]).includes(v ?? '') ? (v as Onglet) : 'identite';
+// 🔴 « Construire en parlant » EST l'entrée par défaut, pas « Identité et ton ». Julien, 2026-08-31 : « je
+// voudrais que la fenêtre Construire en parlant apparaisse en premier ». L'ordre des onglets le disait déjà,
+// mais le défaut ouvrait le formulaire : on tombait sur des champs vides à remplir seul, alors que tout
+// l'intérêt de cet écran est qu'on n'a pas à savoir quoi y écrire.
+const ONGLET_PAR_DEFAUT: Onglet = 'construction';
+const lireOnglet = (v: string | null): Onglet => (ONGLETS as string[]).includes(v ?? '') ? (v as Onglet) : ONGLET_PAR_DEFAUT;
 
 export default function AgentsPage() {
   return <AppShell active="agents">{(session) => <Ecran tenantId={session.tenantId} />}</AppShell>;
@@ -106,20 +111,32 @@ function Ecran({ tenantId }: { tenantId: string }) {
     router.replace(id ? `/agents?id=${id}&tab=${tab}` : '/agents', { scroll: false });
   }, [router]);
 
-  async function supprimer() {
-    if (!ouvert || busy) return;
+  /**
+   * Supprime un agent, DEPUIS SA FICHE OU DEPUIS LA LISTE.
+   *
+   * Julien, 2026-08-31 : « il faut pouvoir supprimer un agent (quand on appuie sur other AI agent) ». Le
+   * bouton n'existait que sur la fiche ouverte : jeter un agent d'essai supposait d'entrer dedans d'abord.
+   * La fonction prend donc son sujet en paramètre plutôt que de lire `ouvert`, ce qui la rend utilisable des
+   * deux endroits sans la dupliquer.
+   */
+  async function supprimer(cible: { id: string; label: string }) {
+    if (busy) return;
     // Confirmation NATIVE : la suppression emporte les conversations, les outils et la base de connaissance
     // de cet agent, et le repo n'a pas de boîte de dialogue maison.
     if (!window.confirm(t(
-      `Supprimer « ${ouvert.label} » ? Ses conversations, ses outils et sa base de connaissance partent avec lui, et les blocs de scénario qui l'utilisent cesseront de répondre.`,
-      `Delete “${ouvert.label}”? Its conversations, tools and knowledge base go with it, and the scenario blocks using it will stop answering.`,
+      `Supprimer « ${cible.label} » ? Ses conversations, ses outils et sa base de connaissance partent avec lui, et les blocs de scénario qui l'utilisent cesseront de répondre.`,
+      `Delete “${cible.label}”? Its conversations, tools and knowledge base go with it, and the scenario blocks using it will stop answering.`,
     ))) return;
     setBusy(true);
     setErreur(null);
     try {
-      await deleteAgent(tenantId, ouvert.id);
-      setOuvert(null);
-      aller(null, 'identite');
+      await deleteAgent(tenantId, cible.id);
+      // On ne referme la fiche QUE si c'est celle qu'on vient de supprimer : depuis la liste, il n'y a rien
+      // d'ouvert, et forcer une navigation ferait clignoter l'écran pour rien.
+      if (ouvert?.id === cible.id) {
+        setOuvert(null);
+        aller(null, ONGLET_PAR_DEFAUT);
+      }
       await charger();
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Suppression impossible', 'Unable to delete'));
@@ -155,7 +172,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
     return (
       <div className="mx-auto flex max-w-4xl flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <button onClick={() => { setOuvert(null); aller(null, 'identite'); void charger(); }} className="text-sm text-brand-600 hover:underline">
+          <button onClick={() => { setOuvert(null); aller(null, ONGLET_PAR_DEFAUT); void charger(); }} className="text-sm text-brand-600 hover:underline">
             ← {t('Retour aux agents', 'Back to agents')}
           </button>
           <div className="flex items-center gap-2">
@@ -163,7 +180,7 @@ function Ecran({ tenantId }: { tenantId: string }) {
             <button
               data-testid="agent-supprimer"
               disabled={busy}
-              onClick={() => void supprimer()}
+              onClick={() => void supprimer(ouvert)}
               title={t('Supprimer cet agent', 'Delete this agent')}
               className="rounded-lg border border-ink-300 px-3 py-1.5 text-sm text-coral hover:bg-red-50 disabled:opacity-40"
             >
@@ -287,16 +304,32 @@ function Ecran({ tenantId }: { tenantId: string }) {
       <div className={`${cardCls} flex flex-col gap-2`}>
         {agents === null && <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>}
         {agents?.length === 0 && <p className="text-sm text-ink-500">{t('Aucun agent pour le moment.', 'No agent yet.')}</p>}
+        {/* Une LIGNE, pas un bouton : la suppression vit ici, et un bouton dans un bouton n'est pas du HTML
+            valide (le navigateur défait l'imbrication, et le clic devient imprévisible). */}
         {(agents ?? []).map((a) => (
-          <button
+          <div
             key={a.id}
-            data-testid={`agent-ligne-${a.id}`}
-            onClick={() => aller(a.id, 'identite')}
-            className="flex items-center justify-between gap-3 rounded-lg border border-ink-200 px-3 py-2 text-left hover:bg-ink-50"
+            className="flex items-center gap-2 rounded-lg border border-ink-200 pr-2 hover:bg-ink-50"
           >
-            <span className="truncate text-sm font-medium text-ink-800">{a.label}</span>
-            <Pastille status={a.status} />
-          </button>
+            <button
+              data-testid={`agent-ligne-${a.id}`}
+              onClick={() => aller(a.id, ONGLET_PAR_DEFAUT)}
+              className="flex flex-1 items-center justify-between gap-3 px-3 py-2 text-left"
+            >
+              <span className="truncate text-sm font-medium text-ink-800">{a.label}</span>
+              <Pastille status={a.status} />
+            </button>
+            <button
+              data-testid={`agent-supprimer-${a.id}`}
+              disabled={busy}
+              onClick={() => void supprimer({ id: a.id, label: a.label })}
+              title={t('Supprimer cet agent', 'Delete this agent')}
+              aria-label={t(`Supprimer ${a.label}`, `Delete ${a.label}`)}
+              className="shrink-0 rounded-lg border border-ink-300 px-2 py-1 text-xs text-coral hover:bg-red-50 disabled:opacity-40"
+            >
+              {t('Supprimer', 'Delete')}
+            </button>
+          </div>
         ))}
       </div>
     </div>

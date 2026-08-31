@@ -84,6 +84,7 @@ import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
+import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
 import { GatewayChatClient } from './agent/llm/chat-client';
@@ -686,6 +687,10 @@ async function main(): Promise<void> {
           titresConnaissance: fiches.map((f) => f.titre),
         };
       },
+      // L entretien est TENU PAR LE SERVEUR : c est lui qui rend la conversation persistante entre deux
+      // visites de l onglet, et surtout qui rend la sequence des questions deterministe (la couverture
+      // cesse d etre une declaration du modele pour devenir un fait).
+      entretiens: new PgEntretienStore(pool),
       ...(gateway ? { completer: (i: Parameters<GatewayChatClient['completer']>[0]) => gateway.completer(i) } : {}),
       modele: config.AGENT_SETUP_MODEL || config.LLM_MODEL,
     },

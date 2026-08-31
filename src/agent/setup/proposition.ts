@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { fichePatchSchema, type FicheAgentContenu } from '../fiche';
 import { OUTILS_MAISON } from '../outils-maison';
-import { CODES_DIMENSIONS } from './couverture';
+import { ACTIONS, CODES_POINTS } from './couverture';
 
 /**
  * Ce que l'IA de construction a le DROIT de proposer, et le diff qu'on montre au client.
@@ -56,15 +56,23 @@ export const propositionSchema = z.object({
    *  un diff que personne ne peut juger. */
   message: z.string().trim().min(1).max(4000),
   /**
-   * 🔴 Les points du périmètre que le CLIENT a réellement tranchés. La route s'en sert pour retenir le diff
-   * tant qu'il en manque un : c'est ce qui transforme « discute d'abord » en mécanisme plutôt qu'en vœu.
+   * 🔴 CE QUE LE CLIENT VIENT DE RÉPONDRE, rattaché aux points de l'ordre du jour. Ce n'est plus une
+   * déclaration de couverture (« j'ai couvert le ton ») mais une EXTRACTION (« au point ton, il a dit ceci ») :
+   * le serveur peut donc la relire, la garder, et décider lui-même de ce qui est couvert. C'est ce qui a fait
+   * passer l'entretien d'un vœu à un mécanisme, cf. `couverture.ts`.
    *
-   * ⚠️ Des CHAÎNES LIBRES, pas une énumération, et c'est délibéré. Un code inventé ne doit rien débloquer,
-   * mais il ne doit pas non plus faire échouer le tour : c'est la doctrine de ce fichier (« un modèle qui
-   * renvoie du bruit doit juste n'obtenir rien »), et une énumération ici rendait 422 sur une conversation
-   * par ailleurs parfaitement valide. Le tri se fait dans `manquesDeCouverture`, qui ignore l'inconnu.
+   * ⚠️ Le `point` est une CHAÎNE LIBRE, pas une énumération, et c'est délibéré. Un code inventé ne doit rien
+   * débloquer, mais il ne doit pas non plus faire échouer le tour : c'est la doctrine de ce fichier (« un
+   * modèle qui renvoie du bruit doit juste n'obtenir rien »), et une énumération ici rendait 422 sur une
+   * conversation par ailleurs parfaitement valide. Le tri se fait dans `couverture.ts`, qui ignore l'inconnu.
    */
-  couverture: z.array(z.string().trim().max(64)).max(CODES_DIMENSIONS.length * 4).default([]),
+  reponses: z.array(z.object({
+    point: z.string().trim().max(64),
+    /** Vide = rien retenu pour ce point. Toléré plutôt que refusé : voir la doctrine ci-dessus. */
+    valeur: z.string().trim().max(2000).default(''),
+    /** Ce que l'agent FAIT (points de bascule). C'est elle qui ouvre un point de creusement. */
+    action: z.enum(ACTIONS).optional(),
+  })).max(CODES_POINTS.length * 2).default([]),
   /** Les champs de fiche proposés. PARTIEL au sens strict : le modèle ne touche qu'à ce dont il parle, et
    *  les champs absents restent ABSENTS (voir `fichePatchSchema`, qui n'applique aucun défaut). */
   fiche: fichePatchSchema.optional(),
@@ -111,11 +119,25 @@ export const SCHEMA_PROPOSITION = {
   type: 'object',
   properties: {
     message: { type: 'string', description: 'Ce que tu dis au client, en français, bref.' },
-    couverture: {
+    reponses: {
       type: 'array',
-      description: 'Les points du périmètre que le CLIENT a tranchés, par leur code. Un point que tu as '
-        + 'seulement supposé n’en fait PAS partie. Tant qu’il en manque un, tes champs ne seront pas montrés.',
-      items: { type: 'string', enum: [...CODES_DIMENSIONS] },
+      description: 'Ce que le client vient de DIRE, rattaché aux points de l’ordre du jour. N’y mets que ce '
+        + 'qu’il a réellement exprimé dans son dernier message : un point que tu as seulement supposé n’en fait '
+        + 'PAS partie. Tant qu’il manque une réponse, tes champs ne seront pas montrés au client.',
+      items: {
+        type: 'object',
+        properties: {
+          point: { type: 'string', enum: [...CODES_POINTS] },
+          valeur: { type: 'string', description: 'Sa réponse, dans tes mots, en une phrase.' },
+          action: {
+            type: 'string',
+            enum: [...ACTIONS],
+            description: 'Pour un point de bascule UNIQUEMENT : ce que l’agent fait à ce moment-là. '
+              + '« continuer » veut dire qu’il continue simplement à répondre, et c’est une réponse complète.',
+          },
+        },
+        required: ['point', 'valeur'],
+      },
     },
     fiche: {
       type: 'object',
@@ -212,7 +234,7 @@ function texteSorties(sorties: FicheAgentContenu['sorties']): string {
  * l'habitude que ce diff existe pour empêcher. C'est aussi ce qui fait qu'une proposition sans effet rend
  * une liste vide, donc un écran qui dit « rien à changer » plutôt qu'un bouton qui n'aurait rien fait.
  */
-export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'couverture'>): Changement[] {
+export function differences(courant: EtatCourant, proposition: Omit<Proposition, 'reponses'>): Changement[] {
   const out: Changement[] = [];
 
   for (const [cle, valeur] of Object.entries(proposition.fiche ?? {})) {
