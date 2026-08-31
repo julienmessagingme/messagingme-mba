@@ -21,10 +21,11 @@ export interface Queue {
    * base, et ignoré.
    *
    * Ne pas le remettre : la policy d'une file est IMMUABLE après création, la reposer ne suffirait donc pas.
-   * La déduplication qui manque se fera par un verrou APPLICATIF (même patron qu'`api_idempotency`), c'est
-   * une décision encore ouverte, tracée dans `todo.md`. En attendant, la seule garantie réelle est le claim
-   * atomique par destinataire : aucun contact ne reçoit deux fois, mais deux runs de la même campagne PEUVENT
-   * tourner en parallèle, chacun avec son propre limiteur de débit en mémoire.
+   * Là où l'unicité compte vraiment, elle est portée par un verrou APPLICATIF, pas par la file : pour les
+   * campagnes, `src/campaign/run-lock.ts` (même patron qu'`api_idempotency`), posé à l'EXÉCUTION du job et non
+   * à son enfilement. Écrire le même verrou pour une autre file se fait sur ce modèle.
+   *
+   * Toute file SANS verrou de ce genre n'a donc aucune unicité : deux enfilements = deux jobs qui tournent.
    */
   enqueue(
     name: string,

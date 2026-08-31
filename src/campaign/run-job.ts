@@ -9,7 +9,8 @@ import type {
   EngineDeps,
 } from './engine';
 import { RateLimiter } from '../meta/http';
-import { resolveRatePerMinute } from './pacing';
+import { resolveRatePerMinute, campaignJobExpireSeconds } from './pacing';
+import type { CampaignRunLock } from './run-lock';
 import { TokenInvalidError } from '../meta/credentials';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
@@ -51,6 +52,22 @@ export interface RunJobDeps extends Pick<
    * sur le chemin WhatsApp, qui l'enverrait depuis un `phone_number_id` vide.
    */
   rcsSenderFor?: (campaign: Campaign) => Promise<CampaignSender | null>;
+  /**
+   * SÉRIALISATION des runs d'une même campagne (R1-bis, cf. `run-lock.ts`). Les trois pièces vont ensemble,
+   * d'où un seul objet : on ne peut pas câbler le verrou sans savoir dimensionner son bail, ni sans savoir
+   * relancer le travail qu'il a écarté.
+   *
+   * ABSENT = comportement d'avant, aucune sérialisation : les tests et l'e2e n'ont rien à câbler et gardent
+   * leur comportement mot pour mot. La production l'injecte, sinon deux runs concurrents doublent le débit
+   * réel de la campagne, ce que le slider de cadence est censé empêcher.
+   */
+  serialisation?: {
+    verrou: CampaignRunLock;
+    /** Destinataires en attente, pour dimensionner le bail sur la MÊME estimation que l'expiration du job. */
+    enAttente(campaignId: string): Promise<number>;
+    /** Relance un run : le verrou a coalescé du travail refusé pendant qu'on le tenait. */
+    relancer(campaignId: string): Promise<void>;
+  };
 }
 
 
@@ -144,7 +161,7 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     }
   }
 
-  return runCampaign(campaign, {
+  const optionsMoteur: EngineDeps = {
     sender,
     ...(channelSender ? { channelSender } : {}),
     recipients: deps.recipients,
@@ -158,5 +175,47 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(deps.getTemplateHeaderMedia ? { getTemplateHeaderMedia: deps.getTemplateHeaderMedia } : {}),
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
-  });
+  };
+
+  const serialisation = deps.serialisation;
+  if (!serialisation) return runCampaign(campaign, optionsMoteur);
+
+  // BAIL dimensionné sur la MÊME estimation que l'expiration du job pg-boss. C'est délibéré : les deux
+  // mécanismes doivent lâcher prise au même moment. Un bail plus court laisserait un second run démarrer sous
+  // le premier ; un bail plus long laisserait la campagne verrouillée après un `up -d` qui a tué le worker en
+  // plein envoi, alors que pg-boss, lui, rejoue déjà le job.
+  const bailSecondes = campaignJobExpireSeconds(await serialisation.enAttente(campaignId), rate);
+  const jeton = await serialisation.verrou.acquire(campaignId, campaign.tenantId, bailSecondes);
+  if (jeton === null) {
+    // Un run vivant tient le verrou. On ne lève PAS : le travail sera fait, par lui ou par la relance qu'il
+    // déclenchera en sortant. Lever ferait rejouer ce job par pg-boss, qui se heurterait au même verrou, cinq
+    // fois, puis finirait en file d'échec pour un cas parfaitement normal.
+    return { sent: 0, skipped: 0, failed: 0, paused: false, reason: 'un run de cette campagne est déjà en cours' };
+  }
+
+  /**
+   * Rend le verrou, et relance si du travail a été écarté pendant qu'on le tenait. Ne laisse JAMAIS remonter
+   * son propre échec : le verrou se libère de lui-même à l'expiration du bail, alors qu'un job en échec serait
+   * rejoué et ré-enverrait ce qui vient de partir.
+   */
+  const rendreLeVerrou = async (relancerSiDemande: boolean): Promise<void> => {
+    try {
+      const { rerunDemande } = await serialisation.verrou.release(campaignId, campaign.tenantId, jeton);
+      if (rerunDemande && relancerSiDemande) await serialisation.relancer(campaignId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`campaign-run : libération du verrou impossible pour ${campaignId}`, err instanceof Error ? err.message : err);
+    }
+  };
+
+  try {
+    const rapport = await runCampaign(campaign, optionsMoteur);
+    await rendreLeVerrou(true);
+    return rapport;
+  } catch (err) {
+    // Le verrou est rendu même sur échec, sinon la campagne resterait bloquée jusqu'au bout de son bail. Sans
+    // relance : pg-boss rejoue déjà le job qui a levé, en ajouter une ferait deux runs pour un seul incident.
+    await rendreLeVerrou(false);
+    throw err;
+  }
 }

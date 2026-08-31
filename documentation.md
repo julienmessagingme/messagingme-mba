@@ -2047,11 +2047,7 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
-## 2026-08-31 : R1 et R13 de l'audit du 25 août (aucune migration)
-
-⏳ **Commité sur `main`, PAS ENCORE DÉPLOYÉ** au moment où ces lignes sont écrites. Aucune migration, donc le
-déploiement est un `git pull` + `up -d --build` ordinaire, mais `web/` change (bouton de pause), donc le build
-de l'image web est nécessaire.
+## 2026-08-31 : R1, R1-bis et R13 de l'audit du 25 août (migration 0089)
 
 ### 🔴 R1. `singletonKey` n'a JAMAIS dédupliqué quoi que ce soit dans ce dépôt
 
@@ -2079,8 +2075,43 @@ rétablie change concrètement :
   rattraper les arrivants dont le job avait été « avalé » par le `singletonKey`. Rien n'avalait rien : l'effet
   réel est qu'il **empile un run de plus par minute** tant que la campagne a des destinataires en attente,
   alors qu'un run tourne déjà. Un envoi throttlé d'une heure finirait à soixante runs concurrents. Aucune
-  campagne au fil de l'eau n'a encore tourné en production, donc ça n'a jamais mordu. Le verrou applicatif de
-  remplacement (patron `api_idempotency`) reste à décider, cf. `todo.md`.
+  campagne au fil de l'eau n'a encore tourné en production, donc ça n'a jamais mordu.
+
+### R1-bis. Le verrou d'exécution qui remplace la déduplication inexistante (migration 0089)
+
+`src/campaign/run-lock.ts`, table `campaign_run_locks`. **Posé au SEUL endroit qui exécute** (`campaignRunJob`),
+jamais aux cinq endroits qui enfilent : on n'essaie pas d'empêcher les enfilements en double, on empêche les
+exécutions en double. C'est la différence entre verrouiller toutes les portes et verrouiller le coffre, et
+c'est ce qui fait qu'un seul point de code couvre les cinq chemins d'un coup (route `/run`, renvoi d'un
+destinataire, balayage de planification, auto-relance F6, alimentation au fil de l'eau).
+
+Trois pièces, et il en faut trois :
+
+- 🔴 **Le bail** (`expires_at`). Sans lui, un worker tué en plein envoi (SIGKILL à 10 s au déploiement, cf. R4)
+  laisserait la campagne verrouillée pour toujours. Il est dimensionné sur **la même estimation que
+  l'expiration du job pg-boss** (`campaignJobExpireSeconds`), délibérément : les deux mécanismes doivent lâcher
+  prise au même instant. Un bail plus court laisserait un second run démarrer sous le premier ; un bail plus
+  long garderait la campagne bloquée alors que pg-boss rejoue déjà son job.
+- 🔴 **Le jeton de garde** (`holder`). Si notre bail a expiré et qu'un autre run a repris le verrou, notre
+  libération ne doit pas supprimer le sien. Sans ce jeton, l'expiration du bail recréerait exactement la
+  concurrence que la table existe pour empêcher.
+- 🔴 **Le drapeau de relance** (`rerun`). Un job écarté peut porter du travail que le run en cours ne verra
+  pas : il a pris son instantané de destinataires à son démarrage. Un destinataire remis en attente par
+  « Renvoyer » ou par l'auto-relance F6 resterait alors `pending` **à vie** sur une campagne passée
+  `completed`. Le tenant du verrou relance donc une fois en sortant, et seulement s'il reste vraiment du
+  travail (sinon un double clic sur « Lancer » ferait clignoter le statut pour un run vide).
+
+Un job qui n'obtient pas le verrou **ne lève pas** : il rend un rapport à zéro. Lever ferait rejouer le job par
+pg-boss, qui se heurterait au même verrou, cinq fois, puis finirait en file d'échec pour un cas parfaitement
+normal.
+
+⚠️ **Ce que le verrou NE fait pas.** Le cas documenté dans `pacing.ts` (un run dont la durée réelle dépasse son
+expiration estimée) reste ouvert : à cet instant, le bail expire en même temps que le job, donc le rejeu
+pg-boss prend le verrou pendant que le run d'origine tourne encore. C'est le risque déjà assumé pour les très
+grosses campagnes à débit très bas, dont le vrai remède est le découpage du run en tranches.
+
+Le SQL est prouvé en intégration (`tests/integration/stores.integration.test.ts`), le câblage en unitaire : les
+deux, parce qu'aucun ne peut prouver ce que prouve l'autre.
 
 ### R13. Arrêter une campagne lancée
 

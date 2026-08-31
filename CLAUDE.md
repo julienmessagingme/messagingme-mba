@@ -51,9 +51,10 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0088** (les sources externes d'outils, lot L2), passée le 2026-08-28 avec la séquence
-complète (build de l'image, vérification que la migration est DEDANS, `migrate`, vérification en base).
-**Prochaine libre = 0089.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Dernière appliquée : 0089** (`campaign_run_locks`, le verrou d'exécution par campagne, R1-bis), passée le
+2026-08-31 avec la séquence complète (build de l'image, vérification que la migration est DEDANS, `migrate`,
+vérification en base). **Prochaine libre = 0090.** En pratique on applique aussi via `npm run migrate` en local
+(même Supabase prod).
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
@@ -124,9 +125,13 @@ qu'avant le premier envoi tracé.
   `standard`, et pg-boss n'y applique aucun index unique sur `singleton_key` (vérifié dans sa source le
   2026-08-31 ; le paramètre `singletonKey`, qui n'a jamais rien fait, a été retiré). N'écrivez jamais de code
   ni de commentaire qui compte sur « un seul job vivant par clé » : deux enfilements = deux jobs qui tournent.
-  La policy étant IMMUABLE après création, on ne peut pas non plus la rattraper sur les files existantes. La
-  seule garantie réelle sur les campagnes est le claim atomique par destinataire, qui protège du double-envoi,
-  PAS du débit. Le verrou applicatif de remplacement est à faire, cf. `todo.md` R1-bis.
+  La policy étant IMMUABLE après création, on ne peut pas non plus la rattraper sur les files existantes.
+- **L'unicité d'exécution se pose à l'EXÉCUTION, jamais à l'enfilement.** Modèle de référence :
+  `src/campaign/run-lock.ts` (migration 0089), qui sérialise les runs d'une même campagne. Trois choses en font
+  un verrou et pas un drapeau : un **bail** (sinon un worker tué en plein envoi bloque la campagne à vie), un
+  **jeton de garde** (sinon le porteur d'un bail périmé supprime le verrou de celui qui l'a repris), et un
+  **drapeau de relance** (sinon le travail arrivé pendant le run est perdu). Réécrire le même verrou ailleurs
+  se fait sur ces trois pièces, pas sur deux.
 - **Une garde de validation se calcule sur l'état EFFECTIF après écriture** (`patch ?? courant`), jamais sur le
   corps de la requête : sinon elle ne ferme qu'un sens (cf. la garde anti-boucle de « conversation analysée »).
 

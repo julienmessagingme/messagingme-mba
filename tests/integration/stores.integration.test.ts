@@ -18,6 +18,7 @@ import {
   PgFrequencyStore,
   PgQualityProvider,
 } from '../../src/campaign/store.pg';
+import { PgCampaignRunLock } from '../../src/campaign/run-lock';
 import { PgStatsStore } from '../../src/stats/store.pg';
 import { PgOpsStore } from '../../src/ops/store.pg';
 import { PgWorkflowStore } from '../../src/workflow/store.pg';
@@ -1577,5 +1578,67 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       ),
     ).rejects.toThrow();
     expect((await repo.listCampaignSummaries(tenantId)).length).toBe(before); // aucune campagne persistée
+  });
+
+  /**
+   * Verrou d'exécution par campagne (R1-bis, migration 0089). C'est ICI que vit la correction : le reste n'est
+   * que du câblage. Ces quatre propriétés sont du SQL, aucun test unitaire ne peut les prouver.
+   */
+  describe('PgCampaignRunLock', () => {
+    const nouvelleCampagne = async (nom: string): Promise<string> => {
+      const repo = new PgCampaignRepo(pool);
+      const { campaignId } = await repo.createWithRecipients(
+        { tenantId, phoneNumberId: 'pn-lock', name: nom, category: 'marketing', templateName: 't', templateLanguage: 'fr', paramMapping: [] },
+        [],
+      );
+      return campaignId;
+    };
+
+    it('🔴 un seul preneur : le second est refusé, et sa demande de relance revient au premier', async () => {
+      const lock = new PgCampaignRunLock(pool);
+      const campaignId = await nouvelleCampagne('Verrou-1');
+      const premier = await lock.acquire(campaignId, tenantId, 3600);
+      expect(premier).not.toBeNull();
+      // Le second ne prend rien ET marque qu'il restait du travail : sans ça, un destinataire remis en attente
+      // pendant le run resterait `pending` à vie sur une campagne passée `completed`.
+      expect(await lock.acquire(campaignId, tenantId, 3600)).toBeNull();
+      expect(await lock.release(campaignId, tenantId, premier!)).toEqual({ rerunDemande: true });
+      // Rendu : le suivant peut le prendre, et il ne traîne aucune relance héritée du précédent.
+      const suivant = await lock.acquire(campaignId, tenantId, 3600);
+      expect(suivant).not.toBeNull();
+      expect(await lock.release(campaignId, tenantId, suivant!)).toEqual({ rerunDemande: false });
+    });
+
+    it('bail écoulé : le verrou est REPRENABLE (sinon un worker tué en plein envoi bloquerait la campagne à vie)', async () => {
+      const lock = new PgCampaignRunLock(pool);
+      const campaignId = await nouvelleCampagne('Verrou-2');
+      const mort = await lock.acquire(campaignId, tenantId, 1);
+      expect(mort).not.toBeNull();
+      // On périme le bail à la main plutôt que d'attendre : le test doit être instantané et déterministe.
+      await pool.query(`update campaign_run_locks set expires_at = now() - interval '1 second' where campaign_id = $1`, [campaignId]);
+      const repreneur = await lock.acquire(campaignId, tenantId, 3600);
+      expect(repreneur).not.toBeNull();
+      expect(repreneur).not.toBe(mort);
+      await lock.release(campaignId, tenantId, repreneur!);
+    });
+
+    it('🔴 jeton de garde : le porteur périmé ne supprime PAS le verrou de celui qui l’a repris', async () => {
+      const lock = new PgCampaignRunLock(pool);
+      const campaignId = await nouvelleCampagne('Verrou-3');
+      const ancien = await lock.acquire(campaignId, tenantId, 1);
+      await pool.query(`update campaign_run_locks set expires_at = now() - interval '1 second' where campaign_id = $1`, [campaignId]);
+      const nouveau = await lock.acquire(campaignId, tenantId, 3600);
+      // L'ancien run, toujours vivant, finit et rend « son » verrou : il ne doit rien casser.
+      expect(await lock.release(campaignId, tenantId, ancien!)).toEqual({ rerunDemande: false });
+      // Sans le jeton, la ligne aurait disparu ici et un troisième run aurait pu démarrer sous le second.
+      expect(await lock.acquire(campaignId, tenantId, 3600)).toBeNull();
+      await lock.release(campaignId, tenantId, nouveau!);
+    });
+
+    it('la libération d’un verrou qu’on ne tient pas ne demande aucune relance', async () => {
+      const lock = new PgCampaignRunLock(pool);
+      const campaignId = await nouvelleCampagne('Verrou-4');
+      expect(await lock.release(campaignId, tenantId, 'jeton-qui-n-existe-pas')).toEqual({ rerunDemande: false });
+    });
   });
 });

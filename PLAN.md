@@ -356,13 +356,12 @@ Un contact qui écrit STOP est désinscrit. Le prédicat de détection existait 
 il n'était simplement pas relié au canal WhatsApp ; il vit maintenant dans `src/crm/consentement.ts`, partagé
 par les deux canaux.
 
-### 1-bis. L'audit du 25 août : cinq constats encore ouverts
+### 1-bis. L'audit du 25 août : quatre constats encore ouverts
 
-**R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué) et **R13** (arrêter une campagne lancée) sont
-faits le 2026-08-31. Restent **R1-bis** (le verrou applicatif de remplacement, et l'amplification du balayage
-fil de l'eau que R1 a mise au jour : soixante runs concurrents sur un envoi throttlé d'une heure, à faire avant
-la première campagne au fil de l'eau), **R4** (un déploiement gèle une campagne en cours), **R10+J2** (le rappel
-« avant date » peut partir deux ou trois fois), **R9** (le mur de l'import CSV), **R7** (le compteur de non-lus).
+**R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué), **R1-bis** (le verrou d'exécution par
+campagne, qui ferme l'amplification du balayage fil de l'eau) et **R13** (arrêter une campagne lancée) sont
+faits le 2026-08-31. Restent **R4** (un déploiement gèle une campagne en cours), **R10+J2** (le rappel « avant
+date » peut partir deux ou trois fois), **R9** (le mur de l'import CSV), **R7** (le compteur de non-lus).
 La liste vivante est en tête de [todo.md](todo.md), pas ici.
 
 ### ~~2. Deux gestes d'hygiène de sécurité~~ ✅ FAIT le 2026-08-29, déployé

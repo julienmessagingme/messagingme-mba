@@ -12,6 +12,7 @@ import type { Campaign, Recipient, QualityRating } from '../src/campaign/types';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 import { MetaApiError } from '../src/meta/errors';
 import { TokenInvalidError } from '../src/meta/credentials';
+import { campaignJobExpireSeconds } from '../src/campaign/pacing';
 
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
@@ -433,5 +434,135 @@ describe('campaignRunJob : campagne en pause', () => {
     );
     expect(report).toMatchObject({ sent: 1, paused: false });
     expect(sender.calls).toEqual(['+33611']);
+  });
+});
+
+/**
+ * SÉRIALISATION des runs (R1-bis). Le verrou lui-même est du SQL, prouvé dans
+ * `tests/integration/stores.integration.test.ts` ; ici on prouve le CÂBLAGE : qui est appelé, avec quoi, et
+ * dans quel ordre. Les deux sont nécessaires, aucun ne remplace l'autre.
+ */
+class VerrouFake {
+  readonly acquis: Array<{ campaignId: string; tenantId: string; leaseSeconds: number }> = [];
+  readonly rendus: Array<{ campaignId: string; holder: string }> = [];
+  constructor(private readonly jeton: string | null, private readonly rerun = false) {}
+  async acquire(campaignId: string, tenantId: string, leaseSeconds: number): Promise<string | null> {
+    this.acquis.push({ campaignId, tenantId, leaseSeconds });
+    return this.jeton;
+  }
+  async release(_c: string, _t: string, holder: string): Promise<{ rerunDemande: boolean }> {
+    this.rendus.push({ campaignId: _c, holder });
+    return { rerunDemande: this.rerun };
+  }
+}
+function avecVerrou(verrou: VerrouFake, over: Partial<RunJobDeps> & { getCampaign: RunJobDeps['getCampaign'] }, relances: string[] = [], enAttente = 0): RunJobDeps {
+  return deps({
+    ...over,
+    serialisation: {
+      verrou,
+      enAttente: async () => enAttente,
+      relancer: async (id) => { relances.push(id); },
+    },
+  });
+}
+
+describe('campaignRunJob : un seul run vivant par campagne', () => {
+  it('🔴 verrou tenu par un run vivant -> ce job N’ENVOIE RIEN et ne lève pas (lever le ferait rejouer en boucle)', async () => {
+    const sender = new FakeSender();
+    const verrou = new VerrouFake(null);
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      avecVerrou(verrou, {
+        getCampaign: async () => campaign,
+        senderFor: async () => sender,
+        recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
+      }),
+    );
+    expect(report).toMatchObject({ sent: 0, paused: false, reason: 'un run de cette campagne est déjà en cours' });
+    expect(sender.calls).toEqual([]);
+    expect(verrou.rendus).toEqual([]); // on ne rend pas un verrou qu'on n'a jamais pris
+  });
+
+  it('contrôle : verrou libre -> le run part, puis le verrou est RENDU avec son jeton', async () => {
+    const sender = new FakeSender();
+    const verrou = new VerrouFake('jeton-1');
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      avecVerrou(verrou, {
+        getCampaign: async () => campaign,
+        senderFor: async () => sender,
+        recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
+      }),
+    );
+    expect(report).toMatchObject({ sent: 1 });
+    expect(verrou.rendus).toEqual([{ campaignId: 'c1', holder: 'jeton-1' }]);
+  });
+
+  it('le bail est dimensionné sur les destinataires en attente, comme l’expiration du job', async () => {
+    // 1000 en attente au débit par défaut (opt-out -> plancher d'estimation 30/min) : bien au-delà du
+    // plancher de 15 min, sinon le bail tomberait en plein envoi et un second run démarrerait dessous.
+    const verrou = new VerrouFake('jeton-1');
+    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(verrou, { getCampaign: async () => campaign }, [], 1000));
+    expect(verrou.acquis[0]).toMatchObject({ campaignId: 'c1', tenantId: 't1' });
+    expect(verrou.acquis[0]!.leaseSeconds).toBe(campaignJobExpireSeconds(1000, 0));
+    expect(verrou.acquis[0]!.leaseSeconds).toBeGreaterThan(900);
+  });
+
+  it('🔴 relance demandée pendant le run -> UN relancement, pour le travail que ce run n’a pas vu', async () => {
+    const relances: string[] = [];
+    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(new VerrouFake('jeton-1', true), { getCampaign: async () => campaign }, relances));
+    expect(relances).toEqual(['c1']);
+  });
+
+  it('aucune relance demandée -> aucun relancement (sinon les runs s’enchaîneraient sans fin)', async () => {
+    const relances: string[] = [];
+    await campaignRunJob({ campaignId: 'c1' }, avecVerrou(new VerrouFake('jeton-1', false), { getCampaign: async () => campaign }, relances));
+    expect(relances).toEqual([]);
+  });
+
+  it('🔴 run en échec : le verrou est RENDU quand même, et SANS relance (pg-boss rejoue déjà ce job)', async () => {
+    const relances: string[] = [];
+    const verrou = new VerrouFake('jeton-1', true);
+    await expect(campaignRunJob(
+      { campaignId: 'c1' },
+      avecVerrou(verrou, {
+        getCampaign: async () => campaign,
+        recipients: { listPending: async () => { throw new Error('base indisponible'); }, claim: async () => true, markResult: async () => {} },
+      }, relances),
+    )).rejects.toThrow('base indisponible');
+    expect(verrou.rendus).toEqual([{ campaignId: 'c1', holder: 'jeton-1' }]);
+    expect(relances).toEqual([]);
+  });
+
+  it('🔴 une libération qui échoue ne fait PAS échouer le job (ce serait ré-envoyer ce qui vient de partir)', async () => {
+    const sender = new FakeSender();
+    const verrouCasse = {
+      acquire: async () => 'jeton-1',
+      release: async () => { throw new Error('base indisponible'); },
+    };
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => campaign,
+        senderFor: async () => sender,
+        recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
+        serialisation: { verrou: verrouCasse, enAttente: async () => 0, relancer: async () => {} },
+      }),
+    );
+    expect(report).toMatchObject({ sent: 1 }); // l'envoi a bien eu lieu, le rapport le dit
+    expect(sender.calls).toEqual(['+33611']);
+  });
+
+  it('sans sérialisation câblée : comportement d’avant, mot pour mot', async () => {
+    const sender = new FakeSender();
+    const report = await campaignRunJob(
+      { campaignId: 'c1' },
+      deps({
+        getCampaign: async () => campaign,
+        senderFor: async () => sender,
+        recipients: new FakeRecipients([{ id: 'r1', contactId: 'x', toE164: '+33611', resolvedParams: [], status: 'pending' }]),
+      }),
+    );
+    expect(report).toMatchObject({ sent: 1 });
   });
 });

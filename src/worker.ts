@@ -14,6 +14,7 @@ import {
   PgQualityProvider,
 } from './campaign/store.pg';
 import { campaignRunJob } from './campaign/run-job';
+import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runRetrySweep } from './campaign/retry-sweep';
@@ -394,6 +395,20 @@ async function main(): Promise<void> {
       // Canal RCS : sender construit à partir de l'agent et du message FIGÉS sur la campagne. null -> la
       // campagne est mise en pause avec sa raison, elle ne repart jamais sur le chemin WhatsApp.
       rcsSenderFor: (campaign) => rcsStack.senderForCampaign(campaign),
+      // SÉRIALISATION des runs (R1-bis) : un seul run vivant par campagne. Injectée ICI seulement, comme les
+      // gardes voisines : absente en test/e2e, le comportement historique est conservé mot pour mot.
+      serialisation: {
+        verrou: new PgCampaignRunLock(pool),
+        enAttente: async (id) => (await repo.getRunSizing(id))?.pendingCount ?? 0,
+        // On ne relance QUE s'il reste vraiment du travail. Un doublon d'enfilement (double clic sur
+        // « Lancer ») marque une relance qui n'a rien à envoyer : elle ferait clignoter le statut de la
+        // campagne (completed -> running -> completed) pour rien.
+        relancer: async (id) => {
+          const sizing = await repo.getRunSizing(id);
+          if (!sizing || sizing.pendingCount === 0) return;
+          await enqueueCampaignRun(queue, id, sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE));
+        },
+      },
       // Campagne workflow : démarre le workflow (blocs sync + 1er template) pour chaque destinataire.
       // firstTemplateParams = variables du 1er template déjà résolues par contact (paramMapping de la campagne).
       // Renvoie false si le run n'a pas démarré (scénario supprimé entre-temps, fil détenu par un humain/MBA,
@@ -617,14 +632,15 @@ async function main(): Promise<void> {
    * attente et personne pour les prendre). Coût : une requête indexée par minute, et zéro enfilement quand
    * rien n'attend.
    *
-   * 🔴 Le motif d'origine était faux : il disait que `singletonKey` refusait un second job tant qu'un run
-   * était en vol, donc que l'arrivant survenu pendant un envoi voyait son job « avalé ». Aucune déduplication
-   * n'a jamais eu lieu (cf. `Queue.enqueue`). L'inversion est fâcheuse : au lieu de rattraper des jobs avalés,
-   * ce balayage EMPILE un run de plus par minute tant que la campagne a des destinataires en attente, alors
-   * qu'un run tourne déjà. Un envoi throttlé d'une heure se retrouve avec soixante runs concurrents, chacun
-   * avec son limiteur de débit en mémoire. Aucune campagne au fil de l'eau n'a encore tourné en production,
-   * donc ça n'a jamais mordu ; c'est l'amplification la plus grave que la découverte de R1 met au jour, et
-   * elle attend le verrou applicatif (`todo.md`).
+   * ⚠️ Ce balayage enfile SANS SE DEMANDER si un run tourne déjà, et c'est assumé : le verrou d'exécution
+   * (`run-lock.ts`) écarte le job en trop et note qu'il faudra relancer, ce que le run en cours fait en
+   * sortant. Le tri se fait donc à l'exécution, pas à l'enfilement.
+   *
+   * 🔴 Ce raisonnement N'ÉTAIT PAS VRAI avant le 2026-08-31. Le motif d'origine créditait un `singletonKey`
+   * qui n'a jamais rien dédupliqué (cf. `Queue.enqueue`), et l'effet réel était l'inverse du rattrapage
+   * annoncé : un run de plus EMPILÉ par minute tant qu'il restait des destinataires en attente, soit soixante
+   * runs concurrents sur un envoi throttlé d'une heure, chacun avec son limiteur de débit en mémoire. Aucune
+   * campagne au fil de l'eau n'ayant encore tourné en production, ça n'a jamais mordu.
    */
   const filDeLEauSweep = async (): Promise<void> => {
     try {

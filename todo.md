@@ -9,21 +9,10 @@ R3 alerte de file d'échec, J0 pool à 8), et R5, R6-découpage, J1, R12 et B3 v
 aucun ne casse, ils se relisent à la source le jour où on ouvre le fichier concerné.
 
 **Faits le 2026-08-31 :** **R1** (la vérité sur `singletonKey`, qui n'a jamais dédupliqué : douze commentaires
-corrigés et le paramètre inerte retiré) et **R13** (arrêter une campagne lancée : pause, garde au démarrage du
-job, reprise explicite). Détail dans `documentation.md` §Journal des lots livrés. Ce que R1 laissait ouvert
-est repris ci-dessous sous R1-bis, avec l'amplification qu'il a mise au jour.
-
-- 🔴 **R1-bis. Le verrou applicatif qui remplace le `singletonKey` inexistant.** R1 est fait (2026-08-31) :
-  la vérité est rétablie et le paramètre inerte retiré, détail dans `documentation.md`. Reste la DÉCISION du
-  mécanisme, que R1 laissait ouverte : une table de verrous, même patron qu'`api_idempotency` (la policy d'une
-  file pg-boss est immuable après création, on ne peut donc pas passer par elle).
-  🔴 **La découverte la plus grave de R1 est là :** le balayage « fil de l'eau » (`filDeLEauSweep`,
-  `src/worker.ts`) se croyait un rattrapage de jobs avalés ; il **empile en fait un run de plus par minute**
-  tant que la campagne a des destinataires en attente, alors qu'un run tourne déjà. Un envoi throttlé d'une
-  heure finirait à **soixante runs concurrents**, chacun avec son limiteur de débit en mémoire. Aucun contact
-  ne recevrait deux fois (le claim tient), mais le débit réel serait soixante fois l'annoncé, ce qui grille un
-  numéro neuf en palier 250. **Ça n'a jamais mordu : aucune campagne au fil de l'eau n'a encore tourné en
-  production.** C'est donc à faire AVANT la première.
+corrigés et le paramètre inerte retiré), **R1-bis** (le verrou d'exécution par campagne, migration 0089, qui
+ferme aussi l'amplification du balayage fil de l'eau que R1 avait mise au jour) et **R13** (arrêter une
+campagne lancée : pause, garde au démarrage du job, reprise explicite). Détail dans `documentation.md`
+§Journal des lots livrés.
 
 - 🔴 **R4. Chaque déploiement gèle une campagne en cours, sans erreur visible.**
   `installGracefulShutdown` (`src/shutdown.ts:5`) force `process.exit(1)` à 10 secondes, un run de deux
