@@ -1156,16 +1156,11 @@ async function main(): Promise<void> {
     arretDemande = true;
   });
 
-  const files = [
-    'webhook',
-    'campaign-run',
-    AUTOMATION_EVENT_QUEUE,
-    // La file d'agent n'est consommée que si le Gateway est configuré : le message de démarrage doit dire
-    // laquelle des deux situations on est, sinon un bloc agent muet ressemble à un bug du moteur.
-    ...(config.AI_GATEWAY_API_KEY ? [AGENT_TURN_QUEUE] : []),
-    ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' ? ['analyze-conversation'] : []),
-    ...(config.CONVERSATION_ANALYSIS_ENABLED === 'true' && config.CONNECTOR_PUSH_URL !== '' ? ['push-analysis', 'hubspot-catchup'] : []),
-  ];
+  // 🔴 DÉRIVÉ des files réellement consommées, jamais recopié. Cette liste était écrite à la main, avec ses
+  // propres conditions (« si le Gateway est configuré »...), c'est-à-dire une SECONDE vérité à tenir alignée
+  // avec les `queue.work`. Elle a menti le jour même de l'ajout de `webhook-status` : le worker annonçait
+  // sept files pour huit consommées, et personne ne l'aurait vu.
+  const files = queue.filesTravaillees();
   // eslint-disable-next-line no-console
   console.log(`messagingme-mba worker démarré (files: ${files.join(', ')})${dryRun ? ' [DRY_RUN]' : ''}`);
 }

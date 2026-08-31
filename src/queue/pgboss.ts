@@ -96,6 +96,8 @@ export class PgBossQueue implements Queue {
   private readonly boss: PgBoss;
   private started = false;
   private readonly ensured = new Set<string>();
+  /** Files consommées par CE process, dans l'ordre : le message de démarrage en dérive (jamais recopié). */
+  private readonly travaillees: string[] = [];
   private readonly retryLimit: number;
 
   constructor(connectionString: string, schema = 'pgboss', opts: PgBossPoolOpts & PgBossMaintenanceOpts & { retryLimit?: number } = {}) {
@@ -169,12 +171,17 @@ export class PgBossQueue implements Queue {
     });
   }
 
+  filesTravaillees(): readonly string[] {
+    return [...this.travaillees];
+  }
+
   async work(
     name: string,
     handler: (data: unknown) => Promise<void>,
     opts?: { concurrency?: number; groupConcurrency?: number },
   ): Promise<void> {
     await this.ensure(name);
+    this.travaillees.push(name);
     // batchSize:1 verrouille l'invariant per-job de l'abstraction (un throw ne fait
     // pas échouer un lot entier / ne rejoue pas des jobs déjà réussis).
     // pollingIntervalSeconds : cadence PAR FILE (défaut pg-boss 2 s, trop bavard pour une base facturée à

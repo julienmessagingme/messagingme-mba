@@ -47,4 +47,12 @@ export interface Queue {
     handler: (data: unknown) => Promise<void>,
     opts?: { concurrency?: number; groupConcurrency?: number },
   ): Promise<void>;
+  /**
+   * Les files RÉELLEMENT consommées par ce process, dans l'ordre d'enregistrement.
+   *
+   * Existe pour que le message de démarrage du worker soit DÉRIVÉ et non recopié. Il l'était : une liste
+   * écrite à la main, avec ses propres conditions (`si le Gateway est configuré`...), donc une seconde vérité
+   * qui a menti le jour même de l'ajout de `webhook-status`, en annonçant sept files pour huit consommées.
+   */
+  filesTravaillees(): readonly string[];
 }

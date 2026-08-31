@@ -41,6 +41,15 @@ describe('queue names (source unique)', () => {
     }
   });
 
+  it('🔴 le message de démarrage est DÉRIVÉ des files consommées, jamais recopié', () => {
+    // Cette liste était écrite à la main, avec ses propres conditions : une seconde vérité à tenir alignée
+    // avec les `queue.work`. Elle a menti le jour même de l'ajout de `webhook-status`, en annonçant sept
+    // files pour huit consommées. Personne ne l'aurait vu : un message de démarrage, ça se lit une fois.
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    expect(worker, 'la liste du log doit venir de la file elle-même').toMatch(/const files = queue\.filesTravaillees\(\)/);
+    expect(worker, 'aucune liste de files écrite à la main dans le log de démarrage').not.toMatch(/const files = \[/);
+  });
+
   it('ALL_QUEUES = chaque file de base + sa DLQ, sans doublon', () => {
     expect(ALL_QUEUES).toHaveLength(BASE_QUEUES.length * 2);
     expect(new Set(ALL_QUEUES).size).toBe(ALL_QUEUES.length);

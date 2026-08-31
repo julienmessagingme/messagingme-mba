@@ -25,6 +25,11 @@ export class FakeQueue implements Queue {
     this.enqueued.push({ name, data, ...(opts ? { opts } : {}) });
   }
 
+  /** Dérivée de `workCalls`, comme en production : la fausse file ne tient pas une seconde liste. */
+  filesTravaillees(): readonly string[] {
+    return this.workCalls.map((c) => c.name);
+  }
+
   async work(
     name: string,
     handler: (data: unknown) => Promise<void>,
