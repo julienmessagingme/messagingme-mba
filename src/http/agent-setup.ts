@@ -7,7 +7,7 @@ import { octetsDepuisDataUrl } from '../rcs/image';
 import {
   extraireTexte, reconnaitre, texteEnFiches, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
 } from '../agent/setup/piece-jointe';
-import { construireMessages, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
+import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
 import { agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
 import { ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
@@ -101,12 +101,15 @@ const DELAI_MS = 45_000;
 
 /** L'avancement, tel que l'écran l'affiche. Le total est celui de l'ordre du jour EFFECTIF : un client dont
  *  l'agent n'appellera jamais d'outil ne doit pas se voir annoncer un point qui n'existera jamais pour lui. */
-function avancement(etat: EntretienComplet): { manquants: string[]; total: number; pointOuvert: string | null } {
-  const manquants = manquesDeCouverture(etat);
+function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): { manquants: string[]; total: number; pointOuvert: string | null } {
+  // L'INVENTAIRE entre ici parce qu'il change la QUESTION du moyen, pas la liste des points : le compte et
+  // l'ordre sont les mêmes, mais la question posée montre ce qui est réellement branché.
+  const inv = ctx ? inventaireDe(ctx) : undefined;
+  const manquants = manquesDeCouverture(etat, inv);
   return {
     manquants,
-    total: agendaEffectif(etat).length,
-    pointOuvert: prochainPoint(etat)?.code ?? null,
+    total: agendaEffectif(etat, inv).length,
+    pointOuvert: prochainPoint(etat, inv)?.code ?? null,
   };
 }
 
@@ -136,7 +139,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
     const entretien = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
-    return reply.code(200).send({ messages: entretien.messages, couverture: avancement(entretien) });
+    return reply.code(200).send({ messages: entretien.messages, couverture: avancement(entretien, ctx.etat) });
   });
 
   /**
@@ -148,7 +151,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
     await ctx.entretiens.effacer(ctx.tenant, ctx.agentId);
-    return reply.code(200).send({ efface: true, couverture: avancement(ENTRETIEN_VIERGE) });
+    return reply.code(200).send({ efface: true, couverture: avancement(ENTRETIEN_VIERGE, ctx.etat) });
   });
 
   /**
@@ -237,7 +240,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const historique: TourEntretien[] = [...avant.messages, { role: 'user', content: parse.data.message }];
     // 🔴 Le point du tour est arrêté AVANT l'appel, sur l'état serveur : c'est ce qui rend la séquence des
     // questions non négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
-    const pointDuTour = prochainPoint(avant);
+    const pointDuTour = prochainPoint(avant, inventaireDe(ctx.etat));
 
     let reponse: ReponseChat;
     try {
@@ -303,7 +306,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * bien la suivante, pas celle à laquelle il vient de répondre. Et on la note POSÉE, puisqu'on vient de la
      * poser : sans ça, le tour d'après la reposerait.
      */
-    const ouvertApres = prochainPoint({ poses, reponses, bascules: listeBascules });
+    const ouvertApres = prochainPoint({ poses, reponses, bascules: listeBascules }, inventaireDe(ctx.etat));
     const relance = ouvertApres && !poseUneQuestion(propose.data.message) ? ouvertApres : null;
     const message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
 
@@ -326,7 +329,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * On ne jette pas la proposition, on ne la MONTRE pas : le tour suivant la reformulera avec ce qu'il aura
      * appris entre-temps, et rien de ce que le client n'a pas encore dit n'aura été présenté comme compris.
      */
-    const suivi = avancement(apres);
+    const suivi = avancement(apres, ctx.etat);
     const enEntretien = suivi.manquants.length > 0;
 
     return reply.code(200).send({

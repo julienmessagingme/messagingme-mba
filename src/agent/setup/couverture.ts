@@ -63,6 +63,39 @@ export const CHOIX_ACTION: ReadonlyArray<{ action: Action; libelle: string }> = 
 /** Les actions qui appellent un MOYEN concret. `humain` a son propre point, `continuer` ne demande rien. */
 const DEMANDE_UN_MOYEN = new Set<Action>(['scenario', 'outil_api', 'outil_mcp', 'autre']);
 
+/**
+ * CE QUI EST RÉELLEMENT BRANCHÉ, au moment où on pose la question.
+ *
+ * 🔴 Julien, 2026-08-31 : « si la personne dit MCP ou API, il faut que t'ailles chercher ce qui est branché
+ * pour que la personne dise exactement lequel c'est ; donc si c'est pas branché ou s'il y a rien, ben y a
+ * rien et la personne devra choisir autre chose ».
+ *
+ * C'est le dernier verrou contre l'outil inventé. Le reste du dispositif empêche le MODÈLE d'en inventer un ;
+ * celui-ci empêche la CONVERSATION de se conclure sur un moyen qui n'existe pas, en montrant l'inventaire réel
+ * au lieu de laisser le client nommer quelque chose au hasard.
+ *
+ * Trois listes et pas une, parce que les trois situations appellent trois réponses différentes.
+ */
+export interface Inventaire {
+  /** Les outils de connecteur DÉJÀ branchés SUR CET AGENT : appelables aujourd'hui, sans rien faire de plus. */
+  outilsApi: string[];
+  /** Les systèmes déclarés dans l'espace mais PAS branchés sur cet agent : à relier, ce qui est un geste
+   *  d'administrateur et non une réponse d'entretien. Les taire ferait dire « rien n'existe » à un client qui
+   *  a justement déclaré son ERP la semaine dernière. */
+  systemesApi: string[];
+  /** Les serveurs MCP déclarés. ⚠️ MCP n'est PAS exécutable aujourd'hui (lot L4 non développé) : même non
+   *  vide, cette liste ne rend rien appelable, et la question le dit. */
+  mcp: string[];
+}
+
+export const INVENTAIRE_VIDE: Inventaire = { outilsApi: [], systemesApi: [], mcp: [] };
+
+/** Une énumération lisible, « a, b et c ». */
+function enumerer(noms: readonly string[]): string {
+  if (noms.length <= 1) return noms[0] ?? '';
+  return `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}`;
+}
+
 /** Le questionnaire, tel qu'il part dans le prompt et dans la question de repli. */
 export function questionnaireAction(moment: string): string {
   const lignes = CHOIX_ACTION.map((c, i) => `${i + 1}) ${c.libelle}`).join('\n');
@@ -220,7 +253,7 @@ export function libelleAction(action: Action): string {
  * qu'il en reste une. Le total annoncé au client GRANDIT donc à mesure qu'il cite des moments, ce qui est
  * honnête : il ne pouvait pas savoir combien il en aurait avant de les avoir dits.
  */
-export function agendaEffectif(etat: EtatEntretien): Point[] {
+export function agendaEffectif(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): Point[] {
   const liste = bascules(etat);
   const engendres: Point[] = [];
   liste.forEach((b, i) => {
@@ -232,7 +265,7 @@ export function agendaEffectif(etat: EtatEntretien): Point[] {
     if (b.action && DEMANDE_UN_MOYEN.has(b.action)) {
       engendres.push({
         code: codeMoyen(i),
-        question: `Pour « ${b.moment} » : ${moyenDemande(b.action)}`,
+        question: `Pour « ${b.moment} » : ${moyenDemande(b.action, inv)}`,
         aObtenir: `le moyen CONCRET pour « ${b.moment} » (${libelleAction(b.action)})`,
       });
     }
@@ -245,16 +278,41 @@ export function agendaEffectif(etat: EtatEntretien): Point[] {
   return out;
 }
 
-/** La question du moyen, selon l'action choisie. Chacune appelle une précision différente. */
-function moyenDemande(action: Action): string {
+/**
+ * La question du moyen, selon l'action choisie ET l'inventaire réel.
+ *
+ * 🔴 Elle MONTRE ce qui est branché plutôt que de demander au client de le deviner. Quand rien ne l'est, elle
+ * le dit et propose les deux seules issues honnêtes : changer d'action, ou décrire ce qu'il faudra brancher.
+ * Ne laisser aucune issue ferait un entretien qui ne peut plus se terminer.
+ */
+function moyenDemande(action: Action, inv: Inventaire): string {
   if (action === 'scenario') return 'quel scénario doit-il lancer, ou que doit contenir ce scénario ?';
-  if (action === 'outil_api') return 'quel connecteur API doit-il appeler ? S’il n’existe pas encore, dites ce qu’il devrait faire.';
-  if (action === 'outil_mcp') return 'quel outil MCP, et sur quel serveur ? (MCP n’est pas encore branché : ce sera à câbler.)';
+  if (action === 'outil_api') {
+    if (inv.outilsApi.length > 0) {
+      const dispo = `Branchés sur cet agent : ${enumerer(inv.outilsApi)}.`;
+      const aRelier = inv.systemesApi.length > 0
+        ? ` Déclarés dans votre espace mais pas encore reliés à cet agent : ${enumerer(inv.systemesApi)}.`
+        : '';
+      return `lequel doit-il appeler ? ${dispo}${aRelier}`;
+    }
+    if (inv.systemesApi.length > 0) {
+      return 'AUCUN connecteur n’est branché sur cet agent. Vous avez déclaré '
+        + `${enumerer(inv.systemesApi)} dans votre espace : il reste à y brancher l’appel (menu Tools > `
+        + 'Connecteurs API). En attendant, dites-moi lequel, ou choisissez autre chose pour ce moment.';
+    }
+    return 'AUCUN connecteur API n’est branché, et aucun système n’est déclaré dans votre espace : il n’y a '
+      + 'rien à appeler aujourd’hui. Décrivez ce qu’il faudrait brancher, ou choisissez autre chose pour ce moment.';
+  }
+  if (action === 'outil_mcp') {
+    const declares = inv.mcp.length > 0 ? ` (vous avez déclaré ${enumerer(inv.mcp)}, mais rien ne peut encore l’appeler)` : '';
+    return `MCP n’est PAS encore disponible sur cette console${declares}. Décrivez ce qu’il faudrait brancher, `
+      + 'ou choisissez autre chose pour ce moment.';
+  }
   return 'que doit-il faire exactement ?';
 }
 
 /** Ce qui reste à couvrir, dans l'ordre. Un point compte comme couvert s'il a été POSÉ **et** répondu. */
-export function manquesDeCouverture(etat: EtatEntretien): string[] {
+export function manquesDeCouverture(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): string[] {
   const poses = new Set(etat.poses);
   const repondus = new Set(retenues(etat.reponses).map((r) => r.point));
   const liste = bascules(etat);
@@ -264,14 +322,14 @@ export function manquesDeCouverture(etat: EtatEntretien): string[] {
     if (b.action) repondus.add(codeAction(i));
     if (b.moyen && b.moyen.trim() !== '') repondus.add(codeMoyen(i));
   });
-  return agendaEffectif(etat)
+  return agendaEffectif(etat, inv)
     .filter((p) => !(poses.has(p.code) && repondus.has(p.code)))
     .map((p) => p.code);
 }
 
 /** Tous les points de l'ordre du jour effectif, par code. */
-function parCode(etat: EtatEntretien): Map<string, Point> {
-  return new Map(agendaEffectif(etat).map((p) => [p.code, p]));
+function parCode(etat: EtatEntretien, inv: Inventaire): Map<string, Point> {
+  return new Map(agendaEffectif(etat, inv).map((p) => [p.code, p]));
 }
 
 /**
@@ -280,9 +338,9 @@ function parCode(etat: EtatEntretien): Map<string, Point> {
  *
  * C'est cette fonction, et elle seule, qui décide de quoi on parle. Le modèle ne vote pas.
  */
-export function prochainPoint(etat: EtatEntretien): Point | null {
-  const manquants = manquesDeCouverture(etat);
-  return manquants.length === 0 ? null : parCode(etat).get(manquants[0]!) ?? null;
+export function prochainPoint(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): Point | null {
+  const manquants = manquesDeCouverture(etat, inv);
+  return manquants.length === 0 ? null : parCode(etat, inv).get(manquants[0]!) ?? null;
 }
 
 /**
@@ -293,9 +351,9 @@ export function prochainPoint(etat: EtatEntretien): Point | null {
  * laisse l'assistant enchaîner sans reposer une question déjà résolue, tout en lui interdisant de sauter plus
  * loin. Un seul point ferait piétiner l'entretien, la liste entière le laisserait le survoler.
  */
-export function prochainsPoints(etat: EtatEntretien): [Point | null, Point | null] {
-  const manquants = manquesDeCouverture(etat);
-  const par = parCode(etat);
+export function prochainsPoints(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): [Point | null, Point | null] {
+  const manquants = manquesDeCouverture(etat, inv);
+  const par = parCode(etat, inv);
   return [par.get(manquants[0] ?? '') ?? null, par.get(manquants[1] ?? '') ?? null];
 }
 
@@ -343,7 +401,7 @@ export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly 
  * pouvoir constater qu'une réponse déjà donnée rend la question suivante inutile à reposer telle quelle, et
  * revenir sur un point si la suite le contredit.
  */
-export function ordreDuJour(etat: EtatEntretien): string {
+export function ordreDuJour(etat: EtatEntretien, inv: Inventaire = INVENTAIRE_VIDE): string {
   const gardees = new Map(retenues(etat.reponses).map((r) => [r.point, r.valeur]));
   // Ce qu'on sait des points ENGENDRÉS ne vit pas dans `reponses` mais sur la bascule elle-même : on le
   // reprojette ici pour que le modèle voie l'ordre du jour d'un seul tenant.
@@ -352,7 +410,7 @@ export function ordreDuJour(etat: EtatEntretien): string {
     if (b.moyen && b.moyen.trim() !== '') gardees.set(codeMoyen(i), b.moyen);
   });
   const poses = new Set(etat.poses);
-  const effectif = agendaEffectif(etat);
+  const effectif = agendaEffectif(etat, inv);
   const large = Math.max(...effectif.map((p) => p.code.length));
   return effectif
     .map((p) => {

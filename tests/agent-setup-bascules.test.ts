@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   AGENDA, CHOIX_ACTION, agendaEffectif, fusionner, fusionnerBascules,
-  manquesDeCouverture, prochainsPoints, type EtatEntretien,
+  manquesDeCouverture, prochainsPoints, type EtatEntretien, type Inventaire,
 } from '../src/agent/setup/couverture';
+import { inventaireDe, type ContexteConstruction } from '../src/agent/setup/conversation';
+import { ficheVide } from '../src/agent/fiche';
 
 /**
  * L'ENTRETIEN CONDUIT PAR LE SERVEUR, ET LES BASCULES PRISES UNE PAR UNE.
@@ -124,6 +126,74 @@ describe('couverture de l’ordre du jour', () => {
   it('🔴 MCP est proposé MAIS annoncé comme non branché : on ne promet pas un câblage inexistant', () => {
     const mcp = CHOIX_ACTION.find((c) => c.action === 'outil_mcp')!;
     expect(mcp.libelle).toContain('pas encore');
+  });
+
+  /**
+   * 🔴 LA QUESTION DU MOYEN MONTRE CE QUI EST RÉELLEMENT BRANCHÉ.
+   *
+   * Julien, 2026-08-31 : « si la personne dit MCP ou API, il faut que t'ailles chercher ce qui est branché
+   * pour que la personne dise exactement lequel c'est ; donc si c'est pas branché ou s'il y a rien, ben y a
+   * rien et la personne devra choisir autre chose ». C'est le dernier verrou contre l'outil inventé : le
+   * reste empêche le MODÈLE d'en inventer un, celui-ci empêche la CONVERSATION de conclure sur un moyen
+   * qui n'existe pas.
+   */
+  describe('la question du moyen lit l’inventaire réel', () => {
+    const question = (action: 'outil_api' | 'outil_mcp', inv: Inventaire): string => {
+      const etat = base({ bascules: [{ moment: 'le client veut prendre rendez-vous', action }] });
+      return agendaEffectif(etat, inv).find((p) => p.code === 'bascule_1_moyen')!.question;
+    };
+
+    it('API branchée : elle NOMME les connecteurs appelables', () => {
+      const q = question('outil_api', { outilsApi: ['Agenda', 'Stock'], systemesApi: [], mcp: [] });
+      expect(q).toContain('Agenda');
+      expect(q).toContain('Stock');
+      expect(q).toContain('Branchés sur cet agent');
+    });
+
+    it('🔴 système DÉCLARÉ mais pas branché sur cet agent : on le dit, au lieu de « rien n’existe »', () => {
+      // Répondre « rien » à un client qui vient de déclarer son ERP lui ferait croire qu'il a mal fait.
+      const q = question('outil_api', { outilsApi: [], systemesApi: ['ERP interne'], mcp: [] });
+      expect(q).toContain('AUCUN connecteur n’est branché sur cet agent');
+      expect(q).toContain('ERP interne');
+      expect(q).toContain('Tools > Connecteurs API'); // et où le brancher
+    });
+
+    it('🔴 RIEN du tout : la question le dit et laisse DEUX issues, jamais un cul-de-sac', () => {
+      // Ne laisser aucune issue ferait un entretien qui ne peut plus se terminer.
+      const q = question('outil_api', { outilsApi: [], systemesApi: [], mcp: [] });
+      expect(q).toContain('rien à appeler');
+      expect(q).toContain('choisissez autre chose');
+      expect(q).toContain('Décrivez ce qu’il faudrait brancher');
+    });
+
+    it('🔴 MCP : même déclaré, il n’est PAS appelable, et la question ne le cache pas', () => {
+      const declare = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: ['serveur maison'] });
+      expect(declare).toContain('n’est PAS encore disponible');
+      expect(declare).toContain('serveur maison');
+      expect(declare).toContain('rien ne peut encore l’appeler');
+      const rien = question('outil_mcp', { outilsApi: [], systemesApi: [], mcp: [] });
+      expect(rien).toContain('n’est PAS encore disponible');
+      expect(rien).toContain('choisissez autre chose');
+    });
+
+    it('un système DÉJÀ branché n’est pas proposé une seconde fois comme « à relier »', () => {
+      const ctx: ContexteConstruction = {
+        label: 'A', fiche: ficheVide(), outils: [], titresConnaissance: [],
+        connecteurs: [{ nom: 'erp', titre: 'ERP interne', description: '', nePasUtiliser: '' }],
+        sources: [{ label: 'ERP interne', kind: 'http', status: 'active' }, { label: 'Agenda', kind: 'http', status: 'active' }],
+      };
+      const inv = inventaireDe(ctx);
+      expect(inv.outilsApi).toEqual(['ERP interne']);
+      expect(inv.systemesApi).toEqual(['Agenda']);
+    });
+
+    it('une source DÉSACTIVÉE ne compte pas : la proposer promettrait un appel qui échouerait', () => {
+      const ctx: ContexteConstruction = {
+        label: 'A', fiche: ficheVide(), outils: [], titresConnaissance: [], connecteurs: [],
+        sources: [{ label: 'Vieux CRM', kind: 'http', status: 'disabled' }, { label: 'MCP off', kind: 'mcp', status: 'disabled' }],
+      };
+      expect(inventaireDe(ctx)).toEqual({ outilsApi: [], systemesApi: [], mcp: [] });
+    });
   });
 
   it('🔴 fusionnerBascules apparie par MOMENT et ajoute en fin : les codes engendrés restent stables', () => {

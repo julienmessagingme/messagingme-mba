@@ -670,9 +670,13 @@ async function main(): Promise<void> {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        const [outils, fiches] = await Promise.all([
+        const [outils, fiches, sources] = await Promise.all([
           toolCatalog.listToutes(tenant, agentId),
           knowledgeStore.lister(tenant, agentId),
+          // La BIBLIOTHEQUE de l espace : ce qui est declare, branche sur cet agent ou non. Sert a repondre
+          // honnetement << vous avez declare votre ERP, il reste a y brancher l appel >> au lieu de
+          // << rien n existe >> a un client qui vient justement de le declarer.
+          agentSources.lister(tenant),
         ]);
         return {
           label: fiche.label,
@@ -685,6 +689,7 @@ async function main(): Promise<void> {
           connecteurs: outils.filter((o) => o.origin !== 'mba')
             .map((o) => ({ nom: o.name, titre: o.title, description: o.description, nePasUtiliser: o.nePasUtiliser })),
           titresConnaissance: fiches.map((f) => f.titre),
+          sources: sources.map((s) => ({ label: s.label, kind: s.kind, status: s.status })),
         };
       },
       // Les PIECES JOINTES ecrivent des fiches de connaissance, par le MEME store que l onglet Connaissance :
