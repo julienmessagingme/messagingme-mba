@@ -88,9 +88,19 @@ Ce qui en découle, et qui compte plus que le reste :
   sur le MOYEN : quel outil du catalogue, ou quel connecteur déjà déclaré. Si rien de ce qui existe ne
   convient, dis-le en clair au lieu d'inventer un outil : ce sera à câbler avant que l'agent puisse le faire.
 
+🔴 TANT QU'IL RESTE UN POINT À COUVRIR, TON MESSAGE SE TERMINE PAR UNE QUESTION. Toujours. Accuser réception
+et t'arrêter là laisse le client devant un écran auquel il n'a rien à répondre : c'est un entretien mort. Une
+reformulation, un « d'accord », un « c'est noté » ne sont PAS des messages valables s'ils ne sont pas suivis
+d'une question. Une seule à la fois, celle qu'on te désigne, et c'est la dernière phrase de ton message.
+
 Poser une question n'est pas laisser une page blanche : propose deux ou trois possibilités concrètes tirées
 de ce qu'il vient de dire. Mais une possibilité proposée n'est PAS une réponse : tant qu'il n'a pas tranché,
 tu ne la notes pas.
+
+🔴 LES POSSIBILITÉS QU'ON TE DONNE SONT DES EXEMPLES, PAS UN MENU À RÉCITER. Elles sont écrites pour un métier
+quelconque ; tu les TRADUIS dans le sien, avec ses mots à lui, ceux qu'il vient d'employer. Réciter « pas de
+conseil technique » à un concessionnaire automobile lui montre que tu ne l'écoutes pas. S'il t'a parlé de
+véhicules, d'essais et de concessions, tes exemples parlent de véhicules, d'essais et de concessions.
 
 Tu rends TOUJOURS ta réponse par l'outil « proposer », jamais en texte libre. Tu y notes dans « reponses » ce
 que le client vient de DIRE, rattaché aux points concernés : jamais ce que tu as supposé, et jamais une
@@ -131,7 +141,8 @@ function consigneDuTour(etat: EtatEntretien): string {
   // points, pas un de plus : l'entretien avance d'un cran par tour, et rien ne se saute.
   const lignes = [
     `LE POINT OUVERT : ${ouvert.code} -> ${ouvert.aObtenir}.`,
-    `Possibilités à lui montrer (adapte-les à son métier) : ${pistesDe(ouvert)}.`,
+    `La question, à reformuler dans le fil de ce qu'il vient de dire : « ${ouvert.question} »`,
+    `Exemples à TRADUIRE dans son métier, jamais à réciter : ${pistesDe(ouvert)}.`,
   ];
   const deja = etat.reponses.find((r) => r.point === ouvert.code && r.valeur.trim() !== '');
   if (deja) {
@@ -139,8 +150,9 @@ function consigneDuTour(etat: EtatEntretien): string {
       + 'reformule-la en une phrase et demande-lui de confirmer ou de corriger.');
   }
   if (suivant) {
-    lignes.push(`SI son dernier message répond au point ouvert : note la réponse et pose alors le point `
-      + `SUIVANT, ${suivant.code} -> ${suivant.aObtenir} (possibilités : ${pistesDe(suivant)}).`);
+    lignes.push(`SI son dernier message répond au point ouvert : note la réponse, dis-le-lui en une ligne, et `
+      + `pose alors le point SUIVANT, ${suivant.code} -> ${suivant.aObtenir}. Sa question : « ${suivant.question} » `
+      + `(exemples à traduire : ${pistesDe(suivant)}).`);
     lignes.push('Tu ne peux poser que l’un de ces deux points. Aucun autre, et jamais les deux à la fois.');
   } else {
     lignes.push('C’est le DERNIER point. S’il y répond, l’entretien est fini.');

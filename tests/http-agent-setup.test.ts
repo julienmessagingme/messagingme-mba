@@ -143,12 +143,65 @@ describe('conversation de construction', () => {
     // C'était le trou de fond. La couverture étant annoncée par le modèle, une seule phrase suffisait à
     // déclarer neuf points tranchés. Elle est maintenant conditionnée à ce que le SERVEUR a réellement posé,
     // et il ne pose qu'un point par tour.
-    const r = reponse(JSON.stringify({ message: 'Voilà tout.', reponses: toutesLesReponses(), fiche: { objectif: 'x' } }));
+    const r = reponse(JSON.stringify({ message: 'Voilà tout, on continue ?', reponses: toutesLesReponses(), fiche: { objectif: 'x' } }));
     const res = await app({ reponse: r }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(res.statusCode).toBe(200);
     // Seul le premier point a été posé par ce tour : tous les autres manquent, malgré leurs réponses.
     expect(res.json().couverture.manquants).toEqual(BASE.slice(1));
     expect(res.json().changements).toEqual([]);
+  });
+
+  /**
+   * 🔴 UN MESSAGE QUI N'INTERROGE RIEN LAISSE L'ENTRETIEN MORT.
+   *
+   * Vu par Julien le 2026-08-31, au point 3 sur 8 : l'assistant a accusé réception (« D'accord : les pages de
+   * description des véhicules seront importées ») et s'est arrêté là. Le client n'avait plus rien à quoi
+   * répondre. Le mandat bornait le MAXIMUM de questions et n'avait jamais posé de minimum.
+   */
+  describe('relance quand l’assistant n’interroge rien', () => {
+    it('🔴 le serveur POSE la question lui-même, et c’est celle du point encore ouvert', async () => {
+      const accuseSeul = reponse(JSON.stringify({
+        message: 'D’accord : les pages de description des véhicules seront importées depuis votre site.',
+        reponses: [{ point: 'mission', valeur: 'faire découvrir les véhicules' }],
+      }));
+      const a = app({ reponse: accuseSeul });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(res.statusCode).toBe(200);
+      const message: string = res.json().message;
+      expect(message).toContain('les pages de description'); // le texte du modèle est GARDÉ
+      expect(message).toContain('?'); // et il se termine par une question
+      // La question est celle du point encore ouvert APRÈS ce tour (mission vient d'être couvert), pas celle
+      // à laquelle il vient de répondre.
+      const suivant = AGENDA.find((p) => p.code === BASE[1])!;
+      expect(message).toContain(suivant.question);
+      // Elle est notée POSÉE : sans ça, le tour d'après la reposerait.
+      expect(a.entretiens.ecrits.at(-1)!.poses).toEqual([BASE[0], BASE[1]]);
+    });
+
+    it('un message qui pose DÉJÀ une question est laissé intact', async () => {
+      const avecQuestion = reponse(JSON.stringify({
+        message: 'Compris. De quoi ne doit-il jamais parler ?',
+        reponses: [{ point: 'mission', valeur: 'faire découvrir les véhicules' }],
+      }));
+      const a = app({ reponse: avecQuestion });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(res.json().message).toBe('Compris. De quoi ne doit-il jamais parler ?');
+      expect(a.entretiens.ecrits.at(-1)!.poses).toEqual([BASE[0]]); // rien de posé en plus
+    });
+
+    it('🔴 l’entretien TERMINÉ ne relance pas : c’est le moment de proposer, pas de questionner', async () => {
+      // Sinon l'assistant repartirait pour un tour au moment précis où il doit montrer ce qu'il a compris.
+      const a = app({ entretien: ENTRETIEN_FINI, reponse: reponse(JSON.stringify({ message: 'Voici ce que je propose.', reponses: [], fiche: { objectif: 'Cerner le besoin puis proposer un essai.' } })) });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(res.json().message).toBe('Voici ce que je propose.');
+      expect(res.json().changements).toHaveLength(1);
+    });
+
+    it('la question du repli est celle de la SOURCE, pas une phrase recopiée ici', async () => {
+      // Une question écrite en dur dans ce test divergerait de l'ordre du jour au premier changement.
+      for (const p of AGENDA) expect(p.question.length, p.code).toBeGreaterThan(10);
+      expect(new Set(AGENDA.map((p) => p.question)).size).toBe(AGENDA.length); // aucune question en double
+    });
   });
 
   it('🔴 le PROMPT porte le point du tour, décidé par le serveur', async () => {

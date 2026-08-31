@@ -9,7 +9,7 @@ import {
 } from '../agent/setup/piece-jointe';
 import { construireMessages, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import { differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION } from '../agent/setup/proposition';
-import { agendaEffectif, fusionner, manquesDeCouverture, prochainPoint } from '../agent/setup/couverture';
+import { agendaEffectif, fusionner, manquesDeCouverture, poseUneQuestion, prochainPoint } from '../agent/setup/couverture';
 import { ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { scopeTenant, estUuid } from './scope';
 
@@ -283,12 +283,31 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      *    ce qui interdit de compter couvert un point que le client n'a jamais vu passer, même si le modèle
      *    prétend en connaître la réponse. La couverture cesse d'être une déclaration pour devenir un fait.
      */
+    const reponses = fusionner(avant.reponses, propose.data.reponses);
+    const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
+      ? [...avant.poses, pointDuTour.code]
+      : avant.poses;
+
+    /**
+     * 🔴 UN MESSAGE QUI N'INTERROGE RIEN LAISSE L'ENTRETIEN MORT. Le serveur pose alors la question lui-même.
+     *
+     * Vu par Julien le 2026-08-31, au point 3 sur 8 : l'assistant a accusé réception (« D'accord : les pages
+     * de description des véhicules seront importées ») et s'est arrêté là. Le client n'avait plus rien à quoi
+     * répondre, et rien dans le dispositif ne le rattrapait. Le mandat bornait le MAXIMUM de questions et
+     * n'avait jamais posé de minimum.
+     *
+     * La question ajoutée est celle du point ENCORE OUVERT une fois les réponses de ce tour intégrées : c'est
+     * bien la suivante, pas celle à laquelle il vient de répondre. Et on la note POSÉE, puisqu'on vient de la
+     * poser : sans ça, le tour d'après la reposerait.
+     */
+    const ouvertApres = prochainPoint({ poses, reponses });
+    const relance = ouvertApres && !poseUneQuestion(propose.data.message) ? ouvertApres : null;
+    const message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
+
     const apres: EntretienComplet = {
-      messages: [...historique, { role: 'assistant', content: propose.data.message }],
-      reponses: fusionner(avant.reponses, propose.data.reponses),
-      poses: pointDuTour && !avant.poses.includes(pointDuTour.code)
-        ? [...avant.poses, pointDuTour.code]
-        : avant.poses,
+      messages: [...historique, { role: 'assistant', content: message }],
+      reponses,
+      poses: relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses,
     };
     await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);
 
@@ -307,7 +326,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const enEntretien = suivi.manquants.length > 0;
 
     return reply.code(200).send({
-      message: propose.data.message,
+      message,
       couverture: suivi,
       proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [] } : {
         fiche: propose.data.fiche ?? {},

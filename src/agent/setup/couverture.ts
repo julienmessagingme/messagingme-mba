@@ -41,8 +41,15 @@ export interface Point {
   code: string;
   /** Ce que l'assistant doit avoir obtenu. Part dans le prompt, telle quelle. */
   aObtenir: string;
-  /** Possibilités à montrer au client pour qu'il tranche au lieu de rédiger. Le modèle les adapte à son
-   *  métier, il ne part pas de la page blanche. */
+  /**
+   * LA QUESTION, telle qu'on la poserait. Deux usages, et le second est le seul qui garantisse quoi que ce
+   * soit : le modèle la reçoit pour la reformuler dans le fil de la conversation, ET le serveur la POSE
+   * LUI-MÊME quand le modèle a rendu un message qui n'interroge rien. Sans ce repli, l'entretien s'arrête net
+   * sur un accusé de réception, ce qui est arrivé à Julien le 2026-08-31 au point 3 sur 8.
+   */
+  question: string;
+  /** Possibilités à montrer au client pour qu'il tranche au lieu de rédiger. Ce sont des EXEMPLES à
+   *  transposer dans son métier, jamais un menu à réciter (cf. le mandat). */
   pistes?: string[];
   /** Ce point n'entre à l'ordre du jour QUE si un autre point a livré cette action. C'est le creusement. */
   debloquePar?: { point: string; action: Action };
@@ -60,27 +67,32 @@ export interface Point {
 export const AGENDA: Point[] = [
   {
     code: 'mission',
+    question: 'Au-delà de répondre aux questions, quel est le but de votre agent ?',
     aObtenir: 'ce que l’agent est là pour faire, au-delà de répondre',
     pistes: ['répondre et orienter', 'qualifier une demande', 'prendre un rendez-vous', 'faire un suivi de commande'],
   },
   {
     code: 'perimetre',
+    question: 'Y a-t-il des choses dont il ne doit jamais parler, ou qu’il ne doit jamais faire ?',
     aObtenir: 'ce dont il ne parle pas, ce qu’il ne fait jamais',
     pistes: ['rien de tarifaire', 'aucun engagement contractuel', 'pas de conseil technique'],
   },
   {
     code: 'connaissance',
+    question: 'D’où viendront ses réponses de fond : des pages de votre site, un document que vous me joignez, des fiches que vous écrirez, ou rien pour l’instant ?',
     aObtenir: 'D’OÙ viennent ses réponses de fond : une base de connaissance à remplir, des pages de son site '
       + 'à importer, un document qu’il va joindre, ou rien du tout (et alors l’agent transfère toute question de fond)',
     pistes: ['des pages de mon site', 'un document que je vous donne', 'je remplirai les fiches à la main', 'rien pour l’instant'],
   },
   {
     code: 'aboutissements',
+    question: 'À quoi ressemble une conversation réussie, celle après laquelle vous êtes content ?',
     aObtenir: 'à quoi ressemble une conversation qui finit bien ; il peut y en avoir plusieurs',
     pistes: ['rendez-vous pris', 'demande qualifiée', 'question résolue', 'transmis à un humain'],
   },
   {
     code: 'bascules',
+    question: 'À quel moment doit-il faire autre chose que répondre, et que doit-il faire à ce moment-là ?',
     aObtenir: 'les moments où il doit faire autre chose que répondre, ET CE QU’IL FAIT à ce moment-là',
     pistes: ['appeler un outil', 'envoyer un bloc du scénario', 'passer la main à un humain', 'continuer simplement à répondre'],
     attendUneAction: true,
@@ -88,6 +100,7 @@ export const AGENDA: Point[] = [
   {
     // 🔴 LE CREUSEMENT. « L'agent le fait tout seul » n'est pas une réponse : c'est le début d'une question.
     code: 'quel_outil',
+    question: 'Concrètement, par quel moyen l’agent fait-il cela tout seul ?',
     aObtenir: 'CONCRÈTEMENT, par quel moyen l’agent fait ce qu’il vient de dire qu’il ferait seul : quel outil '
       + 'du catalogue, ou quel connecteur déjà déclaré. Si rien de ce qui existe ne convient, dis-le clairement '
       + 'plutôt que d’inventer un outil : ce sera à câbler avant que l’agent puisse le faire',
@@ -95,17 +108,20 @@ export const AGENDA: Point[] = [
   },
   {
     code: 'humain',
+    question: 'Quand un humain doit-il reprendre la conversation ? « Jamais » est une réponse valable.',
     aObtenir: 'quand un humain reprend la conversation ; « jamais » est une réponse valable',
     pistes: ['sur demande explicite', 'quand l’agent bloque', 'sur un sujet sensible', 'jamais'],
   },
   {
     code: 'identite',
+    question: 'Sous quel nom votre agent se présente-t-il, et quels traits doit-il avoir ?',
     aObtenir: 'sous quel NOM l’agent se présente au contact (ou aucun), et les deux ou trois traits qui le '
       + 'caractérisent',
     pistes: ['un prénom', 'le nom de la marque', 'aucun nom'],
   },
   {
     code: 'ton',
+    question: 'Comment doit-il parler : vouvoiement ou tutoiement, phrases courtes ou développées, emoji ou non ?',
     aObtenir: 'comment il parle : vouvoiement ou tutoiement, phrases courtes ou développées, emoji ou non',
     pistes: ['vouvoiement, phrases courtes, sans emoji', 'tutoiement, chaleureux', 'formel et détaillé'],
   },
@@ -229,4 +245,23 @@ export function ordreDuJour(etat: EtatEntretien): string {
 /** Les possibilités à montrer pour le point du tour, si on en a. */
 export function pistesDe(point: Point): string {
   return point.pistes && point.pistes.length > 0 ? point.pistes.join(' | ') : '(aucune piste toute faite : fais-le parler)';
+}
+
+/**
+ * 🔴 LE MESSAGE POSE-T-IL UNE QUESTION ?
+ *
+ * Test volontairement GROSSIER, et dans un seul sens : pas le moindre point d'interrogation, donc à coup sûr
+ * aucune question. L'inverse n'est pas vrai (une question peut se formuler sans point d'interrogation), et
+ * c'est très bien ainsi : ce test ne sert qu'à déclencher un REPLI, jamais à refuser un message. Un faux
+ * négatif ajoute une question de trop ; un faux positif laisserait l'entretien mort, ce qu'on ne veut à aucun
+ * prix.
+ *
+ * POURQUOI ÇA EXISTE. Le mandat bornait le MAXIMUM (« jamais plus d'une question à la fois ») et n'a jamais
+ * posé de minimum. Julien, le 2026-08-31, en plein entretien : l'assistant a accusé réception de sa réponse
+ * (« D'accord : les pages de description des véhicules seront importées ») et s'est arrêté là. L'entretien
+ * cale, et le client n'a plus rien à quoi répondre. Une consigne de prompt seule est un vœu : celle-ci a un
+ * mécanisme derrière.
+ */
+export function poseUneQuestion(message: string): boolean {
+  return message.includes('?');
 }
