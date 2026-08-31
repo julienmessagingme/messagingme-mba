@@ -2047,7 +2047,18 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
-## 2026-08-31 : R1, R1-bis et R13 de l'audit du 25 août (migration 0089)
+## DEPLOYE le 2026-08-31 sur `3a708ce` : R1, R1-bis et R13 de l'audit du 25 août (migration 0089)
+
+✅ **Migration 0089 appliquée**, séquence tenue : `build mba-api`, vérification que la 0089 est **DANS l'image**
+(`docker run --entrypoint sh` sur l'image fraîche), `migrate` (« 1 migration appliquée »), vérification EN BASE
+(six colonnes, la clé primaire, les deux clés étrangères, et `0089` en tête de `schema_migrations`), puis
+`up -d --build`. **Prochaine libre = 0090.**
+
+Vérifié APRÈS déploiement : les trois conteneurs sains, rattachés à `mcp-robot_default`, **zéro redémarrage**,
+aucune erreur dans les journaux de l'API ni du worker (qui redémarre bien avec ses sept files). Par le chemin
+PUBLIC : l'accueil et `/campaigns` en 200, `/api/backend/health` en 200, et la nouvelle route de pause qui
+répond **401 sans jeton** (donc montée et gardée, un 404 aurait voulu dire qu'elle n'existait pas). Le libellé
+« Mettre en pause » est présent dans le bundle réellement servi.
 
 ### 🔴 R1. `singletonKey` n'a JAMAIS dédupliqué quoi que ce soit dans ce dépôt
 
