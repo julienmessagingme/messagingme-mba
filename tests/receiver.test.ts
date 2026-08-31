@@ -97,3 +97,52 @@ describe('receiver GET /webhooks/meta (handshake)', () => {
     await app.close();
   });
 });
+
+/**
+ * AIGUILLAGE DES ACCUSÉS (lot 6 du programme, 2026-08-31).
+ *
+ * 🔴 C'est ICI que le lot se joue. Le classement pur est testé à part ; ce qui compte en production, c'est
+ * que le receveur ENVOIE réellement sur deux files distinctes. Sinon une rafale d'accusés de campagne
+ * (trois par destinataire, quinze mille pour 5 000 messages) continue de passer devant la réponse d'un
+ * vrai client, et rien ne le signale.
+ */
+describe('receiver : les accusés de livraison ne passent plus devant les messages', () => {
+  const envoyer = async (payload: unknown) => {
+    const { queue, app } = makeApp();
+    const body = JSON.stringify(payload);
+    const res = await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(sign(body)), payload: body });
+    await app.close();
+    return { res, queue };
+  };
+
+  it('🔴 un payload d’accusés SEULS part sur `webhook-status`', async () => {
+    const { res, queue } = await envoyer({
+      entry: [{ changes: [{ field: 'statuses', value: { statuses: [{ id: 'wamid.1', status: 'delivered' }] } }] }],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(queue.enqueued.map((j) => j.name)).toEqual(['webhook-status']);
+  });
+
+  it('🔴 un message entrant reste sur `webhook`, la file conversationnelle', async () => {
+    const { queue } = await envoyer({
+      entry: [{ changes: [{ field: 'messages', value: { messages: [{ id: 'wamid.2', text: { body: 'bonjour' } }] } }] }],
+    });
+    expect(queue.enqueued.map((j) => j.name)).toEqual(['webhook']);
+  });
+
+  it('un payload MIXTE reste sur `webhook` : on ne perd jamais un événement', async () => {
+    const { queue } = await envoyer({
+      entry: [{ changes: [
+        { field: 'statuses', value: { statuses: [{ id: 'wamid.3', status: 'sent' }] } },
+        { field: 'messages', value: { messages: [{ id: 'wamid.4' }] } },
+      ] }],
+    });
+    expect(queue.enqueued.map((j) => j.name)).toEqual(['webhook']);
+  });
+
+  it('le corps enfilé est le payload BRUT, quelle que soit la file', async () => {
+    const payload = { entry: [{ changes: [{ field: 'statuses', value: { statuses: [{ id: 'wamid.5', status: 'read' }] } }] }] };
+    const { queue } = await envoyer(payload);
+    expect(queue.enqueued[0]?.data).toEqual(payload);
+  });
+});

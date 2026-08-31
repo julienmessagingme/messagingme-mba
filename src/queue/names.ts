@@ -10,7 +10,7 @@
  * sont enregistrées qu'à l'exécution (analyse activée / push connecteur), mais la file EXISTE côté /ops même
  * désactivée — getQueueLoad renvoie zéro job si aucun n'a été enfilé — donc on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn'] as const;
+export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn'] as const;
 
 /**
  * Convention de nommage de la dead-letter queue d'une file. UNE seule définition : PgBossQueue.ensure()
@@ -31,7 +31,11 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  * 5 Go inclus au plan Free. L'egress d'un poll est du pur overhead : ~550 octets pour une réponse vide.
  *
  * La cadence se règle donc par file, sur la latence RÉELLEMENT utile à l'utilisateur, pas sur un défaut global :
- * - `webhook` : chemin des messages entrants (réponse auto, scénario). La latence est conversationnelle -> 2 s.
+ * - `webhook` : chemin des messages ENTRANTS (réponse auto, scénario). La latence est conversationnelle -> 2 s.
+ * - `webhook-status` : les ACCUSÉS de livraison de Meta (sent/delivered/read). Personne ne les attend, et ils
+ *   arrivent par rafales : une campagne de 5 000 messages en produit trois par destinataire. Ils vivaient sur
+ *   la MÊME file que les entrants, donc une rafale d'accusés retardait la réponse à un vrai client (lot 6).
+ *   30 s : c'est du traitement de fond, et les espacer réduit d'autant l'egress de la rafale.
  * - `agent-turn` : un tour d'agent IA (appel LLM plus outils) répond à un message du contact, donc même
  *   chemin conversationnel que `webhook` -> 2 s.
  * - `campaign-run` : l'utilisateur vient de cliquer « lancer » et regarde l'écran -> 5 s.
@@ -42,6 +46,7 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  */
 export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number> = {
   webhook: 2,
+  'webhook-status': 30,
   'campaign-run': 5,
   'automation-event': 5,
   'analyze-conversation': 30,

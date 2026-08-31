@@ -2080,6 +2080,47 @@ mesure. La dérive devient impossible par construction, et ce qu'on ajoutera plu
 Test : `web/e2e/workflow-sorties-multiples.spec.ts`, « une réponse AJOUTÉE À L'INSTANT se relie ».
 
 ---
+## DEPLOYE le 2026-08-31 : LOT 6 (1re moitié), les accusés ne passent plus devant les messages
+
+Une seule file `webhook` traitait TOUT : les messages entrants, les accusés de livraison, et l'avance des
+scénarios. Or une campagne de 5 000 messages produit **trois accusés par destinataire**, soit quinze mille
+jobs qui passaient DEVANT la réponse d'un vrai client, lequel attendait derrière toute la rafale.
+
+**L'aiguillage est au RECEVEUR**, et il ne pouvait pas être ailleurs : router depuis le worker aurait laissé
+la rafale s'empiler dans la même file d'abord, ce qui ne résout rien. Le receveur ne parsait rien, exprès,
+pour répondre à Meta immédiatement ; le test ajouté est un parcours d'objet de quelques microsecondes.
+
+**La règle est volontairement stricte et conservatrice** : un payload part sur `webhook-status` s'il contient
+AU MOINS un accusé et RIEN d'autre. Message, echo, changement de contrôle, payload mixte, forme inconnue :
+tout cela reste sur la file des entrants, qui sait aussi traiter les accusés. On ne perd donc jamais un
+événement ; au pire on renonce à l'optimisation. Le traitement est la MÊME fonction, avec les seules
+dépendances de livraison : rien n'est dupliqué.
+
+⚠️ **Conséquence assumée** : l'ordre relatif entre un accusé et un message entrant n'est plus garanti. Ils
+touchent des lignes différentes (un accusé met à jour un envoi par son `message_id`, un entrant crée une
+conversation), donc aucun invariant n'en dépend. C'est écrit dans le code parce que ça ne se devine pas.
+
+Pas de concurrence sur cette file : deux accusés du même message (`sent` puis `delivered`) doivent s'appliquer
+dans l'ordre, et c'est sa sérialisation qui le garantit. Sa cadence est de 30 s, comme les traitements de
+fond : personne n'attend un accusé, et les espacer réduit d'autant l'egress de la rafale.
+
+**Ce que la garde de files a attrapé tout de suite** : `webhook-status` déclarée sans consommateur. Le test
+qui exige que toute file de `BASE_QUEUES` ait un `queue.work` dans le worker a échoué à la seconde où la
+déclaration a été ajoutée, avant même que le consommateur soit écrit. C'est exactement le trou qu'il existe
+pour fermer (`agent-turn` avait vécu plusieurs jours déclarée et non consommée).
+
+### Ce qui NE sera PAS fait, et pourquoi
+
+Les fonctions `register*Jobs` du worker, reportées du lot 3, **ne seront pas écrites**. L'audit demandait de
+ranger `worker.ts` avant d'y ajouter des files, et sa propre grille dit comment juger : « mesurer le nombre de
+DÉPENDANCES et les tests isolables, pas le nombre de lignes ». Or chaque bloc de composition y utilise une
+douzaine de stores : `registerCampaignJobs(...)` prendrait quinze paramètres, ou bien un objet fourre-tout,
+c'est-à-dire un localisateur de services que l'audit interdit explicitement. On échangerait une composition
+linéaire et lisible contre six fonctions à longue signature. Le gain réel du lot 3 était le REGISTRE DE
+TÂCHES, qui a effectivement trouvé trois minuteries jamais arrêtées et un chemin de crash ; celui-ci n'a pas
+d'équivalent.
+
+---
 ## DEPLOYE le 2026-08-31 : LOT 5 du programme, campagnes en lots courts et concurrence (aucune migration)
 
 **Le problème** : `queue.work('campaign-run')` ne passait AUCUNE option, donc aucune concurrence, et un job

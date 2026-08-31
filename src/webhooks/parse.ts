@@ -51,6 +51,37 @@ function hash(source: WebhookSource, data: unknown): string {
  * quand l'utilisateur a un username). L'identité d'idempotence vient de l'`id`
  * du message/statut, sinon d'un hash stable du contenu.
  */
+/**
+ * Ce payload ne contient-il QUE des accusés de livraison (`statuses`) ?
+ *
+ * 🔴 Sert à router le webhook vers la file des ACCUSÉS plutôt que celle des ENTRANTS (lot 6). Une campagne de
+ * 5 000 messages produit trois accusés par destinataire ; sur une file unique, cette rafale passait DEVANT la
+ * réponse d'un vrai client, qui attendait derrière quinze mille jobs.
+ *
+ * Le test est volontairement STRICT et conservateur : il faut au moins un `statuses`, et RIEN d'autre. Un
+ * payload mixte (jamais observé, mais Meta ne le promet nulle part) part sur la file des entrants, qui
+ * traite aussi les accusés : on ne perd donc jamais rien, on ne fait que renoncer à l'optimisation.
+ */
+export function nAQueDesAccuses(payload: unknown): boolean {
+  const root = asRecord(payload);
+  const entries = asArray(root['entry']);
+  if (entries.length === 0) return false;
+  let accuses = 0;
+  for (const entryRaw of entries) {
+    for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
+      const change = asRecord(changeRaw);
+      const value = asRecord(change['value']);
+      // Tout ce qui n'est pas un accusé disqualifie le payload : messages, echoes, et le champ de handover,
+      // dont la valeur ne porte AUCUNE des clés ci-dessous.
+      if (asArray(value['messages']).length > 0) return false;
+      if (asArray(value['message_echoes']).length > 0) return false;
+      if (change['field'] === 'messaging_handovers') return false;
+      accuses += asArray(value['statuses']).length;
+    }
+  }
+  return accuses > 0;
+}
+
 export function parseWebhook(payload: unknown): WebhookEvent[] {
   const events: WebhookEvent[] = [];
   const root = asRecord(payload);

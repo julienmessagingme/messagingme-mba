@@ -380,6 +380,25 @@ async function main(): Promise<void> {
     );
   });
 
+  /**
+   * File des ACCUSÉS DE LIVRAISON (lot 6). Le receveur y aiguille tout payload qui ne contient QUE des
+   * `statuses`. Une campagne de 5 000 messages en produit trois par destinataire : sur une file unique, cette
+   * rafale de quinze mille jobs passait DEVANT la réponse d'un vrai client.
+   *
+   * MÊME fonction de traitement, avec les seules dépendances de livraison : rien n'est dupliqué, et un accusé
+   * qui arriverait dans un payload mixte reste traité par la file des entrants, qui les gère aussi.
+   *
+   * ⚠️ Conséquence assumée : l'ordre relatif entre un accusé et un message entrant n'est plus garanti. Ils
+   * touchent des lignes différentes (un accusé met à jour un envoi par son `message_id`, un entrant crée une
+   * conversation), donc aucun invariant n'en dépend. Le dire ici parce que ça ne se devine pas.
+   *
+   * Pas de concurrence : deux accusés du MÊME message (sent puis delivered) doivent s'appliquer dans l'ordre,
+   * et c'est la sérialisation de la file qui le garantit aujourd'hui.
+   */
+  await queue.work('webhook-status', async (data) => {
+    await handleWebhookJob(data, eventStore, recipientStore, undefined, undefined, undefined, undefined, undefined, undefined, undefined, nodeEventStore);
+  });
+
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT
   // (B1), avec intercepteur d'auth (un token révoqué invalide le WABA au lieu de brûler des appels).
   const dryRunSender = new DryRunSender();

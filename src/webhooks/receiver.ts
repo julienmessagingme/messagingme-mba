@@ -2,11 +2,14 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { parse as secureJsonParse } from 'secure-json-parse';
 import { verifyMetaSignature, timingSafeEqualStr } from '../lib/signature';
 import type { Queue } from '../queue/queue';
+import { nAQueDesAccuses } from './parse';
 
 export interface ReceiverOptions {
   verifyToken: string;
   appSecret: string;
   queueName?: string;
+  /** File des ACCUSÉS de livraison. Défaut `webhook-status`. Injectable pour les tests. */
+  queueNameStatuts?: string;
 }
 
 type WithRawBody = FastifyRequest & { rawBody?: Buffer };
@@ -17,6 +20,7 @@ type WithRawBody = FastifyRequest & { rawBody?: Buffer };
  */
 export function registerReceiver(app: FastifyInstance, queue: Queue, opts: ReceiverOptions): void {
   const queueName = opts.queueName ?? 'webhook';
+  const queueNameStatuts = opts.queueNameStatuts ?? 'webhook-status';
 
   // Parser JSON en buffer : garde le corps brut pour la validation de signature.
   app.addContentTypeParser(
@@ -66,7 +70,16 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
     if (!raw || !verifyMetaSignature(raw, sigHeader, opts.appSecret)) {
       return reply.code(403).send({ error: 'invalid signature' });
     }
-    await queue.enqueue(queueName, req.body);
+    // 🔴 AIGUILLAGE (lot 6) : un payload qui ne contient QUE des accusés de livraison part sur sa propre file.
+    // Une campagne de 5 000 messages produit trois accusés par destinataire ; sur une file unique, cette
+    // rafale passait DEVANT la réponse d'un vrai client, qui attendait derrière quinze mille jobs. Le test
+    // est un parcours d'objet, quelques microsecondes : l'accusé de réception à Meta reste immédiat, ce qui
+    // était la raison de ne rien parser ici.
+    //
+    // Tout ce qui n'est pas un accusé PUR (message, echo, handover, payload mixte) reste sur la file des
+    // entrants, qui sait aussi traiter les accusés : on ne perd donc jamais un événement, au pire on renonce
+    // à l'optimisation.
+    await queue.enqueue(nAQueDesAccuses(req.body) ? queueNameStatuts : queueName, req.body);
     return reply.code(200).send({ received: true });
   });
 }
