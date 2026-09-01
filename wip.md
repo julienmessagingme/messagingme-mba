@@ -12,7 +12,15 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## RIEN EN COURS
+## PROCHAIN : le lot UX + la question du serveur MCP
+
+La liste de Julien du 2026-09-01 est écrite dans
+[docs/LOT-UX-ET-MCP-2026-09-01.md](docs/LOT-UX-ET-MCP-2026-09-01.md) : cinq briques d'UX (sous-menus AI Agent,
+surlignage des flèches de scénario, Analytics quali actionnable, tableau IA / scripté / humain en quanti,
+export PDF) et UNE décision d'architecture (être serveur MCP), avec mon analyse et les points qui attendent son
+arbitrage. Rien n'est commencé : les briques passeront par `feature-loop`, un plan validé par brique.
+
+## HISTORIQUE : rien d'autre en cours
 
 **Les DEUX programmes sont terminés le 2026-09-01.** Le programme I (sept lots) et le programme II (huit
 lots, dont le 8e volontairement incomplet et arbitré item par item). Détail, mesures et pièges de chacun dans
