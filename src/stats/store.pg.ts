@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
+import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE } from '../inbox/origine';
 
 export interface DailyPoint {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
@@ -74,6 +75,18 @@ export interface DashboardStats {
    * Sous-ensemble de `exchanged`, qui compte aussi les ENTRANTS : deux lectures différentes, même requête.
    */
   service: DailyPoint[];
+  /**
+   * Les mêmes messages de service, ventilés par ce qui les a ÉCRITS (migration 0099).
+   *
+   * Trois thèmes demandés par Julien : l'IA (notre agent et celui de Meta), le scripté (un scénario), et
+   * l'humain (un opérateur depuis l'inbox). Un quatrième, `indeterminee`, n'existe que pour rendre visible
+   * un chemin d'écriture qui aurait oublié de poser son origine : il vaut zéro tant que tout est en règle,
+   * et le montrer est le seul moyen de ne pas classer un tel message en silence dans un thème qui l'accueille.
+   *
+   * 🔴 Le total de cette ventilation ÉGALE la somme de `service` sur la période. C'est ce qui la rend
+   * lisible à côté de la courbe : un écart voudrait dire qu'un message échappe au classement.
+   */
+  serviceParOrigine: { ia: number; scenario: number; humain: number; indeterminee: number };
 }
 
 /** Un template envoyé sur la période, avec son volume (pour le dropdown + le prix estimé). */
@@ -204,6 +217,26 @@ export class PgStatsStore {
       [tenantId, from, to, TZ],
     );
 
+    // 4) Ventilation des SEULS messages de service par origine. Même filtre exactement que la colonne
+    //    `sortants` ci-dessus (sortant, hors template, WhatsApp, hors fil de test), pour que le total de la
+    //    ventilation retombe sur celui de la courbe. Un filtre qui diverge d'un mot ferait mentir les deux.
+    const parOrigine = await this.pool.query<{ origine: string; n: string }>(
+      `with ${BOUNDS_CTE}
+       select ${ORIGINE_EFFECTIVE_SQL} as origine, count(*)::int as n
+       from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
+       where cv.tenant_id = $1 and not cv.is_test and m.created_at >= b.start_ts and m.created_at < b.end_ts
+         and m.direction = 'out' and m.channel = 'whatsapp' and m.type is distinct from 'template'
+       group by 1`,
+      [tenantId, from, to, TZ],
+    );
+    const serviceParOrigine = { ia: 0, scenario: 0, humain: 0, indeterminee: 0 };
+    for (const ligne of parOrigine.rows) {
+      // Une valeur d'origine inconnue de la table de correspondance tombe en « indéterminée » plutôt que
+      // d'être perdue : c'est le seul comportement qui garde le total juste.
+      const theme = THEME_DE_ORIGINE[ligne.origine] ?? 'indeterminee';
+      serviceParOrigine[theme] += Number(ligne.n);
+    }
+
     const utility: DailyPoint[] = [];
     const marketing: DailyPoint[] = [];
     for (const r of templates.rows) {
@@ -217,6 +250,7 @@ export class PgStatsStore {
       templates: { utility, marketing },
       exchanged: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.count) })),
       service: exchanged.rows.map((r) => ({ date: r.d, count: Number(r.sortants) })),
+      serviceParOrigine,
     };
   }
 

@@ -286,7 +286,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // Le message RCS d'un scénario apparaît dans le FIL, comme un template ou un message rapide. La bulle
       // porte son canal (`channel: 'rcs'`), c'est ce que l'Inbox dessine en vert RCS.
       recordOutbound: (tenant, waId, msg) =>
-        inboxStore.recordOutboundByWaId(tenant, waId, { ...msg, type: 'rcs', channel: 'rcs' }),
+        inboxStore.recordOutboundByWaId(tenant, waId, { ...msg, type: 'rcs', channel: 'rcs', origine: 'scenario' }),
     },
     // Un scénario n'écrit jamais dans un fil détenu par un opérateur ou par MBA. Vaut pour l'avance
     // (réponse du contact) comme pour le démarrage (campagne workflow, cible node).
@@ -489,7 +489,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
           ? await client.sendImage(waId, mediaId, body)
           : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
-      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };
     },
     /**
@@ -540,7 +540,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
         : await client.sendText(waId, corps);
       // Journalise la question dans le fil (best-effort, ne casse jamais un envoi Meta réussi). Le corps
       // journalisé est celui REÇU par le contact, variables résolues : c'est ce qu'un opérateur doit relire.
-      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: corps, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: corps, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };
     },
     // Formulaire (node flow) : message interactif type flow, hors template. Atteint via `advance` (le save du
@@ -560,7 +560,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // flow_token jamais vide (exigence Meta #131009) mais jetable : la corrélation passe par le _ref du flow_json.
       const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}` });
       // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
-      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+      try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };
     },
     // Node « Envoi de mail » (SMTP, Task 8). `apply` (executor.ts) enveloppe cet appel d'un try/catch best-effort
@@ -590,7 +590,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     }
     const client = await metaFactory.clientForTenant(tenant, pn);
     const res = await client.sendText(waId, texte);
-    try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId: res.messageId, type: 'text' }); } catch { /* best-effort */ }
+    try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId: res.messageId, type: 'text', origine: 'ia' }); } catch { /* best-effort */ }
   };
 
   /** Poser un tag depuis un agent : les trois effets, et la règle qui les lie, vivent dans `agent/poser-tag`.

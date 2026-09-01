@@ -344,8 +344,11 @@ async function main(): Promise<void> {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
         setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
+        // `origine: 'mba'` et pas `'ia'` : l'agent de Meta EST une IA, mais garder les deux valeurs
+        // distinctes en base coûte zéro et permet de dire un jour laquelle des deux a parlé. Le
+        // regroupement en un seul thème « IA » se fait à l'affichage (`THEME_DE_ORIGINE`).
         recordAgentMessage: (t, w, body, messageId) =>
-          inboxStore.recordOutboundByWaId(t, w, { body, messageId, type: 'mba' }),
+          inboxStore.recordOutboundByWaId(t, w, { body, messageId, type: 'mba', origine: 'mba' }),
       },
       // Automations (Lot E) : un message entrant peut DÉMARRER un scénario (mot-clé, 1er message d'un nouveau
       // contact). `isNewContact` est injecté par le handler (il vient de l'upsert ci-dessus). La garde de

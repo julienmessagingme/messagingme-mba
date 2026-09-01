@@ -48,6 +48,9 @@ function DashboardInner({ session }: { session: Session }) {
         templates: { marketing: serie(s?.templates?.marketing), utility: serie(s?.templates?.utility) },
         exchanged: serie(s?.exchanged),
         service: serie(s?.service),
+        // Laisse `undefined` si l'API ne l'envoie pas : la carte se masque alors, au lieu d'afficher trois
+        // zeros qu'on prendrait pour une mesure (meme raison que le `?? []` des series, un cran plus loin).
+        ...(s?.serviceParOrigine ? { serviceParOrigine: s.serviceParOrigine } : {}),
       });
       setTemplateStats(ts ?? null);
       setErrors(Array.isArray(eb?.errors) ? eb.errors : []);
@@ -109,6 +112,9 @@ function DashboardInner({ session }: { session: Session }) {
                 { label: t('Service', 'Service'), color: '#F5A623', points: stats.service ?? [] },
               ]}
             />
+          </div>
+          <div className="lg:col-span-2">
+            <OrigineServiceCard repartition={stats.serviceParOrigine} />
           </div>
           <div className="lg:col-span-2">
             <CostChartCard tenantId={session.tenantId} range={range} campaigns={campaigns} templates={templateStats?.breakdown ?? []} />
@@ -281,6 +287,75 @@ function SelecteurMultiple({ libelleTous, options, selection, onChange, testId }
           </button>
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * D'OU viennent les messages de service : l'IA, un scénario, un humain.
+ *
+ * Demandé par Julien le 2026-09-01. Le chiffre répond à une question d'exploitation qu'aucun autre écran ne
+ * couvrait : sur ce que le client a envoyé hors template, quelle part est tenue par les machines et quelle
+ * part mobilise encore quelqu'un. C'est la mesure du travail économisé, donc de ce que la console apporte.
+ *
+ * ⚠️ La ligne « origine non enregistrée » n'est pas un état normal : elle veut dire qu'un chemin d'écriture
+ * a envoyé sans dire qui il était. Elle est affichée, et seulement quand elle n'est pas nulle, précisément
+ * pour que ça se voie au lieu d'être versé en silence dans un des trois thèmes.
+ */
+function OrigineServiceCard({ repartition }: { repartition?: { ia: number; scenario: number; humain: number; indeterminee: number } }) {
+  const t = useT();
+  const { locale } = useLocale();
+  // Absente = l'API ne connaît pas encore ce champ (déploiement en cours). Rien plutôt qu'une fausse mesure.
+  if (!repartition) return null;
+  const lignes = [
+    { cle: 'ia', label: t('IA', 'AI'), aide: t('agent IA de la console, et agent de Meta', 'console AI agent, and Meta agent'), valeur: repartition.ia, couleur: 'bg-violet' },
+    { cle: 'scenario', label: t('Scripté', 'Scripted'), aide: t('envoyé par un bloc de scénario', 'sent by a scenario block'), valeur: repartition.scenario, couleur: 'bg-brand-500' },
+    { cle: 'humain', label: t('Humain', 'Human'), aide: t('écrit par un opérateur depuis l’inbox', 'written by an operator from the inbox'), valeur: repartition.humain, couleur: 'bg-mint-400' },
+    ...(repartition.indeterminee > 0
+      ? [{ cle: 'indeterminee', label: t('Origine non enregistrée', 'Origin not recorded'), aide: t('un envoi n’a pas déclaré son origine : à corriger', 'a send did not declare its origin: to be fixed'), valeur: repartition.indeterminee, couleur: 'bg-ink-300' }]
+      : []),
+  ];
+  const total = lignes.reduce((a, l) => a + l.valeur, 0);
+  return (
+    <div id="quanti-origine-service" className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
+      <div className="mb-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Messages de service : qui les a écrits', 'Service messages: who wrote them')}</h3>
+          <BoutonPdf zone="quanti-origine-service" />
+        </div>
+        <p className="text-xs text-ink-400">{t('sur la période, hors template', 'over the period, excluding templates')}</p>
+      </div>
+      {total === 0 ? (
+        <p className="text-sm text-ink-500">{t('Aucun message de service sur la période.', 'No service message over the period.')}</p>
+      ) : (
+        <table className="w-full text-left text-xs" data-testid="origine-service">
+          <thead>
+            <tr className="border-b border-ink-100 text-ink-400">
+              <th className="px-2 py-2 font-medium">{t('Origine', 'Origin')}</th>
+              <th className="px-2 py-2 font-medium">{t('Messages', 'Messages')}</th>
+              <th className="px-2 py-2 font-medium">{t('Part', 'Share')}</th>
+              <th className="w-1/2 px-2 py-2 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {lignes.map((l) => (
+              <tr key={l.cle} data-testid={`origine-${l.cle}`} className="border-b border-ink-50">
+                <td className="px-2 py-2">
+                  <div className="font-medium text-ink-800">{l.label}</div>
+                  <div className="text-[11px] text-ink-400">{l.aide}</div>
+                </td>
+                <td className="px-2 py-2 tabular-nums text-ink-700">{fmtNum(l.valeur, locale)}</td>
+                <td className="px-2 py-2 tabular-nums text-ink-500">{fmtPct(l.valeur, total, locale)}</td>
+                <td className="px-2 py-2">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-ink-50">
+                    <div className={`h-full rounded-full ${l.couleur}`} style={{ width: `${total > 0 ? Math.round((l.valeur / total) * 100) : 0}%` }} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

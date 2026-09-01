@@ -4,6 +4,7 @@ import { buildTemplateComponents, carouselSendBlocker, headerMediaSendBlocker } 
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
+import type { OrigineMessage } from '../inbox/origine';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError, estPlafondNumero } from '../meta/errors';
 import type { CampaignSender } from './sender';
@@ -133,7 +134,7 @@ export interface EngineDeps {
   recordOutbound?: (
     tenantId: string,
     waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs' },
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
   ) => Promise<void>;
   now?: () => number;
   thresholds?: GuardrailThresholds;
@@ -491,6 +492,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         await deps.recordOutbound(campaign.tenantId, waId, {
           body,
           messageId: res.messageId,
+          origine: 'campagne',
           type: rcs ? 'rcs' : 'template',
           ...(rcs
             ? { channel: 'rcs' as const }

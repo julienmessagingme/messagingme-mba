@@ -29,7 +29,7 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
   it('crée la conversation par wa_id + insère le message out (sender_user_id null)', async () => {
     const store = new PgInboxStore(pool);
     const waId = '33600000123';
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo » (Léa)', messageId: 'wamid-A', type: 'template', templateCategory: 'marketing', templateName: 'promo' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo » (Léa)', messageId: 'wamid-A', type: 'template', templateCategory: 'marketing', templateName: 'promo', origine: 'campagne' });
     const convs = await conversationId(waId);
     expect(convs).toHaveLength(1);
     const msg = (await pool.query<{ direction: string; type: string; template_name: string; template_category: string; sender_user_id: string | null }>(
@@ -42,8 +42,8 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
   it('même wa_id, 2e envoi -> même conversation, 2 messages (jamais de conversation en double)', async () => {
     const store = new PgInboxStore(pool);
     const waId = '33600000456';
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-B1', templateName: 'promo' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'B', messageId: 'wamid-B2', templateName: 'promo' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-B1', templateName: 'promo', origine: 'campagne' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'B', messageId: 'wamid-B2', templateName: 'promo', origine: 'campagne' });
     const convs = await conversationId(waId);
     expect(convs).toHaveLength(1);
     expect(await countMessages(convs[0]!)).toBe(2);
@@ -52,8 +52,8 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
   it('idempotent sur meta_message_id : même messageId 2x -> un seul message', async () => {
     const store = new PgInboxStore(pool);
     const waId = '33600000789';
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-DUP', templateName: 'promo' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-DUP', templateName: 'promo' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-DUP', templateName: 'promo', origine: 'campagne' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-DUP', templateName: 'promo', origine: 'campagne' });
     const convs = await conversationId(waId);
     expect(await countMessages(convs[0]!)).toBe(1);
   });
@@ -62,7 +62,7 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
     const store = new PgInboxStore(pool);
     const waId = '33600000999';
     await store.recordInbound(tenantId, { waId, phoneNumberId: 'pn-test', body: 'Bonjour', type: 'text', buttonPayload: null, messageId: 'wamid-IN', profileName: null, field: 'messages' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo »', messageId: 'wamid-OUT', templateName: 'promo' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo »', messageId: 'wamid-OUT', templateName: 'promo', origine: 'campagne' });
     const convs = await conversationId(waId);
     expect(convs).toHaveLength(1); // pas de doublon : outbound tombe sur la conversation de l'inbound
     expect(await countMessages(convs[0]!)).toBe(2);
@@ -84,7 +84,7 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
       `insert into campaign_recipients (campaign_id, contact_id, to_e164, status, message_id, sent_at)
        values ($1, $2, '+33600011111', 'sent', $3, now())`, [camp, contact, wamid]);
     // Pièce 0 logge le MÊME envoi dans conversation_messages (même wamid).
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo_stat »', messageId: wamid, type: 'template', templateCategory: 'marketing', templateName: 'promo_stat' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo_stat »', messageId: wamid, type: 'template', templateCategory: 'marketing', templateName: 'promo_stat', origine: 'campagne' });
 
     const d = (o: number): string => new Date(Date.now() + o * 86_400_000).toISOString().slice(0, 10);
     const rows = await stats.getTemplateBreakdown(tenantId, { from: d(-1), to: d(1) });
@@ -109,9 +109,9 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
     // `type` EXPLICITE : ce store retombe sur 'template' quand on ne dit rien (il a d'abord servi aux envois de
     // campagne). Les vrais messages de service le précisent — 'text' pour une réponse d'agent ou de scénario,
     // 'mba' pour une réponse de l'assistant.
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Je regarde ça', messageId: 'wamid-SVC-OUT-1', type: 'text' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Voilà la réponse', messageId: 'wamid-SVC-OUT-2', type: 'mba' });
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo_svc »', messageId: 'wamid-SVC-TPL', type: 'template', templateCategory: 'marketing', templateName: 'promo_svc' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Je regarde ça', messageId: 'wamid-SVC-OUT-1', type: 'text', origine: 'campagne' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Voilà la réponse', messageId: 'wamid-SVC-OUT-2', type: 'mba', origine: 'campagne' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Template « promo_svc »', messageId: 'wamid-SVC-TPL', type: 'template', templateCategory: 'marketing', templateName: 'promo_svc', origine: 'campagne' });
 
     const apres = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
 
@@ -136,7 +136,7 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
 
     const avant = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
     const waId = '33600033333';
-    await store.recordOutboundByWaId(tenantId, waId, { body: 'Carte RCS', messageId: 'rcs-SVC-OUT', type: 'rcs', channel: 'rcs' });
+    await store.recordOutboundByWaId(tenantId, waId, { body: 'Carte RCS', messageId: 'rcs-SVC-OUT', type: 'rcs', channel: 'rcs', origine: 'campagne' });
     const apres = await stats.getDashboard(tenantId, { from: d(-1), to: d(1) });
 
     expect(duJour(apres.service) - duJour(avant.service)).toBe(0); // pas dans « Service »

@@ -22,6 +22,16 @@ export interface DashboardStats {
   exchanged: DailyPoint[];
   /** Sortants qui ne sont PAS des templates (inbox, scenario dans la fenetre de 24 h). Sous-ensemble d'`exchanged`. */
   service: DailyPoint[];
+  /**
+   * Les memes messages de service, ventiles par ce qui les a ECRITS (migration 0099). Leur somme egale
+   * celle de `service` sur la periode. `indeterminee` vaut zero tant qu'aucun chemin d'ecriture n'a
+   * oublie de poser son origine : le montrer est ce qui empeche un tel message d'etre range en silence
+   * dans un theme qui l'accueille.
+   *
+   * Optionnel a la lecture : un backend plus ancien que ce champ ne l'envoie pas, et l'ecran doit alors
+   * masquer le tableau plutot que d'afficher trois zeros qui passeraient pour une mesure.
+   */
+  serviceParOrigine?: { ia: number; scenario: number; humain: number; indeterminee: number };
 }
 /** Plage de dates des stats (YYYY-MM-DD, Europe/Paris). Absente -> le backend retombe sur 30 jours. */
 export interface StatsRange {

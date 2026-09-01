@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { InboxStore, InboundMessage } from '../webhooks/inbound';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
+import type { OrigineMessage } from './origine';
 
 /**
  * Qui détient la conversation, et donc qui répond au client.
@@ -242,16 +243,19 @@ export class PgInboxStore implements InboxStore {
   async recordOutboundByWaId(
     tenantId: string,
     waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs' },
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; channel?: 'whatsapp' | 'rcs'; origine: OrigineMessage },
   ): Promise<void> {
     const conversationId = await this.upsertConversationByWaId(tenantId, waId, msg.body);
     await this.pool.query(
       // `channel` : le fil est unique par contact, c'est la bulle qui porte le tuyau. Absent -> WhatsApp,
       // donc tous les appelants historiques écrivent exactement ce qu'ils écrivaient.
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel)
-       values ($1, 'out', $2, $3, $4, $5, $6, null, $7)
+      // `origine` est OBLIGATOIRE (migration 0099) : c'est la seule chose qui distingue un envoi de
+      // scénario d'une réponse d'agent IA, et la rendre optionnelle aurait laissé un appelant l'oublier
+      // en silence. Le type l'exige, donc l'oubli ne compile pas.
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin)
+       values ($1, 'out', $2, $3, $4, $5, $6, null, $7, $8)
        on conflict (meta_message_id) where meta_message_id is not null do nothing`,
-      [conversationId, msg.type ?? 'template', msg.body, msg.messageId, msg.templateCategory ?? null, msg.templateName ?? null, msg.channel ?? 'whatsapp'],
+      [conversationId, msg.type ?? 'template', msg.body, msg.messageId, msg.templateCategory ?? null, msg.templateName ?? null, msg.channel ?? 'whatsapp', msg.origine],
     );
   }
 
@@ -594,10 +598,14 @@ export class PgInboxStore implements InboxStore {
        where id = $1`,
       [conversationId, body],
     );
+    // Origine DÉDUITE ici et non passée en paramètre : ce chemin-ci n'a qu'un appelant, les routes de
+    // l'inbox, où l'expéditeur est toujours l'opérateur connecté. La déduire ailleurs (à la lecture)
+    // obligerait à répéter la même règle ; la poser ici la fige à l'écriture, une fois.
+    const origine: OrigineMessage = senderUserId !== null ? 'humain' : 'scenario';
     await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel)
-       values ($1, 'out', $4, $2, $3, $5, $6, $7, $8)`,
-      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel],
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin)
+       values ($1, 'out', $4, $2, $3, $5, $6, $7, $8, $9)`,
+      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine],
     );
   }
 }

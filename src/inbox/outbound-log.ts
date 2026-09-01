@@ -1,9 +1,11 @@
+import type { OrigineMessage } from './origine';
+
 /** Ce dont a besoin le log sortant : juste `recordOutboundByWaId` (satisfait par PgInboxStore). */
 export interface OutboundLogger {
   recordOutboundByWaId(
     tenantId: string,
     waId: string,
-    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null },
+    msg: { body: string; messageId: string | null; type?: string; templateCategory?: string | null; templateName?: string | null; origine: OrigineMessage },
   ): Promise<void>;
 }
 
@@ -19,7 +21,9 @@ export async function logTemplateSent(
   messageId: string | null,
 ): Promise<void> {
   try {
-    await inbox.recordOutboundByWaId(tenantId, waId, { body: `Template « ${templateName} »`, messageId, type: 'template', templateName });
+    // Un template envoyé par un scénario : l'origine est le scénario, pas la campagne (une campagne
+    // passe par `campaign/engine.ts`, qui pose la sienne).
+    await inbox.recordOutboundByWaId(tenantId, waId, { body: `Template « ${templateName} »`, messageId, type: 'template', templateName, origine: 'scenario' });
   } catch {
     /* best-effort : ne casse pas l'envoi */
   }
