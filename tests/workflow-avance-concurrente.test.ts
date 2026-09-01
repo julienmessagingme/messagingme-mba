@@ -25,6 +25,23 @@ class RunsConditionnels {
   /** Ce que la garde a reçu comme bloc de DÉPART, appel par appel. */
   readonly gardes: Array<string | null> = [];
   readonly inconditionnels: string[] = [];
+  /** Le tour est-il DÉJÀ tenu par un autre traitement ? Vrai verrou : une seule réservation à la fois. */
+  private tenuPar: string | null = null;
+  readonly reservations: Array<string | null> = [];
+  readonly liberations: string[] = [];
+
+  async reserverAvance(_t: string, _id: string, nodeId: string | null): Promise<string | null> {
+    if (this.tenuPar !== null) { this.reservations.push(null); return null; }
+    if (this.run && this.run.currentNode !== nodeId) { this.reservations.push(null); return null; }
+    this.tenuPar = `jeton-${this.reservations.length}`;
+    this.reservations.push(this.tenuPar);
+    return this.tenuPar;
+  }
+  async libererAvance(_id: string, token: string): Promise<void> {
+    // Le JETON dans la garde : un porteur périmé ne libère pas le verrou de celui qui l'a repris.
+    if (this.tenuPar === token) this.tenuPar = null;
+    this.liberations.push(token);
+  }
 
   async start(): Promise<{ id: string }> { return { id: 'r1' }; }
   async findWaitingByWaId(): Promise<WorkflowRunRow | null> {
@@ -118,5 +135,75 @@ describe('avance concurrente : l’écriture d’état est conditionnée au bloc
     await ex.advance('t1', '33600', 'msg1');
     expect(calls).toEqual(['qm:B']);
     expect(runs.inconditionnels).toEqual(['r1']);
+  });
+});
+
+
+/**
+ * 🔴 LE TOUR EST RÉSERVÉ AVANT LES ENVOIS (migration 0104).
+ *
+ * C'est le trou que les tests ci-dessus disaient explicitement NE PAS fermer : l'écriture conditionnelle
+ * protège l'état, mais elle arrive APRÈS les envois, donc deux avances concurrentes envoyaient toutes les
+ * deux et le contact recevait un message qu'il ne devait jamais voir. La réservation ferme cela.
+ */
+describe('avance concurrente : le tour est RÉSERVÉ avant tout envoi', () => {
+  it('🔴 deux avances SIMULTANÉES ne produisent QU’UN SEUL envoi', async () => {
+    // Le test qui compte. Sans réservation, les deux avances envoient `qm:B` et le contact reçoit deux fois
+    // le même message. La barrière est le store lui-même : la seconde réservation échoue tant que la
+    // première n'a pas libéré.
+    const runs = new RunsConditionnels();
+    const { ex, calls } = exec(runs);
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await Promise.all([ex.advance('t1', '33600', 'msg1'), ex.advance('t1', '33600', 'msg2')]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(calls).toEqual(['qm:B']);
+    // Deux tentatives de réservation, une seule accordée.
+    expect(runs.reservations.filter((r) => r !== null)).toHaveLength(1);
+  });
+
+  it('🔴 le perdant sort SANS RIEN FAIRE, et on le DIT', async () => {
+    const runs = new RunsConditionnels();
+    // Le tour est déjà pris : la réservation échouera.
+    await runs.reserverAvance('t1', 'r1', 'a');
+    const { ex, calls } = exec(runs);
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { avertissements.push(String(m)); });
+    try {
+      await ex.advance('t1', '33600', 'msg1');
+    } finally {
+      spy.mockRestore();
+    }
+    // RIEN n'est parti, et l'état n'a pas bougé : c'est exactement ce qu'on veut du perdant.
+    expect(calls).toEqual([]);
+    expect(runs.gardes).toEqual([]);
+    expect(runs.run).toMatchObject({ currentNode: 'a' });
+    expect(avertissements.some((a) => a.includes('avance IGNOREE'))).toBe(true);
+  });
+
+  it('🔴 le tour est RENDU même quand un envoi jette', async () => {
+    // Sinon le message SUIVANT du contact attendrait la fin du bail pour rien, sur un parcours parfaitement
+    // sain. C'est la raison du `finally`.
+    const runs = new RunsConditionnels();
+    const { ex } = exec(runs, { sendQuickMessage: async () => { throw new Error('Meta indisponible'); } });
+    await expect(ex.advance('t1', '33600', 'msg1')).rejects.toThrow('Meta indisponible');
+    expect(runs.liberations).toHaveLength(1);
+    // Et le tour est réellement libre : une avance suivante l'obtient.
+    expect(await runs.reserverAvance('t1', 'r1', 'a')).not.toBeNull();
+  });
+
+  it('un store SANS réservation garde le comportement d’avant (fixtures, e2e)', async () => {
+    // La dépendance est optionnelle : une instance qui ne la câble pas ne doit pas cesser d'avancer.
+    const runs = new RunsConditionnels();
+    // Les méthodes vivent sur le PROTOTYPE : on les masque sur l'instance plutôt que de recopier l'objet,
+    // ce qui perdrait toutes les autres (`findWaitingByWaId` la première).
+    const nu = runs as unknown as Record<string, unknown>;
+    nu.reserverAvance = undefined;
+    nu.libererAvance = undefined;
+    const { ex, calls } = exec(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(calls).toEqual(['qm:B']);
   });
 });

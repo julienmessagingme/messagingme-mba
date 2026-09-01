@@ -155,6 +155,49 @@ export class PgWorkflowRunStore {
    * C'est le pendant, côté ÉCRITURE, de la garde que le tour applique déjà en lecture : « le run attend-il
    * toujours sur CE bloc ». Même motif de verrou optimiste que `prendreLeTour` et `claimDueQuestions`.
    */
+  /**
+   * RÉSERVE LE TOUR D'AVANCE d'un parcours, AVANT tout envoi (migration 0104).
+   *
+   * 🔴 C'est ce qui ferme le double envoi. `setStateSiEncoreSur` protège l'ÉTAT mais arrive APRÈS les
+   * envois : deux avances concurrentes envoyaient toutes les deux, et seule la seconde écriture était
+   * refusée. Le contact recevait donc deux messages, dont un qu'il ne devait jamais voir.
+   *
+   * Rend `null` quand un autre traitement tient déjà le tour : l'appelant doit alors sortir SANS RIEN FAIRE.
+   * C'est la même convention que `prendreLeTour` d'une session d'agent, et pour la même raison.
+   *
+   * Les trois pièces d'un vrai verrou :
+   * - le BAIL (`avance_jusqu_a`) : un worker tué en plein traitement ne bloque pas le parcours à vie ;
+   * - le JETON, rendu à l'appelant, qui seul permet de libérer : un porteur de bail périmé ne peut pas
+   *   libérer le verrou de celui qui l'a repris entre-temps ;
+   * - la garde sur `current_node`, qui refuse le tour si le parcours a bougé pendant qu'on lisait.
+   */
+  async reserverAvance(tenantId: string, id: string, nodeId: string | null, bailSecondes: number): Promise<string | null> {
+    const res = await this.pool.query<{ avance_token: string }>(
+      `update workflow_runs
+          set avance_token = gen_random_uuid(),
+              avance_jusqu_a = now() + make_interval(secs => $4::double precision)
+        where id = $1 and tenant_id = $2 and status = 'waiting'
+          and current_node is not distinct from $3
+          and (avance_jusqu_a is null or avance_jusqu_a <= now())
+        returning avance_token`,
+      [id, tenantId, nodeId, bailSecondes],
+    );
+    return res.rows[0]?.avance_token ?? null;
+  }
+
+  /**
+   * Rend le tour. Le JETON est dans le `where` : un porteur de bail périmé, revenu tard, ne peut pas libérer
+   * le verrou de celui qui l'a repris. Sans ça, un traitement lent ferait sauter la garde d'un autre.
+   *
+   * Best-effort chez l'appelant : ne pas réussir à libérer coûte au pire l'attente du bail.
+   */
+  async libererAvance(id: string, token: string): Promise<void> {
+    await this.pool.query(
+      `update workflow_runs set avance_token = null, avance_jusqu_a = null where id = $1 and avance_token = $2`,
+      [id, token],
+    );
+  }
+
   async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState): Promise<boolean> {
     const res = await this.pool.query(
       `update workflow_runs set current_node = $4, status = $5,

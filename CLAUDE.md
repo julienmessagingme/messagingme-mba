@@ -51,9 +51,9 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0103** (`campaigns.pause_reason` + `paused_until`, la reprise après un plafond Meta),
-passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0104.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Dernière appliquée : 0104** (`workflow_runs.avance_token` + `avance_jusqu_a`, le tour d'avance réservé AVANT
+les envois), passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration
+est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0105.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
@@ -63,6 +63,12 @@ migration est rejouée depuis le début, donc chaque instruction doit être idem
 une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
 les deux sens de la règle sur les fichiers réels.
 
+🔴 **0104 est BLOQUANTE, et elle ferme le trou le plus cher du produit.** Deux avances concurrentes
+(l'API traite un retour RCS pendant que le worker traite un webhook du même contact) ENVOYAIENT toutes les deux :
+`setStateSiEncoreSur` protège l'état, mais elle arrive APRÈS les envois. Le contact recevait donc un message
+qu'il ne devait jamais voir. Le tour est désormais RÉSERVÉ avant tout envoi, avec les trois pièces d'un vrai
+verrou (bail, jeton de garde, libération explicite) et **sans drapeau de relance** : le perdant ne doit RIEN
+rejouer, son message a été traité par le gagnant qui lisait le même bloc.
 🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
 pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
 seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un

@@ -10,6 +10,15 @@ import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
 import { rcsSuggestionSchema, apercuRcsSortant } from '../rcs/schema';
 import { aDesVariables, appliquerVariables } from '../rcs/variables';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
+
+/**
+ * Durée du bail d'une avance, en secondes (migration 0104).
+ *
+ * Assez long pour couvrir un traitement lent (un envoi Meta, l'ouverture d'une session d'agent), assez court
+ * pour qu'un worker tué en plein traitement ne fasse pas attendre le contact plus d'une poignée de secondes.
+ * Le bail n'est de toute façon consommé qu'en cas de crash : le chemin normal libère à la fin.
+ */
+const BAIL_AVANCE_S = 60;
 import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 
@@ -54,6 +63,16 @@ export interface WorkflowExecutorDeps {
      * OPTIONNELLE : absente -> `setState` inconditionnel, comportement d'avant (fixtures de test).
      */
     setStateSiEncoreSur?(tenantId: string, id: string, nodeId: string | null, state: RunState): Promise<boolean>;
+    /**
+     * RÉSERVE le tour d'avance AVANT tout envoi (migration 0104). `null` = un autre traitement le tient,
+     * l'appelant sort SANS RIEN FAIRE. C'est ce qui ferme le double envoi, que l'écriture conditionnelle ne
+     * pouvait pas fermer puisqu'elle arrive après les envois.
+     *
+     * OPTIONNELLE : absente -> aucune réservation, comportement d'avant (fixtures de test, e2e).
+     */
+    reserverAvance?(tenantId: string, id: string, nodeId: string | null, bailSecondes: number): Promise<string | null>;
+    /** Rend le tour. Le jeton garantit qu'un porteur de bail périmé ne libère pas le verrou d'un autre. */
+    libererAvance?(id: string, token: string): Promise<void>;
   };
   getGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   /** Pose un tag. Renvoie idéalement `true` si le tag était RÉELLEMENT nouveau : c'est cette information qui
@@ -1144,6 +1163,27 @@ export class WorkflowExecutor {
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
 
     /**
+     * 🔴 LE TOUR EST RÉSERVÉ AVANT TOUT ENVOI (migration 0104). C'est le correctif du dernier trou connu de
+     * ce chemin, documenté ici même depuis des semaines : l'écriture conditionnelle plus bas protège l'ÉTAT,
+     * mais elle arrive APRÈS les envois. Deux avances concurrentes envoyaient donc toutes les deux, et le
+     * contact recevait un message qu'il ne devait jamais voir.
+     *
+     * Perdre la réservation n'est PAS une erreur : c'est le cas normal quand deux messages du même contact
+     * arrivent ensemble. Le gagnant lisait le même bloc et a traité la suite ; rejouer ici ferait avancer le
+     * parcours deux fois. On sort en le journalisant, parce qu'on ne corrige pas ce qu'on ne voit pas.
+     */
+    const peutReserver = this.deps.runs.reserverAvance !== undefined;
+    const jeton = peutReserver
+      ? await this.deps.runs.reserverAvance!(tenantId, run.id, run.currentNode, BAIL_AVANCE_S)
+      : null;
+    if (peutReserver && jeton === null) {
+      // eslint-disable-next-line no-console
+      console.warn(`workflow ${run.workflowId}: avance IGNOREE pour ${waId} (run ${run.id}), un autre traitement tient le tour sur le bloc ${run.currentNode ?? 'null'} (message ${messageId})`);
+      return;
+    }
+    try {
+
+    /**
      * Écriture de l'état, CONDITIONNÉE au fait que le run n'a pas bougé pendant qu'on travaillait.
      *
      * 🔴 Ce que ça ferme. Deux avances peuvent se chevaucher DÈS AUJOURD'HUI, avec un seul worker : le
@@ -1352,6 +1392,14 @@ export class WorkflowExecutor {
     // message ENTRANT, donc la fenêtre est ouverte par construction.
     if (rest.status === 'agent_turn') {
       await this.demarrerTourAgent(tenantId, waId, { id: run.id, workflowId: run.workflowId }, graph, rest.nodeId);
+    }
+    } finally {
+      // Libération BEST-EFFORT : ne pas y arriver coûte au pire l'attente du bail, jamais un message perdu.
+      // Dans le `finally` pour que le tour soit rendu même si un envoi jette : sinon le message SUIVANT du
+      // contact attendrait la fin du bail pour rien.
+      if (jeton !== null && this.deps.runs.libererAvance) {
+        await this.deps.runs.libererAvance(run.id, jeton).catch(() => {});
+      }
     }
   }
 }

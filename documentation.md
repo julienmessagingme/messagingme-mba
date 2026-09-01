@@ -2058,6 +2058,45 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : le tour d'avance est RÉSERVÉ avant les envois (migration 0104)
+
+Le trou le plus cher du produit, documenté dans `executor.ts` depuis des semaines sous la forme « cette garde
+protège l'ÉTAT, pas les effets ». Il est fermé.
+
+**Ce qui se passait.** Deux avances peuvent se chevaucher DÈS AUJOURD'HUI, avec un seul worker : l'API traite
+un retour RCS pendant que le worker traite un webhook du même contact. Les deux lisaient le run sur le bloc N,
+calculaient chacune leur suite, **envoyaient toutes les deux**, et seule la seconde écriture était refusée. Le
+contact recevait donc deux messages, dont un qu'il ne devait jamais voir.
+
+**Le seul correctif possible** est de réserver le tour AVANT les effets, pas après. `setStateSiEncoreSur` reste
+en place : elle devient la ceinture, la réservation étant la bretelle. Deux gardes qui se recouvrent valent
+mieux qu'une seule sur un chemin qui envoie de l'argent.
+
+### Les trois pièces, et la quatrième qu'on n'a PAS mise
+
+Mêmes pièces que le verrou de run de campagne (`src/campaign/run-lock.ts`), parce que ce sont elles qui font la
+différence entre un verrou et un drapeau :
+
+- un **bail** (`avance_jusqu_a`) : un worker tué en plein traitement ne bloque pas le parcours à vie ;
+- un **jeton** (`avance_token`) : le porteur d'un bail périmé, revenu tard, ne peut pas libérer le verrou de
+  celui qui l'a repris entre-temps ;
+- une **libération explicite** dans un `finally`, y compris quand un envoi jette : sinon le message SUIVANT du
+  contact attendrait la fin du bail pour rien, sur un parcours parfaitement sain.
+
+⚠️ **PAS de drapeau de relance**, à la différence du verrou de campagne, et c'est un choix. Le perdant d'une
+avance ne doit RIEN rejouer : son message a été traité par le gagnant, qui lisait le même bloc. Un drapeau de
+relance ferait avancer le parcours deux fois, c'est-à-dire recréerait le défaut à l'envers.
+
+⚠️ **Perdre la réservation n'est pas une erreur**, c'est le cas normal quand deux messages du même contact
+arrivent ensemble. Le perdant sort sans rien faire, en le journalisant (« avance IGNOREE ») : une course qu'on
+ne voit pas est une course qu'on ne corrigera jamais.
+
+### Ce que ça ne ferme toujours pas
+
+Le crash APRÈS un succès fournisseur mais AVANT la persistance. Sans clé d'idempotence acceptée par Meta,
+l'exactly-once est impossible : le compromis reste « un rejeu possible plutôt qu'une perte », et il est assumé.
+
+---
 ## DEPLOYE le 2026-09-01 : la liste des scénarios ne transporte plus les graphes
 
 Dernier constat du contre-audit. `PgWorkflowStore.list` renvoie **deux graphes complets par ligne** (le publié
