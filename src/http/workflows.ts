@@ -3,11 +3,13 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { parseGraph, isWorkflowNodeType } from '../workflow/graph';
 import type { WorkflowGraph } from '../workflow/graph';
-import type { WorkflowRow } from '../workflow/store.pg';
+import type { WorkflowRow, MajScenario } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
 import { collectNodes } from '../workflow/node-list';
 import { newTestToken, waMeTestLink } from '../workflow/test-token';
-import { scopeTenant, nonEmpty } from './scope';
+import { grapheEditable } from '../workflow/store.pg';
+import { makeJournal, type AuditSink } from '../audit/journal';
+import { scopeTenant, nonEmpty, estUuid } from './scope';
 
 /**
  * NOTE (Lot D) : le SAVE n'exige PLUS qu'un scénario commence par un template. Un scénario peut désormais
@@ -28,8 +30,13 @@ export interface WorkflowRouteDeps {
   tenantCode(tenantId: string): Promise<string>;
   listWorkflows(tenantId: string): Promise<WorkflowRow[]>;
   getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
-  updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<boolean>;
+  updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario>;
+  /** Met le brouillon EN LIGNE. Rend la ligne à jour, null si le scénario n'est pas au tenant. Absent ->
+   *  la route de publication répond 503 (câblages de test qui ne montent pas le store). */
+  publishWorkflow?(id: string, tenantId: string): Promise<WorkflowRow | null>;
   deleteWorkflow(id: string, tenantId: string): Promise<boolean>;
+  /** Journal d'audit. Optionnel : absent -> publication sans trace (câblages de test). */
+  audit?: AuditSink;
   /** Déclare dans le référentiel Tags les tags saisis dans les blocs « ajout de tag » du graphe (best-effort).
    *  Absent -> pas de déclaration (rétro-compatible). */
   declareTags?(tenantId: string, tags: string[]): Promise<void>;
@@ -61,6 +68,7 @@ function tagsInGraph(graph: WorkflowGraph): string[] {
  */
 export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps, guard?: Guard): void {
   const opts = { ...(guard ? { preHandler: guard } : {}), bodyLimit: 2 * 1024 * 1024 };
+  const journal = makeJournal(deps.audit);
 
   app.post('/tenants/:tenantId/workflows', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
@@ -89,6 +97,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     const source = await deps.getWorkflow(id, tenant);
     if (!source) return reply.code(404).send({ error: 'workflow inconnu' });
 
@@ -97,9 +106,12 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
 
     // Retire le code de chaque node AVANT de re-minter -> tous les codes sont frais (jamais conservés de la source).
+    // On copie ce que l'auteur VOIT dans l'éditeur (le brouillon s'il y en a un), pas la version en ligne :
+    // dupliquer sert à repartir de son travail en cours. La copie, elle, naît en brouillon (cf. `insert`).
+    const modele = grapheEditable(source);
     const stripped: WorkflowGraph = {
-      nodes: source.graph.nodes.map((node) => ({ ...node, data: { ...node.data, code: undefined } })),
-      edges: source.graph.edges,
+      nodes: modele.nodes.map((node) => ({ ...node, data: { ...node.data, code: undefined } })),
+      edges: modele.edges,
     };
     const graph = mintNodeCodes(stripped, await deps.tenantCode(tenant));
     const { id: newId } = await deps.createWorkflow(tenant, name, graph);
@@ -129,6 +141,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     const wf = await deps.getWorkflow(id, tenant);
     if (!wf) return reply.code(404).send({ error: 'workflow inconnu' });
     return reply.code(200).send({ workflow: wf });
@@ -139,6 +152,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     const b = (req.body ?? {}) as { name?: unknown; graph?: unknown };
 
     const patch: { name?: string; graph?: WorkflowGraph } = {};
@@ -154,10 +168,40 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     }
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'rien à modifier (name/graph)' });
 
-    const ok = await deps.updateWorkflow(id, tenant, patch);
-    if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
-    if (ok && patch.graph && deps.declareTags) { try { await deps.declareTags(tenant, tagsInGraph(patch.graph)); } catch { /* best-effort */ } }
-    return reply.code(200).send({ id, ...patch });
+    const maj = await deps.updateWorkflow(id, tenant, patch);
+    if (!maj.trouve) return reply.code(404).send({ error: 'workflow inconnu' });
+    if (patch.graph && deps.declareTags) { try { await deps.declareTags(tenant, tagsInGraph(patch.graph)); } catch { /* best-effort */ } }
+    // `brouillon` : reste-t-il quelque chose à publier APRÈS cette écriture ? C'est la base qui répond, et
+    // c'est ce qui allume (ou éteint) le bouton « Publier ». L'éditeur ne peut pas le déduire seul : un
+    // enregistrement identique au publié n'y laisse rien, et il s'en produit un à la simple ouverture d'un
+    // scénario (React Flow mesure les blocs au montage).
+    return reply.code(200).send({ id, ...patch, brouillon: maj.brouillon });
+  });
+
+  /**
+   * MET EN LIGNE le brouillon (lot 7). C'est le seul chemin qui touche le graphe publié, donc le seul qui
+   * change quoi que ce soit pour les contacts.
+   *
+   * Ce que la publication emporte, décidé par Julien le 2026-09-01 : un parcours DÉJÀ en cours bascule sur la
+   * nouvelle version (il n'est pas épinglé à celle qui l'a démarré), et une campagne programmée part avec la
+   * version en ligne le jour de l'expédition, pas celle de sa préparation. La version en ligne est la seule
+   * qui existe à l'exécution.
+   *
+   * ⚠️ Sans retour arrière : publier écrase la version précédente, qui n'est conservée nulle part.
+   */
+  app.post('/tenants/:tenantId/workflows/:id/publish', opts, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    if (forbidNonAdmin(req, reply)) return;
+    if (!deps.publishWorkflow) return reply.code(503).send({ error: 'publication indisponible sur cette instance' });
+    const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
+    const row = await deps.publishWorkflow(id, tenant);
+    if (!row) return reply.code(404).send({ error: 'workflow inconnu' });
+    // Le journal porte QUI a publié : la table `workflows`, elle, ne garde que la date. Détail non identifiant
+    // (un nombre de blocs), comme partout dans ce journal.
+    await journal(tenant, req, 'workflow.published', { kind: 'workflow', id }, { blocs: row.graph.nodes.length });
+    return reply.code(200).send({ id, graph: row.graph, publishedAt: row.publishedAt ?? null });
   });
 
   app.delete('/tenants/:tenantId/workflows/:id', opts, async (req, reply) => {
@@ -165,6 +209,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
     if (forbidNonAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     const ok = await deps.deleteWorkflow(id, tenant);
     if (!ok) return reply.code(404).send({ error: 'workflow inconnu' });
     return reply.code(200).send({ ok: true });
@@ -184,6 +229,7 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
     if (forbidNonAdmin(req, reply)) return;
     if (!deps.ensureTestToken) return reply.code(503).send({ error: 'test indisponible sur cette instance' });
     const { id } = req.params as { id: string };
+    if (!estUuid(id)) return reply.code(404).send({ error: 'workflow inconnu' });
     const token = await deps.ensureTestToken(id, tenant, newTestToken());
     if (token === null) return reply.code(404).send({ error: 'workflow inconnu' });
     const phone = deps.getDisplayPhoneNumber ? await deps.getDisplayPhoneNumber(tenant) : null;

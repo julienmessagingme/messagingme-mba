@@ -27,13 +27,32 @@ export interface EnregistrementScenario {
   erreur: string | null;
   /** Enregistre TOUT DE SUITE (bouton « réessayer »), sans attendre le debounce. */
   enregistrer: () => void;
+  /** Reste-t-il un brouillon non publié ? C'est la RÉPONSE DU SERVEUR au dernier enregistrement, pas une
+   *  déduction locale : un enregistrement identique au publié ne laisse aucun brouillon derrière lui. */
+  aPublier: boolean;
+  /**
+   * Vide la file d'enregistrement et dit si TOUT est bien parti. À appeler AVANT de publier : sans ça, un
+   * clic sur « Publier » dans la seconde qui suit une modification mettrait en ligne le brouillon PRÉCÉDENT,
+   * celui d'avant la dernière frappe, et personne ne le verrait.
+   */
+  enregistrerMaintenant: () => Promise<boolean>;
+  /** L'appelant vient de publier : plus rien n'est en attente. */
+  marquerPublie: () => void;
 }
 
-export function useEnregistrementScenario(tenantId: string, workflowId: string, nodes: RFNode[], edges: RFEdge[]): EnregistrementScenario {
+export function useEnregistrementScenario(
+  tenantId: string,
+  workflowId: string,
+  nodes: RFNode[],
+  edges: RFEdge[],
+  /** Y avait-il déjà un brouillon en attente à l'ouverture ? (`draftGraph !== null` côté serveur) */
+  brouillonInitial = false,
+): EnregistrementScenario {
   const t = useT();
   const [enCours, setEnCours] = useState(false);
   const [enregistreA, setEnregistreA] = useState<Date | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [aPublier, setAPublier] = useState(brouillonInitial);
 
   const graphRef = useRef({ nodes, edges });
   useEffect(() => { graphRef.current = { nodes, edges }; }, [nodes, edges]);
@@ -53,8 +72,11 @@ export function useEnregistrementScenario(tenantId: string, workflowId: string, 
     setErreur(null);
     let echoue = false;
     try {
-      await updateWorkflow(tenantId, workflowId, { graph: fromRF(graphRef.current.nodes, graphRef.current.edges) }, keepalive ? { keepalive: true } : undefined);
+      const rep = await updateWorkflow(tenantId, workflowId, { graph: fromRF(graphRef.current.nodes, graphRef.current.edges) }, keepalive ? { keepalive: true } : undefined);
       setEnregistreA(new Date());
+      // Repli `true` si le serveur ne dit rien (backend plus ancien que le front) : on préfère proposer une
+      // publication inutile, qui ne coûte rien, à masquer un bouton dont l'écran a besoin.
+      setAPublier(typeof rep?.brouillon === 'boolean' ? rep.brouillon : true);
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
       dirtyRef.current = true; // laisse une chance au prochain debounce / au bouton « réessayer »
@@ -95,5 +117,22 @@ export function useEnregistrementScenario(tenantId: string, workflowId: string, 
 
   const enregistrer = useCallback(() => { void doSaveRef.current(); }, []);
 
-  return { enCours, enregistreA, erreur, enregistrer };
+  /**
+   * Attend que la file soit vide, puis rend `true` si tout est bien enregistré.
+   *
+   * La boucle d'attente n'est pas du zèle : `doSave` REND LA MAIN TOUT DE SUITE quand un PATCH est déjà en
+   * vol (il se contente de marquer « sale »). L'appeler et l'attendre ne prouverait donc rien dans ce cas
+   * précis. Bornée à 4 s pour ne jamais bloquer un bouton sur une requête qui traîne.
+   */
+  const enregistrerMaintenant = useCallback(async (): Promise<boolean> => {
+    for (let garde = 0; garde < 100 && savingRef.current; garde += 1) {
+      await new Promise((r) => { setTimeout(r, 40); });
+    }
+    if (dirtyRef.current) await doSaveRef.current();
+    return !dirtyRef.current;
+  }, []);
+
+  const marquerPublie = useCallback(() => { setAPublier(false); }, []);
+
+  return { enCours, enregistreA, erreur, enregistrer, aPublier, enregistrerMaintenant, marquerPublie };
 }

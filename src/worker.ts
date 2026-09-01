@@ -36,7 +36,7 @@ import {
   ensureFieldByKey,
   CTWA_AD_ID_FIELD_KEY, CTWA_AD_ID_FIELD_LABEL, CTWA_AD_TITLE_FIELD_KEY, CTWA_AD_TITLE_FIELD_LABEL,
 } from './crm/fields';
-import { PgWorkflowStore } from './workflow/store.pg';
+import { PgWorkflowStore, grapheEditable } from './workflow/store.pg';
 import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
@@ -366,7 +366,10 @@ async function main(): Promise<void> {
           const wf = await workflowStore.getById(workflowId, tenant);
           if (!wf) return false;
           const contactId = await contactStore.findIdByWaId(tenant, waId);
-          return workflowExecutor.startInWindow(tenant, workflowId, wf.graph, { waId, contactId }, { emitEvents: true });
+          // 🔴 LE TEST JOUE LE BROUILLON (lot 7), et c'est le seul chemin d'exécution qui le fait. Essayer sa
+          // version avant de la mettre en ligne est TOUTE la raison d'être du brouillon : jouer le publié ici
+          // obligerait à publier pour tester, ce qui rend le bouton « Publier » inutile.
+          return workflowExecutor.startInWindow(tenant, workflowId, grapheEditable(wf), { waId, contactId }, { emitEvents: true });
         },
       },
       // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le

@@ -14,6 +14,7 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'contact.purged': ['Contact supprimé', 'Contact deleted'],
   'contact.optin': ['Passage en opt-in', 'Marked as opted in'],
   'contact.optout': ['Passage en opt-out', 'Marked as opted out'],
+  'workflow.published': ['Scénario mis en ligne', 'Scenario published'],
 };
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */

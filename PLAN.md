@@ -518,18 +518,18 @@ retour arrière) mais **un brouillon et un publié sur le scénario lui-même** 
 - Aucun run à migrer : ils lisent le publié, comme aujourd'hui ils lisent le graphe.
 - Aucune sémantique de retour arrière à inventer.
 
-🔴 **Le trou que ce choix LAISSE OUVERT, et qu'il faut fermer dans le même lot.** Si on publie une version qui
-supprime un bloc pendant qu'un contact attend DESSUS, son run pointe un bloc qui n'existe plus. C'est déjà le
-cas aujourd'hui (aucun versionnement), et l'exécuteur le traite en silence : bloc introuvable -> pas de suite
--> run clos, conversation rendue à l'agent. Personne n'est prévenu. Avec un bouton « Publier », ce cas devient
-FRÉQUENT et VOLONTAIRE (on republie justement pour corriger). Le lot doit donc, au minimum, remonter la
-conversation à un humain au lieu de la clore, exactement comme le « bouton qui ne mène nulle part » du lot 1.
+**5. Le bloc supprimé sous les pieds d'un contact : ON ASSUME.** Tranché par Julien le 2026-09-01, après que le
+cas lui a été posé : publier une version qui supprime un bloc pendant qu'un contact attend DESSUS laisse son
+run sur un bloc qui n'existe plus, l'exécuteur ne trouve pas de suite, le run se clôt et la conversation
+revient à l'agent, sans prévenir personne. « Tant pis on assume que le user tombe dans le vide. » Donc **aucune
+remontée à un humain à écrire**, le comportement d'aujourd'hui reste. Ce que le lot doit quand même faire :
+que ça se VOIE dans les journaux, pour ne pas passer une heure à chercher pourquoi un parcours s'est arrêté.
 
-**Garde-fou proposé, à confirmer** : conserver le graphe publié PRÉCÉDENT dans une colonne, pour un
-« revenir à la version d'avant » en un clic. Publier écrase aujourd'hui sans recours, et un bouton qui met
-en ligne devant des clients mérite son bouton d'annulation. Une colonne, pas une table.
+**6. Pas de retour arrière.** Le garde-fou proposé (garder le graphe publié précédent dans une colonne, pour un
+« revenir à la version d'avant » en un clic) est **refusé** : « non on s'encombre pas de l'ancienne version ».
+Publier écrase, sans recours. Une colonne de moins.
 
-### Encore à trancher### Encore à trancher
+### Encore à trancher
 
 Elles changent le coût, pas la faisabilité.
 

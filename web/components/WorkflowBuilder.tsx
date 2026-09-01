@@ -7,7 +7,7 @@ import {
   type Connection, type ReactFlowInstance, type OnConnectEnd,
 } from '@xyflow/react';
 import {
-  listTemplates, listFlows, listTags, listUserFields, listUserFieldUsage, createTag, listEmailAccounts, listEmailTemplates, listRcsMessages,
+  listTemplates, listFlows, listTags, listUserFields, listUserFieldUsage, createTag, listEmailAccounts, listEmailTemplates, listRcsMessages, publishWorkflow,
   type WorkflowGraph, type WorkflowNodeType, type TemplateSummary, type FlowSummary, type TagCount, type UserFieldDef,
   type EmailAccount, type EmailTemplate, type RcsMessage,
 } from '@/lib/api';
@@ -51,10 +51,21 @@ function initialDataFor(wfType: WorkflowNodeType): Record<string, unknown> {
 
 /**
  * Éditeur visuel d'un workflow (bot builder). Blocs reliés par des flèches drag-and-drop (tirer depuis le
- * point bas d'un bloc vers un autre). +/poubelle sur chaque flèche. Panneau de config par bloc. PB1 : édition
- * + sauvegarde du graphe (pas d'exécution). Le graphe est validé/sanitisé côté serveur au save.
+ * point bas d'un bloc vers un autre). +/poubelle sur chaque flèche. Panneau de config par bloc. Le graphe est
+ * validé/sanitisé côté serveur au save.
+ *
+ * 🔴 CE QUI S'ÉDITE ICI EST UN BROUILLON (lot 7, 2026-09-01). L'enregistrement automatique n'atteint plus les
+ * contacts : il écrit une version de travail, et seul le bouton « Publier » la met en ligne. Avant ce lot, une
+ * retouche partait en production dans la seconde, y compris pour les parcours déjà en cours.
  */
-export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [] }: { tenantId: string; workflowId: string; initialGraph: WorkflowGraph; mbaEnabled?: boolean; rcsEnabled?: boolean; emailEnabled?: boolean; /** Agents IA ACTIFS du workspace. `null` = pas encore chargés (ou lecture en échec), `[]` = aucun : la
+export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonInitial = false, publieLe = null, mbaEnabled = false, rcsEnabled = false, emailEnabled = false, agents = [] }: { tenantId: string; workflowId: string;
+  /** Ce que l'éditeur ouvre : le brouillon s'il existe, sinon la version en ligne (cf. `grapheEditable`). */
+  initialGraph: WorkflowGraph;
+  /** Un brouillon non publié attendait-il déjà à l'ouverture ? Pilote l'état initial du bouton « Publier ». */
+  brouillonInitial?: boolean;
+  /** Date de la dernière mise en ligne (ISO), null si jamais publié. */
+  publieLe?: string | null;
+  mbaEnabled?: boolean; rcsEnabled?: boolean; emailEnabled?: boolean; /** Agents IA ACTIFS du workspace. `null` = pas encore chargés (ou lecture en échec), `[]` = aucun : la
    *  brique « Agent IA » est grisée dans les deux cas, mais seul `[]` autorise à AFFIRMER qu'un agent n'est
    *  plus actif. */ agents?: AgentResume[] | null }) {
   const t = useT();
@@ -283,7 +294,29 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
 
   // Enregistrement automatique du scénario : debounce, un seul PATCH en vol, vidage au démontage et à la
   // fermeture d'onglet. Tout est dans `useEnregistrementScenario` (aucun de ces états ne touche le canevas).
-  const enregistrement = useEnregistrementScenario(tenantId, workflowId, nodes, edges);
+  const enregistrement = useEnregistrementScenario(tenantId, workflowId, nodes, edges, brouillonInitial);
+
+  // Mise en ligne. Deux états seulement : en cours, et le message d'échec.
+  const [publication, setPublication] = useState<{ enCours: boolean; erreur: string | null }>({ enCours: false, erreur: null });
+  const [publieA, setPublieA] = useState<string | null>(publieLe);
+  const publier = useCallback(async () => {
+    setPublication({ enCours: true, erreur: null });
+    // 🔴 On vide D'ABORD la file d'enregistrement. L'auto-save attend 1,2 s : publier sans ça, juste après une
+    // modification, mettrait en ligne le brouillon PRÉCÉDENT, et l'écran affirmerait pourtant « publié ».
+    const propre = await enregistrement.enregistrerMaintenant();
+    if (!propre) {
+      setPublication({ enCours: false, erreur: t('Modifications pas encore enregistrées : rien n’a été publié.', 'Changes not saved yet: nothing was published.') });
+      return;
+    }
+    try {
+      const rep = await publishWorkflow(tenantId, workflowId);
+      setPublieA(rep.publishedAt);
+      enregistrement.marquerPublie();
+      setPublication({ enCours: false, erreur: null });
+    } catch (err) {
+      setPublication({ enCours: false, erreur: err instanceof Error ? err.message : t('Publication impossible', 'Could not publish') });
+    }
+  }, [tenantId, workflowId, enregistrement, t]);
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
@@ -400,7 +433,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
             « est-ce que mon scénario est enregistré ». Il est désormais toujours VISIBLE (fond, bordure) et son
             état au repos DIT qu'il n'y a rien à cliquer, au lieu d'un simple « Enregistrement automatique »
             qu'on pouvait lire comme une option à activer. */}
-        <div className="ml-auto flex shrink-0 items-center gap-2 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs" data-testid="workflow-autosave">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs" data-testid="workflow-autosave">
           {enregistrement.erreur ? (
             <>
               <span className="font-medium text-coral">⚠ {t('Échec de l’enregistrement', 'Save failed')}</span>
@@ -409,12 +443,41 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, mbaEnabled
           ) : enregistrement.enCours ? (
             <span className="text-ink-500">{t('Enregistrement…', 'Saving…')}</span>
           ) : enregistrement.enregistreA ? (
-            <span className="text-mint-700">✓ {t('Enregistré à', 'Saved at')} {enregistrement.enregistreA.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="text-mint-700">✓ {t('Brouillon enregistré à', 'Draft saved at')} {enregistrement.enregistreA.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
           ) : (
-            <span className="text-ink-500">✓ {t('Enregistrement automatique, aucun bouton à cliquer', 'Saved automatically, no button to click')}</span>
+            // ⚠️ Ce message DISAIT « aucun bouton à cliquer ». Depuis le lot 7 il y en a un, juste à côté, et
+            // c'est lui qui met en ligne : promettre le contraire ferait croire qu'éditer suffit.
+            <span className="text-ink-500">✓ {t('Brouillon enregistré automatiquement', 'Draft saved automatically')}</span>
           )}
         </div>
+        {/* MISE EN LIGNE. Le bouton n'apparaît que s'il y a quelque chose à publier ; sinon on affiche depuis
+            quand la version en cours est en ligne, parce que « rien à publier » et « jamais publié » ne sont
+            pas la même situation et que la seconde mérite d'être vue. */}
+        {enregistrement.aPublier ? (
+          <button
+            onClick={() => { void publier(); }}
+            disabled={publication.enCours}
+            data-testid="workflow-publier"
+            title={t('Met cette version en ligne. Les parcours en cours basculent dessus, et il n’y a pas de retour arrière.', 'Puts this version live. Runs in progress switch to it, and there is no going back.')}
+            className="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+          >
+            {publication.enCours ? t('Publication…', 'Publishing…') : t('Publier', 'Publish')}
+          </button>
+        ) : (
+          <span className="shrink-0 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs text-ink-500" data-testid="workflow-publie">
+            {publieA
+              ? `${t('En ligne depuis le', 'Live since')} ${new Date(publieA).toLocaleDateString()}`
+              : t('En ligne', 'Live')}
+          </span>
+        )}
+        </div>
       </div>
+
+      {publication.erreur && (
+        <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800" data-testid="workflow-publier-erreur">
+          <b>{t('Publication impossible.', 'Could not publish.')}</b> {publication.erreur}
+        </div>
+      )}
 
       {montageImpossible && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">

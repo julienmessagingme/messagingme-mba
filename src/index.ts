@@ -937,6 +937,9 @@ async function main(): Promise<void> {
       listWorkflows: (tenant) => workflowStore.list(tenant),
       getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
       updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),
+      // Bouton « Publier » (lot 7) : le SEUL chemin qui touche le graphe exécuté.
+      publishWorkflow: (id, tenant) => workflowStore.publish(id, tenant),
+      audit: auditSink,
       deleteWorkflow: (id, tenant) => workflowStore.remove(id, tenant),
       // Déclare les tags des blocs « ajout de tag » dans le référentiel (Contenus > Tags) à la sauvegarde.
       declareTags: async (tenant, tags) => { for (const t of tags) await tagStore.create(tenant, t); },

@@ -16,7 +16,10 @@ export type AuditAction =
   | 'contact.imported'
   | 'contact.purged'
   | 'contact.optin'
-  | 'contact.optout';
+  | 'contact.optout'
+  // Mise en ligne d'un scénario (lot 7). La table `workflows` ne garde que la DATE de publication ; qui a
+  // cliqué est ici, comme pour toute action humaine de l'espace.
+  | 'workflow.published';
 
 export interface AuditEntry {
   id: string;

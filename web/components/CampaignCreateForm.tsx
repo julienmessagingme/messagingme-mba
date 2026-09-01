@@ -1345,8 +1345,8 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                 {workflowsTotal === 0
                   ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario. Create one from the "Scenario" menu on the left.')
                   : t(
-                      "Aucun scénario utilisable en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template configuré (un tag, une action ou une condition avant lui ne posent aucun problème). Tes autres scénarios restent utilisables quand le contact vient d'écrire.",
-                      'No scenario usable in a campaign: a campaign targets a cold audience, so the FIRST message sent must be a configured template (a tag, an action or a condition before it is fine). Your other scenarios remain usable when the contact has just written.',
+                      "Aucun scénario utilisable en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template configuré (un tag, une action ou une condition avant lui ne posent aucun problème). Tes autres scénarios restent utilisables quand le contact vient d'écrire. Un scénario jamais PUBLIÉ n'apparaît pas non plus ici : c'est la version en ligne qui part en campagne.",
+                      'No scenario usable in a campaign: a campaign targets a cold audience, so the FIRST message sent must be a configured template (a tag, an action or a condition before it is fine). Your other scenarios remain usable when the contact has just written. A scenario that was never PUBLISHED does not show up here either: a campaign sends the live version.',
                     )}
               </p>
             ) : (

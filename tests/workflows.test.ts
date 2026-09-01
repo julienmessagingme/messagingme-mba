@@ -7,6 +7,10 @@ import type { WorkflowRouteDeps } from '../src/http/workflows';
 import type { WorkflowRow } from '../src/workflow/store.pg';
 
 const SECRET = 'test-secret';
+// Un identifiant qui a la FORME d'un uuid : les routes refusent desormais en 404 ce qui n'en est pas un,
+// parce qu'un id mal forme partait tel quel dans un `where id = $1` sur une colonne uuid et faisait lever
+// Postgres (22P02), donc un 500 dont Cloudflare remplace le corps. Une adresse tapee de travers rend 404.
+const W1 = '11111111-1111-4111-8111-111111111111';
 let adminTok = '';
 let agentTok = '';
 let otherTok = '';
@@ -19,21 +23,27 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const sampleRow = (over: Partial<WorkflowRow> = {}): WorkflowRow => ({
-  id: 'w1', tenantId: 't1', name: 'Onboarding',
+  id: W1, tenantId: 't1', name: 'Onboarding',
   graph: { nodes: [{ id: 'n1', type: 'template', position: { x: 0, y: 0 }, data: {} }], edges: [] },
   createdAt: '2026-07-13T00:00:00.000Z', updatedAt: '2026-07-13T00:00:00.000Z', ...over,
 });
 
 function app(over: Partial<WorkflowRouteDeps> = {}) {
-  const cap = { created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>, deleted: [] as string[], declared: [] as string[][] };
+  const cap = {
+    created: [] as Array<{ name: string; graph: unknown }>, updated: [] as Array<{ id: string; patch: unknown }>,
+    deleted: [] as string[], declared: [] as string[][], publies: [] as string[],
+    journal: [] as Array<{ action: string; userId: string | null; target: string }>,
+  };
   const deps: WorkflowRouteDeps = {
     createWorkflow: async (_t, name, graph) => { cap.created.push({ name, graph }); return { id: 'wNew' }; },
     tenantCode: async () => 'k7m2p3',
     listWorkflows: async () => [sampleRow()],
-    getWorkflow: async (id) => (id === 'w1' ? sampleRow() : null),
-    updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return id === 'w1'; },
-    deleteWorkflow: async (id) => { cap.deleted.push(id); return id === 'w1'; },
+    getWorkflow: async (id) => (id === W1 ? sampleRow() : null),
+    updateWorkflow: async (id, _t, patch) => { cap.updated.push({ id, patch }); return { trouve: id === W1, brouillon: true }; },
+    publishWorkflow: async (id) => { cap.publies.push(id); return id === W1 ? sampleRow({ publishedAt: '2026-09-01T10:00:00.000Z' }) : null; },
+    deleteWorkflow: async (id) => { cap.deleted.push(id); return id === W1; },
     declareTags: async (_t, tags) => { cap.declared.push(tags); },
+    audit: async (_t, actor, action, target) => { cap.journal.push({ action, userId: actor.userId, target: target.id }); },
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, workflows: deps }), cap };
@@ -88,7 +98,7 @@ describe('routes workflows', () => {
     const post = await server.inject({ method: 'POST', url: '/tenants/t1/workflows', ...h(adminTok), payload: { name: 'X', graph: flowEntry } });
     expect(post.statusCode).toBe(201);
     const qmEntry = { nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { body: 'Salut', quickReplies: ['Oui'] } }], edges: [] };
-    const patch = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: qmEntry } });
+    const patch = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: qmEntry } });
     expect(patch.statusCode).toBe(200);
     // Les deux graphes sont bien PERSISTÉS (et non acceptés puis silencieusement vidés).
     expect(cap.created).toHaveLength(1);
@@ -110,7 +120,7 @@ describe('routes workflows', () => {
     const { server } = app();
     const list = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });
     expect(list.json<{ workflows: unknown[] }>().workflows).toHaveLength(1);
-    const one = await server.inject({ method: 'GET', url: '/tenants/t1/workflows/w1', ...h(adminTok) });
+    const one = await server.inject({ method: 'GET', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
     expect(one.statusCode).toBe(200);
     const miss = await server.inject({ method: 'GET', url: '/tenants/t1/workflows/nope', ...h(adminTok) });
     expect(miss.statusCode).toBe(404);
@@ -119,12 +129,12 @@ describe('routes workflows', () => {
 
   it('PATCH graph -> 200 ; graphe invalide -> 400 ; rien à modifier -> 400', async () => {
     const { server, cap } = app();
-    const ok = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: validGraph } });
+    const ok = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
     expect(ok.statusCode).toBe(200);
-    expect(cap.updated[0]!.id).toBe('w1');
-    const bad = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: { nodes: 'x', edges: [] } } });
+    expect(cap.updated[0]!.id).toBe(W1);
+    const bad = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: { nodes: 'x', edges: [] } } });
     expect(bad.statusCode).toBe(400);
-    const empty = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: {} });
+    const empty = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: {} });
     expect(empty.statusCode).toBe(400);
     await server.close();
   });
@@ -149,7 +159,7 @@ describe('routes workflows', () => {
       ],
       edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
     };
-    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: withCode } });
+    const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: withCode } });
     expect(res.statusCode).toBe(200);
     const g = res.json<{ graph: { nodes: Array<{ data: { code?: string } }> } }>().graph;
     expect(g.nodes[0]!.data.code).toBe('nod_k7m2p3_0123456789ABCDEFGHJKMNPQRS'); // conservé (stabilité)
@@ -167,7 +177,7 @@ describe('routes workflows', () => {
 
   it('PATCH graph déclare aussi les tags du graphe', async () => {
     const { server, cap } = app();
-    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/workflows/w1', ...h(adminTok), payload: { graph: validGraph } });
+    const res = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
     expect(res.statusCode).toBe(200);
     expect(cap.declared).toEqual([['vip']]);
     await server.close();
@@ -182,7 +192,7 @@ describe('routes workflows', () => {
 
   it('DELETE -> 200 ; inconnu -> 404', async () => {
     const { server } = app();
-    const ok = await server.inject({ method: 'DELETE', url: '/tenants/t1/workflows/w1', ...h(adminTok) });
+    const ok = await server.inject({ method: 'DELETE', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok) });
     expect(ok.statusCode).toBe(200);
     const miss = await server.inject({ method: 'DELETE', url: '/tenants/t1/workflows/nope', ...h(adminTok) });
     expect(miss.statusCode).toBe(404);
@@ -239,8 +249,8 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('201, nom « (copie) », graphe cloné, codes de node RE-MINTÉS (différents de la source)', async () => {
-    const { server, cap } = app({ getWorkflow: async (id) => (id === 'w1' ? source() : null), listWorkflows: async () => [source()] });
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(adminTok), payload: {} });
+    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? source() : null), listWorkflows: async () => [source()] });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(201);
     expect(res.json<{ name: string }>().name).toBe('Promo (copie)');
     expect(cap.created[0]!.name).toBe('Promo (copie)');
@@ -253,8 +263,8 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
   });
 
   it('incrémente « (copie 2) » si le nom est déjà pris', async () => {
-    const { server, cap } = app({ getWorkflow: async (id) => (id === 'w1' ? source() : null), listWorkflows: async () => [source(), sampleRow({ name: 'Promo (copie)' })] });
-    const res = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(adminTok), payload: {} });
+    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? source() : null), listWorkflows: async () => [source(), sampleRow({ name: 'Promo (copie)' })] });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(201);
     expect(cap.created[0]!.name).toBe('Promo (copie 2)');
     await server.close();
@@ -268,12 +278,90 @@ describe('POST /tenants/:t/workflows/:id/duplicate', () => {
     await server.close();
   });
 
+  it('🔴 copie le BROUILLON quand il y en a un (on duplique ce qu’on voit, pas ce qui tourne)', async () => {
+    const avecBrouillon = (): WorkflowRow => sampleRow({
+      name: 'Promo',
+      graph: { nodes: [{ id: 'nEnLigne', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'en-ligne' } }], edges: [] },
+      draftGraph: { nodes: [{ id: 'nBrouillon', type: 'template', position: { x: 0, y: 0 }, data: { templateName: 'brouillon' } }], edges: [] },
+    });
+    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? avecBrouillon() : null), listWorkflows: async () => [avecBrouillon()] });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(201);
+    const g = cap.created[0]!.graph as { nodes: Array<{ id: string }> };
+    expect(g.nodes[0]!.id).toBe('nBrouillon');
+    await server.close();
+  });
+
+  it('sans brouillon, copie la version en ligne (l’autre sens de la même règle)', async () => {
+    const { server, cap } = app({ getWorkflow: async (id) => (id === W1 ? source() : null), listWorkflows: async () => [source()] });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(201);
+    const g = cap.created[0]!.graph as { nodes: Array<{ id: string }> };
+    expect(g.nodes[0]!.id).toBe('n1');
+    await server.close();
+  });
+
   it('agent -> 403 (admin-only) ; tenant != token -> 403', async () => {
     const { server } = app({ getWorkflow: async () => source() });
-    const agent = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(agentTok), payload: {} });
-    const cross = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/w1/duplicate', ...h(otherTok), payload: {} });
+    const agent = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(agentTok), payload: {} });
+    const cross = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/duplicate`, ...h(otherTok), payload: {} });
     expect(agent.statusCode).toBe(403);
     expect(cross.statusCode).toBe(403);
     await server.close();
+  });
+});
+
+/**
+ * MISE EN LIGNE (lot 7). La route est le seul chemin qui change quelque chose pour les contacts : tout le
+ * reste de l'éditeur n'écrit qu'un brouillon.
+ */
+describe('POST /tenants/:t/workflows/:id/publish', () => {
+  it('200 : publie, rend le graphe en ligne et la date, et journalise QUI a publié', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ publishedAt: string }>().publishedAt).toBe('2026-09-01T10:00:00.000Z');
+    expect(cap.publies).toEqual([W1]);
+    expect(cap.journal).toEqual([{ action: 'workflow.published', userId: 'u1', target: W1 }]);
+    await server.close();
+  });
+
+  it('scénario inconnu -> 404, et un id qui n’est pas un uuid -> 404 SANS toucher au store', async () => {
+    const { server, cap } = app();
+    const inconnu = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/22222222-2222-4222-8222-222222222222/publish', ...h(adminTok), payload: {} });
+    expect(inconnu.statusCode).toBe(404);
+    const malForme = await server.inject({ method: 'POST', url: '/tenants/t1/workflows/pas-un-uuid/publish', ...h(adminTok), payload: {} });
+    expect(malForme.statusCode).toBe(404);
+    // Le second n'a JAMAIS atteint la base : un id mal formé y ferait lever Postgres (22P02), donc un 500.
+    expect(cap.publies).toEqual(['22222222-2222-4222-8222-222222222222']);
+    await server.close();
+  });
+
+  it('🔴 réservée aux admins, et jamais d’un espace à l’autre', async () => {
+    const { server, cap } = app();
+    const agent = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(agentTok), payload: {} });
+    const cross = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(otherTok), payload: {} });
+    expect(agent.statusCode).toBe(403);
+    expect(cross.statusCode).toBe(403);
+    expect(cap.publies).toEqual([]);
+    await server.close();
+  });
+
+  it('instance sans store de publication -> 503, pas un 500', async () => {
+    const { server } = app({ publishWorkflow: undefined });
+    const res = await server.inject({ method: 'POST', url: `/tenants/t1/workflows/${W1}/publish`, ...h(adminTok), payload: {} });
+    expect(res.statusCode).toBe(503);
+    await server.close();
+  });
+
+  it('le PATCH dit s’il reste un brouillon à publier : c’est lui qui allume le bouton', async () => {
+    const { server } = app();
+    const avec = await server.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
+    expect(avec.json<{ brouillon: boolean }>().brouillon).toBe(true);
+    const { server: s2 } = app({ updateWorkflow: async () => ({ trouve: true, brouillon: false }) });
+    const sans = await s2.inject({ method: 'PATCH', url: `/tenants/t1/workflows/${W1}`, ...h(adminTok), payload: { graph: validGraph } });
+    expect(sans.json<{ brouillon: boolean }>().brouillon).toBe(false);
+    await server.close();
+    await s2.close();
   });
 });

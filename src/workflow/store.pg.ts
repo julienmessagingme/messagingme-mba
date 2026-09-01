@@ -9,21 +9,59 @@ export interface WorkflowRow {
   name: string;
   /** Code public « scn_<client>_<ulid> » (schéma A). null tant que le backfill n'a pas tourné (lignes anciennes). */
   code?: string | null;
+  /**
+   * Le graphe PUBLIÉ : celui que l'exécuteur, les campagnes, les automations et l'API publique lisent. Il ne
+   * change QUE par `publish`. Toutes les lectures d'exécution du dépôt passent par ce champ, et c'est
+   * volontaire (cf. migration 0095).
+   */
   graph: WorkflowGraph;
+  /** Le BROUILLON en attente de publication. null = aucun, le publié fait foi. Seul l'éditeur le lit. */
+  draftGraph?: WorkflowGraph | null;
+  /** Dernière mise en ligne. null = jamais publié depuis l'arrivée du bouton (lignes antérieures comprises). */
+  publishedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 const EMPTY_GRAPH: WorkflowGraph = { nodes: [], edges: [] };
 
-/** Store Postgres des workflows (bot builder). Scopé tenant. `graph` = jsonb du graphe de blocs. */
+/** Les colonnes lues partout : une seule liste, sinon un champ ajouté ici manque à une des quatre requêtes. */
+const COLS = 'id, tenant_id, name, code, graph, draft_graph, published_at, created_at, updated_at';
+
+/**
+ * Résultat d'un enregistrement de l'éditeur.
+ *
+ * `brouillon` est l'état APRÈS écriture, tel que la base le voit : c'est lui, et pas « un PATCH a réussi »,
+ * qui dit s'il reste quelque chose à publier. La nuance compte, parce qu'un enregistrement dont le contenu
+ * est identique au publié ne laisse AUCUN brouillon derrière lui (cf. `update`), et l'éditeur ne doit alors
+ * pas proposer de publier le vide.
+ */
+export interface MajScenario {
+  /** Une ligne du tenant a-t-elle bougé ? false = scénario inconnu (ou d'un autre espace) -> 404. */
+  trouve: boolean;
+  /** Reste-t-il un brouillon non publié ? */
+  brouillon: boolean;
+}
+
+/**
+ * Store Postgres des workflows (bot builder). Scopé tenant.
+ *
+ * 🔴 DEUX GRAPHES DEPUIS LE LOT 7 : `graph` est le PUBLIÉ (ce qui tourne), `draft_graph` le brouillon (ce qui
+ * s'édite). Toute écriture de l'éditeur va au brouillon ; `graph` ne bouge que par `publish`. Écrire `graph`
+ * ailleurs qu'ici remettrait l'édition en direct sur la production, ce que le bouton « Publier » est censé
+ * empêcher.
+ */
 export class PgWorkflowStore {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Crée un scénario. Le graphe fourni part en BROUILLON, jamais en publié : rien n'est en ligne tant que
+   * personne n'a cliqué « Publier ». Une seule règle à retenir, valable aussi pour la duplication.
+   */
   async insert(tenantId: string, name: string, graph: WorkflowGraph): Promise<{ id: string }> {
     const code = makeCode('scn', await resolveTenantCode(this.pool, tenantId));
     const res = await this.pool.query<{ id: string }>(
-      `insert into workflows (tenant_id, name, graph, code) values ($1, $2, $3::jsonb, $4) returning id`,
+      `insert into workflows (tenant_id, name, draft_graph, code) values ($1, $2, $3::jsonb, $4) returning id`,
       [tenantId, name, JSON.stringify(graph), code],
     );
     return { id: res.rows[0]!.id };
@@ -31,8 +69,7 @@ export class PgWorkflowStore {
 
   async list(tenantId: string): Promise<WorkflowRow[]> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, code, graph, created_at, updated_at from workflows
-       where tenant_id = $1 order by created_at desc`,
+      `select ${COLS} from workflows where tenant_id = $1 order by created_at desc`,
       [tenantId],
     );
     return res.rows.map(toRow);
@@ -40,8 +77,7 @@ export class PgWorkflowStore {
 
   async getById(id: string, tenantId: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, code, graph, created_at, updated_at from workflows
-       where id = $1 and tenant_id = $2 limit 1`,
+      `select ${COLS} from workflows where id = $1 and tenant_id = $2 limit 1`,
       [id, tenantId],
     );
     const r = res.rows[0];
@@ -49,17 +85,61 @@ export class PgWorkflowStore {
   }
 
   /** MAJ partielle (name/graph). true si une ligne du tenant a bougé. `coalesce` : un champ absent
-   *  ne l'écrase pas. Le graphe passé est DÉJÀ validé/sanitisé par la route (parseGraph). */
-  async update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<boolean> {
-    const res = await this.pool.query(
+   *  ne l'écrase pas. Le graphe passé est DÉJÀ validé/sanitisé par la route (parseGraph).
+   *
+   *  ⚠️ Le graphe atterrit dans le BROUILLON. C'est ici que se joue la promesse du bouton « Publier » :
+   *  l'éditeur enregistre en continu (auto-save toutes les 1,2 s), et aucune de ces écritures ne doit
+   *  atteindre les contacts en cours de parcours. */
+  async update(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario> {
+    const res = await this.pool.query<{ brouillon: boolean }>(
       `update workflows set
          name = coalesce($3, name),
-         graph = coalesce($4::jsonb, graph),
+         -- Un brouillon IDENTIQUE au publié n'en est pas un : on le ramène à null, et l'écran cesse
+         -- d'annoncer « modifications non publiées ». Sans ce cas, la simple OUVERTURE d'un scénario
+         -- suffisait à en poser un (React Flow mesure les blocs au montage, ce qui déclenche l'auto-save),
+         -- et tout scénario seulement consulté aurait porté le badge à vie.
+         draft_graph = case
+           when $4::jsonb is null then draft_graph
+           when $4::jsonb = graph then null
+           else $4::jsonb
+         end,
          updated_at = now()
-       where id = $1 and tenant_id = $2`,
+       where id = $1 and tenant_id = $2
+       returning draft_graph is not null as brouillon`,
       [id, tenantId, patch.name ?? null, patch.graph ? JSON.stringify(patch.graph) : null],
     );
-    return (res.rowCount ?? 0) > 0;
+    const r = res.rows[0];
+    return r ? { trouve: true, brouillon: r.brouillon } : { trouve: false, brouillon: false };
+  }
+
+  /**
+   * MET EN LIGNE le brouillon : il devient le graphe publié, et il n'y a pas de retour arrière (décision de
+   * Julien le 2026-09-01 : on ne garde pas la version précédente).
+   *
+   * Idempotent et sans effet quand il n'y a rien à publier : `draft_graph` null laisse `graph` intact grâce au
+   * `coalesce`. Sans lui, republier deux fois d'affilée écraserait le publié par NULL, donc effacerait le
+   * scénario en production.
+   *
+   * Renvoie la ligne à jour (null si le scénario n'est pas au tenant) : l'appelant a besoin du graphe publié
+   * et de la date pour répondre, et un second aller-retour pourrait déjà avoir été doublé par une autre
+   * publication.
+   */
+  async publish(id: string, tenantId: string): Promise<WorkflowRow | null> {
+    const res = await this.pool.query<Row>(
+      `update workflows set
+         graph = coalesce(draft_graph, graph),
+         -- La date ne bouge QUE s'il y avait quelque chose à mettre en ligne : sinon elle daterait d'un clic
+         -- une publication qui n'a rien changé, et on ne pourrait plus dire depuis quand la version en cours
+         -- est en ligne.
+         published_at = case when draft_graph is not null then now() else published_at end,
+         draft_graph = null,
+         updated_at = now()
+       where id = $1 and tenant_id = $2
+       returning ${COLS}`,
+      [id, tenantId],
+    );
+    const r = res.rows[0];
+    return r ? toRow(r) : null;
   }
 
   async remove(id: string, tenantId: string): Promise<boolean> {
@@ -91,8 +171,7 @@ export class PgWorkflowStore {
    */
   async findByTestToken(token: string): Promise<WorkflowRow | null> {
     const res = await this.pool.query<Row>(
-      `select id, tenant_id, name, code, graph, created_at, updated_at from workflows
-       where test_token = $1 limit 1`,
+      `select ${COLS} from workflows where test_token = $1 limit 1`,
       [token],
     );
     const r = res.rows[0];
@@ -100,9 +179,22 @@ export class PgWorkflowStore {
   }
 }
 
+/**
+ * Ce que l'ÉDITEUR ouvre, et ce que le lien de TEST joue : le brouillon s'il existe, sinon le publié.
+ *
+ * Un point de passage unique, parce que c'est la seule question à laquelle il ne faut pas répondre deux fois
+ * de deux façons. Tout le reste du dépôt lit `row.graph`, c'est-à-dire le publié : essayer son scénario avant
+ * de le mettre en ligne est précisément à quoi sert un brouillon, mais un contact réel, lui, ne doit jamais
+ * tomber dedans.
+ */
+export function grapheEditable(row: WorkflowRow): WorkflowGraph {
+  return row.draftGraph ?? row.graph;
+}
+
 interface Row {
   id: string; tenant_id: string; name: string; code: string | null;
-  graph: WorkflowGraph | null; created_at: Date; updated_at: Date;
+  graph: WorkflowGraph | null; draft_graph: WorkflowGraph | null;
+  published_at: Date | null; created_at: Date; updated_at: Date;
 }
 function toRow(r: Row): WorkflowRow {
   return {
@@ -111,6 +203,8 @@ function toRow(r: Row): WorkflowRow {
     name: r.name,
     code: r.code,
     graph: r.graph ?? EMPTY_GRAPH,
+    draftGraph: r.draft_graph ?? null,
+    publishedAt: r.published_at ? r.published_at.toISOString() : null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
   };

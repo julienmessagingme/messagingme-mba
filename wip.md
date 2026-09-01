@@ -23,9 +23,10 @@ Conséquence : le lot est bien plus petit que ce que l'audit décrivait. Pas de 
 colonne par run, pas de migration des runs, pas de sémantique de retour arrière. Un graphe BROUILLON et un
 graphe PUBLIÉ sur le scénario, l'exécuteur lisant le publié.
 
-🔴 À faire dans le même lot : un run qui attend sur un bloc SUPPRIMÉ par la nouvelle publication ne doit plus
-être clos en silence (comportement actuel), il doit remonter à un humain. Ce cas devient fréquent dès qu'on
-publie pour corriger.
+**Deux refus, tranchés le 2026-09-01.** (1) Un run qui attend sur un bloc SUPPRIMÉ par la nouvelle publication
+reste clos en silence : « tant pis on assume que le user tombe dans le vide ». Aucune remontée à un humain à
+écrire, seulement une trace dans les journaux pour que ça se diagnostique. (2) Pas de conservation du graphe
+publié précédent, donc pas de retour arrière : « on s'encombre pas de l'ancienne version ». Publier écrase.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 

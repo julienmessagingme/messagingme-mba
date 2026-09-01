@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { WorkflowBuilder } from '@/components/WorkflowBuilder';
 import type { Session } from '@/lib/session';
-import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, listEmailAccounts, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
+import { listWorkflows, createWorkflow, getWorkflow, deleteWorkflow, updateWorkflow, duplicateWorkflow, getSettings, createWorkflowTestLink, listEmailAccounts, grapheEditable, type WorkflowSummary, type WorkflowTestLink } from '@/lib/api';
 import { listAgents, type AgentResume } from '@/lib/api-agent';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
@@ -200,7 +200,9 @@ function WorkflowsInner({ session }: { session: Session }) {
         </div>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         <div className="min-h-0 flex-1">
-          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={editing.graph} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} />
+          {/* L'éditeur ouvre le BROUILLON s'il y en a un (lot 7) : c'est le travail en cours de l'auteur, pas
+              forcément ce qui tourne. `brouillonInitial` allume le bouton « Publier » dès l'ouverture. */}
+          <WorkflowBuilder key={editing.id} tenantId={session.tenantId} workflowId={editing.id} initialGraph={grapheEditable(editing)} brouillonInitial={Boolean(editing.draftGraph)} publieLe={editing.publishedAt ?? null} mbaEnabled={mbaEnabled} rcsEnabled={rcsEnabled} emailEnabled={emailEnabled} agents={agents} />
         </div>
       </div>
     );
@@ -247,8 +249,18 @@ function WorkflowsInner({ session }: { session: Session }) {
                   <td className="px-5 py-3">
                     <button onClick={() => open(w)} className="font-medium text-brand-600 hover:underline">{w.name}</button>
                     {w.code && <div className="font-mono text-[10px] text-ink-300" title={t('Code public (API)', 'Public code (API)')}>{w.code}</div>}
+                    {/* Un brouillon en attente se voit DEPUIS LA LISTE : sans ça, un scénario modifié mais
+                        jamais publié aurait l'air en ligne, et c'est précisément l'erreur que le bouton
+                        « Publier » peut faire commettre. */}
+                    {w.draftGraph && (
+                      <div className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" data-testid={`workflow-brouillon-${w.id}`}>
+                        {t('brouillon non publié', 'unpublished draft')}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-5 py-3 text-ink-500">{w.graph.nodes.length}</td>
+                  {/* Le nombre de blocs de ce que l'auteur ÉDITE (brouillon s'il existe) : la liste sert à
+                      retrouver son travail, pas à auditer la production. */}
+                  <td className="px-5 py-3 text-ink-500">{grapheEditable(w).nodes.length}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-ink-500">{createdLabel(w.createdAt)}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">

@@ -1481,9 +1481,18 @@ export interface WorkflowSummary {
   name: string;
   /** Code public « scn_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
   code?: string | null;
+  /** Le graphe EN LIGNE : celui que les contacts parcourent. Ne change que sur « Publier ». */
   graph: WorkflowGraph;
+  /** Le brouillon en attente. null = aucun, ce qui est en ligne est aussi ce qui est édité. */
+  draftGraph?: WorkflowGraph | null;
+  /** Dernière mise en ligne. null = jamais publié (scénario neuf, ou antérieur au bouton). */
+  publishedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+/** Ce que l'éditeur OUVRE : le brouillon s'il existe, sinon la version en ligne (miroir de `grapheEditable`). */
+export function grapheEditable(w: WorkflowSummary): WorkflowGraph {
+  return w.draftGraph ?? w.graph;
 }
 export function listWorkflows(tenantId: string): Promise<{ workflows: WorkflowSummary[] }> {
   return request<{ workflows: WorkflowSummary[] }>(`/tenants/${tenantId}/workflows`);
@@ -1494,12 +1503,27 @@ export function createWorkflow(tenantId: string, name: string, graph?: WorkflowG
 export function getWorkflow(tenantId: string, id: string): Promise<{ workflow: WorkflowSummary }> {
   return request<{ workflow: WorkflowSummary }>(`/tenants/${tenantId}/workflows/${id}`);
 }
-export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph }, opts?: { keepalive?: boolean }): Promise<unknown> {
+/**
+ * Enregistre le BROUILLON du scénario (jamais la version en ligne, cf. `publishWorkflow`).
+ *
+ * `brouillon` dans la réponse = reste-t-il quelque chose à publier après cette écriture ? La question se pose
+ * au serveur parce qu'un enregistrement identique à la version en ligne n'y laisse aucun brouillon.
+ */
+export function updateWorkflow(tenantId: string, id: string, patch: { name?: string; graph?: WorkflowGraph }, opts?: { keepalive?: boolean }): Promise<{ brouillon?: boolean }> {
   // `keepalive` : la requête survit au déchargement de la page (flush auto-save sur beforeunload / fermeture d'onglet).
   return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(patch), ...(opts?.keepalive ? { keepalive: true } : {}) });
 }
 export function deleteWorkflow(tenantId: string, id: string): Promise<unknown> {
   return request(`/tenants/${tenantId}/workflows/${id}`, { method: 'DELETE' });
+}
+/**
+ * MET EN LIGNE le brouillon. C'est le seul appel du front qui change quelque chose pour les contacts : tout
+ * le reste de l'éditeur n'écrit que le brouillon.
+ *
+ * ⚠️ Sans retour arrière : la version précédente n'est conservée nulle part.
+ */
+export function publishWorkflow(tenantId: string, id: string): Promise<{ id: string; graph: WorkflowGraph; publishedAt: string | null }> {
+  return request(`/tenants/${tenantId}/workflows/${id}/publish`, { method: 'POST', body: JSON.stringify({}) });
 }
 /** Duplique un scénario (nom « X (copie) », graphe cloné avec codes de node frais). Renvoie le nouveau scénario. */
 export function duplicateWorkflow(tenantId: string, id: string): Promise<{ id: string; name: string; graph: WorkflowGraph }> {
