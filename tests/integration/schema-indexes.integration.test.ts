@@ -56,9 +56,35 @@ describe.skipIf(!url)('index de montée en charge (migration 0042)', () => {
  */
 describe.skipIf(!url)('index des chemins chauds (migration 0096)', () => {
   let pool: Pool;
+  let tenantId = '';
 
-  beforeAll(() => { pool = new Pool({ connectionString: url, ssl: pgSsl() }); });
-  afterAll(async () => { await pool.end(); });
+  /**
+   * ⚠️ CE BLOC ÉCRIT DES DONNÉES, contrairement au reste de ce fichier. Il le faut : sur une table VIDE le
+   * planificateur n'a aucune raison de préférer un index précis (tous les chemins coûtent zéro), et il
+   * choisissait effectivement l'index de tenant en appliquant le reste en Filter. Constaté en CI le
+   * 2026-09-01 : les deux assertions de plan échouaient pour cette seule raison, index parfaitement bons.
+   *
+   * 2 000 fiches dans un espace DÉDIÉ, `analyze` pour que les statistiques existent, et l'espace est supprimé
+   * en fin de bloc (la cascade emporte les fiches). Comme tout ce dossier, ça ne tourne qu'en CI, sur un
+   * Postgres jetable : le `DATABASE_URL` local pointe la PRODUCTION.
+   */
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    tenantId = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-index-chemins-chauds') returning id`,
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status)
+       select $1, '+336' || lpad(i::text, 8, '0'), 'opted_in' from generate_series(1, 2000) i`,
+      [tenantId],
+    );
+    await pool.query('analyze contacts');
+  });
+
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    await pool.end();
+  });
 
   const INDEX_0096 = [
     'contacts_tenant_waid_digits_idx',
@@ -86,7 +112,7 @@ describe.skipIf(!url)('index des chemins chauds (migration 0096)', () => {
     const plan = await planDe(
       pool,
       `select id from contacts where tenant_id = $1 and deleted_at is null and ${matchWaIdPredicat('', '$2')}`,
-      ['00000000-0000-4000-8000-000000000000', '33600000000'],
+      [tenantId, '33600000042'],
     );
     expect(plan).toContain('contacts_tenant_waid_digits_idx');
   });
@@ -97,7 +123,7 @@ describe.skipIf(!url)('index des chemins chauds (migration 0096)', () => {
     const plan = await planDe(
       pool,
       `select id from contacts where tenant_id = $1 and deleted_at is null and phone_e164 like $2`,
-      ['00000000-0000-4000-8000-000000000000', '+336%'],
+      [tenantId, '+33600000042%'],
     );
     expect(plan).toContain('contacts_tenant_phone_prefix_idx');
   });
