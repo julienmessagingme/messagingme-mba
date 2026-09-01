@@ -440,7 +440,7 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
 | ~~**1**~~ ✅ | Runner de migrations hors transaction, puis les index qui manquent | 0096 | S | **FAIT le 2026-09-01.** TROIS index, pas quatre : celui du funnel ne servait à rien, mesuré |
 | ~~**2**~~ ✅ | Garde de ré-entrance des 17 balayages, et le rejet de webhook qui parle | non | S | **FAIT le 2026-09-01.** Un incident cesse d'être indiagnosticable |
 | ~~**3**~~ ✅ | Dépendances nommées de `handleWebhookJob`, puis ordonnancement par contact des entrants | non | M | **FAIT le 2026-09-01.** Concurrence 3 sur les entrants, un job en vol par contact |
-| **4** | La rétention qui manque : blocs, runs terminés, journal d'audit, clics | oui | M | Le seul point de la liste qui ne se rattrape pas après coup |
+| ~~**4**~~ ✅ | La rétention qui manque : blocs, runs terminés, journal d'audit, clics | 0097 | M | **FAIT le 2026-09-01.** Les blocs sont ANONYMISÉS (ils sont la mesure), les trois autres purgés |
 | **5** | Découpage de `web/lib/api.ts`, puis delta du fil et `AbortController` | non | M | Le fil ouvert cesse de retélécharger 500 messages toutes les 4 s, par onglet |
 | **6** | Les cinq endroits qui recalculent ou chargent tout en mémoire | oui | M | Ce qui tient à 5 clients et pas à 25 |
 | **7** | Le palier Meta enfin utilisé, et la surveillance des numéros au-delà du 200e | non | M | Un numéro neuf cesse de brûler son quota sans prévenir |

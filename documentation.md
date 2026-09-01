@@ -2058,6 +2058,45 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : programme II, lot 4 (la rétention des quatre dernières tables non bornées)
+
+Événements de blocs, parcours terminés, clics tracés, journal d'audit : quatre tables qui grossissaient depuis
+le premier jour, dont deux portent un numéro de téléphone. Migration 0097 (hors transaction), quatre index
+dédiés : ⚠️ les index de LECTURE existants ne servaient à aucun de ces balayages, parce qu'ils commencent tous
+par `tenant_id` alors qu'une purge balaye la table entière par date. C'est le cas où « il y en a déjà un » est
+faux.
+
+🔴 **Deux natures, deux traitements, et c'est le point du lot.**
+- Les **événements de blocs sont ANONYMISÉS**, jamais supprimés (`wa_id = 'anonyme'`). Ils SONT la mesure des
+  tableaux, et il n'existe aucune statistique rétroactive (migration 0063) : les effacer viderait l'historique
+  du client pour retirer un numéro. On retire le numéro et on garde le compteur, exactement la décision déjà
+  prise pour la purge d'un contact et pour `campaign_recipients.to_e164`. ⚠️ Corollaire assumé : ce balayage
+  ne borne PAS la croissance de cette table, il ferme le risque RGPD. Le volume sera un pré-agrégat, pas une
+  purge.
+- Les **trois autres sont supprimées** : plus personne ne les relit.
+
+🔴 **Deux garanties de NON-effacement, testées pour elles-mêmes.**
+1. Un parcours **vivant** (`waiting`, `sleeping`) n'est jamais purgé, quel que soit son âge. La garde est posée
+   DEUX fois : dans la requête, et dans le prédicat de l'index partiel. Un run en attente depuis un an est une
+   anomalie à corriger ailleurs, sûrement pas une ligne à supprimer sous les pieds d'un contact.
+2. Purger les clics ne touche **jamais** `tracked_links`. Porte à sens unique : un lien supprimé est une
+   adresse morte dans des messages déjà livrés, sans recours.
+
+🔴 **Une rétention à ZÉRO ne purge RIEN, et ce n'est pas cosmétique.** Vérifié sur le banc :
+`make_interval(days => 0)` vaut « maintenant », donc `at < now()` est vrai pour TOUTE ligne. Sans le
+`if (days <= 0) return 0`, régler une rétention à 0 en croyant la désactiver viderait la table entière,
+immédiatement. Un test le fixe pour les quatre méthodes.
+
+**Les durées, et leur logique** : courtes là où il y a une donnée personnelle (blocs 365 j, parcours 90 j),
+longues là où il n'y en a pas (clics et journal 730 j), puisque la question n'y est que le volume et que le
+journal d'audit est la PREUVE qu'une purge a eu lieu. Le raccourcir reviendrait à effacer l'attestation en
+gardant l'obligation.
+
+**Vérifié avant de pousser**, sur un postgres:16 jetable : migration appliquée, purge qui épargne le parcours
+en attente, et plan qui utilise bien le nouvel index partiel. En production le balayage est resté muet, ce qui
+est correct : les 22 parcours terminés, 89 événements, 79 clics et 9 entrées de journal sont tous récents.
+
+---
 ## DEPLOYE le 2026-09-01 : programme II, lot 3 (les entrants en parallèle, ordonnés par contact)
 
 **Ce qui changeait.** La file des messages entrants traitait UN job à la fois, tous clients confondus : un

@@ -21,10 +21,10 @@ ses pièges dans [documentation.md](documentation.md) § Journal des lots livré
 **La suite est écrite** : `PLAN.md` § **LE PROGRAMME II** (arrêté le 2026-09-01), huit lots dans l'ordre, qui
 prennent ce qui reste des mêmes audits (surtout les jaunes de la §7 du 25 août).
 
-**Lots 1, 2 et 3 livrés et déployés le 2026-09-01** (index des chemins chauds + migrations hors transaction ;
-ré-entrance des balayages + rejet de webhook qui parle ; entrants en parallèle, ordonnés par contact). Détail
-et mesures dans [documentation.md](documentation.md) § Journal des lots livrés. **Prochain : lot 4**, la
-rétention qui manque (événements de blocs, runs terminés, journal d'audit, clics tracés).
+**Lots 1 à 4 livrés et déployés le 2026-09-01** (index des chemins chauds + migrations hors transaction ;
+ré-entrance des balayages + rejet de webhook qui parle ; entrants en parallèle, ordonnés par contact ; les
+quatre dernières tables non bornées). Détail et mesures dans [documentation.md](documentation.md) § Journal des
+lots livrés. **Prochain : lot 5**, le découpage de `web/lib/api.ts` puis le delta du fil et `AbortController`.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 
