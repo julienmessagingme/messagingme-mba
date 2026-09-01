@@ -34,8 +34,8 @@ async function main(): Promise<void> {
   const verrou = await client.query<{ ok: boolean }>('select pg_try_advisory_lock($1) as ok', [VERROU_MIGRATIONS]);
   if (verrou.rows[0]?.ok !== true) {
     throw new Error(
-      'une autre exécution de migrations tourne déjà sur cette base (verrou d'avis). '
-      + 'Attendre qu'elle finisse plutôt que de forcer : deux exécutions rejoueraient la même migration.',
+      "une autre exécution de migrations tourne déjà sur cette base (verrou d'avis). "
+      + "Attendre qu'elle finisse plutôt que de forcer : deux exécutions rejoueraient la même migration.",
     );
   }
 
