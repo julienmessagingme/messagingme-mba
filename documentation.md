@@ -2058,6 +2058,38 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : banc de charge et de reprise après kill (dernier item ouvert du lot 8)
+
+**Ce qui a été mesuré, et comment.** Postgres 16 jetable sur le VPS, worker réel en `DRY_RUN=true` (le sender
+de démo rend un identifiant sans appeler Meta), campagne de 400 destinataires, `kill -9` du worker en plein
+envoi. Script rejouable : `scripts/banc-charge.mts`, avec DEUX gardes indépendantes avant la moindre écriture
+(`BANC_CONFIRME=1`, et refus de toute chaîne de connexion qui ressemble à Supabase).
+
+🔴 **CE QUE LE BANC A TROUVÉ, et c'était une perte SILENCIEUSE et DÉFINITIVE.** Le destinataire en vol au
+moment du kill reste à l'état `sending`. Le run suivant ne le voit pas (`listPending` ne rend que les
+`pending`), vide la file et marque la campagne **`completed`** : 399 envoyés sur 400, campagne « terminée ».
+Dix minutes plus tard `reclaimStale` fait son travail et le remet en `pending`... sur une campagne TERMINÉE,
+que la reprise ne relance plus (elle ne regarde que les `running`). Ce contact ne recevait jamais son message,
+et rien ne le disait. Corrigé : le statut de sortie d'un run reste `running` tant qu'un destinataire est
+réservé.
+
+**Ce que le banc a prouvé, et qui tient :**
+- **zéro destinataire envoyé deux fois** après le kill : le claim atomique fait son travail ;
+- la campagne **repart toute seule**, sans intervention, en **trois minutes au plus** : le bail du verrou de
+  run dure 120 s et le balayage de reprise passe toutes les 60 s. Mesuré : 92 envoyés au moment du kill,
+  reprise automatique, 400 traités à la fin ;
+- `reclaimStale` récupère bien le destinataire coincé.
+
+⚠️ **Ce que le banc ne peut PAS prouver, et qu'il faut savoir** : le destinataire coincé a `message_id` NULL,
+donc on ignore si son message était déjà parti chez Meta quand le process est mort. Le rejouer peut produire
+**un double envoi par kill brutal et par run**. Le fermer demanderait une idempotence côté Meta, pas une garde
+de plus chez nous.
+
+⚠️ **Ce que ce banc ne mesure PAS non plus** : le débit d'une campagne. Il est plafonné à **80 messages par
+minute** par une contrainte de base (migration 0033), donc décidé par nous et pas par la tuyauterie. Le débit
+qui se mesurerait vraiment est celui de la file des ENTRANTS, qui n'a pas ce plafond.
+
+---
 ## DEPLOYE le 2026-09-01 : programme II, lot 4 (la rétention des quatre dernières tables non bornées)
 
 Événements de blocs, parcours terminés, clics tracés, journal d'audit : quatre tables qui grossissaient depuis

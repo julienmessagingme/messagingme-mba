@@ -531,9 +531,12 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
   qu'un worker), audit des 17 balayages en multi-réplique, recalcul du budget de connexions (l'arithmétique est
   déjà écrite dans `config.ts`), limiteurs distribués. Ces cinq-là se feront **le jour où un second worker est
   décidé**, en une demi-session, et pas avant.
-  **RESTE OUVERT, et c'est le seul vrai manque** : le **test de charge et de reprise après kill**. Il aurait de
-  la valeur AUJOURD'HUI (il validerait les lots 3 à 6 sous charge réelle), mais c'est une session à lui seul,
-  pas la fin d'un lot.
+  ✅ **FAIT le 2026-09-01, et il a trouvé un défaut** : le **banc de charge et de reprise après kill**
+  (`scripts/banc-charge.mts`, rejouable, deux gardes contre un lancement sur la production). Un `kill -9` en
+  plein envoi laissait un destinataire en `sending`, la campagne passait `completed`, et le reclaim le
+  remettait en `pending` sur une campagne que plus aucune reprise ne regarde : ce contact ne recevait jamais
+  son message. Corrigé. Le reste tient : zéro double envoi, reprise automatique en trois minutes au plus.
+  Détail et limites dans `documentation.md`.
 
 ### Ce qu'on ne fera PAS, et pourquoi
 
