@@ -14,5 +14,5 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src", "tests", "db"]
+  "include": ["src", "tests", "db", "scripts"]
 }
