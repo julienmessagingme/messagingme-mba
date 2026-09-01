@@ -134,8 +134,23 @@ export interface ConversationThread {
   /** Surcharge de reprise de CE fil (C.4). null = suit le défaut du tenant. */
   messages: InboxMessage[];
 }
-export function getConversationMessages(tenantId: string, conversationId: string): Promise<ConversationThread> {
-  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages`);
+/**
+ * Le fil d'une conversation. `apres` ne demande QUE les messages postérieurs au couple donné : le fil ouvert
+ * se rafraîchit toutes les 4 secondes, et il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
+ *
+ * ⚠️ Le point de reprise est le COUPLE `(createdAt, id)`, jamais l'identifiant seul : deux messages peuvent
+ * porter le même horodatage, et l'un des deux se perdrait à chaque poll. Un couple incomplet ou mal formé est
+ * ignoré par le serveur, qui rend alors le fil ENTIER : le repli est de voir trop de messages, jamais trop peu.
+ *
+ * `signal` : l'écran annule sa requête en cours quand on change de conversation ou qu'on quitte l'inbox.
+ */
+export function getConversationMessages(
+  tenantId: string,
+  conversationId: string,
+  opts?: { apres?: { at: string; id: string }; signal?: AbortSignal },
+): Promise<ConversationThread> {
+  const q = opts?.apres ? `?afterAt=${encodeURIComponent(opts.apres.at)}&afterId=${encodeURIComponent(opts.apres.id)}` : '';
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages${q}`, opts?.signal ? { signal: opts.signal } : {});
 }
 /** L'opérateur rend la main : le scénario (ou l'agent de Meta) reprend la conversation. */
 export function releaseConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {

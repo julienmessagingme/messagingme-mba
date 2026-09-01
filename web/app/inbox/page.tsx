@@ -12,6 +12,7 @@ import { useT, useLocale } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import { repeterAvecGigue } from '@/lib/poll';
+import { estAnnulation } from '@/lib/http';
 import { ContactDetail } from '@/components/ContactDetail';
 import { InboxRcsPanel } from '@/components/InboxRcsPanel';
 import {
@@ -531,32 +532,60 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   // des rafraîchissements de 4 s. Remis à zéro par le remontage du composant à chaque conversation.
   const dernierVuRef = useRef<string | null>(null);
 
+  /**
+   * Dernier message DÉJÀ affiché, pour ne demander que la SUITE au rafraîchissement suivant.
+   *
+   * En `ref` et non en état dérivé : `load` ne doit pas être recréé à chaque nouveau message, sinon l'effet
+   * qui installe le minuteur se relancerait toutes les quatre secondes.
+   */
+  const bornRef = useRef<{ at: string; id: string } | null>(null);
+  /** Requête de fil en cours, annulée quand on change de conversation ou qu'on quitte l'écran. */
+  const enVolRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
+    enVolRef.current?.abort();
+    const ctrl = new AbortController();
+    enVolRef.current = ctrl;
     try {
-      const res = await getConversationMessages(session.tenantId, conversation.id);
-      // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
-      // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
-      const dernier = res.messages[res.messages.length - 1]?.id ?? null;
-      if (dernier !== dernierVuRef.current) {
-        dernierVuRef.current = dernier;
-        markConversationRead(session.tenantId, conversation.id)
-          .then(() => window.dispatchEvent(new Event(UNREAD_CHANGED_EVENT)))
-          .catch(() => { /* pastille d'appoint */ });
+      // DELTA (lot 5 du programme II) : on ne redemande que ce qui est arrivé APRÈS ce qu'on a déjà. Le fil
+      // se rafraîchit toutes les 4 s ; il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
+      const res = await getConversationMessages(session.tenantId, conversation.id, {
+        ...(bornRef.current ? { apres: bornRef.current } : {}),
+        signal: ctrl.signal,
+      });
+      // ⚠️ On AJOUTE, on ne remplace plus. Conséquence assumée : un message effacé côté serveur reste à
+      // l'écran jusqu'au prochain changement de conversation. Le produit n'efface pas de message, et le fil
+      // se remonte à chaque sélection (`key={selected.id}`), donc l'écart ne survit pas à un clic.
+      if (res.messages.length > 0) {
+        const arrivee = res.messages[res.messages.length - 1]!;
+        bornRef.current = { at: arrivee.createdAt, id: arrivee.id };
+        // Toujours en AJOUT : au premier chargement `prev` est vide, donc l'ajout rend le fil entier. Le
+        // composant est remonté à chaque conversation (`key={selected.id}`), donc `prev` ne mélange jamais
+        // deux fils.
+        setMessages((prev) => [...prev, ...res.messages]);
+        // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
+        // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
+        if (arrivee.id !== dernierVuRef.current) {
+          dernierVuRef.current = arrivee.id;
+          markConversationRead(session.tenantId, conversation.id)
+            .then(() => window.dispatchEvent(new Event(UNREAD_CHANGED_EVENT)))
+            .catch(() => { /* pastille d'appoint */ });
+        }
       }
-      // GARDE anti-saut de scroll : on ne remplace `messages` (nouvelle référence) QUE si le fil a réellement
-      // changé (nombre de messages ou dernier id). Sinon l'effet scrollIntoView ci-dessous ramènerait le scroll
-      // en bas à chaque tick de poll pendant que l'agent lit l'historique.
-      setMessages((prev) =>
-        prev.length === res.messages.length && prev[prev.length - 1]?.id === res.messages[res.messages.length - 1]?.id
-          ? prev
-          : res.messages,
-      );
+      // Rien de nouveau -> `messages` garde sa référence, donc l'effet de scroll ne se redéclenche pas : c'est
+      // la garde anti-saut de scroll d'avant, obtenue ici gratuitement par le delta.
       setWindowOpen(res.windowOpen);
       setControlOwner(res.controlOwner);
     } catch (err) {
+      // Une requête ANNULÉE n'est pas une panne : changer de conversation annule la précédente, et afficher
+      // un bandeau rouge à chaque clic serait absurde.
+      if (estAnnulation(err)) return;
       setError(err instanceof Error ? err.message : t('Chargement impossible', 'Failed to load'));
     }
   }, [session.tenantId, conversation.id, t]);
+
+  // Annule la requête en vol au démontage (changement de conversation, sortie de l'inbox).
+  useEffect(() => () => { enVolRef.current?.abort(); }, []);
 
   useEffect(() => {
     void load();

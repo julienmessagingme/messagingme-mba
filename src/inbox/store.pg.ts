@@ -492,7 +492,19 @@ export class PgInboxStore implements InboxStore {
     return out;
   }
 
-  async getMessages(conversationId: string): Promise<ConversationMessage[]> {
+  /**
+   * Les messages d'un fil, ou seulement CEUX D'APRÈS un point donné (lot 5 du programme II).
+   *
+   * 🔴 Pourquoi un delta. Le fil ouvert se rafraîchit toutes les 4 secondes et retéléchargeait jusqu'à 500
+   * messages à chaque tour, par onglet ouvert : sur une conversation vivante, la même charge partait quinze
+   * fois par minute pour n'ajouter parfois qu'une bulle.
+   *
+   * Le point de reprise est le COUPLE `(created_at, id)`, jamais l'identifiant seul : deux messages peuvent
+   * porter le même horodatage (une salve d'un scénario, un import), et l'un des deux se perdrait alors à
+   * chaque poll. C'est le même keyset que la pagination des conversations, et l'`order by` porte les deux
+   * colonnes pour que la comparaison et le tri parlent de la même chose.
+   */
+  async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
       id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; sender_name: string | null; channel: string | null;
     }>(
@@ -502,8 +514,10 @@ export class PgInboxStore implements InboxStore {
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
        from conversation_messages m
        left join users u on u.id = m.sender_user_id
-       where m.conversation_id = $1 order by m.created_at limit 500`,
-      [conversationId],
+       where m.conversation_id = $1
+         and ($2::timestamptz is null or (m.created_at, m.id) > ($2::timestamptz, $3::uuid))
+       order by m.created_at, m.id limit 500`,
+      [conversationId, apres?.at ?? null, apres?.id ?? null],
     );
     return res.rows.map((r) => ({
       id: r.id,

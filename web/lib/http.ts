@@ -65,12 +65,27 @@ export const SESSION_EXPIRED_EVENT = 'mba:session-expired';
 const RETRYABLE_METHODS = new Set(['GET', 'HEAD']);
 const RETRY_DELAY_MS = 400;
 
+/**
+ * Cette erreur est-elle une ANNULATION voulue (`AbortController`), et non une panne ?
+ *
+ * 🔴 La distinction n'est pas cosmétique : un appelant qui la confond affiche un bandeau rouge chaque fois
+ * qu'on quitte un écran, puisque quitter l'écran EST ce qui a annulé la requête. Exporté pour que chaque
+ * appelant puisse l'ignorer explicitement, plutôt que d'attraper « toutes les erreurs » et de se taire.
+ */
+export function estAnnulation(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const canRetry = RETRYABLE_METHODS.has(method);
   try {
     return await attempt<T>(path, init);
   } catch (err) {
+    // ⚠️ Une requête ANNULÉE ne se rejoue pas. Sans cette ligne, le retry repartait avec le MÊME signal, déjà
+    // avorté : il échouait aussitôt, après avoir attendu la pause pour rien, et l'appelant recevait son
+    // erreur 400 ms plus tard. Une annulation n'est pas un hoquet réseau, c'est une décision de l'écran.
+    if (estAnnulation(err)) throw err;
     const transient = err instanceof ApiError ? err.status >= 500 : true; // panne réseau -> pas d'ApiError
     if (!canRetry || !transient) throw err;
     await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));

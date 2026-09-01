@@ -190,3 +190,65 @@ describe.skipIf(!url)('PgInboxStore : affectation (Supabase)', () => {
     expect(await store.listConversations(tenantId, { limit: 10, affectee: 'aucune' })).toHaveLength(1);
   });
 });
+
+/**
+ * DELTA du fil (lot 5 du programme II) : ne redemander que les messages postérieurs à celui qu'on a déjà.
+ *
+ * 🔴 Même raison d'être en intégration que la pagination ci-dessus, et même piège : tout se joue dans une
+ * comparaison de TUPLE `(created_at, id) > ($1, $2)`. Le cas qui casse une comparaison sur l'horodatage SEUL
+ * est celui de deux messages écrits à la MÊME milliseconde, ce qu'une salve de scénario produit tous les
+ * jours. Un faux store ne dirait rien de tout ça.
+ */
+describe.skipIf(!url)('PgInboxStore : delta du fil (Supabase)', () => {
+  let pool: Pool;
+  let store: PgInboxStore;
+  let tenantId = '';
+  let conversationId = '';
+  const T1 = '2026-06-01T10:00:00.000Z';
+  const T2 = '2026-06-01T10:00:05.000Z';
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
+    store = new PgInboxStore(pool);
+    tenantId = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-delta-fil') returning id`,
+    )).rows[0]!.id;
+    conversationId = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000095', $2) returning id`,
+      [tenantId, T2],
+    )).rows[0]!.id;
+    // DEUX messages exactement au même instant, puis un troisième plus tard.
+    for (const [corps, at] of [['a', T1], ['b', T1], ['c', T2]] as const) {
+      await pool.query(
+        `insert into conversation_messages (conversation_id, direction, body, created_at) values ($1, 'in', $2, $3)`,
+        [conversationId, corps, at],
+      );
+    }
+  });
+
+  afterAll(async () => {
+    if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
+    await pool.end();
+  });
+
+  it('sans point de reprise : tout le fil, dans l’ordre', async () => {
+    const tous = await store.getMessages(conversationId);
+    expect(tous.map((m) => m.body)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('🔴 deux messages au MÊME horodatage : le second n’est pas escamoté', async () => {
+    // C'est le cas que casserait une comparaison sur `created_at` seul : en repartant du premier des deux, un
+    // `>` sur l'horodatage sauterait le second à jamais. Le contact aurait écrit, l'écran ne le montrerait
+    // jamais, et personne ne saurait pourquoi.
+    const tous = await store.getMessages(conversationId);
+    const premier = tous[0]!;
+    const suite = await store.getMessages(conversationId, { at: premier.createdAt, id: premier.id });
+    expect(suite.map((m) => m.body)).toEqual(['b', 'c']);
+  });
+
+  it('à jour : le delta est VIDE (c’est le cas courant, quinze fois par minute)', async () => {
+    const tous = await store.getMessages(conversationId);
+    const dernier = tous[tous.length - 1]!;
+    expect(await store.getMessages(conversationId, { at: dernier.createdAt, id: dernier.id })).toEqual([]);
+  });
+});

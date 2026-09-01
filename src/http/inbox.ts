@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
-import { scopeTenant, nonEmpty } from './scope';
+import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
 import { cacheCourt } from '../lib/cache-court';
@@ -54,7 +54,7 @@ export interface InboxRouteDeps {
     tenantId: string,
   ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
   /** Pose/retire la surcharge de reprise d'UN fil (C.4). null = suit le défaut du tenant. Optionnel (deps de test minimales). */
-  getMessages(conversationId: string): Promise<ConversationMessage[]>;
+  getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
   /**
    * Un opérateur vient d'écrire : il PREND le fil. Posé depuis la route et non depuis le store, parce que
    * seule la route sait qu'un humain authentifié est à l'origine de l'envoi. Sans condition `only` : un
@@ -230,6 +230,15 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const { conversationId } = req.params as { conversationId: string };
     const ctx = await deps.getConversationContext(conversationId, tenant);
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    // DELTA (lot 5 du programme II) : `afterAt` + `afterId` = le dernier message que l'écran a déjà. Le fil se
+    // rafraîchit toutes les 4 s et retéléchargeait 500 messages à chaque tour, par onglet ouvert.
+    //
+    // ⚠️ LES DEUX ou AUCUN, et `afterId` doit être un uuid : un couple incomplet ou mal formé est IGNORÉ, donc
+    // on rend le fil entier. C'est le repli sûr — un client qui se trompe voit trop de messages, jamais trop
+    // peu. L'inverse (partir d'un point inventé) escamoterait des bulles sans que personne ne le voie.
+    const q = (req.query ?? {}) as { afterAt?: unknown; afterId?: unknown };
+    const afterAt = typeof q.afterAt === 'string' && !Number.isNaN(Date.parse(q.afterAt)) ? q.afterAt : undefined;
+    const apres = afterAt !== undefined && estUuid(q.afterId) ? { at: afterAt, id: q.afterId } : undefined;
     return reply.code(200).send({
       waId: ctx.waId,
       windowOpen: ctx.windowOpen,
@@ -240,7 +249,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
       controlOwner: deps.getControlOwner ? await deps.getControlOwner(tenant, ctx.waId) : 'app_workflow',
       // Surcharge de reprise de CE fil (C.4) : null = suit le défaut du tenant. L'inbox l'affiche pour que
       // l'opérateur sache si, à la reprise, ce fil précis restera à l'humain ou repartira au scénario.
-      messages: await deps.getMessages(conversationId),
+      messages: await deps.getMessages(conversationId, apres),
     });
   });
 

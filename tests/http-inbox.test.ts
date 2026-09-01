@@ -711,3 +711,50 @@ describe('affectation des conversations', () => {
     await a.close();
   });
 });
+
+/**
+ * DELTA du fil (lot 5 du programme II). L'écran se rafraîchit toutes les 4 secondes et retéléchargeait
+ * jusqu'à 500 messages à chaque tour, par onglet ouvert. Il ne demande plus que la suite.
+ */
+describe('inbox : ne redemander que la suite du fil', () => {
+  const AT = '2026-07-06T00:00:00.000Z';
+  const ID = '11111111-1111-4111-8111-111111111111';
+
+  /** Rend l'app et ce que la route a transmis au store (undefined = « tout le fil »). */
+  function appDelta() {
+    const vus: Array<{ at: string; id: string } | undefined> = [];
+    const a = app({ getMessages: async (_id, apres) => { vus.push(apres); return []; } });
+    return { a, vus };
+  }
+
+  it('sans paramètre : le fil ENTIER', async () => {
+    const { a, vus } = appDelta();
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations/c1/messages', ...auth() });
+    expect(vus[0]).toBeUndefined();
+    await a.close();
+  });
+
+  it('avec le couple complet : seulement la suite', async () => {
+    const { a, vus } = appDelta();
+    await a.inject({ method: 'GET', url: `/tenants/t1/conversations/c1/messages?afterAt=${encodeURIComponent(AT)}&afterId=${ID}`, ...auth() });
+    expect(vus[0]).toEqual({ at: AT, id: ID });
+    await a.close();
+  });
+
+  it('🔴 un couple INCOMPLET ou mal formé est ignoré : on rend TOUT, jamais un fil tronqué', async () => {
+    // Le repli sûr est de voir trop de messages. Partir d'un point inventé escamoterait des bulles sans que
+    // personne ne le voie : l'écran afficherait un fil incomplet en croyant être à jour.
+    const cas = [
+      `?afterAt=${encodeURIComponent(AT)}`,               // id manquant
+      `?afterId=${ID}`,                                    // date manquante
+      `?afterAt=${encodeURIComponent(AT)}&afterId=pas-un-uuid`,
+      `?afterAt=pas-une-date&afterId=${ID}`,
+    ];
+    for (const q of cas) {
+      const { a, vus } = appDelta();
+      await a.inject({ method: 'GET', url: `/tenants/t1/conversations/c1/messages${q}`, ...auth() });
+      expect(vus[0], `cas ${q}`).toBeUndefined();
+      await a.close();
+    }
+  });
+});
