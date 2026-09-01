@@ -71,8 +71,13 @@ async function semer(nb: number): Promise<void> {
   )).rows[0]!.id;
   // ⚠️ 80/minute est le PLAFOND du produit (`campaigns_rate_per_minute_check`, migration 0033). Une campagne
   // ne peut donc pas, par construction, servir de test de débit : sa vitesse est décidée par nous, pas par la
-  // tuyauterie. Ce que ce scénario-ci éprouve est la REPRISE APRÈS KILL. Le débit se mesure sur la file des
-  // entrants (commande `webhooks`), qui n'a aucun plafond de ce genre.
+  // tuyauterie. Ce que ce scénario-ci éprouve est la REPRISE APRÈS KILL.
+  //
+  // 🔴 CE BANC NE MESURE PAS LE DÉBIT, et il ne prétend plus le contraire. Ce commentaire renvoyait à une
+  // commande `webhooks` qui n'a jamais été écrite : une doc qui décrit du code absent est pire qu'une doc
+  // manquante, parce qu'on croit la mesure faite. Relevé par le contre-audit du 2026-09-01. Ce qui manque
+  // encore, et qui est listé dans `todo.md` : le débit des entrants, l'équité entre plusieurs espaces, la
+  // rafale d'accusés, la concurrence API + worker sur un même numéro, et deux workers.
   // Destinataires matérialisés directement : le banc mesure l'ENVOI, pas la construction, et la création
   // passe déjà par ses propres tests.
   await c.query(

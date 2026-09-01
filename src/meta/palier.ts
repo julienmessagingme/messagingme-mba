@@ -42,9 +42,14 @@ export function plafondDuPalier(tier: string | null | undefined): number | undef
 export function avertissementPalier(tier: string | null | undefined, destinataires: number): string | undefined {
   const plafond = plafondDuPalier(tier);
   if (plafond === undefined || destinataires <= plafond) return undefined;
+  // 🔴 « et VOUS DEVREZ LA REPRENDRE », pas « et reprend ensuite ». La phrase d'avant promettait une reprise
+  // automatique qui n'existe pas : aucune routine ne repasse une campagne `paused` en `running`, il faut un
+  // POST `/run`. Trouvé par le contre-audit du 2026-09-01. Un opérateur qui lit « reprend ensuite » attend
+  // devant un écran, et la campagne ne repart jamais. Tant que la reprise est manuelle, le texte le dit.
   return `Ce numéro est au palier ${plafond.toLocaleString('fr-FR')} conversations par 24 h, et cette campagne vise `
     + `${destinataires.toLocaleString('fr-FR')} destinataires. Elle partira en plusieurs jours : au plafond, Meta `
-    + `refuse les envois suivants, la campagne se met en pause d'elle-même et reprend ensuite, sans perdre `
-    + `personne. Ordre de grandeur seulement : le palier est relevé périodiquement, Meta compte des `
+    + `refuse les envois suivants et la campagne se met en pause d'elle-même, sans perdre personne. `
+    + `Vous devrez la relancer vous-même le lendemain : la reprise n'est pas automatique. `
+    + `Ordre de grandeur seulement : le palier est relevé périodiquement, Meta compte des `
     + `conversations et non des destinataires, et vos autres envois consomment le même budget.`;
 }

@@ -14,6 +14,59 @@ ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et c
 multi-numéro sort du plan, remplacé par un refus explicite du second) et **conversations gardées 12 mois**
 (plancher de 3 mois donné par Julien, quadruplé parce que l'effacement est irréversible).
 
+## Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code
+
+L'audit complet est `AUDIT-COMPARATIF-STRUCTURE-SCALABILITE-2026-09-01.md`. Six de ses constats ont ete
+REVERIFIES dans le code avant d'etre inscrits ici ; les six etaient vrais. Ce qui suit est le reste
+actionnable, trie. Deux items sont deja faits (le typecheck du WIP, ferme par la brique C ; le texte du
+palier et le commentaire du banc, fermes le jour meme).
+
+**1. 🔴 Le debit par numero n'est PAS partage entre l'API et le worker.** `src/index.ts:192` et
+`src/worker.ts:193` construisent chacun leur arbitre en memoire. Les deux conteneurs tournent DEJA en
+production : pendant qu'une campagne part du worker, un operateur qui repond depuis l'inbox consomme un
+SECOND budget sur le meme numero. Le debit affiche n'est donc pas une propriete du numero.
+⚠️ Ce n'est pas un sujet de gros volume : ca se produit avec un client et deux messages.
+**Decision a prendre avant de coder** : soit une file d'envoi durable partitionnee par numero (l'ordre et
+les priorites deviennent simples, la latence interactive augmente), soit un compteur partage en base avec
+bail (les chemins directs restent directs, une brique de coordination apparait). Test d'acceptation dans les
+deux cas : une campagne, un scenario et un envoi inbox lances ensemble depuis DEUX process.
+
+**2. 🔴 Le piege des 25 000 destinataires.** Le front propose jusqu'a 100 000 contacts
+(`idsForFilters`, cap 100 000), met tous leurs identifiants dans le POST, et la route plafonne a 1 Mo
+(`src/server.ts:209`). Le JSON des seuls identifiants pese environ 975 Ko a 25 000 contacts : la casse
+arrive donc bien AVANT la limite que l'ecran annonce. L'interface promet quelque chose qui echoue.
+⚠️ Julien a mis les campagnes de 100k hors sujet pour l'instant, mais le piege, lui, reste pose.
+La moitie du correctif ne coute presque rien : `BulkTarget` EXISTE deja dans le mini-CRM
+(`{ filters, excludeIds } | { ids }`), il suffit d'envoyer l'INTENTION de selection et de la resoudre dans
+la transaction. Le decoupage SQL du moteur (`listPending` sans limite) est un chantier separe, non retenu.
+
+**3. 🟡 La liste des scenarios renvoie DEUX graphes complets par ligne** (`graph` et `draft_graph` sont
+tous les deux dans `COLS`, `src/workflow/store.pg.ts:29`), pour des ecrans qui n'affichent qu'un nom.
+Correctif : une projection resumee et paginee (id, code, nom, dates, brouillon en attente, nombre de blocs,
+eligibilite campagne), le graphe complet restant sur `GET /workflows/:id`.
+⚠️ Deux consommateurs empechent un simple retrait : `estEnLigne` a besoin du nombre de blocs, et le
+selecteur de scenario de l'inbox appelle `isCampaignEligible(w.graph)`. Les deux doivent devenir des
+champs calcules cote serveur, avec un test de parite, sinon la regle existe a deux endroits.
+**Declencheur** : avant environ 100 scenarios par espace.
+
+**4. 🟡 La pause Meta ne reprend jamais toute seule.** Le texte est corrige (il dit desormais que la reprise
+est manuelle), mais la reprise elle-meme reste a faire : `pause_reason` + `paused_until`, un debit temporaire
+reessaye apres un `Retry-After` borne, une qualite degradee JAMAIS reactivee aveuglement.
+⚠️ Angle mort a traiter en meme temps : un HTTP 429 sans code Meta connu n'entre pas dans `estPlafondNumero`
+et finit en echec destinataire au lieu d'une pause globale.
+
+**5. 🟡 Le banc de charge ne mesure pas ce qu'on lui prete.** Il prouve la reprise apres kill d'une campagne
+de 400 destinataires sur un worker, et rien d'autre. Manquent : le debit des entrants et son p95, l'equite
+entre espaces, la rafale d'accuses, la concurrence API + worker sur un meme numero, deux workers.
+🔴 **Ecrire les SLO AVANT les profils** : un resultat sans seuil d'acceptation est une observation, pas une
+preuve de capacite. Trois suffisent pour commencer : delai d'un entrant, delai avant premier envoi de
+campagne, age du plus vieux job par espace.
+
+**6. Non retenu, et pourquoi.** Le VERSIONNAGE IMMUABLE des scenarios (`workflow_versions`) : Julien a
+tranche le 2026-09-01, « on s'encombre pas de l'ancienne version » et « tant pis on assume que le user tombe
+dans le vide ». Ce n'est donc pas une dette, c'est un arbitrage. Ce qui reste utile et pas cher : **dire au
+moment de publier combien de parcours vivants vont etre affectes**. Ne plus le faire les yeux fermes.
+
 ## Ce que le lot MCP du 2026-09-01 laisse ouvert
 
 **1. Le grant OAuth 2.1 délégué (le gros morceau).** Aujourd'hui l'accès MCP passe par une **clé d'API** à
