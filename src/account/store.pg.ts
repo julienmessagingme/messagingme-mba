@@ -73,7 +73,11 @@ export class PgPhoneStatusStore {
          account_review_status = coalesce($10, account_review_status),
          business_verification_status = coalesce($11, business_verification_status),
          marketing_messages_lite_api_status = coalesce($12, marketing_messages_lite_api_status),
-         owner_business_name = coalesce($13, owner_business_name)
+         owner_business_name = coalesce($13, owner_business_name),
+         -- Horodate le RELEVÉ, pas la modification : c'est ce qui fait tourner le tourniquet du balayage
+         -- (lot 7). Un pull qui ne change rien doit quand même faire passer ce numéro en queue, sinon les
+         -- numéros stables seraient relus en boucle et les autres jamais.
+         status_checked_at = now()
        where id = $1`,
       [
         phoneNumberId,

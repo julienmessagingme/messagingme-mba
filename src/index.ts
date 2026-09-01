@@ -254,6 +254,9 @@ async function main(): Promise<void> {
       repo,
       queue,
       drafts: campaignDraftStore,
+      // Palier d'envoi du numéro, pour AVERTIR avant un lancement plus gros que ce que Meta laissera passer
+      // en 24 h (lot 7). Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
+      getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
       // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.

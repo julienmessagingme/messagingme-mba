@@ -152,12 +152,19 @@ export class PgOpsStore {
   /**
    * Numéros à rafraîchir par le sweeper de statut (item 4.10), CROSS-TENANT (lecture seule stricte, comme le
    * reste de ce store). C'est la seule lecture cross-tenant de phone_numbers du store d'ops. BORNÉE : le pull
-   * fait 2 GET Graph par numéro, LIMIT protège le budget si le parc grandit. Ordre stable (created_at).
+   * fait 2 GET Graph par numéro, LIMIT protège le budget si le parc grandit.
+   *
+   * 🔴 TOURNIQUET par ancienneté de RELEVÉ (lot 7 du programme II). L'ordre était `created_at`, donc au-delà
+   * du 200e numéro un numéro n'était JAMAIS relu : ni sa qualité, ni son palier, ni la révocation de son
+   * jeton n'étaient surveillés, et c'étaient toujours les 200 mêmes qu'on relisait. Trier par
+   * `status_checked_at` fait passer en queue celui qu'on vient de lire : tout le parc finit par tourner.
+   * `nulls first` = jamais relevé, donc prioritaire.
    */
   async listNumbersForStatusSweep(limit = 200): Promise<PhoneForSweepRow[]> {
     const n = Math.max(1, Math.min(1000, Math.floor(limit)));
     const res = await this.pool.query<{ id: string; tenant_id: string; waba_id: string | null; status: string | null; quality_rating: string | null }>(
-      `select id, tenant_id, waba_id, status, quality_rating from phone_numbers order by created_at limit $1`,
+      `select id, tenant_id, waba_id, status, quality_rating from phone_numbers
+        order by status_checked_at asc nulls first, created_at limit $1`,
       [n],
     );
     return res.rows.map((r) => ({ id: r.id, tenantId: r.tenant_id, wabaId: r.waba_id, status: r.status, qualityRating: r.quality_rating }));

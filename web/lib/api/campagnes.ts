@@ -255,6 +255,11 @@ export interface CampaignCreated {
   /** Destinataires écartés à la création (variable de template manquante, ex. prénom absent) -> avertissement UI. */
   /** Écarts à la construction, avec leur motif. `missing` n'existe que pour `missing_variable`. */
   skipped: Array<{ contactId: string; toE164: string; reason: 'missing_variable' | 'not_opted_in'; missing?: number[] }>;
+  /**
+   * Avertissement de PALIER : l'audience dépasse ce que Meta laissera passer en 24 h sur ce numéro. Absent =
+   * rien à signaler. Ce n'est PAS un refus : la campagne part, se met en pause au plafond et reprend.
+   */
+  avertissement?: string;
 }
 export function createCampaign(tenantId: string, input: CreateCampaignInput): Promise<CampaignCreated> {
   return request(`/tenants/${tenantId}/campaigns`, { method: 'POST', body: JSON.stringify(input) });

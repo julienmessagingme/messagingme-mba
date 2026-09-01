@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { rcsOutboundSchema } from '../rcs/schema';
 import type { Queue } from '../queue/queue';
 import { createCampaignWithRecipients } from '../campaign/create';
+import { avertissementPalier } from '../meta/palier';
 import type { CampaignRepoLike } from '../campaign/create';
 import type { CreateCampaignInput, CampaignSummary, CampaignDetail, PhoneNumberRow, RetryReset } from '../campaign/store.pg';
 import type { CampaignCategory } from '../campaign/types';
@@ -16,6 +17,12 @@ import { scopeTenant, nonEmpty } from './scope';
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
   queue: Queue;
+  /**
+   * Palier d'envoi du numéro de l'espace (`messaging_limit_tier`), pour AVERTIR avant un lancement trop gros.
+   * Optionnel : absent -> aucun avertissement, comportement d'avant. Une panne de lecture ne doit jamais
+   * empêcher de créer une campagne, d'où le repli silencieux côté appelant.
+   */
+  getMessagingLimitTier?(tenantId: string): Promise<string | null>;
   /**
    * Brouillons de COMPOSITION (une campagne qu'on est en train d'écrire). Rien à voir avec
    * `campaigns.status = 'draft'`, qui est une campagne complète et non lancée. OPTIONNEL : absent, les routes
@@ -348,7 +355,16 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       ...(webhookId ? { webhookId } : {}),
     };
     const result = await createCampaignWithRecipients(input, deps.repo);
-    return reply.code(201).send(result);
+    // AVERTISSEMENT de palier (lot 7 du programme II) : dit AVANT ce que le moteur sait déjà gérer APRÈS (il
+    // met la campagne en pause sur un code de plafond depuis le lot 1). Best-effort : une lecture en échec ne
+    // doit pas empêcher de créer la campagne, elle n'ajoute qu'un message.
+    let avertissement: string | undefined;
+    if (deps.getMessagingLimitTier) {
+      try {
+        avertissement = avertissementPalier(await deps.getMessagingLimitTier(effectiveTenant), result.recipientCount);
+      } catch { /* le palier est un confort, pas une condition */ }
+    }
+    return reply.code(201).send({ ...result, ...(avertissement ? { avertissement } : {}) });
   });
 
   app.post('/campaigns/:campaignId/run', guard, async (req, reply) => {

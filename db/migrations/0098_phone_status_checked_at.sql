@@ -1,0 +1,13 @@
+-- 0098_phone_status_checked_at.sql — date du dernier relevé de statut d'un numéro (programme II, lot 7).
+--
+-- 🔴 CE QUE ÇA FERME. Le balayage de statut lisait `order by created_at limit 200` : au-delà du 200e numéro,
+-- un numéro n'était JAMAIS relu, donc ni sa qualité, ni son palier, ni sa révocation de jeton n'étaient
+-- surveillés. Et comme l'ordre était l'ancienneté de CRÉATION, c'étaient toujours les 200 mêmes.
+--
+-- Trier par ancienneté de RELEVÉ donne un tourniquet naturel : celui qu'on vient de lire passe en queue, et
+-- tout le parc finit par tourner, quelle que soit sa taille. `null` en premier = jamais relevé, donc
+-- prioritaire, ce qui est exactement le bon ordre au premier passage après cette migration.
+--
+-- Pas d'index : le parc se compte en dizaines de numéros, et un tri sur quelques centaines de lignes ne
+-- justifie pas de payer une écriture d'index à chaque relevé. Ce sera à revoir au millier.
+alter table phone_numbers add column if not exists status_checked_at timestamptz;

@@ -738,9 +738,12 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       const skippedMsg = res.skipped.length > 0
         ? t(` ${res.skipped.length} contact(s) écartés (${detail}).`, ` ${res.skipped.length} contact(s) skipped (${detail}).`)
         : '';
+      // Avertissement de PALIER (lot 7) : dit avant le lancement ce que Meta refusera après. Il arrive rédigé
+      // par le serveur, qui est le seul à connaître le palier du numéro ; l'écran ne le reformule pas.
+      const palierMsg = res.avertissement ? ` ${res.avertissement}` : '';
       setOk(t(
-        `Campagne créée : ${res.recipientCount} destinataire(s).${skippedMsg} Clique « Lancer » pour envoyer.`,
-        `Campaign created: ${res.recipientCount} recipient(s).${skippedMsg} Click "Launch" to send.`,
+        `Campagne créée : ${res.recipientCount} destinataire(s).${skippedMsg}${palierMsg} Clique « Lancer » pour envoyer.`,
+        `Campaign created: ${res.recipientCount} recipient(s).${skippedMsg}${palierMsg} Click "Launch" to send.`,
       ));
       setName('');
       setTemplateName('');
