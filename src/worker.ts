@@ -81,6 +81,7 @@ import { PgOpsStore } from './ops/store.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { MetaClientFactory } from './meta/factory';
 import { arbitreDeDebit } from './meta/arbitre-debit';
+import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
 import { MetaCredentialsResolver } from './meta/credentials';
 import { PgEmbeddedSignupStore } from './account/es-store.pg';
 import { decryptSecret } from './crypto/secretbox';
@@ -190,7 +191,14 @@ async function main(): Promise<void> {
     // Frein PAR NUMÉRO, partagé par tout ce qui envoie depuis lui (lot 4). Instancié ICI, donc un par
     // process : le budget n'est pas partagé entre l'API et le worker, et `arbitre-debit.ts` dit pourquoi
     // c'est acceptable aujourd'hui et pourquoi ça ne le sera plus au second worker.
-    arbitreDebit: arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
+    // Le budget du numéro est PARTAGÉ entre l'API et le worker (migration 0102). L'arbitre local reste
+    // dessous : il est le repli si la base de débit ne répond pas, donc le pire cas de ce montage est
+    // exactement le comportement d'avant, jamais une absence de frein.
+    arbitreDebit: arbitreDeDebitPartage(
+      arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
+      config.PHONE_RATE_PER_MINUTE_MAX,
+      depsPorteDebitPg(pool),
+    ),
   });
 
   // Exécuteur de workflows : quand un contact répond, on avance son run (blocs tag/field/template -> inbox).

@@ -21,7 +21,14 @@ REVERIFIES dans le code avant d'etre inscrits ici ; les six etaient vrais. Ce qu
 actionnable, trie. Deux items sont deja faits (le typecheck du WIP, ferme par la brique C ; le texte du
 palier et le commentaire du banc, fermes le jour meme).
 
-**1. 🔴 Le debit par numero n'est PAS partage entre l'API et le worker.** `src/index.ts:192` et
+**1. ✅ FAIT le 2026-09-01 (migration 0102).** Le debit par numero est desormais partage entre l'API et le
+worker : le compteur en memoire devient une ligne, la reservation une instruction SQL atomique, et l'attente
+se fait HORS de la base. Panne de la base = repli sur le frein local, donc le pire cas est le comportement
+d'avant. La PRIORITE (faire passer l'inbox devant une campagne) n'est PAS faite et n'etait pas le sujet :
+elle demanderait une file d'envoi ordonnee, donc de la latence sur le chemin interactif. Detail dans
+`documentation.md`. Le constat d'origine, garde pour memoire :
+
+~~**Le debit par numero n'est PAS partage entre l'API et le worker.**~~ `src/index.ts:192` et
 `src/worker.ts:193` construisent chacun leur arbitre en memoire. Les deux conteneurs tournent DEJA en
 production : pendant qu'une campagne part du worker, un operateur qui repond depuis l'inbox consomme un
 SECOND budget sur le meme numero. Le debit affiche n'est donc pas une propriete du numero.

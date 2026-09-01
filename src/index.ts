@@ -60,6 +60,7 @@ import { signSession } from './auth/token';
 import { ecrireHandoffEnabled } from './mba/handoff';
 import { MetaClientFactory } from './meta/factory';
 import { arbitreDeDebit } from './meta/arbitre-debit';
+import { arbitreDeDebitPartage, depsPorteDebitPg } from './meta/arbitre-debit-partage';
 import { buildTemplateComponents, carouselSendBlocker } from './meta/template-components';
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { PgEmailAccountStore } from './email/account-store.pg';
@@ -189,7 +190,14 @@ async function main(): Promise<void> {
     // Frein PAR NUMÉRO, partagé par tout ce qui envoie depuis lui (lot 4). Instancié ICI, donc un par
     // process : le budget n'est pas partagé entre l'API et le worker, et `arbitre-debit.ts` dit pourquoi
     // c'est acceptable aujourd'hui et pourquoi ça ne le sera plus au second worker.
-    arbitreDebit: arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
+    // Le budget du numéro est PARTAGÉ entre l'API et le worker (migration 0102). L'arbitre local reste
+    // dessous : il est le repli si la base de débit ne répond pas, donc le pire cas de ce montage est
+    // exactement le comportement d'avant, jamais une absence de frein.
+    arbitreDebit: arbitreDeDebitPartage(
+      arbitreDeDebit(config.PHONE_RATE_PER_MINUTE_MAX),
+      config.PHONE_RATE_PER_MINUTE_MAX,
+      depsPorteDebitPg(pool),
+    ),
   });
 
   /**

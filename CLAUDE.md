@@ -51,9 +51,9 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0101** (`origin = 'mcp'`, l'agent tiers branché par le serveur MCP),
+**Dernière appliquée : 0102** (`phone_rate_gate`, le budget d'envoi d'un numéro partagé entre les process),
 passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0102.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+`migrate`, vérification en base). **Prochaine libre = 0103.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
@@ -63,6 +63,10 @@ migration est rejouée depuis le début, donc chaque instruction doit être idem
 une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
 les deux sens de la règle sur les fichiers réels.
 
+⚠️ **0102 est bloquante, mais elle DÉGRADE PROPREMENT** : sans la table, chaque envoi retombe sur le frein
+LOCAL du process et le signale dans les logs, c'est-à-dire exactement le comportement d'avant. C'est voulu :
+un frein de débit protège la qualité d'un numéro, il n'AUTORISE pas l'envoi, donc son indisponibilité ne doit
+jamais faire échouer un message. La migrer avant reste la règle, mais l'oublier ne casse rien.
 🔴 **0101 est BLOQUANTE, et sa leçon vaut plus que sa ligne de SQL.** `recordOutbound` DÉDUISAIT l'origine de
 l'expéditeur (« pas d'expéditeur, donc un scénario »), ce qui était vrai tant que ses seuls appelants étaient les
 routes de la console. Le serveur MCP en a ajouté un sans expéditeur humain : chaque réponse d'agent tiers est

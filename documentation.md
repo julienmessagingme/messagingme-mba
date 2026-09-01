@@ -2058,6 +2058,55 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : le budget d'un numéro, partagé entre l'API et le worker (migration 0102)
+
+Premier constat du contre-audit, et le seul qui se produisait DÉJÀ en production. `src/index.ts` et
+`src/worker.ts` construisaient chacun leur arbitre de débit en mémoire ; les deux sont des conteneurs
+distincts, donc un numéro avait deux budgets. Pendant qu'une campagne part du worker, un opérateur qui répond
+depuis l'inbox consomme un second budget sur le même numéro. **Ce n'est pas un sujet de gros volume : ça se
+produit avec un client et deux messages.**
+
+### Le montage, et pourquoi celui-là
+
+Le champ `nextAllowed` que le limiteur en mémoire gardait dans une variable devient une LIGNE, et la
+réservation devient une instruction SQL atomique. L'algorithme ne change pas ; c'est son état qui sort du
+process. Deux process qui réservent en même temps se sérialisent sur le verrou de ligne, ce qui est
+exactement le comportement voulu.
+
+Choisi contre l'autre voie possible, une file d'envoi durable partitionnée par numéro. Celle-ci aurait donné
+en plus l'ORDONNANCEMENT (faire passer l'inbox devant une campagne), mais au prix d'un aller-retour de file
+sur le chemin interactif, donc de la latence pour l'opérateur. **Le trou d'aujourd'hui est un trou de
+COMPTAGE, pas d'ordonnancement** : on le ferme sans changer le comportement de l'inbox. La priorité reste à
+prendre le jour où elle manquera vraiment.
+
+### Les trois propriétés à connaître avant d'y toucher
+
+🔴 **Aucune transaction n'est tenue ouverte pendant l'appel à Meta.** La réservation est UNE instruction qui
+rend un nombre de millisecondes ; l'attente a lieu ensuite, hors de la base. Tenir un verrou pendant un
+aller-retour réseau chez un tiers immobiliserait une connexion du pool pour tous les envois du numéro.
+
+🔴 **En cas de panne de la base, on retombe sur le frein LOCAL, jamais sur « laisser passer ».** C'est ce qui
+rend le changement sûr : le pire cas possible après cette migration est exactement le comportement d'avant.
+Et un envoi ne doit pas échouer parce que la table de débit est indisponible, parce qu'un frein protège la
+qualité d'un numéro, il n'autorise pas l'envoi.
+
+⚠️ **Le temps de référence est celui de Postgres**, jamais celui des conteneurs : deux horloges qui dérivent
+de quelques secondes suffiraient à laisser passer une rafale, et personne ne surveille l'heure d'un conteneur.
+Les deux `now()` de l'instruction sont dans la même requête, donc la même valeur.
+
+### Ce qui le prouve
+
+Le test unitaire vérifie que l'attente rendue est observée et que la panne retombe sur le frein local. Il ne
+peut PAS prouver le partage : c'est Postgres qui l'assure. D'où
+`tests/integration/porte-debit.integration.test.ts`, avec **deux pools séparés** pour imiter deux process (un
+pool unique aurait pu réussir pour une mauvaise raison, deux requêtes sur la même connexion se sérialisant de
+toute façon). Six réservations alternées doivent attendre 0, 1, 2, 3, 4 puis 5 secondes ; avant la migration
+elles auraient attendu 0, 0, 1, 1, 2, 2, soit le double du débit configuré.
+
+Le SQL a aussi été éprouvé **contre la base de production dans une transaction annulée** avant tout
+déploiement : la requête part vraiment (donc la syntaxe et les types sont vérifiés), et rien n'est écrit.
+
+---
 ## DEPLOYE le 2026-09-01 : le lot UX + le serveur MCP (les six points de la liste de Julien)
 
 Quatre briques, trois commits, deux migrations. Ce qui suit ne redit pas ce que `features.md` décrit : ce sont
