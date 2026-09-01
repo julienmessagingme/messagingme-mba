@@ -2058,6 +2058,50 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : programme II, lots 1 et 2 (index des chemins chauds, et ce qui se dégradait en silence)
+
+**Lot 1, le runner AVANT les index, et l'ordre n'est pas négociable.** `db/migrate.ts` jouait tout dans une
+transaction, donc `CREATE INDEX CONCURRENTLY` y était interdit : le premier index sur une grosse table aurait
+bloqué les écritures en plein déploiement. D'où la directive `-- migrate: no-transaction` (migration 0096, la
+première du dépôt à s'en servir).
+
+🔴 **Le piège qui rendait la directive INUTILE, et qui a failli passer.** Postgres exécute une requête simple
+contenant PLUSIEURS instructions dans une transaction IMPLICITE. Retirer le `begin`/`commit` ne suffisait donc
+pas : envoyer le fichier entier en un `client.query()` gardait `CONCURRENTLY` illégal. Mesuré dans un
+postgres:16 jetable : deux `CONCURRENTLY` dans un seul `psql -c` échouent, les mêmes en deux `-c` passent. Le
+runner envoie désormais **instruction par instruction** (`decouperInstructions`, conscient des chaînes, des
+commentaires et des dollars). Contrepartie assumée et écrite dans le runner : une migration hors transaction
+n'a **aucun filet**, elle est rejouée depuis le début après un échec, donc chaque instruction doit être
+idempotente. `tests/migration-directives.test.ts` garde les deux sens sur les fichiers réels.
+
+**TROIS index, pas quatre, et c'est la mesure qui a tranché.** Banc jetable, 200 000 lignes, plans réels :
+résolution `wa_id` -> contact **54,96 ms -> 0,20 ms** (BitmapOr des trois branches) ; `reclaimStale`
+**16,01 ms -> 0,17 ms** ; préfixe téléphone en Index Scan, y compris en plan générique. L'index réclamé par
+l'audit pour le `NOT EXISTS` du funnel n'a **pas** été posé : le plan et le temps ne bougent pas (186 -> 184 ms),
+Postgres préfère un Hash Anti Join complet, et un index posé « au cas où » se paie à chaque écriture.
+
+⚠️ **Deux commentaires FAUX corrigés au passage**, tous deux démentis par un `explain` sur la production :
+le `like` ancré sur `phone_e164` n'utilisait PAS l'index unique (un btree ordinaire ne borne pas un préfixe
+hors collation C, d'où `text_pattern_ops`), et le GIN `contacts_fields_gin` de la migration 0032 ne sert PAS
+`fields ->> clé` (noté pour le lot 6).
+
+⚠️ **Sur la production d'aujourd'hui, ces index ne changent RIEN** : 12 contacts, 51 destinataires, Postgres
+les ignorera à raison. Ils sont posés à froid, exactement pour la raison donnée à propos du quota par numéro :
+construire un index d'expression sous charge est une opération à cœur ouvert.
+
+**Lot 2, deux dégradations silencieuses.** (1) `setInterval` ne saute pas un tour parce que le précédent n'est
+pas fini : une passe plus lente que sa cadence se superposait à elle-même, et **un seul des dix-sept balayages
+se protégeait**. La garde est posée dans le registre `src/worker/taches.ts`, donc elle couvre les dix-sept et
+les suivants. Le saut est journalisé avec le nombre de tours sautés d'affilée, sans quoi on aurait échangé une
+contention contre une invisibilité. ⚠️ Limite connue : elle protège les passes PÉRIODIQUES entre elles, pas la
+passe de démarrage lancée à côté par l'appelant, d'où la garde locale conservée sur `reveil-parcours`.
+(2) Le POST de webhook refusé rendait 403 **sans écrire une ligne**. Trois causes distinguées, parce qu'elles
+ne disent pas la même chose : signature ABSENTE (un scanner), signature INVALIDE (**Meta nous parle et notre
+secret ne correspond plus, donc 100 % des entrants jetés**, la panne indiagnosticable du 2026-08-17), corps
+absent. Au plus une ligne par cause et par minute, avec le compte depuis la dernière ligne, et jamais le corps
+ni la signature reçue. Le test de rafale a trouvé un vrai défaut de comptage : la ligne annonçait 51 pour 50.
+
+---
 ## DEPLOYE le 2026-09-01 : lot 7, un brouillon et une version publiée pour les scénarios
 
 **Ce que ça ferme.** `workflow_runs` porte `workflow_id` et `current_node`, jamais une version : modifier un

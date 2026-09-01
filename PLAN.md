@@ -437,8 +437,8 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
 
 | Lot | Contenu | Migration | Taille | Ce que ça achète |
 |---|---|---|---|---|
-| **1** | Runner de migrations hors transaction, puis les quatre index qui manquent | oui | S | Le chemin le plus chaud du produit cesse de se dégrader, et poser un index cesse d'être un risque de déploiement |
-| **2** | Garde de ré-entrance des 17 balayages, et le rejet de webhook qui parle | non | S | Un incident cesse d'être indiagnosticable |
+| ~~**1**~~ ✅ | Runner de migrations hors transaction, puis les index qui manquent | 0096 | S | **FAIT le 2026-09-01.** TROIS index, pas quatre : celui du funnel ne servait à rien, mesuré |
+| ~~**2**~~ ✅ | Garde de ré-entrance des 17 balayages, et le rejet de webhook qui parle | non | S | **FAIT le 2026-09-01.** Un incident cesse d'être indiagnosticable |
 | **3** | `register*Jobs` du worker, puis ordonnancement par contact des files entrantes | non | M | Deux messages d'un même contact cessent de se croiser, ET les entrants passent enfin en parallèle |
 | **4** | La rétention qui manque : blocs, runs terminés, journal d'audit, clics | oui | M | Le seul point de la liste qui ne se rattrape pas après coup |
 | **5** | Découpage de `web/lib/api.ts`, puis delta du fil et `AbortController` | non | M | Le fil ouvert cesse de retélécharger 500 messages toutes les 4 s, par onglet |

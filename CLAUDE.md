@@ -51,10 +51,18 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0095** (`workflows.draft_graph` + `published_at`, le brouillon / publié des scénarios),
-passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0096.** En pratique on applique aussi via
-`npm run migrate` en local (même Supabase prod).
+**Dernière appliquée : 0096** (les index des chemins chauds : résolution `wa_id`, préfixe téléphone,
+destinataires bloqués), passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la
+migration est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0097.** En pratique on applique
+aussi via `npm run migrate` en local (même Supabase prod).
+
+🔴 **0096 est la PREMIÈRE migration jouée HORS TRANSACTION** (directive `-- migrate: no-transaction` en tête de
+fichier), parce que `CREATE INDEX CONCURRENTLY` est interdit dans un bloc de transaction. Deux conséquences à
+connaître avant d'en écrire une autre : elle n'a **aucun filet** (un échec à mi-parcours n'annule rien et la
+migration est rejouée depuis le début, donc chaque instruction doit être idempotente), et le runner l'envoie
+**instruction par instruction**, parce qu'une requête simple multi-instructions est exécutée par Postgres dans
+une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
+les deux sens de la règle sur les fichiers réels.
 
 ⚠️ **0095 était BLOQUANTE** (le code écrit `draft_graph` à chaque enregistrement de l'éditeur), donc migrée
 AVANT le déploiement. **0094 n'était qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit
@@ -81,15 +89,17 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Sa section **« LE PROGRAMME »** (arrêtée le
-  2026-08-31) est LA liste à suivre : sept lots dans l'ordre, avec le piège de chacun. Tout ce qui la précède
-  est l'historique.
+- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Sa section **« LE PROGRAMME II »** (arrêtée le
+  2026-09-01) est LA liste à suivre : huit lots dans l'ordre, avec le piège de chacun. Le **programme I (sept
+  lots) est terminé** le 2026-09-01 ; tout ce qui précède est l'historique.
 - [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md) :
   la synthèse des trois audits, source du programme. ⚠️ Ses constats factuels ont été **revérifiés un par un
   dans le code** le 2026-08-31 (aucun faux, un sous-estimé) ; ses PRIORITÉS, elles, ont été retriées avec
   Julien. En cas d'écart, c'est `PLAN.md` qui fait foi.
 - [AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md) : plus aucun rouge ni orange (clos le 2026-08-31).
-  ⚠️ Sa **§7, 23 jaunes**, n'a jamais été ouverte : c'est la dette de performance encore intacte.
+  ⚠️ Sa **§7, 23 jaunes**, est la dette de performance restante, et elle structure le programme II. Au
+  2026-09-01 : 4 fermés (purge `webhook_events`, `expireInSeconds` du retry-sweep, ré-entrance des balayages,
+  rejet de webhook muet), 1 à moitié (rétention générale), et les index des chemins chauds posés par 0096.
 - [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) : le détail de chaque constat de l'audit
   (référencé par `PLAN.md` sous la forme Bn). Supplanté par celui d'août quand les deux se recouvrent.
 - [documentation.md](documentation.md) : technique : archi, stack, schéma DB, env, patterns

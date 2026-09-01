@@ -19,8 +19,12 @@ qui est donc terminé. Son fonctionnel est dans [features.md](features.md) § Au
 ses pièges dans [documentation.md](documentation.md) § Journal des lots livrés.
 
 **La suite est écrite** : `PLAN.md` § **LE PROGRAMME II** (arrêté le 2026-09-01), huit lots dans l'ordre, qui
-prennent ce qui reste des mêmes audits (surtout les 20 jaunes encore intacts de la §7 du 25 août). Rien n'est
-commencé : ce fichier se remplit au démarrage du lot 1.
+prennent ce qui reste des mêmes audits (surtout les jaunes de la §7 du 25 août).
+
+**Lots 1 et 2 livrés et déployés le 2026-09-01** (index des chemins chauds + migrations hors transaction ;
+ré-entrance des balayages + rejet de webhook qui parle). Détail et mesures dans
+[documentation.md](documentation.md) § Journal des lots livrés. **Prochain : lot 3** (`register*Jobs` du
+worker, puis ordonnancement par contact des files entrantes).
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 
