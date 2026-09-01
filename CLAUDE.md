@@ -51,25 +51,30 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0097** (les index des quatre balayages de rétention), passée le 2026-09-01 avec la
-séquence complète (build de l'image, vérification que la migration est DEDANS, `migrate`, vérification en
-base). **Prochaine libre = 0098.** En pratique on applique aussi via `npm run migrate` en local (même Supabase
-prod).
+**Dernière appliquée : 0098** (`phone_numbers.status_checked_at`, le tourniquet du balayage de statut),
+passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
+`migrate`, vérification en base). **Prochaine libre = 0099.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
-bloc de transaction. Deux conséquences à
-connaître avant d'en écrire une autre : elle n'a **aucun filet** (un échec à mi-parcours n'annule rien et la
+bloc de transaction. Deux conséquences à connaître avant d'en écrire une autre : elle n'a **aucun filet** (un échec à mi-parcours n'annule rien et la
 migration est rejouée depuis le début, donc chaque instruction doit être idempotente), et le runner l'envoie
 **instruction par instruction**, parce qu'une requête simple multi-instructions est exécutée par Postgres dans
 une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
 les deux sens de la règle sur les fichiers réels.
 
-⚠️ **0095 était BLOQUANTE** (le code écrit `draft_graph` à chaque enregistrement de l'éditeur), donc migrée
+⚠️ **0098 était BLOQUANTE** (`saveStatus` écrit `status_checked_at` à chaque relevé), donc migrée AVANT le
+déploiement. **0095 l'était aussi** (le code écrit `draft_graph` à chaque enregistrement de l'éditeur), donc migrée
 AVANT le déploiement. **0094 n'était qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit
 `phone_number_id` à chaque webhook entrant, et déployer avant de migrer aurait fait échouer TOUS les entrants,
 exactement l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessus : le type de la migration
 décide de l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
+
+🔴 **Une seule exécution de `migrate` à la fois** (verrou d'avis Postgres, lot 8). Deux exécutions
+simultanées (le conteneur du VPS et le poste de Julien pointent la MÊME base) rejoueraient la même migration.
+La seconde est REFUSÉE tout de suite, avec le message qui le dit. ⚠️ Et `db/` est désormais dans
+`tsconfig.include` : le runner n'était pas type-checké, une faute de syntaxe n'y devenait visible qu'à
+l'exécution, en plein déploiement.
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
@@ -90,18 +95,21 @@ qu'avant le premier envoi tracé.
 
 ## Docs du repo (séparation stricte)
 
-- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Sa section **« LE PROGRAMME II »** (arrêtée le
-  2026-09-01) est LA liste à suivre : huit lots dans l'ordre, avec le piège de chacun. Le **programme I (sept
-  lots) est terminé** le 2026-09-01 ; tout ce qui précède est l'historique.
+- **[PLAN.md](PLAN.md) : le plan global, à lire en premier.** Les DEUX programmes sont terminés le
+  2026-09-01 : le I (sept lots) et le II (huit lots, dont le 8e volontairement incomplet, arbitré item par
+  item). Le fichier reste la référence de séquencement et porte le piège de chaque lot ; il n'y a plus de
+  liste en cours. Ce qui reste ouvert est listé dans `todo.md` et dans la §7 de l'audit du 25 août.
 - [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md) :
   la synthèse des trois audits, source du programme. ⚠️ Ses constats factuels ont été **revérifiés un par un
   dans le code** le 2026-08-31 (aucun faux, un sous-estimé) ; ses PRIORITÉS, elles, ont été retriées avec
   Julien. En cas d'écart, c'est `PLAN.md` qui fait foi.
 - [AUDIT-SCALE-2026-08-25.md](AUDIT-SCALE-2026-08-25.md) : plus aucun rouge ni orange (clos le 2026-08-31).
-  ⚠️ Sa **§7, 23 jaunes**, est la dette de performance restante, et elle structure le programme II. Au
-  2026-09-01 : 6 fermés (purge `webhook_events`, `expireInSeconds` du retry-sweep, ré-entrance des balayages,
-  rejet de webhook muet, rétention générale, file `automation-event` documentée), plus les index des chemins
-  chauds (0096) et ceux des balayages de rétention (0097).
+  ⚠️ Sa **§7, 23 jaunes**, était la dette de performance restante, et elle a structuré le programme II. Au
+  2026-09-01, après les huit lots : une dizaine sont fermés (purge `webhook_events`, `expireInSeconds` du
+  retry-sweep, ré-entrance des balayages, rejet de webhook muet, rétention générale, index des chemins chauds,
+  index des rétentions, delta du fil, `AbortController`, batch de contacts, création de campagne en mémoire,
+  balayage de statut plafonné à 200). **Deux ont été fermés par la MESURE, sans code** : l'index du funnel ne
+  change rien (191 ms avant et après), et l'upload média est déjà borné. Le reste est dans `todo.md`.
 - [AUDIT-SCALE-2026-07-18.md](AUDIT-SCALE-2026-07-18.md) : le détail de chaque constat de l'audit
   (référencé par `PLAN.md` sous la forme Bn). Supplanté par celui d'août quand les deux se recouvrent.
 - [documentation.md](documentation.md) : technique : archi, stack, schéma DB, env, patterns

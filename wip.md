@@ -14,17 +14,13 @@
 
 ## RIEN EN COURS
 
-Le lot 7 (brouillon / publié des scénarios) est **livré le 2026-09-01**, dernier des sept du **programme I**,
-qui est donc terminé. Son fonctionnel est dans [features.md](features.md) § Automatisations, sa technique et
-ses pièges dans [documentation.md](documentation.md) § Journal des lots livrés.
+**Les DEUX programmes sont terminés le 2026-09-01.** Le programme I (sept lots) et le programme II (huit
+lots, dont le 8e volontairement incomplet et arbitré item par item). Détail, mesures et pièges de chacun dans
+[documentation.md](documentation.md) § Journal des lots livrés ; l'état lot par lot dans [PLAN.md](PLAN.md).
 
-**La suite est écrite** : `PLAN.md` § **LE PROGRAMME II** (arrêté le 2026-09-01), huit lots dans l'ordre, qui
-prennent ce qui reste des mêmes audits (surtout les jaunes de la §7 du 25 août).
-
-**Lots 1 à 4 livrés et déployés le 2026-09-01** (index des chemins chauds + migrations hors transaction ;
-ré-entrance des balayages + rejet de webhook qui parle ; entrants en parallèle, ordonnés par contact ; les
-quatre dernières tables non bornées). Détail et mesures dans [documentation.md](documentation.md) § Journal des
-lots livrés. **Prochain : lot 5**, le découpage de `web/lib/api.ts` puis le delta du fil et `AbortController`.
+**Ce qui reste ouvert, et qui n'est pas dans un lot** : le test de charge et de reprise après kill (une
+session à lui seul, il validerait les lots 3 à 6 sous charge réelle), les cinq items du niveau B qui attendent
+la décision d'un second worker, et les jaunes restants de la §7 de l'audit du 25 août.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 
