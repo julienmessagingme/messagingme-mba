@@ -73,4 +73,49 @@ describe('registre des tâches périodiques', () => {
     registre.arreterTout();
     spy.mockRestore();
   });
+
+  it('🔴 une passe LENTE ne se superpose pas à elle-même, et le saut est journalisé', async () => {
+    // `setInterval` ne saute pas un tour parce que le précédent n'est pas fini : sans garde, deux exemplaires
+    // du même balayage lisent puis écrivent les mêmes lignes. Un seul des dix-sept se protégeait.
+    vi.useFakeTimers();
+    const avertissements: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { avertissements.push(String(a[0])); });
+    const registre = registreDeTaches();
+    let demarrees = 0;
+    let fini: (() => void) | null = null;
+    registre.programmer('lente', 1000, () => {
+      demarrees += 1;
+      return new Promise<void>((r) => { fini = r; });
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(demarrees).toBe(1);
+    // Trois tours de plus pendant que la passe traîne : AUCUNE nouvelle passe ne démarre.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(demarrees).toBe(1);
+    expect(avertissements).toHaveLength(3);
+    expect(avertissements[0]).toContain('lente');
+    expect(avertissements[2]).toContain("3 d'affilée"); // le compteur dit la gravité
+
+    // La passe se termine : le tour suivant repart normalement.
+    fini!();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(demarrees).toBe(2);
+    registre.arreterTout();
+    spy.mockRestore();
+  });
+
+  it('🔴 une passe qui ÉCHOUE libère quand même la garde (sinon la tâche est morte à vie)', async () => {
+    vi.useFakeTimers();
+    const spyErr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const spyWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const registre = registreDeTaches();
+    let passes = 0;
+    registre.programmer('fragile', 1000, async () => { passes += 1; throw new Error('boum'); });
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.waitFor(() => expect(passes).toBe(3)); // 3 tours, 3 passes : rien n'est resté verrouillé
+    registre.arreterTout();
+    spyErr.mockRestore();
+    spyWarn.mockRestore();
+  });
 });

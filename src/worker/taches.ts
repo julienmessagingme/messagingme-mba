@@ -14,6 +14,12 @@
  * veulent balayer au démarrage gardent leur `void passe()`, à l'endroit où ils l'écrivaient déjà. Le rendre
  * implicite ferait démarrer quinze balayages qui ne le faisaient pas, ce qui serait un changement de
  * comportement caché dans un refactor.
+ *
+ * ⚠️ CONSÉQUENCE SUR LA GARDE DE RÉ-ENTRANCE ci-dessous, et c'est pour ça qu'on l'écrit ici : elle protège les
+ * passes PÉRIODIQUES entre elles, pas la passe de DÉMARRAGE lancée à côté par l'appelant. Un balayage dont la
+ * première passe peut déborder sur le premier tour garde donc sa propre garde (`reveil-parcours` en a une, et
+ * elle n'est pas redondante pour cette raison précise). Faire passer les passes de démarrage par le registre
+ * est un travail de lot 3 du programme II, avec le regroupement des `register*Jobs`.
  */
 
 export interface RegistreDeTaches {
@@ -30,6 +36,8 @@ export interface RegistreDeTaches {
 
 export function registreDeTaches(): RegistreDeTaches {
   const minuteries = new Map<string, ReturnType<typeof setInterval>>();
+  /** Les passes EN COURS, par nom, avec le nombre de tours sautés d'affilée. */
+  const enCours = new Map<string, number>();
 
   return {
     programmer(nom, intervalMs, passe) {
@@ -46,10 +54,27 @@ export function registreDeTaches(): RegistreDeTaches {
       //
       // On journalise et on continue : une tâche périodique qui rate une passe la refera à la suivante.
       const t = setInterval(() => {
+        // 🔴 GARDE DE RÉ-ENTRANCE (lot 2 du programme II). `setInterval` ne saute pas un tour parce que le
+        // précédent n'est pas fini : une passe plus lente que sa cadence se superpose à elle-même, et deux
+        // exemplaires du même balayage lisent puis écrivent les mêmes lignes. Un seul des dix-sept balayages
+        // se protégeait. Posée ICI, elle couvre les dix-sept d'un coup, et les suivants sans qu'on y pense.
+        //
+        // ⚠️ Le saut est JOURNALISÉ, avec le nombre de tours sautés d'affilée. Une garde muette échangerait
+        // une contention contre une invisibilité : un balayage qui déborde systématiquement ne tournerait
+        // plus qu'une fois sur deux, et rien ne le dirait. Le compteur donne la gravité d'un coup d'œil.
+        const sautes = enCours.get(nom);
+        if (sautes !== undefined) {
+          enCours.set(nom, sautes + 1);
+          // eslint-disable-next-line no-console
+          console.warn(`tâche « ${nom} » : passe précédente encore en cours, tour sauté (${sautes + 1} d'affilée)`);
+          return;
+        }
+        enCours.set(nom, 0);
         void Promise.resolve()
           .then(passe)
           // eslint-disable-next-line no-console
-          .catch((err: unknown) => console.error(`tâche « ${nom} » : passe en échec non rattrapée :`, err instanceof Error ? err.message : err));
+          .catch((err: unknown) => console.error(`tâche « ${nom} » : passe en échec non rattrapée :`, err instanceof Error ? err.message : err))
+          .finally(() => { enCours.delete(nom); });
       }, intervalMs);
       t.unref();
       minuteries.set(nom, t);
@@ -58,6 +83,10 @@ export function registreDeTaches(): RegistreDeTaches {
     arreterTout() {
       for (const t of minuteries.values()) clearInterval(t);
       minuteries.clear();
+      // Les passes EN VOL ne sont pas interrompues (on ne sait pas les annuler), mais leur marque doit partir :
+      // un registre réutilisé après un arrêt reprogrammerait des tâches que la garde croirait déjà en cours,
+      // donc muettes à vie. Le cas n'existe qu'en test aujourd'hui, et c'est justement là qu'il piégerait.
+      enCours.clear();
     },
 
     noms() {

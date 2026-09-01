@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { buildServer } from '../src/server';
 import { FakeQueue } from '../src/queue/fake';
@@ -144,5 +144,65 @@ describe('receiver : les accusés de livraison ne passent plus devant les messag
     const payload = { entry: [{ changes: [{ field: 'statuses', value: { statuses: [{ id: 'wamid.5', status: 'read' }] } }] }] };
     const { queue } = await envoyer(payload);
     expect(queue.enqueued[0]?.data).toEqual(payload);
+  });
+});
+
+/**
+ * Le rejet qui PARLE (lot 2 du programme II).
+ *
+ * Avant, un POST refusé renvoyait 403 sans écrire une ligne. Une panne 100 % entrants (secret Meta qui ne
+ * correspond plus) y restait indiagnosticable, exactement le scénario qui a coûté 1 h 30 le 2026-08-17.
+ */
+describe('receiver : journal des rejets', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('🔴 distingue la signature INVALIDE de la signature ABSENTE', async () => {
+    // La nuance est tout le sujet : « absente » c'est un scanner, « invalide » c'est Meta qui nous parle et
+    // dont on jette TOUT. Les deux ne demandent pas la même réaction.
+    const lignes: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { lignes.push(String(a[0])); });
+    const { app } = makeApp();
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders('sha256=' + '0'.repeat(64)), payload: '{"a":1}' });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(), payload: '{"a":1}' });
+    expect(lignes.some((l) => l.includes('signature_invalide'))).toBe(true);
+    expect(lignes.some((l) => l.includes('signature_absente'))).toBe(true);
+    await app.close();
+    spy.mockRestore();
+  });
+
+  it('🔴 n’écrit NI le corps NI la signature reçue', async () => {
+    const lignes: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { lignes.push(a.map(String).join(' ')); });
+    const { app } = makeApp();
+    const secretDuClient = 'le-message-prive-du-client';
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders('sha256=' + 'a'.repeat(64)), payload: JSON.stringify({ texte: secretDuClient }) });
+    expect(lignes.join(' ')).not.toContain(secretDuClient);
+    expect(lignes.join(' ')).not.toContain('a'.repeat(64));
+    await app.close();
+    spy.mockRestore();
+  });
+
+  it('🔴 une rafale ne noie pas le journal, et le COMPTE est dit', async () => {
+    // Horloge pilotée par un espion sur `Date.now`, PAS par `vi.useFakeTimers()` : les fausses minuteries
+    // gèlent aussi celles de Fastify, et `app.inject` ne rend jamais la main (test en timeout à 5 s).
+    let horloge = 1_700_000_000_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => horloge);
+    const lignes: string[] = [];
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => { lignes.push(String(a[0])); });
+    const { app } = makeApp();
+    const mauvais = { method: 'POST' as const, url: '/webhooks/meta', headers: jsonHeaders('sha256=' + '0'.repeat(64)), payload: '{"a":1}' };
+    for (let i = 0; i < 50; i += 1) await app.inject(mauvais);
+    expect(lignes).toHaveLength(1); // 50 rejets, UNE ligne
+    expect(lignes[0]).toContain('1 rejet');
+
+    // Une minute plus tard, la ligne suivante dit COMBIEN sont passés entre-temps : sans ce compte, le
+    // throttle cacherait l'ampleur qu'il est censé rendre lisible.
+    horloge += 61_000;
+    await app.inject(mauvais);
+    expect(lignes).toHaveLength(2);
+    expect(lignes[1]).toContain('50 rejets');
+    await app.close();
+    spy.mockRestore();
+    now.mockRestore();
   });
 });

@@ -14,6 +14,50 @@ export interface ReceiverOptions {
 
 type WithRawBody = FastifyRequest & { rawBody?: Buffer };
 
+/** Pourquoi un POST a été rejeté. La distinction est TOUT l'intérêt du journal, cf. `journalDeRejets`. */
+type CauseDeRejet = 'signature_invalide' | 'signature_absente' | 'corps_absent';
+
+/** Au plus une ligne par cause et par minute : un scanner ne doit pas noyer le journal. */
+const REJET_THROTTLE_MS = 60_000;
+
+/**
+ * Le journal des POST refusés du webhook Meta.
+ *
+ * 🔴 POURQUOI IL EXISTE (lot 2 du programme II). Le rejet renvoyait 403 sans écrire une ligne. Or ces trois
+ * causes ne disent pas du tout la même chose :
+ *  - `signature_absente` : quelqu'un qui n'est pas Meta frappe à la porte. Du bruit, sauf en rafale.
+ *  - `signature_invalide` : Meta nous appelle et notre `META_APP_SECRET` ne correspond pas. **100 % des
+ *    entrants sont jetés**, et rien ne le dit : c'est exactement la panne indiagnosticable du 2026-08-17.
+ *  - `corps_absent` : un POST vide, donc un problème de transport ou de proxy.
+ *
+ * Le compteur accompagne chaque ligne : « 1 rejet » et « 4 000 rejets » demandent deux réactions différentes,
+ * et sans lui le throttle cacherait l'ampleur qu'il est censé rendre lisible.
+ *
+ * ⚠️ N'écrit JAMAIS le corps ni la signature reçue : un journal ne doit pas devenir la copie du secret qu'il
+ * observe, ni du message d'un client.
+ */
+function journalDeRejets(): (cause: CauseDeRejet) => void {
+  const dernier = new Map<CauseDeRejet, { a: number; depuis: number }>();
+  return (cause) => {
+    const maintenant = Date.now();
+    const etat = dernier.get(cause);
+    if (etat === undefined) {
+      dernier.set(cause, { a: maintenant, depuis: 0 });
+      // eslint-disable-next-line no-console
+      console.warn(`webhook Meta REFUSÉ (${cause}) : 1 rejet`);
+      return;
+    }
+    // `depuis` compte CE rejet-ci compris : il est incrémenté avant le test de throttle, donc il vaut
+    // exactement le nombre de rejets survenus depuis la dernière ligne. Un `+ 1` de plus recompterait
+    // celui-ci deux fois (le test de rafale l'a attrapé : il annonçait 51 pour 50 rejets).
+    etat.depuis += 1;
+    if (maintenant - etat.a < REJET_THROTTLE_MS) return;
+    // eslint-disable-next-line no-console
+    console.warn(`webhook Meta REFUSÉ (${cause}) : ${etat.depuis} rejets depuis la dernière ligne`);
+    dernier.set(cause, { a: maintenant, depuis: 0 });
+  };
+}
+
 /**
  * Enregistre les routes du webhook Meta sur `app`.
  * Le bouclier : signature validée, ACK immédiat, enqueue du brut. Zéro métier ici.
@@ -21,6 +65,7 @@ type WithRawBody = FastifyRequest & { rawBody?: Buffer };
 export function registerReceiver(app: FastifyInstance, queue: Queue, opts: ReceiverOptions): void {
   const queueName = opts.queueName ?? 'webhook';
   const queueNameStatuts = opts.queueNameStatuts ?? 'webhook-status';
+  const signalerRejet = journalDeRejets();
 
   // Parser JSON en buffer : garde le corps brut pour la validation de signature.
   app.addContentTypeParser(
@@ -68,6 +113,10 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
     const sig = req.headers['x-hub-signature-256'];
     const sigHeader = Array.isArray(sig) ? sig[0] : sig;
     if (!raw || !verifyMetaSignature(raw, sigHeader, opts.appSecret)) {
+      // La CAUSE est déterminée ici, où on l'a encore : `signature_invalide` est la seule des trois qui
+      // signifie « Meta nous parle et on jette tout ». La réponse au client, elle, ne change pas (403 nu) :
+      // on ne renseigne pas un appelant non authentifié sur la raison de son échec.
+      signalerRejet(!raw ? 'corps_absent' : sigHeader === undefined ? 'signature_absente' : 'signature_invalide');
       return reply.code(403).send({ error: 'invalid signature' });
     }
     // 🔴 AIGUILLAGE (lot 6) : un payload qui ne contient QUE des accusés de livraison part sur sa propre file.
