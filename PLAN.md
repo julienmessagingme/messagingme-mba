@@ -494,6 +494,38 @@ par construction), **5.7** (`schemaVersion` du contrat vers le connecteur), **5.
    défendable devant une DSI. Variable d'environnement : descendre est sans danger, c'est l'inverse qui ne se
    rattrape pas.
 
+### 🔴 LOT 7 : les quatre décisions qui attendent Julien (posées le 2026-09-01)
+
+Le lot 7 (versions publiées de scénarios) ne se code pas avant ces réponses : chacune change ce qu'on
+construit, pas seulement son coût. Les valeurs entre crochets sont ce que je ferais sans réponse.
+
+1. **Publier devient-il un GESTE ?** Aujourd'hui l'éditeur enregistre tout seul et c'est LIVE dans la
+   seconde : le client corrige un mot, le contact suivant le voit. Avec des versions, il faut un brouillon
+   éditable et un bouton « Publier ». C'est la rupture d'habitude du lot, et c'est le seul point qui se voit
+   à l'écran. [Défaut : OUI, bouton explicite, avec un bandeau « brouillon non publié » qui ne laisse pas
+   croire qu'on est en ligne.]
+
+2. **Un parcours DÉJÀ EN COURS reste-t-il sur sa version ?** C'est la promesse même du lot (reproductible,
+   analytics interprétables). Sa contrepartie : un client qui corrige une faute ou un bloc cassé voit sa
+   correction NE PAS atteindre les conversations en cours, qui peuvent durer des jours. [Défaut : OUI il
+   reste, PLUS une case « appliquer aussi aux parcours en cours » pour le cas du bloc cassé, qui est le seul
+   moment où on veut vraiment écraser.]
+
+3. **Une campagne PROGRAMMÉE lundi pour vendredi, avec le scénario modifié mercredi : quelle version part ?**
+   Celle qu'on voyait en préparant, ou la dernière publiée à l'heure du départ ? [Défaut : celle ÉPINGLÉE à
+   la création. On envoie ce qu'on a relu et validé, pas ce que quelqu'un a changé entre-temps.]
+
+4. **Que fige-t-on VRAIMENT ?** Versionner le graphe ne fige pas ce qu'il pointe : template Meta, modèle
+   d'email, agent IA, tag, champ, média. Un template supprimé chez Meta casse un parcours V1 « figé ».
+   [Défaut : on fige le GRAPHE (structure, textes, branchements) et on RÉFÉRENCE le reste, parce qu'un
+   template est un objet Meta qu'on ne peut pas dupliquer. Conséquence assumée : « version publiée » veut
+   dire « le parcours ne change plus », pas « rien de ce qu'il utilise ne change ».]
+
+Ce qui ne demande PAS de décision, et que je ferai ainsi : la version est PARTAGÉE et référencée par les runs
+(jamais recopiée dans chaque run), les runs existants sont migrés vers une V1 créée depuis le graphe courant,
+les anciennes versions référencées par un run ou un rapport ne sont jamais supprimées, et publier suit la
+RBAC en place (écriture = admin).
+
 ### Encore à trancher
 
 Elles changent le coût, pas la faisabilité.
