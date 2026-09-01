@@ -146,7 +146,13 @@ function WFNode({ id, data, selected }: NodeProps) {
   // On lit les arêtes plutôt que de recalculer les handles : le nom d'une sortie est déjà établi quelques
   // lignes plus bas, au moment de dessiner sa poignée. Une seconde définition finirait par diverger et
   // signalerait des boutons parfaitement branchés.
-  const reliees = new Set(useEdges().filter((e) => e.source === id).map((e) => e.sourceHandle ?? ''));
+  const aretes = useEdges();
+  const reliees = new Set(aretes.filter((e) => e.source === id).map((e) => e.sourceHandle ?? ''));
+  // Extrémité de la flèche SÉLECTIONNÉE. Lu ici plutôt que passé par un contexte : `useEdges` est déjà
+  // appelé juste au-dessus, et React Flow tient la sélection dans ces mêmes arêtes. Une flèche peut boucler
+  // sur son bloc (source == target) : « départ » l'emporte alors, c'est le bout qu'on cherche en premier.
+  const flecheChoisie = aretes.find((e) => e.selected);
+  const extremite = flecheChoisie?.source === id ? 'depart' : flecheChoisie?.target === id ? 'arrivee' : null;
   // La sortie LIBRE (« toute autre réponse ») n'est volontairement pas concernée : la laisser non reliée est
   // un choix documenté (le parcours s'arrête et l'agent reprend), pas un oubli.
   const orpheline = (h: string): boolean => !reliees.has(h);
@@ -216,7 +222,22 @@ function WFNode({ id, data, selected }: NodeProps) {
   });
 
   return (
-    <div ref={hote} className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-xl border bg-ink-50 shadow-sm transition ${selected ? 'border-brand-500 ring-2 ring-brand-100' : 'border-ink-300'}`}>
+    <div
+      ref={hote}
+      className={`relative ${showCarousel ? 'w-52' : 'w-44'} rounded-xl border bg-ink-50 shadow-sm transition ${
+        selected ? 'border-brand-500 ring-2 ring-brand-100' : extremite ? 'border-brand-400 ring-2 ring-brand-100' : 'border-ink-300'
+      }`}
+    >
+      {/* Bout de la flèche sélectionnée. L'étiquette est nécessaire en plus de l'anneau : les deux bouts se
+          ressembleraient sinon, or la question posée est justement « lequel est le départ ». */}
+      {extremite && (
+        <span
+          data-testid={`wf-extremite-${extremite}`}
+          className="absolute -top-2 left-2 z-10 rounded-full bg-brand-500 px-1.5 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide text-white shadow"
+        >
+          {extremite === 'depart' ? t('départ', 'from') : t('arrivée', 'to')}
+        </span>
+      )}
       <Handle type="target" position={Position.Top} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-400" />
       {/* Suppression directe du bloc (sans passer par le menu de droite). nodrag + stopPropagation : ne déclenche ni
           le drag ni la sélection du bloc. Même pattern que le ✕ des arêtes (CustomEvent -> listener parent). */}
@@ -458,13 +479,28 @@ function WFNode({ id, data, selected }: NodeProps) {
   );
 }
 
-/** Arête courbée avec, au milieu, une poubelle (supprimer) et un + (insérer un bloc entre les deux). */
-function WFEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd }: EdgeProps) {
+/**
+ * Arête courbée avec, au milieu, une poubelle (supprimer) et un + (insérer un bloc entre les deux).
+ *
+ * SÉLECTIONNÉE, elle passe au bleu de marque et s'épaissit. Sur un scénario chargé, les flèches se croisent
+ * et se recouvrent : en cliquer une était le seul moyen de la désigner, mais rien à l'écran ne disait
+ * LAQUELLE on venait de désigner, donc ni d'où elle partait ni où elle allait. Le surlignage répond à ça, et
+ * les deux blocs qu'elle relie s'annoncent « départ » / « arrivée » (cf. `WFNode`), parce que la couleur
+ * seule ne suffit pas quand les deux bouts sont hors de l'écran.
+ */
+function WFEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, selected }: EdgeProps) {
   const t = useT();
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={{ stroke: '#94a3b8', strokeWidth: 2 }} />
+      <BaseEdge
+        id={id}
+        path={path}
+        markerEnd={markerEnd}
+        // `brand-500` de la palette (tailwind.config), en dur parce qu'un attribut SVG `stroke` ne lit pas
+        // une classe Tailwind. Épaissie aussi : sur fond gris clair, la couleur seule se voit mal.
+        style={selected ? { stroke: '#0080D6', strokeWidth: 3.5 } : { stroke: '#94a3b8', strokeWidth: 2 }}
+      />
       <EdgeLabelRenderer>
         <div
           className="nodrag nopan pointer-events-auto absolute flex gap-1"

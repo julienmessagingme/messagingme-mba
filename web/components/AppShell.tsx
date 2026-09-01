@@ -9,6 +9,7 @@ import { Logo } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
+import { cheminDeNav, type NavEntree } from '@/lib/nav';
 
 type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'connecteurs' | 'parametres';
 
@@ -37,8 +38,8 @@ const icons = {
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 13a1.65 1.65 0 00.33 1.82l.05.05a2 2 0 11-2.83 2.83l-.05-.05a1.65 1.65 0 00-2.82 1.17V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.05.05a2 2 0 11-2.83-2.83l.05-.05A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.05-.05a2 2 0 112.83-2.83l.05.05A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.05-.05a2 2 0 112.83 2.83l-.05.05A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z',
 };
 
-interface NavChild { key: string; href: string; label: string }
-interface NavItem { key: string; href?: string; label: string; d: string; children?: NavChild[]; badge?: number }
+// Le modèle d'entrée (et le calcul de la chaîne d'ancêtres) vit dans `lib/nav.ts` : il est récursif depuis
+// que la barre a trois niveaux, et il se teste sans monter de composant.
 
 /** Intervalle de rafraîchissement de la pastille de non-lus. Assez court pour qu'un message vu sur le
  *  téléphone apparaisse vite, assez long pour ne pas marteler l'API depuis toutes les pages. */
@@ -65,7 +66,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const [sessionExpiree, setSessionExpiree] = useState(false);
 
   // Nav construite au rendu (et non en constante module) pour que les libellés suivent la langue courante.
-  const NAV_ADMIN: NavItem[] = [
+  const NAV_ADMIN: NavEntree[] = [
     // L'accueil n'était atteignable que par le logo, ce qui ne se devine pas. Il n'apparaît PAS dans
     // `NAV_AGENT` : `pageDArrivee` envoie un agent sur l'inbox, et cette page montre le statut du compte et
     // ses réglages, qui ne le concernent pas.
@@ -76,12 +77,15 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), d: icons.campaign },
     { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), d: icons.flow },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), d: icons.automation },
-    // Les DEUX répondeurs que le client peut faire parler, dans un seul groupe : l'agent de Meta (guide et
-    // réglages, qui gardent leurs URL) et le nôtre. Le modèle de nav n'a qu'UN niveau d'enfants, donc le
-    // groupe est plat : « MBA » et « Other AI agent » sont des entrées voisines, pas deux sous-groupes.
+    // Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA, son guide et ses réglages,
+    // qui gardent leurs URL) et le nôtre. MBA est un SOUS-GROUPE et non deux entrées voisines : ses deux
+    // écrans parlent du même agent, les mettre au même rang que « Other AI agent » laissait croire à trois
+    // agents. C'est ce qui a fait passer la barre à trois niveaux (cf. `lib/nav.ts`).
     { key: 'ia', label: t('AI Agent', 'AI Agent'), d: icons.mba, children: [
-      { key: 'mba-guide', href: '/mba', label: t('MBA, guide', 'MBA, guide') },
-      { key: 'mba-settings', href: '/mba/parametres', label: t('MBA, paramètres', 'MBA, settings') },
+      { key: 'mba', label: t('MBA', 'MBA'), children: [
+        { key: 'mba-guide', href: '/mba', label: t('MBA, guide', 'MBA, guide') },
+        { key: 'mba-settings', href: '/mba/parametres', label: t('MBA, paramètres', 'MBA, settings') },
+      ] },
       { key: 'agents', href: '/agents', label: t('Other AI agent', 'Other AI agent') },
     ] },
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
@@ -111,25 +115,25 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   ];
   // Second tableau, rendu dans son propre conteneur COLLÉ EN BAS de la barre. La nav n'a aucun mécanisme de
   // placement (pas de champ `position`), donc le bas se fait par la structure, pas par une propriété d'entrée.
-  const NAV_ADMIN_BAS: NavItem[] = [
+  const NAV_ADMIN_BAS: NavEntree[] = [
     { key: 'developers', label: t('Developers', 'Developers'), d: icons.developers, children: [
       { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
     ] },
   ];
-  const NAV_AGENT: NavItem[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];
+  const NAV_AGENT: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];
 
-  // Appartenance page -> groupe, DÉDUITE de la nav ci-dessus. Elle y était réécrite à la main deux fois de
-  // plus (l'initialiseur des groupes ouverts et la table du groupe actif) : un groupe oublié dans l'une
-  // laissait sa page active invisible, l'autre le gardait replié. Il n'y a plus qu'un endroit à tenir.
-  const GROUP_OF: Record<string, string> = {};
-  for (const item of [...NAV_ADMIN, ...NAV_ADMIN_BAS]) {
-    for (const enfant of item.children ?? []) GROUP_OF[enfant.key] = item.key;
-  }
+  // Chaîne des groupes qui mènent à la page active, DÉDUITE de la nav ci-dessus (`lib/nav.ts`). Deux choses
+  // en vivent : le groupe de premier niveau à surligner, et les groupes à déplier. Elles étaient écrites à la
+  // main ; un groupe oublié dans l'une laissait sa page active invisible, l'autre le gardait replié.
+  const chemin = cheminDeNav([...NAV_ADMIN, ...NAV_ADMIN_BAS], active);
 
-  // Groupes repliables : ouvert au départ seulement si la page active est un de ses enfants (`active` est
-  // une prop stable, donc pas de flicker : l'état initial est déjà bon au 1er rendu).
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => ({ [GROUP_OF[active] ?? '']: true }));
+  // Groupes repliables : ouverts au départ sur TOUTE la chaîne de la page active (à trois niveaux, n'ouvrir
+  // que le premier laisserait la page dans un sous-menu encore replié). `active` est une prop stable, donc
+  // pas de flicker : l'état initial est déjà bon au 1er rendu.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(chemin.map((k) => [k, true])),
+  );
 
   // Fail-safe : tout ce qui n'est pas l'inbox est réservé aux admins.
   const adminOnly = active !== 'inbox';
@@ -177,7 +181,6 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     router.replace('/login');
   }
 
-  const group = GROUP_OF[active] ?? active;
   const nav = session.role === 'admin' ? NAV_ADMIN : NAV_AGENT;
 
   const itemCls = (on: boolean) =>
@@ -185,10 +188,17 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const subCls = (on: boolean) =>
     `block rounded-md px-3 py-1.5 text-sm transition ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-800'}`;
 
-  // Rendu paramétré : la barre a désormais DEUX listes (le corps, et le bloc collé en bas). Factorisé plutôt
-  // que dupliqué, pour qu'un changement de style de nav n'ait pas à être fait deux fois.
-  const renderNav = (items: NavItem[]) => (
-    <nav className="space-y-1">
+  /**
+   * Rendu RÉCURSIF d'une liste d'entrées. Trois niveaux existent aujourd'hui (« AI Agent » > « MBA » >
+   * « MBA, guide ») et la récursion en accepte davantage sans nouveau code : c'est ce qui évite qu'un
+   * quatrième niveau se règle un jour par un troisième bloc copié-collé.
+   *
+   * Ce qui change avec la profondeur : le premier niveau seul porte une icône et le style « entrée », les
+   * suivants prennent le style « sous-entrée » et un retrait. Le reste (repli, surlignage, fermeture du
+   * tiroir mobile) est identique partout, donc écrit une seule fois.
+   */
+  const listeNav = (items: NavEntree[], niveau: number) => (
+    <div className={niveau === 1 ? 'space-y-1' : 'space-y-0.5'}>
       {items.map((item) =>
         item.children ? (
           <div key={item.key}>
@@ -196,23 +206,31 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               type="button"
               onClick={() => setOpenGroups((s) => ({ ...s, [item.key]: !s[item.key] }))}
               aria-expanded={!!openGroups[item.key]}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition hover:bg-ink-100 ${group === item.key ? 'font-medium text-brand-700' : 'text-ink-600'}`}
+              data-testid={`nav-groupe-${item.key}`}
+              className={
+                niveau === 1
+                  ? `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-600'}`
+                  : `flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-sm transition hover:bg-ink-100 ${chemin.includes(item.key) ? 'font-medium text-brand-700' : 'text-ink-500'}`
+              }
             >
-              <Ico d={item.d} />
+              {item.d && <Ico d={item.d} />}
               {item.label}
               <svg viewBox="0 0 24 24" className={`ml-auto h-4 w-4 shrink-0 text-ink-400 transition-transform ${openGroups[item.key] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
             </button>
             {openGroups[item.key] && (
-              <div className="ml-[30px] mt-0.5 space-y-0.5 border-l border-ink-100 pl-2">
-                {item.children.map((c) => (
-                  <Link key={c.key} href={c.href} onClick={() => setDrawerOpen(false)} className={subCls(active === c.key)}>{c.label}</Link>
-                ))}
+              <div className={`mt-0.5 border-l border-ink-100 pl-2 ${niveau === 1 ? 'ml-[30px]' : 'ml-2'}`}>
+                {listeNav(item.children, niveau + 1)}
               </div>
             )}
           </div>
         ) : (
-          <Link key={item.key} href={item.href!} onClick={() => setDrawerOpen(false)} className={itemCls(group === item.key)}>
-            <Ico d={item.d} />
+          <Link
+            key={item.key}
+            href={item.href!}
+            onClick={() => setDrawerOpen(false)}
+            className={niveau === 1 ? itemCls(active === item.key) : subCls(active === item.key)}
+          >
+            {item.d && <Ico d={item.d} />}
             {item.label}
             {item.badge !== undefined && item.badge > 0 && (
               <span
@@ -227,8 +245,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
           </Link>
         ),
       )}
-    </nav>
+    </div>
   );
+
+  // La barre a DEUX listes (le corps, et le bloc collé en bas). Un seul rendu pour les deux, pour qu'un
+  // changement de style de nav n'ait pas à être fait deux fois.
+  const renderNav = (items: NavEntree[]) => <nav>{listeNav(items, 1)}</nav>;
 
   const SidebarInner = (
     // Colonne pleine hauteur : c'est elle qui permet au bloc bas de descendre. Le `flex-1` du corps ci-dessous
