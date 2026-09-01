@@ -33,8 +33,8 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
 
   it('PgEventStore : insert idempotent (2x -> 1 ligne)', async () => {
     const store = new PgEventStore(pool);
-    await handleWebhookJob(payload, store);
-    await handleWebhookJob(payload, store);
+    await handleWebhookJob(payload, { store });
+    await handleWebhookJob(payload, { store });
     const res = await pool.query('select count(*)::int as n from webhook_events where meta_message_id = $1', [KEY]);
     expect(res.rows[0]?.n).toBe(1);
   });

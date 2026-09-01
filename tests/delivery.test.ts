@@ -63,7 +63,10 @@ describe('processStatuses via handleWebhookJob', () => {
   it('applique les statuts aux destinataires, ignore les messages entrants', async () => {
     const delivery = new FakeDelivery();
     const events = new FakeEvents();
-    await handleWebhookJob(payload, events, delivery);
+    await handleWebhookJob(payload, {
+      store: events,
+      delivery,
+    });
     expect(delivery.calls.map((c) => `${c.messageId}:${c.status}`)).toEqual(['wamid.1:sent', 'wamid.1:read']);
     // Les événements (statuts + message entrant) sont tous stockés.
     expect(events.events.length).toBeGreaterThanOrEqual(3);
@@ -71,6 +74,6 @@ describe('processStatuses via handleWebhookJob', () => {
 
   it('sans delivery store -> ne casse pas (rétro-compat)', async () => {
     const events = new FakeEvents();
-    await expect(handleWebhookJob(payload, events)).resolves.toBeUndefined();
+    await expect(handleWebhookJob(payload, { store: events })).resolves.toBeUndefined();
   });
 });

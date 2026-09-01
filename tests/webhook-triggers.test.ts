@@ -76,23 +76,23 @@ describe('handleWebhookJob : intégration des automations', () => {
 
   it('le signal « nouveau contact » vient de l’upsert (created) et est transmis au déclencheur', async () => {
     const seen: AutomationEvent[] = [];
-    await handleWebhookJob(
-      inboundPayload('33611', 'bonjour'), eventStore, undefined, inbox, undefined, undefined,
-      async () => 'created', // l'upsert signale une fiche NEUVE
-      undefined,
-      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
-    );
+    await handleWebhookJob(inboundPayload('33611', 'bonjour'), {
+      store: eventStore,
+      inbox,
+      inboundContactUpsert: async () => 'created',
+      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
+    });
     expect(seen[0]).toMatchObject({ waId: '33611', isNewContact: true });
   });
 
   it('contact déjà connu (updated) -> isNewContact faux', async () => {
     const seen: AutomationEvent[] = [];
-    await handleWebhookJob(
-      inboundPayload('33611', 'bonjour'), eventStore, undefined, inbox, undefined, undefined,
-      async () => 'updated',
-      undefined,
-      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
-    );
+    await handleWebhookJob(inboundPayload('33611', 'bonjour'), {
+      store: eventStore,
+      inbox,
+      inboundContactUpsert: async () => 'updated',
+      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { seen.push(ev); return 1; } },
+    });
     expect(seen[0]).toMatchObject({ isNewContact: false });
   });
 
@@ -105,30 +105,32 @@ describe('handleWebhookJob : intégration des automations', () => {
       ] } }] }],
     };
     const flags: boolean[] = [];
-    await handleWebhookJob(
-      payload, eventStore, undefined, inbox, undefined, undefined,
-      async () => 'created',
-      undefined,
-      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { flags.push(ev.kind === 'message' && ev.isNewContact); return 1; } },
-    );
+    await handleWebhookJob(payload, {
+      store: eventStore,
+      inbox,
+      inboundContactUpsert: async () => 'created',
+      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { flags.push(ev.kind === 'message' && ev.isNewContact); return 1; } },
+    });
     expect(flags).toEqual([true, false]);
   });
 
   it('une automation qui PLANTE ne fait pas échouer le job webhook (invariant 5)', async () => {
     let inboundRecorded = 0;
-    await expect(handleWebhookJob(
-      inboundPayload('33611', 'rdv'), eventStore, undefined,
-      { phoneNumberTenant: async () => 't1', recordInbound: async () => { inboundRecorded += 1; } },
-      undefined, undefined, async () => 'updated', undefined,
-      { phoneNumberTenant: async () => { throw new Error('base indisponible'); }, run: async () => 0 },
-    )).resolves.toBeUndefined();
+    await expect(handleWebhookJob(inboundPayload('33611', 'rdv'), {
+      store: eventStore,
+      inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => { inboundRecorded += 1; } },
+      inboundContactUpsert: async () => 'updated',
+      triggers: { phoneNumberTenant: async () => { throw new Error('base indisponible'); }, run: async () => 0 },
+    })).resolves.toBeUndefined();
     expect(inboundRecorded).toBe(1); // l'inbox a bien été enregistrée malgré l'automation en échec
   });
 
   it('aucune dep automation -> comportement inchangé (rétro-compatibilité)', async () => {
-    await expect(handleWebhookJob(
-      inboundPayload('33611', 'rdv'), eventStore, undefined, inbox, undefined, undefined, async () => 'updated',
-    )).resolves.toBeUndefined();
+    await expect(handleWebhookJob(inboundPayload('33611', 'rdv'), {
+      store: eventStore,
+      inbox,
+      inboundContactUpsert: async () => 'updated',
+    })).resolves.toBeUndefined();
   });
 
   // --- Lot F : priorité du jeton de test ---
@@ -141,13 +143,13 @@ describe('handleWebhookJob : intégration des automations', () => {
     const advanced: string[] = [];
     const triggered: string[] = [];
     const started: string[] = [];
-    await handleWebhookJob(
-      inboundPayload('33611', MOT_TEST), eventStore, undefined, inbox, undefined,
-      { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
-      async () => 'updated',
-      undefined,
-      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
-      {
+    await handleWebhookJob(inboundPayload('33611', MOT_TEST), {
+      store: eventStore,
+      inbox,
+      workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
+      inboundContactUpsert: async () => 'updated',
+      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
+      testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         mayStart: async () => true,
@@ -155,7 +157,7 @@ describe('handleWebhookJob : intégration des automations', () => {
         endWaitingRun: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
-    );
+    });
     expect(started).toEqual(['wf1']);
     expect(advanced).toEqual([]);   // l'avance n'a PAS vu le message
     expect(triggered).toEqual([]);  // les automations non plus
@@ -164,13 +166,13 @@ describe('handleWebhookJob : intégration des automations', () => {
   it('un message ORDINAIRE passe toujours à l’avance et aux automations (le jeton ne bloque rien d’autre)', async () => {
     const advanced: string[] = [];
     const triggered: string[] = [];
-    await handleWebhookJob(
-      inboundPayload('33611', 'je veux un rdv'), eventStore, undefined, inbox, undefined,
-      { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
-      async () => 'updated',
-      undefined,
-      { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
-      {
+    await handleWebhookJob(inboundPayload('33611', 'je veux un rdv'), {
+      store: eventStore,
+      inbox,
+      workflowAdvance: { phoneNumberTenant: async () => 't1', advance: async (_t, waId) => { advanced.push(waId); } },
+      inboundContactUpsert: async () => 'updated',
+      triggers: { phoneNumberTenant: async () => 't1', run: async (_t, ev) => { triggered.push(ev.waId); return 1; } },
+      testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => null,
         mayStart: async () => true,
@@ -178,7 +180,7 @@ describe('handleWebhookJob : intégration des automations', () => {
         endWaitingRun: async () => {},
         startTestRun: async () => true,
       },
-    );
+    });
     expect(advanced).toEqual(['33611']);
     expect(triggered).toEqual(['33611']);
   });
@@ -188,10 +190,11 @@ describe('handleWebhookJob : intégration des automations', () => {
     // handler traduit en « ne pas redémarrer le test ». Toutes les autres étapes sont déjà idempotentes.
     const started: string[] = [];
     const deja = { insertEvent: async () => false }; // événement DÉJÀ vu
-    await handleWebhookJob(
-      inboundPayload('33611', 'test-a7k2m9p3'), deja, undefined, inbox, undefined, undefined,
-      async () => 'updated', undefined, undefined,
-      {
+    await handleWebhookJob(inboundPayload('33611', 'test-a7k2m9p3'), {
+      store: deja,
+      inbox,
+      inboundContactUpsert: async () => 'updated',
+      testTokens: {
         phoneNumberTenant: async () => 't1',
         findByTestToken: async () => ({ workflowId: 'wf1', tenantId: 't1' }),
         mayStart: async () => true,
@@ -199,15 +202,16 @@ describe('handleWebhookJob : intégration des automations', () => {
         endWaitingRun: async () => {},
         startTestRun: async (_t, wf) => { started.push(wf); return true; },
       },
-    );
+    });
     expect(started).toEqual([]);
   });
 
   it('un jeton de test qui PLANTE ne fait pas échouer le job webhook', async () => {
-    await expect(handleWebhookJob(
-      inboundPayload('33611', 'test-a7k2m9p3'), eventStore, undefined, inbox, undefined, undefined,
-      async () => 'updated', undefined, undefined,
-      {
+    await expect(handleWebhookJob(inboundPayload('33611', 'test-a7k2m9p3'), {
+      store: eventStore,
+      inbox,
+      inboundContactUpsert: async () => 'updated',
+      testTokens: {
         phoneNumberTenant: async () => { throw new Error('base indisponible'); },
         findByTestToken: async () => null,
         mayStart: async () => true,
@@ -215,6 +219,6 @@ describe('handleWebhookJob : intégration des automations', () => {
         endWaitingRun: async () => {},
         startTestRun: async () => true,
       },
-    )).resolves.toBeUndefined();
+    })).resolves.toBeUndefined();
   });
 });

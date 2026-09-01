@@ -31,28 +31,47 @@ export interface FlowMappingDeps {
  * destinataires (`delivery`) et enregistre les messages entrants en conversations (`inbox`).
  * Toute erreur des étapes cœur est propagée pour laisser pg-boss faire son retry -> DLQ.
  */
-export async function handleWebhookJob(
-  raw: unknown,
-  store: EventStore,
-  delivery?: DeliveryStore,
-  inbox?: InboxStore,
-  flowMapping?: FlowMappingDeps,
-  workflowAdvance?: WorkflowAdvanceDeps,
-  inboundContactUpsert?: InboundContactUpsert,
-  handover?: HandoverDeps,
+/**
+ * Les dépendances du traitement d'un webhook, NOMMÉES.
+ *
+ * 🔴 Pourquoi un objet, et pas les douze paramètres positionnels d'avant (lot 3 du programme II). L'appel de
+ * la file des accusés s'écrivait `handleWebhookJob(data, eventStore, recipientStore, undefined, undefined,
+ * undefined, undefined, undefined, undefined, undefined, nodeEventStore)` : SEPT `undefined` d'affilée, dont
+ * aucun lecteur ne peut dire ce qu'ils désignent. Insérer un paramètre au mauvais rang y changeait le câblage
+ * en silence, sans que le compilateur bronche, puisque tout est optionnel et de types voisins. C'est la même
+ * leçon que `enqueueCampaignRun` au lot 5 : passé un certain nombre, on finit par en inverser deux.
+ *
+ * Tout est optionnel sauf `store` : une dépendance absente désactive son étape, ce qui est exactement ce dont
+ * la file des accusés se sert pour n'exécuter que la livraison.
+ */
+export interface WebhookJobDeps {
+  /** Le seul obligatoire : l'insertion idempotente des événements bruts. */
+  store: EventStore;
+  delivery?: DeliveryStore;
+  inbox?: InboxStore;
+  flowMapping?: FlowMappingDeps;
+  workflowAdvance?: WorkflowAdvanceDeps;
+  inboundContactUpsert?: InboundContactUpsert;
+  handover?: HandoverDeps;
   /** Automations (Lot E). `isNewContact` est fourni ICI : il vient de l'upsert d'inbound, pas d'une requête. */
-  triggers?: Omit<TriggerDeps, 'isNewContact'>,
+  triggers?: Omit<TriggerDeps, 'isNewContact'>;
   /** Jetons de test d'un scénario (Lot F). Prioritaires sur l'avance et sur les automations. */
-  testTokens?: TestTokenDeps,
+  testTokens?: TestTokenDeps;
   /** Mesure par bloc (« Mes tableaux ») : rattache les accusés Meta au bloc qui a envoyé le message. */
-  nodeEvents?: NodeStatusSink,
+  nodeEvents?: NodeStatusSink;
   /**
    * Opt-out par mot-clé sur un message WhatsApp entrant (STOP, désabonner...). Absent -> aucun désabonnement
    * automatique, ce qui était l'état du canal WhatsApp jusqu'au 2026-08-29 alors que le RCS, lui, l'avait.
    * Voir `processInbound` pour les deux points d'ordre qui comptent.
    */
-  inboundOptOut?: InboundOptOut,
-): Promise<void> {
+  inboundOptOut?: InboundOptOut;
+}
+
+export async function handleWebhookJob(raw: unknown, deps: WebhookJobDeps): Promise<void> {
+  const {
+    store, delivery, inbox, flowMapping, workflowAdvance, inboundContactUpsert,
+    handover, triggers, testTokens, nodeEvents, inboundOptOut,
+  } = deps;
   const events = parseWebhook(raw);
   // `insertEvent` renvoie false quand l'événement était DÉJÀ enregistré : c'est le signal « ce webhook est un
   // rejeu » (Meta redélivre quand l'ACK se perd, pg-boss réessaie un job interrompu). On le retient pour les

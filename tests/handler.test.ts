@@ -20,8 +20,8 @@ const payload = {
 describe('handleWebhookJob', () => {
   it('deux fois le même event -> une seule insertion (idempotent)', async () => {
     const store = new FakeStore();
-    await handleWebhookJob(payload, store);
-    await handleWebhookJob(payload, store);
+    await handleWebhookJob(payload, { store });
+    await handleWebhookJob(payload, { store });
     expect(store.inserts).toHaveLength(1);
   });
 
@@ -31,6 +31,6 @@ describe('handleWebhookJob', () => {
         throw new Error('db down');
       },
     };
-    await expect(handleWebhookJob(payload, boom)).rejects.toThrow('db down');
+    await expect(handleWebhookJob(payload, { store: boom })).rejects.toThrow('db down');
   });
 });

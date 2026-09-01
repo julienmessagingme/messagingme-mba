@@ -298,17 +298,19 @@ async function main(): Promise<void> {
   });
 
   await queue.work('webhook', async (data) => {
-    await handleWebhookJob(
-      data, eventStore, recipientStore, inboxStore,
+    await handleWebhookJob(data, {
+      store: eventStore,
+      delivery: recipientStore,
+      inbox: inboxStore,
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi,
       // et le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
-      { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
-      { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp) },
+      flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
+      workflowAdvance: { phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid), advance: (t, w, m, bp) => workflowExecutor.advance(t, w, m, bp) },
       // Auto-création de fiche depuis l'inbound (par numéro OU BSUID) : les clients qui écrivent sans
       // partager leur numéro (post-octobre) atterrissent quand même dans le CRM. Isolé dans processInbound.
       // Le résultat ('created') est le signal « 1er message d'un contact inconnu » : le handler le capture
       // pour le déclencheur d'automation `new_contact`. Ne PAS le jeter.
-      async (tenant, m) => {
+      inboundContactUpsert: async (tenant, m) => {
         const issue = await contactStore.upsertFromInbound(tenant, m.waId, m.profileName);
         // 🔴 L'origine PUBLICITAIRE, posée sur la fiche AU PASSAGE. Meta ne l'envoie que sur le premier
         // message après le clic : ici ou jamais. Isolé dans son propre try : une fiche créée vaut mieux
@@ -330,7 +332,7 @@ async function main(): Promise<void> {
       },
       // Pré-câblage MBA : bascules de contrôle et messages de l'agent Meta. Inerte tant que MBA n'est
       // activé nulle part, mais déjà branché pour que le premier test réel soit OBSERVABLE.
-      {
+      handover: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         // Sans `only` : Meta fait autorité sur qui détient le fil, notre état ne fait que refléter le sien.
         setControlOwner: (t, w, o) => inboxStore.setControlOwner(t, w, o),
@@ -340,13 +342,13 @@ async function main(): Promise<void> {
       // Automations (Lot E) : un message entrant peut DÉMARRER un scénario (mot-clé, 1er message d'un nouveau
       // contact). `isNewContact` est injecté par le handler (il vient de l'upsert ci-dessus). La garde de
       // contrôle du fil est celle de l'executor : un scénario déclenché n'écrit pas dans un fil tenu par un humain.
-      {
+      triggers: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         run: (tenant, ev) => runAutomations(tenant, ev, automationRunnerDeps),
       },
       // Jetons de test d'un scénario (Lot F) : le testeur envoie le mot de son lien wa.me / QR depuis son
       // propre téléphone. C'est LUI qui ouvre la fenêtre 24 h, donc le scénario peut démarrer en session.
-      {
+      testTokens: {
         phoneNumberTenant: (pnid) => inboxStore.phoneNumberTenant(pnid),
         findByTestToken: async (token) => {
           const wf = await workflowStore.findByTestToken(token);
@@ -374,13 +376,13 @@ async function main(): Promise<void> {
       },
       // Mesure par bloc : les accuses Meta (delivre / lu / echec) retrouvent ici le bloc qui a envoye le
       // message. Un identifiant hors scenario (inbox, campagne) ne cree rien.
-      nodeEventStore,
+      nodeEvents: nodeEventStore,
       // 🔴 OPT-OUT PAR MOT-CLE sur WhatsApp (STOP, desabonner...). Le RCS le faisait depuis toujours, pas
       // WhatsApp : un contact qui repondait STOP restait `opted_in` et recevait la campagne suivante. La
       // source `whatsapp_stop` distingue ce refus de ceux poses a la main dans le mini-CRM, ce qui compte
       // le jour ou il faut prouver d ou vient un desabonnement.
-      (tenant, waId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP),
-    );
+      inboundOptOut: (tenant, waId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP),
+    });
   });
 
   /**
@@ -399,7 +401,10 @@ async function main(): Promise<void> {
    * et c'est la sérialisation de la file qui le garantit aujourd'hui.
    */
   await queue.work('webhook-status', async (data) => {
-    await handleWebhookJob(data, eventStore, recipientStore, undefined, undefined, undefined, undefined, undefined, undefined, undefined, nodeEventStore);
+    // Trois dépendances NOMMÉES là où il y avait sept `undefined` d'affilée : ce qui est absent l'est
+    // volontairement (aucune conversation, aucune automation, aucun scénario ne se déclenche sur un accusé),
+    // et ça se lit maintenant sans compter les virgules.
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore });
   });
 
   // File campaign-run (Loop 5). DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu PAR TENANT
