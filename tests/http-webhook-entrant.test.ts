@@ -422,3 +422,37 @@ describe('webhook entrant : alimente une campagne au fil de l eau', () => {
     await server.close();
   });
 });
+
+/**
+ * LE PLAFOND SE PREND AVANT LA BASE (programme II, après les huit lots).
+ *
+ * 🔴 Il était posé APRÈS `getByCode` : une rafale sur une adresse valide coûtait une requête SQL PAR APPEL
+ * avant d'être refusée. C'est la seule route publiquement adressable de ce service, donc un levier
+ * d'amplification vers Postgres offert à qui connaît une adresse.
+ */
+describe('webhook entrant : le plafond AVANT la requête SQL', () => {
+  it('🔴 au-delà du plafond, la base n’est PLUS interrogée du tout', async () => {
+    const { server, cap } = app(HOOK, { limiter: new RateLimiter(3, 60_000) });
+    for (let i = 0; i < 3; i += 1) {
+      const r = await post(server, CORPS);
+      expect(r.statusCode).not.toBe(429);
+    }
+    expect(cap.lus).toHaveLength(3);
+    // Les appels refusés ne coûtent plus rien : c'est TOUT l'objet du déplacement.
+    for (let i = 0; i < 20; i += 1) {
+      const r = await post(server, CORPS);
+      expect(r.statusCode).toBe(429);
+    }
+    expect(cap.lus).toHaveLength(3);
+    await server.close();
+  });
+
+  it('🔴 un robot qui tire des codes au hasard ne fait pas grossir la table indéfiniment', async () => {
+    // Contrepartie du déplacement : la clé est choisie par l'appelant. Sans plafond de CLÉS, chaque code
+    // inventé créerait une entrée qui ne peut pas expirer tant que la fenêtre court.
+    const limiter = new RateLimiter(120, 60_000, undefined, 5);
+    for (let i = 0; i < 5; i += 1) expect(limiter.take(`code-${i}`)).toBe(true);
+    expect(limiter.take('code-neuf')).toBe(false);   // table pleine -> refus
+    expect(limiter.take('code-0')).toBe(true);       // une clé DÉJÀ connue reste servie
+  });
+});

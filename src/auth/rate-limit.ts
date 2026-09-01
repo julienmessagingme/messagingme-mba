@@ -18,6 +18,17 @@ export class RateLimiter {
     private readonly max: number,
     private readonly windowMs: number,
     private readonly now: () => number = () => Date.now(),
+    /**
+     * Nombre maximal de clés VIVANTES. Au-delà, une clé NEUVE est refusée (les clés déjà connues continuent
+     * d'être servies normalement). `0` = pas de plafond, comportement d'origine.
+     *
+     * 🔴 À poser dès que la clé est choisie par l'APPELANT et non par nous. Le limiteur du webhook entrant est
+     * désormais consulté AVANT la requête en base, donc sur un code qui n'existe peut-être pas : sans plafond,
+     * un robot qui tire des codes au hasard ferait grossir la table indéfiniment pendant toute la fenêtre (la
+     * purge ne retire que les entrées EXPIRÉES, et sous flot rien n'expire). On échange une fuite de mémoire
+     * contre un refus, qui est le bon comportement sous attaque.
+     */
+    private readonly maxCles = 0,
   ) {}
 
   /** Enregistre une tentative pour `key`. Retourne true si elle est autorisée, false si bloquée. */
@@ -29,6 +40,9 @@ export class RateLimiter {
       // opportunément les entrées expirées avant d'en créer une neuve, pour ne pas fuir la mémoire (une clé
       // jamais re-touchée resterait sinon indéfiniment dans la Map).
       if (this.hits.size >= this.pruneThreshold) this.prune(t);
+      // Clé NEUVE alors que la table est pleine : on refuse plutôt que de grossir. Les clés déjà présentes
+      // (donc les vrais webhooks, qui appellent régulièrement) ne sont pas concernées.
+      if (this.maxCles > 0 && !entry && this.hits.size >= this.maxCles) return false;
       this.hits.set(key, { count: 1, resetAt: t + this.windowMs });
       return true;
     }

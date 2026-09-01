@@ -90,7 +90,9 @@ interface Compte {
 export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntrantRouteDeps): void {
   // Plafond de débit par WEBHOOK (pas par IP) : c'est le budget d'une intégration, et l'IP d'un Zapier n'a
   // aucune stabilité. Singleton, comme le limiteur de `/v1`.
-  const limiter = deps.limiter ?? new RateLimiter(120, 60_000);
+  // Plafond de CLÉS vivantes : le limiteur est consulté avant la base, donc sur des codes qui n'existent
+  // peut-être pas. 5 000 codes distincts par minute est très au-dessus de tout parc réel, et borne la table.
+  const limiter = deps.limiter ?? new RateLimiter(120, 60_000, undefined, 5000);
 
   app.post('/w/:code', { bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const { code } = req.params as { code: string };
@@ -100,15 +102,23 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     // offrir une requête SQL par essai.
     if (!CODE_RE.test(normalise)) return reply.code(404).send({ error: 'webhook introuvable' });
 
+    // 🔴 LE PLAFOND SE PREND AVANT LA BASE (programme II). Il était posé APRÈS `getByCode` : une rafale sur
+    // une adresse valide coûtait donc une requête SQL PAR APPEL avant d'être refusée, ce qui fait de la seule
+    // route publiquement adressable de ce service un levier d'amplification vers Postgres.
+    //
+    // La clé est le CODE et non l'identifiant du webhook. Les deux sont en correspondance stricte (le code est
+    // unique), donc le comptage est le même ; simplement, le code est déjà là, validé par la regex ci-dessus,
+    // et il n'a rien coûté. Contrepartie assumée et bornée : un robot qui tire des codes au hasard crée une
+    // clé par essai, d'où le plafond de clés du limiteur, qui refuse au lieu de grossir.
+    if (!limiter.take(normalise)) {
+      // La réponse ne révèle ni le plafond ni l'espace : juste « trop d'appels ».
+      return reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
+    }
+
     const hook = await deps.getByCode(normalise);
     // Code inconnu ET webhook désactivé rendent la MÊME chose : un tiers n'a pas à distinguer « ce webhook
     // n'existe pas » de « il existe mais il est éteint ».
     if (!hook || !hook.enabled) return reply.code(404).send({ error: 'webhook introuvable' });
-
-    if (!limiter.take(hook.id)) {
-      // La réponse ne révèle ni le plafond ni l'espace : juste « trop d'appels ».
-      return reply.code(429).send({ error: 'trop d’appels, réessayez dans une minute' });
-    }
 
     if (hook.secretHash !== null) {
       const brut = req.headers['x-webhook-secret'];
