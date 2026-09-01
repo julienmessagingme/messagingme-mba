@@ -231,9 +231,15 @@ describe.skipIf(!url)('PgInboxStore : delta du fil (Supabase)', () => {
     await pool.end();
   });
 
-  it('sans point de reprise : tout le fil, dans l’ordre', async () => {
+  it('sans point de reprise : tout le fil, le plus récent en dernier', async () => {
     const tous = await store.getMessages(conversationId);
-    expect(tous.map((m) => m.body)).toEqual(['a', 'b', 'c']);
+    expect(tous).toHaveLength(3);
+    // ⚠️ Les DEUX messages du même horodatage sortent dans l'ordre de leur `id`, qui est un uuid ALÉATOIRE :
+    // ce n'est pas l'ordre d'arrivée, et ça ne peut pas l'être (rien ne l'enregistre à la milliseconde près).
+    // Ce test l'a appris en rougissant en CI sur `['b','a','c']`. Le tri reste DÉTERMINISTE, ce qui est ce
+    // dont le curseur a besoin ; l'ordre d'affichage de deux messages simultanés, lui, est indifférent.
+    expect(tous.slice(0, 2).map((m) => m.body).sort()).toEqual(['a', 'b']);
+    expect(tous[2]!.body).toBe('c');
   });
 
   it('🔴 deux messages au MÊME horodatage : le second n’est pas escamoté', async () => {
@@ -243,7 +249,9 @@ describe.skipIf(!url)('PgInboxStore : delta du fil (Supabase)', () => {
     const tous = await store.getMessages(conversationId);
     const premier = tous[0]!;
     const suite = await store.getMessages(conversationId, { at: premier.createdAt, id: premier.id });
-    expect(suite.map((m) => m.body)).toEqual(['b', 'c']);
+    // Les DEUX autres, quel que soit lequel des jumeaux était premier : c'est bien qu'aucun n'est sauté.
+    expect(suite).toHaveLength(2);
+    expect(suite.map((m) => m.body).sort()).toEqual([tous[1]!.body, 'c'].sort());
   });
 
   it('à jour : le delta est VIDE (c’est le cas courant, quinze fois par minute)', async () => {

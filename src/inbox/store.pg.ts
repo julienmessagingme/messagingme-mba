@@ -503,6 +503,12 @@ export class PgInboxStore implements InboxStore {
    * porter le même horodatage (une salve d'un scénario, un import), et l'un des deux se perdrait alors à
    * chaque poll. C'est le même keyset que la pagination des conversations, et l'`order by` porte les deux
    * colonnes pour que la comparaison et le tri parlent de la même chose.
+   *
+   * ⚠️ Deux messages du MÊME horodatage sortent donc dans l'ordre de leur `id`, un uuid aléatoire : ce n'est
+   * pas leur ordre d'arrivée, et rien ne l'enregistre à la milliseconde près pour qu'il puisse l'être. Ce qui
+   * compte ici est que le tri soit DÉTERMINISTE (sans quoi le curseur sauterait des messages) ; l'ordre
+   * d'affichage de deux messages simultanés, lui, est indifférent. Avant, le tri portait sur `created_at`
+   * seul et les ex aequo sortaient dans l'ordre du tas, donc pas même de façon stable.
    */
   async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
