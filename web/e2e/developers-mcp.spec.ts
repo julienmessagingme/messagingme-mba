@@ -11,16 +11,21 @@ import { OUTILS_MCP } from '../lib/mcp-outils';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
-async function mock(page: import('@playwright/test').Page) {
+async function mock(page: import('@playwright/test').Page, cles: unknown[] = [cle(['mcp:read'])]) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
-    if (url.includes('/api-keys')) return json({ keys: [] });
+    if (url.includes('/api-keys')) return json({ keys: cles });
     return json({});
   });
 }
+
+/** Une clé telle que la liste la rend. `revokedAt` non nul = elle ne peut plus rien, mais elle RESTE listée. */
+const cle = (scopes: string[], revokedAt: string | null = null) => ({
+  id: `k-${scopes.join('-')}`, name: 'test', scopes, createdAt: '2026-09-01T00:00:00.000Z', lastUsedAt: null, revokedAt,
+});
 
 test.describe('Developers : le serveur MCP', () => {
   test('🔴 la NAV y mène, et la page donne l adresse et la commande', async ({ page }) => {
@@ -45,6 +50,24 @@ test.describe('Developers : le serveur MCP', () => {
       await expect(page.getByText(o.nom, { exact: true })).toBeVisible();
     }
     await expect(page.getByText('mcp:write').first()).toBeVisible();
+  });
+
+  test('🔴 sans clé MCP, la page PRÉVIENT que la commande sera refusée', async ({ page }) => {
+    // Copier une commande qui ne peut pas marcher, c'est un aller-retour de support garanti. Une clé qui
+    // n'a QUE des droits non-MCP ne compte pas, et une clé MCP RÉVOQUÉE non plus : elle reste dans la liste.
+    await mock(page, [cle(['contacts:write']), cle(['mcp:write'], '2026-09-01T10:00:00.000Z')]);
+    await page.goto('/developers/mcp');
+    await expect(page.getByTestId('mcp-sans-cle')).toBeVisible();
+    await page.getByRole('link', { name: /Créer une clé avec/ }).click();
+    await expect(page).toHaveURL(/\/developers\/keys/);
+  });
+
+  test('🔴 avec une clé MCP vivante, aucun avertissement', async ({ page }) => {
+    // L'autre sens : un avertissement qui s'affiche tout le temps ne se lit plus.
+    await mock(page, [cle(['mcp:read'])]);
+    await page.goto('/developers/mcp');
+    await expect(page.getByText(/claude mcp add/)).toBeVisible();
+    await expect(page.getByTestId('mcp-sans-cle')).toHaveCount(0);
   });
 
   test('🔴 la page DIT ce que le serveur ne fait pas', async ({ page }) => {

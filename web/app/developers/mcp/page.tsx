@@ -1,9 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/lib/i18n';
 import { OUTILS_MCP } from '@/lib/mcp-outils';
+import { listApiKeys } from '@/lib/api';
+import type { Session } from '@/lib/session';
+
+/**
+ * L'espace a-t-il une clé UTILISABLE pour MCP ?
+ *
+ * `null` = on ne sait pas encore, ou la liste n'a pas pu être lue. Les deux se traitent pareil, et c'est
+ * volontaire : une vérification qui échoue ne doit surtout pas afficher « vous n'avez aucune clé », qui
+ * enverrait quelqu'un en créer une seconde alors qu'il en a déjà une. Ne rien dire vaut mieux que dire faux.
+ */
+type EtatCle = null | 'aucune' | 'ok';
 
 /**
  * L'écran d'où un intégrateur part : l'adresse du serveur MCP, la commande à copier, ce que chaque outil
@@ -15,14 +27,31 @@ import { OUTILS_MCP } from '@/lib/mcp-outils';
  * elle promettrait un jour un outil retiré, ou tairait un outil ajouté.
  */
 export default function McpPage() {
-  return <AppShell active="mcp">{() => <McpInner />}</AppShell>;
+  return <AppShell active="mcp">{(session) => <McpInner session={session} />}</AppShell>;
 }
 
 const CARTE = 'rounded-2xl border border-ink-200 bg-white p-5 shadow-sm';
 
-function McpInner() {
+function McpInner({ session }: { session: Session }) {
   const t = useT();
   const [copie, setCopie] = useState(false);
+  const [etatCle, setEtatCle] = useState<EtatCle>(null);
+
+  // La commande affichée ne peut pas marcher sans une clé portant un droit `mcp:*`. La copier puis se
+  // heurter à un 401 est un aller-retour de support garanti, alors que la réponse tient en une phrase.
+  useEffect(() => {
+    let vivant = true;
+    listApiKeys(session.tenantId)
+      .then(({ keys }) => {
+        if (!vivant) return;
+        // Une clé RÉVOQUÉE reste dans la liste : elle ne compte pas. Sans ce filtre, l'avertissement se
+        // tairait pour un espace dont la seule clé MCP vient justement d'être coupée.
+        const utilisable = keys.some((k) => k.revokedAt === null && k.scopes.some((s) => s.startsWith('mcp:')));
+        setEtatCle(utilisable ? 'ok' : 'aucune');
+      })
+      .catch(() => { /* on ne sait pas : on se tait, cf. EtatCle */ });
+    return () => { vivant = false; };
+  }, [session.tenantId]);
   // L'adresse suit le domaine SUR LEQUEL la console est ouverte : en local c'est localhost, en production
   // c'est mba.messagingme.app. L'écrire en dur aurait donné à un intégrateur, depuis un environnement de
   // test, une commande qui vise la production.
@@ -60,11 +89,26 @@ function McpInner() {
           </button>
         </div>
         <p className="mt-2 text-xs text-ink-400">
-          {t(
-            'Remplace VOTRE_CLE par une clé d’API portant les droits MCP. Elle se crée dans « Clés d’API », juste au-dessus.',
-            'Replace VOTRE_CLE with an API key holding the MCP scopes. Create one under "API keys", just above.',
-          )}
+          {t('Remplace VOTRE_CLE par une clé d’API portant un droit MCP.', 'Replace VOTRE_CLE with an API key holding an MCP scope.')}{' '}
+          <Link href="/developers/keys" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
+            {t('Créer une clé', 'Create a key')}
+          </Link>
         </p>
+
+        {/* L'avertissement ne s'affiche QUE sur une certitude (`aucune`). Tant qu'on ne sait pas, ou si la
+            liste n'a pas pu être lue, on se tait : annoncer « aucune clé » à quelqu'un qui en a une l'enverrait
+            en créer une seconde, et ce serait notre faute. */}
+        {etatCle === 'aucune' && (
+          <div data-testid="mcp-sans-cle" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {t(
+              'Cet espace n’a aucune clé d’API portant un droit MCP : la commande ci-dessus sera refusée telle quelle.',
+              'This workspace has no API key with an MCP scope: the command above will be rejected as is.',
+            )}{' '}
+            <Link href="/developers/keys" className="font-semibold underline underline-offset-2">
+              {t('Créer une clé avec « MCP : lire »', 'Create a key with "MCP: read"')}
+            </Link>
+          </div>
+        )}
       </div>
 
       <div className={CARTE}>
