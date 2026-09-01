@@ -12,6 +12,30 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
+## LIVRÉ ET DÉPLOYÉ dans la nuit du 2026-09-01 au 02 : les quatre items du contre-audit, puis trois de plus
+
+Julien a demandé les quatre items retenus du contre-audit d'affilée, puis « le top 3 suivant de ce qui me
+semble le plus important », sans m'arrêter. Tout est en production, chaque lot avec sa CI verte et sa
+vérification à deux sens.
+
+**Les quatre du contre-audit :** la cible de campagne en INTENTION (et le trou pré-existant de la liste vide,
+qui envoyait à tout l'espace), la reprise après un plafond Meta (avec la qualité qui ne repart JAMAIS seule),
+les SLO écrits AVANT toute mesure plus l'âge du plus vieux job, et la liste des scénarios qui ne transporte
+plus les graphes.
+
+**Les trois que j'ai choisis ensuite, par ordre de gravité réelle :**
+1. **Le tour d'avance réservé AVANT les envois** (migration 0104). Le trou le plus cher du produit : deux
+   avances concurrentes envoyaient toutes les deux, et un client recevait un message qu'il ne devait jamais
+   voir. Documenté dans le code depuis des semaines, fermé maintenant.
+2. **L'équité RENDUE VISIBLE** dans `/ops`. C'était l'angle mort que mon propre document de SLO signalait sur
+   lui-même la veille : une dette qu'on vient d'écrire se paie tout de suite.
+3. **Voir et rejouer les jobs MORTS.** Un `webhook` mort est un message de client jamais traité, et c'est
+   silencieux. On alertait, on ne pouvait rien reprendre.
+
+🔴 **Ce qui n'est PAS fait et qu'il ne faut pas croire fait** : aucun profil de banc n'a encore TOURNÉ contre
+les seuils de SLO (ils sont écrits et instrumentés, pas éprouvés) ; le grant OAuth 2.1 du MCP reste un lot à
+part ; le passage à deux workers reste bloqué par la checklist de `todo.md`.
+
 ## LIVRÉ ET DÉPLOYÉ le 2026-09-01 : le lot UX + le serveur MCP
 
 Les six points de la liste de Julien ([docs/LOT-UX-ET-MCP-2026-09-01.md](docs/LOT-UX-ET-MCP-2026-09-01.md))
