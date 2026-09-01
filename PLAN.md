@@ -489,6 +489,12 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
   tables brutes.
   ⚠️ **Le piège** : le pré-agrégat du dashboard est le seul de la liste qui crée une donnée DÉRIVÉE, donc une
   seconde source de vérité à tenir à jour. Le faire en dernier, et seulement si la mesure le justifie.
+  ➕ **Deux mesures du lot 1 à reprendre ici.** (a) Le filtre par champ perso (`fields ->> clé = valeur`) sort
+  en **Filter**, jamais en Index Cond : le GIN `contacts_fields_gin` de la migration 0032 ne sert PAS `->>`,
+  contrairement à ce que dit son commentaire. Le seul vrai correctif est de réécrire le cas d'égalité en
+  `fields @> ...`, ce qui CHANGE la sémantique dès qu'une valeur n'est pas une chaîne : à mesurer avant.
+  (b) L'index réclamé par l'audit pour le `NOT EXISTS` du funnel **ne sert à rien** (mesuré : 186 ms -> 184 ms,
+  plan inchangé) ; le coût est le recalcul complet, pas l'absence d'index.
 - **Lot 7.** `messaging_limit_tier` est récupéré, persisté et affiché, et **jamais utilisé** : ni avertissement
   au lancement, ni débit adapté, et l'UI ne distingue pas plafond, qualité de numéro, jeton invalide et échec
   métier. Plus le balayage de statut des numéros, plafonné à 200 par `order by created_at` : au-delà, un numéro

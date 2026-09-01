@@ -915,7 +915,11 @@ export function buildContactWhere(tenantId: string, f: ContactFilters): { where:
     clauses.push(`opt_in_status = ${add(f.optIn)}`);
   }
   if (f.phonePrefix && f.phonePrefix.trim() !== '') {
-    // Préfixe ANCRÉ (utilise l'index unique sur phone_e164). On garde `+` et chiffres saisis tels quels.
+    // Préfixe ANCRÉ. ⚠️ Ce commentaire affirmait qu'il « utilise l'index unique sur phone_e164 » : c'était
+    // FAUX, et mesuré tel quel sur la production le 2026-09-01 (le `like` y sortait en Filter, jamais en
+    // Index Cond). Un btree ordinaire ordonne selon la collation, pas octet par octet, donc il ne sait pas
+    // borner un préfixe. C'est `contacts_tenant_phone_prefix_idx` (migration 0096, `text_pattern_ops`) qui
+    // sert cette clause. On garde `+` et chiffres saisis tels quels.
     clauses.push(`phone_e164 like ${add(f.phonePrefix.trim() + '%')}`);
   }
   if (f.phoneContains && f.phoneContains.replace(/\D/g, '') !== '') {

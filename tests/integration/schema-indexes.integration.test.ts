@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
+import { matchWaIdPredicat } from '../../src/crm/contact-store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -39,3 +40,89 @@ describe.skipIf(!url)('index de montée en charge (migration 0042)', () => {
     }
   });
 });
+
+/**
+ * Les index des chemins chauds (migration 0096, programme II lot 1).
+ *
+ * 🔴 CE QUE CE BLOC VÉRIFIE ET QU'AUCUN AUTRE NE PEUT VÉRIFIER : qu'ils sont réellement UTILISABLES. Un index
+ * d'expression n'est choisi que si la requête écrit EXACTEMENT la même expression que l'index ; sinon il est
+ * payé à chaque écriture et jamais lu, en silence. Le test construit donc son prédicat avec le fragment
+ * partagé du code de production (`matchWaIdPredicat`), pas avec une copie : le jour où l'un des deux dérive,
+ * c'est ici que ça se voit.
+ *
+ * Les tables de CI sont vides, donc le planificateur préfèrerait un seq scan : on le lui interdit le temps
+ * d'un `explain` (`set local`, dans une transaction annulée), ce qui montre ce qu'il ferait s'il avait le
+ * choix. C'est la question posée ici, pas la vitesse.
+ */
+describe.skipIf(!url)('index des chemins chauds (migration 0096)', () => {
+  let pool: Pool;
+
+  beforeAll(() => { pool = new Pool({ connectionString: url, ssl: pgSsl() }); });
+  afterAll(async () => { await pool.end(); });
+
+  const INDEX_0096 = [
+    'contacts_tenant_waid_digits_idx',
+    'contacts_tenant_phone_prefix_idx',
+    'campaign_recipients_stale_idx',
+  ];
+
+  it('les trois index existent et sont VALIDES', async () => {
+    // `indisvalid` : un `CREATE INDEX CONCURRENTLY` interrompu laisse un index INVALIDE, que Postgres
+    // n'utilise jamais et que le `if not exists` de la migration considère pourtant comme présent. Sans ce
+    // contrôle, on croirait l'index posé alors qu'il est mort.
+    const res = await pool.query<{ nom: string; valide: boolean }>(
+      `select i.indexrelid::regclass::text as nom, i.indisvalid as valide
+         from pg_index i where i.indexrelid::regclass::text = any($1::text[])`,
+      [INDEX_0096],
+    );
+    const parNom = new Map(res.rows.map((r) => [r.nom, r.valide]));
+    for (const nom of INDEX_0096) {
+      expect(parNom.has(nom), `${nom} manquant`).toBe(true);
+      expect(parNom.get(nom), `${nom} présent mais INVALIDE (CONCURRENTLY interrompu)`).toBe(true);
+    }
+  });
+
+  it('🔴 le planificateur CHOISIT l’index d’expression pour la résolution wa_id -> contact', async () => {
+    const plan = await planDe(
+      pool,
+      `select id from contacts where tenant_id = $1 and deleted_at is null and ${matchWaIdPredicat('', '$2')}`,
+      ['00000000-0000-4000-8000-000000000000', '33600000000'],
+    );
+    expect(plan).toContain('contacts_tenant_waid_digits_idx');
+  });
+
+  it('🔴 le planificateur CHOISIT l’index text_pattern_ops pour le préfixe téléphone', async () => {
+    // Le `like` ancré ne peut PAS se servir d'un btree ordinaire hors collation C : c'est tout l'objet de
+    // l'opclass. Si quelqu'un recrée cet index sans `text_pattern_ops`, ce test le dit.
+    const plan = await planDe(
+      pool,
+      `select id from contacts where tenant_id = $1 and deleted_at is null and phone_e164 like $2`,
+      ['00000000-0000-4000-8000-000000000000', '+336%'],
+    );
+    expect(plan).toContain('contacts_tenant_phone_prefix_idx');
+  });
+
+  it('le planificateur CHOISIT l’index partiel des destinataires bloqués', async () => {
+    const plan = await planDe(
+      pool,
+      `select id from campaign_recipients where status = 'sending' and claimed_at < now() - interval '10 minutes' limit 100`,
+      [],
+    );
+    expect(plan).toContain('campaign_recipients_stale_idx');
+  });
+});
+
+/** Plan d'une requête, seq scan INTERDIT le temps d'une transaction annulée (`set local`, jamais global :
+ *  la connexion retourne au pool telle qu'elle en est sortie). */
+async function planDe(pool: Pool, sql: string, params: unknown[]): Promise<string> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query('set local enable_seqscan = off');
+    const res = await client.query<Record<string, string>>(`explain (format text) ${sql}`, params);
+    return res.rows.map((r) => Object.values(r)[0]!).join('\n');
+  } finally {
+    await client.query('rollback');
+    client.release();
+  }
+}
