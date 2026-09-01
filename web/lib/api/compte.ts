@@ -134,6 +134,20 @@ export interface TenantOverviewRow {
   phoneStatus: string | null;
   quality: string | null;
 }
+/**
+ * Le plus vieux job en attente d'UN GROUPE de file.
+ *
+ * ⚠️ Ce que `groupe` designe DEPEND de la file : l'ESPACE client pour `campaign-run` (c'est la que se lit
+ * l'equite entre clients), le CONTACT pour `webhook` (« quel contact attend le plus »). Les autres files
+ * n'ont pas de groupe et n'apparaissent pas.
+ */
+export interface QueueGroupLoadRow {
+  queue: string;
+  groupe: string;
+  backlog: number;
+  ageMaxSecondes: number;
+}
+
 export interface QueueLoadRow {
   queue: string;
   backlog: number;
@@ -161,6 +175,12 @@ export interface OpsOverview {
   tenants: TenantOverviewRow[];
   daily: DailyPoint[];
   queues: QueueLoadRow[];
+  /**
+   * Les GROUPES qui attendent le plus (equite). Vide quand rien n'attend, ce qui est l'etat normal : cette
+   * liste n'existe que pour rendre visible ce qu'une moyenne cache, un espace affame derriere un espace
+   * bavard. Optionnelle a la lecture : une API d'avant ne l'envoie pas.
+   */
+  queuesParGroupe?: QueueGroupLoadRow[];
   /** Peut être absent d'une réponse antérieure au 4.9 -> traité comme null côté page. */
   worker: WorkerHeartbeat | null;
 }

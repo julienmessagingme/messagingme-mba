@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, observerTenant, type OpsOverview, type TenantOverviewRow, type QueueLoadRow, type WorkerHeartbeat } from '@/lib/api';
+import { getOpsOverview, observerTenant, type OpsOverview, type TenantOverviewRow, type QueueLoadRow,
+  type QueueGroupLoadRow, type WorkerHeartbeat } from '@/lib/api';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
@@ -134,6 +135,7 @@ export default function OpsPage() {
             <WorkerCard worker={data.worker} />
 
             <QueueCard queues={data.queues} />
+            <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
             {dailyFrom && dailyTo && data.daily.length > 0 && (
               <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm">
@@ -195,6 +197,51 @@ function WorkerCard({ worker }: { worker: WorkerHeartbeat | null }) {
         ) : (
           <span className="text-xs text-ink-500">{t('Le worker n’a jamais signalé de vie (jamais démarré, ou table absente).', 'The worker has never reported liveness (never started, or table missing).')}</span>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ÉQUITÉ : qui attend le plus, groupe par groupe (SLO 3 de `docs/SLO-2026-09-01.md`).
+ *
+ * 🔴 Cette carte n'apparaît QUE quand quelqu'un attend, et c'est tout son intérêt : la profondeur et l'âge
+ * globaux disent « la file avance », pas « tout le monde est servi ». Un espace affamé derrière un espace
+ * bavard est parfaitement invisible d'une moyenne, et l'équité est la promesse la plus facile à trahir sans
+ * s'en apercevoir.
+ *
+ * ⚠️ Ce que « groupe » désigne dépend de la file : l'ESPACE pour `campaign-run`, le CONTACT pour `webhook`.
+ * L'écran le dit, sinon on lirait un identifiant de contact comme un identifiant de client.
+ */
+function EquiteCard({ groupes }: { groupes: QueueGroupLoadRow[] }) {
+  const t = useT();
+  const { locale } = useLocale();
+  if (groupes.length === 0) return null;
+  const SEUIL_S = 300; // 5 min : le seuil du SLO 3, au-delà duquel un client se demande si ça marche pour lui.
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="ops-equite">
+      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Qui attend le plus', 'Who is waiting longest')}</h3>
+      <p className="mb-3 text-xs text-ink-400">
+        {t(
+          'Groupe = l’espace client pour les campagnes, le contact pour les entrants. Au-delà de 5 min, l’objectif d’équité est dépassé.',
+          'Group = the workspace for campaigns, the contact for inbound. Beyond 5 min, the fairness objective is breached.',
+        )}
+      </p>
+      <div className="space-y-1.5">
+        {groupes.map((g) => (
+          <div key={`${g.queue}:${g.groupe}`} className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2 text-xs">
+            <span className="flex min-w-0 gap-2">
+              <span className="font-mono text-ink-700">{g.queue}</span>
+              <span className="truncate font-mono text-ink-400" title={g.groupe}>{g.groupe}</span>
+            </span>
+            <span className="flex shrink-0 gap-3 tabular-nums">
+              <span className="text-ink-500">{fmtNum(g.backlog, locale)} {t('en file', 'queued')}</span>
+              <span className={g.ageMaxSecondes >= SEUIL_S ? 'font-medium text-coral' : 'text-ink-500'}>
+                {g.ageMaxSecondes >= 60 ? `${Math.round(g.ageMaxSecondes / 60)} min` : `${g.ageMaxSecondes} s`}
+              </span>
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
