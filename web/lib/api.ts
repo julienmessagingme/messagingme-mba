@@ -1504,7 +1504,11 @@ export function grapheEditable(w: WorkflowSummary): WorkflowGraph {
  * introduit, et il se ferme au moment du choix.
  */
 export function estEnLigne(w: WorkflowSummary): boolean {
-  return w.graph.nodes.length > 0;
+  // Lecture DÉFENSIVE, comme partout où l'on touche une réponse d'API : ce helper est appelé depuis trois
+  // écrans qui ne demandent au scénario que son nom (automations, webhooks, inbox). Une réponse sans `graph`
+  // ferait tomber la page ENTIÈRE sur un `.nodes` d'undefined, pour un simple libellé. Vu le 2026-09-01 :
+  // 19 tests e2e des webhooks rouges d'un coup.
+  return Array.isArray(w.graph?.nodes) && w.graph.nodes.length > 0;
 }
 export function listWorkflows(tenantId: string): Promise<{ workflows: WorkflowSummary[] }> {
   return request<{ workflows: WorkflowSummary[] }>(`/tenants/${tenantId}/workflows`);
