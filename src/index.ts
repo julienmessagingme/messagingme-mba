@@ -124,7 +124,9 @@ async function main(): Promise<void> {
   const statsStore = new PgStatsStore(pool);
   // Lecture des agrégats d'analyse de conversation (Pièce 1). `enabled` = état de la feature côté serveur
   // (empty-state différencié). La lecture ne coûte rien ; l'écriture (analyse LLM) est gatée ailleurs.
-  const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true');
+  // La rétention vient du MÊME endroit que la purge du worker (`CONVERSATION_RETENTION_DAYS`) : l'écran
+  // annonce ainsi le nombre réellement appliqué, pas une valeur recopiée qui dériverait le jour où on la change.
+  const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true', config.CONVERSATION_RETENTION_DAYS);
   const settingsStore = new PgTenantSettingsStore(pool);
   const userStore = new PgUserStore(pool);
   const authTokenStore = new PgAuthTokenStore(pool);

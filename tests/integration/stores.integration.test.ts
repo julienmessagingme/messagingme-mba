@@ -506,7 +506,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
   it('PgConversationStatsStore : agrégats + liste quali (Lot 9), scopés tenant', async () => {
     const { PgConversationStatsStore } = await import('../../src/stats/conversation-stats.pg');
-    const store = new PgConversationStatsStore(pool, true);
+    const store = new PgConversationStatsStore(pool, true, 365);
     // Fenêtre large (hier..demain) : les lignes sont créées à now(), on évite tout effet de bord de fuseau.
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     const range = { from: iso(new Date(Date.now() - 86_400_000)), to: iso(new Date(Date.now() + 86_400_000)) };
@@ -517,13 +517,16 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       const mkConv = async (wa: string) => (await pool.query<{ id: string }>(`insert into conversations (tenant_id, wa_id, contact_id, last_message_at) values ($1,$2,$3, now()) returning id`, [t, wa, ct])).rows[0]!.id;
       const cv1 = await mkConv('33611111111');
       const cv2 = await mkConv('33622222222');
-      const insAna = (convId: string, sentiment: string, intent: string, resolved: boolean, handled: string, action: string, ex: number, conf: number, topic: string) =>
+      // `summary` en dernier paramètre : une des deux lignes en porte un, l'autre non. C'est ce qui permet
+      // de vérifier plus bas que la LECTURE distingue les deux, au lieu de rendre `''` pour tout le monde
+      // (auquel cas la fiche n'afficherait jamais son repli, ou ne l'afficherait que).
+      const insAna = (convId: string, sentiment: string, intent: string, resolved: boolean, handled: string, action: string, ex: number, conf: number, topic: string, summary: string | null = null) =>
         pool.query(
-          `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'test','anthropic','claude-haiku-4-5')`,
-          [convId, t, sentiment, intent, topic, resolved, handled, ex, action, conf],
+          `insert into conversation_analysis (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, action_suggestion, confidence, justification, llm_provider, llm_model, summary)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'test','anthropic','claude-haiku-4-5',$11)`,
+          [convId, t, sentiment, intent, topic, resolved, handled, ex, action, conf, summary],
         );
-      await insAna(cv1, 'positif', 'demande_devis', true, 'humain', 'creer_devis', 4, 0.92, 'Devis');
+      await insAna(cv1, 'positif', 'demande_devis', true, 'humain', 'creer_devis', 4, 0.92, 'Devis', 'Le client veut 50 licences.');
       await insAna(cv2, 'negatif', 'reclamation', false, 'automatise', 'escalader', 2, 0.6, ' devis ');
 
       const s = await store.getSummary(t, range);
@@ -542,10 +545,29 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(s.topTopics).toEqual([{ topic: 'devis', count: 2 }]);
       expect(s.confidence).toMatchObject({ gte90: 1, from50to70: 1 });
 
+      // La rétention voyage AVEC les agrégats : c'est ce qui permet à l'écran de dire pourquoi une période
+      // ancienne rend moins de lignes que prévu, sans recopier la valeur côté front.
+      expect(s.retentionDays).toBe(365);
+
       // Liste quali : filtre par sentiment, join contacts (profile_name), inboxHref.
       const list = await store.listAnalyzed(t, range, { sentiment: 'positif' });
       expect(list).toHaveLength(1);
       expect(list[0]).toMatchObject({ conversationId: cv1, sentiment: 'positif', profileName: 'Alice', inboxHref: `/inbox?c=${cv1}` });
+      // 🔴 Le résumé et les infos relevées remontent bien de la base, et une analyse SANS résumé rend
+      // `null`, pas une chaîne vide : la fiche de conversation affiche son repli sur cette distinction.
+      expect(list[0]!.summary).toBe('Le client veut 50 licences.');
+      expect(list[0]!.entities).toEqual({});
+      const sansResume = (await store.listAnalyzed(t, range, { sentiment: 'negatif' }))[0]!;
+      expect(sansResume.summary).toBeNull();
+
+      // 🔴 Filtre par SUJET : la normalisation `lower(btrim(...))` s'applique DES DEUX CÔTÉS. Les deux
+      // lignes portent « Devis » et « devis » (avec des espaces) ; le regroupement des sujets fréquents les
+      // compte déjà ensemble, donc cliquer la pastille doit ramener les deux. Une comparaison brute n'en
+      // ramènerait qu'une, et la pastille annoncerait 2 pour en montrer 1.
+      const parSujet = await store.listAnalyzed(t, range, { topic: 'DEVIS' });
+      expect(parSujet.map((r) => r.conversationId).sort()).toEqual([cv1, cv2].sort());
+      // Et l'autre sens : un sujet qui n'existe pas ne ramène rien (le filtre filtre vraiment).
+      expect(await store.listAnalyzed(t, range, { topic: 'sujet inexistant' })).toHaveLength(0);
 
       // SCOPE TENANT : le tenant principal ne voit RIEN de ce jeu (aucune fuite).
       const other = await store.getSummary(tenantId, range);

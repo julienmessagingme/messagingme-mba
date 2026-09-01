@@ -64,6 +64,21 @@ describe('engine — parseLlmOutput', () => {
   it('enum hors liste -> null', () => {
     expect(parseLlmOutput(JSON.stringify({ ...valid, sentiment: 'euphorique' }))).toBeNull();
   });
+  it('🔴 summary ABSENT -> analyse valide quand même, et le champ reste indéfini', () => {
+    // Le résumé (migration 0100) est arrivé après coup, comme `abusive` avant lui : un modèle qui l'omet
+    // ne doit pas faire perdre TOUTE l'analyse, qui coûte un appel LLM. Et son absence doit rester
+    // DISTINGUABLE d'un résumé vide, parce que la fiche de conversation ne dit pas la même chose des deux.
+    const sortie = parseLlmOutput(JSON.stringify(valid));
+    expect(sortie).not.toBeNull();
+    expect(sortie?.summary).toBeUndefined();
+  });
+  it('summary présent -> conservé ; summary trop long -> analyse refusée', () => {
+    expect(parseLlmOutput(JSON.stringify({ ...valid, summary: 'Le client veut 50 licences.' }))?.summary)
+      .toBe('Le client veut 50 licences.');
+    // Borne haute : un modèle qui recrache le transcript entier remplirait la colonne de bruit, et la
+    // fiche deviendrait illisible. Mieux vaut refuser et rejouer que stocker ça.
+    expect(parseLlmOutput(JSON.stringify({ ...valid, summary: 'x'.repeat(801) }))).toBeNull();
+  });
   it('champ manquant -> null', () => {
     const { confidence, ...rest } = valid;
     void confidence;

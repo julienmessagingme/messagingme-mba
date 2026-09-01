@@ -17,6 +17,14 @@ const TZ = STATS_TZ;
 export interface ConversationAnalysisSummary {
   /** Feature d'analyse active côté serveur (config). Distingue « inactif » de « aucune donnée ». */
   enabled: boolean;
+  /**
+   * Combien de jours une conversation reste consultable (`CONVERSATION_RETENTION_DAYS`, purge du worker).
+   *
+   * Remonté avec les agrégats, comme `enabled`, et pour la même raison : l'écran doit pouvoir DIRE pourquoi
+   * une plage ancienne rend moins de lignes que prévu. Sans cette phrase, un export plus court que la
+   * période demandée passe pour un bug, et c'est le genre de doute qui coûte un aller-retour de support.
+   */
+  retentionDays: number;
   total: number;
   sentiment: { positif: number; neutre: number; negatif: number };
   intent: { demande_devis: number; sav: number; reclamation: number; information: number; prise_rdv: number; autre: number };
@@ -32,6 +40,13 @@ export interface AnalyzedConversationsFilter {
   sentiment?: string;
   intent?: string;
   action?: string;
+  /**
+   * Sujet, en texte libre : c'est le LLM qui l'écrit, il n'y a donc pas d'énumération à valider. La
+   * comparaison se fait sur `lower(btrim(...))` DES DEUX CÔTÉS, exactement comme le regroupement des sujets
+   * fréquents : sans ça, cliquer une pastille « retard de livraison » ne ramènerait pas les lignes écrites
+   * « Retard de livraison ». La valeur part en paramètre lié, jamais dans le texte de la requête.
+   */
+  topic?: string;
   limit?: number;
 }
 
@@ -50,12 +65,18 @@ export interface AnalyzedConversationRow {
   exchangesCount: number;
   analyzedAt: string; // ISO (conversation_analysis.created_at)
   inboxHref: string; // /inbox?c=<conversationId>
+  /** Ce qui s'est DIT (migration 0100). `null` pour les analyses d'avant : l'écran l'annonce au lieu de
+   *  laisser un blanc, et ne le remplace jamais par `justification`, qui répond à une autre question. */
+  summary: string | null;
+  /** Infos extraites par l'analyse (produit, budget, quantité...). Déjà stockées, jamais montrées avant :
+   *  c'est la fiche de conversation qui leur donne enfin un endroit où servir. */
+  entities: Record<string, unknown>;
 }
 
 /** `enabled` injecté (= config.CONVERSATION_ANALYSIS_ENABLED === 'true') : la lecture d'agrégats ne coûte rien,
  *  mais on remonte l'état de la feature pour un empty-state différencié. */
 export class PgConversationStatsStore {
-  constructor(private readonly pool: Pool, private readonly enabled: boolean) {}
+  constructor(private readonly pool: Pool, private readonly enabled: boolean, private readonly retentionDays: number) {}
 
   async getSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary> {
     const { from, to } = range;
@@ -123,6 +144,7 @@ export class PgConversationStatsStore {
     const resolved = Number(r.resolved);
     return {
       enabled: this.enabled,
+      retentionDays: this.retentionDays,
       total,
       sentiment: { positif: Number(r.s_pos), neutre: Number(r.s_neu), negatif: Number(r.s_neg) },
       intent: {
@@ -145,16 +167,21 @@ export class PgConversationStatsStore {
    *  (profile_name), lien inbox `/inbox?c=<id>`. Filtres validés côté route (enum), passés en $ nullable. */
   async listAnalyzed(tenantId: string, range: DateRange, filters: AnalyzedConversationsFilter): Promise<AnalyzedConversationRow[]> {
     const { from, to } = range;
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+    // Plafond relevé à 1000 (il était de 200) : c'est cette liste que l'écran exporte en CSV, et un export
+    // silencieusement tronqué à 200 lignes est pire qu'un export refusé, parce que rien ne le signale. Le
+    // plafond reste, lui, parce qu'une plage d'un an sans borne rendrait tout l'historique d'un coup.
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 1000);
     const res = await this.pool.query<{
       conversation_id: string; wa_id: string; profile_name: string | null;
       sentiment: string; intent: string; topic: string; resolved: boolean; action_suggestion: string;
       confidence: number; justification: string; handled_by: string; exchanges_count: number; created_at: Date;
+      summary: string | null; entities: Record<string, unknown> | null;
     }>(
       `with ${BOUNDS_CTE}
        select ca.conversation_id, c.wa_id, ct.profile_name,
               ca.sentiment, ca.intent, ca.topic, ca.resolved, ca.action_suggestion,
-              ca.confidence, ca.justification, ca.handled_by, ca.exchanges_count, ca.created_at
+              ca.confidence, ca.justification, ca.handled_by, ca.exchanges_count, ca.created_at,
+              ca.summary, ca.entities
        from conversation_analysis ca
          join conversations c on c.id = ca.conversation_id
          left join contacts ct on ct.id = c.contact_id, bounds b
@@ -162,9 +189,13 @@ export class PgConversationStatsStore {
          and ($5::text is null or ca.sentiment = $5::text)
          and ($6::text is null or ca.intent = $6::text)
          and ($7::text is null or ca.action_suggestion = $7::text)
+         -- Même normalisation des DEUX côtés que le regroupement des sujets fréquents de getSummary, sinon
+         -- cliquer une pastille ne ramènerait pas les lignes de casse différente qu'elle a pourtant comptées.
+         and ($8::text is null or lower(btrim(ca.topic)) = $8::text)
        order by ca.created_at desc
-       limit $8`,
-      [tenantId, from, to, TZ, filters.sentiment ?? null, filters.intent ?? null, filters.action ?? null, limit],
+       limit $9`,
+      [tenantId, from, to, TZ, filters.sentiment ?? null, filters.intent ?? null, filters.action ?? null,
+        filters.topic !== undefined ? filters.topic.trim().toLowerCase() : null, limit],
     );
     return res.rows.map((r) => ({
       conversationId: r.conversation_id,
@@ -181,6 +212,8 @@ export class PgConversationStatsStore {
       exchangesCount: r.exchanges_count,
       analyzedAt: r.created_at.toISOString(),
       inboxHref: `/inbox?c=${r.conversation_id}`,
+      summary: r.summary,
+      entities: r.entities ?? {},
     }));
   }
 }

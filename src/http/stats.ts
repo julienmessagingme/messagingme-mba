@@ -17,6 +17,17 @@ const INTENTS = new Set(['demande_devis', 'sav', 'reclamation', 'information', '
 const ACTIONS = new Set(['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune']);
 const inSet = (s: Set<string>, v: unknown): string | undefined => (typeof v === 'string' && s.has(v) ? v : undefined);
 
+/**
+ * Le filtre par SUJET. Contrairement aux trois autres, il n'a pas d'énumération : le sujet est écrit par le
+ * LLM en texte libre (`topic` est un `text` en base, borné à 120 caractères par le schéma de sortie).
+ *
+ * On borne donc la longueur à cette même limite, plutôt que de laisser passer une chaîne de n'importe quelle
+ * taille jusqu'à la base : un filtre plus long que ce qu'une colonne peut contenir ne peut de toute façon
+ * rien ramener. `undefined` (pas de filtre) pour tout le reste, y compris la chaîne vide.
+ */
+const topicValide = (v: unknown): string | undefined =>
+  (typeof v === 'string' && v.trim() !== '' && v.trim().length <= 120 ? v.trim() : undefined);
+
 export interface StatsRouteDeps {
   getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
   /** Volume par template envoyé (dropdown dashboard). */
@@ -137,7 +148,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
     return reply.code(200).send(await deps.getConversationSummary(tenant, r.range));
   });
 
-  // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&limit= (enums valides seulement).
+  // Liste quali des conversations analysées, filtrable ?sentiment=&intent=&action=&topic=&limit=.
   app.get('/tenants/:tenantId/stats/conversations/list', guard, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
@@ -149,6 +160,10 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, requir
       ...(inSet(SENTIMENTS, q.sentiment) ? { sentiment: inSet(SENTIMENTS, q.sentiment) } : {}),
       ...(inSet(INTENTS, q.intent) ? { intent: inSet(INTENTS, q.intent) } : {}),
       ...(inSet(ACTIONS, q.action) ? { action: inSet(ACTIONS, q.action) } : {}),
+      // Le sujet est du TEXTE LIBRE (le LLM l'écrit) : il n'y a pas d'énumération à valider, donc on borne
+      // ce qu'on peut borner, la longueur, et on laisse le paramètre lié faire le reste. Une chaîne vide
+      // vaut « pas de filtre » et n'est pas transmise, sinon elle ne ramènerait jamais rien.
+      ...(topicValide(q.topic) ? { topic: topicValide(q.topic) } : {}),
       ...(limit !== undefined ? { limit } : {}),
     };
     return reply.code(200).send({ conversations: await deps.listAnalyzedConversations(tenant, r.range, filters) });

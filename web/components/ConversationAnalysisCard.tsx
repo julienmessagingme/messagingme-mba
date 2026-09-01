@@ -13,6 +13,20 @@ import { fmtNum, fmtPct } from '@/lib/format';
 import { formatDate, hourMin } from '@/lib/day';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
+import { Modale } from './Modale';
+import { BoutonPdf } from './BoutonPdf';
+import { toCsv, downloadCsv } from '@/lib/csv';
+import { entetesQuali, ligneQuali } from '@/lib/quali-export';
+
+/**
+ * Plafond de lignes ramenées quand on ouvre une liste pour l'exporter.
+ *
+ * Le tableau de détail en montre 50, ce qui suffit à se faire une idée. Un export, lui, doit couvrir la
+ * période : sortir 50 lignes d'une période qui en compte 400 produirait un fichier faux SANS le dire, et
+ * c'est précisément ce qu'on ne veut pas d'un export. 1000 est le plafond que la route accepte ; au-delà,
+ * l'écran prévient plutôt que de tronquer en silence.
+ */
+const PLAFOND_EXPORT = 1000;
 
 /** Traducteur au point d'appel (cf. i18n.tsx). Réutilisé par les helpers de libellé. */
 type Tr = (fr: string, en?: string) => string;
@@ -75,16 +89,29 @@ function Counter({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Barre horizontale (patron des barres inline de CampaignFunnelCard) : label + piste + valeur à droite. */
-function Bar({ label, pct, value, cls }: { label: string; pct: number; value: string; cls: string }) {
-  return (
-    <div className="flex items-center gap-3">
+/**
+ * Barre horizontale (patron des barres inline de CampaignFunnelCard) : label + piste + valeur à droite.
+ *
+ * `onClick` la rend CLIQUABLE : c'est ce qui ouvre la liste des conversations derrière un chiffre. Une barre
+ * dont le compte vaut zéro n'est jamais cliquable, même si `onClick` est fourni : ouvrir une fenêtre vide
+ * ferait croire à une panne. Le curseur et le soulignement disent que le chiffre mène quelque part, sinon
+ * personne ne pense à cliquer un nombre.
+ */
+function Bar({ label, pct, value, cls, onClick, titre }: { label: string; pct: number; value: string; cls: string; onClick?: () => void; titre?: string }) {
+  const corps = (
+    <>
       <div className="w-32 shrink-0 truncate text-xs text-ink-600" title={label}>{label}</div>
       <div className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
         <div className={`h-full rounded-md ${cls}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="w-10 shrink-0 text-right text-xs tabular-nums text-ink-500">{value}</div>
-    </div>
+      <div className={`w-10 shrink-0 text-right text-xs tabular-nums ${onClick ? 'font-medium text-brand-600 underline decoration-dotted underline-offset-2' : 'text-ink-500'}`}>{value}</div>
+    </>
+  );
+  if (!onClick) return <div className="flex items-center gap-3">{corps}</div>;
+  return (
+    <button type="button" onClick={onClick} title={titre} className="flex w-full items-center gap-3 rounded-md text-left transition hover:bg-ink-50">
+      {corps}
+    </button>
   );
 }
 
@@ -134,7 +161,13 @@ function SentimentDonut({ summary, locale, t }: { summary: ConversationAnalysisS
 }
 
 /** Bloc quanti : compteurs, donut sentiment, barres intention/action, split humain vs automatisé, top topics. */
-function QuantiBlock({ summary }: { summary: ConversationAnalysisSummary }) {
+function QuantiBlock({ summary, sujet, onSujet, onAction }: {
+  summary: ConversationAnalysisSummary;
+  /** Sujet actuellement retenu (partagé avec la table du dessous), `null` = aucun. */
+  sujet: string | null;
+  onSujet: (sujet: string | null) => void;
+  onAction: (action: string) => void;
+}) {
   const t = useT();
   const { locale } = useLocale();
 
@@ -181,9 +214,20 @@ function QuantiBlock({ summary }: { summary: ConversationAnalysisSummary }) {
 
       <div>
         <div className={SECTION_LABEL}>{t('Action suggérée (pipeline)', 'Suggested action (pipeline)')}</div>
-        <div className="space-y-2">
+        {/* Le chiffre d'une action OUVRE la liste des conversations concernées. C'était la demande de
+            Julien : le tableau disait « 12 devis à créer » sans dire lesquels, donc le chiffre ne menait à
+            aucun geste. Une action à zéro n'ouvre rien : une fenêtre vide se lit comme une panne. */}
+        <div className="space-y-2" data-testid="quali-actions">
           {actions.map((a) => (
-            <Bar key={a.key} label={a.label} pct={Math.round((a.value / actionMax) * 100)} value={fmtNum(a.value, locale)} cls="bg-violet" />
+            <Bar
+              key={a.key}
+              label={a.label}
+              pct={Math.round((a.value / actionMax) * 100)}
+              value={fmtNum(a.value, locale)}
+              cls="bg-violet"
+              titre={t('Voir les conversations concernées', 'See the matching conversations')}
+              {...(a.value > 0 ? { onClick: () => onAction(a.key) } : {})}
+            />
           ))}
         </div>
       </div>
@@ -205,13 +249,30 @@ function QuantiBlock({ summary }: { summary: ConversationAnalysisSummary }) {
       {topics.length > 0 && (
         <div>
           <div className={SECTION_LABEL}>{t('Sujets fréquents', 'Frequent topics')}</div>
+          {/* Chaque sujet est une BASCULE sur la table de détail : cliquer restreint, recliquer le même
+              relâche. Une bascule et non une sélection multiple, parce qu'une conversation n'a qu'UN sujet :
+              en retenir deux ne pourrait rien ramener, et l'écran promettrait un filtre qui ne marche pas. */}
           <div className="flex flex-wrap gap-2">
-            {topics.map((tp) => (
-              <span key={tp.topic} className="inline-flex items-center gap-1.5 rounded-full bg-ink-50 px-2.5 py-1 text-xs">
-                <span className="text-ink-700">{tp.topic}</span>
-                <span className="tabular-nums text-ink-400">{fmtNum(tp.count, locale)}</span>
-              </span>
-            ))}
+            {topics.map((tp) => {
+              const retenu = sujet === tp.topic;
+              return (
+                <button
+                  key={tp.topic}
+                  type="button"
+                  data-testid={`quali-sujet-${tp.topic}`}
+                  aria-pressed={retenu}
+                  onClick={() => onSujet(retenu ? null : tp.topic)}
+                  title={retenu ? t('Retirer ce filtre', 'Remove this filter') : t('Ne garder que ce sujet', 'Keep only this topic')}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition ${
+                    retenu ? 'bg-brand-500 text-white' : 'bg-ink-50 hover:bg-ink-100'
+                  }`}
+                >
+                  <span className={retenu ? '' : 'text-ink-700'}>{tp.topic}</span>
+                  <span className={`tabular-nums ${retenu ? 'text-white/80' : 'text-ink-400'}`}>{fmtNum(tp.count, locale)}</span>
+                  {retenu && <span aria-hidden="true">×</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -219,16 +280,222 @@ function QuantiBlock({ summary }: { summary: ConversationAnalysisSummary }) {
   );
 }
 
-/** Table quali (fetch séparé, filtrable) : 50 conversations analysées, ligne cliquable vers l'inbox. */
-function QualiTable({ tenantId, range }: { tenantId: string; range: StatsRange }) {
+/** Bouton d'export CSV d'une liste de conversations. Le même partout : un seul jeu de colonnes (`quali-export`). */
+function BoutonCsv({ rows, nom }: { rows: AnalyzedConversation[]; nom: string }) {
+  const t = useT();
+  const libelles = {
+    sentiment: (v: string) => sentimentLabel(v, t),
+    intent: (v: string) => intentLabel(v, t),
+    action: (v: string) => actionLabel(v, t),
+  };
+  return (
+    <button
+      type="button"
+      disabled={rows.length === 0}
+      data-testid={`csv-${nom}`}
+      onClick={() => downloadCsv(`${nom}.csv`, toCsv(entetesQuali(t), rows.map((c) => ligneQuali(c, t, libelles))))}
+      title={t('Exporter cette liste en CSV', 'Export this list to CSV')}
+      className="sans-impression shrink-0 rounded-md border border-ink-200 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-ink-400 transition hover:border-ink-300 hover:bg-ink-50 hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      CSV
+    </button>
+  );
+}
+
+/**
+ * La FICHE d'une conversation : tout ce que le tableau montre, plus le résumé, plus les infos extraites.
+ *
+ * Elle remplace le saut direct vers l'inbox. Julien : « au lieu de t'envoyer sur la conversation dans Inbox,
+ * je veux que ça ouvre une pop-up ». La raison tient à ce que faisait l'ancien geste : le tableau ne montre
+ * qu'une justification tronquée, et pour la lire en entier il fallait quitter l'analytics et perdre ses
+ * filtres. Le bouton vers l'inbox reste, en bas, comme une décision et non comme un effet de bord d'un clic.
+ */
+function FicheConversation({ c, onClose }: { c: AnalyzedConversation; onClose: () => void }) {
   const t = useT();
   const { locale } = useLocale();
   const router = useRouter();
+  const entites = Object.entries(c.entities ?? {});
+  const champ = (label: string, valeur: React.ReactNode) => (
+    <div>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{label}</div>
+      <div className="text-sm text-ink-800">{valeur}</div>
+    </div>
+  );
+  return (
+    <Modale
+      titre={c.profileName ?? c.waId}
+      sousTitre={`${formatDate(c.analyzedAt, locale, { day: '2-digit', month: '2-digit', year: 'numeric' })} ${hourMin(c.analyzedAt, locale)} · ${c.waId}`}
+      onClose={onClose}
+    >
+      <div className="space-y-4" data-testid="fiche-conversation">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Résumé de la conversation', 'Conversation summary')}</div>
+          {/* Repli ASSUMÉ et NOMMÉ. Les analyses d'avant la migration 0100 n'ont pas de résumé, et
+              afficher `justification` à la place serait un mensonge discret : elle explique le classement,
+              pas ce qui s'est dit. Mieux vaut dire qu'il n'y en a pas. */}
+          {c.summary && c.summary.trim() !== '' ? (
+            <p className="mt-0.5 whitespace-pre-line text-sm text-ink-700" data-testid="fiche-resume">{c.summary}</p>
+          ) : (
+            <p className="mt-0.5 text-sm italic text-ink-400" data-testid="fiche-resume-absent">
+              {t(
+                'Pas de résumé : cette conversation a été analysée avant que le résumé n’existe.',
+                'No summary: this conversation was analyzed before summaries existed.',
+              )}
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 border-t border-ink-100 pt-3 sm:grid-cols-3">
+          {champ(t('Sentiment', 'Sentiment'), (
+            <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${sentimentBadge(c.sentiment)}`}>{sentimentLabel(c.sentiment, t)}</span>
+          ))}
+          {champ(t('Intention', 'Intent'), intentLabel(c.intent, t))}
+          {champ(t('Sujet', 'Topic'), c.topic)}
+          {champ(t('Résolu', 'Resolved'), c.resolved ? t('Oui', 'Yes') : t('Non', 'No'))}
+          {champ(t('Action suggérée', 'Suggested action'), actionLabel(c.actionSuggestion, t))}
+          {champ(t('Confiance', 'Confidence'), `${Math.round(c.confidence * 100)} %`)}
+          {champ(t('Qui a géré', 'Handled by'), c.handledBy === 'humain' ? t('Humain', 'Human') : c.handledBy === 'mba' ? 'MBA' : t('Automatisé', 'Automated'))}
+          {champ(t('Échanges', 'Exchanges'), fmtNum(c.exchangesCount, locale))}
+        </div>
+
+        <div className="border-t border-ink-100 pt-3">
+          {champ(t('Justification de l’action', 'Action rationale'), <span className="text-ink-600">{c.justification}</span>)}
+        </div>
+
+        {entites.length > 0 && (
+          <div className="border-t border-ink-100 pt-3">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{t('Infos relevées', 'Extracted details')}</div>
+            <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+              {entites.map(([cle, valeur]) => (
+                <div key={cle}>
+                  <dt className="text-[11px] text-ink-400">{cle}</dt>
+                  <dd className="text-ink-800">{typeof valeur === 'object' ? JSON.stringify(valeur) : String(valeur)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+
+        <div className="sans-impression flex justify-end border-t border-ink-100 pt-3">
+          <button
+            type="button"
+            data-testid="fiche-vers-inbox"
+            onClick={() => router.push(c.inboxHref)}
+            className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-600"
+          >
+            {t('Ouvrir la conversation dans l’inbox', 'Open the conversation in the inbox')}
+          </button>
+        </div>
+      </div>
+    </Modale>
+  );
+}
+
+/**
+ * La liste des conversations derrière un chiffre d'action suggérée.
+ *
+ * Elle charge sa propre liste plutôt que de filtrer celle du tableau : le tableau n'en tient que 50, et une
+ * fenêtre qui annoncerait « 120 conversations » pour n'en montrer que 50 mentirait sur son propre titre.
+ */
+function ListeParAction({ tenantId, range, action, onClose }: {
+  tenantId: string; range: StatsRange; action: string; onClose: () => void;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const router = useRouter();
+  const [rows, setRows] = useState<AnalyzedConversation[] | null>(null);
+  const [erreur, setErreur] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    setRows(null);
+    setErreur(false);
+    listAnalyzedConversations(tenantId, range, { action, limit: PLAFOND_EXPORT })
+      .then((r) => { if (vivant) setRows(r.conversations); })
+      .catch(() => { if (vivant) { setRows([]); setErreur(true); } });
+    return () => { vivant = false; };
+  }, [tenantId, range.from, range.to, action]);
+
+  return (
+    <Modale
+      titre={actionLabel(action, t)}
+      sousTitre={rows === null ? t('Chargement…', 'Loading…') : t(`${rows.length} conversation(s)`, `${rows.length} conversation(s)`)}
+      taille="large"
+      onClose={onClose}
+      actions={rows && rows.length > 0 ? (
+        <>
+          <BoutonCsv rows={rows} nom={`conversations-${action}`} />
+          <BoutonPdf zone="quali-liste-action" />
+        </>
+      ) : undefined}
+    >
+      <div id="quali-liste-action">
+        {erreur ? (
+          <p className="text-sm text-red-700">{t('Liste indisponible pour le moment.', 'List unavailable right now.')}</p>
+        ) : rows === null ? (
+          <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-ink-500">{t('Aucune conversation ne correspond.', 'No conversation matches.')}</p>
+        ) : (
+          <>
+            {rows.length === PLAFOND_EXPORT && (
+              // Dire la troncature plutôt que la subir : un export de 1000 lignes exactement est suspect,
+              // et sans cette phrase personne ne saurait qu'il en manque.
+              <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {t(`Liste limitée aux ${PLAFOND_EXPORT} plus récentes. Réduis la période pour tout voir.`, `List capped at the ${PLAFOND_EXPORT} most recent. Narrow the period to see them all.`)}
+              </p>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-xs">
+                <thead>
+                  <tr className="border-b border-ink-100 text-ink-400">
+                    <th className="whitespace-nowrap px-2 py-2 font-medium">{t('Date', 'Date')}</th>
+                    <th className="px-2 py-2 font-medium">{t('Contact', 'Contact')}</th>
+                    <th className="px-2 py-2 font-medium">{t('Sujet', 'Topic')}</th>
+                    <th className="px-2 py-2 font-medium">{t('Sentiment', 'Sentiment')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr
+                      key={r.conversationId}
+                      data-testid="liste-action-ligne"
+                      onClick={() => router.push(r.inboxHref)}
+                      className="cursor-pointer border-b border-ink-50 hover:bg-ink-50"
+                      title={t('Ouvrir dans l’inbox', 'Open in the inbox')}
+                    >
+                      <td className="whitespace-nowrap px-2 py-2 text-ink-500">
+                        {formatDate(r.analyzedAt, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })} {hourMin(r.analyzedAt, locale)}
+                      </td>
+                      <td className="px-2 py-2 font-medium text-ink-800">{r.profileName ?? r.waId}</td>
+                      <td className="px-2 py-2 text-ink-600">{r.topic}</td>
+                      <td className="px-2 py-2">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${sentimentBadge(r.sentiment)}`}>{sentimentLabel(r.sentiment, t)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </Modale>
+  );
+}
+
+/** Table quali (fetch séparé, filtrable) : 50 conversations analysées, ligne cliquable vers sa fiche. */
+function QualiTable({ tenantId, range, sujet, onSujet }: {
+  tenantId: string; range: StatsRange; sujet: string | null; onSujet: (sujet: string | null) => void;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
   const [sentiment, setSentiment] = useState('');
   const [intent, setIntent] = useState('');
   const [action, setAction] = useState('');
   const [rows, setRows] = useState<AnalyzedConversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fiche, setFiche] = useState<AnalyzedConversation | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -237,19 +504,22 @@ function QualiTable({ tenantId, range }: { tenantId: string; range: StatsRange }
       ...(sentiment ? { sentiment } : {}),
       ...(intent ? { intent } : {}),
       ...(action ? { action } : {}),
+      // Le sujet vient des pastilles du bloc du dessus : c'est le SERVEUR qui filtre, pas un tri en mémoire
+      // sur les 50 lignes déjà chargées, qui aurait donné une liste plus courte que la réalité.
+      ...(sujet ? { topic: sujet } : {}),
       limit: 50,
     })
       .then((r) => { if (alive) setRows(r.conversations); })
       .catch(() => { if (alive) setRows([]); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [tenantId, range.from, range.to, sentiment, intent, action]);
+  }, [tenantId, range.from, range.to, sentiment, intent, action, sujet]);
 
   const th = 'px-2 py-2 font-medium whitespace-nowrap';
   const td = 'px-2 py-2 align-top';
 
   return (
-    <div className="mt-6 border-t border-ink-100 pt-5">
+    <div className="mt-6 border-t border-ink-100 pt-5" id="quali-detail">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="mr-auto text-xs font-medium uppercase tracking-wide text-ink-400">{t('Détail des conversations', 'Conversation details')}</div>
         <select value={sentiment} onChange={(e) => setSentiment(e.target.value)} className={SELECT}>
@@ -264,7 +534,25 @@ function QualiTable({ tenantId, range }: { tenantId: string; range: StatsRange }
           <option value="">{t('Action : toutes', 'Action: all')}</option>
           {ACTIONS.map((a) => <option key={a} value={a}>{actionLabel(a, t)}</option>)}
         </select>
+        <BoutonCsv rows={rows} nom="conversations-analysees" />
+        <BoutonPdf zone="quali-detail" />
       </div>
+
+      {/* Le sujet est choisi dans les pastilles, plus haut : sans ce rappel ici, on lit une table filtrée
+          sans voir pourquoi, et on croit à des données manquantes. */}
+      {sujet && (
+        <div className="sans-impression mb-2 flex items-center gap-2 text-xs">
+          <span className="text-ink-500">{t('Sujet :', 'Topic:')}</span>
+          <button
+            type="button"
+            data-testid="quali-sujet-retirer"
+            onClick={() => onSujet(null)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-brand-500 px-2.5 py-1 text-white transition hover:bg-brand-600"
+          >
+            {sujet}<span aria-hidden="true">×</span>
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
@@ -292,7 +580,8 @@ function QualiTable({ tenantId, range }: { tenantId: string; range: StatsRange }
                 return (
                   <tr
                     key={r.conversationId}
-                    onClick={() => router.push(r.inboxHref)}
+                    data-testid="quali-ligne"
+                    onClick={() => setFiche(r)}
                     className="cursor-pointer border-b border-ink-50 hover:bg-ink-50"
                   >
                     <td className={`${td} whitespace-nowrap text-ink-500`}>
@@ -317,6 +606,8 @@ function QualiTable({ tenantId, range }: { tenantId: string; range: StatsRange }
           </table>
         </div>
       )}
+
+      {fiche && <FicheConversation c={fiche} onClose={() => setFiche(null)} />}
     </div>
   );
 }
@@ -326,6 +617,10 @@ export function ConversationAnalysisCard({ tenantId, range }: { tenantId: string
   const t = useT();
   const [summary, setSummary] = useState<ConversationAnalysisSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  // Le sujet retenu vit ICI et pas dans la table : il se CHOISIT dans les pastilles du bloc quanti et
+  // s'APPLIQUE à la table du dessous. Deux états séparés se seraient désynchronisés au premier oubli.
+  const [sujet, setSujet] = useState<string | null>(null);
+  const [actionOuverte, setActionOuverte] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -336,6 +631,10 @@ export function ConversationAnalysisCard({ tenantId, range }: { tenantId: string
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [tenantId, range.from, range.to]);
+
+  // Changer de période relâche le sujet : une pastille retenue sur l'ancienne période peut ne plus exister
+  // dans la nouvelle, et la table serait alors vide sans que rien ne l'explique.
+  useEffect(() => { setSujet(null); }, [range.from, range.to]);
 
   return (
     <div className={CARD}>
@@ -354,8 +653,32 @@ export function ConversationAnalysisCard({ tenantId, range }: { tenantId: string
         </p>
       ) : (
         <>
-          <QuantiBlock summary={summary} />
-          <QualiTable tenantId={tenantId} range={range} />
+          <QuantiBlock summary={summary} sujet={sujet} onSujet={setSujet} onAction={setActionOuverte} />
+          <QualiTable tenantId={tenantId} range={range} sujet={sujet} onSujet={setSujet} />
+          {/* La rétention, DITE. Sans cette ligne, une période qui remonte au-delà d'un an rend moins de
+              conversations que prévu et l'écran passe pour cassé. Le nombre vient du serveur (la même
+              variable que la purge), il ne peut donc pas dériver de ce qui est réellement appliqué.
+
+              🔴 ZÉRO ne veut PAS dire « zéro jour » : c'est la valeur qui DÉSACTIVE la purge
+              (`CONVERSATION_RETENTION_DAYS` dans `config.ts`, et `purgeConversationsOlderThan` qui rend 0
+              sans rien effacer). Écrire « conservées 0 jours, au-delà elles ne sont plus consultables »
+              dirait exactement l'inverse de ce que fait le serveur. */}
+          {summary.retentionDays !== undefined && (
+            <p className="mt-4 text-[11px] text-ink-400">
+              {summary.retentionDays > 0
+                ? t(
+                  `Les conversations et leurs analyses sont conservées ${summary.retentionDays} jours. Au-delà, elles ne sont plus consultables ni exportables.`,
+                  `Conversations and their analyses are kept for ${summary.retentionDays} days. Beyond that, they can no longer be viewed or exported.`,
+                )
+                : t(
+                  'Les conversations et leurs analyses sont conservées sans limite de durée : la purge est désactivée sur cet espace.',
+                  'Conversations and their analyses are kept indefinitely: the purge is disabled on this workspace.',
+                )}
+            </p>
+          )}
+          {actionOuverte && (
+            <ListeParAction tenantId={tenantId} range={range} action={actionOuverte} onClose={() => setActionOuverte(null)} />
+          )}
         </>
       )}
     </div>

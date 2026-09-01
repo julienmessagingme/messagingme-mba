@@ -51,9 +51,9 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0099** (`conversation_messages.origin`, d'où vient un message sortant),
+**Dernière appliquée : 0100** (`conversation_analysis.summary`, le résumé de conversation),
 passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0100.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+`migrate`, vérification en base). **Prochaine libre = 0101.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
@@ -63,6 +63,10 @@ migration est rejouée depuis le début, donc chaque instruction doit être idem
 une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
 les deux sens de la règle sur les fichiers réels.
 
+⚠️ **0100 est BLOQUANTE** (chaque analyse écrit `summary`), donc migrée AVANT le déploiement. Sa colonne
+reste vide pour les analyses d'avant, et elle le restera : reconstruire un résumé voudrait dire rappeler le
+LLM sur tout l'historique. La fiche de conversation le DIT au lieu d'afficher `justification` à la place,
+qui explique le classement et pas le contenu.
 ⚠️ **0099 est BLOQUANTE** (les quatre chemins d'envoi écrivent `origin` à chaque message sortant), donc migrée
 AVANT le déploiement. Sa colonne est volontairement NULLABLE : un `not null` aurait fait échouer une insertion
 sur le chemin chaud le jour d'un oubli d'appelant. La garde contre l'oubli est ailleurs, là où elle ne coûte

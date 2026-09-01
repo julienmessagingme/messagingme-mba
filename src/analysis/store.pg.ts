@@ -106,18 +106,20 @@ export class PgConversationAnalysisStore {
       await client.query(
         `insert into conversation_analysis
            (conversation_id, tenant_id, sentiment, intent, topic, resolved, handled_by, exchanges_count, entities,
-            action_suggestion, confidence, justification, llm_provider, llm_model, abusive)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15)
+            action_suggestion, confidence, justification, llm_provider, llm_model, abusive, summary)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16)
          on conflict (conversation_id) do update set
            tenant_id = excluded.tenant_id, sentiment = excluded.sentiment, intent = excluded.intent,
            topic = excluded.topic, resolved = excluded.resolved, handled_by = excluded.handled_by,
            exchanges_count = excluded.exchanges_count, entities = excluded.entities,
            action_suggestion = excluded.action_suggestion, confidence = excluded.confidence,
            justification = excluded.justification, llm_provider = excluded.llm_provider, llm_model = excluded.llm_model,
-           abusive = excluded.abusive, created_at = now()`,
+           abusive = excluded.abusive, summary = excluded.summary, created_at = now()`,
+        // `summary` : une chaîne vide vaut absence. Le modèle peut rendre le champ vide plutôt que de
+        // l'omettre, et un résumé vide affiché comme un résumé serait pire qu'un repli assumé.
         [conversationId, tenantId, a.sentiment, a.intent, a.topic, a.resolved, a.handled_by, a.exchanges_count,
           JSON.stringify(a.entities), a.action_suggestion, a.confidence, a.justification, model.provider, model.model,
-          a.abusive === true],
+          a.abusive === true, a.summary !== undefined && a.summary.trim() !== '' ? a.summary : null],
       );
       await client.query(
         `update conversations set

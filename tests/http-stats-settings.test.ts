@@ -4,6 +4,7 @@ import { FakeQueue } from '../src/queue/fake';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { StatsRouteDeps } from '../src/http/stats';
+import type { AnalyzedConversationsFilter } from '../src/stats/conversation-stats.pg';
 import type { SettingsRouteDeps } from '../src/http/settings';
 
 const SECRET = 'test-secret';
@@ -32,7 +33,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
     getErrorBreakdown: async () => [{ code: 131049, count: 4, templateName: 'promo' }, { code: 131047, count: 2, templateName: null }],
     getCostSeries: async () => ({ marketing: [{ date: '2026-07-09', count: 0.57 }], utility: [], total: 0.57, hasRates: true, currency: 'EUR' }),
     getConversationSummary: async () => ({
-      enabled: true, total: 3,
+      enabled: true, retentionDays: 365, total: 3,
       sentiment: { positif: 1, neutre: 1, negatif: 1 },
       intent: { demande_devis: 2, sav: 1, reclamation: 0, information: 0, prise_rdv: 0, autre: 0 },
       resolution: { resolved: 2, unresolved: 1, rate: 2 / 3 },
@@ -43,7 +44,7 @@ function app(over: { stats?: Partial<StatsRouteDeps>; settings?: Partial<Setting
       confidence: { lt50: 0, from50to70: 1, from70to90: 1, gte90: 1 },
     }),
     listAnalyzedConversations: async (_t, _r, f) => [
-      { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1' },
+      { conversationId: 'cv1', waId: '33600', profileName: 'Julie', sentiment: f.sentiment ?? 'positif', intent: 'demande_devis', topic: 'devis', resolved: true, actionSuggestion: 'creer_devis', confidence: 0.9, justification: 'demande un devis', handledBy: 'humain', exchangesCount: 3, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: 'Le client demande un devis pour 50 unites.', entities: { quantite: 50 } },
     ],
     ...over.stats,
   };
@@ -96,7 +97,7 @@ describe('stats route', () => {
 
   it('GET /stats/conversations/list -> quali + filtres enum valides seulement, inboxHref', async () => {
     const captured: unknown[] = [];
-    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1' }]; } } });
+    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return [{ conversationId: 'cv1', waId: '33600', profileName: null, sentiment: 'negatif', intent: 'sav', topic: 't', resolved: false, actionSuggestion: 'escalader', confidence: 0.6, justification: 'j', handledBy: 'automatise', exchangesCount: 5, analyzedAt: '2026-07-17T10:00:00.000Z', inboxHref: '/inbox?c=cv1', summary: null, entities: {} }]; } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=negatif&intent=sav&action=escalader&limit=25&junk=xxx', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ conversations: Array<{ inboxHref: string }> }>().conversations[0]?.inboxHref).toBe('/inbox?c=cv1');
@@ -105,6 +106,30 @@ describe('stats route', () => {
     const bad = await a.inject({ method: 'GET', url: '/tenants/t1/stats/conversations/list?days=30&sentiment=PIRATE&action=drop', ...h(adminTok) });
     expect(bad.statusCode).toBe(200);
     expect(captured[1]).toEqual({}); // aucune valeur d'enum valide -> aucun filtre
+    await a.close();
+  });
+
+  it('🔴 le filtre par SUJET passe au store, borné en longueur, et une chaîne vide ne filtre pas', async () => {
+    // Le sujet est du texte libre (écrit par le LLM), donc pas d'énumération à opposer : ce qui protège
+    // ici, c'est le paramètre lié côté store plus cette borne de longueur. Les deux sens comptent : un
+    // sujet légitime doit ARRIVER au store, une chaîne vide ne doit PAS devenir un filtre qui ne ramène
+    // jamais rien, et un sujet absurdement long ne doit pas descendre jusqu'à la base.
+    const captured: AnalyzedConversationsFilter[] = [];
+    const a = app({ stats: { listAnalyzedConversations: async (_t, _r, f) => { captured.push(f); return []; } } });
+    const url = (q: string) => `/tenants/t1/stats/conversations/list?days=30&${q}`;
+
+    expect((await a.inject({ method: 'GET', url: url('topic=retard%20de%20livraison'), ...h(adminTok) })).statusCode).toBe(200);
+    expect(captured[0]).toEqual({ topic: 'retard de livraison' });
+
+    await a.inject({ method: 'GET', url: url('topic='), ...h(adminTok) });
+    expect(captured[1]).toEqual({});
+
+    await a.inject({ method: 'GET', url: url(`topic=${'x'.repeat(121)}`), ...h(adminTok) });
+    expect(captured[2]).toEqual({});
+
+    // Exactement la borne : accepté. Sinon la borne refuserait un sujet que la base sait stocker.
+    await a.inject({ method: 'GET', url: url(`topic=${'x'.repeat(120)}`), ...h(adminTok) });
+    expect(captured[3]).toEqual({ topic: 'x'.repeat(120) });
     await a.close();
   });
 

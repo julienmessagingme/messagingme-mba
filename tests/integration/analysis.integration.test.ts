@@ -109,6 +109,33 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     expect(Number(cnt)).toBe(1);
   });
 
+  it('🔴 save : le RÉSUMÉ fait l’aller-retour, et une absence reste NULL (migration 0100)', async () => {
+    // Aller-retour contre une vraie base : c'est le seul test qui prouve que la colonne existe, que le
+    // paramètre tombe dans la BONNE colonne de l'INSERT (elle a été ajoutée en 16e position d'une liste
+    // déjà longue) et que l'upsert la remplace. Un test unitaire sur une fausse `pool` ne verrait rien de
+    // tout ça, et l'écran afficherait « pas de résumé » sur des analyses qui en ont un.
+    const store = new PgConversationAnalysisStore(pool);
+    const conv = await insertConv('33600100099', { status: 'queued' });
+    const base: ConversationAnalysis = {
+      sentiment: 'neutre', intent: 'information', topic: 'facture', resolved: true, entities: {},
+      action_suggestion: 'aucune', confidence: 0.7, justification: 'question réglée', handled_by: 'automatise', exchanges_count: 2, abusive: false,
+    };
+    const lire = async (): Promise<string | null> =>
+      (await pool.query<{ summary: string | null }>(`select summary from conversation_analysis where conversation_id = $1`, [conv])).rows[0]!.summary;
+
+    await store.save(conv, tenantId, { ...base, summary: 'Le client demande sa facture, elle lui a été renvoyée.' }, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    expect(await lire()).toBe('Le client demande sa facture, elle lui a été renvoyée.');
+
+    // Un modèle qui ne rend pas de résumé laisse NULL, pas une chaîne vide : la fiche ne dit pas la même
+    // chose des deux, et un « » affiché comme un résumé serait pire qu'un repli assumé.
+    await store.save(conv, tenantId, base, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    expect(await lire()).toBeNull();
+
+    // Et un résumé fait QUE d'espaces vaut aussi absence : c'est la même règle, posée à l'écriture.
+    await store.save(conv, tenantId, { ...base, summary: '   ' }, { provider: 'anthropic', model: 'm' }, new Date().toISOString());
+    expect(await lire()).toBeNull();
+  });
+
   it('save : un message postérieur à la borne repasse la conversation en pending (course d\'analyse)', async () => {
     const store = new PgConversationAnalysisStore(pool);
     const conv = await insertConv('33600100035', { status: 'queued' });

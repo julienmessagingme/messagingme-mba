@@ -163,6 +163,12 @@ export function getTemplateStats(tenantId: string, range?: StatsRange): Promise<
 export interface ConversationAnalysisSummary {
   /** Feature d'analyse active côté serveur (empty-state différencié : inactif vs aucune donnée). */
   enabled: boolean;
+  /**
+   * Combien de jours une conversation reste consultable (purge du worker). Optionnel a la lecture : une API
+   * plus ancienne que ce champ ne l'envoie pas, et l'ecran tait alors la phrase plutot que d'annoncer une
+   * duree inventee.
+   */
+  retentionDays?: number;
   total: number;
   sentiment: { positif: number; neutre: number; negatif: number };
   intent: { demande_devis: number; sav: number; reclamation: number; information: number; prise_rdv: number; autre: number };
@@ -189,6 +195,13 @@ export interface AnalyzedConversation {
   analyzedAt: string;
   /** Lien vers le fil dans l'inbox (/inbox?c=<conversationId>). */
   inboxHref: string;
+  /**
+   * Ce qui s'est DIT, ecrit par l'analyse (migration 0100). `null` pour les analyses d'avant : la fiche
+   * l'annonce, et ne le remplace JAMAIS par `justification`, qui explique le classement et pas le contenu.
+   */
+  summary?: string | null;
+  /** Infos extraites par l'analyse (produit, budget, quantite...). `{}` si rien. */
+  entities?: Record<string, unknown>;
 }
 export function getConversationAnalysisSummary(tenantId: string, range?: StatsRange): Promise<ConversationAnalysisSummary> {
   return request<ConversationAnalysisSummary>(`/tenants/${tenantId}/stats/conversations${rangeQuery(range)}`);
@@ -196,12 +209,13 @@ export function getConversationAnalysisSummary(tenantId: string, range?: StatsRa
 export function listAnalyzedConversations(
   tenantId: string,
   range?: StatsRange,
-  filters?: { sentiment?: string; intent?: string; action?: string; limit?: number },
+  filters?: { sentiment?: string; intent?: string; action?: string; topic?: string; limit?: number },
 ): Promise<{ conversations: AnalyzedConversation[] }> {
   const parts: string[] = [];
   if (filters?.sentiment) parts.push(`sentiment=${encodeURIComponent(filters.sentiment)}`);
   if (filters?.intent) parts.push(`intent=${encodeURIComponent(filters.intent)}`);
   if (filters?.action) parts.push(`action=${encodeURIComponent(filters.action)}`);
+  if (filters?.topic) parts.push(`topic=${encodeURIComponent(filters.topic)}`);
   if (filters?.limit != null) parts.push(`limit=${filters.limit}`);
   const base = rangeQuery(range);
   const extra = parts.length ? (base ? `&${parts.join('&')}` : `?${parts.join('&')}`) : '';

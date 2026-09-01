@@ -21,6 +21,16 @@ export const llmOutputSchema = z.object({
   confidence: z.number().min(0).max(1),
   justification: z.string().trim().min(1).max(2000),
   /**
+   * Ce qui s'est DIT, en deux ou trois phrases. À ne pas confondre avec `justification`, qui explique le
+   * classement : un lecteur qui ouvre la fiche d'une conversation veut d'abord savoir de quoi elle parlait,
+   * pas pourquoi le modèle a proposé de rappeler.
+   *
+   * `.optional()` et non `.default('')` : un modèle qui l'omet ne doit pas invalider toute l'analyse (même
+   * raison que `abusive`), et l'absence doit rester DISTINGUABLE d'un résumé vide, parce que l'écran ne dit
+   * pas la même chose dans les deux cas. Les analyses d'avant la migration 0100 n'en ont pas.
+   */
+  summary: z.string().trim().max(800).optional(),
+  /**
    * Le CLIENT a-t-il été injurieux ou agressif envers l'entreprise ?
    *
    * `.default(false)` volontaire : le champ est arrivé après coup, et un modèle qui l'omet ne doit pas
