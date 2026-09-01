@@ -30,6 +30,7 @@ import {
   runCampaign,
   listTemplates,
   listWorkflows,
+  getWorkflow,
   listUserFields,
   listTags,
   listRcsAgents,
@@ -418,9 +419,21 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     if (id === '') return;
     const wf = workflows.find((w) => w.id === id);
     if (!wf) return;
+    // 🔴 Le GRAPHE est chargé ICI, à la demande, et plus dans la liste. La liste n'en porte plus : elle
+    // renvoyait deux graphes complets par scénario pour afficher des noms. Un aller-retour au moment où
+    // l'opérateur CHOISIT son scénario est très largement préférable à N graphes à chaque ouverture d'écran.
+    let graphe = wf.graph;
+    if (!graphe) {
+      try {
+        graphe = (await getWorkflow(tenantId, id)).workflow.graph;
+      } catch {
+        setWfError(t('Ce scénario n’a pas pu être lu. Réessaie.', 'This scenario could not be read. Try again.'));
+        return;
+      }
+    }
     // Le template à paramétrer est celui qui OUVRE, pas forcément le bloc d'entrée : un tag ou une action
     // peuvent le précéder sans rien envoyer. Chercher sur l'entrée rendrait '' et perdrait le mapping.
-    const entry = firstTemplateOf(wf.graph);
+    const entry = graphe ? firstTemplateOf(graphe) : null;
     const tplName = entry ? String(entry.data.templateName ?? '').trim() : '';
     if (!entry || tplName === '') {
       setWfError(t("Ce scénario n'ouvre pas par un envoi de template : il ne peut pas partir en campagne.", 'This scenario does not open by sending a template: it cannot run as a campaign.'));
@@ -1415,7 +1428,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
               <select value={workflowId} onChange={(e) => { void chooseWorkflow(e.target.value); }} className={inputCls}>
                 <option value="">{t('Choisir un scénario…', 'Choose a scenario…')}</option>
                 {workflows.map((w) => (
-                  <option key={w.id} value={w.id}>{w.name} ({w.graph.nodes.length} {w.graph.nodes.length > 1 ? t('blocs', 'blocks') : t('bloc', 'block')})</option>
+                  <option key={w.id} value={w.id}>{w.name} ({w.nodeCount ?? 0} {(w.nodeCount ?? 0) > 1 ? t('blocs', 'blocks') : t('bloc', 'block')})</option>
                 ))}
               </select>
             )}

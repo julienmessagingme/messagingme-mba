@@ -952,6 +952,8 @@ async function main(): Promise<void> {
       createWorkflow: (tenant, name, graph) => workflowStore.insert(tenant, name, graph),
       tenantCode: (tenant) => resolveTenantCode(pool, tenant),
       listWorkflows: (tenant) => workflowStore.list(tenant),
+      // Le navigateur reçoit le RÉSUMÉ : plus aucun graphe ne traverse le réseau pour afficher des noms.
+      listWorkflowsResume: (tenant) => workflowStore.listResume(tenant),
       getWorkflow: (id, tenant) => workflowStore.getById(id, tenant),
       updateWorkflow: (id, tenant, patch) => workflowStore.update(id, tenant, patch),
       // Bouton « Publier » (lot 7) : le SEUL chemin qui touche le graphe exécuté.

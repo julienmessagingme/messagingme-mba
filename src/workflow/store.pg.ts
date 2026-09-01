@@ -2,6 +2,41 @@ import type { Pool } from 'pg';
 import type { WorkflowGraph } from './graph';
 import { makeCode } from '../ids/code';
 import { resolveTenantCode } from '../ids/tenant-code';
+import { scanOpening } from './engine';
+
+/**
+ * Le scénario peut-il OUVRIR une campagne ? Miroir exact de la règle de l'écran
+ * (`web/lib/campaign-eligibility.ts`), calculé côté serveur pour que la liste n'ait plus à envoyer les
+ * graphes au navigateur. Les deux s'appuient sur le même `scanOpening`, dont la parité est déjà gardée par
+ * `tests/web-campaign-eligibility.test.ts`.
+ *
+ * Une campagne part sur une audience FROIDE : hors fenêtre de 24 h, seul un template (ou un bloc RCS, qui ne
+ * passe pas par WhatsApp) peut ouvrir.
+ */
+function campagneOuvrable(graph: WorkflowGraph): boolean {
+  const scan = scanOpening(graph);
+  if (scan.sessionOpen || scan.waitBeforeTemplate || scan.ambiguousTemplate || scan.unnamedOpeningTemplate) return false;
+  if (scan.rcsOpen) return true;
+  if (!scan.firstTemplate) return false;
+  return String(scan.firstTemplate.data.templateName ?? '').trim() !== '';
+}
+
+/**
+ * Une ligne de la liste des scénarios, SANS les graphes. Ce que les écrans lisaient réellement du graphe est
+ * devenu trois champs : combien de blocs, y a-t-il un brouillon, peut-il ouvrir une campagne.
+ */
+export interface WorkflowResumeRow {
+  id: string;
+  tenantId: string;
+  name: string;
+  code: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+  nodeCount: number;
+  hasDraft: boolean;
+  campaignEligible: boolean;
+}
 
 export interface WorkflowRow {
   id: string;
@@ -65,6 +100,61 @@ export class PgWorkflowStore {
       [tenantId, name, JSON.stringify(graph), code],
     );
     return { id: res.rows[0]!.id };
+  }
+
+  /**
+   * La liste RÉSUMÉE, pour les écrans : jamais les graphes.
+   *
+   * 🔴 `list()` renvoie DEUX graphes complets par ligne (le publié et le brouillon), pour des écrans qui
+   * n'affichent qu'un nom. Constat du contre-audit du 2026-09-01. Avec quelques dizaines de scénarios c'est
+   * indolore ; avec des centaines de graphes riches, chaque écran paie le transfert et l'analyse de tous les
+   * JSON pour rendre une colonne de libellés.
+   *
+   * Ce que les écrans faisaient RÉELLEMENT du graphe, et qui devient un champ : compter les blocs, savoir
+   * s'il existe un brouillon, savoir si le scénario peut ouvrir une campagne. Les deux premiers se calculent
+   * en SQL, sans transporter le graphe. L'éligibilité, elle, demande un parcours du graphe : elle est donc
+   * calculée ICI, avec `scanOpening`, la MÊME fonction que la garde de création de campagne. La lire côté
+   * navigateur obligeait à lui envoyer le graphe entier.
+   *
+   * ⚠️ Ce que ça ne fait PAS : la base envoie toujours le graphe à l'application (l'éligibilité en a besoin).
+   * Ce qui disparaît est le trajet application -> navigateur et l'analyse JSON côté client, c'est-à-dire ce
+   * que les écrans paient vraiment. Supprimer aussi la lecture en base demanderait de dénormaliser le nombre
+   * de blocs et l'éligibilité en colonnes tenues à l'écriture, avec le risque de péremption que ça implique :
+   * à faire le jour où la lecture pèse, pas avant.
+   *
+   * `list()` reste inchangée : la résolution d'un scénario ou d'un bloc par code (`/v1/sends`) a réellement
+   * besoin des graphes.
+   */
+  async listResume(tenantId: string): Promise<WorkflowResumeRow[]> {
+    const res = await this.pool.query<{
+      id: string; tenant_id: string; name: string; code: string | null;
+      created_at: Date; updated_at: Date; published_at: Date | null;
+      node_count: number; has_draft: boolean; graph: WorkflowGraph;
+    }>(
+      // `jsonb_array_length` et `is not null` se calculent DANS Postgres : ces deux-là ne transportent rien.
+      // `coalesce(...,'[]')` : un graphe sans `nodes` (ligne ancienne) ne doit pas faire échouer la requête
+      // entière pour tous les scénarios de l'espace.
+      `select id, tenant_id, name, code, created_at, updated_at, published_at,
+              jsonb_array_length(coalesce(graph->'nodes', '[]'::jsonb)) as node_count,
+              (draft_graph is not null) as has_draft,
+              graph
+         from workflows where tenant_id = $1 order by created_at desc`,
+      [tenantId],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      tenantId: r.tenant_id,
+      name: r.name,
+      code: r.code,
+      createdAt: r.created_at.toISOString(),
+      updatedAt: r.updated_at.toISOString(),
+      publishedAt: r.published_at ? r.published_at.toISOString() : null,
+      nodeCount: r.node_count,
+      hasDraft: r.has_draft,
+      // MÊME fonction que la garde serveur de création de campagne : l'écran ne peut donc pas proposer un
+      // scénario que la création refusera, ni cacher un scénario qu'elle accepterait.
+      campaignEligible: campagneOuvrable(r.graph),
+    }));
   }
 
   async list(tenantId: string): Promise<WorkflowRow[]> {

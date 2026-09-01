@@ -252,7 +252,7 @@ function WorkflowsInner({ session }: { session: Session }) {
                     {/* Un brouillon en attente se voit DEPUIS LA LISTE : sans ça, un scénario modifié mais
                         jamais publié aurait l'air en ligne, et c'est précisément l'erreur que le bouton
                         « Publier » peut faire commettre. */}
-                    {w.draftGraph && (
+                    {(w.hasDraft ?? Boolean(w.draftGraph)) && (
                       <div className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800" data-testid={`workflow-brouillon-${w.id}`}>
                         {t('brouillon non publié', 'unpublished draft')}
                       </div>
@@ -260,7 +260,7 @@ function WorkflowsInner({ session }: { session: Session }) {
                   </td>
                   {/* Le nombre de blocs de ce que l'auteur ÉDITE (brouillon s'il existe) : la liste sert à
                       retrouver son travail, pas à auditer la production. */}
-                  <td className="px-5 py-3 text-ink-500">{grapheEditable(w).nodes.length}</td>
+                  <td className="px-5 py-3 text-ink-500">{w.nodeCount ?? grapheEditable(w).nodes.length}</td>
                   <td className="whitespace-nowrap px-5 py-3 text-ink-500">{createdLabel(w.createdAt)}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">

@@ -84,7 +84,9 @@ export function useCampagneReferences(tenantId: string, onErreur: (message: stri
         // Le sélecteur ne propose QUE les scénarios lançables en broadcast (ce qui OUVRE = un template
         // configuré). Un scénario peut légitimement démarrer autrement (formulaire, message rapide) : il
         // reste valide, mais réservé aux déclenchements en fenêtre garantie, donc hors campagne.
-        setWorkflows(w.workflows.filter((x) => isCampaignEligible(x.graph)));
+        // L'éligibilité vient du SERVEUR (même règle que la garde de création). Repli sur le calcul local tant
+        // qu'une API d'avant ne l'envoie pas : deux conteneurs ne redémarrent pas à la même seconde.
+        setWorkflows(w.workflows.filter((x) => x.campaignEligible ?? (x.graph ? isCampaignEligible(x.graph) : false)));
         setWorkflowsTotal(w.workflows.length);
         setUserFields(uf.fields);
         setTags(tg.tags);

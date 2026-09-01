@@ -147,10 +147,27 @@ export interface WorkflowSummary {
   name: string;
   /** Code public « scn_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
   code?: string | null;
-  /** Le graphe EN LIGNE : celui que les contacts parcourent. Ne change que sur « Publier ». */
-  graph: WorkflowGraph;
-  /** Le brouillon en attente. null = aucun, ce qui est en ligne est aussi ce qui est édité. */
+  /**
+   * Le graphe EN LIGNE : celui que les contacts parcourent. Ne change que sur « Publier ».
+   *
+   * ⚠️ ABSENT de la LISTE depuis le 2026-09-01, et c'est voulu : elle renvoyait deux graphes complets par
+   * ligne pour des écrans qui n'affichent qu'un nom. Il n'est présent que sur `getWorkflow(id)`, que
+   * l'écran d'édition appelle déjà à l'ouverture. Ce que les écrans en tiraient est devenu `nodeCount`,
+   * `hasDraft` et `campaignEligible`.
+   */
+  graph?: WorkflowGraph;
+  /** Le brouillon en attente. null = aucun, ce qui est en ligne est aussi ce qui est édité. Absent de la
+   *  liste, comme `graph` : c'est `hasDraft` qui le remplace. */
   draftGraph?: WorkflowGraph | null;
+  /** Nombre de blocs. Rendu par la LISTE (calculé en base), absent du détail. */
+  nodeCount?: number;
+  /** Un brouillon attend-il d'être publié ? Rendu par la LISTE, absent du détail (`draftGraph` y répond). */
+  hasDraft?: boolean;
+  /**
+   * Le scénario peut-il ouvrir une CAMPAGNE ? Rendu par la LISTE, calculé côté serveur avec la MÊME règle
+   * que la garde de création : l'écran ne peut donc pas proposer un scénario que la création refuserait.
+   */
+  campaignEligible?: boolean;
   /** Dernière mise en ligne. null = jamais publié (scénario neuf, ou antérieur au bouton). */
   publishedAt?: string | null;
   createdAt: string;
@@ -158,7 +175,10 @@ export interface WorkflowSummary {
 }
 /** Ce que l'éditeur OUVRE : le brouillon s'il existe, sinon la version en ligne (miroir de `grapheEditable`). */
 export function grapheEditable(w: WorkflowSummary): WorkflowGraph {
-  return w.draftGraph ?? w.graph;
+  // ⚠️ À n'appeler QUE sur un scénario venu de `getWorkflow(id)`. La LISTE ne porte plus de graphe, et un
+  // repli sur un graphe vide est plus honnête qu'un plantage : l'écran d'édition, seul appelant, charge
+  // toujours le détail avant d'ouvrir.
+  return w.draftGraph ?? w.graph ?? { nodes: [], edges: [] };
 }
 /**
  * Ce scénario a-t-il quelque chose EN LIGNE ? Un scénario jamais publié n'a pas de version publiée, donc
@@ -170,6 +190,8 @@ export function grapheEditable(w: WorkflowSummary): WorkflowGraph {
  * introduit, et il se ferme au moment du choix.
  */
 export function estEnLigne(w: WorkflowSummary): boolean {
+  // La LISTE ne porte plus de graphe : elle donne le nombre de blocs, calculé en base. On le lit d'abord.
+  if (typeof w.nodeCount === 'number') return w.nodeCount > 0;
   // Lecture DÉFENSIVE, comme partout où l'on touche une réponse d'API : ce helper est appelé depuis trois
   // écrans qui ne demandent au scénario que son nom (automations, webhooks, inbox). Une réponse sans `graph`
   // ferait tomber la page ENTIÈRE sur un `.nodes` d'undefined, pour un simple libellé. Vu le 2026-09-01 :

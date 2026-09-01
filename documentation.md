@@ -2058,6 +2058,41 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : la liste des scénarios ne transporte plus les graphes
+
+Dernier constat du contre-audit. `PgWorkflowStore.list` renvoie **deux graphes complets par ligne** (le publié
+et le brouillon, tous deux dans `COLS`) à des écrans qui n'affichent qu'un nom : la page Scénarios, la liste
+des blocs, le sélecteur de campagne, l'inbox, les automations, les webhooks. Avec quelques dizaines de
+scénarios c'est indolore ; avec des centaines de graphes riches, chaque écran paie le transfert et l'analyse
+de tous les JSON.
+
+Ce que les écrans TIRAIENT réellement du graphe se résume à trois choses, qui deviennent trois champs :
+`nodeCount`, `hasDraft`, `campaignEligible`. Les deux premiers se calculent en SQL sans rien transporter ; le
+troisième demande un parcours du graphe, et il est donc calculé côté serveur avec `scanOpening`, **la même
+fonction que la garde de création de campagne** (parité déjà gardée par `tests/web-campaign-eligibility.test.ts`).
+L'écran ne peut donc plus proposer un scénario que la création refuserait.
+
+⚠️ **`list()` n'a PAS changé**, et c'est délibéré : la résolution d'un scénario ou d'un bloc par code
+(`/v1/sends`) a réellement besoin des graphes. C'est `listResume()` qui sert le navigateur.
+
+⚠️ **Ce que ça ne fait pas.** La base envoie toujours le graphe à l'application, puisque l'éligibilité en a
+besoin. Ce qui disparaît est le trajet application vers navigateur et l'analyse JSON côté client, c'est-à-dire
+ce que les écrans paient vraiment. Aller plus loin demanderait de dénormaliser le nombre de blocs et
+l'éligibilité en colonnes tenues à l'écriture, avec le risque de péremption que ça implique : à faire le jour
+où la lecture en base pèse, pas avant.
+
+### Les deux endroits qui avaient VRAIMENT besoin du graphe
+
+L'écran d'édition appelait déjà `GET /workflows/:id` à l'ouverture : rien à changer. Le formulaire de campagne,
+lui, cherche le template d'ouverture à paramétrer : il charge désormais le graphe **au moment où l'opérateur
+choisit son scénario**. Un aller-retour à ce moment-là est très largement préférable à N graphes à chaque
+ouverture d'écran.
+
+Chaque lecture côté client garde un repli sur l'ancien calcul (`campaignEligible ?? isCampaignEligible(graph)`)
+: deux conteneurs ne redémarrent pas à la même seconde, et le temps d'un déploiement le front neuf peut
+interroger l'API d'avant.
+
+---
 ## DEPLOYE le 2026-09-01 : la reprise après un plafond Meta (migration 0103)
 
 Troisième constat du contre-audit. Sur un plafond, le moteur rendait déjà le destinataire à la file et mettait

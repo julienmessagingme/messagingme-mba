@@ -870,7 +870,9 @@ function ScenarioSendPanel({
         const res = await listWorkflows(session.tenantId);
         if (!alive) return;
         setTotal(res.workflows.length);
-        setWorkflows(windowOpen ? res.workflows : res.workflows.filter((w) => isCampaignEligible(w.graph)));
+        // L'éligibilité vient désormais du SERVEUR (même règle que la garde de création). Repli sur le calcul
+        // local tant qu'une API d'avant ne l'envoie pas : deux conteneurs ne redémarrent pas à la même seconde.
+        setWorkflows(windowOpen ? res.workflows : res.workflows.filter((w) => w.campaignEligible ?? (w.graph ? isCampaignEligible(w.graph) : false)));
       } catch (err) {
         if (alive) setError(err instanceof Error ? err.message : t('Scénarios indisponibles', 'Scenarios unavailable'));
       }

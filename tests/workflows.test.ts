@@ -365,3 +365,37 @@ describe('POST /tenants/:t/workflows/:id/publish', () => {
     await s2.close();
   });
 });
+
+
+describe('GET /workflows : le RÉSUMÉ, jamais les graphes', () => {
+  it('🔴 la liste ne transporte AUCUN graphe quand le résumé est câblé', async () => {
+    // 🔴 Constat du contre-audit du 2026-09-01 : la liste renvoyait DEUX graphes complets par ligne (le
+    // publié et le brouillon) pour des écrans qui n'affichent qu'un nom. Avec des centaines de scénarios,
+    // chaque écran paie le transfert et l'analyse de tous les JSON. Ce que les écrans en tiraient devient
+    // trois champs, et le graphe complet reste sur `GET /workflows/:id`.
+    const { server } = app({
+      listWorkflowsResume: async () => [{
+        id: W1, tenantId: 't1', name: 'Onboarding', code: 'scn_k7m2p3_x',
+        createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', publishedAt: null,
+        nodeCount: 4, hasDraft: true, campaignEligible: true,
+      }],
+    });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    const [w] = res.json<{ workflows: Array<Record<string, unknown>> }>().workflows;
+    expect(w).toMatchObject({ nodeCount: 4, hasDraft: true, campaignEligible: true });
+    // La preuve qui compte : aucun graphe dans la charge utile.
+    expect(w).not.toHaveProperty('graph');
+    expect(w).not.toHaveProperty('draftGraph');
+    await server.close();
+  });
+
+  it('sans résumé câblé, la route retombe sur l’ancien comportement', async () => {
+    // Rétro-compatibilité assumée : une instance qui ne câble pas le résumé continue de servir les graphes,
+    // et rien ne casse. C'est ce qui permet aux câblages de test de ne rien changer.
+    const { server } = app({});
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/workflows', ...h(adminTok) });
+    expect(res.json<{ workflows: Array<Record<string, unknown>> }>().workflows[0]).toHaveProperty('graph');
+    await server.close();
+  });
+});

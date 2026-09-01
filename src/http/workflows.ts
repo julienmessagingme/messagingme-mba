@@ -4,6 +4,7 @@ import type { Guard } from '../auth/middleware';
 import { parseGraph, isWorkflowNodeType } from '../workflow/graph';
 import type { WorkflowGraph } from '../workflow/graph';
 import type { WorkflowRow, MajScenario } from '../workflow/store.pg';
+import type { WorkflowResumeRow } from '../workflow/store.pg';
 import { mintNodeCodes } from '../workflow/node-codes';
 import { collectNodes } from '../workflow/node-list';
 import { newTestToken, waMeTestLink } from '../workflow/test-token';
@@ -29,6 +30,14 @@ export interface WorkflowRouteDeps {
   /** Code client racine (tenants.public_code, self-heal) : sert à minter les codes publics des nodes au save. */
   tenantCode(tenantId: string): Promise<string>;
   listWorkflows(tenantId: string): Promise<WorkflowRow[]>;
+  /**
+   * La liste RÉSUMÉE servie au navigateur : jamais les graphes, mais le nombre de blocs, l'existence d'un
+   * brouillon et l'éligibilité en campagne, qui sont les trois seules choses que les écrans en tiraient.
+   *
+   * Optionnelle : absente, la route retombe sur `listWorkflows` (comportement d'avant, graphes compris).
+   * C'est ce qui permet aux câblages de test de ne rien changer.
+   */
+  listWorkflowsResume?(tenantId: string): Promise<WorkflowResumeRow[]>;
   getWorkflow(id: string, tenantId: string): Promise<WorkflowRow | null>;
   updateWorkflow(id: string, tenantId: string, patch: { name?: string; graph?: WorkflowGraph }): Promise<MajScenario>;
   /** Met le brouillon EN LIGNE. Rend la ligne à jour, null si le scénario n'est pas au tenant. Absent ->
@@ -122,6 +131,11 @@ export function registerWorkflows(app: FastifyInstance, deps: WorkflowRouteDeps,
   app.get('/tenants/:tenantId/workflows', opts, async (req, reply) => {
     const tenant = scopeTenant(req);
     if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    // 🔴 Le RÉSUMÉ, pas les graphes. La liste renvoyait DEUX graphes complets par ligne (le publié et le
+    // brouillon) pour des écrans qui n'affichent qu'un nom : avec des centaines de scénarios, chaque écran
+    // paie le transfert et l'analyse de tous les JSON. Le graphe complet reste sur `GET /workflows/:id`,
+    // que l'écran d'édition appelle déjà à l'ouverture.
+    if (deps.listWorkflowsResume) return reply.code(200).send({ workflows: await deps.listWorkflowsResume(tenant) });
     return reply.code(200).send({ workflows: await deps.listWorkflows(tenant) });
   });
 

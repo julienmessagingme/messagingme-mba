@@ -53,7 +53,13 @@ La moitie du correctif ne coute presque rien : `BulkTarget` EXISTE deja dans le 
 (`{ filters, excludeIds } | { ids }`), il suffit d'envoyer l'INTENTION de selection et de la resoudre dans
 la transaction. Le decoupage SQL du moteur (`listPending` sans limite) est un chantier separe, non retenu.
 
-**3. 🟡 La liste des scenarios renvoie DEUX graphes complets par ligne** (`graph` et `draft_graph` sont
+**3. ✅ FAIT le 2026-09-01.** La route sert un RESUME (`listResume`) : plus aucun graphe ne traverse le
+reseau pour afficher des noms. `nodeCount` et `hasDraft` sont calcules en SQL, `campaignEligible` cote serveur
+avec la MEME fonction que la garde de creation. `list()` reste inchangee (la resolution par code en a besoin).
+⚠️ La base envoie toujours le graphe a l'application : seul le trajet vers le navigateur disparait. Aller plus
+loin demanderait de denormaliser en colonnes tenues a l'ecriture, avec le risque de peremption. Le constat :
+
+~~**La liste des scenarios renvoie DEUX graphes complets par ligne**~~ (`graph` et `draft_graph` sont
 tous les deux dans `COLS`, `src/workflow/store.pg.ts:29`), pour des ecrans qui n'affichent qu'un nom.
 Correctif : une projection resumee et paginee (id, code, nom, dates, brouillon en attente, nombre de blocs,
 eligibilite campagne), le graphe complet restant sur `GET /workflows/:id`.
