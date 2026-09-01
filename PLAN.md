@@ -494,39 +494,42 @@ par construction), **5.7** (`schemaVersion` du contrat vers le connecteur), **5.
    défendable devant une DSI. Variable d'environnement : descendre est sans danger, c'est l'inverse qui ne se
    rattrape pas.
 
-### 🔴 LOT 7 : les quatre décisions qui attendent Julien (posées le 2026-09-01)
+### ✅ LOT 7 : les quatre décisions, TRANCHÉES par Julien le 2026-09-01
 
-Le lot 7 (versions publiées de scénarios) ne se code pas avant ces réponses : chacune change ce qu'on
-construit, pas seulement son coût. Les valeurs entre crochets sont ce que je ferais sans réponse.
+1. **Publier est un GESTE.** Bouton « Publier » explicite. L'éditeur enregistre un BROUILLON ; tant qu'on n'a
+   pas publié, rien ne change pour les contacts. C'est la seule rupture d'habitude visible du lot (aujourd'hui
+   l'autosauvegarde est live dans la seconde), et c'est assumé.
+2. **Un parcours en cours NE reste PAS sur sa version : il suit la version publiée.** « C'est plus simple
+   comme ça ». Donc pas d'épinglage, pas de version par run.
+3. **Une campagne programmée prend la version LIVE le jour de l'expédition**, pas celle de sa préparation.
+   Même logique que le point 2 : ce qui est publié fait foi, partout, tout le temps.
+4. **On fige le template.** La version publiée retient le template qu'elle utilise et son association de
+   variables. ⚠️ Nuance à connaître : on ne peut pas figer le CONTENU d'un template, il vit chez Meta et
+   c'est Meta qui le supprime ou le refuse. « Figé » veut dire « le parcours ne change pas de template ni de
+   mapping tout seul », pas « le template ne peut plus disparaître ».
 
-1. **Publier devient-il un GESTE ?** Aujourd'hui l'éditeur enregistre tout seul et c'est LIVE dans la
-   seconde : le client corrige un mot, le contact suivant le voit. Avec des versions, il faut un brouillon
-   éditable et un bouton « Publier ». C'est la rupture d'habitude du lot, et c'est le seul point qui se voit
-   à l'écran. [Défaut : OUI, bouton explicite, avec un bandeau « brouillon non publié » qui ne laisse pas
-   croire qu'on est en ligne.]
+**Ce que ces réponses changent, et c'est considérable.** Les points 2 et 3 disent la même chose : la version
+publiée est la SEULE qui existe à l'exécution. Le lot 7 n'est donc plus « des versions immuables épinglées aux
+runs » (table de versions, colonne `workflow_version_id`, migration de tous les runs existants, sémantique de
+retour arrière) mais **un brouillon et un publié sur le scénario lui-même** :
 
-2. **Un parcours DÉJÀ EN COURS reste-t-il sur sa version ?** C'est la promesse même du lot (reproductible,
-   analytics interprétables). Sa contrepartie : un client qui corrige une faute ou un bloc cassé voit sa
-   correction NE PAS atteindre les conversations en cours, qui peuvent durer des jours. [Défaut : OUI il
-   reste, PLUS une case « appliquer aussi aux parcours en cours » pour le cas du bloc cassé, qui est le seul
-   moment où on veut vraiment écraser.]
+- `workflows` gagne le graphe de BROUILLON (édité par le builder) et le graphe PUBLIÉ (lu par l'exécuteur),
+  plus qui a publié et quand. Une migration, deux ou trois colonnes, aucune table de versions.
+- Aucun run à migrer : ils lisent le publié, comme aujourd'hui ils lisent le graphe.
+- Aucune sémantique de retour arrière à inventer.
 
-3. **Une campagne PROGRAMMÉE lundi pour vendredi, avec le scénario modifié mercredi : quelle version part ?**
-   Celle qu'on voyait en préparant, ou la dernière publiée à l'heure du départ ? [Défaut : celle ÉPINGLÉE à
-   la création. On envoie ce qu'on a relu et validé, pas ce que quelqu'un a changé entre-temps.]
+🔴 **Le trou que ce choix LAISSE OUVERT, et qu'il faut fermer dans le même lot.** Si on publie une version qui
+supprime un bloc pendant qu'un contact attend DESSUS, son run pointe un bloc qui n'existe plus. C'est déjà le
+cas aujourd'hui (aucun versionnement), et l'exécuteur le traite en silence : bloc introuvable -> pas de suite
+-> run clos, conversation rendue à l'agent. Personne n'est prévenu. Avec un bouton « Publier », ce cas devient
+FRÉQUENT et VOLONTAIRE (on republie justement pour corriger). Le lot doit donc, au minimum, remonter la
+conversation à un humain au lieu de la clore, exactement comme le « bouton qui ne mène nulle part » du lot 1.
 
-4. **Que fige-t-on VRAIMENT ?** Versionner le graphe ne fige pas ce qu'il pointe : template Meta, modèle
-   d'email, agent IA, tag, champ, média. Un template supprimé chez Meta casse un parcours V1 « figé ».
-   [Défaut : on fige le GRAPHE (structure, textes, branchements) et on RÉFÉRENCE le reste, parce qu'un
-   template est un objet Meta qu'on ne peut pas dupliquer. Conséquence assumée : « version publiée » veut
-   dire « le parcours ne change plus », pas « rien de ce qu'il utilise ne change ».]
+**Garde-fou proposé, à confirmer** : conserver le graphe publié PRÉCÉDENT dans une colonne, pour un
+« revenir à la version d'avant » en un clic. Publier écrase aujourd'hui sans recours, et un bouton qui met
+en ligne devant des clients mérite son bouton d'annulation. Une colonne, pas une table.
 
-Ce qui ne demande PAS de décision, et que je ferai ainsi : la version est PARTAGÉE et référencée par les runs
-(jamais recopiée dans chaque run), les runs existants sont migrés vers une V1 créée depuis le graphe courant,
-les anciennes versions référencées par un run ou un rapport ne sont jamais supprimées, et publier suit la
-RBAC en place (écriture = admin).
-
-### Encore à trancher
+### Encore à trancher### Encore à trancher
 
 Elles changent le coût, pas la faisabilité.
 
