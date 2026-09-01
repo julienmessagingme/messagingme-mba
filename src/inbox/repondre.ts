@@ -1,0 +1,85 @@
+/**
+ * RÉPONDRE dans la fenêtre de service de 24 h. Une seule implémentation, deux appelants.
+ *
+ * 🔴 C'est LE point de cette extraction, et il vaut plus que le code qu'elle déplace. La console appelait
+ * cette séquence depuis sa route d'inbox ; le serveur MCP doit faire exactement la même chose, et la
+ * recopier aurait été la faute que ce dépôt paie déjà (l'audit du 2026-08-18 a retiré une centaine de
+ * copies). Une copie qui dérive ici ne produit pas un affichage bancal : elle produit un agent tiers qui
+ * envoie des WhatsApp avec des garde-fous différents de ceux de l'interface. La règle du lot MCP est
+ * celle-ci, écrite une fois : un outil MCP n'a JAMAIS de logique métier à lui, il appelle la fonction que
+ * la route de console appelle.
+ *
+ * L'ordre des quatre gestes n'est pas indifférent, et il est repris tel quel de la route :
+ *   1. la conversation existe et appartient à cet espace (sinon on ne dit rien de plus, cf. IDOR) ;
+ *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors, autant refuser AVANT d'appeler) ;
+ *   3. l'envoi ;
+ *   4. la prise du fil et le journal, APRÈS l'envoi réussi et en best-effort : un échec d'état ne doit
+ *      jamais faire croire à un message perdu alors qu'il est parti.
+ */
+import type { OrigineMessage } from './origine';
+
+export interface DepsRepondre {
+  getConversationContext(
+    conversationId: string,
+    tenantId: string,
+  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean } | null>;
+  getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+  sendReply(tenantId: string, phoneNumberId: string, to: string, text: string): Promise<string>;
+  recordOutbound(
+    conversationId: string,
+    body: string,
+    messageId: string | null,
+    origine: OrigineMessage,
+    type?: string,
+    templateCategory?: string | null,
+    templateName?: string | null,
+    senderUserId?: string | null,
+    channel?: 'whatsapp' | 'rcs',
+  ): Promise<void>;
+  takeControl?(tenantId: string, waId: string): Promise<void>;
+}
+
+/**
+ * Le refus est TYPÉ, pas une chaîne libre : la route HTTP doit en faire un code de statut (404 / 422 / 400)
+ * et l'outil MCP un message d'erreur lisible par un agent. Une chaîne unique aurait obligé l'un des deux à
+ * deviner, et c'est ainsi qu'une fenêtre fermée finit en 500.
+ */
+export type RefusReponse =
+  | { motif: 'conversation_inconnue' }
+  | { motif: 'fenetre_fermee' }
+  | { motif: 'aucun_numero' };
+
+export type ResultatReponse = { messageId: string } | { refus: RefusReponse };
+
+/**
+ * `auteur` = l'identifiant de l'humain qui écrit, ou `null` quand ce n'est pas un humain (un agent tiers via
+ * MCP). Il finit dans `sender_user_id`, qui décide de la pastille d'auteur dans l'inbox.
+ *
+ * 🔴 `origine` est SÉPARÉE d'`auteur` et obligatoire, et cette séparation est le correctif d'un vrai bug.
+ * On la déduisait d'`auteur` (« pas d'auteur, donc un scénario »), ce qui a fait enregistrer les réponses
+ * de l'agent MCP comme du scripté. Les deux champs répondent à deux questions différentes : QUI signe le
+ * message dans l'inbox, et QU'EST-CE QUI l'a écrit. Un agent tiers ne signe personne, et n'est pas un
+ * scénario pour autant.
+ */
+export async function repondreDansLaFenetre(
+  deps: DepsRepondre,
+  tenantId: string,
+  conversationId: string,
+  texte: string,
+  auteur: string | null,
+  origine: OrigineMessage,
+): Promise<ResultatReponse> {
+  const ctx = await deps.getConversationContext(conversationId, tenantId);
+  if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
+  if (!ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
+
+  const phoneNumberId = await deps.getTenantPhoneNumberId(tenantId);
+  if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
+
+  const messageId = await deps.sendReply(tenantId, phoneNumberId, ctx.waId, texte);
+  // Le fil est PRIS : le scénario cesse d'avancer sur ce contact, et une campagne ne l'écrasera pas. Vrai
+  // aussi quand c'est un agent tiers qui écrit : ce qui compte est qu'un tiers parle, pas lequel.
+  await deps.takeControl?.(tenantId, ctx.waId).catch(() => {});
+  await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur);
+  return { messageId };
+}

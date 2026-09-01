@@ -6,6 +6,8 @@ import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
 import { cacheCourt } from '../lib/cache-court';
+import { repondreDansLaFenetre } from '../inbox/repondre';
+import type { OrigineMessage } from '../inbox/origine';
 
 /**
  * Durée de vie du micro-cache des compteurs de l'inbox (AUDIT-SCALE-2026-08-25.md, R7).
@@ -76,6 +78,9 @@ export interface InboxRouteDeps {
     conversationId: string,
     body: string,
     messageId: string | null,
+    /** D'OÙ vient le message (migration 0099). Obligatoire : elle était déduite, et la déduction a menti
+     *  dès qu'un appelant sans expéditeur humain est apparu (le serveur MCP). */
+    origine: OrigineMessage,
     type?: string,
     templateCategory?: string | null,
     templateName?: string | null,
@@ -300,27 +305,25 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     const text = (req.body as { text?: unknown } | null)?.text;
     if (!nonEmpty(text)) return reply.code(400).send({ error: 'text requis' });
 
-    const ctx = await deps.getConversationContext(conversationId, tenant);
-    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    // L'affectation est une règle de la CONSOLE (qui, parmi les opérateurs, a la charge du fil) : elle est
+    // vérifiée ici et pas dans `repondreDansLaFenetre`, qui sert aussi un appelant sans opérateur.
     const refus = await refusAffectation(req, tenant, conversationId);
     if (refus) return reply.code(403).send({ error: refus, code: 'assigned_to_other' });
-    // Hors fenêtre 24 h : Meta refuse le texte libre. On bloque et on dit les DEUX chemins qui restent.
-    // Le message ne parlait que du template, alors que le même écran propose le RCS juste en dessous : un
-    // opérateur croyait devoir faire approuver un template alors qu'il avait un chemin immédiat.
-    // Le code `window_closed` ne bouge pas, l'écran s'en sert.
-    if (!ctx.windowOpen) {
+
+    // « humain » : cette route n'est atteignable qu'avec un JWT de console, donc c'est toujours un opérateur
+    // qui écrit. L'origine est POSÉE et non déduite, cf. le commentaire de `repondreDansLaFenetre`.
+    const res = await repondreDansLaFenetre(deps, tenant, conversationId, text, req.auth?.userId ?? null, 'humain');
+    if ('refus' in res) {
+      if (res.refus.motif === 'conversation_inconnue') return reply.code(404).send({ error: 'conversation inconnue' });
+      if (res.refus.motif === 'aucun_numero') return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
+      // Hors fenêtre 24 h : Meta refuse le texte libre. On bloque et on dit les DEUX chemins qui restent.
+      // Le message ne parlait que du template, alors que le même écran propose le RCS juste en dessous : un
+      // opérateur croyait devoir faire approuver un template alors qu'il avait un chemin immédiat.
+      // Le code `window_closed` ne bouge pas, l'écran s'en sert.
       return reply.code(422).send({ error: 'Fenêtre de 24 h fermée : envoie un template, ou un message RCS si le contact y est joignable.', code: 'window_closed' });
     }
-    const phoneNumberId = await deps.getTenantPhoneNumberId(tenant);
-    if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
-
-    const messageId = await deps.sendReply(tenant, phoneNumberId, ctx.waId, text);
-    // L'opérateur prend le fil : le scénario cesse d'avancer sur ce contact, et une campagne ne l'écrasera
-    // pas. Best-effort, APRÈS l'envoi réussi : un échec d'état ne doit pas faire croire à un message perdu.
-    await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    await deps.recordOutbound(conversationId, text, messageId, 'text', null, null, req.auth?.userId ?? null);
-    return reply.code(200).send({ messageId });
+    return reply.code(200).send({ messageId: res.messageId });
   });
 
   /**
@@ -366,7 +369,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // d'état ne doit pas faire croire à un message perdu.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
+    await deps.recordOutbound(conversationId, issue.apercu, issue.messageId, 'humain', 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
     return reply.code(200).send({ messageId: issue.messageId });
   });
 
@@ -453,7 +456,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
     await deps.takeControl?.(tenant, ctx.waId).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
+    await deps.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'humain', 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
     return reply.code(200).send({ messageId });
   });
 

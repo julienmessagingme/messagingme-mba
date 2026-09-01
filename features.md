@@ -12,11 +12,14 @@ mêmes accès qu'un agent tant que ce qu'un manager a le droit de faire n'a pas 
 
 ## Navigation (sidebar gauche, pleine largeur)
 
-Admin : **Accueil · Inbox · mini-CRM · Campagnes · Scénario · Automation · AI Agent (MBA, guide /
-MBA, paramètres / Other AI agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
+Admin : **Accueil · Inbox · mini-CRM · Campagnes · Scénario · Automation · AI Agent (MBA [MBA, guide /
+MBA, paramètres] / Other AI agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Tags / Champs) · Tools (Webhooks / Connecteurs API) · Analytics
 (Quantitatif / Qualitatif / Mes tableaux) · Paramètres · Support**, plus un bloc **Developers
-(Documentation API / Clés d'API)** collé **en bas** de la barre.
+(Documentation API / Clés d'API / Serveur MCP)** collé **en bas** de la barre.
+- ✅ **La barre a TROIS niveaux depuis le 2026-09-01**, et « MBA » est le seul groupe de deuxième niveau :
+  ses deux écrans (guide, paramètres) parlent du même agent, alors que « Other AI agent » en est un autre.
+  Les mettre au même rang laissait croire à trois agents.
 Les groupes **AI Agent**, **Contenu**, **Tools**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
 Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, **Boîtes email**, Abonnement*, Billing*,
 Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
@@ -380,6 +383,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
     Un scénario qui **commence** par une question ne peut donc pas être lancé en campagne, il se déclenche
     depuis l'Inbox ou après un template.
 
+- ✅ **La flèche CLIQUÉE se voit** (2026-09-01). Sur un scénario chargé, les flèches se croisent et se
+  recouvrent : en cliquer une était le seul moyen de la désigner, mais rien ne disait LAQUELLE on venait de
+  désigner. Elle passe désormais au bleu et s'épaissit, et les **deux blocs qu'elle relie s'annoncent
+  « DÉPART » et « ARRIVÉE »** : la couleur seule ne suffit pas quand les deux bouts sont hors de l'écran.
 - ✅ **Quatre frottements corrigés dans l'éditeur de scénario** (2026-08-26), tous signalés par Julien :
   - **Lâcher une flèche SUR le bloc visé suffit** désormais. Il fallait viser son petit point d'entrée à
     20 pixels près, sinon rien ne se passait et l'éditeur avait l'air cassé.
@@ -819,6 +826,23 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Plage de dates libre** : presets 7/30/90 j **+** sélecteur de dates personnalisé (les graphes honorent
   une plage passée). Séries : contacts (cumul), templates envoyés, messages échangés. **La barre périodes +
   dates reste FIGÉE en haut au scroll** (sticky sous la barre de compte).
+- ✅ **« Messages de service : qui les a écrits »** (2026-09-01, quantitatif). Un tableau qui ventile les
+  messages hors template en trois thèmes : **IA** (l'agent de la console et celui de Meta), **scripté** (un
+  bloc de scénario) et **humain** (un opérateur depuis l'inbox), avec le volume et la part de chacun. C'est
+  la mesure du travail réellement économisé. ⚠️ Une quatrième ligne, **« origine non enregistrée »**,
+  n'apparaît que si elle n'est pas nulle : c'est un signal d'anomalie (un envoi qui n'a pas déclaré d'où il
+  venait), pas une catégorie normale.
+- ✅ **Le qualitatif est ACTIONNABLE** (2026-09-01). Quatre gestes, là où le tableau ne faisait qu'afficher :
+  **cliquer le chiffre d'une action suggérée** ouvre la liste des conversations concernées (et de là, on va
+  dans l'inbox) ; **cliquer un sujet fréquent** restreint le détail à ce sujet, recliquer le relâche ;
+  **cliquer une ligne du détail** ouvre une **fiche** avec tous les champs du tableau, un **résumé de la
+  conversation**, les infos relevées par l'analyse, et un bouton pour aller dans l'inbox ; et **la liste
+  s'exporte en CSV et en PDF**, depuis la fenêtre comme depuis le tableau.
+  ⚠️ **Les conversations analysées AVANT le 2026-09-01 n'ont pas de résumé** et n'en auront jamais (le
+  reconstruire voudrait dire rappeler le modèle sur tout l'historique). La fiche le dit franchement au lieu
+  d'afficher la justification à la place, qui explique le classement et pas ce qui s'est dit.
+  ⚠️ L'écran **annonce la rétention** (365 jours) : au-delà, une conversation n'est plus consultable ni
+  exportable, et une liste plus courte que la période demandée n'est donc pas un bug.
 - ✅ **Funnel PAR campagne** : sélecteur de campagne, envoyés → délivrés → **lus** → **répondus** + taux
   (+ échecs). « Répondu » = réponse reçue après l'envoi, attribuée au dernier envoi (pas de double-comptage).
   Sous-estimation des « lus » assumée si le destinataire a coupé les accusés. Campagne-only en V1. **Ce bloc
@@ -1474,6 +1498,34 @@ a pas de numéro d'expéditeur, et **aucun modèle à faire approuver** : on éc
 - ⚠️ **Ce que le canal ne dit pas à l'avance** : le fournisseur ne sait pas dire si un numéro est joignable en
   RCS avant d'essayer. La sortie « Non joignable » se déclenche donc sur le **rapport de livraison**, quelques
   instants à quelques minutes après l'envoi, et non au moment où le bloc est atteint.
+
+## Serveur MCP : brancher un assistant sur la console (LIVE, 2026-09-01)
+
+**À quoi ça sert.** Un client (ou son prestataire) branche son assistant, Claude ou n'importe quel client
+compatible MCP, directement sur son espace, **sans développer d'intégration**. Là où le connecteur HubSpot a
+coûté un dépôt entier pour UN partenaire, le serveur MCP rend la console joignable par tout ce qui parle ce
+protocole, pour un seul travail.
+
+**Comment ça s'utilise.** Menu **Developers > Serveur MCP**. L'écran donne l'adresse
+(`https://mba.messagingme.app/mcp`), la commande à copier, la liste des outils et ce que le serveur ne fait
+pas. L'accès passe par une **clé d'API** portant les droits `mcp:read` et/ou `mcp:write`, créée dans
+« Clés d'API ». Pour couper un assistant : révoquer sa clé.
+
+**Ce que l'assistant peut faire.** Lire (`mcp:read`) : lister les conversations, ouvrir un fil et savoir si la
+fenêtre de 24 h est ouverte, lire les messages, chercher un contact, lister les membres. Agir (`mcp:write`) :
+répondre dans une conversation ouverte, poser des tags, confier un fil à un membre.
+
+**Ce qu'il ne fait PAS, et c'est délibéré.**
+- **Aucun envoi de template, aucune campagne.** Ouvrir l'envoi de template à un modèle, c'est lui donner un
+  mégaphone facturé sur un numéro dont Meta note la qualité. Un assistant répond dans une conversation
+  ouverte ; il ne lance pas d'envoi de masse.
+- **Hors de la fenêtre de 24 h, rien ne part.** L'outil refuse et dit pourquoi.
+- **Les automations ne se déclenchent pas.** Un tag posé par un assistant classe le contact, il ne réveille
+  pas les automations qui écoutent ce tag : un agent qui boucle sur 500 fils déclencherait 500 envois.
+- **Une clé de lecture ne VOIT même pas les outils qui écrivent** : ils ne sont pas listés.
+
+⚠️ **L'accès est une clé, pas un compte.** Le scénario « fenêtre de login, je choisis mon organisation,
+j'approuve l'accès » (OAuth 2.1 délégué) n'est pas encore là : voir `todo.md`.
 
 ## À venir / hors périmètre
 

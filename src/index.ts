@@ -362,7 +362,7 @@ async function main(): Promise<void> {
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
       getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
       getMessages: (id) => inboxStore.getMessages(id),
-      recordOutbound: (id, body, msgId, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, type, cat, name, sender, canal),
+      recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal),
       /**
        * Variables d'un template résolues sur la fiche du contact ouvert, avec le libellé du champ qui les
        * alimente. MÊME résolution que l'envoi réel (`resolveHintParams` + les indices posés à la création du
@@ -1207,6 +1207,36 @@ async function main(): Promise<void> {
         idempotencyComplete: (tenant, key, sendId, response) => idempotencyStore.complete(tenant, key, sendId, response),
         idempotencyRelease: (tenant, key) => idempotencyStore.release(tenant, key),
         getSendDetail: (sendId, tenant) => repo.getCampaignDetail(sendId, tenant),
+      },
+      /**
+       * Serveur MCP (`POST /mcp`) : les MÊMES fonctions que la console, jamais des variantes.
+       *
+       * Chaque ligne ci-dessous est déjà branchée plus haut pour les routes de l'inbox et du mini-CRM. C'est
+       * exactement l'intention : un outil MCP n'est qu'un second appelant. Le jour où une garde change (la
+       * fenêtre de 24 h, la prise de fil, le scope tenant), elle change pour les deux d'un coup.
+       */
+      mcp: {
+        listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
+        getMessages: (id) => inboxStore.getMessages(id),
+        getConversationContext: (id, tenant) => inboxStore.getConversationContext(id, tenant),
+        getControlOwner: (tenant, waId) => inboxStore.getControlOwner(tenant, waId),
+        getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
+        setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),
+        getTenantPhoneNumberId: (tenant) => repo.getTenantPhoneNumberId(tenant),
+        sendReply: async (tenant, phoneNumberId, to, text) => {
+          const client = await metaFactory.clientForTenant(tenant, phoneNumberId); // token PAR TENANT (B1)
+          return (await client.sendText(to, text)).messageId;
+        },
+        recordOutbound: (id, body, msgId, origine, type, cat, name, sender, canal) => inboxStore.recordOutbound(id, body, msgId, origine, type, cat, name, sender, canal),
+        // ⚠️ `app_human` pour un agent TIERS, et c'est un choix : `ControlOwner` n'a que trois valeurs, et ce
+        // qui compte ici est que le scénario cesse d'avancer et qu'une campagne saute le contact, ce que
+        // `app_human` produit exactement. La distinction « qui a parlé » est portée là où elle sert et où
+        // elle ne coûte pas de migration du chemin chaud : l'ORIGINE du message (`mcp`, migration 0101).
+        takeControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_human'); },
+        chercherContacts: (tenant, filtres, limit, offset) => contactStore.query(tenant, filtres, limit, offset),
+        contactParTelephone: (tenant, phone) => contactStore.findByPhone(tenant, phone),
+        ajouterTags: (tenant, waId, tags) => contactStore.addTagsByPhoneReturningNew(tenant, waId, tags),
+        listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
       },
     },
   });

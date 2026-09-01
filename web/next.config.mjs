@@ -30,6 +30,14 @@ const nextConfig = {
       // accepte l'envoi. ⚠️ Servi par le backend, qui n'a aucun port hôte publié : ce rewrite est le SEUL
       // chemin qui les relie. Le modifier casse les visuels de messages DÉJÀ ENVOYÉS.
       { source: '/m/:fichier', destination: `${backend}/m/:fichier` },
+      // Serveur MCP. Chemin COURT et sans `/api` parce que c'est l'adresse qu'un intégrateur tape dans sa
+      // commande `claude mcp add --transport http mba https://mba.messagingme.app/mcp` : elle est destinée
+      // à être lue et recopiée par un humain, pas à être construite par notre front.
+      //
+      // ⚠️ Servi par le backend, qui n'a aucun port hôte publié : ce rewrite est le SEUL chemin qui les
+      // relie. Comme `/r/` et `/m/`, il est GELÉ AU BUILD de l'image web : toute modification de ce fichier
+      // exige `up -d --build`, un simple `up -d` laisserait le proxy dans son état d'avant.
+      { source: '/mcp', destination: `${backend}/mcp` },
     ];
   },
 };

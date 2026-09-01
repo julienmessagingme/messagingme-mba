@@ -12,13 +12,25 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## PROCHAIN : le lot UX + la question du serveur MCP
+## LIVRÉ le 2026-09-01 : le lot UX + le serveur MCP
 
-La liste de Julien du 2026-09-01 est écrite dans
-[docs/LOT-UX-ET-MCP-2026-09-01.md](docs/LOT-UX-ET-MCP-2026-09-01.md) : cinq briques d'UX (sous-menus AI Agent,
-surlignage des flèches de scénario, Analytics quali actionnable, tableau IA / scripté / humain en quanti,
-export PDF) et UNE décision d'architecture (être serveur MCP), avec mon analyse et les points qui attendent son
-arbitrage. Rien n'est commencé : les briques passeront par `feature-loop`, un plan validé par brique.
+Les six points de la liste de Julien ([docs/LOT-UX-ET-MCP-2026-09-01.md](docs/LOT-UX-ET-MCP-2026-09-01.md))
+sont livrés en quatre briques. Le fonctionnel est dans [features.md](features.md), la technique dans
+[documentation.md](documentation.md), ce qui reste dans [todo.md](todo.md).
+
+**Ce qu'il faut retenir avant de toucher à ces zones :**
+
+- La reconnaissance a invalidé DEUX suppositions du cadrage, et c'est le vrai enseignement du lot. (1) Le
+  groupe « AI Agent » existait déjà mais PLAT, la période du quali existait déjà : lire le code avant de
+  chiffrer a évité de refaire ce qui était fait. (2) L'origine d'un message de service n'était PAS
+  dérivable, contrairement à ce que le document affirmait, parce que scénario et agent IA écrivent la même
+  ligne. Une supposition écrite dans un cadrage n'est pas un constat.
+- `/v1` ne compte que quatre endpoints et AUCUNE lecture. « MCP = façade mince sur /v1 » était donc faux :
+  la règle retenue est qu'un outil MCP appelle la fonction que la route de console appelle, ce qui a fait
+  extraire `src/inbox/repondre.ts`, partagé par les deux.
+- **Le grant OAuth 2.1 délégué n'est PAS fait** : l'accès MCP passe par une clé d'API à scopes. Le scénario
+  `claude mcp add` + fenêtre de login + choix d'espace + révocation par utilisateur est un lot à lui seul,
+  décrit dans [todo.md](todo.md).
 
 ## HISTORIQUE : rien d'autre en cours
 

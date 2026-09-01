@@ -14,6 +14,33 @@ ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et c
 multi-numéro sort du plan, remplacé par un refus explicite du second) et **conversations gardées 12 mois**
 (plancher de 3 mois donné par Julien, quadruplé parce que l'effacement est irréversible).
 
+## Ce que le lot MCP du 2026-09-01 laisse ouvert
+
+**1. Le grant OAuth 2.1 délégué (le gros morceau).** Aujourd'hui l'accès MCP passe par une **clé d'API** à
+scopes : révocable par clé, limitée en débit, déjà en place. Ce que ça ne donne PAS, et que le scénario de
+Julien décrivait (`claude mcp add`, une fenêtre de login, choisir son organisation, approuver l'accès), c'est
+une **délégation par (utilisateur, client tiers, espace, scopes)**, révocable par utilisateur et traçable.
+C'est une TROISIÈME autorité en plus du JWT de session et des clés d'API, avec enregistrement dynamique de
+client (RFC 7591), écran de consentement, et métadonnées de ressource protégée (RFC 9728). C'est ce morceau
+qui décide si une DSI signe, et c'est pour ça qu'il ne devait pas être bâclé en réutilisant une clé.
+⚠️ Ne pas le faire à moitié : un demi-OAuth donnerait l'ILLUSION d'un contrôle d'accès par personne.
+
+**2. `send_template` en MCP : une décision à prendre, pas un oubli.** Julien l'avait cité dans sa liste ; il
+n'est volontairement pas exposé. Ouvrir l'envoi de template à un modèle, c'est un mégaphone facturé sur un
+numéro dont Meta note la qualité. Le jour où on le veut, il faut décider AVANT : un scope à part
+(`mcp:send_template`, non coché par défaut), et un plafond par clé et par jour. Un test
+(`tests/mcp-serveur.test.ts`) garde aujourd'hui l'absence de tout outil de template : l'ajouter obligera à le
+modifier, donc à en décider.
+
+**3. Les six copies de la modale.** `web/components/Modale.tsx` existe et sert les deux fenêtres du
+qualitatif, mais `app/tags`, `app/flows`, `app/inbox`, `ContactDetail`, `MbaFaqPanel` et `MbaSkillsPanel`
+portent chacun leur propre copie de la même structure, sans touche Échap ni rôle de dialogue. À faire quand
+on touchera ces écrans, pas comme un chantier à part.
+
+**4. Un résumé pour les analyses d'avant.** Les conversations analysées avant le 2026-09-01 n'ont pas de
+résumé (migration 0100) et la fiche le dit. Le rattraper voudrait dire rappeler le LLM sur tout l'historique,
+donc payer une seconde fois pour du confort. À ne faire que si un client le demande, et alors par lots.
+
 ## Audit de scalabilité du 2026-08-25 : les constats retenus (triés le 2026-08-29)
 
 L'audit complet reste `AUDIT-SCALE-2026-08-25.md`. Ce qui suit est le seul reste ACTIONNABLE après

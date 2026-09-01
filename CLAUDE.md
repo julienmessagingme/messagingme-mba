@@ -51,9 +51,9 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0100** (`conversation_analysis.summary`, le résumé de conversation),
+**Dernière appliquée : 0101** (`origin = 'mcp'`, l'agent tiers branché par le serveur MCP),
 passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0101.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+`migrate`, vérification en base). **Prochaine libre = 0102.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
@@ -63,6 +63,13 @@ migration est rejouée depuis le début, donc chaque instruction doit être idem
 une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
 les deux sens de la règle sur les fichiers réels.
 
+🔴 **0101 est BLOQUANTE, et sa leçon vaut plus que sa ligne de SQL.** `recordOutbound` DÉDUISAIT l'origine de
+l'expéditeur (« pas d'expéditeur, donc un scénario »), ce qui était vrai tant que ses seuls appelants étaient les
+routes de la console. Le serveur MCP en a ajouté un sans expéditeur humain : chaque réponse d'agent tiers est
+partie marquée « scenario ». Le pire n'était pas l'erreur mais son INVISIBILITÉ, la valeur fausse étant écrite
+explicitement, donc le repli « indéterminée » ne pouvait pas se déclencher. **Une valeur déduite d'un autre champ
+n'est une garde que tant que la liste des appelants ne bouge pas, et une liste d'appelants bouge toujours.** Le
+paramètre est désormais obligatoire, comme sur `recordOutboundByWaId`.
 ⚠️ **0100 est BLOQUANTE** (chaque analyse écrit `summary`), donc migrée AVANT le déploiement. Sa colonne
 reste vide pour les analyses d'avant, et elle le restera : reconstruire un résumé voudrait dire rappeler le
 LLM sur tout l'historique. La fiche de conversation le DIT au lieu d'afficher `justification` à la place,

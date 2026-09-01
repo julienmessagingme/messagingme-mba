@@ -2058,6 +2058,103 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : le lot UX + le serveur MCP (les six points de la liste de Julien)
+
+Quatre briques, trois commits, deux migrations. Ce qui suit ne redit pas ce que `features.md` décrit : ce sont
+les décisions et les pièges.
+
+### Ce que la reconnaissance a invalidé, avant d'écrire une ligne
+
+🔴 **Une supposition écrite dans un cadrage n'est pas un constat.** Deux affirmations du document de cadrage
+étaient fausses, et les vérifier a changé le plan :
+1. Le groupe « AI Agent » et la période du qualitatif EXISTAIENT DÉJÀ. Le travail restant sur la nav n'était
+   pas « créer un menu » mais « ajouter un troisième niveau au modèle », et il n'y avait rien à faire sur la
+   période.
+2. L'origine d'un message de service n'était PAS dérivable. Les envois de scénario (`wiring.ts`) et les
+   réponses de l'agent IA (`envoyerTexteAgent`) écrivent tous les deux `type: 'text'` avec
+   `sender_user_id = null` : rien ne les séparait.
+
+### Migration 0099 : l'origine d'un message sortant
+
+- Colonne **NULLABLE et sans défaut**. Un `not null` aurait fait échouer une insertion sur le chemin chaud du
+  webhook le jour d'un oubli d'appelant, c'est-à-dire l'incident du 2026-08-17. La garde contre l'oubli est
+  posée là où elle ne coûte rien en production : le paramètre `origine` est **obligatoire dans la signature
+  TypeScript**, donc un chemin d'écriture oublié ne compile pas. Le compilateur a désigné les six appelants.
+- La lecture de l'historique (`src/inbox/origine.ts`) est **bornée dans le temps**. Avant la bascule, un
+  sortant hors template sans expéditeur humain vient forcément d'un scénario : **mesuré** le 2026-09-01 sur la
+  base de production, `agent_sessions` était vide. Après la bascule, une origine absente ressort en
+  « indéterminée » À L'ÉCRAN. Sans cette borne, un chemin ajouté plus tard sans poser son origine serait
+  compté comme du scripté, en silence et pour toujours.
+- Le fragment SQL de classement est **partagé** entre l'agrégat et le détail : un total et sa ventilation qui
+  classeraient différemment ne tomberaient plus juste.
+
+### Migration 0100 : le résumé de conversation
+
+`justification` explique le CLASSEMENT, pas ce qui s'est dit. La montrer comme un résumé aurait été un
+raccourci qu'on ne voit plus une fois pris. Colonne nullable, **jamais remplie rétroactivement** : la fiche
+affiche un repli nommé. Le champ est `.optional()` dans le schéma Zod (comme `abusive` avant lui) pour qu'un
+modèle qui l'omet ne fasse pas perdre toute l'analyse, et une chaîne vide est écrite `null` : l'absence doit
+rester distinguable d'un résumé vide, parce que l'écran ne dit pas la même chose des deux.
+
+### Serveur MCP : les trois décisions qui portent le reste
+
+🔴 **`/v1` ne compte que quatre endpoints et AUCUNE lecture.** « MCP = façade mince sur /v1 » était donc faux :
+les outils de lecture n'avaient aucun endpoint à appeler. La règle retenue est plus forte et plus simple :
+**un outil MCP n'a jamais de logique métier à lui, il appelle la fonction que la route de console appelle.**
+C'est ce qui a fait extraire `src/inbox/repondre.ts` (`repondreDansLaFenetre`), désormais partagé par la route
+d'inbox et par l'outil `reply_in_open_window`. Une copie qui dérive ici ne produit pas un affichage bancal :
+elle produit un agent tiers qui envoie des WhatsApp avec des garde-fous différents de ceux de l'interface.
+
+🔴 **Transport écrit à la main, sans le SDK officiel.** La surface utile tient en cinq méthodes
+(`initialize`, `notifications/initialized`, `tools/list`, `tools/call`, `ping`), et le SDK apporte une gestion
+de session et un canal SSE dont un serveur d'outils **sans état** n'a aucun usage. Sans état est un choix :
+ni `Mcp-Session-Id` ni reprise de flux, donc deux requêtes du même client peuvent tomber sur deux process
+différents. C'est ce qui permettra d'en lancer une seconde instance.
+
+🔴 **Un refus MÉTIER est un RÉSULTAT, pas une erreur de protocole.** Fenêtre de 24 h fermée, conversation
+inconnue : `isError: true` dans le résultat, avec la raison en clair. Une erreur JSON-RPC dirait au modèle
+« l'outil est cassé » au lieu de « ta demande n'était pas recevable, lis pourquoi ». Seule une panne réelle
+sort en `-32603`, et son message d'origine n'est PAS renvoyé (il peut porter un fragment de requête SQL ou de
+réponse Meta).
+
+⚠️ **Deux détails d'autorisation qui ne se devinent pas.** (1) Un outil hors des scopes de la clé n'est même
+pas LISTÉ, et le refus d'appel dit « inconnu ou non autorisé » : distinguer les deux renseignerait un porteur
+de clé sur des capacités qu'on lui refuse. (2) Les scopes MCP ne sont PAS cochés d'avance à la création d'une
+clé (`API_SCOPES_PAR_DEFAUT`) : l'écran cochait tout quand il n'y avait que deux droits, et laisser ce geste
+aurait donné à toute clé neuve le droit d'envoyer des WhatsApp au nom du client.
+
+⚠️ **Aucun outil n'émet d'événement d'automation.** Le CLAUDE.md range l'API publique parmi les chemins qui
+n'émettent pas ; un serveur MCP en est une. Un agent qui boucle sur 500 conversations déclencherait sinon 500
+automations, donc des envois facturés que personne n'a demandés. La page Developers le dit à l'intégrateur.
+
+🔴 **Ce que la revue du lot a trouvé, et qu'il faut retenir.** Deux bloquants, tous les deux sur la surface
+d'écriture ouverte aux tiers :
+
+1. **Le lot JSON-RPC contournait le plafond de débit.** Le quota se compte UNE FOIS PAR REQUÊTE HTTP, dans le
+   preHandler de la clé. Un tableau accepté laissait donc passer, pour une seule unité de quota, autant
+   d'appels `reply_in_open_window` que le corps de 1 Mo peut en contenir : des milliers d'envois Meta réels
+   dans un seul POST. C'est exactement le mégaphone que le lot dit avoir fermé en n'exposant pas
+   `send_template`, rouvert par le VOLUME au lieu de la fonctionnalité. Le lot est désormais REFUSÉ, ce qui
+   est aussi la bonne réponse de protocole (il a été retiré de MCP en 2025-06-18).
+   **Règle générale : quand un plafond se compte par requête, tout mécanisme qui met N actions dans une
+   requête est un contournement du plafond.**
+2. **Une réponse MCP était enregistrée « scenario ».** `recordOutbound` DÉDUISAIT l'origine de l'expéditeur.
+   Vrai tant que ses appelants étaient tous des routes de console ; faux dès qu'un appelant sans expéditeur
+   humain est apparu. Et la faute était INVISIBLE : la valeur fausse étant écrite explicitement, le repli
+   « indéterminée » de la migration 0099 ne pouvait pas se déclencher. Le paramètre est devenu obligatoire
+   (migration 0101, origine `mcp`).
+   **Règle générale : une valeur déduite d'un autre champ n'est une garde que tant que la liste des appelants
+   ne bouge pas, et une liste d'appelants bouge toujours.**
+
+⚠️ **`control_owner` reste `app_human` pour un agent tiers**, et c'est un choix. `ControlOwner` n'a que trois
+valeurs ; ce qui compte est que le scénario cesse d'avancer et qu'une campagne saute le contact, ce que
+`app_human` produit exactement. La distinction « qui a parlé » est portée là où elle sert et où elle ne coûte
+pas de migration du chemin chaud : l'origine du message.
+
+⚠️ **Le rewrite `/mcp` est GELÉ AU BUILD** de l'image web, comme `/r/:code` et `/m/:fichier`. Toute
+modification de `web/next.config.mjs` exige `up -d --build`. `tests/rewrites-web.test.ts` garde les quatre.
+
+---
 ## DEPLOYE le 2026-09-01 : banc de charge et de reprise après kill (dernier item ouvert du lot 8)
 
 **Ce qui a été mesuré, et comment.** Postgres 16 jetable sur le VPS, worker réel en `DRY_RUN=true` (le sender

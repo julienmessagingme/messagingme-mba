@@ -14,7 +14,15 @@ import type { UserFieldKind } from '../field-kinds';
 // --- Clés d'API (surface publique /v1) ---
 
 /** Scopes reconnus. Doit rester aligné sur `VALID_API_SCOPES` du serveur (`src/http/api-keys.ts`). */
-export const API_SCOPES = ['contacts:write', 'sends:create'] as const;
+export const API_SCOPES = ['contacts:write', 'sends:create', 'mcp:read', 'mcp:write'] as const;
+/**
+ * Ce qui est COCHÉ D'AVANCE à la création d'une clé.
+ *
+ * 🔴 Les deux scopes MCP n'y sont volontairement PAS. L'écran cochait tout par défaut quand il n'y avait
+ * que deux droits ; laisser ce geste tel quel aurait donné à toute clé neuve le droit d'ENVOYER des
+ * WhatsApp au nom du client, sans que personne ne l'ait décidé. Ouvrir MCP doit rester une case qu'on coche.
+ */
+export const API_SCOPES_PAR_DEFAUT = ['contacts:write', 'sends:create'] as const;
 export type ApiScope = (typeof API_SCOPES)[number];
 
 export interface ApiKeyRow {

@@ -37,6 +37,8 @@ import { registerEmbeddedSignup } from './http/embedded-signup';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Sends } from './http/v1-sends';
+import { registerMcp } from './http/mcp';
+import type { DepsMcp } from './mcp/outils';
 import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
 import { registerHubspotInstall } from './http/hubspot-install';
@@ -168,7 +170,7 @@ export interface ServerDeps {
   /** CRUD des clés d'API (console admin, JWT) — réservé aux admins. */
   apiKeys?: ApiKeysRouteDeps;
   /** API publique /v1 (authentifiée par clé d'API, autorité SÉPARÉE du JWT, comme /ops). */
-  v1?: { apiKeys: ApiKeyLookup; contacts: V1ContactsRouteDeps; sends?: V1SendsRouteDeps };
+  v1?: { apiKeys: ApiKeyLookup; contacts: V1ContactsRouteDeps; sends?: V1SendsRouteDeps; mcp?: DepsMcp };
   /** Import de listes HubSpot (3e source de campagne) — réservé aux admins. */
   hubspotImport?: HubspotImportRouteDeps;
   /** Émission du lien d'install/re-consentement HubSpot signé — réservé aux admins. */
@@ -342,6 +344,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     const requireApiKey = makeRequireApiKey(deps.v1.apiKeys, apiLimiter);
     registerV1Contacts(app, deps.v1.contacts, [requireApiKey, requireScope('contacts:write')]);
     if (deps.v1.sends) registerV1Sends(app, deps.v1.sends, [requireApiKey, requireScope('sends:create')]);
+    // Serveur MCP : MÊME autorité et MÊME limiteur de débit que /v1. Il partage volontairement le
+    // `requireApiKey` déjà construit : une seconde instance de limiteur aurait doublé le quota d'une clé
+    // selon la porte empruntée, ce qui n'aurait été visible de personne.
+    //
+    // Pas de `requireScope` ici : le serveur MCP a DEUX scopes (lecture, écriture) et c'est l'outil appelé
+    // qui décide duquel il a besoin. Un `requireScope` à la porte aurait forcé à en choisir un des deux, et
+    // donc soit fermé l'écriture, soit ouvert la lecture aux seules clés qui écrivent.
+    if (deps.v1.mcp) registerMcp(app, deps.v1.mcp, [requireApiKey]);
   }
   // Accueil : statut compte réservé aux admins (la page /accueil est admin-only) ; /me ouvert à tout
   // compte authentifié (générique, lit req.auth.userId).

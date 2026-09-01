@@ -13,7 +13,7 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
-type Journal = Array<{ body: string; type?: string; canal?: string; sender?: string | null }>;
+type Journal = Array<{ body: string; type?: string; canal?: string; sender?: string | null; origine?: string }>;
 
 /** `windowOpen` FERMEE par defaut : c'est le cas qui compte pour le RCS. */
 function app(over: Partial<InboxRouteDeps> = {}, windowOpen = false) {
@@ -23,8 +23,8 @@ function app(over: Partial<InboxRouteDeps> = {}, windowOpen = false) {
     listConversations: async () => [],
     getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen, lastInboundAt: null } : null),
     getMessages: async () => [],
-    recordOutbound: async (_id, body, _msg, type, _cat, _name, sender, canal) => {
-      journal.push({ body, type, canal, sender });
+    recordOutbound: async (_id, body, _msg, origine, type, _cat, _name, sender, canal) => {
+      journal.push({ body, type, canal, sender: sender ?? null, origine });
     },
     takeControl: async (_t, waId) => { priseDeControle.push(waId); },
     getTenantPhoneNumberId: async () => 'pn1',
@@ -51,7 +51,7 @@ describe('Envoyer un RCS depuis l inbox', () => {
     const r = await a.inject(envoi());
     expect(r.statusCode).toBe(200);
     expect(r.json().messageId).toBe('rcs-1');
-    expect(journal).toEqual([{ body: 'Bonjour Julien', type: 'rcs', canal: 'rcs', sender: 'u1' }]);
+    expect(journal).toEqual([{ body: 'Bonjour Julien', type: 'rcs', canal: 'rcs', sender: 'u1', origine: 'humain' }]);
     await a.close();
   });
 
@@ -68,7 +68,7 @@ describe('Envoyer un RCS depuis l inbox', () => {
     const r = await a.inject(envoi({ text: '  Je regarde ca  ' }));
     expect(r.statusCode).toBe(200);
     expect(recus).toEqual([{ text: 'Je regarde ca' }]); // trimé, et AUCUN rcsMessageId inventé
-    expect(journal).toEqual([{ body: 'Je regarde ca', type: 'rcs', canal: 'rcs', sender: 'u1' }]);
+    expect(journal).toEqual([{ body: 'Je regarde ca', type: 'rcs', canal: 'rcs', sender: 'u1', origine: 'humain' }]);
     await a.close();
   });
 

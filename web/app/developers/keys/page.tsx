@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, type ApiKeyRow, type ApiKeyCreated } from '@/lib/api';
+import { listApiKeys, createApiKey, revokeApiKey, API_SCOPES, API_SCOPES_PAR_DEFAUT, type ApiKeyRow, type ApiKeyCreated } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
@@ -19,7 +19,8 @@ function KeysInner({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<Set<string>>(() => new Set(API_SCOPES));
+  // Pas `API_SCOPES` : les droits MCP ne sont pas cochés d'avance (cf. `API_SCOPES_PAR_DEFAUT`).
+  const [scopes, setScopes] = useState<Set<string>>(() => new Set<string>(API_SCOPES_PAR_DEFAUT));
   const [busy, setBusy] = useState(false);
   // La clé en clair n'existe QUE dans la réponse de création. Elle est gardée ici pour la modale, et il ne
   // faut surtout pas recharger la liste avant de l'avoir montrée : la liste ne la renvoie jamais.
@@ -41,6 +42,8 @@ function KeysInner({ session }: { session: Session }) {
   const SCOPE_LABEL: Record<string, string> = {
     'contacts:write': t('Créer et mettre à jour des contacts', 'Create and update contacts'),
     'sends:create': t('Déclencher des envois', 'Trigger sends'),
+    'mcp:read': t('MCP : lire les conversations et les contacts', 'MCP: read conversations and contacts'),
+    'mcp:write': t('MCP : répondre, taguer, affecter', 'MCP: reply, tag, assign'),
   };
 
   function toggleScope(s: string) {

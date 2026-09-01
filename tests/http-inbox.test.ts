@@ -62,7 +62,7 @@ describe('inbox routes', () => {
     let recorded: [string, string, string | null, string | undefined] | null = null;
     let sent: [string, string, string, string] | null = null;
     const a = app({
-      recordOutbound: async (id, body, msgId, type) => { recorded = [id, body, msgId, type]; },
+      recordOutbound: async (id, body, msgId, _origine, type) => { recorded = [id, body, msgId, type]; },
       sendReply: async (tenant, pn, to, text) => { sent = [tenant, pn, to, text]; return 'wamid.OUT'; },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
@@ -72,14 +72,19 @@ describe('inbox routes', () => {
     await a.close();
   });
 
-  it('POST reply -> journalise l auteur (sender_user_id du JWT) en 7e position', async () => {
+  it('POST reply -> journalise l auteur (sender_user_id du JWT) et l origine « humain »', async () => {
     let sender: string | null | undefined = 'UNSET';
+    const origines: string[] = [];
     const a = app({
-      recordOutbound: async (_id, _body, _msg, _type, _cat, _name, s) => { sender = s; },
+      recordOutbound: async (_id, _body, _msg, origine, _type, _cat, _name, s) => { sender = s; origines.push(origine); },
     });
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
     expect(res.statusCode).toBe(200);
     expect(sender).toBe('u1'); // userId du token
+    // 🔴 L'origine est POSÉE, plus déduite de l'expéditeur. Cette route n'est atteignable qu'avec un JWT de
+    // console, donc c'est bien un humain ; la déduction, elle, mentait dès qu'un appelant sans expéditeur
+    // humain apparaissait, et c'est ce qui est arrivé avec le serveur MCP.
+    expect(origines).toEqual(['humain']);
     await a.close();
   });
 
@@ -111,7 +116,7 @@ describe('inbox routes', () => {
     const a = app({
       getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
       sendTemplateMessage: async (tenant, pn, to, tpl) => { sent = { tenant, pn, to, tpl }; return 'wamid.TPL'; },
-      recordOutbound: async (_id, _body, _msg, type) => { recordedType = type; },
+      recordOutbound: async (_id, _body, _msg, _origine, type) => { recordedType = type; },
     });
     const res = await a.inject({
       method: 'POST',
@@ -130,7 +135,7 @@ describe('inbox routes', () => {
     let recorded: { type?: string; cat?: string | null; name?: string | null } = {};
     const a = app({
       getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
-      recordOutbound: async (_id, _body, _msg, type, cat, name) => { recorded = { type, cat, name }; },
+      recordOutbound: async (_id, _body, _msg, _origine, type, cat, name) => { recorded = { type, cat, name }; },
     });
     const res = await a.inject({
       method: 'POST',
@@ -147,7 +152,7 @@ describe('inbox routes', () => {
     const cats: Array<string | null> = [];
     const a = app({
       getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }),
-      recordOutbound: async (_id, _body, _msg, _type, cat) => { cats.push(cat ?? null); },
+      recordOutbound: async (_id, _body, _msg, _origine, _type, cat) => { cats.push(cat ?? null); },
     });
     // catégorie inconnue (ex. AUTHENTICATION / typo) -> null
     const r1 = await a.inject({

@@ -83,17 +83,24 @@ describe('origine d’un message de service', () => {
       expect(origineEcrite(requetes)).toBe('ia');
     });
 
-    it('🔴 une réponse d’opérateur est marquée « humain », déduite de l’expéditeur', async () => {
+    it('🔴 l’envoi par conversation écrit l’origine QU’ON LUI DONNE, il ne la déduit plus', async () => {
+      // 🔴 Le correctif d'un vrai bug, trouvé en revue. Cette origine était DÉDUITE de l'expéditeur : « pas
+      // d'expéditeur, donc un scénario ». Vrai tant que les seuls appelants étaient les routes de la
+      // console ; faux dès que le serveur MCP en a ajouté un, qui n'a pas d'expéditeur humain et n'est pas
+      // un scénario pour autant. Chaque réponse d'agent tiers partait marquée « scenario », et comme la
+      // valeur était écrite explicitement, le repli « indéterminée » ne pouvait même pas la signaler.
       const { pool, requetes } = faussePool();
-      await new PgInboxStore(pool).recordOutbound('conv-1', 'je vous rappelle', 'wamid-2', 'text', null, null, 'user-7');
+      await new PgInboxStore(pool).recordOutbound('conv-1', 'je vous rappelle', 'wamid-2', 'humain', 'text', null, null, 'user-7');
       expect(origineEcrite(requetes)).toBe('humain');
     });
 
-    it('le même chemin SANS expéditeur humain n’est pas marqué humain', async () => {
-      // Deux sens : la déduction doit distinguer, pas coller « humain » sur tout ce qui passe par l'inbox.
+    it('🔴 le MÊME chemin, sans expéditeur humain, n’écrit PAS « scenario » par défaut', async () => {
+      // L'autre sens, et c'est celui qui aurait attrapé le bug : un appelant sans expéditeur humain doit
+      // pouvoir dire ce qu'il est. Un agent tiers écrit « mcp », pas « scenario ».
       const { pool, requetes } = faussePool();
-      await new PgInboxStore(pool).recordOutbound('conv-1', 'message auto', 'wamid-3', 'text', null, null, null);
-      expect(origineEcrite(requetes)).not.toBe('humain');
+      await new PgInboxStore(pool).recordOutbound('conv-1', 'réponse d’un agent tiers', 'wamid-3', 'mcp', 'text', null, null, null);
+      expect(origineEcrite(requetes)).toBe('mcp');
+      expect(origineEcrite(requetes)).not.toBe('scenario');
     });
 
     it('🔴 l’envoi de l’AGENT IA déclare « ia », et pas l’origine de ses voisins', () => {
@@ -111,15 +118,19 @@ describe('origine d’un message de service', () => {
     });
   });
 
-  describe('la migration 0099', () => {
+  describe('les migrations de la colonne', () => {
     const sql = readFileSync(new URL('../db/migrations/0099_message_origine.sql', import.meta.url), 'utf8');
+    // La contrainte a été ROUVERTE par 0101 (l'origine `mcp`). C'est la DERNIÈRE qui fait foi : lire 0099
+    // seule aurait fait échouer ce test à chaque nouvelle valeur, et surtout l'aurait fait échouer POUR LA
+    // MAUVAISE RAISON, en laissant croire que le code écrit une valeur interdite.
+    const sqlCourant = readFileSync(new URL('../db/migrations/0101_origine_mcp.sql', import.meta.url), 'utf8');
 
     it('🔴 contraint la colonne aux SEULES origines déclarées en TypeScript', () => {
       // Les deux listes doivent rester alignées : une valeur écrite par le code mais absente du `check`
       // ferait échouer l'insertion en production, sur un chemin d'envoi, donc au pire moment.
-      for (const o of ORIGINES) expect(sql, `origine « ${o} » absente du check SQL`).toContain(`'${o}'`);
+      for (const o of ORIGINES) expect(sqlCourant, `origine « ${o} » absente du check SQL`).toContain(`'${o}'`);
       // Et l'inverse : rien dans le `check` qui ne soit pas déclaré côté code.
-      const duCheck = [...(sql.match(/check \(origin in \(([^)]*)\)\)/)?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+      const duCheck = [...(sqlCourant.match(/check \(origin in \(([^)]*)\)\)/)?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
       expect(duCheck.sort()).toEqual([...ORIGINES].sort());
     });
 

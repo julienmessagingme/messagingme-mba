@@ -5,7 +5,15 @@ import type { ApiKeyRow } from '../auth/api-key-store.pg';
 import { scopeTenant, nonEmpty } from './scope';
 
 /** Scopes d'API reconnus en V1. Une clé demande un sous-ensemble non vide. */
-export const VALID_API_SCOPES = ['contacts:write', 'sends:create'] as const;
+/**
+ * Les droits qu'une clé d'API peut porter.
+ *
+ * `mcp:read` et `mcp:write` sont SÉPARÉS des deux autres, et c'est voulu : une clé donnée à un agent tiers
+ * pour lire l'inbox ne doit pas emporter au passage le droit de créer des contacts ou de lancer un envoi.
+ * Le serveur MCP ne liste même pas les outils hors des scopes de la clé, donc « lecture seule » veut dire
+ * qu'un agent ne VOIT pas l'outil qui écrit.
+ */
+export const VALID_API_SCOPES = ['contacts:write', 'sends:create', 'mcp:read', 'mcp:write'] as const;
 
 export interface ApiKeysRouteDeps {
   createKey(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }>;

@@ -11,7 +11,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { cheminDeNav, type NavEntree } from '@/lib/nav';
 
-type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'webhooks' | 'connecteurs' | 'parametres';
+type Tab = 'accueil' | 'dashboard' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'workflows' | 'automations' | 'mba-guide' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'parametres';
 
 /** Icônes de nav (SVG inline, aucune dépendance). */
 const ICON = 'h-[18px] w-[18px] shrink-0';
@@ -119,6 +119,7 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     { key: 'developers', label: t('Developers', 'Developers'), d: icons.developers, children: [
       { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
+      { key: 'mcp', href: '/developers/mcp', label: t('Serveur MCP', 'MCP server') },
     ] },
   ];
   const NAV_AGENT: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), d: icons.inbox, badge: unread }];

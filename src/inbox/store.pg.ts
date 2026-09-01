@@ -586,6 +586,18 @@ export class PgInboxStore implements InboxStore {
     conversationId: string,
     body: string,
     messageId: string | null,
+    /**
+     * 🔴 OBLIGATOIRE, et placée AVANT les paramètres à défaut pour que ce soit le compilateur qui trouve
+     * les appelants (migration 0101).
+     *
+     * Elle était DÉDUITE de `senderUserId` : « un expéditeur, donc un humain ; pas d'expéditeur, donc un
+     * scénario ». C'était vrai tant que ce chemin n'avait que des appelants de la console. Le serveur MCP
+     * en a ajouté un sans expéditeur humain, et chaque réponse d'agent tiers est partie marquée
+     * « scénario », en silence, sans même déclencher le repli « indéterminée » puisque la valeur était
+     * écrite. Une valeur déduite d'un autre champ ne tient que tant que la liste des appelants ne bouge
+     * pas, et une liste d'appelants bouge toujours.
+     */
+    origine: OrigineMessage,
     type = 'text',
     templateCategory: string | null = null,
     templateName: string | null = null,
@@ -598,10 +610,6 @@ export class PgInboxStore implements InboxStore {
        where id = $1`,
       [conversationId, body],
     );
-    // Origine DÉDUITE ici et non passée en paramètre : ce chemin-ci n'a qu'un appelant, les routes de
-    // l'inbox, où l'expéditeur est toujours l'opérateur connecté. La déduire ailleurs (à la lecture)
-    // obligerait à répéter la même règle ; la poser ici la fige à l'écriture, une fois.
-    const origine: OrigineMessage = senderUserId !== null ? 'humain' : 'scenario';
     await this.pool.query(
       `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin)
        values ($1, 'out', $4, $2, $3, $5, $6, $7, $8, $9)`,

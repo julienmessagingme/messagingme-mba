@@ -8,7 +8,7 @@
  * naturelle, en relisant la table, est de croire que `type` suffit.
  */
 
-export const ORIGINES = ['humain', 'scenario', 'ia', 'mba', 'campagne'] as const;
+export const ORIGINES = ['humain', 'scenario', 'ia', 'mba', 'campagne', 'mcp'] as const;
 export type OrigineMessage = (typeof ORIGINES)[number];
 
 /**
@@ -54,6 +54,10 @@ export const ORIGINE_EFFECTIVE_SQL = `coalesce(
 export const THEME_DE_ORIGINE: Record<string, 'ia' | 'scenario' | 'humain' | 'indeterminee'> = {
   ia: 'ia',
   mba: 'ia',
+  // Un agent tiers branché par MCP : côté client, c'est une IA qui répond. La valeur reste DISTINCTE en
+  // base (comme `mba` l'est de `ia`) pour pouvoir la séparer un jour sans réécrire l'historique, mais elle
+  // rejoint le thème « IA » à l'écran, parce que Julien en a demandé trois et pas six.
+  mcp: 'ia',
   scenario: 'scenario',
   humain: 'humain',
   campagne: 'scenario',
