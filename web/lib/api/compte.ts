@@ -1,0 +1,237 @@
+'use client';
+
+/**
+ * Le compte : profil, statut WhatsApp, import HubSpot, exploitation /ops, support, admin.
+ *
+ * Sorti de `lib/api.ts` le 2026-09-01 (lot 5 du programme II), qui pesait 1 874 lignes. Le socle HTTP
+ * (`./http`) etait deja extrait : ce decoupage-ci ne separe que des surfaces d'appel, sans etat partage.
+ * `lib/api.ts` reste le point d'entree et reexporte tout, donc AUCUN des 67 importeurs ne change.
+ */
+
+import { request, ApiError, BASE } from '../http';
+import type { LoginResult } from './auth';
+import type { ImportReport } from './contacts';
+import type { DailyPoint } from './stats';
+
+// --- Accueil : profil courant + statut compte WhatsApp ---
+
+export interface MeResponse {
+  email: string;
+  name: string | null;
+  role: string;
+}
+export function getMe(tenantId: string): Promise<MeResponse> {
+  return request<MeResponse>(`/tenants/${tenantId}/me`);
+}
+
+export type AccountDot = 'green' | 'amber' | 'red' | 'grey';
+export interface AccountStatusResponse {
+  hasNumber: boolean;
+  /** Id Meta du numéro principal (requis pour le PATCH du toggle HubSpot). */
+  phoneNumberId: string | null;
+  number: string | null;
+  tier: string | null;
+  quality: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN';
+  numberStatus: string | null;
+  nameStatus: string | null;
+  codeVerificationStatus: string | null;
+  throughputLevel: string | null;
+  verifiedName: string | null;
+  wabaHealthStatus: string | null;
+  accountReviewStatus: string | null;
+  businessVerificationStatus: string | null;
+  /** Onboarding API MM Lite (marketing_messages_lite_api_status). null = non communiqué par Meta. */
+  marketingMessagesLiteApiStatus: string | null;
+  /** Business propriétaire du WABA (owner_business_info.name). null = inconnu. */
+  ownerBusinessName: string | null;
+  hubspotConnected: boolean;
+  /** Instant de pause de la synchro (F3-a). null = jamais activé OU actif ; non-null + hubspotConnected=false = en pause. */
+  hubspotPausedAt: string | null;
+  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ».
+   *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */
+  hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean };
+  status: { dot: AccountDot; label: string; reason: string };
+}
+export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {
+  return request<AccountStatusResponse>(`/tenants/${tenantId}/account-status`);
+}
+/** Active/coupe/pause la synchro HubSpot d'un numéro (toggle admin). `catchupTriggered` = true si on vient de
+ *  reprendre après une pause (le rattrapage des analyses accumulées est en cours côté worker). */
+export function setHubspotConnected(tenantId: string, phoneNumberId: string, connected: boolean): Promise<{ phoneNumberId: string; hubspotConnected: boolean; catchupTriggered: boolean }> {
+  return request(`/tenants/${tenantId}/phone-numbers/${encodeURIComponent(phoneNumberId)}/hubspot`, {
+    method: 'PATCH',
+    body: JSON.stringify({ connected }),
+  });
+}
+/** Déconnexion COMPLÈTE (candidat 2) : délie le portail HubSpot du tenant (le connecteur révoque le token si dernier
+ *  tenant) et coupe la synchro de TOUS les numéros du tenant. `disconnected:false` = déjà délié (succès idempotent). */
+export function disconnectHubspot(tenantId: string, phoneNumberId: string): Promise<{ phoneNumberId: string; hubspotConnected: boolean; disconnected: boolean }> {
+  return request(`/tenants/${tenantId}/phone-numbers/${encodeURIComponent(phoneNumberId)}/hubspot`, {
+    method: 'PATCH',
+    body: JSON.stringify({ connected: false, action: 'disconnect' }),
+  });
+}
+
+// --- Import de listes HubSpot (3e source de campagne) ---
+
+export interface HubspotList { listId: string; name: string; size: number | null; processingType: string }
+/**
+ * Réponse du GET /hubspot/lists : `available:false` si le toggle est OFF (sans reason) OU si la synchro est en pause
+ * (`reason:'paused'`, F3-b) ; sinon lists (ou re-consentement requis).
+ */
+export interface HubspotListsResult {
+  available: boolean;
+  reason?: 'reconsent_required' | 'paused';
+  reconsentUrl?: string;
+  lists?: HubspotList[];
+}
+export function listHubspotLists(tenantId: string, query?: string): Promise<HubspotListsResult> {
+  const qs = query ? `?query=${encodeURIComponent(query)}` : '';
+  return request<HubspotListsResult>(`/tenants/${tenantId}/hubspot/lists${qs}`);
+}
+/** Une étape de deal du portail. `closed` = étape de fin (gagné/perdu), signalée à l'écran. */
+export interface HubspotDealStage { id: string; label: string; closed: boolean }
+export interface HubspotDealPipeline { id: string; label: string; stages: HubspotDealStage[] }
+/**
+ * Pipelines du portail avec les libellés de leurs étapes, pour régler une automation « étape de deal » sans
+ * aller recopier un identifiant opaque dans HubSpot. `connected:false` = aucun portail lié (pas une erreur).
+ */
+export function listHubspotDealStages(tenantId: string): Promise<{ connected: boolean; pipelines: HubspotDealPipeline[] }> {
+  return request(`/tenants/${tenantId}/hubspot/deal-stages`);
+}
+
+/**
+ * Crée UN contact à la main (le mini-CRM ne savait le faire que par import CSV). `status` dit si le contact a
+ * été créé ou si un contact portant ce numéro EXISTAIT déjà et a été mis à jour : l'écran ne doit pas annoncer
+ * une création dans le second cas.
+ */
+export function createContact(
+  tenantId: string,
+  input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean; bsuid?: string },
+): Promise<{ status: 'created' | 'updated'; contactId?: string }> {
+  return request(`/tenants/${tenantId}/contacts`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** Importe une liste HubSpot comme contacts (opt-in jamais activé, tag « HubSpot: <nom> »). `tags` = tag(s)
+ *  réellement posé(s) par le serveur (source de vérité pour filtrer les contacts importés). */
+export function importHubspotList(tenantId: string, listId: string, listName: string): Promise<ImportReport & { truncated: boolean; skippedNoPhone: number; tags: string[] }> {
+  return request(`/tenants/${tenantId}/hubspot/import`, { method: 'POST', body: JSON.stringify({ listId, listName }) });
+}
+
+// --- Surface d'exploitation cross-tenant (/ops) : token SÉPARÉ (x-ops-token), PAS la session JWT ---
+
+export interface TenantOverviewRow {
+  id: string;
+  name: string;
+  createdAt: string;
+  mbaEnabled: boolean;
+  users: number;
+  contacts: number;
+  messages: number;
+  templatesUsed: number;
+  lastSendAt: string | null;
+  phone: string | null;
+  phoneStatus: string | null;
+  quality: string | null;
+}
+export interface QueueLoadRow {
+  queue: string;
+  backlog: number;
+  active: number;
+  failed: number;
+}
+/** Signal de vie du worker (item 4.9). null = aucun battement (worker jamais démarré, ou table absente avant
+ *  migration 0044). `ageSeconds` élevé = worker probablement mort (crash-loop invisible côté mba-api). */
+export interface WorkerHeartbeat {
+  beatAt: string;
+  bootedAt: string | null;
+  instance: string | null;
+  ageSeconds: number;
+}
+export interface OpsOverview {
+  tenants: TenantOverviewRow[];
+  daily: DailyPoint[];
+  queues: QueueLoadRow[];
+  /** Peut être absent d'une réponse antérieure au 4.9 -> traité comme null côté page. */
+  worker: WorkerHeartbeat | null;
+}
+
+/**
+ * Appel dédié à /ops : n'utilise NI getSession NI clearSession (un 401 ops ne doit pas déconnecter la
+ * console admin), pose seulement `x-ops-token`. Le token est saisi par l'ops et gardé en localStorage.
+ */
+/**
+ * Ouvre une session d'OBSERVATION dans l'espace d'un client (surface d'exploitation).
+ *
+ * Rend un jeton de session en LECTURE SEULE, valable une heure. Il ne peut rien écrire et ne marque rien
+ * comme lu : c'est le SERVEUR qui l'impose, pas l'écran.
+ */
+export async function observerTenant(opsToken: string, tenantId: string): Promise<{ token: string; tenantId: string; tenantName: string }> {
+  // `fetch` direct et non `request` : la surface d'exploitation a sa PROPRE autorité (`x-ops-token`), et
+  // `request` y attacherait le jeton de session du client. Même patron que `getOpsOverview` juste en dessous.
+  const res = await fetch(`${BASE}/ops/observe`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-ops-token': opsToken },
+    body: JSON.stringify({ tenantId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<{ token: string; tenantId: string; tenantName: string }>;
+}
+export async function getOpsOverview(opsToken: string): Promise<OpsOverview> {
+  const res = await fetch(`${BASE}/ops/overview`, { headers: { 'x-ops-token': opsToken } });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error ?? `Erreur ${res.status}`);
+  }
+  return res.json() as Promise<OpsOverview>;
+}
+
+// --- Support (formulaire de contact -> email Resend) ---
+
+/** Le reply-to n'est PAS envoye par le client : le serveur le resout depuis le compte authentifie. */
+export function sendSupportMessage(tenantId: string, input: { subject: string; message: string }): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>(`/tenants/${tenantId}/support`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+// --- Admin (gestion des comptes) ---
+
+export type UserRole = 'admin' | 'manager' | 'agent';
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: UserRole;
+  /** Code public « usr_<client>_<ulid> » (schéma A). Absent tant que le backfill n'a pas tourné. */
+  code?: string | null;
+  /** true = compte révoqué (login bloqué). */
+  disabled: boolean;
+  /** true = invitation en attente (mot de passe pas encore choisi). */
+  pending: boolean;
+  createdAt: string;
+  /** Dernière connexion réussie (ISO). null = jamais connecté depuis la mise en place du suivi (migration
+   *  0037) : on affiche « jamais », on ne retombe PAS sur `createdAt` qui mentirait. */
+  lastLoginAt: string | null;
+}
+export function listUsers(tenantId: string): Promise<{ users: AdminUser[] }> {
+  return request<{ users: AdminUser[] }>(`/tenants/${tenantId}/users`);
+}
+/** Invite un membre (crée un compte en attente + envoie un lien pour choisir son mot de passe). */
+export function inviteMember(tenantId: string, email: string, role: UserRole): Promise<{ user: AdminUser; emailSent: boolean }> {
+  return request(`/tenants/${tenantId}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) });
+}
+/** Accepte une invitation : pose le mot de passe et connecte (renvoie une session comme le login). */
+export function acceptInvitation(token: string, password: string): Promise<LoginResult> {
+  return request<LoginResult>('/auth/invitations/accept', { method: 'POST', body: JSON.stringify({ token, password }) });
+}
+export function setUserRole(tenantId: string, userId: string, role: UserRole): Promise<{ id: string; role: UserRole }> {
+  return request(`/tenants/${tenantId}/users/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+}
+export function setUserDisabled(tenantId: string, userId: string, disabled: boolean): Promise<{ id: string; disabled: boolean }> {
+  return request(`/tenants/${tenantId}/users/${userId}/disabled`, { method: 'PATCH', body: JSON.stringify({ disabled }) });
+}
+export function deleteUser(tenantId: string, userId: string): Promise<{ id: string; deleted: boolean }> {
+  return request(`/tenants/${tenantId}/users/${userId}`, { method: 'DELETE' });
+}
