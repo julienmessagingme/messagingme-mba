@@ -2058,6 +2058,41 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : programme II, lot 3 (les entrants en parallèle, ordonnés par contact)
+
+**Ce qui changeait.** La file des messages entrants traitait UN job à la fois, tous clients confondus : un
+envoi Meta lent ou un appel HubSpot qui traîne, et la réponse d'un autre client attendait derrière. C'est le
+« noisy neighbour » de l'audit, sur le chemin le plus visible du produit.
+
+🔴 **Les deux options vont ENSEMBLE, et c'est tout le sujet.** `concurrency` seul remettrait le désordre entre
+deux messages d'un même contact : le verrou d'avance conditionnelle (lot 1 du programme I) protège l'ÉTAT du
+parcours, pas les EFFETS, et deux messages envoyés dans le désordre restent envoyés dans le désordre.
+`groupConcurrency` seul serait un NO-OP, pg-boss n'ayant rien à répartir tant qu'un seul job est en vol. Un
+test statique lit désormais `src/worker.ts` et refuse l'une sans l'autre, vérifié dans les deux sens.
+
+**La clé de groupe est `phone_number_id:wa_id`**, calculée par le receveur SANS toucher la base (il doit
+accuser réception à Meta immédiatement). Un numéro appartient à un seul espace, donc deux espaces ne peuvent
+pas partager une clé : le cloisonnement tient sans lecture. Elle vaut `undefined` dès que le payload ne désigne
+pas UN contact et un seul (plusieurs contacts, `wa_id` masqué par un BSUID, bascule de contrôle dont la forme
+n'est pas documentée) : même doctrine conservatrice que l'aiguillage des accusés, dans le doute on renonce à
+l'optimisation plutôt que d'inventer un ordre faux.
+
+**Concurrence à 3, avec l'arithmétique.** Le worker tient déjà 4 runs de campagne en parallèle, plus les
+accusés, les automations et les tours d'agent ; le pool applicatif est de 8 connexions PAR PROCESS, valeur
+mesurée comme la capacité réelle du pooler. Relever `WEBHOOK_CONCURRENCY` demande de refaire ce calcul, pas
+seulement de changer la variable.
+
+⚠️ **La garantie d'ordre est LOCALE au process** (`localGroupConcurrency`). Avec un second worker elle tombe :
+c'est le lot 8. `automation-event` reste à un job en vol, donc ordonnée par construction, et la note est posée
+à l'endroit exact où quelqu'un voudra lui donner de la concurrence.
+
+**Refactor préalable, commit séparé.** `handleWebhookJob` prenait DOUZE paramètres positionnels : l'appel de
+la file des accusés s'écrivait avec sept `undefined` d'affilée, dont aucun lecteur ne peut dire ce qu'ils
+désignent, et où insérer un paramètre au mauvais rang changeait le câblage en silence (tout est optionnel et
+de types voisins, le compilateur ne bronchait pas). Dépendances nommées, corps inchangé, seize appels de test
+convertis, même leçon que `enqueueCampaignRun`.
+
+---
 ## DEPLOYE le 2026-09-01 : programme II, lots 1 et 2 (index des chemins chauds, et ce qui se dégradait en silence)
 
 **Lot 1, le runner AVANT les index, et l'ordre n'est pas négociable.** `db/migrate.ts` jouait tout dans une
