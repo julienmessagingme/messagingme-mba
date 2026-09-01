@@ -12,7 +12,7 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## LIVRÉ le 2026-09-01 : le lot UX + le serveur MCP
+## LIVRÉ ET DÉPLOYÉ le 2026-09-01 : le lot UX + le serveur MCP
 
 Les six points de la liste de Julien ([docs/LOT-UX-ET-MCP-2026-09-01.md](docs/LOT-UX-ET-MCP-2026-09-01.md))
 sont livrés en quatre briques. Le fonctionnel est dans [features.md](features.md), la technique dans
@@ -28,6 +28,9 @@ sont livrés en quatre briques. Le fonctionnel est dans [features.md](features.m
 - `/v1` ne compte que quatre endpoints et AUCUNE lecture. « MCP = façade mince sur /v1 » était donc faux :
   la règle retenue est qu'un outil MCP appelle la fonction que la route de console appelle, ce qui a fait
   extraire `src/inbox/repondre.ts`, partagé par les deux.
+- ⚠️ **Ce qui n'est PAS prouvé en production** : un `tools/call` authentifié. Le chemin public est vérifié
+  jusqu'au 401 (donc rewrite Next, route et preHandler sont vivants) ; exécuter un outil demande une vraie
+  clé d'API, à créer depuis la console.
 - **Le grant OAuth 2.1 délégué n'est PAS fait** : l'accès MCP passe par une clé d'API à scopes. Le scénario
   `claude mcp add` + fenêtre de login + choix d'espace + révocation par utilisateur est un lot à lui seul,
   décrit dans [todo.md](todo.md).
