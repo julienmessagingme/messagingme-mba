@@ -213,3 +213,103 @@ describe('charge des files : l’âge du plus vieux job', () => {
     await a.close();
   });
 });
+
+
+describe('équité : les groupes qui attendent le plus', () => {
+  it('🔴 remontent dans la réponse, et une lecture en ÉCHEC ne prive pas de tout le reste', async () => {
+    // 🔴 C'est le SLO 3 (`docs/SLO-2026-09-01.md`), et le trou que ce document signalait comme son propre
+    // angle mort : la profondeur et l'âge par file disent « la file avance », pas « tout le monde est
+    // servi ». Un espace affamé derrière un espace bavard est invisible d'une moyenne.
+    const a = app(OPS, {
+      getQueueLoadParGroupe: async () => [{ queue: 'campaign-run', groupe: 't-affame', backlog: 3, ageMaxSecondes: 420 }],
+    });
+    const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    expect(res.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe)
+      .toEqual([{ queue: 'campaign-run', groupe: 't-affame', backlog: 3, ageMaxSecondes: 420 }]);
+    await a.close();
+
+    // Une lecture de confort qui échoue ne doit pas emporter l'écran d'exploitation entier : c'est
+    // précisément quand ça va mal qu'on en a besoin.
+    const b = app(OPS, { getQueueLoadParGroupe: async () => { throw new Error('pgboss injoignable'); } });
+    const res2 = await b.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    expect(res2.statusCode).toBe(200);
+    expect(res2.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe).toEqual([]);
+    expect(res2.json<{ queues: unknown[] }>().queues.length).toBeGreaterThan(0);
+    await b.close();
+  });
+
+  it('une instance sans cette lecture rend une liste vide, pas une erreur', async () => {
+    const a = app(OPS, {});
+    const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    expect(res.json<{ queuesParGroupe: unknown[] }>().queuesParGroupe).toEqual([]);
+    await a.close();
+  });
+});
+
+
+describe('jobs morts : les voir, puis les rejouer', () => {
+  const mort = (id: string, queue: string) => ({ id, queue, data: { x: id }, creeLe: '2026-09-01T00:00:00.000Z', erreur: 'boom' });
+
+  it('la route de lecture est ABSENTE sans la dépendance : rien ne s’expose par défaut', async () => {
+    const a = app(OPS, {});
+    expect((await a.inject({ method: 'GET', url: '/ops/dlq', headers: { 'x-ops-token': OPS } })).statusCode).toBe(404);
+    await a.close();
+  });
+
+  it('lit les jobs morts', async () => {
+    const a = app(OPS, { listerJobsMorts: async () => [mort('j1', 'webhook')] });
+    const res = await a.inject({ method: 'GET', url: '/ops/dlq', headers: { 'x-ops-token': OPS } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ jobs: Array<{ id: string }> }>().jobs).toHaveLength(1);
+    await a.close();
+  });
+
+  it('🔴 le rejeu ENFILE PUIS OUBLIE, jamais l’inverse', async () => {
+    // 🔴 L'ordre décide du mode de panne. Un crash entre les deux produit un DOUBLON ; l'ordre inverse
+    // produirait une PERTE. Le doublon est rattrapé partout où ça compte, la perte nulle part.
+    const journal: string[] = [];
+    const a = app(OPS, {
+      listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook')],
+      reenfiler: async (q) => { journal.push(`enfile:${q}`); },
+      oublierJobsMorts: async (ids) => { journal.push(`oublie:${ids.join(',')}`); return ids.length; },
+    });
+    const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook', limit: 10 } });
+    expect(res.json<{ rejoues: number; oublies: number }>()).toEqual({ rejoues: 2, oublies: 2 });
+    expect(journal).toEqual(['enfile:webhook', 'enfile:webhook', 'oublie:j1,j2']);
+    await a.close();
+  });
+
+  it('🔴 un enfilement qui ÉCHOUE n’oublie que ce qui est réellement parti', async () => {
+    // Sinon on supprimerait de la file d'échec des traitements qui n'ont jamais été ré-enfilés : une perte
+    // silencieuse, et sur un `webhook` c'est un message de client perdu pour de bon.
+    const oublies: string[][] = [];
+    let enfiles = 0;
+    const a = app(OPS, {
+      listerJobsMorts: async () => [mort('j1', 'webhook'), mort('j2', 'webhook'), mort('j3', 'webhook')],
+      // Le PREMIER passe, le SECOND échoue : on vérifie qu'on n'oublie que le premier.
+      reenfiler: async () => { enfiles += 1; if (enfiles === 2) throw new Error('file pleine'); },
+      oublierJobsMorts: async (ids) => { oublies.push(ids); return ids.length; },
+    });
+    const res = await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook' } });
+    expect(res.json<{ rejoues: number }>().rejoues).toBe(1);
+    expect(oublies).toEqual([['j1']]);
+    await a.close();
+  });
+
+  it('🔴 la FILE est obligatoire : pas de rejeu « tout » d’un coup', async () => {
+    // Un rejeu global relancerait campagnes et webhooks ensemble, sur des causes d'échec différentes qu'on
+    // n'a pas toutes corrigées.
+    const a = app(OPS, { listerJobsMorts: async () => [], reenfiler: async () => {}, oublierJobsMorts: async () => 0 });
+    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: {} })).statusCode).toBe(400);
+    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', headers: { 'x-ops-token': OPS }, payload: { queue: 'webhook', limit: 5000 } })).statusCode).toBe(400);
+    await a.close();
+  });
+
+  it('sans jeton d’exploitation, ni lecture ni rejeu', async () => {
+    // C'est une ÉCRITURE métier : elle ne doit jamais être atteignable depuis un compte de la console.
+    const a = app(OPS, { listerJobsMorts: async () => [], reenfiler: async () => {}, oublierJobsMorts: async () => 0 });
+    expect((await a.inject({ method: 'GET', url: '/ops/dlq' })).statusCode).toBe(401);
+    expect((await a.inject({ method: 'POST', url: '/ops/dlq/replay', payload: { queue: 'webhook' } })).statusCode).toBe(401);
+    await a.close();
+  });
+});

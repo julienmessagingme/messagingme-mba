@@ -1117,6 +1117,14 @@ async function main(): Promise<void> {
       getTenantOverview: () => opsStore.getTenantOverview(),
       getGlobalDaily: (days) => opsStore.getGlobalDaily(days),
       getQueueLoad: () => opsStore.getQueueLoad(),
+      // L'équité : quels GROUPES attendent le plus. Vide = tout le monde est servi.
+      getQueueLoadParGroupe: () => opsStore.getQueueLoadParGroupe(),
+      // Les jobs MORTS et leur rejeu. Deuxième écriture métier de la surface d'exploitation, assumée pour la
+      // même raison que le rechargement de solde : rejouer un traitement mort est un geste d'exploitation,
+      // cross-espace, qui suppose qu'on ait corrigé la cause de l'échec.
+      listerJobsMorts: (limite) => opsStore.listerJobsMorts(limite),
+      reenfiler: (nomDeFile, data) => queue.enqueue(nomDeFile, data),
+      oublierJobsMorts: (ids) => opsStore.oublierJobsMorts(ids),
       getWorkerHeartbeat: () => heartbeatStore.get(),
       // Le solde prepaye d un workspace pour l agent IA. La RECHARGE est la seule ecriture metier de cette
       // surface, et elle est ici parce qu un client ne doit jamais pouvoir crediter son propre compte.

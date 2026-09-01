@@ -2058,6 +2058,37 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-02 : voir et rejouer les jobs MORTS
+
+Le dépôt ALERTAIT déjà quand une file d'échec se remplissait, mais la seule reprise possible était de renvoyer
+le message à la main, ce qui ne passe pas l'échelle. Un job qui épuise ses rejeux part en file d'échec, que
+**rien ne consomme** : il y reste pour toujours.
+
+🔴 **Pour un `webhook`, un job mort est un MESSAGE DE CLIENT jamais traité.** C'est le pire cas du dépôt parce
+qu'il est silencieux : le client a écrit, le scénario n'a pas avancé, et personne ne le sait.
+
+### Deuxième écriture métier de `/ops`, et pourquoi elle y a sa place
+
+Le CLAUDE.md exige qu'aucune écriture ne rejoigne cette surface sans la même justification que le rechargement
+de solde. Elle tient : rejouer un traitement mort est un geste d'EXPLOITATION par nature. Il est cross-espace,
+il suppose qu'on ait corrigé la cause de l'échec, et il ne doit jamais être accessible depuis un compte de la
+console, sans quoi un client rejouerait des traitements sans savoir pourquoi ils avaient échoué.
+
+### Trois décisions qui portent le reste
+
+🔴 **Enfiler PUIS oublier, jamais l'inverse.** L'ordre décide du mode de panne : un crash entre les deux
+produit un DOUBLON, l'ordre inverse produirait une PERTE. Le doublon est rattrapé partout où ça compte
+(déduplication du message entrant, réclamation atomique d'un destinataire, verrou de run) ; la perte n'est
+rattrapée nulle part. Un test le prouve dans les deux sens.
+
+🔴 **La file est OBLIGATOIRE, il n'y a pas de « tout rejouer ».** Un rejeu global relancerait campagnes et
+webhooks ensemble, sur des causes d'échec différentes qu'on n'a pas toutes corrigées. Le lot est borné à 100,
+pour forcer à regarder entre deux passes.
+
+⚠️ **La lecture d'abord.** `GET /ops/dlq` montre les plus anciens avec leur erreur tronquée. Rejouer sans
+regarder, c'est relancer en masse des traitements qui ont échoué pour une raison qu'on n'a pas corrigée.
+
+---
 ## DEPLOYE le 2026-09-01 : le tour d'avance est RÉSERVÉ avant les envois (migration 0104)
 
 Le trou le plus cher du produit, documenté dans `executor.ts` depuis des semaines sous la forme « cette garde

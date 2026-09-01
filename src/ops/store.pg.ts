@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { ALL_QUEUES } from '../queue/names';
+import { ALL_QUEUES, BASE_QUEUES, dlqName } from '../queue/names';
 
 /** Rollup par tenant pour la surface d'exploitation cross-tenant (lecture seule). */
 export interface TenantOverviewRow {
@@ -35,6 +35,43 @@ export interface QueueLoadRow {
    * trois jours de retard et rendrait la mesure inutilisable.
    */
   ageMaxSecondes: number;
+}
+
+/**
+ * Le plus vieux job en attente d'UN GROUPE de file. Sert l'équité (SLO 3 de `docs/SLO-2026-09-01.md`).
+ *
+ * 🔴 Pourquoi il fallait ça EN PLUS de l'âge par file : la profondeur et l'âge globaux disent « la file
+ * avance », pas « tout le monde est servi ». Un espace affamé derrière un espace bavard est parfaitement
+ * invisible d'une moyenne, et l'équité est justement la promesse la plus facile à trahir sans s'en
+ * apercevoir. C'est le trou que le document de SLO signalait comme son propre angle mort.
+ *
+ * ⚠️ CE QUE `groupe` DÉSIGNE DÉPEND DE LA FILE, et il ne faut pas le lire de travers :
+ *   - `campaign-run` : l'ESPACE client (c'est là que se lit l'équité entre clients) ;
+ *   - `webhook` : le CONTACT (`<numéro>:<wa_id>`), donc « quel contact attend le plus », ce qui sert le SLO 1 ;
+ *   - les autres files n'ont pas de groupe : elles n'apparaissent pas ici.
+ */
+export interface QueueGroupLoadRow {
+  queue: string;
+  groupe: string;
+  backlog: number;
+  ageMaxSecondes: number;
+}
+
+/**
+ * Un job MORT, en attente d'une décision humaine. Il a épuisé ses rejeux et personne ne consomme les DLQ :
+ * sans rejeu manuel, il y reste pour toujours.
+ *
+ * 🔴 Pour un `webhook`, ça veut dire un MESSAGE DE CLIENT jamais traité. C'est le pire cas de tout ce dépôt,
+ * parce qu'il est silencieux : le client a écrit, le scénario n'a pas avancé, et personne ne le sait.
+ */
+export interface JobMortRow {
+  id: string;
+  /** La file d'ORIGINE (sans le suffixe), c'est-à-dire celle où le rejeu le remettra. */
+  queue: string;
+  data: unknown;
+  creeLe: string;
+  /** Ce que la dernière tentative a laissé comme trace, tronqué : de quoi décider, pas de quoi enquêter. */
+  erreur: string | null;
 }
 
 export interface GlobalDailyPoint {
@@ -134,6 +171,86 @@ export class PgOpsStore {
    * process séparés : on lit l'état en base, pas via l'instance pg-boss du worker. Tolère l'absence de
    * la table (pg-boss pas encore initialisé) -> renvoie des zéros plutôt que de planter la route.
    */
+  /**
+   * Les groupes qui ATTENDENT le plus, toutes files confondues. Vide quand rien n'attend, ce qui est l'état
+   * normal : cette lecture n'existe que pour rendre visible ce qu'une moyenne cache.
+   *
+   * Borné à `limite` lignes, triées par âge décroissant : on veut les pires, pas un inventaire. Un espace
+   * qui n'apparaît pas est un espace qui va bien.
+   */
+  /**
+   * Les jobs MORTS, les plus anciens d'abord. Lecture pure : rien n'est déplacé ni supprimé.
+   *
+   * C'est ce qui permet de décider AVANT de rejouer. Rejouer sans regarder, c'est relancer en masse des
+   * traitements qui ont échoué pour une raison qu'on n'a pas corrigée.
+   */
+  async listerJobsMorts(limite = 50): Promise<JobMortRow[]> {
+    const parDlq = new Map(BASE_QUEUES.map((q) => [dlqName(q), q]));
+    try {
+      const res = await this.pool.query<{ id: string; name: string; data: unknown; created_on: Date; output: unknown }>(
+        `select id, name, data, created_on, output
+           from ${this.schema}.job
+          where name = any($1) and state = 'created'
+          order by created_on asc
+          limit $2`,
+        [[...parDlq.keys()], Math.max(1, Math.min(limite, 200))],
+      );
+      return res.rows.map((r) => ({
+        id: r.id,
+        queue: parDlq.get(r.name) ?? r.name,
+        data: r.data,
+        creeLe: r.created_on.toISOString(),
+        // `output` porte l'erreur de la dernière tentative. Tronquée : un opérateur décide sur une ligne,
+        // il enquête ailleurs, et une pile complète par job rendrait l'écran illisible.
+        erreur: r.output === null || r.output === undefined ? null : JSON.stringify(r.output).slice(0, 300),
+      }));
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return [];
+      throw err;
+    }
+  }
+
+  /**
+   * Retire de la DLQ les jobs qu'on vient de RÉ-ENFILER. Appelée APRÈS l'enfilement, jamais avant.
+   *
+   * 🔴 L'ordre décide du mode de panne, et il est choisi. Enfiler puis supprimer veut dire qu'un crash entre
+   * les deux produit un DOUBLON ; supprimer puis enfiler produirait une PERTE. Le doublon est rattrapé
+   * partout où ça compte (déduplication du message entrant, réclamation atomique d'un destinataire, verrou de
+   * run), la perte ne l'est nulle part. On choisit donc le doublon, en le sachant.
+   */
+  async oublierJobsMorts(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const res = await this.pool.query(`delete from ${this.schema}.job where id = any($1::uuid[])`, [ids]);
+    return res.rowCount ?? 0;
+  }
+
+  async getQueueLoadParGroupe(limite = 20): Promise<QueueGroupLoadRow[]> {
+    try {
+      const res = await this.pool.query<{ name: string; group_id: string; backlog: string; age_max: string }>(
+        `select name, group_id, count(*)::int as backlog,
+                max(extract(epoch from (now() - start_after)))::int as age_max
+           from ${this.schema}.job
+          where name = any($1) and state in ('created', 'retry')
+            and group_id is not null and start_after <= now()
+          group by name, group_id
+          having max(extract(epoch from (now() - start_after))) > 0
+          order by age_max desc
+          limit $2`,
+        [ALL_QUEUES, Math.max(1, limite)],
+      );
+      return res.rows.map((r) => ({
+        queue: r.name,
+        groupe: r.group_id,
+        backlog: Number(r.backlog),
+        ageMaxSecondes: Math.max(0, Number(r.age_max)),
+      }));
+    } catch (err) {
+      // 42P01 = table pgboss absente : pas d'erreur, rien à signaler.
+      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return [];
+      throw err;
+    }
+  }
+
   async getQueueLoad(): Promise<QueueLoadRow[]> {
     const zero = (): QueueLoadRow[] => ALL_QUEUES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }));
     try {

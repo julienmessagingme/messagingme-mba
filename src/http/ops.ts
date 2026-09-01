@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { makeRequireOps } from '../auth/middleware';
 import { estUuid } from './scope';
-import type { TenantOverviewRow, QueueLoadRow, GlobalDailyPoint } from '../ops/store.pg';
+import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, GlobalDailyPoint, JobMortRow } from '../ops/store.pg';
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
 
 /**
@@ -28,6 +28,24 @@ export interface OpsRouteDeps {
   getTenantOverview(): Promise<TenantOverviewRow[]>;
   getGlobalDaily(days: number): Promise<GlobalDailyPoint[]>;
   getQueueLoad(): Promise<QueueLoadRow[]>;
+  /**
+   * Les GROUPES qui attendent le plus (équité, SLO 3). Vide quand rien n'attend, ce qui est l'état normal.
+   *
+   * Optionnelle : absente -> `queuesParGroupe: []`, aucun site de construction cassé. C'est une lecture de
+   * confort d'exploitation, pas une garantie : elle ne doit rien faire échouer.
+   */
+  getQueueLoadParGroupe?(): Promise<QueueGroupLoadRow[]>;
+  /**
+   * Les jobs MORTS (file d'échec), les plus anciens d'abord. Lecture pure. Absente -> route non montée.
+   *
+   * 🔴 Pour un `webhook`, un job mort est un MESSAGE DE CLIENT jamais traité, et c'est le pire cas du dépôt
+   * parce qu'il est silencieux : le client a écrit, le scénario n'a pas avancé, personne ne le sait.
+   */
+  listerJobsMorts?(limite: number): Promise<JobMortRow[]>;
+  /** Ré-enfile un job dans sa file d'origine. Doit être la MÊME file que celle des jobs vivants. */
+  reenfiler?(queue: string, data: unknown): Promise<void>;
+  /** Retire de la file d'échec les jobs RÉ-ENFILÉS. Appelée APRÈS l'enfilement, jamais avant. */
+  oublierJobsMorts?(ids: string[]): Promise<number>;
   /** Signal de vie du worker (item 4.9). OPTIONNEL : omis -> `worker: null` dans le payload, aucun site de
    *  construction cassé. Distinct des files (queues) : prouve que le PROCESS worker vit, pas que les files se vident. */
   getWorkerHeartbeat?(): Promise<WorkerHeartbeatRow | null>;
@@ -55,17 +73,24 @@ const MAX_RECHARGE_MICRO_EUR = 1_000_000_000;
  *  champ d'être rempli par un espace pour passer la garde. */
 const MIN_NOTE = 3;
 
+/** Plafond d'un rejeu en une fois. Rejouer mille traitements d'un coup sur une cause non corrigée, c'est
+ *  refaire mille fois la même erreur : on borne pour forcer à regarder entre deux lots. */
+const MAX_REJEU = 100;
+
 export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: string): void {
   const guard = { preHandler: makeRequireOps(opsToken) };
 
   app.get('/ops/overview', guard, async (_req, reply) => {
-    const [tenants, daily, queues, worker] = await Promise.all([
+    const [tenants, daily, queues, worker, queuesParGroupe] = await Promise.all([
       deps.getTenantOverview(),
       deps.getGlobalDaily(14),
       deps.getQueueLoad(),
       deps.getWorkerHeartbeat ? deps.getWorkerHeartbeat() : Promise.resolve(null),
+      // Best-effort : une lecture d'équité en échec ne doit pas priver l'exploitation de tout le reste de
+      // l'écran. Elle sert à VOIR, elle ne garantit rien.
+      deps.getQueueLoadParGroupe ? deps.getQueueLoadParGroupe().catch(() => []) : Promise.resolve([]),
     ]);
-    return reply.code(200).send({ tenants, daily, queues, worker });
+    return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe });
   });
 
   /**
@@ -80,6 +105,68 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: 
    * 🔴 Invisible côté CLIENT, journalisé côté EXPLOITATION : un accès à toutes les données de tous les
    * clients sans aucune trace nulle part est exactement ce qu'un audit de sécurité reproche en premier.
    */
+  /**
+   * LES JOBS MORTS : les voir, puis décider de les rejouer.
+   *
+   * 🔴 DEUXIÈME ÉCRITURE MÉTIER de cette surface, et elle est assumée pour la même raison que la première
+   * (le rechargement de solde) : rejouer un traitement mort est un geste d'EXPLOITATION par nature. Il est
+   * cross-espace, il suppose qu'on ait corrigé la cause de l'échec, et il ne doit jamais être accessible
+   * depuis un compte de la console, sans quoi un client rejouerait des traitements sans savoir pourquoi ils
+   * avaient échoué. L'autorité séparée de `/ops` est exactement la bonne.
+   *
+   * Pourquoi ça manquait. Un job qui épuise ses rejeux part en file d'échec, que RIEN ne consomme. On alerte
+   * déjà quand elle se remplit, mais la seule reprise possible était de renvoyer le message à la main, ce qui
+   * ne passe pas l'échelle. Pour un `webhook`, un job mort est un MESSAGE DE CLIENT jamais traité : il a
+   * écrit, le scénario n'a pas avancé, et personne ne le sait.
+   *
+   * La LECTURE d'abord, et c'est délibéré : rejouer sans regarder, c'est relancer en masse des traitements
+   * qui ont échoué pour une raison qu'on n'a pas corrigée.
+   */
+  if (deps.listerJobsMorts) {
+    app.get('/ops/dlq', guard, async (req, reply) => {
+      const brut = (req.query as { limit?: unknown }).limit;
+      const limite = typeof brut === 'string' && /^\d+$/.test(brut) ? Number(brut) : 50;
+      return reply.code(200).send({ jobs: await deps.listerJobsMorts!(limite) });
+    });
+  }
+
+  if (deps.listerJobsMorts && deps.reenfiler && deps.oublierJobsMorts) {
+    app.post('/ops/dlq/replay', guard, async (req, reply) => {
+      const b = (req.body ?? {}) as { queue?: unknown; limit?: unknown };
+      // La file est OBLIGATOIRE : un rejeu « tout » relancerait des campagnes et des webhooks d'un coup,
+      // sur des causes d'échec différentes qu'on n'a pas toutes corrigées.
+      if (typeof b.queue !== 'string' || b.queue.trim() === '') {
+        return reply.code(400).send({ error: 'queue requise (la file d’origine, ex. « webhook »)' });
+      }
+      const queue = b.queue.trim();
+      const limite = typeof b.limit === 'number' && Number.isFinite(b.limit) ? Math.trunc(b.limit) : 10;
+      if (limite < 1 || limite > MAX_REJEU) {
+        return reply.code(400).send({ error: `limit entre 1 et ${MAX_REJEU}` });
+      }
+      const morts = (await deps.listerJobsMorts!(200)).filter((j) => j.queue === queue).slice(0, limite);
+      if (morts.length === 0) return reply.code(200).send({ rejoues: 0, oublies: 0 });
+
+      // 🔴 ENFILER PUIS OUBLIER, et l'ordre est choisi. Un crash entre les deux produit un DOUBLON ;
+      // l'ordre inverse produirait une PERTE. Le doublon est rattrapé partout où ça compte (déduplication
+      // du message entrant, réclamation atomique d'un destinataire, verrou de run), la perte nulle part.
+      const rejoues: string[] = [];
+      for (const j of morts) {
+        try {
+          await deps.reenfiler!(j.queue, j.data);
+          rejoues.push(j.id);
+        } catch (err) {
+          // On s'arrête au premier échec d'enfilement plutôt que d'insister : si la file refuse, elle
+          // refusera aussi les suivants, et ce qui a déjà été enfilé doit être oublié proprement.
+          // eslint-disable-next-line no-console
+          console.error(`ops dlq replay: enfilement impossible pour ${j.id}`, err instanceof Error ? err.message : err);
+          break;
+        }
+      }
+      const oublies = await deps.oublierJobsMorts!(rejoues);
+      return reply.code(200).send({ rejoues: rejoues.length, oublies });
+    });
+  }
+
   app.post('/ops/observe', guard, async (req, reply) => {
     if (!deps.observerTenant) return reply.code(503).send({ error: 'observation non disponible sur cette instance' });
     const tenantId = (req.body as { tenantId?: unknown } | null)?.tenantId;
