@@ -442,7 +442,7 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
 | ~~**3**~~ ✅ | Dépendances nommées de `handleWebhookJob`, puis ordonnancement par contact des entrants | non | M | **FAIT le 2026-09-01.** Concurrence 3 sur les entrants, un job en vol par contact |
 | ~~**4**~~ ✅ | La rétention qui manque : blocs, runs terminés, journal d'audit, clics | 0097 | M | **FAIT le 2026-09-01.** Les blocs sont ANONYMISÉS (ils sont la mesure), les trois autres purgés |
 | **5** | Découpage de `web/lib/api.ts`, puis delta du fil et `AbortController` | non | M | Le fil ouvert cesse de retélécharger 500 messages toutes les 4 s, par onglet |
-| **6** | Les cinq endroits qui recalculent ou chargent tout en mémoire | oui | M | Ce qui tient à 5 clients et pas à 25 |
+| ~~**6**~~ ✅ | Les cinq endroits qui recalculent ou chargent tout en mémoire | non | M | **FAIT le 2026-09-01.** DEUX corrigés, TROIS clos par la mesure (voir le détail) |
 | **7** | Le palier Meta enfin utilisé, et la surveillance des numéros au-delà du 200e | non | M | Un numéro neuf cesse de brûler son quota sans prévenir |
 | **8** | Le deuxième worker, en un seul bloc | oui | L | La réplication horizontale, le jour où on la veut, et pas avant |
 
@@ -489,6 +489,18 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
   tables brutes.
   ⚠️ **Le piège** : le pré-agrégat du dashboard est le seul de la liste qui crée une donnée DÉRIVÉE, donc une
   seconde source de vérité à tenir à jour. Le faire en dernier, et seulement si la mesure le justifie.
+  ✅ **Ce que le lot a réellement fait, le 2026-09-01, et ce que la mesure a écarté.**
+  **Corrigés :** (a) `/v1/contacts/batch` écrit par VAGUES de 4 au lieu de 500 allers-retours à la file (la
+  validation reste séquentielle : elle partage un cache de champs et peut en créer un) ; (b) la création de
+  campagne avec une sélection ne charge plus TOUT le CRM pour n'en garder qu'une poignée — la méthode bornée
+  existait déjà, écrite pour `/v1/sends`, elle n'avait jamais été branchée là.
+  **Écartés par la mesure, pas par manque de temps :** (c) la liste des campagnes — un index couvrant
+  `(campaign_id, status, delivery_status)` **n'est PAS utilisé** (banc à 40 campagnes x 5 000 destinataires :
+  191 ms avant, 191 ms après, seq scan dans les deux cas). Il n'y a pas de prédicat sélectif, Postgres doit
+  lire les 200 000 lignes de toute façon. Le seul correctif est un compteur DÉNORMALISÉ, c'est-à-dire
+  exactement ce que le piège ci-dessous dit de faire en dernier ; (d) l'upload média — la route est **déjà
+  bornée** (`bodyLimit` 24 Mo, 16 Mo décodés max, validation du type) : les « 65 Mo en vol » de l'audit ne
+  correspondent pas au code ; (e) le pré-agrégat du dashboard, différé par la règle ci-dessous.
   ➕ **Deux mesures du lot 1 à reprendre ici.** (a) Le filtre par champ perso (`fields ->> clé = valeur`) sort
   en **Filter**, jamais en Index Cond : le GIN `contacts_fields_gin` de la migration 0032 ne sert PAS `->>`,
   contrairement à ce que dit son commentaire. Le seul vrai correctif est de réécrire le cas d'égalité en

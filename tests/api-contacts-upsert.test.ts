@@ -64,3 +64,57 @@ describe('consentement écrit par le chemin partagé', () => {
     expect(ecrits[0]?.optInSource).toBeUndefined();
   });
 });
+
+/**
+ * ÉCRITURES PAR VAGUES (lot 6 du programme II). Les 500 upserts d'un lot plein partaient à la file, un
+ * aller-retour chacun, soit environ cinq secondes et demie de latence pure. Ils partent maintenant par
+ * vagues, la VALIDATION restant séquentielle (elle partage un cache de champs et peut en créer un).
+ */
+describe('upsert API : écritures par vagues', () => {
+  /** Store qui compte les écritures SIMULTANÉES et retient le maximum atteint. */
+  function storeQuiCompte() {
+    const etat = { enVol: 0, max: 0, total: 0 };
+    const contacts = {
+      upsertByPhoneReturningId: async (u: { phoneE164: string }) => {
+        etat.enVol += 1;
+        etat.max = Math.max(etat.max, etat.enVol);
+        etat.total += 1;
+        await new Promise((r) => { setTimeout(r, 5); });
+        etat.enVol -= 1;
+        return { id: `id-${u.phoneE164}`, created: true };
+      },
+    };
+    return { etat, contacts };
+  }
+
+  it('🔴 plusieurs écritures en vol, mais BORNÉES (le pool n’est pas à nous seuls)', async () => {
+    const { etat, contacts } = storeQuiCompte();
+    const items = Array.from({ length: 20 }, (_, i) => ({ phone: `+3360000${String(i).padStart(4, '0')}` }));
+    await upsertContactsFromApi('t1', items, {
+      contacts: contacts as never,
+      fields: { list: async () => [] } as never,
+    });
+    expect(etat.total).toBe(20);
+    expect(etat.max).toBeGreaterThan(1); // ce n'est plus séquentiel
+    expect(etat.max).toBeLessThanOrEqual(4); // et ça ne prend pas tout le pool
+  });
+
+  it('🔴 les résultats restent dans l’ORDRE REÇU, erreurs de validation comprises', async () => {
+    // Les erreurs de validation sortent au premier temps, les écritures au second : sans le tri final, un
+    // numéro invalide en tête de lot se serait retrouvé en queue de réponse, et l'intégrateur qui lit
+    // `results[i]` pour son item `i` aurait attribué l'erreur au mauvais contact.
+    const { contacts } = storeQuiCompte();
+    const items = [
+      { phone: 'pas-un-numero' },
+      { phone: '+33600000001' },
+      { phone: '' },
+      { phone: '+33600000002' },
+    ];
+    const res = await upsertContactsFromApi('t1', items, {
+      contacts: contacts as never,
+      fields: { list: async () => [] } as never,
+    });
+    expect(res.map((r) => r.index)).toEqual([0, 1, 2, 3]);
+    expect(res.map((r) => r.status)).toEqual(['error', 'created', 'error', 'created']);
+  });
+});

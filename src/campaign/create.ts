@@ -5,6 +5,8 @@ import type { CreateCampaignInput } from './store.pg';
 /** Sous-ensemble du repo requis pour créer une campagne (fakable en test). */
 export interface CampaignRepoLike {
   listContactsForBuild(tenantId: string): Promise<BuildContact[]>;
+  /** Les contacts CHOISIS, et eux seuls. Existe depuis `/v1/sends`, qui refusait déjà de charger tout le CRM. */
+  listContactsForBuildByIds(tenantId: string, ids: string[]): Promise<BuildContact[]>;
   createWithRecipients(
     input: CreateCampaignInput,
     recipients: BuiltRecipient[],
@@ -28,11 +30,18 @@ export async function createCampaignWithRecipients(
     const cree = await repo.createWithRecipients(input, []);
     return { ...cree, skipped: [] };
   }
-  const all = await repo.listContactsForBuild(input.tenantId);
-  // Restreindre aux contacts choisis si une sélection est fournie (sinon tous). L'opt-in + le
-  // numéro requis restent appliqués par buildRecipients : choisir un contact ne force pas l'envoi.
-  const ids = input.contactIds && input.contactIds.length > 0 ? new Set(input.contactIds) : null;
-  const contacts = ids ? all.filter((c) => ids.has(c.id)) : all;
+  // 🔴 La SÉLECTION se fait en base, pas en mémoire (lot 6 du programme II). Ce chemin chargeait TOUS les
+  // contacts de l'espace pour n'en garder que ceux de la liste : viser cent personnes dans un CRM de cinq
+  // cent mille en ramenait cinq cent mille dans le process, à chaque création de campagne. La méthode bornée
+  // existait déjà, écrite pour `/v1/sends` avec exactement cette raison ; elle n'avait simplement jamais été
+  // branchée ici.
+  //
+  // L'opt-in et le numéro requis restent appliqués par `buildRecipients` : choisir un contact ne force
+  // toujours pas l'envoi.
+  const ids = input.contactIds && input.contactIds.length > 0 ? input.contactIds : null;
+  const contacts = ids
+    ? await repo.listContactsForBuildByIds(input.tenantId, ids)
+    : await repo.listContactsForBuild(input.tenantId);
   // recipients = envoyables ; skipped = variable manquante (ex. prénom absent) -> remontés pour l'avertissement.
   const { recipients, skipped } = buildRecipients(input.category, input.paramMapping, contacts, { now: new Date() }, input.channel ?? 'whatsapp');
   const result = await repo.createWithRecipients(input, recipients);

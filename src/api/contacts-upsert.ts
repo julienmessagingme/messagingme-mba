@@ -42,6 +42,17 @@ const normalizeTags = (v: unknown): string[] =>
  * est déjà atomique via ON CONFLICT ; pas de transaction géante, comme importContacts). Un item invalide ->
  * outcome `error` avec la raison, sans faire échouer les autres. Renvoie un outcome par item (index préservé).
  */
+/**
+ * Combien d'upserts en vol à la fois.
+ *
+ * 4 et pas 8 : le pool applicatif de ce process en compte 8 au total (`DB_POOL_MAX`, valeur mesurée comme la
+ * capacité réelle du pooler), et cette API ne doit pas prendre à elle seule toutes les connexions pendant
+ * qu'un opérateur charge son inbox. Chaque upsert est UNE instruction `on conflict`, donc deux vagues ne
+ * peuvent pas s'interbloquer : au pire elles attendent le même verrou de ligne, ce qui est le cas voulu quand
+ * un lot répète le même numéro.
+ */
+const ECRITURES_EN_VOL = 4;
+
 export async function upsertContactsFromApi(
   tenantId: string,
   items: ApiContactInput[],
@@ -53,7 +64,15 @@ export async function upsertContactsFromApi(
   const cache: FieldLister = { list: async () => defs };
   const ensured = new Set<string>();
 
+  // DEUX TEMPS (lot 6 du programme II), et l'ordre n'est pas indifférent.
+  //
+  // 1) La validation reste SÉQUENTIELLE : elle partage un cache de définitions de champs et peut en créer un
+  //    au passage. La paralléliser ferait courir deux items sur la même création, pour un gain nul (le cache
+  //    évite déjà presque tous les allers-retours).
+  // 2) Les ÉCRITURES partent par vagues. C'est là qu'était le coût : 500 upserts à la file, un aller-retour
+  //    chacun, soit environ cinq secondes et demie de latence pure pour un lot plein.
   const out: ApiUpsertOutcome[] = [];
+  const aEcrire: Array<{ index: number; upsert: Parameters<PgContactStore['upsertByPhoneReturningId']>[0] }> = [];
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i]!;
     const p = normalizePhone(String(item.phone ?? ''), deps.defaultCountry ?? 'FR');
@@ -91,8 +110,9 @@ export async function upsertContactsFromApi(
 
     const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 200) : null;
     const bsuid = typeof item.bsuid === 'string' && item.bsuid.trim() !== '' ? item.bsuid.trim().slice(0, 200) : null;
-    try {
-      const res = await deps.contacts.upsertByPhoneReturningId({
+    aEcrire.push({
+      index: i,
+      upsert: {
         tenantId,
         phoneE164: p.e164,
         profileName: name,
@@ -101,18 +121,29 @@ export async function upsertContactsFromApi(
         ...(item.optIn === true ? { optInSource: item.optInSource ?? 'api' } : {}),
         ...(normalizeTags(item.tags).length > 0 ? { tags: normalizeTags(item.tags) } : {}),
         ...(bsuid !== null ? { bsuid } : {}),
-      });
-      out.push({ index: i, status: res.created ? 'created' : 'updated', contactId: res.id });
-    } catch (err) {
-      // `contacts_tenant_bsuid_uidx` rend le BSUID unique par espace. Le violer est une erreur de SAISIE, pas
-      // une panne : sans ce filet elle sortirait en 500, et Cloudflare remplace le corps des 5xx par sa propre
-      // page, donc l'opérateur ne verrait même pas ce qu'on lui reproche.
-      if ((err as { code?: string }).code === '23505') {
-        out.push({ index: i, status: 'error', reason: 'ce BSUID est déjà utilisé par un autre contact de cet espace' });
-        continue;
-      }
-      throw err;
-    }
+      },
+    });
   }
-  return out;
+
+  for (let d = 0; d < aEcrire.length; d += ECRITURES_EN_VOL) {
+    const vague = aEcrire.slice(d, d + ECRITURES_EN_VOL);
+    const resultats = await Promise.all(vague.map(async ({ index, upsert }): Promise<ApiUpsertOutcome> => {
+      try {
+        const res = await deps.contacts.upsertByPhoneReturningId(upsert);
+        return { index, status: res.created ? 'created' : 'updated', contactId: res.id };
+      } catch (err) {
+        // `contacts_tenant_bsuid_uidx` rend le BSUID unique par espace. Le violer est une erreur de SAISIE, pas
+        // une panne : sans ce filet elle sortirait en 500, et Cloudflare remplace le corps des 5xx par sa propre
+        // page, donc l'opérateur ne verrait même pas ce qu'on lui reproche.
+        if ((err as { code?: string }).code === '23505') {
+          return { index, status: 'error', reason: 'ce BSUID est déjà utilisé par un autre contact de cet espace' };
+        }
+        throw err;
+      }
+    }));
+    out.push(...resultats);
+  }
+  // Les erreurs de validation sont poussées au fil du premier temps, les écritures au second : on RETRIE sur
+  // l'index pour rendre les résultats dans l'ordre reçu, qui est le contrat de cette API.
+  return out.sort((a, b) => a.index - b.index);
 }

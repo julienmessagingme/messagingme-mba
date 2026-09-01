@@ -6,9 +6,16 @@ import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
 
 class FakeRepo implements CampaignRepoLike {
   lastRecipients: BuiltRecipient[] = [];
+  /** Ce que la création a RÉELLEMENT demandé à la base : « tout » ou une liste d'ids. */
+  charges: Array<'tout' | string[]> = [];
   constructor(private readonly contacts: BuildContact[]) {}
   async listContactsForBuild(): Promise<BuildContact[]> {
+    this.charges.push('tout');
     return this.contacts;
+  }
+  async listContactsForBuildByIds(_tenantId: string, ids: string[]): Promise<BuildContact[]> {
+    this.charges.push(ids);
+    return this.contacts.filter((c) => ids.includes(c.id));
   }
   async createWithRecipients(_input: CreateCampaignInput, recipients: BuiltRecipient[]): Promise<{ campaignId: string; recipientCount: number }> {
     this.lastRecipients = recipients;
@@ -89,5 +96,26 @@ describe('createCampaignWithRecipients', () => {
     ]);
     const out = await createCampaignWithRecipients({ ...input, contactIds: ['c1'] }, repo);
     expect(out.recipientCount).toBe(0);
+  });
+
+  it('🔴 une sélection ne charge QUE les contacts choisis, pas tout le CRM', async () => {
+    // Ce chemin ramenait tous les contacts de l espace pour n en garder que la poignée visée : viser cent
+    // personnes dans un CRM de cinq cent mille en chargeait cinq cent mille dans le process.
+    const repo = new FakeRepo([
+      { id: 'c1', phone_e164: '+33611', profile_name: 'Julie', fields: {}, optInStatus: 'opted_in' },
+      { id: 'c2', phone_e164: '+33622', profile_name: 'Marc', fields: {}, optInStatus: 'opted_in' },
+    ]);
+    const out = await createCampaignWithRecipients({ ...input, contactIds: ['c2'] }, repo);
+    expect(repo.charges).toEqual([['c2']]);   // la base a filtré, pas la mémoire
+    expect(out.recipientCount).toBe(1);
+    expect(repo.lastRecipients[0]?.toE164).toBe('+33622');
+  });
+
+  it('sans sélection, on charge bien tout (l autre sens de la meme regle)', async () => {
+    const repo = new FakeRepo([
+      { id: 'c1', phone_e164: '+33611', profile_name: 'Julie', fields: {}, optInStatus: 'opted_in' },
+    ]);
+    await createCampaignWithRecipients(input, repo);
+    expect(repo.charges).toEqual(['tout']);
   });
 });

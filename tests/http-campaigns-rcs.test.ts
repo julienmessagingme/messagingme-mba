@@ -21,6 +21,10 @@ class FakeRepo implements CampaignRepoLike {
   async listContactsForBuild(): Promise<BuildContact[]> {
     return [{ id: 'c1', phone_e164: '+33611', profile_name: 'A', fields: {}, optInStatus: 'opted_in' }];
   }
+  /** Meme source, bornee aux ids : la creation de campagne s'en sert des qu'une selection existe. */
+  async listContactsForBuildByIds(_tenantId: string, ids: string[]): Promise<BuildContact[]> {
+    return (await this.listContactsForBuild()).filter((c) => ids.includes(c.id));
+  }
   async createWithRecipients(input: CreateCampaignInput, recipients: BuiltRecipient[]) {
     this.created.push(input);
     return { campaignId: 'camp-1', recipientCount: recipients.length };
