@@ -2058,6 +2058,53 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : lot 7, un brouillon et une version publiée pour les scénarios
+
+**Ce que ça ferme.** `workflow_runs` porte `workflow_id` et `current_node`, jamais une version : modifier un
+bloc changeait les parcours DÉJÀ démarrés, dans la seconde, sans que personne l'ait demandé.
+
+**Les quatre décisions de Julien (2026-09-01) ont divisé le lot par trois.** Un parcours en cours SUIT la
+version publiée (pas d'épinglage), et une campagne programmée prend la version en ligne le jour de
+l'expédition. La version publiée est donc la SEULE qui existe à l'exécution : ni table de versions, ni colonne
+`workflow_version_id` par run, ni migration des runs existants, ni sémantique de retour arrière. Deux refus
+explicites : **pas de conservation de la version précédente** (« on s'encombre pas de l'ancienne version »), et
+**un contact qui attend sur un bloc supprimé par la nouvelle publication reste clos en silence** (« tant pis on
+assume que le user tombe dans le vide »).
+
+🔴 **LE POINT DE CONCEPTION : `graph` reste le PUBLIÉ, et `draft_graph` est le nouveau.** Une douzaine de
+chemins lisent `graph` pour exécuter (exécuteur, campagnes, automations, API publique par code, mesures,
+comptage de blocs). Nommer le brouillon `graph` aurait fait basculer les douze d'un coup, et le moindre oubli
+aurait mis un brouillon en ligne sans que rien ne le signale. Dans ce sens-ci, un oubli lit le publié : le
+pire cas est de ne pas voir une modification, pas d'en envoyer une qui n'était pas prête. **Seuls deux
+chemins lisent le brouillon**, tous deux par `grapheEditable(row)` : l'éditeur, et le lien de test.
+
+**Deux gardes MESURÉES, pas supposées.**
+1. **Ouvrir un scénario déclenche UN enregistrement** (mesuré le 2026-09-01 avec une sonde Playwright : React
+   Flow remesure les blocs au montage, ce qui change `nodes`, ce qui réveille l'auto-save). Sans garde, tout
+   scénario simplement CONSULTÉ aurait porté « brouillon non publié » à vie. D'où le `case when $4::jsonb =
+   graph then null` de `update` : un brouillon identique au publié n'en est pas un.
+2. **Publier vide d'abord la file d'enregistrement** (`enregistrerMaintenant`). L'auto-save attend 1,2 s :
+   sans ce vidage, un clic dans cette fenêtre mettait en ligne le brouillon d'AVANT la dernière frappe, en
+   affichant « en ligne ». Vérifié DANS LES DEUX SENS : le test e2e échoue si on retire le vidage. La boucle
+   d'attente n'est pas du zèle non plus, parce que `doSave` rend la main tout de suite si un PATCH est déjà
+   en vol : l'attendre ne prouverait rien dans ce cas précis.
+
+**Le reste des choix.** `publish` promeut avec un `coalesce(draft_graph, graph)` (sans lui, republier deux
+fois d'affilée écraserait le publié par NULL, donc effacerait le scénario de la production sur un double-clic)
+et ne redate que s'il y avait quelque chose à mettre en ligne. `insert` écrit le BROUILLON : une création, une
+duplication, rien n'est en ligne tant qu'on n'a pas publié, une seule règle. Dupliquer copie ce qu'on VOIT.
+QUI a publié va au journal d'audit (`workflow.published`), pas dans une colonne : le mécanisme existait.
+
+**Refactor préalable, dans un commit séparé** (règle : jamais refactor et comportement ensemble).
+`WorkflowBuilder.tsx` passait de 1 860 à 573 lignes, en trois sorties posées sur des frontières qui existaient
+déjà : `WorkflowNode.tsx` (props React Flow + `CustomEvent`), `WorkflowConfigPanel.tsx` (reçoit un bloc, rend
+un patch), `lib/use-enregistrement-scenario.ts` (l'enregistrement, c'est-à-dire exactement le code que le lot
+allait modifier), plus `lib/workflow-canevas.ts` pour la frontière graphe <-> canevas. Les 64 tests e2e du
+builder passent sans modification.
+
+**Migration 0095, BLOQUANTE** (le code écrit `draft_graph`) : migrer AVANT de déployer.
+
+---
 ## DEPLOYE le 2026-08-29 : le bloc Question, des sorties qu'on voyait sans pouvoir les relier
 
 Symptôme rapporté par Julien : « certains boutons de réponses restent rouges et je ne peux pas les relier […]

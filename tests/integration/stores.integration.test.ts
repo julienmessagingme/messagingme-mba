@@ -1196,8 +1196,12 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       ],
       edges: [{ id: 'e1', source: 'n1', target: 'n2' }],
     };
+    // ⚠️ Depuis le lot 7, une création part en BROUILLON : rien n'est en ligne tant qu'on n'a pas publié.
+    // On publie donc tout de suite, puisque ce test-ci vérifie le round-trip jsonb, pas la publication
+    // (elle a son propre fichier, `workflow-publication.integration.test.ts`).
     const { id } = await store.insert(tenantId, 'Onboarding', graph);
     expect(id).toBeTruthy();
+    await store.publish(id, tenantId);
 
     const list = await store.list(tenantId);
     const mine = list.find((w) => w.id === id);
@@ -1209,14 +1213,17 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(one!.graph.nodes).toHaveLength(2);
 
     // update partiel : seul le nom change, le graphe est préservé (coalesce).
-    expect(await store.update(id, tenantId, { name: 'Onboarding v2' })).toBe(true);
+    expect(await store.update(id, tenantId, { name: 'Onboarding v2' })).toEqual({ trouve: true, brouillon: false });
     const afterName = await store.getById(id, tenantId);
     expect(afterName!.name).toBe('Onboarding v2');
     expect(afterName!.graph).toEqual(graph); // graphe non écrasé
 
-    // update du graphe.
+    // update du graphe : il va au BROUILLON, la version en ligne ne bouge pas tant qu'on ne publie pas.
     const g2 = { nodes: [{ id: 'n1', type: 'inbox' as const, position: { x: 5, y: 5 }, data: {} }], edges: [] };
-    expect(await store.update(id, tenantId, { graph: g2 })).toBe(true);
+    expect(await store.update(id, tenantId, { graph: g2 })).toEqual({ trouve: true, brouillon: true });
+    expect((await store.getById(id, tenantId))!.graph).toEqual(graph);
+    expect((await store.getById(id, tenantId))!.draftGraph).toEqual(g2);
+    await store.publish(id, tenantId);
     expect((await store.getById(id, tenantId))!.graph).toEqual(g2);
 
     // scope tenant : un autre tenant ne peut ni voir ni supprimer.
@@ -1282,7 +1289,11 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       ],
       edges: [{ id: 'e1', source: 't', target: 'tpl' }, { id: 'e2', source: 'tpl', target: 'ib' }],
     };
+    // 🔴 PUBLIÉ, sinon rien ne tourne : `getGraph` lit la version EN LIGNE (lot 7), et une création part en
+    // brouillon. C'est la garantie du lot vue depuis le moteur : ce qui n'a pas été publié n'existe pas pour
+    // les contacts. Ce test a échoué exactement là au premier passage, et c'est le bon comportement.
     const { id: wfId } = await wfStore.insert(tenantId, 'Atelier', graph);
+    await wfStore.publish(wfId, tenantId);
 
     const sends: string[] = [];
     const ex = new WorkflowExecutor({

@@ -383,7 +383,7 @@ classés », ils tombent dans le défaut TERMINAL, donc ils brûlent les destina
 | ~~**4**~~ ✅ | Throttle partagé par numéro, sur les 4 chemins d'envoi | non | **FAIT le 2026-08-31**, posé en UN point (`clientForTenant`). Budget par PROCESS : le partager vraiment est le prérequis du 2e worker |
 | ~~**5**~~ ✅ | Campagnes en lots courts, puis `groupId` + concurrence | non | **FAIT le 2026-08-31.** Lots bornés par la DURÉE (2 min), concurrence 4 avec un run par espace |
 | ~~**6**~~ ✅ | Files webhook séparées, et `useCampagneReferences` sorti de `CampaignCreateForm` | non | **FAIT le 2026-08-31.** Les accusés ont leur file. Trois découpages du formulaire refusés avec argument (cf. `documentation.md`) |
-| **7** | Extraction du `WorkflowBuilder`, puis versions publiées de scénarios | oui | Modifier un scénario cesse de changer les parcours en cours |
+| ~~**7**~~ ✅ | Extraction du `WorkflowBuilder`, puis brouillon / publié des scénarios | 0095 | **FAIT le 2026-09-01.** Modifier un scénario ne change plus rien tant qu'on n'a pas publié. Le programme est terminé |
 
 **En fil de l'eau, quand le fichier est déjà ouvert** : découpage de `web/lib/api.ts` derrière un barrel, et
 les index des jaunes de la §7 de l'audit du 25 août — dont le `regexp_replace` NON INDEXABLE de la résolution
@@ -411,8 +411,11 @@ nombre de process). Une demi-session, le jour où un deuxième worker est voulu.
   en mémoire par `phone_number_id`) ; distribué seulement au deuxième worker.
 - **Lot 5.** `queue.work('campaign-run')` ne passe AUCUNE option : un job traite sa campagne jusqu'à
   épuisement, soit 2 h 47 pour 5 000 destinataires à 30/min. Viser une DURÉE de lot bornée, pas un nombre fixe.
-- **Lot 7.** `workflow_runs` porte `workflow_id` et `current_node`, jamais une version : modifier un bloc
-  change les parcours déjà démarrés. Version partagée référencée, jamais une copie du graphe par run.
+- **Lot 7.** ✅ `workflow_runs` porte `workflow_id` et `current_node`, jamais une version : modifier un bloc
+  changeait les parcours déjà démarrés. Fermé le 2026-09-01 par un brouillon et un publié sur le scénario
+  lui-même (migration 0095), pas par une table de versions : les décisions de Julien font que la version
+  publiée est la SEULE qui existe à l'exécution. Deux gardes mesurées plutôt que supposées (l'ouverture d'un
+  scénario déclenche un enregistrement ; publier doit vider la file d'abord) : détail dans `documentation.md`.
 
 ---
 

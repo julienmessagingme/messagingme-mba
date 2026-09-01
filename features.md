@@ -343,6 +343,25 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Brouillon et bouton « Publier »** (2026-09-01). Modifier un scénario ne change plus rien pour les
+  contacts tant qu'on n'a pas publié.
+  - L'éditeur enregistre toujours tout seul, mais ce qu'il enregistre est un **brouillon**. Avant, la moindre
+    retouche partait en production dans la seconde, y compris pour les contacts en plein parcours.
+  - Le bouton **« Publier »** apparaît en haut à droite dès qu'il y a quelque chose à mettre en ligne. Quand
+    il n'y a rien en attente, on lit à sa place depuis quand la version en cours est en ligne.
+  - La liste des scénarios signale ceux qui portent un **brouillon non publié**, et compte les blocs de ce
+    qu'on est en train d'éditer.
+  - **Le lien de test joue le brouillon** : on essaie sa version avant de la mettre en ligne, c'est tout
+    l'intérêt. Un contact réel, lui, ne voit que la version publiée.
+  - **Un parcours déjà en cours suit la nouvelle version** dès qu'elle est publiée, et une campagne
+    programmée part avec la version en ligne **le jour de l'expédition**, pas celle de sa préparation.
+  - **Dupliquer copie ce qu'on voit** (le brouillon s'il y en a un), et la copie naît elle-même en brouillon :
+    rien n'est en ligne tant qu'on n'a pas publié.
+  - ⚠️ **Un scénario jamais publié n'apparaît pas dans le sélecteur de campagne** : une campagne envoie la
+    version en ligne, et il n'y en a pas encore.
+  - ⚠️ **Publier n'a pas de retour arrière** : la version précédente n'est conservée nulle part.
+  - Qui a publié quoi et quand se lit dans le **journal des actions** de l'espace.
+
 - ✅ **Nouveau bloc « Question »** (2026-08-26) : poser une question au contact et **router sa réponse**.
   - **Un MENU déroulant** au lieu de boutons : jusqu'à **10 réponses** (24 caractères chacune, avec une
     précision facultative en dessous), là où un message rapide plafonne à 3 boutons. Le contact ouvre le menu
