@@ -51,15 +51,16 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0094** (`conversations_last_message_idx`, l'index du balayage de rétention des
-conversations), passée le 2026-08-31 avec la séquence complète (build de l'image, vérification que la
-migration est DEDANS, `migrate`, vérification en base). **Prochaine libre = 0095.** En pratique on applique
-aussi via `npm run migrate` en local (même Supabase prod).
+**Dernière appliquée : 0095** (`workflows.draft_graph` + `published_at`, le brouillon / publié des scénarios),
+passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
+`migrate`, vérification en base). **Prochaine libre = 0096.** En pratique on applique aussi via
+`npm run migrate` en local (même Supabase prod).
 
-⚠️ **0094 n'est qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit `phone_number_id` à
-chaque webhook entrant, et déployer avant de migrer aurait fait échouer TOUS les entrants, exactement
-l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessus : le type de la migration décide de
-l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
+⚠️ **0095 était BLOQUANTE** (le code écrit `draft_graph` à chaque enregistrement de l'éditeur), donc migrée
+AVANT le déploiement. **0094 n'était qu'un INDEX, donc non bloquante. 0093, elle, l'ÉTAIT** : son code écrit
+`phone_number_id` à chaque webhook entrant, et déployer avant de migrer aurait fait échouer TOUS les entrants,
+exactement l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessus : le type de la migration
+décide de l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
 
 🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
 `compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut

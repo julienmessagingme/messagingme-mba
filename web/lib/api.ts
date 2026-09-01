@@ -1494,6 +1494,18 @@ export interface WorkflowSummary {
 export function grapheEditable(w: WorkflowSummary): WorkflowGraph {
   return w.draftGraph ?? w.graph;
 }
+/**
+ * Ce scénario a-t-il quelque chose EN LIGNE ? Un scénario jamais publié n'a pas de version publiée, donc
+ * rien ne s'exécute quand on le déclenche.
+ *
+ * 🔴 À afficher partout où l'on CHOISIT un scénario à déclencher (automation, webhook entrant, lancement
+ * depuis l'inbox). Sans ça, on peut brancher une automation sur un scénario jamais publié : elle se
+ * déclencherait normalement et ne ferait rien, sans le moindre message. C'est le seul piège que le brouillon
+ * introduit, et il se ferme au moment du choix.
+ */
+export function estEnLigne(w: WorkflowSummary): boolean {
+  return w.graph.nodes.length > 0;
+}
 export function listWorkflows(tenantId: string): Promise<{ workflows: WorkflowSummary[] }> {
   return request<{ workflows: WorkflowSummary[] }>(`/tenants/${tenantId}/workflows`);
 }

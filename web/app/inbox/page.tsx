@@ -32,7 +32,7 @@ import {
   sendTemplateToConversation,
   resolveTemplateParamsForConversation,
   markConversationRead,
-  listWorkflows,
+  listWorkflows, estEnLigne,
   startWorkflowInConversation,
   type Conversation,
   type InboxMessage,
@@ -890,8 +890,10 @@ function ScenarioSendPanel({
           ) : (
             <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
               <option value="" disabled>{t('Choisir…', 'Choose…')}</option>
+              {/* « non publié » : fenêtre ouverte, la liste n'est pas filtrée et un scénario jamais mis en
+                  ligne y figure. Le lancer ne ferait rien du tout, autant le dire avant le clic. */}
               {workflows.map((w) => (
-                <option key={w.id} value={w.id}>{w.name}</option>
+                <option key={w.id} value={w.id}>{estEnLigne(w) ? w.name : `${w.name} (${t('non publié', 'not published')})`}</option>
               ))}
             </select>
           )}

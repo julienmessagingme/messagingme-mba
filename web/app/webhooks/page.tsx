@@ -7,7 +7,7 @@ import type { Session } from '@/lib/session';
 import {
   listWebhooks, createWebhook, updateWebhook, deleteWebhook,
   rotateWebhookSecret, clearWebhookSecret, forgetWebhookPayload,
-  listUserFields, createUserField, listWorkflows,
+  listUserFields, createUserField, listWorkflows, estEnLigne,
   type WebhookEntrant, type RegleMappingWebhook, type UserFieldDef, type UserFieldKind, type WorkflowSummary,
 } from '@/lib/api';
 import { USER_FIELD_KINDS, USER_FIELD_KIND_LABELS } from '@/lib/field-kinds';
@@ -554,7 +554,10 @@ function Detail({
           data-testid="select-scenario"
         >
           <option value="">{t('Aucun (n’écrire que des champs)', 'None (only write fields)')}</option>
-          {scenarios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {/* Même avertissement que dans les automations : un scénario jamais publié ne fait rien. */}
+          {scenarios.map((s) => (
+            <option key={s.id} value={s.id}>{estEnLigne(s) ? s.name : `${s.name} (${t('non publié', 'not published')})`}</option>
+          ))}
         </select>
         <p className="mt-2 text-sm text-ink-500">
           {t(

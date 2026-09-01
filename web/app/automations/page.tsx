@@ -6,7 +6,7 @@ import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import {
   listAutomations, createAutomation, updateAutomation, deleteAutomation, listWorkflows, listHubspotDealStages,
-  listUserFields,
+  listUserFields, estEnLigne,
   type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline, type UserFieldDef,
 } from '@/lib/api';
 
@@ -434,7 +434,11 @@ function AutomationsInner({ session }: { session: Session }) {
             ) : (
               <select value={workflowId} onChange={(e) => setWorkflowId(e.target.value)} data-testid="automation-workflow" className={inputCls}>
                 <option value="">{t('Choisir un scénario…', 'Choose a scenario…')}</option>
-                {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                {/* « non publié » : un scénario jamais mis en ligne se déclenche et ne fait RIEN. Le dire
+                    ici, au moment du choix, plutôt que de laisser chercher pourquoi l'automation est muette. */}
+                {workflows.map((w) => (
+                  <option key={w.id} value={w.id}>{estEnLigne(w) ? w.name : `${w.name} (${t('non publié', 'not published')})`}</option>
+                ))}
               </select>
             )}
           </div>
