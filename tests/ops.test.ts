@@ -14,7 +14,7 @@ function app(opsToken = OPS, over: Partial<OpsRouteDeps> = {}) {
   const deps: OpsRouteDeps = {
     getTenantOverview: async () => OVERVIEW,
     getGlobalDaily: async () => [{ date: '2026-07-11', count: 5 }],
-    getQueueLoad: async () => [{ queue: 'webhook', backlog: 0, active: 0, failed: 0 }],
+    getQueueLoad: async () => [{ queue: 'webhook', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }],
     ...over,
   };
   return buildServer({ queue: new FakeQueue(), ops: deps, opsToken });
@@ -189,5 +189,27 @@ describe('solde prépayé sur /ops', () => {
     expect((await server.inject({ method: 'GET', url: `/ops/credits/${T1}`, ...withTok(OPS) })).statusCode).toBe(503);
     expect((await server.inject({ method: 'POST', url: `/ops/credits/${T1}`, ...withTok(OPS), payload: recharge(1000) })).statusCode).toBe(503);
     await server.close();
+  });
+});
+
+
+describe('charge des files : l’âge du plus vieux job', () => {
+  it('🔴 l’âge remonte jusqu’à la réponse, il n’est pas calculé pour rien', async () => {
+    // 🔴 C'est la mesure qui rend observables les objectifs de service (`docs/SLO-2026-09-01.md`) : la
+    // profondeur seule ne dit pas si on tient la cadence. Mille jobs avalés en trois secondes vont bien, dix
+    // qui attendent depuis un quart d'heure vont mal. Un champ calculé en base mais perdu en route
+    // n'afficherait que des zéros, et l'écran passerait pour rassurant.
+    const a = app(OPS, {
+      getQueueLoad: async () => [
+        { queue: 'webhook', backlog: 3, active: 1, failed: 0, ageMaxSecondes: 42 },
+        { queue: 'campaign-run', backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 },
+      ],
+    });
+    const res = await a.inject({ method: 'GET', url: '/ops/overview', headers: { 'x-ops-token': OPS } });
+    expect(res.statusCode).toBe(200);
+    const files = res.json<{ queues: Array<{ queue: string; ageMaxSecondes: number }> }>().queues;
+    expect(files.find((q) => q.queue === 'webhook')?.ageMaxSecondes).toBe(42);
+    expect(files.find((q) => q.queue === 'campaign-run')?.ageMaxSecondes).toBe(0);
+    await a.close();
   });
 });

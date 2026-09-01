@@ -20,10 +20,12 @@
  *   BANC_CONFIRME=1 DATABASE_URL=postgres://... npx tsx scripts/banc-charge.mts semer 5000
  *   BANC_CONFIRME=1 DATABASE_URL=postgres://... npx tsx scripts/banc-charge.mts suivre
  *   BANC_CONFIRME=1 DATABASE_URL=postgres://... npx tsx scripts/banc-charge.mts verdict
+ *   BANC_CONFIRME=1 DATABASE_URL=postgres://... npx tsx scripts/banc-charge.mts webhooks 2000
  */
 import 'dotenv/config';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
+import { PgBossQueue } from '../src/queue/pgboss';
 
 const url = process.env.DATABASE_URL ?? '';
 const ESPACE = 'banc-de-charge';
@@ -73,11 +75,12 @@ async function semer(nb: number): Promise<void> {
   // ne peut donc pas, par construction, servir de test de débit : sa vitesse est décidée par nous, pas par la
   // tuyauterie. Ce que ce scénario-ci éprouve est la REPRISE APRÈS KILL.
   //
-  // 🔴 CE BANC NE MESURE PAS LE DÉBIT, et il ne prétend plus le contraire. Ce commentaire renvoyait à une
-  // commande `webhooks` qui n'a jamais été écrite : une doc qui décrit du code absent est pire qu'une doc
-  // manquante, parce qu'on croit la mesure faite. Relevé par le contre-audit du 2026-09-01. Ce qui manque
-  // encore, et qui est listé dans `todo.md` : le débit des entrants, l'équité entre plusieurs espaces, la
-  // rafale d'accusés, la concurrence API + worker sur un même numéro, et deux workers.
+  // 🔴 CE SCÉNARIO-CI NE MESURE PAS LE DÉBIT. Le commentaire d'origine renvoyait à une commande `webhooks`
+  // qui n'existait pas : une doc qui décrit du code absent est pire qu'une doc manquante, parce qu'on croit
+  // la mesure faite. Relevé par le contre-audit du 2026-09-01, et la commande a été ÉCRITE depuis (profil
+  // « entrants », seuil dans `docs/SLO-2026-09-01.md`).
+  // Ce qui manque ENCORE, et qui est listé dans `todo.md` : l'équité entre plusieurs espaces, la rafale
+  // d'accusés, la concurrence API + worker sur un même numéro, et deux workers.
   // Destinataires matérialisés directement : le banc mesure l'ENVOI, pas la construction, et la création
   // passe déjà par ses propres tests.
   await c.query(
@@ -157,13 +160,62 @@ async function verdict(): Promise<void> {
   await c.end();
 }
 
+/**
+ * PROFIL « ENTRANTS » : le SLO 1 (`docs/SLO-2026-09-01.md`), c'est-a-dire le seul delai qu'un client final
+ * RESSENT. On enfile n webhooks entrants d'un coup, comme une rafale, puis on regarde combien de temps le
+ * plus vieux job PRET attend avant d'etre pris.
+ *
+ * 🔴 Il faut un WORKER qui tourne en face, sur la meme base jetable. Sans lui, la file ne se vide pas et le
+ * banc mesure une file morte, ce qui ne prouve rien. Le script le DIT plutot que d'afficher des chiffres
+ * qu'on prendrait pour une mesure.
+ *
+ * Le seuil d'acceptation est ecrit AVANT la mesure : l'age du plus vieux job pret doit rester sous 30 s.
+ */
+const SEUIL_ENTRANT_S = 30;
+
+async function webhooks(nb: number): Promise<void> {
+  const queue = new PgBossQueue(url, 'pgboss');
+  queue.onError((err) => { console.error('pgboss:', err instanceof Error ? err.message : err); });
+  await queue.start();
+  const c = await client();
+  const avant = Date.now();
+  for (let i = 0; i < nb; i += 1) {
+    // Charge utile MINIMALE et volontairement inexploitable par le worker : ce profil mesure la CADENCE de
+    // la file, pas le traitement metier. Un payload realiste ferait mesurer le LLM et la base en plus.
+    await queue.enqueue('webhook', { banc: true, i });
+  }
+  console.log(`${nb} entrants enfiles en ${((Date.now() - avant) / 1000).toFixed(1)} s`);
+
+  let pire = 0;
+  for (let t = 0; t < 120; t += 1) {
+    const r = await c.query<{ n: string; age: string | null }>(
+      `select count(*)::text as n,
+              max(extract(epoch from (now() - start_after))) filter (where start_after <= now()) as age
+         from pgboss.job where name = 'webhook' and state in ('created', 'retry')`,
+    );
+    const restants = Number(r.rows[0]!.n);
+    const age = r.rows[0]!.age === null ? 0 : Math.round(Number(r.rows[0]!.age));
+    if (age > pire) pire = age;
+    console.log(`${t}s restants=${restants} age_max=${age}s`);
+    if (restants === 0) break;
+    if (t === 5 && restants === nb) {
+      console.log('⚠️ AUCUN job consomme apres 5 s : y a-t-il un worker sur cette base ? Sans lui, ce banc ne mesure rien.');
+    }
+    await new Promise((r2) => { setTimeout(r2, 1000); });
+  }
+  console.log(JSON.stringify({ age_max_observe_s: pire, seuil_s: SEUIL_ENTRANT_S, verdict: pire <= SEUIL_ENTRANT_S ? 'TENU' : 'DEPASSE' }, null, 2));
+  await c.end();
+  await queue.stop();
+}
+
 async function main(): Promise<void> {
   garde();
   const [commande, arg] = process.argv.slice(2);
   if (commande === 'semer') await semer(Number(arg ?? 5000));
   else if (commande === 'suivre') await suivre();
   else if (commande === 'verdict') await verdict();
-  else throw new Error('commande attendue : semer <n> | suivre | verdict');
+  else if (commande === 'webhooks') await webhooks(Number(arg ?? 2000));
+  else throw new Error('commande attendue : semer <n> | suivre | verdict | webhooks <n>');
 }
 
 main().catch((err) => { console.error(err instanceof Error ? err.message : err); process.exit(1); });

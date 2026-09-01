@@ -73,7 +73,16 @@ reessaye apres un `Retry-After` borne, une qualite degradee JAMAIS reactivee ave
 ⚠️ Angle mort a traiter en meme temps : un HTTP 429 sans code Meta connu n'entre pas dans `estPlafondNumero`
 et finit en echec destinataire au lieu d'une pause globale.
 
-**5. 🟡 Le banc de charge ne mesure pas ce qu'on lui prete.** Il prouve la reprise apres kill d'une campagne
+**5. 🟠 PARTIELLEMENT FAIT le 2026-09-01.** Les SLO sont ECRITS AVANT toute mesure
+(`docs/SLO-2026-09-01.md`, trois objectifs avec leurs seuils), l'age du plus vieux job PRET est instrumente
+dans `/ops` (c'est la mesure qui les rend observables, la profondeur seule ne dit rien), et le profil
+« entrants » du banc existe enfin (`webhooks <n>`).
+⚠️ RESTE OUVERT, et c'est ecrit dans le document lui-meme : le SLO 3 (equite entre espaces) n'est
+qu'A MOITIE instrumente. `/ops` donne l'age par FILE, pas par espace : un espace affame derriere un espace
+bavard reste invisible. Le geste suivant est d'ajouter `group_id` au regroupement de `getQueueLoad`. Et le
+profil `equite` du banc n'est pas ecrit. Le constat d'origine :
+
+~~**Le banc de charge ne mesure pas ce qu'on lui prete.**~~ Il prouve la reprise apres kill d'une campagne
 de 400 destinataires sur un worker, et rien d'autre. Manquent : le debit des entrants et son p95, l'equite
 entre espaces, la rafale d'accuses, la concurrence API + worker sur un meme numero, deux workers.
 🔴 **Ecrire les SLO AVANT les profils** : un resultat sans seuil d'acceptation est une observation, pas une

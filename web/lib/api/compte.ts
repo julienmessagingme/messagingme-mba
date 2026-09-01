@@ -137,6 +137,15 @@ export interface TenantOverviewRow {
 export interface QueueLoadRow {
   queue: string;
   backlog: number;
+  /**
+   * Age, en secondes, du plus vieux job PRET a partir et pas encore pris. `0` = aucun en attente.
+   *
+   * 🔴 C'est la mesure qui dit si on tient la cadence : la profondeur, seule, ne le dit pas. Mille jobs
+   * avales en trois secondes vont bien, dix jobs qui attendent depuis un quart d'heure vont mal.
+   * Optionnel a la lecture : une API plus ancienne ne l'envoie pas, et l'ecran doit alors se taire plutot
+   * que d'afficher un zero qui passerait pour « tout va bien ».
+   */
+  ageMaxSecondes?: number;
   active: number;
   failed: number;
 }

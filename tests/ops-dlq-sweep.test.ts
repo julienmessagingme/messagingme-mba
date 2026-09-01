@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { creerDlqSweep } from '../src/ops/dlq-sweep';
 import type { QueueLoadRow } from '../src/ops/store.pg';
 
-const ligne = (queue: string, backlog: number, active = 0, failed = 0): QueueLoadRow => ({ queue, backlog, active, failed });
+const ligne = (queue: string, backlog: number, active = 0, failed = 0, ageMaxSecondes = 0): QueueLoadRow => ({ queue, backlog, active, failed, ageMaxSecondes });
 
 /**
  * Surveillance des dead letter queues. Le défaut réel qu'elle couvre : un message client entrant a dormi en

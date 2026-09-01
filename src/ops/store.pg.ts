@@ -23,6 +23,18 @@ export interface QueueLoadRow {
   backlog: number;
   active: number;
   failed: number;
+  /**
+   * Âge, en secondes, du plus vieux job PRÊT à partir et pas encore pris. `0` quand il n'y en a aucun.
+   *
+   * 🔴 C'est LA mesure qui dit si on tient la cadence, et la profondeur ne la remplace pas : mille jobs
+   * avalés en trois secondes vont bien, dix jobs qui attendent depuis un quart d'heure vont mal. C'est aussi
+   * le seul indicateur qui rende observables les objectifs de service (`docs/SLO-2026-09-01.md`).
+   *
+   * ⚠️ « PRÊT » compte : un job programmé pour plus tard n'est pas en retard, il attend son heure. On mesure
+   * donc depuis `start_after`, pas depuis la création, sinon un rappel prévu dans trois jours afficherait
+   * trois jours de retard et rendrait la mesure inutilisable.
+   */
+  ageMaxSecondes: number;
 }
 
 export interface GlobalDailyPoint {
@@ -123,16 +135,21 @@ export class PgOpsStore {
    * la table (pg-boss pas encore initialisé) -> renvoie des zéros plutôt que de planter la route.
    */
   async getQueueLoad(): Promise<QueueLoadRow[]> {
-    const zero = (): QueueLoadRow[] => ALL_QUEUES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0 }));
+    const zero = (): QueueLoadRow[] => ALL_QUEUES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }));
     try {
-      const res = await this.pool.query<{ name: string; state: string; count: string }>(
-        `select name, state, count(*)::int as count
+      const res = await this.pool.query<{ name: string; state: string; count: string; age_max: string | null }>(
+        // `age_max` n'est calculé que sur les jobs PRÊTS et en attente : un job programmé pour plus tard
+        // (`start_after` futur) n'est pas en retard. Le `filter` le fait dans le même passage, donc sans
+        // second balayage de la table des jobs.
+        `select name, state, count(*)::int as count,
+                max(extract(epoch from (now() - start_after)))
+                  filter (where state in ('created', 'retry') and start_after <= now()) as age_max
          from ${this.schema}.job
          where name = any($1) and state in ('created', 'retry', 'active', 'failed')
          group by name, state`,
         [ALL_QUEUES],
       );
-      const byQueue = new Map<string, QueueLoadRow>(ALL_QUEUES.map((q) => [q, { queue: q, backlog: 0, active: 0, failed: 0 }]));
+      const byQueue = new Map<string, QueueLoadRow>(ALL_QUEUES.map((q) => [q, { queue: q, backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }]));
       for (const row of res.rows) {
         const q = byQueue.get(row.name);
         if (!q) continue;
@@ -140,6 +157,10 @@ export class PgOpsStore {
         if (row.state === 'created' || row.state === 'retry') q.backlog += c;
         else if (row.state === 'active') q.active += c;
         else if (row.state === 'failed') q.failed += c;
+        // Le `max` porte sur UN état à la fois (le group by inclut `state`) : on garde le plus grand des deux
+        // lignes possibles, `created` et `retry`.
+        const age = row.age_max === null ? 0 : Math.max(0, Math.round(Number(row.age_max)));
+        if (age > q.ageMaxSecondes) q.ageMaxSecondes = age;
       }
       return ALL_QUEUES.map((q) => byQueue.get(q)!);
     } catch (err) {

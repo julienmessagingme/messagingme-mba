@@ -215,6 +215,19 @@ function QueueCard({ queues }: { queues: QueueLoadRow[] }) {
               <span title={t('en attente', 'pending')} className="text-ink-600">{fmtNum(q.backlog, locale)} {t('en file', 'queued')}</span>
               <span title={t('actifs', 'active')} className="text-brand-600">{fmtNum(q.active, locale)} {t('actifs', 'active')}</span>
               <span title={t('échoués', 'failed')} className={q.failed > 0 ? 'font-medium text-coral' : 'text-ink-400'}>{fmtNum(q.failed, locale)} {t('échoués', 'failed')}</span>
+              {/* 🔴 L'AGE du plus vieux job prêt, et pas seulement leur nombre : mille jobs avalés en trois
+                  secondes vont bien, dix qui attendent depuis un quart d'heure vont mal. C'est ce chiffre
+                  que les objectifs de service regardent (docs/SLO-2026-09-01.md). Le seuil d'alerte est
+                  celui de la file la plus exigeante, l'entrant : au-delà d'une minute, un client attend. */}
+              {q.ageMaxSecondes !== undefined && q.ageMaxSecondes > 0 && (
+                <span
+                  data-testid={`file-age-${q.queue}`}
+                  title={t('âge du plus vieux job prêt', 'age of the oldest ready job')}
+                  className={q.ageMaxSecondes >= 60 ? 'font-medium text-coral' : 'text-ink-400'}
+                >
+                  {q.ageMaxSecondes >= 60 ? `${Math.round(q.ageMaxSecondes / 60)} min` : `${q.ageMaxSecondes} s`} {t('d’attente', 'waiting')}
+                </span>
+              )}
             </span>
           </div>
         ))}
