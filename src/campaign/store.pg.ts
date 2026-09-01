@@ -752,10 +752,41 @@ export class PgCampaignRepo {
    */
   async resumeCampaign(campaignId: string, tenantId: string): Promise<boolean> {
     const res = await this.pool.query(
-      `update campaigns set status = 'running' where id = $1 and tenant_id = $2 and status = 'paused'`,
+      // Les deux colonnes de pause sont effacées : une campagne relancée à la main ne doit pas garder une
+      // échéance qui ferait la « reprendre » une seconde fois par le balayage.
+      `update campaigns set status = 'running', pause_reason = null, paused_until = null
+        where id = $1 and tenant_id = $2 and status = 'paused'`,
       [campaignId, tenantId],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Reprend les campagnes dont la pause de DÉBIT est arrivée à échéance. Rend celles réellement reprises.
+   *
+   * 🔴 RÉCLAMATION ATOMIQUE, comme les destinataires et les runs. L'`update ... returning` prend et rend dans
+   * la MÊME instruction : deux balayages concurrents (deux workers un jour, ou un balayage qui déborde sur le
+   * suivant) ne peuvent pas reprendre la même campagne deux fois et enfiler deux runs.
+   *
+   * 🔴 `pause_reason = 'debit'` est dans le WHERE, et c'est la garde qui compte. Une pause de QUALITÉ n'a pas
+   * d'échéance (`paused_until` nul) et n'entrerait donc pas ici de toute façon ; l'écrire quand même rend la
+   * règle lisible sur place, et protège d'une ligne mal formée qui porterait une échéance sans le vouloir.
+   * Meta juge alors le numéro : relancer sans rien changer aggrave le problème et peut coûter le numéro.
+   */
+  async reprendreCampagnesEnPauseDeDebit(limite = 50): Promise<Array<{ id: string; tenantId: string }>> {
+    const res = await this.pool.query<{ id: string; tenant_id: string }>(
+      `update campaigns set status = 'running', pause_reason = null, paused_until = null
+        where id in (
+          select id from campaigns
+           where status = 'paused' and pause_reason = 'debit' and paused_until is not null and paused_until <= now()
+           order by paused_until asc
+           limit $1
+           for update skip locked
+        )
+       returning id, tenant_id`,
+      [Math.max(1, limite)],
+    );
+    return res.rows.map((r) => ({ id: r.id, tenantId: r.tenant_id }));
   }
 
   /**
@@ -892,8 +923,18 @@ async function bulkInsertRecipients(
 
 export class PgCampaignStore implements CampaignStore {
   constructor(private readonly pool: Pool) {}
-  async setStatus(campaignId: string, status: CampaignStatus): Promise<void> {
-    await this.pool.query(`update campaigns set status = $2 where id = $1`, [campaignId, status]);
+  async setStatus(
+    campaignId: string,
+    status: CampaignStatus,
+    pause?: { raison: 'debit' | 'qualite'; reprise: Date | null },
+  ): Promise<void> {
+    // 🔴 Les deux colonnes sont TOUJOURS écrites, y compris à null quand `pause` est absent. Les laisser
+    // telles quelles sur une reprise ferait qu'une campagne repartie garderait l'échéance de sa pause
+    // d'avant, et le balayage de reprise la « reprendrait » une seconde fois, alors qu'elle tourne déjà.
+    await this.pool.query(
+      `update campaigns set status = $2, pause_reason = $3, paused_until = $4 where id = $1`,
+      [campaignId, status, pause?.raison ?? null, pause?.reprise ?? null],
+    );
   }
 
   /** Statut courant, scopé tenant. Sert au run pour voir qu'un opérateur l'a mis en pause. */

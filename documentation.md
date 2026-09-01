@@ -2058,6 +2058,44 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : la reprise après un plafond Meta (migration 0103)
+
+Troisième constat du contre-audit. Sur un plafond, le moteur rendait déjà le destinataire à la file et mettait
+la campagne en pause, sans perdre personne. Mais **aucune routine ne la repassait en `running`** : il fallait
+un clic, alors que le texte affiché promettait une reprise automatique. Le texte a été corrigé le jour même ;
+ce lot apporte la reprise.
+
+### La seule décision qui compte : les deux raisons ne se reprennent pas pareil
+
+- **Débit** (130429, ou un HTTP 429 sans code connu) : une limite de CADENCE. Elle retombe seule, donc on
+  réessaie après un délai borné. C'est le seul cas repris automatiquement.
+- **Qualité** (131048) : Meta juge le NUMÉRO. Relancer sans rien changer aggrave le problème et peut coûter le
+  numéro. `paused_until` reste nul, aucune machine ne lève cette pause, et c'est un humain qui décide.
+
+`paused_until` nul veut donc dire « pas de reprise automatique », et c'est le DÉFAUT : une pause dont on ne
+sait pas quoi penser (y compris celle qu'un opérateur pose à la main) ne repart pas toute seule.
+
+### Trois choses à connaître avant d'y toucher
+
+⚠️ **Un HTTP 429 sans code connu est désormais un plafond.** Angle mort relevé par l'audit : il était rejouable
+dans le transport mais n'entrait pas dans `estPlafondNumero`. Une fois les tentatives épuisées, il finissait en
+ÉCHEC DU DESTINATAIRE, qui n'y est pour rien et devient injoignable sans intervention, pendant que le suivant
+échouait pareil. « Trop de requêtes » ne parle jamais du destinataire, il parle de nous.
+
+⚠️ **Le délai suit le `Retry-After` de Meta, mais BORNÉ** (1 min à 1 h, 15 min par défaut). C'est Meta qui sait,
+mais un en-tête absurde ne doit pas décider seul du comportement d'une campagne.
+
+🔴 **`setStatus` écrit TOUJOURS les deux colonnes, y compris à null.** Les laisser telles quelles sur une
+reprise ferait qu'une campagne repartie garderait l'échéance de sa pause d'avant, et le balayage la
+« reprendrait » une seconde fois alors qu'elle tourne déjà.
+
+⚠️ **L'ordre du balayage est l'INVERSE de celui des campagnes programmées, et c'est voulu.** Là-bas on enfile
+puis on marque, pour qu'un échec d'enfilement laisse la campagne reprise au tour suivant. Ici la reprise en
+base est ce qui RÉCLAME la ligne (atomique) : elle doit venir d'abord, sinon deux balayages enfileraient deux
+runs. La contrepartie, une campagne `running` sans run, est exactement ce que le balayage de reprise après gel
+(R4) rattrape à la minute suivante. On échange un double envoi possible contre un retard d'une minute.
+
+---
 ## DEPLOYE le 2026-09-01 : la cible d'une campagne part en INTENTION, pas en liste d'identifiants
 
 Deuxième constat du contre-audit. L'écran proposait « tout sélectionner » jusqu'à 100 000 contacts,

@@ -69,7 +69,10 @@ class FakeRecipients implements RecipientStore {
 }
 class FakeCampaigns implements CampaignStore {
   readonly statuses: string[] = [];
-  async setStatus(_id: string, status: string): Promise<void> {
+  /** Raisons de pause vues, avec leur instant de reprise. `null` = pas de reprise automatique. */
+  readonly pauses: Array<{ raison: string; reprise: Date | null }> = [];
+  async setStatus(_id: string, status: string, pause?: { raison: 'debit' | 'qualite'; reprise: Date | null }): Promise<void> {
+    if (pause) this.pauses.push(pause);
     this.statuses.push(status);
   }
 }
@@ -837,7 +840,11 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     expect(recipients.claimed).toEqual(['r1', 'r2']);
   });
 
-  it('131048 (plafond de qualité) se comporte comme 130429', async () => {
+  it('131048 (plafond de qualité) met AUSSI en pause, mais SANS reprise automatique', async () => {
+    // 🔴 La distinction du lot 0103. Les deux mettent la campagne en pause et ne perdent personne, mais la
+    // QUALITÉ n'a pas d'instant de reprise : Meta juge le numéro, pas la cadence, et relancer sans rien
+    // changer aggrave le problème et peut coûter le numéro. `reprise: null` est ce qui rend la campagne
+    // invisible au balayage de reprise.
     const sender = new FakeSender();
     sender.codePlafond = 131048;
     sender.plafondFor.add('+33611');
@@ -847,6 +854,23 @@ describe('runCampaign : plafond du numéro chez Meta', () => {
     expect(report.paused).toBe(true);
     expect(recipients.relaches).toEqual(['r1']);
     expect(campaigns.statuses).toEqual(['running', 'paused']);
+    expect(campaigns.pauses).toEqual([{ raison: 'qualite', reprise: null }]);
+    expect(report.reason).toMatch(/n'est PAS automatique/);
+  });
+
+  it('🔴 130429 (plafond de DÉBIT) pose un instant de reprise : c’est lui qui fait repartir la campagne', async () => {
+    // L'autre sens, et il compte autant : sans instant, le balayage ne verrait jamais cette campagne et la
+    // reprise resterait le clic manuel que le texte affiché promettait déjà à tort.
+    const sender = new FakeSender();
+    sender.codePlafond = 130429;
+    sender.plafondFor.add('+33611');
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const campaigns = new FakeCampaigns();
+    const report = await runCampaign(campaign, deps({ recipients, sender, campaigns }));
+    expect(campaigns.pauses).toHaveLength(1);
+    expect(campaigns.pauses[0]!.raison).toBe('debit');
+    expect(campaigns.pauses[0]!.reprise).toBeInstanceOf(Date);
+    expect(report.reason).toMatch(/Reprise automatique/);
   });
 
   it('⚠️ 131056 (plafond de la PAIRE) reste un échec de destinataire, PAS une pause', async () => {

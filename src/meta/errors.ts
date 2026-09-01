@@ -33,7 +33,31 @@ export const CODES_PLAFOND_NUMERO = new Set<number>([130429, 131048]);
  * de mal, et le suivant échouerait pour la même raison.
  */
 export function estPlafondNumero(err: unknown): boolean {
-  return err instanceof MetaApiError && err.code !== undefined && CODES_PLAFOND_NUMERO.has(err.code);
+  if (!(err instanceof MetaApiError)) return false;
+  if (err.code !== undefined && CODES_PLAFOND_NUMERO.has(err.code)) return true;
+  // 🔴 UN 429 EST UN PLAFOND, même sans code connu. Angle mort relevé par le contre-audit du 2026-09-01 : un
+  // HTTP 429 dont le corps ne porte pas 130429 était rejouable dans le transport, mais n'entrait pas ici.
+  // Une fois les tentatives épuisées, il finissait donc en ÉCHEC DU DESTINATAIRE, qui n'y est pour rien et
+  // devient injoignable sans intervention, pendant que le suivant échouait à son tour. « Trop de requêtes »
+  // ne parle jamais du destinataire, il parle de nous.
+  return err.httpStatus === 429;
+}
+
+/**
+ * POURQUOI le numéro est plafonné, et c'est ce qui décide si la campagne peut repartir toute seule.
+ *
+ * 🔴 La distinction n'est pas cosmétique. Une limite de CADENCE retombe d'elle-même : la réessayer après un
+ * délai est le bon geste. Une QUALITÉ dégradée (131048) est un jugement de Meta sur le numéro : relancer
+ * sans rien changer aggrave le problème et peut coûter le numéro. Une pause qualité ne doit donc JAMAIS être
+ * levée par une machine.
+ *
+ * `undefined` quand ce n'est pas un plafond du tout.
+ */
+export type RaisonDePause = 'debit' | 'qualite';
+
+export function raisonDePause(err: unknown): RaisonDePause | undefined {
+  if (!estPlafondNumero(err)) return undefined;
+  return err instanceof MetaApiError && err.code === 131048 ? 'qualite' : 'debit';
 }
 
 // Premier jeu de codes (extensible, à affiner avec la doc Meta live).

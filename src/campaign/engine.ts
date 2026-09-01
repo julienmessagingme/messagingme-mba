@@ -6,7 +6,8 @@ import { refreshNowParams } from '../crm/template';
 import { messagingTarget } from '../meta/types';
 import type { OrigineMessage } from '../inbox/origine';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
-import { MetaApiError, estPlafondNumero } from '../meta/errors';
+import { MetaApiError, raisonDePause } from '../meta/errors';
+import { instantDeReprise, messageDePause } from './pause';
 import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
 
@@ -56,7 +57,13 @@ export interface RecipientStore {
 }
 
 export interface CampaignStore {
-  setStatus(campaignId: string, status: Campaign['status']): Promise<void>;
+  /**
+   * `pause` n'est fourni QUE sur une mise en pause par plafond Meta, et il décide si la campagne repartira
+   * toute seule : `raison: 'debit'` avec un instant de reprise, ou `raison: 'qualite'` avec `reprise: null`,
+   * qui veut dire « jamais automatiquement ». Toute autre transition l'omet, et l'implémentation efface
+   * alors les deux colonnes : une campagne qui repart ne doit pas garder l'échéance d'une pause d'avant.
+   */
+  setStatus(campaignId: string, status: Campaign['status'], pause?: { raison: 'debit' | 'qualite'; reprise: Date | null }): Promise<void>;
   /**
    * Relit le statut COURANT de la campagne en base, pour que le run puisse s'arrêter quand un opérateur la met
    * en pause pendant l'envoi. Scopé tenant comme toute lecture (le pooler est superuser, la RLS ne joue pas).
@@ -439,11 +446,15 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       //
       // La pause est le bon geste, et pas seulement l'arrêt du run : elle empêche le balayage de reprise de
       // relancer la campagne dans la minute, contre un plafond qui n'est pas encore retombé.
-      if (estPlafondNumero(err)) {
+      const raison = raisonDePause(err);
+      if (raison !== undefined) {
         await deps.recipients.relacher(r.id);
         report.paused = true;
-        report.reason = `plafond Meta atteint sur le numéro (${errorCode}) : campagne mise en pause, aucun destinataire perdu`;
-        await deps.campaigns.setStatus(campaign.id, 'paused');
+        // Le délai vient du `Retry-After` de Meta quand il existe (c'est lui qui sait), borné. La qualité,
+        // elle, ne donne AUCUN instant de reprise : un humain doit regarder avant de relancer.
+        const reprise = instantDeReprise(raison, err instanceof MetaApiError ? err.retryAfterMs : undefined, (deps.now ?? Date.now)());
+        report.reason = messageDePause(raison, reprise, errorCode);
+        await deps.campaigns.setStatus(campaign.id, 'paused', { raison, reprise });
         return report;
       }
 

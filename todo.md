@@ -62,7 +62,12 @@ selecteur de scenario de l'inbox appelle `isCampaignEligible(w.graph)`. Les deux
 champs calcules cote serveur, avec un test de parite, sinon la regle existe a deux endroits.
 **Declencheur** : avant environ 100 scenarios par espace.
 
-**4. 🟡 La pause Meta ne reprend jamais toute seule.** Le texte est corrige (il dit desormais que la reprise
+**4. ✅ FAIT le 2026-09-01 (migration 0103).** `pause_reason` + `paused_until`, un balayage qui reprend les
+pauses de DEBIT echues (reclamation atomique), et une pause de QUALITE qui n'est JAMAIS reprise par une
+machine. L'angle mort du 429 sans code connu est ferme aussi : il entre desormais dans `estPlafondNumero`.
+Le constat d'origine, garde pour memoire :
+
+~~**La pause Meta ne reprend jamais toute seule.**~~ Le texte est corrige (il dit desormais que la reprise
 est manuelle), mais la reprise elle-meme reste a faire : `pause_reason` + `paused_until`, un debit temporaire
 reessaye apres un `Retry-After` borne, une qualite degradee JAMAIS reactivee aveuglement.
 ⚠️ Angle mort a traiter en meme temps : un HTTP 429 sans code Meta connu n'entre pas dans `estPlafondNumero`

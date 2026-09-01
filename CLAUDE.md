@@ -51,9 +51,9 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0102** (`phone_rate_gate`, le budget d'envoi d'un numéro partagé entre les process),
+**Dernière appliquée : 0103** (`campaigns.pause_reason` + `paused_until`, la reprise après un plafond Meta),
 passée le 2026-09-01 avec la séquence complète (build de l'image, vérification que la migration est DEDANS,
-`migrate`, vérification en base). **Prochaine libre = 0103.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+`migrate`, vérification en base). **Prochaine libre = 0104.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0096 et 0097 sont jouées HORS TRANSACTION** (0096 est la première du dépôt à l'être), via la directive
 `-- migrate: no-transaction` en tête de fichier, parce que `CREATE INDEX CONCURRENTLY` est interdit dans un
@@ -63,6 +63,12 @@ migration est rejouée depuis le début, donc chaque instruction doit être idem
 une transaction implicite, ce qui rendrait la directive inopérante. `tests/migration-directives.test.ts` garde
 les deux sens de la règle sur les fichiers réels.
 
+🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
+pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
+seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un
+jugement de Meta sur le numéro : relancer sans rien changer aggrave le problème et peut coûter le numéro, donc
+`paused_until` reste NUL et **aucune machine ne lève cette pause**. `paused_until` nul veut dire « pas de
+reprise automatique », et c'est le défaut : une pause dont on ne sait pas quoi penser ne repart pas toute seule.
 ⚠️ **0102 est bloquante, mais elle DÉGRADE PROPREMENT** : sans la table, chaque envoi retombe sur le frein
 LOCAL du process et le signale dans les logs, c'est-à-dire exactement le comportement d'avant. C'est voulu :
 un frein de débit protège la qualité d'un numéro, il n'AUTORISE pas l'envoi, donc son indisponibilité ne doit

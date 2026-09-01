@@ -17,6 +17,7 @@ import {
 import { campaignRunJob } from './campaign/run-job';
 import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
+import { runCampaignRepriseSweep } from './campaign/reprise-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runRetrySweep } from './campaign/retry-sweep';
 import { alimenterCampagnesWebhook, type WebhookFeedDeps } from './campaign/webhook-feed';
@@ -694,6 +695,40 @@ async function main(): Promise<void> {
   };
   void scheduleSweep();
   taches.programmer('campagnes-programmees', 60_000, scheduleSweep);
+
+  /**
+   * 🔴 BALAYAGE DE REPRISE APRÈS UN PLAFOND DE DÉBIT (migration 0103).
+   *
+   * Une campagne qui touche un plafond de cadence Meta se met en pause sans perdre personne, mais RIEN ne la
+   * repartait : il fallait un clic, alors que le texte affiché à l'opérateur promettait une reprise
+   * automatique. Ce balayage rend cette phrase vraie.
+   *
+   * Il ne touche QUE les pauses de débit. Une pause de QUALITÉ n'a pas d'échéance et ne sera jamais reprise
+   * par une machine : Meta juge alors le numéro, et relancer sans rien changer peut coûter le numéro.
+   */
+  const plafondSweep = async (): Promise<void> => {
+    try {
+      const n = await runCampaignRepriseSweep({
+        reprendreDues: () => repo.reprendreCampagnesEnPauseDeDebit(),
+        getRunSizing: (id) => repo.getRunSizing(id),
+        enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
+        defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+        onError: (m, err) => {
+          // eslint-disable-next-line no-console
+          console.error(`${m}:`, err instanceof Error ? err.message : err);
+          alert('sweeper:reprise', `${m} : ${err instanceof Error ? err.message : err}`);
+        },
+      });
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`reprise-sweep: ${n} campagne(s) reprise(s) apres un plafond de debit`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('reprise-sweep erreur:', err instanceof Error ? err.message : err);
+      alert('sweeper:reprise', `reprise-sweep en échec : ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  void plafondSweep();
+  taches.programmer('campagnes-reprise-plafond', 60_000, plafondSweep);
 
   /**
    * 🔴 BALAYAGE DE REPRISE : relance toute campagne GELÉE (R4).
