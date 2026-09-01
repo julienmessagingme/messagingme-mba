@@ -45,6 +45,13 @@ export interface RecipientStore {
     id: string,
     r: { status: 'sent' | 'failed' | 'skipped'; messageId?: string; error?: string; sentAt?: number; errorCode?: number },
   ): Promise<void>;
+  /**
+   * Combien de destinataires sont RÉSERVÉS mais pas encore résolus (`sending`) ?
+   *
+   * 🔴 Sert à ne PAS déclarer une campagne terminée alors qu'un destinataire est en suspens. Absent ->
+   * comportement d'avant (rétro-compatible avec les faux des tests).
+   */
+  countSending?(campaignId: string): Promise<number>;
 }
 
 export interface CampaignStore {
@@ -209,6 +216,23 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   // que plus aucun lead n'est contacté. Elle repart donc en `running`.
   const statutFinal: CampaignStatus = campaign.webhookId ? 'running' : 'completed';
 
+  /**
+   * Le statut de sortie RÉEL, décidé au dernier moment.
+   *
+   * 🔴 MESURÉ AU BANC DE CHARGE le 2026-09-01, et c'était une perte SILENCIEUSE et DÉFINITIVE. Un `kill -9`
+   * du worker en plein envoi laisse le destinataire en vol à l'état `sending`. Le run suivant ne le voit pas
+   * (`listPending` ne rend que les `pending`), vide la file, et marque la campagne `completed`. Dix minutes
+   * plus tard, `reclaimStale` remet ce destinataire en `pending`... sur une campagne TERMINÉE, que la reprise
+   * ne relance plus (elle ne regarde que les `running`). Ce contact ne recevait jamais son message, et rien
+   * ne le disait : les compteurs affichaient 399 envoyés sur 400 et la campagne se disait finie.
+   *
+   * On reste donc `running` tant qu'un destinataire est réservé. La reprise repassera après le reclaim.
+   */
+  const statutDeSortie = async (): Promise<CampaignStatus> => {
+    if (statutFinal !== 'completed' || !deps.recipients.countSending) return statutFinal;
+    return (await deps.recipients.countSending(campaign.id)) > 0 ? 'running' : 'completed';
+  };
+
   // Carousel : les cartes (image, corps, boutons) sont IDENTIQUES pour tous les destinataires -> relues une
   // seule fois par run. Une lecture qui échoue (réseau, WABA absent) ne casse pas la campagne : on part comme
   // avant (un template sans carousel est inchangé ; un carousel échouera avec le message d'erreur de Meta).
@@ -251,7 +275,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       await deps.recipients.markResult(r.id, { status: 'failed', error: reason });
       report.failed += 1;
     }
-    await deps.campaigns.setStatus(campaign.id, statutFinal);
+    await deps.campaigns.setStatus(campaign.id, await statutDeSortie());
     return report;
   }
 
@@ -478,6 +502,6 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
   }
 
-  await deps.campaigns.setStatus(campaign.id, statutFinal);
+  await deps.campaigns.setStatus(campaign.id, await statutDeSortie());
   return report;
 }

@@ -51,8 +51,10 @@ async function semer(nb: number): Promise<void> {
   const c = await client();
   await c.query('delete from tenants where name = $1', [ESPACE]);
   const tenantId = (await c.query<{ id: string }>('insert into tenants (name) values ($1) returning id', [ESPACE])).rows[0]!.id;
+  await c.query(`insert into waba (id, tenant_id, name) values ('banc-waba', $1, 'banc')`, [tenantId]);
   await c.query(
-    `insert into phone_numbers (id, tenant_id, display_phone_number, status) values ('banc-pn', $1, '+33500000000', 'CONNECTED')`,
+    `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status)
+     values ('banc-pn', $1, 'banc-waba', '+33500000000', 'CONNECTED')`,
     [tenantId],
   );
   // Contacts opt-in, avec un prénom : la campagne porte une variable, comme en vrai.
@@ -64,9 +66,13 @@ async function semer(nb: number): Promise<void> {
   );
   const campaignId = (await c.query<{ id: string }>(
     `insert into campaigns (tenant_id, phone_number_id, name, category, template_name, template_language, status, param_mapping, rate_per_minute)
-     values ($1, 'banc-pn', 'banc', 'marketing', 'banc_tpl', 'fr', 'draft', '[]'::jsonb, 100000) returning id`,
+     values ($1, 'banc-pn', 'banc', 'marketing', 'banc_tpl', 'fr', 'draft', '[]'::jsonb, 80) returning id`,
     [tenantId],
   )).rows[0]!.id;
+  // ⚠️ 80/minute est le PLAFOND du produit (`campaigns_rate_per_minute_check`, migration 0033). Une campagne
+  // ne peut donc pas, par construction, servir de test de débit : sa vitesse est décidée par nous, pas par la
+  // tuyauterie. Ce que ce scénario-ci éprouve est la REPRISE APRÈS KILL. Le débit se mesure sur la file des
+  // entrants (commande `webhooks`), qui n'a aucun plafond de ce genre.
   // Destinataires matérialisés directement : le banc mesure l'ENVOI, pas la construction, et la création
   // passe déjà par ses propres tests.
   await c.query(

@@ -943,3 +943,44 @@ describe('runCampaign : lots bornés par la durée', () => {
     expect(campaigns.statuses).toEqual(['running', 'completed']);
   });
 });
+
+/**
+ * FIN DE CAMPAGNE ET DESTINATAIRE EN VOL (mesuré au banc de charge le 2026-09-01).
+ *
+ * 🔴 Ce que ce test protège est une perte SILENCIEUSE et DÉFINITIVE. Un `kill -9` du worker en plein envoi
+ * laisse le destinataire en cours à l'état `sending`. Le run suivant ne le voit pas (`listPending` ne rend que
+ * les `pending`), vide la file et marque la campagne `completed`. Dix minutes plus tard, `reclaimStale` le
+ * remet en `pending`... sur une campagne TERMINÉE, que la reprise ne relance plus. Ce contact ne recevait
+ * jamais son message, et les compteurs affichaient « 399 sur 400 » avec une campagne « terminée ».
+ */
+describe('moteur : ne pas clore une campagne avec un destinataire en vol', () => {
+  function socle(sending: number) {
+    const statuts: string[] = [];
+    return {
+      statuts,
+      campaigns: {
+        setStatus: async (_id: string, s: string) => { statuts.push(s); },
+        getStatus: async () => 'running' as const,
+      },
+      recipients: {
+        listPending: async () => [],
+        claim: async () => true,
+        relacher: async () => {},
+        markResult: async () => {},
+        countSending: async () => sending,
+      },
+    };
+  }
+
+  it('🔴 un destinataire encore RÉSERVÉ laisse la campagne en cours', async () => {
+    const s = socle(1);
+    await runCampaign(campaign, s as never);
+    expect(s.statuts[s.statuts.length - 1]).toBe('running');
+  });
+
+  it('aucun destinataire réservé : la campagne se termine normalement', async () => {
+    const s = socle(0);
+    await runCampaign(campaign, s as never);
+    expect(s.statuts[s.statuts.length - 1]).toBe('completed');
+  });
+});

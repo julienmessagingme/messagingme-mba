@@ -907,6 +907,22 @@ export class PgCampaignStore implements CampaignStore {
 }
 
 export class PgRecipientStore implements RecipientStore, DeliveryStore {
+  /**
+   * Destinataires RÉSERVÉS mais pas encore résolus (`sending`).
+   *
+   * 🔴 Sert au moteur à ne pas déclarer une campagne terminée alors qu'un destinataire est en suspens. Mesuré
+   * au banc de charge le 2026-09-01 : sans ça, un `kill -9` en plein envoi laissait un destinataire en
+   * `sending`, la campagne passait `completed`, et le reclaim le remettait dix minutes plus tard en `pending`
+   * sur une campagne que plus aucune reprise ne regarde. Le contact ne recevait jamais son message.
+   */
+  async countSending(campaignId: string): Promise<number> {
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n from campaign_recipients where campaign_id = $1 and status = 'sending'`,
+      [campaignId],
+    );
+    return Number(res.rows[0]?.n ?? 0);
+  }
+
   constructor(private readonly pool: Pool) {}
 
   /**
