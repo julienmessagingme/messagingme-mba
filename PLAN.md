@@ -1,7 +1,8 @@
-# PLAN.md : plan global (programme arrêté le 2026-08-31)
+# PLAN.md : plan global (programme II arrêté le 2026-09-01)
 
-Ce fichier est la référence de SÉQUENCEMENT. Ce qu'on exécute est la section **« LE PROGRAMME »**, sept lots
-dans l'ordre ; tout ce qui la précède est l'historique, gardé pour son récit.
+Ce fichier est la référence de SÉQUENCEMENT. Ce qu'on exécute est la section **« LE PROGRAMME II »**, huit lots
+dans l'ordre ; tout ce qui la précède est l'historique, gardé pour son récit. Le **programme I (sept lots) est
+TERMINÉ le 2026-09-01**, sa table reste plus bas avec l'état de chaque lot.
 
 **Les quatre sources de constats**, par ordre d'autorité quand elles se recouvrent :
 [AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md](AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md) (la
@@ -25,9 +26,10 @@ Pour une session qui démarre sans contexte.
 
 1. **`docs/MBA-ARCHITECTURE.md`** (10 min). Ce que MBA implique pour notre code, et pourquoi le
    chantier n° 1 se construit sans attendre Meta. C'est le document qui donne le sens du reste.
-2. **Ce fichier**, la section **« LE PROGRAMME »** (arrêté le 2026-08-31). C'est la seule liste à suivre,
-   avec ses sept lots dans l'ordre. Les blocs 0 à 5 plus haut sont l'HISTORIQUE : chaque ligne y porte son
-   état vérifié, mais on n'y entre que pour comprendre un item, jamais pour choisir quoi faire.
+2. **Ce fichier**, la section **« LE PROGRAMME II »** (arrêté le 2026-09-01). C'est la seule liste à suivre,
+   avec ses huit lots dans l'ordre. Le programme I juste au-dessus est terminé, et les blocs 0 à 5 plus haut
+   sont l'HISTORIQUE : chaque ligne y porte son état vérifié, mais on n'y entre que pour comprendre un item,
+   jamais pour choisir quoi faire.
 3. **`docs/MBA-API-REFERENCE.md`** seulement quand on code un appel MBA. 3 700 lignes, à consulter
    par chapitre, jamais en entier.
 
@@ -351,9 +353,11 @@ Une URL `*.railway.app` casse le callback OAuth de toute nouvelle installation, 
 
 ---
 
-## 🔴 LE PROGRAMME (arrêté le 2026-08-31 avec Julien) — c'est LA liste à suivre
+## ✅ LE PROGRAMME I (arrêté le 2026-08-31, TERMINÉ le 2026-09-01) — historique
 
-Les blocs 0 à 5 plus haut sont l'HISTORIQUE. Ce programme-ci est ce qu'on exécute, dans cet ordre.
+Ses sept lots sont livrés et déployés. La liste à suivre est désormais **LE PROGRAMME II**, plus bas. Cette
+section reste pour ce qu'elle documente : l'origine des constats, les deux règles de méthode de Julien, et le
+piège de chaque lot.
 
 **Origine.** Les trois audits (`AUDIT-SCALE-2026-07-18`, `AUDIT-ANTI-SLOP-2026-08-18`,
 `AUDIT-SCALE-2026-08-25`) plus la synthèse `AUDIT-SYNTHESE-STRUCTURE-SCALABILITE-2026-08-31.md`, dont **chaque
@@ -416,6 +420,101 @@ nombre de process). Une demi-session, le jour où un deuxième worker est voulu.
   lui-même (migration 0095), pas par une table de versions : les décisions de Julien font que la version
   publiée est la SEULE qui existe à l'exécution. Deux gardes mesurées plutôt que supposées (l'ouverture d'un
   scénario déclenche un enregistrement ; publier doit vider la file d'abord) : détail dans `documentation.md`.
+
+---
+
+## 🔴 LE PROGRAMME II (arrêté le 2026-09-01) — la suite, et c'est LA liste à suivre
+
+Le programme I est terminé. Celui-ci prend ce qui RESTE des mêmes audits, revérifié dans le code le
+2026-09-01, lot par lot.
+
+**Ce qui reste, chiffré.** Synthèse du 31 août : niveau A, 6 des 8 sujets fermés, **A6 et A7 à moitié** ;
+niveau B, 7 sujets, aucun fait et c'est normal (ils n'ont d'objet qu'au deuxième worker) ; niveau C, 3 fermés,
+1 à moitié, 2 ouverts ; niveau D intact et volontairement en attente. Audit du 25 août : plus aucun rouge ni
+orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés depuis (purge de `webhook_events`,
+`expireInSeconds` du retry-sweep), 1 à moitié (la rétention générale, faite pour les conversations seulement),
+**20 intacts**. C'est de loin la plus grosse poche restante, et c'est elle qui structure ce programme.
+
+| Lot | Contenu | Migration | Taille | Ce que ça achète |
+|---|---|---|---|---|
+| **1** | Runner de migrations hors transaction, puis les quatre index qui manquent | oui | S | Le chemin le plus chaud du produit cesse de se dégrader, et poser un index cesse d'être un risque de déploiement |
+| **2** | Garde de ré-entrance des 17 balayages, et le rejet de webhook qui parle | non | S | Un incident cesse d'être indiagnosticable |
+| **3** | `register*Jobs` du worker, puis ordonnancement par contact des files entrantes | non | M | Deux messages d'un même contact cessent de se croiser, ET les entrants passent enfin en parallèle |
+| **4** | La rétention qui manque : blocs, runs terminés, journal d'audit, clics | oui | M | Le seul point de la liste qui ne se rattrape pas après coup |
+| **5** | Découpage de `web/lib/api.ts`, puis delta du fil et `AbortController` | non | M | Le fil ouvert cesse de retélécharger 500 messages toutes les 4 s, par onglet |
+| **6** | Les cinq endroits qui recalculent ou chargent tout en mémoire | oui | M | Ce qui tient à 5 clients et pas à 25 |
+| **7** | Le palier Meta enfin utilisé, et la surveillance des numéros au-delà du 200e | non | M | Un numéro neuf cesse de brûler son quota sans prévenir |
+| **8** | Le deuxième worker, en un seul bloc | oui | L | La réplication horizontale, le jour où on la veut, et pas avant |
+
+### Détail des lots, et le piège de chacun
+
+- **Lot 1.** `db/migrate.ts` joue tout dans UNE transaction, donc `CREATE INDEX CONCURRENTLY` y est interdit :
+  le premier index sur une grosse table bloquerait les écritures en plein déploiement. L'ordre est donc imposé,
+  le runner d'abord (une directive `-- migrate: no-transaction` par fichier). Les quatre index : expression sur
+  la résolution `wa_id` vers contact (`regexp_replace` non indexable, sur le chemin de CHAQUE message entrant),
+  partiel sur `(claimed_at) where status = 'sending'` (`reclaimStale` fait un seq scan toutes les 5 minutes),
+  le `NOT EXISTS` corrélé du funnel, et les filtres contacts par téléphone et par champ perso.
+  ⚠️ **Le piège** : un index d'expression n'est utilisé que si la requête écrit EXACTEMENT la même expression.
+  Corriger l'appel dans le même lot, sinon on paie l'index à chaque écriture sans jamais le lire. À vérifier
+  par `explain`, pas par raisonnement.
+- **Lot 2.** Le registre `src/worker/taches.ts` existe depuis le lot 3 du programme I : la garde de ré-entrance
+  se pose donc en UN point et couvre les 17 balayages d'un coup (un seul en a une aujourd'hui). Et le rejet de
+  signature Meta (`webhooks/receiver.ts`) renvoie 403 **sans une ligne de journal** : une panne 100 % entrants
+  y reste indiagnosticable, exactement ce qui a coûté 1 h 30 le 2026-08-17.
+  ⚠️ **Le piège** : « ne pas relancer si la passe précédente tourne encore » doit JOURNALISER le saut. Sans ça,
+  un balayage qui déborde systématiquement ne tourne plus qu'une fois sur deux, en silence, et on a remplacé
+  une contention par une invisibilité.
+- **Lot 3.** ⚠️ **Le piège est double, et il est écrit dans notre propre `pgboss.ts`** : `localGroupConcurrency`
+  est un NO-OP tant que `localConcurrency` vaut 1. Ce lot doit donc AUSSI monter la concurrence de la file
+  `webhook` (aujourd'hui les entrants se traitent un par un), et c'est là qu'est le gain de débit. Second
+  piège : le groupe est LOCAL au process, donc la garantie d'ordre tient tant qu'il n'y a qu'un worker, pas
+  après (c'est le lot 8). Clé de groupe : `tenant:phoneNumberId:waId`. `automation-event` a le même défaut, en
+  plus petit, et se traite dans la foulée. Le refactor `register*Jobs` passe AVANT, dans son propre commit :
+  c'est le même fichier de 1 175 lignes, et la règle est la même qu'au lot 7.
+- **Lot 4.** Restent sans aucune rétention : les événements de blocs, les runs terminés, le journal d'audit et
+  les clics tracés. Même argument qu'au lot 2 du programme I : c'est le seul type de dette qui ne se rattrape
+  pas, puisque la donnée continue de s'accumuler pendant qu'on ne la traite pas.
+  ⚠️ **Le piège** : on purge les CLICS, jamais les LIENS. `/r/:code` est une porte à sens unique (cf. CLAUDE.md) :
+  supprimer une ligne de `tracked_links` casse des messages déjà livrés, sans recours.
+- **Lot 5.** Refactor d'abord : `web/lib/api.ts` fait 1 874 lignes et les deux changements suivants le
+  touchent. Puis le delta du fil (`?after=`, le front garde déjà la référence) et un `AbortController` sur les
+  listes (il n'y en a AUCUN dans tout `web/`).
+  ⚠️ **Le piège** : une requête annulée n'est pas une requête en échec. Sans cette distinction, changer de page
+  affiche une erreur rouge à chaque fois, et on aura dégradé l'écran en croyant l'optimiser.
+- **Lot 6.** Cinq endroits, du plus simple au plus discutable : `/v1/contacts/batch` fait 500 allers-retours
+  alors que **le helper de lot existe déjà** (`upsertManyByPhone`, écrit pour l'import CSV et jamais branché
+  ici) ; la création de campagne sans liste explicite charge tous les contacts du tenant en mémoire ; l'upload
+  média passe en base64 dans du JSON (65 Mo en vol par vidéo) ; la liste des campagnes recalcule les compteurs
+  de TOUTES les campagnes du tenant à chaque affichage ; le dashboard recalcule tous les agrégats sur les
+  tables brutes.
+  ⚠️ **Le piège** : le pré-agrégat du dashboard est le seul de la liste qui crée une donnée DÉRIVÉE, donc une
+  seconde source de vérité à tenir à jour. Le faire en dernier, et seulement si la mesure le justifie.
+- **Lot 7.** `messaging_limit_tier` est récupéré, persisté et affiché, et **jamais utilisé** : ni avertissement
+  au lancement, ni débit adapté, et l'UI ne distingue pas plafond, qualité de numéro, jeton invalide et échec
+  métier. Plus le balayage de statut des numéros, plafonné à 200 par `order by created_at` : au-delà, un numéro
+  n'est JAMAIS surveillé (trier par ancienneté de rafraîchissement donne un tourniquet naturel).
+  ⚠️ **Le piège** : le palier est périmable, et Meta compte des conversations uniques, pas nos lignes de
+  destinataires. On avertit et on adapte le débit, on ne REFUSE jamais une audience sur la seule valeur du
+  palier. L'inbox, les scénarios et les autres campagnes mangent le même budget.
+- **Lot 8.** Le niveau B de la synthèse, en bloc : heartbeat par INSTANCE (aujourd'hui une ligne unique
+  `id='worker'`, donc un worker mort est masqué par un vivant), advisory lock des migrations, audit des 17
+  balayages en multi-réplique, recalcul du budget de connexions, rate limits explicitement locaux ou
+  distribués (ce sont des `Map` par process), test de charge et test de reprise après kill.
+  ⚠️ **Le piège** : ne pas le faire avant d'en avoir besoin. Sans deuxième worker, aucun de ces sept items ne
+  protège de quoi que ce soit, et ce serait du travail rangé d'avance. C'est aussi là que le `groupId` du lot 3
+  cesse de suffire.
+
+### Ce qu'on ne fera PAS, et pourquoi
+
+- **Le découpage profond de `workflow/executor.ts`** (1 357 lignes) et **des gros stores Postgres**. Niveau D
+  de la synthèse, et son argument est le bon : fort risque de déplacer la complexité et de perdre des
+  invariants qui ne sont documentés que là où ils s'appliquent.
+- **Les deux process Node par requête** (rewrite Next puis Fastify). C'est l'architecture NPM -> web -> api,
+  qui nous donne l'absence de CORS et un seul point d'entrée public. On ne la démonte pas pour quelques
+  millisecondes.
+- **La file d'import dédiée** et **la colonne `unread` dénormalisée**, gardées avec leur condition de
+  réouverture en tête de [todo.md](todo.md), qui reste la liste vivante.
+- **Le bind IPv6 (4.2) et l'advisory lock hors lot 8 (4.8)** : ils attendent Railway, pas nous.
 
 ---
 

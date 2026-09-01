@@ -14,9 +14,13 @@
 
 ## RIEN EN COURS
 
-Le lot 7 (brouillon / publié des scénarios) est **livré le 2026-09-01**, dernier des sept du programme. Son
-fonctionnel est dans [features.md](features.md) § Automatisations, sa technique et ses pièges dans
-[documentation.md](documentation.md) § Journal des lots livrés.
+Le lot 7 (brouillon / publié des scénarios) est **livré le 2026-09-01**, dernier des sept du **programme I**,
+qui est donc terminé. Son fonctionnel est dans [features.md](features.md) § Automatisations, sa technique et
+ses pièges dans [documentation.md](documentation.md) § Journal des lots livrés.
+
+**La suite est écrite** : `PLAN.md` § **LE PROGRAMME II** (arrêté le 2026-09-01), huit lots dans l'ordre, qui
+prennent ce qui reste des mêmes audits (surtout les 20 jaunes encore intacts de la §7 du 25 août). Rien n'est
+commencé : ce fichier se remplit au démarrage du lot 1.
 
 ## EN PAUSE : le bloc agent IA (lots L0 et L1)
 
