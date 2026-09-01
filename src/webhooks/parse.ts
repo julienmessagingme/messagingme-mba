@@ -82,6 +82,59 @@ export function nAQueDesAccuses(payload: unknown): boolean {
   return accuses > 0;
 }
 
+/**
+ * La CLÉ DE GROUPE d'un payload : `<phone_number_id>:<wa_id>`, ou `undefined` s'il n'en a pas exactement une.
+ *
+ * 🔴 À QUOI ELLE SERT (lot 3 du programme II). La file des entrants passe en concurrence : sans clé, deux
+ * messages du MÊME contact seraient traités en parallèle, et le second pourrait avancer son parcours avant le
+ * premier. Le verrou d'avance conditionnelle protège l'ÉTAT du run, pas les EFFETS (deux messages envoyés
+ * dans le désordre restent envoyés dans le désordre). C'est l'ordre par contact qui le protège, et pg-boss
+ * l'obtient en plafonnant à un job en vol par groupe.
+ *
+ * Pourquoi `phone_number_id` suffit à cloisonner les espaces : un numéro appartient à UN espace (`phone_numbers`
+ * fait le lien), donc deux espaces ne peuvent pas partager une clé. Rien à lire en base pour la calculer, ce
+ * qui compte : le receveur doit accuser réception à Meta sans toucher au disque.
+ *
+ * ⚠️ `undefined` = pas de groupe, donc pas d'ordre garanti pour ce payload. On le rend dès que le payload ne
+ * désigne pas UN contact et un seul : plusieurs contacts, un `wa_id` absent (BSUID masqué), une bascule de
+ * contrôle dont la forme n'est pas documentée. Même doctrine conservatrice que `nAQueDesAccuses` : dans le
+ * doute, on renonce à l'optimisation plutôt que d'inventer un ordre faux. Meta n'a jamais été observé en train
+ * d'envoyer deux contacts dans un même appel.
+ */
+export function cleDeContact(payload: unknown): string | undefined {
+  const cles = new Set<string>();
+  let inattribuable = false;
+
+  for (const entryRaw of asArray(asRecord(payload)['entry'])) {
+    for (const changeRaw of asArray(asRecord(entryRaw)['changes'])) {
+      const change = asRecord(changeRaw);
+      const value = asRecord(change['value']);
+      const pnId = texte(asRecord(value['metadata'])['phone_number_id']);
+      if (pnId === undefined) { inattribuable = true; continue; }
+      // La forme des bascules de contrôle n'est pas documentée : on ne devine pas de qui elles parlent.
+      if (change['field'] === 'messaging_handovers') { inattribuable = true; continue; }
+
+      const secours = texte(asRecord(asArray(value['contacts'])[0])['wa_id']);
+      const ajouter = (waId: string | undefined): void => {
+        if (waId === undefined) inattribuable = true;
+        else cles.add(`${pnId}:${waId}`);
+      };
+      // Même règle d'identité que `extractInbound` : `from`, sinon le `wa_id` du bloc `contacts`.
+      for (const m of asArray(value['messages'])) ajouter(texte(asRecord(m)['from']) ?? secours);
+      for (const s of asArray(value['statuses'])) ajouter(texte(asRecord(s)['recipient_id']) ?? secours);
+      // Echo d'un message SORTANT : le contact est le destinataire.
+      for (const e of asArray(value['message_echoes'])) ajouter(texte(asRecord(e)['to']) ?? secours);
+    }
+  }
+
+  return inattribuable || cles.size !== 1 ? undefined : [...cles][0];
+}
+
+/** Chaîne non vide, sinon `undefined`. */
+function texte(v: unknown): string | undefined {
+  return typeof v === 'string' && v !== '' ? v : undefined;
+}
+
 export function parseWebhook(payload: unknown): WebhookEvent[] {
   const events: WebhookEvent[] = [];
   const root = asRecord(payload);

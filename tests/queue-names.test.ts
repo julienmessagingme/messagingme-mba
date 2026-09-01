@@ -109,4 +109,17 @@ describe('cadence de polling par file', () => {
     expect(worker, 'le worker doit espacer la maintenance flow').toMatch(/flowIntervalSeconds:\s*60/);
     expect(wrapper, 'la cadence par file doit réellement atteindre boss.work').toMatch(/pollingIntervalSeconds:\s*pollingSecondsFor\(name\)/);
   });
+
+  it('🔴 une file en CONCURRENCE declare toujours sa concurrence par GROUPE', () => {
+    // Les deux options vont ensemble, et l'oubli est silencieux dans les deux sens : `concurrency` seul
+    // remet le desordre entre deux jobs qui doivent rester ordonnes (deux messages d'un meme contact, deux
+    // runs d'une meme campagne) ; `groupConcurrency` seul est un NO-OP, pg-boss n'ayant rien a repartir tant
+    // qu'un seul job est en vol. Ce test lit le worker REEL, pas une liste tenue a la main.
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const options = [...worker.matchAll(/\{\s*concurrency:[^}]*\}/g)].map((m) => m[0]);
+    expect(options.length, 'aucune file en concurrence trouvee : le test ne prouve rien').toBeGreaterThan(0);
+    for (const o of options) {
+      expect(o, `concurrency sans groupConcurrency : ${o}`).toContain('groupConcurrency');
+    }
+  });
 });

@@ -187,6 +187,22 @@ export const schema = z.object({
    * à ce qu'un client n'attende pas la campagne d'un AUTRE.
    */
   CAMPAIGN_RUN_CONCURRENCY: z.coerce.number().default(4),
+  /**
+   * Concurrence de la file des messages ENTRANTS (lot 3 du programme II). Elle valait 1, donc un seul message
+   * entrant était traité à la fois, TOUS clients confondus : un envoi Meta lent, un appel HubSpot qui traîne,
+   * et la réponse d'un autre client attendait derrière. C'est le « noisy neighbour » de l'audit.
+   *
+   * 🔴 Ce plafond n'est sûr QUE parce que l'enfilement pose une clé de groupe par contact et que `work`
+   * plafonne à un job en vol par groupe : deux messages d'un même contact restent sérialisés. Relever l'un
+   * sans l'autre remettrait le désordre que le groupe supprime.
+   *
+   * Pourquoi 3, et pas plus : le worker tient déjà 4 runs de campagne en parallèle, plus les accusés, les
+   * automations et les tours d'agent. Le pool applicatif est de 8 connexions PAR PROCESS, valeur mesurée
+   * comme la capacité réelle du pooler (cf. `DB_POOL_MAX`). Monter au-delà déplacerait l'attente de notre
+   * pool vers celle de Supavisor, où elle est muette. Relever ce nombre demande donc de refaire cette
+   * arithmétique-là, pas seulement de changer la variable.
+   */
+  WEBHOOK_CONCURRENCY: z.coerce.number().default(3),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

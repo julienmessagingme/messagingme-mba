@@ -268,6 +268,10 @@ async function main(): Promise<void> {
   // File `automation-event` (E.2) : les événements qui ne viennent PAS du webhook (tag posé depuis l'API,
   // analyse de conversation terminée). L'API ne sait pas démarrer un scénario, elle publie ; le worker exécute.
   // Un payload inexploitable est ignoré proprement plutôt que de faire boucler la file jusqu'à la DLQ.
+  // ⚠️ Cette file reste à UN job en vol, donc ses événements sont ordonnés par construction. Le jour où on lui
+  // donne de la concurrence (lot 8, ou une charge qui l'exige), il faudra poser une clé de groupe
+  // `tenant:waId` à l'ENFILEMENT, sur les six sites qui publient ici — sinon deux événements du même contact
+  // démarreraient deux scénarios en parallèle. Les deux se posent ensemble, comme sur la file des entrants.
   await queue.work(AUTOMATION_EVENT_QUEUE, async (data) => {
     const job = parseAutomationEventJob(data);
     if (!job) {
@@ -383,7 +387,14 @@ async function main(): Promise<void> {
       // le jour ou il faut prouver d ou vient un desabonnement.
       inboundOptOut: (tenant, waId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', SOURCE_STOP_WHATSAPP),
     });
-  });
+    // 🔴 CONCURRENCE DES ENTRANTS (lot 3 du programme II), et les deux options vont ENSEMBLE.
+    // `concurrency` seul remettrait le désordre entre deux messages d'un même contact ; `groupConcurrency`
+    // seul serait un NO-OP (pg-boss n'a rien à répartir tant qu'un seul job est en vol). Le groupe est le
+    // COUPLE numéro + contact, posé à l'enfilement par le receveur (`cleDeContact`).
+    //
+    // ⚠️ La garantie est LOCALE au process. Avec un second worker, deux jobs du même contact pourraient
+    // repartir en parallèle : c'est le lot 8, et c'est écrit là plutôt que découvert ce jour-là.
+  }, { concurrency: config.WEBHOOK_CONCURRENCY, groupConcurrency: 1 });
 
   /**
    * File des ACCUSÉS DE LIVRAISON (lot 6). Le receveur y aiguille tout payload qui ne contient QUE des

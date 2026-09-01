@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { parse as secureJsonParse } from 'secure-json-parse';
 import { verifyMetaSignature, timingSafeEqualStr } from '../lib/signature';
 import type { Queue } from '../queue/queue';
-import { nAQueDesAccuses } from './parse';
+import { nAQueDesAccuses, cleDeContact } from './parse';
 
 export interface ReceiverOptions {
   verifyToken: string;
@@ -128,7 +128,16 @@ export function registerReceiver(app: FastifyInstance, queue: Queue, opts: Recei
     // Tout ce qui n'est pas un accusé PUR (message, echo, handover, payload mixte) reste sur la file des
     // entrants, qui sait aussi traiter les accusés : on ne perd donc jamais un événement, au pire on renonce
     // à l'optimisation.
-    await queue.enqueue(nAQueDesAccuses(req.body) ? queueNameStatuts : queueName, req.body);
+    // 🔴 CLÉ DE GROUPE = le contact (lot 3 du programme II). La file des entrants traite désormais plusieurs
+    // jobs à la fois ; sans groupe, deux messages du même contact partiraient en parallèle et pourraient
+    // s'appliquer dans le désordre. pg-boss plafonne à un job en vol par groupe, ce qui restaure l'ordre là
+    // où il compte sans sérialiser les contacts entre eux. `undefined` -> aucun groupe (cf. `cleDeContact`).
+    const groupId = cleDeContact(req.body);
+    await queue.enqueue(
+      nAQueDesAccuses(req.body) ? queueNameStatuts : queueName,
+      req.body,
+      groupId === undefined ? undefined : { groupId },
+    );
     return reply.code(200).send({ received: true });
   });
 }

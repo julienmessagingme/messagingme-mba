@@ -206,3 +206,69 @@ describe('receiver : journal des rejets', () => {
     now.mockRestore();
   });
 });
+
+/**
+ * ORDRE PAR CONTACT (lot 3 du programme II). La file des entrants traite désormais plusieurs jobs à la fois :
+ * sans clé de groupe, deux messages du même contact pourraient s'appliquer dans le désordre. La clé est posée
+ * à l'ENFILEMENT, par le receveur, sans toucher à la base (il doit accuser réception à Meta immédiatement).
+ */
+describe('receiver : clé de groupe par contact', () => {
+  it('un message pose la clé « numéro:contact »', async () => {
+    const { queue, app } = makeApp();
+    const body = JSON.stringify({ entry: [{ changes: [{ field: 'messages', value: {
+      metadata: { phone_number_id: 'pn1' },
+      messages: [{ id: 'wamid.1', from: '33611', type: 'text', text: { body: 'salut' } }],
+    } }] }] });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(sign(body)), payload: body });
+    expect(queue.enqueued[0]?.opts?.groupId).toBe('pn1:33611');
+    await app.close();
+  });
+
+  it('un wa_id masqué (BSUID) : le bloc `contacts` sert de secours', async () => {
+    const { queue, app } = makeApp();
+    const body = JSON.stringify({ entry: [{ changes: [{ field: 'messages', value: {
+      metadata: { phone_number_id: 'pn1' },
+      contacts: [{ wa_id: '33622' }],
+      messages: [{ id: 'wamid.2', type: 'text', text: { body: 'sans from' } }],
+    } }] }] });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(sign(body)), payload: body });
+    expect(queue.enqueued[0]?.opts?.groupId).toBe('pn1:33622');
+    await app.close();
+  });
+
+  it('🔴 DEUX contacts dans un payload -> AUCUNE clé, plutôt qu’un ordre inventé', async () => {
+    const { queue, app } = makeApp();
+    const body = JSON.stringify({ entry: [{ changes: [{ field: 'messages', value: {
+      metadata: { phone_number_id: 'pn1' },
+      messages: [
+        { id: 'wamid.3', from: '33611', type: 'text', text: { body: 'a' } },
+        { id: 'wamid.4', from: '33622', type: 'text', text: { body: 'b' } },
+      ],
+    } }] }] });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(sign(body)), payload: body });
+    expect(queue.enqueued[0]?.opts?.groupId).toBeUndefined();
+    await app.close();
+  });
+
+  it('🔴 une bascule de contrôle -> aucune clé (sa forme n’est pas documentée)', async () => {
+    const { queue, app } = makeApp();
+    const body = JSON.stringify({ entry: [{ changes: [{ field: 'messaging_handovers', value: {
+      metadata: { phone_number_id: 'pn1' }, control_passed: { metadata: 'x' },
+    } }] }] });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(sign(body)), payload: body });
+    expect(queue.enqueued[0]?.opts?.groupId).toBeUndefined();
+    await app.close();
+  });
+
+  it('un accusé de livraison est groupé par son destinataire', async () => {
+    const { queue, app } = makeApp();
+    const body = JSON.stringify({ entry: [{ changes: [{ field: 'messages', value: {
+      metadata: { phone_number_id: 'pn1' },
+      statuses: [{ id: 'wamid.5', status: 'delivered', recipient_id: '33633' }],
+    } }] }] });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', headers: jsonHeaders(sign(body)), payload: body });
+    expect(queue.enqueued[0]?.name).toBe('webhook-status');
+    expect(queue.enqueued[0]?.opts?.groupId).toBe('pn1:33633');
+    await app.close();
+  });
+});
