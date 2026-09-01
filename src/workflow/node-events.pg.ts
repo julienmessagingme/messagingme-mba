@@ -112,4 +112,34 @@ export class PgWorkflowNodeEventStore {
       contacts: Number(r.c),
     }));
   }
+
+  /**
+   * ANONYMISE les événements de blocs plus vieux que la rétention. Ne supprime RIEN.
+   *
+   * 🔴 Pourquoi anonymiser et non purger, contrairement aux trois autres tables du lot. Ces lignes SONT la
+   * mesure : « combien de contacts ont cliqué le choix 2 du bloc 3 » se lit ici et nulle part ailleurs, et il
+   * n'existe aucune statistique rétroactive (cf. migration 0063). Les supprimer effacerait l'historique des
+   * tableaux du client pour retirer un numéro de téléphone. On retire donc le numéro et on garde le compteur,
+   * exactement la décision déjà prise pour la purge d'un contact (`wa_id = 'anonyme'`) et pour
+   * `campaign_recipients.to_e164`.
+   *
+   * ⚠️ CE BALAYAGE NE BORNE DONC PAS LA CROISSANCE de cette table, et c'est assumé : il ferme le risque RGPD,
+   * pas le volume. Le jour où le volume gênera, ce sera un pré-agrégat, pas une purge.
+   *
+   * Borné par passage, même raison que `purgeOlderThan` des événements Meta : la première passe sur une table
+   * qui n'a jamais été balayée peut viser des millions de lignes.
+   */
+  async anonymiserAnciens(days: number, maxParPassage = 50_000): Promise<number> {
+    if (days <= 0) return 0;
+    const res = await this.pool.query(
+      `update workflow_node_events set wa_id = 'anonyme'
+        where id in (
+          select id from workflow_node_events
+           where at < now() - make_interval(days => $1) and wa_id <> 'anonyme'
+           limit $2
+        )`,
+      [Math.floor(days), Math.max(1, maxParPassage)],
+    );
+    return res.rowCount ?? 0;
+  }
 }

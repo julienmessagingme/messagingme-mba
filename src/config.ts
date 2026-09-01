@@ -152,6 +152,24 @@ export const schema = z.object({
    */
   CONVERSATION_RETENTION_DAYS: z.coerce.number().default(365),
   /**
+   * Rétentions du lot 4 du programme II. Quatre tables qui grossissaient sans fin, et dont deux portent une
+   * donnée personnelle. 0 = balayage désactivé pour cette table (comme les rétentions ci-dessus).
+   *
+   * 🔴 Les deux natures ne se règlent pas pareil, et c'est le point à comprendre avant de toucher ces valeurs :
+   * les tables qui portent un `wa_id` (événements de blocs, parcours) ont une rétention COURTE parce que la
+   * donnée personnelle n'a plus de raison d'être ; celles qui n'en portent aucune (clics, journal d'audit) ont
+   * une rétention LONGUE parce qu'elles ne posent qu'une question de volume et qu'elles servent de mesure ou
+   * de preuve.
+   */
+  /** ANONYMISATION (pas suppression) du `wa_id` des événements de blocs : les compteurs restent justes. */
+  NODE_EVENTS_ANONYMISATION_DAYS: z.coerce.number().default(365),
+  /** Suppression des parcours TERMINÉS (`done`, `inbox`). Les parcours vivants ne sont jamais touchés. */
+  WORKFLOW_RUNS_RETENTION_DAYS: z.coerce.number().default(90),
+  /** Suppression des CLICS tracés (jamais des liens : `/r/<code>` est une porte à sens unique). */
+  TRACKED_CLICKS_RETENTION_DAYS: z.coerce.number().default(730),
+  /** Suppression des entrées du journal d'audit. LONGUE : c'est la preuve qu'une purge a eu lieu. */
+  AUDIT_LOG_RETENTION_DAYS: z.coerce.number().default(730),
+  /**
    * Plafond d'envois par minute et PAR NUMÉRO, tous chemins confondus (campagne, scénario, automation,
    * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
    *

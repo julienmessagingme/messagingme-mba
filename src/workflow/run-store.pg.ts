@@ -293,4 +293,30 @@ export class PgWorkflowRunStore {
     );
     return res.rowCount ?? 0;
   }
+
+  /**
+   * Purge les parcours TERMINÉS plus vieux que la rétention.
+   *
+   * 🔴 UN PARCOURS VIVANT N'EST JAMAIS EFFACÉ, quel que soit son âge. Le filtre porte sur les statuts
+   * terminaux (`done`, `inbox`), et l'index partiel de la migration 0097 porte le même : la garde est donc
+   * posée deux fois, en base et dans la requête. Un run `waiting` ou `sleeping` vieux d'un an est une anomalie
+   * à corriger ailleurs, sûrement pas une ligne à supprimer en silence sous les pieds d'un contact.
+   *
+   * Ce que ça ferme : ces lignes portent le `wa_id` du contact (donnée personnelle) et ne sont plus lues par
+   * personne une fois le parcours fini. Aucun écran, aucun rapport ne les relit : seule l'exécution interroge
+   * cette table, et elle ne cherche que des parcours vivants.
+   */
+  async purgeTerminesOlderThan(days: number, maxParPassage = 50_000): Promise<number> {
+    if (days <= 0) return 0;
+    const res = await this.pool.query(
+      `delete from workflow_runs
+        where id in (
+          select id from workflow_runs
+           where status in ('done', 'inbox') and updated_at < now() - make_interval(days => $1)
+           limit $2
+        )`,
+      [Math.floor(days), Math.max(1, maxParPassage)],
+    );
+    return res.rowCount ?? 0;
+  }
 }

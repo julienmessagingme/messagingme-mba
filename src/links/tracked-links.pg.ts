@@ -141,4 +141,26 @@ export class PgTrackedLinkStore {
     for (const r of res.rows) out[r.code] = Number(r.n);
     return out;
   }
+
+  /**
+   * Purge les CLICS plus vieux que la rétention.
+   *
+   * 🔴 LES CLICS, JAMAIS LES LIENS. `tracked_links` est une porte à SENS UNIQUE (cf. CLAUDE.md) : dès qu'un
+   * template portant un lien `/r/<code>` est approuvé et ENVOYÉ, son adresse circule dans des messages déjà
+   * livrés. Supprimer une ligne de `tracked_links` casserait ces liens-là définitivement, chez des contacts
+   * qui les ont encore sous les yeux. Une purge qui remonterait la cascade `on delete cascade` depuis les
+   * clics serait donc une catastrophe silencieuse : elle ne remonte pas, ce `delete` ne touche que les clics.
+   *
+   * Cette table ne porte AUCUNE donnée personnelle (un code, un espace, une date) : ce balayage répond à la
+   * croissance, pas au RGPD. D'où une rétention longue, qui garde les mesures d'une année sur l'autre.
+   */
+  async purgeClicsOlderThan(days: number, maxParPassage = 50_000): Promise<number> {
+    if (days <= 0) return 0;
+    const res = await this.pool.query(
+      `delete from tracked_link_clicks
+        where id in (select id from tracked_link_clicks where at < now() - make_interval(days => $1) limit $2)`,
+      [Math.floor(days), Math.max(1, maxParPassage)],
+    );
+    return res.rowCount ?? 0;
+  }
 }

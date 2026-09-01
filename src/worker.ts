@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
+import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { PgAuditStore } from './audit/store.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { handleWebhookJob } from './webhooks/handler';
@@ -163,6 +164,9 @@ async function main(): Promise<void> {
   const fieldStore = new PgUserFieldStore(pool);
   const auditStore = new PgAuditStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
+  // Instancié ICI pour le seul balayage de rétention des clics (lot 4) : l'API a le sien, et ces stores ne
+  // sont que des enveloppes autour du pool partagé.
+  const trackedLinkStore = new PgTrackedLinkStore(pool);
   const repo = new PgCampaignRepo(pool);
   const transport = new FetchTransport();
   const dryRun = config.DRY_RUN === 'true';
@@ -933,6 +937,42 @@ async function main(): Promise<void> {
   };
   void conversationSweep();
   taches.programmer('retention-conversations', 6 * 60 * 60 * 1000, conversationSweep);
+
+  /**
+   * Les QUATRE dernières tables qui grossissaient sans fin (lot 4 du programme II).
+   *
+   * 🔴 UN SEUL balayage, mais quatre étapes INDÉPENDANTES : chacune a son `try`, donc une base qui refuse une
+   * purge n'empêche pas les trois autres de passer. Les regrouper dans une tâche unique évite quatre entrées
+   * de plus dans le registre pour un travail qui se compte en millisecondes et qui a la même cadence.
+   *
+   * ⚠️ Les deux natures ne font PAS la même chose, et c'est voulu :
+   *  - les événements de blocs sont ANONYMISÉS, jamais supprimés. Ils SONT la mesure des tableaux, et il n'y a
+   *    aucune statistique rétroactive : les effacer viderait l'historique du client pour retirer un numéro.
+   *  - les parcours terminés, les clics et le journal sont SUPPRIMÉS. Personne ne les relit.
+   */
+  const retentionSweep = async (): Promise<void> => {
+    const etape = async (nom: string, quoi: string, faire: () => Promise<number>): Promise<void> => {
+      try {
+        const n = await faire();
+        // eslint-disable-next-line no-console
+        if (n > 0) console.log(`retention-sweep: ${n} ${quoi}`);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`retention-sweep (${nom}) erreur:`, err instanceof Error ? err.message : err);
+        alert(`sweeper:retention:${nom}`, `retention-sweep ${nom} en échec : ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    await etape('blocs', `événement(s) de bloc anonymisé(s) (au-delà de ${config.NODE_EVENTS_ANONYMISATION_DAYS} j)`,
+      () => nodeEventStore.anonymiserAnciens(config.NODE_EVENTS_ANONYMISATION_DAYS));
+    await etape('parcours', `parcours terminé(s) effacé(s) (au-delà de ${config.WORKFLOW_RUNS_RETENTION_DAYS} j)`,
+      () => runStore.purgeTerminesOlderThan(config.WORKFLOW_RUNS_RETENTION_DAYS));
+    await etape('clics', `clic(s) tracé(s) effacé(s) (au-delà de ${config.TRACKED_CLICKS_RETENTION_DAYS} j)`,
+      () => trackedLinkStore.purgeClicsOlderThan(config.TRACKED_CLICKS_RETENTION_DAYS));
+    await etape('audit', `entrée(s) de journal effacée(s) (au-delà de ${config.AUDIT_LOG_RETENTION_DAYS} j)`,
+      () => auditStore.purgeOlderThan(config.AUDIT_LOG_RETENTION_DAYS));
+  };
+  void retentionSweep();
+  taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep);
 
   // Déclencheur « X avant la date d'un champ » : le seul qui ne répond pas à un événement mais à
   // l'écoulement du temps. Il PUBLIE dans la file, il ne démarre rien : le scénario part par le chemin

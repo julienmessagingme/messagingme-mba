@@ -86,6 +86,26 @@ export class PgAuditStore {
       detail: r.detail ?? {},
     }));
   }
+
+  /**
+   * Purge les entrées plus vieilles que la rétention.
+   *
+   * ⚠️ Ce journal ne porte AUCUNE donnée personnelle, par construction (cf. migration 0061 : l'identifiant
+   * interne du contact, jamais son numéro ni son nom). Ce balayage ne répond donc pas au RGPD mais à la
+   * croissance : une ligne par action sur un contact, sans fin.
+   *
+   * 🔴 Et c'est pour ça que sa rétention est LONGUE. Ce journal est la PREUVE qu'une purge a eu lieu et de qui
+   * l'a demandée ; le raccourcir revient à effacer l'attestation en gardant l'obligation. Deux ans par défaut.
+   */
+  async purgeOlderThan(days: number, maxParPassage = 50_000): Promise<number> {
+    if (days <= 0) return 0;
+    const res = await this.pool.query(
+      `delete from audit_log
+        where id in (select id from audit_log where at < now() - make_interval(days => $1) limit $2)`,
+      [Math.floor(days), Math.max(1, maxParPassage)],
+    );
+    return res.rowCount ?? 0;
+  }
 }
 
 interface Ligne {
@@ -96,4 +116,5 @@ interface Ligne {
   target_kind: string;
   target_id: string;
   detail: Record<string, unknown> | null;
+
 }
