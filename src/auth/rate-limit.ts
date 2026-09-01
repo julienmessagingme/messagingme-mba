@@ -1,6 +1,12 @@
 /**
  * Limiteur de débit en mémoire (fenêtre glissante par clé, ex. IP). Sans dépendance,
  * suffisant pour un process unique : borne le brute-force/credential-stuffing sur /auth/login.
+ *
+ * 🔴 EXPLICITEMENT LOCAL AU PROCESS (programme II, lot 8). Le plafond annoncé est celui d'UNE instance : avec
+ * deux process d'API derrière le même proxy, un attaquant dispose du DOUBLE, et rien ne le signale. Ce n'est
+ * pas un défaut aujourd'hui (il n'y a qu'une instance), c'est une propriété à connaître AVANT d'en lancer une
+ * seconde. Le jour où ça arrive, la réponse n'est pas de diviser le plafond par le nombre d'instances (on ne
+ * le connaît pas de façon fiable) mais de porter le compteur en base ou dans un cache partagé.
  */
 export class RateLimiter {
   private readonly hits = new Map<string, { count: number; resetAt: number }>();

@@ -98,3 +98,17 @@ function porteDuCode(morceau: string): boolean {
     .join('')
     .trim() !== '';
 }
+
+/**
+ * Clé du verrou d'avis qui sérialise les exécutions de migrations.
+ *
+ * 🔴 CE QUE ÇA FERME, ET C'EST UN RISQUE D'AUJOURD'HUI, pas du jour où un second worker existera. Les
+ * migrations de ce dépôt s'appliquent depuis DEUX endroits : le conteneur du VPS, et le poste de Julien dont
+ * le `DATABASE_URL` pointe la même base de production. Deux exécutions simultanées lisent le même
+ * `schema_migrations`, y voient la même migration comme non appliquée, et la jouent toutes les deux. Sur un
+ * `create index if not exists` c'est sans conséquence ; sur une migration de DONNÉES, ça la joue deux fois.
+ *
+ * Valeur arbitraire mais FIXE : deux exécutions doivent demander le MÊME verrou, sinon il ne sert à rien.
+ * Elle n'a pas d'autre signification et ne doit jamais changer.
+ */
+export const VERROU_MIGRATIONS = 8_142_026_090_1;

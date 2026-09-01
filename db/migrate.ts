@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
-import { veutHorsTransaction, decouperInstructions } from '../src/db/migration-directives';
+import { veutHorsTransaction, decouperInstructions, VERROU_MIGRATIONS } from '../src/db/migration-directives';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, 'migrations');
@@ -23,6 +23,21 @@ async function main(): Promise<void> {
     ssl: pgSsl(),
   });
   await client.connect();
+
+  // 🔴 UNE SEULE exécution à la fois (programme II, lot 8). `pg_try_advisory_lock` rend la main tout de suite
+  // au lieu d'attendre : deux exécutions simultanées sont une ERREUR d'exploitation, pas une file d'attente à
+  // organiser, et un `migrate` qui bloque sans rien dire au milieu d'un déploiement est pire que refusé.
+  //
+  // ⚠️ Le verrou est de SESSION : il tient tant que cette connexion vit, et Postgres le libère de lui-même si
+  // le process meurt. Rien à nettoyer, y compris après un plantage. Il suppose une connexion en mode SESSION,
+  // ce qui est déjà le cas ici (le mode transaction ne saurait pas non plus jouer `CREATE INDEX CONCURRENTLY`).
+  const verrou = await client.query<{ ok: boolean }>('select pg_try_advisory_lock($1) as ok', [VERROU_MIGRATIONS]);
+  if (verrou.rows[0]?.ok !== true) {
+    throw new Error(
+      'une autre exécution de migrations tourne déjà sur cette base (verrou d'avis). '
+      + 'Attendre qu'elle finisse plutôt que de forcer : deux exécutions rejoueraient la même migration.',
+    );
+  }
 
   await client.query(`
     create table if not exists schema_migrations (

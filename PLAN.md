@@ -443,8 +443,8 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
 | ~~**4**~~ ✅ | La rétention qui manque : blocs, runs terminés, journal d'audit, clics | 0097 | M | **FAIT le 2026-09-01.** Les blocs sont ANONYMISÉS (ils sont la mesure), les trois autres purgés |
 | **5** | Découpage de `web/lib/api.ts`, puis delta du fil et `AbortController` | non | M | Le fil ouvert cesse de retélécharger 500 messages toutes les 4 s, par onglet |
 | ~~**6**~~ ✅ | Les cinq endroits qui recalculent ou chargent tout en mémoire | non | M | **FAIT le 2026-09-01.** DEUX corrigés, TROIS clos par la mesure (voir le détail) |
-| **7** | Le palier Meta enfin utilisé, et la surveillance des numéros au-delà du 200e | non | M | Un numéro neuf cesse de brûler son quota sans prévenir |
-| **8** | Le deuxième worker, en un seul bloc | oui | L | La réplication horizontale, le jour où on la veut, et pas avant |
+| ~~**7**~~ ✅ | Le palier Meta enfin utilisé, et la surveillance des numéros au-delà du 200e | 0098 | M | **FAIT le 2026-09-01.** Avertissement au lancement, tourniquet du balayage |
+| ~~**8**~~ ⚠️ | Le deuxième worker : UN item fait, six refusés avec argument | non | L | **ARBITRÉ le 2026-09-01.** Le verrou de migrations est un risque d'AUJOURD'HUI, le reste est du travail rangé d'avance (voir le détail) |
 
 ### Détail des lots, et le piège de chacun
 
@@ -514,13 +514,26 @@ orange, mais **sa §7 et ses 23 jaunes n'ont jamais été ouverts** : 2 fermés 
   ⚠️ **Le piège** : le palier est périmable, et Meta compte des conversations uniques, pas nos lignes de
   destinataires. On avertit et on adapte le débit, on ne REFUSE jamais une audience sur la seule valeur du
   palier. L'inbox, les scénarios et les autres campagnes mangent le même budget.
-- **Lot 8.** Le niveau B de la synthèse, en bloc : heartbeat par INSTANCE (aujourd'hui une ligne unique
-  `id='worker'`, donc un worker mort est masqué par un vivant), advisory lock des migrations, audit des 17
-  balayages en multi-réplique, recalcul du budget de connexions, rate limits explicitement locaux ou
-  distribués (ce sont des `Map` par process), test de charge et test de reprise après kill.
-  ⚠️ **Le piège** : ne pas le faire avant d'en avoir besoin. Sans deuxième worker, aucun de ces sept items ne
-  protège de quoi que ce soit, et ce serait du travail rangé d'avance. C'est aussi là que le `groupId` du lot 3
-  cesse de suffire.
+- **Lot 8.** ⚠️ **ARBITRÉ le 2026-09-01, et c'est le seul lot volontairement incomplet.** Son propre piège
+  disait « ne pas le faire avant d'en avoir besoin » : sans deuxième worker, six de ses sept items ne protègent
+  de rien et n'ajouteraient que de la complexité et de l'egress. Le tri a donc été fait item par item.
+  **FAIT, parce que c'est un risque d'AUJOURD'HUI** : le **verrou d'avis des migrations**. Elles s'appliquent
+  depuis DEUX endroits (le conteneur du VPS, et le poste de Julien dont le `DATABASE_URL` pointe la même base
+  de production) : deux exécutions simultanées voient la même migration comme non appliquée et la jouent toutes
+  les deux. `pg_try_advisory_lock`, qui REFUSE tout de suite au lieu d'attendre — un `migrate` qui bloque sans
+  rien dire au milieu d'un déploiement est pire que refusé. Vérifié en intégration, y compris la libération
+  automatique quand la session meurt (rien à nettoyer après un plantage).
+  **FAIT AUSSI, pour trois lignes** : les limiteurs de débit sont désormais documentés comme **explicitement
+  locaux au process**, avec ce que ça implique le jour où une seconde instance d'API démarre (le plafond
+  double, en silence).
+  **REFUSÉ, avec l'argument** : heartbeat par instance, concurrence pg-boss coordonnée par la base
+  (`groupConcurrency` au lieu de `localGroupConcurrency` : coûterait de l'egress pour rien tant qu'il n'y a
+  qu'un worker), audit des 17 balayages en multi-réplique, recalcul du budget de connexions (l'arithmétique est
+  déjà écrite dans `config.ts`), limiteurs distribués. Ces cinq-là se feront **le jour où un second worker est
+  décidé**, en une demi-session, et pas avant.
+  **RESTE OUVERT, et c'est le seul vrai manque** : le **test de charge et de reprise après kill**. Il aurait de
+  la valeur AUJOURD'HUI (il validerait les lots 3 à 6 sous charge réelle), mais c'est une session à lui seul,
+  pas la fin d'un lot.
 
 ### Ce qu'on ne fera PAS, et pourquoi
 
