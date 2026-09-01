@@ -36,7 +36,6 @@ import {
   listRcsMessages,
   queryContacts,
   countContacts,
-  contactIdsForFilters,
   getTemplateHints,
   getSettings,
   getCampaign,
@@ -227,6 +226,17 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   const [total, setTotal] = useState<number | null>(null);
   const [countLoading, setCountLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /**
+   * « Tout ce qui correspond aux filtres », par INTENTION plutôt que par liste d'identifiants.
+   *
+   * 🔴 C'est ce qui retire le piège des grosses sélections. « Tout sélectionner » rapatriait jusqu'à 100 000
+   * identifiants dans le navigateur puis les renvoyait tous dans la requête, plafonnée à 1 Mo : la création
+   * échouait vers 25 000 contacts, donc bien AVANT la limite que l'écran annonçait, et sans rien dire.
+   * Même modèle que les actions en masse du mini-CRM (`allMode` + `excluded`), et même cible envoyée au
+   * serveur, pour que les deux écrans visent exactement la même chose.
+   */
+  const [toutFiltre, setToutFiltre] = useState(false);
+  const [exclus, setExclus] = useState<Set<string>>(new Set());
   // Récap non bloquant après un import fichier (N importés + tag posé) : affiché dans la zone Destinataires.
   const [importMsg, setImportMsg] = useState<{ n: number; tags: string[] } | null>(null);
   // Import CSV (source fichier) en vol : gèle les boutons de source (changer de source démonterait CsvImport).
@@ -332,6 +342,11 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           // de la requete, qu'on afficherait comme une verite.
           setTotal(typeof c?.total === 'number' ? c.total : null);
           setSelected(new Set(liste.map((x) => x.id)));
+          // 🔴 Les filtres ont changé, donc les EXCLUSIONS ne veulent plus rien dire : elles désignaient des
+          // contacts d'un autre ensemble. Les garder retirerait des gens que l'utilisateur n'a jamais vus
+          // dans cette nouvelle sélection, et le compteur afficherait un nombre plus petit sans raison
+          // visible. Le mode « tout ce qui correspond », lui, RESTE : il suit les filtres, c'est son sens.
+          setExclus(new Set());
           setCountLoading(false);
         } catch {
           if (seq !== reqSeq.current || !mountedRef.current) return;
@@ -491,6 +506,18 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setSource(s);
     setImportMsg(null);
     if (s !== 'crm') setSelected(new Set());
+    /**
+     * 🔴 Changer de source OUBLIE le mode « tout ce qui correspond », toujours, même en revenant sur le CRM.
+     *
+     * Sans ça : on clique « Tout sélectionner » sur le CRM (filtres vides = tout l'espace), on bascule sur
+     * « Import fichier », et l'écran montre un widget d'upload vide pendant que l'état retient encore la
+     * cible du CRM. Le bandeau qui annonce ce mode et le compteur ne sont rendus que dans la branche CRM :
+     * plus rien à l'écran ne dit ce qui est visé, mais « Prêt à lancer à N » reste affiché, et créer enverrait
+     * les ANCIENS filtres. Une campagne partirait à tout l'espace alors que l'opérateur croit viser son
+     * fichier. C'est exactement l'accident que ce lot existe pour fermer, déplacé d'un cran.
+     */
+    setToutFiltre(false);
+    setExclus(new Set());
     // Quitter la source webhook OUBLIE l'adresse choisie : la laisser posée ferait partir une campagne « au
     // fil de l'eau » alors que l'opérateur a sous les yeux une liste de contacts cochés.
     if (s !== 'webhook') setWebhookId('');
@@ -534,16 +561,33 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     setImportMsg({ n: report.created + report.updated, tags });
   }
   function toggleContact(id: string) {
+    // En mode « tout ce qui correspond », décocher une ligne l'EXCLUT ; on ne reconstruit jamais la liste.
+    if (toutFiltre) {
+      setExclus((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+      return;
+    }
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
-  // « Tout sélectionner (N) » : résout côté serveur TOUS les ids correspondants (au-delà des 500 affichés).
-  async function selectAllMatching() {
-    try {
-      const { ids } = await contactIdsForFilters(tenantId, filters);
-      if (!mountedRef.current) return;
-      setSelected(new Set(ids));
-    } catch { /* silencieux */ }
+  /** « Tout sélectionner (N) » : on retient l'INTENTION, on ne rapatrie plus aucun identifiant. */
+  function selectAllMatching() {
+    setToutFiltre(true);
+    setSelected(new Set());
+    setExclus(new Set());
   }
+  function viderSelection() {
+    setToutFiltre(false);
+    setSelected(new Set());
+    setExclus(new Set());
+  }
+  /** Une ligne affichée est-elle retenue ? En mode « tout », tout l'est sauf ce qui a été exclu. */
+  const estRetenu = (id: string): boolean => (toutFiltre ? !exclus.has(id) : selected.has(id));
+  /**
+   * Combien de destinataires, réellement. En mode « tout ce qui correspond », c'est le total SERVEUR moins
+   * les exclusions : le navigateur ne connaît pas la liste, il connaît son cardinal. Toutes les phrases de
+   * l'écran (durée estimée, « prêt à lancer à N ») lisent ce nombre, plus `selected.size`, qui vaudrait zéro.
+   */
+  const nbDestinataires = toutFiltre ? Math.max(0, (total ?? 0) - exclus.size) : selected.size;
+
   // Un filtre est actif dès qu'une clé est posée -> distingue « aucun résultat » de « aucun contact du tout ».
   const hasActiveFilters = filtersActive(filters);
   // Le récap d'import n'est PERTINENT que tant que le filtre affiché == exactement les tags importés (rien
@@ -566,9 +610,13 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
     // Comment les destinataires sont DÉSIGNÉS, et c'est l'un ou l'autre : une liste figée, ou une adresse qui
     // les amènera au fil de l'eau. Envoyer les deux est refusé par le serveur, et à juste titre : ce serait
     // laisser croire que la liste va partir alors que seule l'adresse compte.
-    const cible: Pick<CreateCampaignInput, 'contactIds' | 'webhookId'> = auFilDeLEau
+    // Trois façons de désigner les destinataires, et une seule part : une adresse (fil de l'eau), une
+    // INTENTION (filtres + exclusions), ou une liste explicite. Le serveur refuse d'en recevoir deux.
+    const cible: Pick<CreateCampaignInput, 'contactIds' | 'contactTarget' | 'webhookId'> = auFilDeLEau
       ? { webhookId }
-      : { contactIds: [...selected] };
+      : toutFiltre
+        ? { contactTarget: { filters, excludeIds: [...exclus] } }
+        : { contactIds: [...selected] };
     // Débit TOUJOURS choisi (jauge, défaut 60) : on envoie systématiquement le plafond 1..80.
     // Campagne RCS : ni numéro Meta, ni template, ni variables. Le message part tel qu'il est écrit.
     if (mode === 'rcs') {
@@ -871,7 +919,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
   // si les destinataires sont désignés.
   const auFilDeLEau = source === 'webhook';
   const webhookChoisi = webhooks?.find((w) => w.id === webhookId) ?? null;
-  const destinatairesPrets = auFilDeLEau ? webhookId !== '' : selected.size > 0;
+  const destinatairesPrets = auFilDeLEau ? webhookId !== '' : nbDestinataires > 0;
 
   // Étape 1 prête = ce qui active l'étape 2 (indépendant du busy/launch en cours).
   // Le numéro Meta n'est exigé que sur WhatsApp : une campagne RCS part d'un agent de marque.
@@ -962,7 +1010,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
           <label className="text-sm font-medium text-ink-700">{t('Destinataires', 'Recipients')}</label>
           {/* Y = total réel (compteur serveur), pas le nombre de contacts affichés. */}
           {source === 'crm' && total !== null && (
-            <span className="text-xs text-ink-400">{selected.size} / {total} {t('sélectionnés', 'selected')}</span>
+            <span className="text-xs text-ink-400">{nbDestinataires} / {total} {t('sélectionnés', 'selected')}</span>
           )}
         </div>
 
@@ -1117,14 +1165,25 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                   </button>
                 </>
               )}
-              <button type="button" onClick={() => setSelected(new Set())} className="rounded-lg border border-ink-300 px-2 py-0.5 text-ink-600 hover:bg-ink-50">{t('Vider', 'Clear')}</button>
+              <button type="button" onClick={viderSelection} className="rounded-lg border border-ink-300 px-2 py-0.5 text-ink-600 hover:bg-ink-50">{t('Vider', 'Clear')}</button>
             </div>
+
+            {/* Le mode « tout ce qui correspond » doit se VOIR : sans cette ligne, l'écran montre 500 cases
+                cochées et rien ne dit que la campagne en vise beaucoup plus. */}
+            {toutFiltre && (
+              <div data-testid="campagne-cible-filtre" className="mb-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-800">
+                {t(
+                  `Les ${nbDestinataires} contacts qui correspondent aux filtres sont visés, y compris ceux qui ne sont pas affichés ci-dessous. Décocher une ligne l'exclut.`,
+                  `All ${nbDestinataires} contacts matching the filters are targeted, including those not shown below. Unticking a row excludes it.`,
+                )}
+              </div>
+            )}
 
             {/* Liste des contacts correspondants (<= 500 affichés) : cocher/décocher affine la sélection. */}
             <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-lg border border-ink-200">
               {contacts.map((c) => (
                 <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
-                  <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
+                  <input type="checkbox" checked={estRetenu(c.id)} onChange={() => toggleContact(c.id)} className="accent-brand-500" />
                   <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
                   {(c.tags ?? []).slice(0, 3).map((tag) => (
                     <span key={tag} className="shrink-0 rounded bg-brand-50 px-1 text-[10px] text-brand-700">{tag}</span>
@@ -1380,7 +1439,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
       </div>
 
       {/* Débit d'envoi : jauge TOUJOURS active (défaut 60/min, réglable 1..80). Grisée tant que la campagne n'a pas de nom.
-          Placée après le grid pour disposer de la sélection (durée estimée sur selected.size). */}
+          Placée après le grid pour disposer de la sélection (durée estimée sur le nombre de destinataires). */}
       <div className={`mt-4 rounded-xl border border-ink-200 p-4 ${!nameSet ? 'pointer-events-none select-none opacity-40' : ''}`} aria-disabled={!nameSet}>
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-medium text-ink-700">{t("Débit d'envoi", 'Sending rate')}</h3>
@@ -1398,9 +1457,9 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
             className="flex-1 accent-brand-500"
           />
         </div>
-        {selected.size > 0 && (
+        {nbDestinataires > 0 && (
           <p className="mt-2 text-xs text-ink-500">
-            {t(`~${Math.ceil(selected.size / ratePerMinute)} min pour envoyer ${selected.size} message(s)`, `~${Math.ceil(selected.size / ratePerMinute)} min to send ${selected.size} message(s)`)}
+            {t(`~${Math.ceil(nbDestinataires / ratePerMinute)} min pour envoyer ${nbDestinataires} message(s)`, `~${Math.ceil(nbDestinataires / ratePerMinute)} min to send ${nbDestinataires} message(s)`)}
           </p>
         )}
         <p className="mt-2 text-[11px] text-ink-400">
@@ -1464,7 +1523,7 @@ export function CampaignCreateForm({ tenantId, numbers, onCreated, onBusyChange,
                     `Prêt à ouvrir sur « ${webhookChoisi?.name ?? ''} » : les contacts arriveront au fil de l'eau.`,
                     `Ready to open on “${webhookChoisi?.name ?? ''}”: contacts will arrive continuously.`,
                   )
-                : t(`Prêt à lancer à ${selected.size} destinataire(s).`, `Ready to launch to ${selected.size} recipient(s).`)}
+                : t(`Prêt à lancer à ${nbDestinataires} destinataire(s).`, `Ready to launch to ${nbDestinataires} recipient(s).`)}
             </p>
 
             {/* Timing : lancer maintenant OU programmer un envoi futur. 'later' révèle un sélecteur date/heure. */}

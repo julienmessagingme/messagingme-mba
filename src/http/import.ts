@@ -116,8 +116,14 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, requ
     return reply.code(200).send({ total });
   });
 
-  // Résolution serveur de la source « Liste de contacts » d'une campagne : les ids correspondant aux filtres
-  // (sans charger tout le CRM côté front). L'opt-in marketing reste appliqué au build de la campagne.
+  // Résolution serveur de la source « Liste de contacts » d'une campagne : les ids correspondant aux filtres.
+  //
+  // ⚠️ PLUS AUCUN APPELANT depuis le 2026-09-01. C'était le seul chemin par lequel jusqu'à 100 000
+  // identifiants arrivaient dans le navigateur, pour repartir aussitôt dans le corps de la création de
+  // campagne, plafonné à 1 Mo : la création échouait vers 25 000 contacts, avant la limite affichée. L'écran
+  // envoie désormais l'INTENTION de sélection (`contactTarget`), résolue en base.
+  // La route reste montée parce qu'elle est une primitive de lecture légitime, bornée et testée ; la retirer
+  // est une décision à prendre à part, elle est notée dans `todo.md`.
   app.get('/tenants/:tenantId/contacts/ids', guard, async (req, reply) => {
     const effectiveTenant = scopeTenant(req);
     if (effectiveTenant === null) return reply.code(403).send({ error: 'tenant interdit' });

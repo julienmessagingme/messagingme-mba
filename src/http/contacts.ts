@@ -101,9 +101,15 @@ function normalizeContactFilters(raw: unknown): ContactFilters {
   });
 }
 
-/** Cible d'une action en masse depuis le corps : `ids` non vides -> par ids ; sinon `filters` (+ `excludeIds`).
- *  null si aucune cible exploitable (-> 400, jamais un UPDATE global par erreur). */
-function parseBulkTarget(raw: unknown): BulkTarget | null {
+/**
+ * Cible d'une action en masse depuis le corps : `ids` non vides -> par ids ; sinon `filters` (+ `excludeIds`).
+ * null si aucune cible exploitable (-> 400, jamais un UPDATE global par erreur).
+ *
+ * EXPORTÉE parce que la création de campagne s'en sert aussi (elle désigne ses destinataires exactement de la
+ * même façon depuis le 2026-09-01). Un second analyseur dériverait, et une cible qui dérive veut dire une
+ * campagne qui ne vise pas ce que l'écran du mini-CRM montrait.
+ */
+export function parseBulkTarget(raw: unknown): BulkTarget | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const t = raw as { ids?: unknown; filters?: unknown; excludeIds?: unknown };
   if (Array.isArray(t.ids) && t.ids.length > 0) {

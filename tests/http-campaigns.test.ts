@@ -88,6 +88,12 @@ interface Deps {
   sansPause?: boolean;
   /** Brouillons de COMPOSITION. Absent -> les routes ne sont pas montées (dépendance optionnelle). */
   drafts?: CampaignRouteDeps['drafts'];
+  /** Résolution d'une CIBLE (filtres + exclusions) en identifiants. Absente -> instance d'avant le lot. */
+  ciblesResolues?: string[];
+  /** Ce que la route a réellement demandé de résoudre : c'est là que se lit ce qui a voyagé. */
+  ciblesVues?: unknown[];
+  /** Ne câble PAS la résolution de cible : reproduit une instance qui ne connaît que les listes d'ids. */
+  sansCible?: boolean;
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -99,6 +105,12 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
       ...(d.drafts ? { drafts: d.drafts } : {}),
       phoneNumberBelongsToTenant: async () => d.ownsNumber ?? true,
+      ...(d.sansCible ? {} : {
+        contactIdsForTarget: async (tenant: string, target: unknown) => {
+          d.ciblesVues?.push({ tenant, target });
+          return d.ciblesResolues ?? ['c1'];
+        },
+      }),
       ...(d.sansWebhook ? {} : {
         webhookUsableByTenant: async () => d.webhookOk ?? true,
         stopWebhookCampaign: async (id: string, tenant: string) => { d.stopCalls?.push({ id, tenant }); return d.stopOk ?? true; },
@@ -710,6 +722,105 @@ describe('POST /tenants/:tenantId/campaigns : au fil de l eau', () => {
     const repo = new FakeRepo(contacts);
     const app = appWith(repo, {});
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, webhookId: 'wh1', contactIds: ['c1'] } });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('🔴 une CIBLE par filtres est résolue en base : aucun identifiant ne voyage', async () => {
+    // Le piège que ce lot retire. L'écran proposait « tout sélectionner » jusqu'à 100 000 contacts, rapatriait
+    // leurs identifiants dans le navigateur et les renvoyait tous dans le corps, plafonné à 1 Mo : la création
+    // échouait vers 25 000, donc bien AVANT la limite affichée, et sans rien dire. On envoie désormais
+    // l'INTENTION, et c'est le serveur qui la résout.
+    const repo = new FakeRepo(contacts);
+    const ciblesVues: unknown[] = [];
+    const app = appWith(repo, { ciblesVues, ciblesResolues: ['c1', 'c2'] });
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, contactTarget: { filters: { tags: ['vip'] }, excludeIds: ['c3'] } },
+    });
+    expect(res.statusCode).toBe(201);
+    // La cible part au store TELLE QUELLE, scopée au tenant du jeton.
+    expect(ciblesVues).toEqual([{ tenant: 't1', target: { filters: expect.objectContaining({ tags: ['vip'] }), excludeIds: ['c3'] } }]);
+    // Et ce sont les identifiants RÉSOLUS qui deviennent les destinataires.
+    expect(repo.created[0]?.contactIds).toEqual(['c1', 'c2']);
+    await app.close();
+  });
+
+  it('🔴 une cible qui ne résout PERSONNE est refusée, elle ne devient pas « tout le monde »', async () => {
+    // Sans ce refus, une liste vide retomberait sur « tous les contacts de l'espace » quelques lignes plus
+    // bas. C'est l'accident le plus cher que ce chemin puisse produire.
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { ciblesResolues: [] });
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, contactTarget: { filters: { tags: ['inexistant'] } } },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('🔴 une LISTE VIDE ne veut PAS dire « tout le monde »', async () => {
+    // Trou trouvé en relisant ce chemin pour le lot de la cible, et il précédait ce lot. `contactIds: []`
+    // est un TABLEAU, donc truthy : il traversait la route, et `createCampaignWithRecipients` le voyait vide
+    // puis retombait sur « charger tous les contacts de l'espace ». Une sélection explicitement vide devenait
+    // donc une campagne à TOUT LE MONDE. C'est le pire accident que ce chemin puisse produire.
+    //
+    // `contactIds` ABSENT continue de vouloir dire « tous les contacts » : c'est documenté et voulu. Ce qui
+    // est refusé, c'est de DÉSIGNER une liste et de n'y mettre personne.
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {});
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactIds: [] } });
+    expect(res.statusCode).toBe(422);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('🔴 une LISTE et une CIBLE ensemble -> 400 : deux façons de désigner les mêmes personnes', async () => {
+    // Même doctrine que le refus « webhook + liste » : on n'en honorerait qu'une, et l'appelant croirait
+    // avoir visé l'autre.
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {});
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, contactIds: ['c1'], contactTarget: { filters: { tags: ['vip'] } } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('une cible ILLISIBLE est refusée, elle ne retombe pas sur « tous les contacts »', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {});
+    for (const cible of [{}, { ids: [] }, 'nawak', 42]) {
+      const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, contactTarget: cible } });
+      expect(res.statusCode, `cible ${JSON.stringify(cible)}`).toBe(400);
+    }
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('une CIBLE et une adresse de webhook ensemble -> 400', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, {});
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, webhookId: 'wh1', contactTarget: { filters: { tags: ['vip'] } } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(repo.created).toEqual([]);
+    await app.close();
+  });
+
+  it('instance SANS résolution de cible -> 400 explicite, jamais une campagne à tout le monde', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { sansCible: true });
+    const res = await app.inject({
+      method: 'POST', url: '/tenants/t1/campaigns', ...auth(),
+      payload: { ...validBody, contactTarget: { filters: { tags: ['vip'] } } },
+    });
     expect(res.statusCode).toBe(400);
     expect(repo.created).toEqual([]);
     await app.close();

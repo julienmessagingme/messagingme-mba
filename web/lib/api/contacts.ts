@@ -122,12 +122,6 @@ export function countContacts(tenantId: string, filters: ContactFilters): Promis
   return request<{ total: number }>(`/tenants/${tenantId}/contacts/count${suffix ? `?${suffix}` : ''}`);
 }
 
-/** Ids des contacts correspondant aux filtres (résolution serveur de la source d'une campagne). */
-export function contactIdsForFilters(tenantId: string, filters: ContactFilters): Promise<{ ids: string[] }> {
-  const suffix = filtersToQuery(filters).toString();
-  return request<{ ids: string[] }>(`/tenants/${tenantId}/contacts/ids${suffix ? `?${suffix}` : ''}`);
-}
-
 /** Action en masse du mini-CRM (admin) : ajouter/retirer un tag OU poser un champ, sur une cible (ids ou filtres).
  *  Renvoie le nombre de contacts touchés. */
 export type BulkAction =

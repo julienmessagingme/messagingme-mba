@@ -13,6 +13,10 @@ import type { WorkflowGraph } from '../workflow/graph';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { scopeTenant, nonEmpty } from './scope';
+// Le MÊME analyseur de cible que le mini-CRM : les destinataires d'une campagne se désignent exactement
+// comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
+import { parseBulkTarget } from './contacts';
+import type { BulkTarget } from '../crm/contact-store.pg';
 
 export interface CampaignRouteDeps {
   repo: CampaignRepoLike;
@@ -36,6 +40,17 @@ export interface CampaignRouteDeps {
   };
   /** Le numéro appartient-il au tenant ? (empêche d'envoyer depuis le numéro d'autrui.) */
   phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  /**
+   * Résout une CIBLE (filtres + exclusions, ou identifiants) en liste d'identifiants, dans la base.
+   *
+   * 🔴 C'est ce qui retire le piège des grosses sélections. L'écran proposait « tout sélectionner » jusqu'à
+   * 100 000 contacts, rapatriait leurs identifiants dans le navigateur, et les renvoyait tous dans le corps
+   * de la requête, plafonné à 1 Mo : le JSON des seuls identifiants pèse environ 975 Ko à 25 000 contacts.
+   * La création échouait donc BIEN AVANT la limite que l'écran annonçait, et sans rien dire.
+   *
+   * Optionnelle : absente, seule la liste explicite d'identifiants reste acceptée (comportement d'avant).
+   */
+  contactIdsForTarget?(tenantId: string, target: BulkTarget): Promise<string[]>;
   /** L'agent RCS appartient-il au tenant ? Même garde que pour le numéro : sans elle, un tenant enverrait
    *  sous la marque d'un autre. Absente du câblage -> aucune campagne RCS ne peut être créée. */
   rcsAgentBelongsToTenant?(agentId: string, tenantId: string): Promise<boolean>;
@@ -211,6 +226,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       templateLanguage: string;
       paramMapping: unknown;
       contactIds: unknown;
+      contactTarget: unknown;
       workflowId: string;
       ratePerMinute: unknown;
       channel: string;
@@ -322,7 +338,48 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       if (!Array.isArray(b.contactIds) || !b.contactIds.every((x) => nonEmpty(x))) {
         return reply.code(400).send({ error: 'contactIds invalide (tableau d\'ids)' });
       }
+      /**
+       * 🔴 UNE LISTE VIDE N'EST PAS « TOUT LE MONDE ». Un tableau vide est truthy : il traversait la route,
+       * et `createCampaignWithRecipients` le voyait vide puis retombait sur « charger tous les contacts de
+       * l'espace ». Une sélection explicitement vide devenait donc une campagne à l'espace entier, ce qui
+       * est le pire accident que ce chemin puisse produire.
+       *
+       * `contactIds` ABSENT continue de vouloir dire « tous les contacts » : c'est documenté et voulu. Ce
+       * qu'on refuse, c'est de DÉSIGNER une liste et de n'y mettre personne.
+       */
+      if (b.contactIds.length === 0) {
+        return reply.code(422).send({ error: 'Aucun contact ne correspond à cette sélection.' });
+      }
       contactIds = b.contactIds as string[];
+    }
+
+    /**
+     * CIBLE par intention (filtres + exclusions) plutôt que par liste d'identifiants.
+     *
+     * 🔴 Deux façons de désigner les mêmes destinataires ne peuvent pas coexister dans une requête : on
+     * n'en honorerait qu'une, et l'appelant croirait avoir visé l'autre. Même doctrine que le refus
+     * `webhookId` + `contactIds` juste au-dessus, et pour la même raison.
+     */
+    if (b.contactTarget !== undefined) {
+      if (contactIds !== undefined) {
+        return reply.code(400).send({ error: 'contactIds et contactTarget désignent tous les deux les destinataires : n’en envoyer qu’un.' });
+      }
+      if (webhookId) {
+        return reply.code(400).send({ error: "Une campagne alimentée par un webhook ne prend pas de cible de contacts : ses destinataires arrivent au fil de l'eau." });
+      }
+      if (!deps.contactIdsForTarget) {
+        return reply.code(400).send({ error: 'La désignation par filtres n’est pas disponible sur cette instance.' });
+      }
+      const target = parseBulkTarget(b.contactTarget);
+      // `null` = aucune cible exploitable. On REFUSE plutôt que de retomber sur « tous les contacts » : une
+      // cible mal formée qui viserait tout l'espace est exactement l'accident qu'on ne veut jamais.
+      if (target === null) return reply.code(400).send({ error: 'contactTarget invalide (ids non vides, ou filters)' });
+      contactIds = await deps.contactIdsForTarget(effectiveTenant, target);
+      // Une cible qui ne résout personne est une erreur de l'appelant, pas une campagne à tout le monde :
+      // sans ce refus, `contactIds` vide retomberait sur « tous les contacts » un peu plus bas.
+      if (contactIds.length === 0) {
+        return reply.code(422).send({ error: 'Aucun contact ne correspond à cette sélection.' });
+      }
     }
 
     // Le numéro doit appartenir au tenant (sinon envoi depuis le numéro d'un autre client). Sur RCS, c'est

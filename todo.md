@@ -38,7 +38,13 @@ les priorites deviennent simples, la latence interactive augmente), soit un comp
 bail (les chemins directs restent directs, une brique de coordination apparait). Test d'acceptation dans les
 deux cas : une campagne, un scenario et un envoi inbox lances ensemble depuis DEUX process.
 
-**2. 🔴 Le piege des 25 000 destinataires.** Le front propose jusqu'a 100 000 contacts
+**2. ✅ FAIT le 2026-09-01.** La cible part en INTENTION (`contactTarget`), resolue en base, avec le MEME
+analyseur que les actions en masse du mini-CRM. Quatre refus ferment le pire accident (une campagne a tout
+l'espace), dont un trou PRE-EXISTANT : `contactIds: []` etait truthy et retombait sur « tous les contacts ».
+Le decoupage SQL du moteur (`listPending` sans limite) reste NON FAIT, hors sujet decide par Julien.
+Le constat d'origine, garde pour memoire :
+
+~~**Le piege des 25 000 destinataires.**~~ Le front propose jusqu'a 100 000 contacts
 (`idsForFilters`, cap 100 000), met tous leurs identifiants dans le POST, et la route plafonne a 1 Mo
 (`src/server.ts:209`). Le JSON des seuls identifiants pese environ 975 Ko a 25 000 contacts : la casse
 arrive donc bien AVANT la limite que l'ecran annonce. L'interface promet quelque chose qui echoue.
@@ -73,6 +79,18 @@ campagne, age du plus vieux job par espace.
 tranche le 2026-09-01, « on s'encombre pas de l'ancienne version » et « tant pis on assume que le user tombe
 dans le vide ». Ce n'est donc pas une dette, c'est un arbitrage. Ce qui reste utile et pas cher : **dire au
 moment de publier combien de parcours vivants vont etre affectes**. Ne plus le faire les yeux fermes.
+
+## Une route sans appelant : `GET /tenants/:id/contacts/ids`
+
+Depuis le 2026-09-01, la création de campagne envoie l'INTENTION de sélection (`contactTarget`) et non plus
+une liste d'identifiants. Cette route, qui rendait jusqu'à 100 000 identifiants au navigateur, était le seul
+chemin par lequel ils y arrivaient, et donc le mécanisme même du piège des 25 000. Elle **n'a plus aucun
+appelant** (la fonction cliente a été retirée).
+
+Elle reste montée parce qu'elle est une primitive de lecture légitime, bornée et testée, et que retirer une
+route est une décision à prendre à part plutôt qu'un effet de bord d'un lot de correction. À trancher : la
+supprimer (avec son test) ferme définitivement la possibilité de reconstruire le piège, la garder laisse une
+brique réutilisable. Rien ne presse : sans appelant, elle ne coûte rien.
 
 ## Ce que le lot MCP du 2026-09-01 laisse ouvert
 

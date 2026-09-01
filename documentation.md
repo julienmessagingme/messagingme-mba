@@ -2058,6 +2058,55 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-01 : la cible d'une campagne part en INTENTION, pas en liste d'identifiants
+
+Deuxième constat du contre-audit. L'écran proposait « tout sélectionner » jusqu'à 100 000 contacts,
+rapatriait tous leurs identifiants dans le navigateur, et les renvoyait dans le corps de la requête, plafonné
+à 1 Mo. Le JSON des seuls identifiants pèse environ 975 Ko à 25 000 contacts : **la création échouait bien
+AVANT la limite que l'écran annonçait**, et sans rien dire. L'interface promettait donc quelque chose qui
+n'existait pas.
+
+Rien de neuf n'a été inventé : le mini-CRM faisait DÉJÀ ce geste pour ses actions en masse (`allMode` +
+`excluded` + une cible `BulkTarget`). Le formulaire de campagne reprend son modèle, et la route réutilise
+**le même analyseur de cible** (`parseBulkTarget`, exporté de `http/contacts.ts`). Deux analyseurs auraient
+fini par ne plus viser la même chose, et une cible qui dérive veut dire une campagne qui ne vise pas ce que
+l'écran montrait.
+
+### Le pire accident de ce chemin, et les quatre refus qui le ferment
+
+Une campagne qui part à TOUT L'ESPACE. `createCampaignWithRecipients` retombe sur « charger tous les
+contacts » dès que la liste d'identifiants est absente ou vide, ce qui est le comportement voulu pour
+« absente » et un accident pour « vide ». D'où :
+
+1. une cible qui ne résout **personne** est refusée (422) ;
+2. une cible **illisible** est refusée (400), jamais interprétée ;
+3. **`contactIds: []` est refusé** (422). 🔴 Trou PRÉ-EXISTANT trouvé en relisant ce chemin : un tableau vide
+   est truthy, il traversait toutes les gardes, et la campagne partait à l'espace entier. Le test a été écrit
+   AVANT le correctif et rendait 201 ;
+4. **deux façons de désigner les mêmes personnes** ensemble sont refusées (liste + cible, cible + webhook),
+   même doctrine que le refus liste + webhook qui existait déjà.
+
+⚠️ `contactIds` ABSENT continue de vouloir dire « tous les contacts ». C'est documenté et voulu ; ce qu'on
+refuse, c'est de DÉSIGNER une liste et de n'y mettre personne.
+
+### Ce que la revue a trouvé, et qui valait le lot à lui seul
+
+🔴 **Le mode « tout ce qui correspond » SURVIVAIT à un changement de source.** On cliquait « Tout
+sélectionner » sur le CRM (filtres vides = tout l'espace), on basculait sur « Import fichier », et l'écran
+montrait un widget d'upload vide pendant que l'état retenait encore la cible du CRM. Le bandeau qui annonce
+ce mode et le compteur ne sont rendus que dans la branche CRM : plus rien à l'écran ne disait ce qui était
+visé, mais « Prêt à lancer à N » restait affiché. Créer aurait envoyé les ANCIENS filtres à un opérateur
+persuadé de viser son fichier. **L'accident que le lot ferme, déplacé d'un cran.**
+Règle qui en sort : un état de SÉLECTION doit mourir avec l'écran qui le rend visible. S'il survit à un
+changement de contexte où plus rien ne l'affiche, il devient une décision que personne ne prend.
+
+⚠️ Les exclusions sont aussi remises à zéro à chaque changement de filtre : elles désignaient des contacts
+d'un autre ensemble, les garder retirerait des gens que l'utilisateur n'a jamais vus.
+
+⚠️ `GET /tenants/:id/contacts/ids` n'a plus aucun appelant (c'était le mécanisme du piège). La route reste
+montée, la fonction cliente est supprimée, et la décision de retrait est posée dans `todo.md`.
+
+---
 ## DEPLOYE le 2026-09-01 : le budget d'un numéro, partagé entre l'API et le worker (migration 0102)
 
 Premier constat du contre-audit, et le seul qui se produisait DÉJÀ en production. `src/index.ts` et

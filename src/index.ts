@@ -268,6 +268,10 @@ async function main(): Promise<void> {
       // en 24 h (lot 7). Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
       getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
       phoneNumberBelongsToTenant: (pn, tenant) => repo.phoneNumberBelongsToTenant(pn, tenant),
+      // La MÊME résolution de cible que les actions en masse du mini-CRM : une campagne désigne ses
+      // destinataires comme le mini-CRM désigne les siens, donc par l'intention et non par une liste
+      // d'identifiants qui ne tiendrait pas dans le corps de la requête.
+      contactIdsForTarget: (tenant, target) => contactStore.contactIdsForTarget(tenant, target),
       // Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
       // donc c'est CE contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
       rcsAgentBelongsToTenant: (agentId, tenant) => workflowRuntime.rcsStack.agents.belongsToTenant(agentId, tenant),

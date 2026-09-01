@@ -9,6 +9,7 @@
  */
 
 import { request } from '../http';
+import type { BulkTarget } from '../contact-filters';
 
 // --- Campagnes ---
 
@@ -92,6 +93,15 @@ export interface CreateCampaignInput {
   paramMapping?: TemplateParam[];
   /** Contacts choisis. Absent -> tous les contacts éligibles. */
   contactIds?: string[];
+  /**
+   * Les destinataires par INTENTION plutot que par liste d'identifiants : les filtres du mini-CRM, moins ce
+   * qui a ete decoche. Exclusif avec `contactIds`, le serveur refuse les deux.
+   *
+   * 🔴 C'est ce qui retire le piege des grosses selections. « Tout selectionner » rapatriait jusqu'a 100 000
+   * identifiants dans le navigateur et les renvoyait tous dans la requete, plafonnee a 1 Mo : la creation
+   * echouait vers 25 000 contacts, bien AVANT la limite que l'ecran annoncait, et sans rien dire.
+   */
+  contactTarget?: BulkTarget;
   /** Campagne workflow : démarre ce workflow par destinataire (au lieu d'un template). */
   workflowId?: string;
   /** Débit max en messages/minute (1..80). Absent/null = aucun throttle (le run part au max). */
