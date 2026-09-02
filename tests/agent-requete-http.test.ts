@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { construireCorps, construireParametres, variablesUtilisees, champsVersJson, type GabaritCorps } from '../src/agent/requete-http';
+import { construireCorps, construireParametres, variablesUtilisees, champsVersJson, assemblerAppel, type GabaritCorps } from '../src/agent/requete-http';
+import { construireCible } from '../src/agent/http-cible';
 
 /** Raccourci de lisibilité : la grande majorité des cas éprouve le mode JSON brut. */
 const json = (gabarit: string): GabaritCorps => ({ mode: 'json', gabarit });
@@ -152,6 +153,72 @@ describe('paramètres d’URL', () => {
   it('aucun paramètre = pas de chaîne de requête', () => {
     expect(construireParametres([], {})).toEqual({ ok: true, query: '' });
     expect(construireParametres(null, {})).toEqual({ ok: true, query: '' });
+  });
+});
+
+/**
+ * L'assemblage complet, avec la VRAIE garde d'adresse (`construireCible`) plutôt qu'un faux : c'est le seul
+ * moyen de prouver que les morceaux tiennent ensemble, et cette fonction est partagée par l'exécution réelle
+ * et par le bouton « Test » de la console. Un test qui dirait « ça marche » d'un appel que l'exécution ne
+ * sait pas faire serait pire qu'aucun test.
+ */
+describe('assemblage de l’appel complet', () => {
+  const base = { baseUrl: 'https://api.exemple.com/v1', construireCible };
+
+  it('compose l’adresse, les paramètres d’URL et le corps', () => {
+    const r = assemblerAppel({
+      ...base, methode: 'POST', chemin: '/commandes/{numero}',
+      parametres: [{ cle: 'ville', valeur: '{{ville}}' }],
+      corps: json('{"note": "{{note}}"}'),
+      valeurs: { numero: 'A42', ville: 'Lyon', note: 'urgent' },
+    });
+    expect(r.ok).toBe(true);
+    const a = r as { url: string; methode: string; entetes: Record<string, string>; corps: string };
+    expect(a.url).toBe('https://api.exemple.com/v1/commandes/A42?ville=Lyon');
+    expect(a.methode).toBe('POST');
+    expect(JSON.parse(a.corps)).toEqual({ note: 'urgent' });
+  });
+
+  it('🔴 un en-tête RÉSERVÉ saisi est ignoré : l’authentification ne peut pas être recouverte', () => {
+    // Le champ « en-têtes » d'un mini-Postman est l'endroit le plus naturel pour coller un jeton en clair.
+    // La route le refuse déjà ; cette garde-ci tient même si celle-là tombe.
+    const r = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x',
+      entetes: [{ nom: 'Authorization', valeur: 'Bearer vole' }, { nom: 'X-Client', valeur: 'mba' }],
+      corps: { mode: 'aucun' }, valeurs: {},
+    });
+    const e = (r as { entetes: Record<string, string> }).entetes;
+    expect(e.authorization).toBeUndefined();
+    expect(e['x-client']).toBe('mba'); // les en-têtes ordinaires, eux, passent
+  });
+
+  it('content-type est posé d’après ce qui part RÉELLEMENT, pas d’après une déclaration', () => {
+    const sans = assemblerAppel({ ...base, methode: 'GET', chemin: '/x', corps: { mode: 'aucun' }, valeurs: {} });
+    expect((sans as { entetes: Record<string, string> }).entetes['content-type']).toBeUndefined();
+    const avec = assemblerAppel({ ...base, methode: 'POST', chemin: '/x', corps: json('{"a":1}'), valeurs: {} });
+    expect((avec as { entetes: Record<string, string> }).entetes['content-type']).toBe('application/json');
+  });
+
+  it('🔴 une adresse refusée court-circuite : la garde anti-SSRF passe avant tout le reste', () => {
+    const r = assemblerAppel({
+      baseUrl: 'http://localhost:8095', construireCible, methode: 'GET', chemin: '/x',
+      corps: { mode: 'aucun' }, valeurs: {},
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it('un refus du corps remonte tel quel, avec sa raison', () => {
+    const r = assemblerAppel({ ...base, methode: 'POST', chemin: '/x', corps: json('{"a": "{{manquante}}"}'), valeurs: {} });
+    expect(r.ok).toBe(false);
+    expect((r as { raison: string }).raison).toContain('manquante');
+  });
+
+  it('les paramètres s’ajoutent avec & quand le chemin en porte déjà', () => {
+    const r = assemblerAppel({
+      ...base, methode: 'GET', chemin: '/x?deja=1', parametres: [{ cle: 'p', valeur: '2' }],
+      corps: { mode: 'aucun' }, valeurs: {},
+    });
+    expect((r as { url: string }).url).toBe('https://api.exemple.com/v1/x?deja=1&p=2');
   });
 });
 

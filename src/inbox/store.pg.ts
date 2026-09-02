@@ -618,6 +618,41 @@ export class PgInboxStore implements InboxStore {
     return res.rows.map((r) => ({ direction: r.direction, body: r.body ?? '' }));
   }
 
+  /**
+   * La DERNIÈRE SAISIE du contact : le dernier message qu'il a ÉCRIT, tous canaux confondus.
+   *
+   * Julien, le 2026-09-02 : « il faut qu'on ait un champ système genre last text input, que systématiquement
+   * la dernière chose que le client ait dit soit un champ mis à jour constamment ». Elle sert à envoyer au
+   * système d'un client ce que la personne vient d'écrire, sans demander au modèle de le recopier, donc sans
+   * risquer qu'il le reformule au passage.
+   *
+   * 🔴 LUE À LA DEMANDE, PAS DÉNORMALISÉE, et c'est le choix qui compte ici. La stocker sur le contact
+   * imposerait une écriture de plus sur le chemin le plus chaud du produit (chaque message entrant de chaque
+   * client) pour une valeur que très peu de connecteurs réclament, et créerait une seconde vérité qui peut
+   * dériver. Ici il n'y a rien à tenir à jour : la source est le fil lui-même.
+   *
+   * ⚠️ Et surtout PAS `conversations.last_preview`, qui semblait tout indiqué : cette colonne est écrite par
+   * les DEUX sens (l'upsert est partagé par le webhook entrant et les envois de campagne ou de scénario).
+   * Elle porte donc parfois notre propre message, et un connecteur enverrait alors au client ce que NOUS
+   * venons de dire en croyant transmettre ce que le contact a demandé.
+   *
+   * `direction = 'in'` et un corps non vide : un appui de bouton arrive sans texte, et l'envoyer comme
+   * « dernière chose dite » serait faux.
+   */
+  async derniereSaisieDuContact(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ body: string }>(
+      `select m.body
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'in'
+          and m.body is not null and m.body <> ''
+        order by m.created_at desc, m.id desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.body ?? null;
+  }
+
   /** Journalise une réponse sortante de l'agent (texte libre ou template). Pour un template,
    *  `templateCategory` (marketing|utility) + `templateName` alimentent les stats du dashboard.
    *  `senderUserId` (EN FIN de signature) = auteur -> pastille dans l'inbox ; null pour les réponses auto. */

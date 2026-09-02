@@ -53,7 +53,22 @@ export interface OutilDefini {
    * maison en a forcément une.
    */
   sourceId: string | null;
-  /** Chemins d'extraction de la réponse. Vide = la réponse entière (bornée par `maxBytes`). */
+  /**
+   * La REQUÊTE que cet outil déclenche (`connector_requests`, migration 0105), ou `null` pour un outil maison.
+   *
+   * 🔴 C'est ce qui a remplacé la description de l'appel DANS l'outil. Avant, la méthode, le chemin et les
+   * paramètres vivaient ici, donc le même appel était redécrit pour chaque agent qui s'en servait, et le
+   * corriger quelque part ne le corrigeait pas ailleurs. L'outil DÉSIGNE désormais un appel mis au point une
+   * fois dans la bibliothèque du workspace.
+   */
+  requestId: string | null;
+  /**
+   * Chemins d'extraction de la réponse. Vide = la réponse entière (bornée par `maxBytes`).
+   *
+   * ⚠️ Pour un connecteur, c'est la REQUÊTE qui porte cette liste, et c'est elle que le résolveur lit : ce
+   * qu'un agent a le droit de lire dans une réponse est une propriété de l'appel, pas de l'agent. Ce champ-ci
+   * ne sert plus qu'aux outils maison.
+   */
   outputPaths: string[];
   risk: RisqueOutil;
   timeoutMs: number;

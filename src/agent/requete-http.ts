@@ -166,6 +166,32 @@ export interface ParametreUrl {
   valeur: string;
 }
 
+/** Un en-tête SUPPLÉMENTAIRE de la requête. Voir `EN_TETES_RESERVES` pour ce qui n'a rien à faire ici. */
+export interface EnTete {
+  nom: string;
+  valeur: string;
+}
+
+/**
+ * Les en-têtes que le client NE PEUT PAS poser lui-même sur une requête.
+ *
+ * 🔴 `authorization` d'abord, et ce n'est pas du zèle. L'authentification d'un connecteur vit sur la SOURCE,
+ * chiffrée, et `enTetesAuthSource` en est l'unique point de passage. Laisser saisir un `authorization` ici
+ * ferait deux chemins d'authentification, dont un qui stocke le secret EN CLAIR dans la configuration de la
+ * requête, visible de tout écran qui l'affiche et de tout export qui la copie. Le champ existerait « parce
+ * que Postman l'a », et il deviendrait la façon la plus naturelle de s'authentifier, donc la plus utilisée.
+ *
+ * `content-type` ensuite, pour une raison plus terre à terre : il est posé par la construction du corps, en
+ * accord avec ce qui part réellement. Le laisser saisir permettrait d'annoncer du XML en envoyant du JSON.
+ *
+ * `host` et `content-length` enfin : ils décrivent le transport, les fixer à la main casse l'appel.
+ */
+export const EN_TETES_RESERVES = ['authorization', 'content-type', 'content-length', 'host'] as const;
+
+export function estEnTeteReserve(nom: string): boolean {
+  return (EN_TETES_RESERVES as readonly string[]).includes(nom.trim().toLowerCase());
+}
+
 /**
  * Construit la chaîne de requête (`?ville=Paris&depuis=2026-01-01`).
  *
@@ -201,6 +227,64 @@ export function construireParametres(
   }
   const query = sp.toString();
   return { ok: true, query };
+}
+
+/**
+ * L'APPEL COMPLET : l'adresse finale, la méthode, les en-têtes et le corps, à partir de la requête déclarée
+ * et des valeurs résolues. C'est le point de passage obligé, partagé par l'exécution réelle et par le bouton
+ * « Test » de la console.
+ *
+ * 🔴 PARTAGÉ EXPRÈS, et c'est la leçon que `enTetesAuthSource` porte déjà : le jour où le test et l'exécution
+ * construisent leur requête séparément, le test dit « ça marche » d'un appel que l'exécution ne sait pas
+ * faire. C'est exactement la divergence que l'audit du 2026-08-18 a payée une centaine de fois.
+ *
+ * ⚠️ L'AUTHENTIFICATION N'EST PAS ICI. Les en-têtes rendus sont ceux de la requête ; l'appelant y superpose
+ * ceux de la source EN DERNIER, pour qu'aucun en-tête saisi ne puisse la recouvrir. La saisie d'un en-tête
+ * réservé est refusée en amont par la route, mais cet ordre-là tient même si cette garde-là tombe.
+ */
+export function assemblerAppel(input: {
+  baseUrl: string;
+  methode: string;
+  chemin: string;
+  parametres?: readonly ParametreUrl[] | null;
+  entetes?: readonly EnTete[] | null;
+  corps: GabaritCorps;
+  valeurs: Readonly<Record<string, ValeurVariable>>;
+  /** Injectée pour tester la garde d'adresse sans dupliquer ses cas ici. */
+  construireCible: (i: { baseUrl: string; binding: { methode: string; chemin: string }; args: Record<string, unknown> })
+  => { ok: true; url: string; methode: string } | { ok: false; raison: string };
+}): { ok: true; url: string; methode: string; entetes: Record<string, string>; corps: string | null } | CorpsRefuse {
+  // 1. L'ADRESSE, avec toutes ses gardes (HTTPS, hôte public, cible sous la base). Elle passe AVANT le reste :
+  // inutile de construire un corps pour une adresse qu'on refusera.
+  const cible = input.construireCible({
+    baseUrl: input.baseUrl,
+    binding: { methode: input.methode, chemin: input.chemin },
+    args: input.valeurs as Record<string, unknown>,
+  });
+  if (!cible.ok) return { ok: false, raison: cible.raison };
+
+  // 2. LES PARAMÈTRES D'URL.
+  const q = construireParametres(input.parametres, input.valeurs);
+  if (!q.ok) return q;
+  const url = q.query === '' ? cible.url : `${cible.url}${cible.url.includes('?') ? '&' : '?'}${q.query}`;
+
+  // 3. LE CORPS.
+  const c = construireCorps(input.corps, input.valeurs);
+  if (!c.ok) return c;
+
+  // 4. LES EN-TÊTES. Un en-tête réservé saisi malgré tout est IGNORÉ plutôt que transmis : la route le refuse
+  // déjà, et deux gardes qui se recouvrent valent mieux qu'une seule sur un chemin qui porte un secret.
+  const entetes: Record<string, string> = { accept: 'application/json' };
+  for (const e of input.entetes ?? []) {
+    const nom = e.nom.trim().toLowerCase();
+    if (nom === '' || estEnTeteReserve(nom)) continue;
+    entetes[nom] = e.valeur;
+  }
+  // Posé d'après ce qui part RÉELLEMENT, jamais d'après une déclaration : annoncer un corps qu'on n'envoie
+  // pas fait répondre 400 à certaines API.
+  if (c.corps !== null) entetes['content-type'] = 'application/json';
+
+  return { ok: true, url, methode: cible.methode, entetes, corps: c.corps };
 }
 
 /**

@@ -22,7 +22,7 @@ const OUTIL: OutilDefini = {
     { name: 'wa_id', type: 'string', source: 'contact', contactPath: 'wa_id' },
     { name: 'boutique', type: 'string', source: 'fixe', value: 'FR-01' },
   ],
-  binding: { handler: 'peu_importe' }, sourceId: null,
+  binding: { handler: 'peu_importe' }, sourceId: null, requestId: null,
   outputPaths: [],
   risk: 'read',
   timeoutMs: 5_000,

@@ -38,7 +38,7 @@ const OUTIL: OutilComplet = {
   id: OUT, tenantId: 't1', agentId: AG, origin: 'mba', name: 'mba_terminer',
   title: 'Terminer', description: 'Termine la conversation.', nePasUtiliser: 'Pas pour escalader.',
   params: [{ name: 'sortie', type: 'string', source: 'modele', required: true }],
-  binding: { handler: 'terminer' }, sourceId: null, outputPaths: [], risk: 'read',
+  binding: { handler: 'terminer' }, sourceId: null, requestId: null, outputPaths: [], risk: 'read',
   timeoutMs: 8000, maxBytes: 16384, autonome: false, actif: false, activeLe: null, autonomeLe: null,
 };
 

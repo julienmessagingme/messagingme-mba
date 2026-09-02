@@ -30,7 +30,7 @@ const store = (fiches: FicheTrouvee[]): KnowledgeStore => ({ chercher: async () 
 function entree(args: Record<string, unknown>): EntreeResolveur {
   const outil: OutilDefini = {
     id: 'o1', tenantId: 't1', agentId: 'a1', origin: 'mba', name: 'mba_chercher_connaissance',
-    description: '', params: [], binding: { handler: 'chercher_connaissance' }, sourceId: null,
+    description: '', params: [], binding: { handler: 'chercher_connaissance' }, sourceId: null, requestId: null,
     nePasUtiliser: '', outputPaths: [], risk: 'read', timeoutMs: 8000, maxBytes: 16384, autonome: true,
   };
   return {

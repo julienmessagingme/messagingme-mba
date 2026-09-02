@@ -60,6 +60,7 @@ import { creerCerveauGateway } from './agent/brain.gateway';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
+import { PgRequeteStore } from './agent/requetes.pg';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerEscaladeVersHumain } from './agent/escalade';
@@ -1157,6 +1158,9 @@ async function main(): Promise<void> {
     const knowledgeStore = new PgKnowledgeStore(pool);
     const credits = new PgCreditStore(pool);
     const agentSources = new PgSourceStore(pool);
+    // Les REQUETES de connecteur (migration 0105) : un appel mis au point une fois dans la bibliotheque du
+    // workspace, que l'outil d'un agent DESIGNE au lieu de le redecrire.
+    const agentRequetes = new PgRequeteStore(pool);
 
     // L'escalade vers un humain : trois effets dans un ordre contre-intuitif, que `escalade.ts` explique.
     const escaladerVersHumain = creerEscaladeVersHumain({
@@ -1199,7 +1203,18 @@ async function main(): Promise<void> {
         // 🔴 Les deux familles qui EXISTENT. `mcp` n'a volontairement aucun résolveur : l'exécuteur refuse
         // alors proprement (`erreur_protocole`) plutôt que d'appeler dans le vide. Le résolveur `http` relit
         // sa source à chaque appel, donc une source désactivée cesse d'être appelée tout de suite.
-        resolveurs: { mba: resolveurMba, http: creerResolveurHttp({ sources: agentSources }) },
+        resolveurs: {
+          mba: resolveurMba,
+          http: creerResolveurHttp({
+            sources: agentSources,
+            requetes: agentRequetes,
+            // Chargées PARESSEUSEMENT par le résolveur : ces deux fonctions ne sont appelées que si la requête
+            // déclare une variable qui les réclame. Un connecteur qui n'envoie qu'un numéro ne coûte donc
+            // aucune requête de plus.
+            derniereSaisie: (t, waId) => inboxStore.derniereSaisieDuContact(t, waId),
+            fuseau: async (t) => (await settingsStore.get(t)).timezone,
+          }),
+        },
         compterAppel: (t, sessionId) => agentSessions.compterAppel(t, sessionId),
       },
       lireContact: async (t, waId) => {

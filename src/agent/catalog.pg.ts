@@ -16,6 +16,7 @@ interface Ligne {
   params: unknown;
   binding: unknown;
   source_id: string | null;
+  request_id: string | null;
   output_paths: string[] | null;
   risk: OutilDefini['risk'];
   timeout_ms: number;
@@ -26,7 +27,7 @@ interface Ligne {
 /** Colonnes lues par les deux requêtes. Une seule liste : deux projections divergentes finiraient par ne plus
  *  rendre le même outil selon le chemin, et le chemin qui compte est celui de l'exécution. */
 const COLONNES = `id, tenant_id, agent_id, origin, name, description, ne_pas_utiliser, params, binding,
-                  source_id, output_paths, risk, timeout_ms, max_bytes, autonome`;
+                  source_id, request_id, output_paths, risk, timeout_ms, max_bytes, autonome`;
 
 function versOutil(r: Ligne): OutilDefini {
   return {
@@ -46,6 +47,9 @@ function versOutil(r: Ligne): OutilDefini {
     // La source vit sur la LIGNE, pas dans `binding` : elle est une clé étrangère, et la contrainte
     // `agent_tools_origin_src_chk` la rend obligatoire dès que l'origine n'est pas `mba`.
     sourceId: r.source_id,
+    // La REQUETE que l'outil declenche (migration 0105). Sur la LIGNE pour la meme raison que la source :
+    // c'est une cle etrangere, pas une donnee libre, donc la base garantit qu'elle designe quelque chose.
+    requestId: r.request_id,
     outputPaths: r.output_paths ?? [],
     risk: r.risk,
     timeoutMs: r.timeout_ms,

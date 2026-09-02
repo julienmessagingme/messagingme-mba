@@ -3,6 +3,7 @@ import { creerResolveurHttp } from '../src/agent/resolvers/http';
 import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
+import type { RequeteConnecteur } from '../src/agent/requetes';
 
 /**
  * Le résolveur des outils de CONNECTEUR (lot L2).
@@ -21,16 +22,30 @@ const SOURCE: SourceAppel = {
 };
 
 const OUTIL: OutilDefini = {
-  id: 'to1', tenantId: 't1', agentId: 'ag1', origin: 'http', sourceId: 'src1', nePasUtiliser: '',
+  id: 'to1', tenantId: 't1', agentId: 'ag1', origin: 'http', sourceId: 'src1', requestId: 'rq1', nePasUtiliser: '',
   name: 'lire_commande', description: 'lit une commande', params: [],
-  binding: { methode: 'GET', chemin: '/commandes/{ref}' },
-  outputPaths: ['statut', 'livraison.date'],
+  binding: {},
+  outputPaths: [],
   risk: 'read', timeoutMs: 5_000, maxBytes: 16_384, autonome: false,
+};
+
+/**
+ * L'appel vit desormais dans la REQUETE (migration 0105), plus dans le binding de l'outil : c'est elle qui
+ * porte la methode, le chemin, le corps et les variables. L'outil ne fait que la designer.
+ */
+const REQUETE: RequeteConnecteur = {
+  id: 'rq1', tenantId: 't1', sourceId: 'src1', label: 'Lire une commande',
+  methode: 'GET', chemin: '/commandes/{ref}',
+  parametres: [], entetes: [], corps: { mode: 'aucun' },
+  variables: [{ nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true }],
+  outputPaths: ['statut', 'livraison.date'],
+  valeursTest: {}, outils: 1, updatedAt: '2026-09-02T00:00:00.000Z',
 };
 
 const CTX = {
   tenantId: 't1', agentId: 'ag1', sessionId: 's1', runId: 'r1', workflowId: 'wf1', waId: '33600',
-  contact: null, contactInconnu: 'tous' as const, appelsRestants: 5, budgetRestantMicroEur: 10_000,
+  contact: null as Record<string, unknown> | null,
+  contactInconnu: 'tous' as const, appelsRestants: 5, budgetRestantMicroEur: 10_000,
   deadline: Date.now() + 30_000,
 };
 
@@ -38,6 +53,9 @@ function harnais(over: {
   source?: SourceAppel | null;
   reponse?: { status: number; body: string; contentType?: string };
   outil?: OutilDefini;
+  requete?: RequeteConnecteur | null;
+  ctx?: Partial<typeof CTX>;
+  derniereSaisie?: string | null;
   lance?: Error;
 } = {}) {
   const appels: Array<{ url: string; init: RequestInit }> = [];
@@ -54,13 +72,18 @@ function harnais(over: {
       pourAppel: async () => (over.source === undefined ? SOURCE : over.source),
       marquerEpreuve: async (_t, _i, ok, erreur) => { epreuves.push({ ok, ...(erreur ? { erreur } : {}) }); },
     },
+    requetes: { parId: async () => (over.requete === undefined ? REQUETE : over.requete) },
+    derniereSaisie: async () => over.derniereSaisie ?? null,
+    fuseau: async () => 'Europe/Paris',
+    // Horloge figee : la valeur systeme « maintenant » doit etre reproductible.
+    now: () => new Date('2026-09-02T09:45:00.000Z'),
     fetchImpl,
   });
 
   const entree: EntreeResolveur = {
     outil: over.outil ?? OUTIL,
     args: { ref: 'CMD-1' },
-    ctx: CTX,
+    ctx: { ...CTX, ...over.ctx },
     signal: AbortSignal.timeout(10_000),
   };
   return { resolveur, entree, appels, epreuves };
@@ -142,13 +165,18 @@ describe('résolveur http : les refus, tous sans lever', () => {
   });
 
   it('gabarit illisible ou cible refusée', async () => {
-    for (const binding of [
-      {}, { methode: 'GET' }, { methode: 'CONNECT', chemin: '/x' },
+    // ⚠️ La méthode et le chemin vivent sur la REQUÊTE depuis la migration 0105 : c'est elle qu'on abîme ici,
+    // plus le binding de l'outil. Le `as` est assumé, on éprouve précisément des valeurs que le type refuse
+    // et que la base peut pourtant porter (jsonb écrit par une version antérieure de la console).
+    for (const abime of [
+      { methode: '', chemin: '' }, { methode: 'GET', chemin: '' }, { methode: 'CONNECT', chemin: '/x' },
       { methode: 'GET', chemin: 'https://evil.test/x' },
-    ]) {
-      const { resolveur, entree, appels } = harnais({ outil: { ...OUTIL, binding } });
+    ] as Array<{ methode: string; chemin: string }>) {
+      const { resolveur, entree, appels } = harnais({
+        requete: { ...REQUETE, ...(abime as unknown as Pick<RequeteConnecteur, 'methode' | 'chemin'>) },
+      });
       const r = await resolveur(entree);
-      expect(r.ok, JSON.stringify(binding)).toBe(false);
+      expect(r.ok, JSON.stringify(abime)).toBe(false);
       expect(appels).toHaveLength(0);
     }
   });
@@ -196,10 +224,116 @@ describe('résolveur http : les refus, tous sans lever', () => {
   });
 
   it('sans `outputPaths`, rien ne part : le filtre est la règle, pas l’exception', async () => {
-    // La décision D-L2-2 : la réponse appartient au client. Un outil sans filtre est une déclaration
-    // incomplète, refusée à l'écriture ; s'il en existait un, il ne doit RIEN divulguer.
-    const { resolveur, entree } = harnais({ outil: { ...OUTIL, outputPaths: [] } });
+    // La décision D-L2-2 : la réponse appartient au client. Une requête sans filtre est une déclaration
+    // incomplète, refusée à l'écriture ; s'il en existait une, elle ne doit RIEN divulguer.
+    // ⚠️ Le filtre vit sur la REQUÊTE depuis la migration 0105, plus sur l'outil : ce que l'agent a le droit
+    // de lire dans une réponse est une propriété de l'APPEL, pas de l'agent qui le déclenche.
+    const { resolveur, entree } = harnais({ requete: { ...REQUETE, outputPaths: [] } });
     const r = await resolveur(entree);
     expect(r.ok).toBe(false);
+  });
+
+  it('🔴 un outil qui ne DÉSIGNE aucune requête refuse au lieu d’inventer un appel', async () => {
+    // La contrainte de clé étrangère rend le cas improbable, mais « improbable » n'est pas « impossible » :
+    // un outil orphelin ne doit pas retomber sur un appel par défaut, qui irait quelque part.
+    const { resolveur, entree } = harnais({ requete: null });
+    const r = await resolveur(entree);
+    expect(r.ok).toBe(false);
+    expect(String(r.erreur)).toMatch(/requête introuvable/i);
+  });
+});
+
+/**
+ * Ce que le lot apporte vraiment : un connecteur qui ENVOIE quelque chose. Avant, un POST partait avec un
+ * corps vide, donc ne servait à rien.
+ */
+describe('résolveur http : le corps et les variables', () => {
+  it('🔴 un POST part AVEC son corps, rempli des variables déclarées', async () => {
+    const { resolveur, entree, appels } = harnais({
+      requete: {
+        ...REQUETE, methode: 'POST', chemin: '/recherche',
+        corps: { mode: 'json', gabarit: '{"ville": "{{ville}}", "question": "{{q}}"}' },
+        variables: [
+          { nom: 'ville', type: 'string', origine: { type: 'champ', cle: 'ville' } },
+          { nom: 'q', type: 'string', origine: { type: 'systeme', cle: 'derniere_saisie' } },
+        ],
+      },
+      ctx: { contact: { nom: 'Léa', champs: { ville: 'Lyon' } } },
+      derniereSaisie: 'je cherche un plombier',
+    });
+    const r = await resolveur(entree);
+    expect(r.ok).not.toBe(false);
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!.init.method).toBe('POST');
+    expect(JSON.parse(String(appels[0]!.init.body))).toEqual({ ville: 'Lyon', question: 'je cherche un plombier' });
+    // Le type de contenu est posé d'après ce qui part réellement.
+    expect((appels[0]!.init.headers as Record<string, string>)['content-type']).toBe('application/json');
+  });
+
+  it('la valeur système « maintenant » part avec le décalage du fuseau de l’espace', async () => {
+    const { resolveur, entree, appels } = harnais({
+      requete: {
+        ...REQUETE, methode: 'POST', chemin: '/x',
+        corps: { mode: 'champs', champs: [{ cle: 'le', valeur: '{{quand}}' }] },
+        variables: [{ nom: 'quand', type: 'string', origine: { type: 'systeme', cle: 'maintenant' } }],
+      },
+    });
+    await resolveur(entree);
+    // Horloge figée à 09:45 UTC, fuseau Europe/Paris : l'heure LUE doit être 11:45, pas 09:45.
+    expect(JSON.parse(String(appels[0]!.init.body))).toEqual({ le: '2026-09-02T11:45:00+02:00' });
+  });
+
+  it('🔴 une variable SANS VALEUR refuse l’appel : rien ne part avec une donnée inventée', async () => {
+    // Envoyer une ville qu'on ne connaît pas ferait répondre le système du client sur autre chose, et l'agent
+    // répéterait cette réponse au contact avec assurance.
+    const { resolveur, entree, appels } = harnais({
+      requete: {
+        ...REQUETE, methode: 'POST', chemin: '/x',
+        corps: { mode: 'json', gabarit: '{"v": "{{ville}}"}' },
+        variables: [{ nom: 'ville', type: 'string', origine: { type: 'champ', cle: 'ville' }, requis: true }],
+      },
+      ctx: { contact: { nom: 'Léa', champs: {} } },
+    });
+    const r = await resolveur(entree);
+    expect(r.ok).toBe(false);
+    expect(appels).toHaveLength(0); // aucun appel réseau n'est parti
+  });
+
+  it('une variable FACULTATIVE dont la valeur est inconnue part en null, et l’appel a lieu', async () => {
+    // Le pendant du cas précédent, sans lequel il ne prouverait pas grand-chose : toutes les absences ne se
+    // valent pas, et c'est le client qui dit lesquelles empêchent l'appel. Décider à sa place refuserait des
+    // appels parfaitement valides sur une API qui accepte un champ vide.
+    const { resolveur, entree, appels } = harnais({
+      requete: {
+        ...REQUETE, methode: 'POST', chemin: '/x',
+        corps: { mode: 'json', gabarit: '{"v": "{{ville}}"}' },
+        variables: [{ nom: 'ville', type: 'string', origine: { type: 'champ', cle: 'ville' } }],
+      },
+      ctx: { contact: { nom: 'Léa', champs: {} } },
+    });
+    const r = await resolveur(entree);
+    expect(r.ok).not.toBe(false);
+    expect(JSON.parse(String(appels[0]!.init.body))).toEqual({ v: null });
+  });
+
+  it('les paramètres d’URL sont ajoutés à l’adresse', async () => {
+    const { resolveur, entree, appels } = harnais({
+      requete: {
+        ...REQUETE, chemin: '/commandes', parametres: [{ cle: 'ville', valeur: '{{v}}' }],
+        variables: [{ nom: 'v', type: 'string', origine: { type: 'fixe', valeur: 'Nice' } }],
+      },
+    });
+    await resolveur(entree);
+    expect(appels[0]!.url).toBe('https://api.client.fr/v1/commandes?ville=Nice');
+  });
+
+  it('🔴 un en-tête « authorization » saisi dans la requête ne recouvre pas celui de la SOURCE', async () => {
+    // Deux gardes se recouvrent ici : la saisie est refusée par la route, et l'authentification de la source
+    // est superposée EN DERNIER. Ce test tient même si la première tombe.
+    const { resolveur, entree, appels } = harnais({
+      requete: { ...REQUETE, entetes: [{ nom: 'authorization', valeur: 'Bearer FAUX' }] },
+    });
+    await resolveur(entree);
+    expect((appels[0]!.init.headers as Record<string, string>).authorization).toBe('Bearer JETON-SECRET-42');
   });
 });

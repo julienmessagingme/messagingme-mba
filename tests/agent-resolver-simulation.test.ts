@@ -26,7 +26,7 @@ const FICHE = (over: Partial<FicheTrouvee> = {}): FicheTrouvee => ({
 function entree(handler: string, args: Record<string, unknown> = {}): EntreeResolveur {
   const outil: OutilDefini = {
     id: 'o1', tenantId: 't1', agentId: 'a1', origin: 'mba', name: `mba_${handler}`,
-    description: '', params: [], binding: { handler }, sourceId: null, nePasUtiliser: '', outputPaths: [], risk: 'write',
+    description: '', params: [], binding: { handler }, sourceId: null, requestId: null, nePasUtiliser: '', outputPaths: [], risk: 'write',
     timeoutMs: 8000, maxBytes: 16384, autonome: true,
   };
   return {
