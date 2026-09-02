@@ -86,6 +86,7 @@ import { buildTransport as buildEmailTransport } from './email/smtp';
 import { FetchTransport } from './meta/http';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
+import { creerRechercheSemantique } from './agent/recherche';
 import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
@@ -158,6 +159,9 @@ async function main(): Promise<void> {
   const workflowStore = new PgWorkflowStore(pool);
   const agentStore = new PgAgentStore(pool);
   const knowledgeStore = new PgKnowledgeStore(pool);
+  // Une seule fabrique pour les trois usages (agent, bac a sable, balayage) : trois constructions seraient
+  // trois occasions de cabler un modele ou un seuil different.
+  const rechercheSemantique = creerRechercheSemantique();
   const toolCatalog = new PgToolCatalog(pool);
   const credits = new PgCreditStore(pool);
   const agentSources = new PgSourceStore(pool);
@@ -805,7 +809,9 @@ async function main(): Promise<void> {
             catalogue: toolCatalog,
             // Muet : `agent_tool_calls.session_id` reference une session, et le bac a sable n en ouvre aucune.
             journal: JOURNAL_MUET,
-            resolveurs: { mba: creerResolveurSimulation({ connaissance: knowledgeStore }) },
+            // Le bac a sable recoit la MEME recherche que la production : il n'a de valeur que s'il rend
+            // exactement ce qu'elle rendrait.
+            resolveurs: { mba: creerResolveurSimulation({ connaissance: knowledgeStore, ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}) }) },
             // Rien a compter : sans session, il n y a pas de compteur a incrementer. Le plafond d appels du
             // tour est tenu en memoire par la boucle du cerveau.
             compterAppel: async () => {},

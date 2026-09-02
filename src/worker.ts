@@ -56,6 +56,7 @@ import { runTurn, type RunTurnDeps } from './agent/run-turn';
 import { PgAgentStore } from './agent/agent-store.pg';
 import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
 import { PgKnowledgeStore } from './agent/knowledge.pg';
+import { balayerVectorisation, creerRechercheSemantique } from './agent/recherche';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { lireContexteAgent } from './agent/contexte';
@@ -1212,6 +1213,27 @@ async function main(): Promise<void> {
     const toolCatalog = new PgToolCatalog(pool);
     const journalAppels = new PgJournalAppels(pool);
     const knowledgeStore = new PgKnowledgeStore(pool);
+    const rechercheSemantique = creerRechercheSemantique();
+    /**
+     * LE BALAYAGE QUI VECTORISE, seul endroit du depot qui calcule un vecteur de fiche. Il rattrape les
+     * fiches neuves, celles dont le texte a change (leur vecteur est efface a l'edition) et celles d'un
+     * ancien modele. Cadence courte : une fiche creee est trouvable par les MOTS a la seconde, par le SENS
+     * au passage suivant.
+     */
+    if (rechercheSemantique) {
+      const vectoriser = async (): Promise<void> => {
+        try {
+          const n = await balayerVectorisation(knowledgeStore, rechercheSemantique, config.AGENT_EMBED_MODEL);
+          // eslint-disable-next-line no-console
+          if (n > 0) console.log(`vectorisation: ${n} fiche(s) vectorisee(s)`);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('vectorisation: lot ignore (migration 0110 passee ?):', err instanceof Error ? err.message : err);
+        }
+      };
+      void vectoriser();
+      taches.programmer('vectorisation', 60_000, vectoriser);
+    }
     const credits = new PgCreditStore(pool);
     const agentSources = new PgSourceStore(pool);
     // Les REQUETES de connecteur (migration 0105) : un appel mis au point une fois dans la bibliotheque du
@@ -1239,6 +1261,9 @@ async function main(): Promise<void> {
       // propose sur ce paramètre.
       ecrireChamp: async (t, waId, cle, valeur) => { await contactStore.mergeFieldsByPhone(t, waId, { [cle]: valeur }); },
       connaissance: knowledgeStore,
+      // Le rappel vectoriel et le verdict du reranker (migration 0110). `null` sans cle du Gateway : la
+      // recherche retombe alors sur le plein texte, comportement d'avant.
+      ...(rechercheSemantique ? { recherche: rechercheSemantique } : {}),
     });
 
     // UN seul cerveau pour toutes les conversations de tous les clients : le contexte du tour est passé à

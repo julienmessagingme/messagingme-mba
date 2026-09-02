@@ -1,6 +1,6 @@
 import type { ResolveurOutil, SortieResolveur } from '../executor';
 import type { KnowledgeStore } from '../knowledge';
-import { chercherConnaissance } from './connaissance';
+import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 
 /**
  * Le résolveur du BAC À SABLE : celui qui sert quand le client parle à son agent depuis la console.
@@ -22,6 +22,9 @@ import { chercherConnaissance } from './connaissance';
 export interface DepsResolveurSimulation {
   /** La base de connaissance, la VRAIE : c'est elle qu'on teste. */
   connaissance: KnowledgeStore;
+  /** La MEME recherche semantique que la production, pour la meme raison : un bac a sable qui juge
+   *  differemment ne prouve rien. Optionnelle, comme en production. */
+  recherche?: RechercheSemantique;
 }
 
 function texte(args: Record<string, unknown>, cle: string): string {
@@ -73,7 +76,9 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
         // MÊME verdict qu'en production, sortie comprise : c'est le garde-fou anti-hallucination, et un bac à
         // sable qui l'adoucirait laisserait croire que l'agent sait répondre là où il transférera. La règle est
         // partagée (`resolvers/connaissance.ts`), elle n'est plus recopiée ici.
-        return chercherConnaissance(deps.connaissance, ctx, requete);
+        // Le bac a sable passe la MEME recherche que la production : il n'a de valeur que s'il rend
+        // exactement ce qu'elle rendrait, et leurs deux copies avaient deja commence a diverger une fois.
+        return chercherConnaissance(deps.connaissance, ctx, requete, deps.recherche);
       }
 
       // Aucun contact dans un bac à sable, et c'est la vérité : le dire permet d'éprouver ce que l'agent fait

@@ -17,6 +17,16 @@ export interface FicheTrouvee {
   couverture: number;
   /** Proximité trigramme du TITRE avec la requête brute, dans [0, 1]. Rattrape la faute de frappe. */
   proximiteTitre: number;
+  /**
+   * Similarité cosinus au vecteur de la question, dans [0, 1]. `undefined` = cette fiche n'est pas venue du
+   * rappel vectoriel (ou la vectorisation n'est pas branchée).
+   *
+   * 🔴 CE N'EST PAS UNE MESURE DE PERTINENCE, et il ne faut jamais lui en faire porter le rôle. Mesuré le
+   * 2026-09-02 : une question HORS SUJET remonte une fiche à 0,361 quand une vraie question descend à 0,299.
+   * Les deux populations se chevauchent, donc aucun seuil n'est posable dessus. Elle sert au RAPPEL, c'est
+   * tout ; le verdict appartient au reranker. Cf. `docs/MESURE-RECHERCHE-CONNAISSANCE-2026-09-02.md`.
+   */
+  similarite?: number;
 }
 
 export interface KnowledgeStore {
@@ -27,6 +37,14 @@ export interface KnowledgeStore {
    * contrôle. Et la requête vient du MODÈLE, donc d'un texte qu'un contact peut influencer.
    */
   chercher(tenantId: string, agentId: string, requete: string, limite: number): Promise<FicheTrouvee[]>;
+  /**
+   * Les fiches les plus proches d'un VECTEUR de question (migration 0110). Même scope, mêmes raisons.
+   *
+   * OPTIONNELLE : absente, ou colonne vide, ou vectorisation non branchée -> la recherche retombe sur le
+   * plein texte seul, qui est le comportement d'avant. Une base sans vecteurs reste donc pleinement
+   * utilisable, ce qui est ce qui rend la migration non bloquante.
+   */
+  chercherParVecteur?(tenantId: string, agentId: string, vecteur: number[], limite: number): Promise<FicheTrouvee[]>;
 }
 
 /** Une fiche telle que l'écran de réglage la montre et l'édite. */

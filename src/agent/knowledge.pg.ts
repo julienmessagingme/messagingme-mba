@@ -80,6 +80,75 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     }));
   }
 
+  /**
+   * LE RAPPEL VECTORIEL (migration 0110). Les fiches les plus proches du vecteur de la question.
+   *
+   * 🔴 Ce que cette requête ne fait PAS, et c'est le plus important : elle ne juge rien. Elle rend un
+   * classement, et il y a TOUJOURS une fiche « la moins loin », y compris pour une question qui n'a aucune
+   * réponse dans la base. Le verdict est rendu après, par le reranker, sur un score qui, lui, sépare
+   * (mesuré le 2026-09-02). Servir ces lignes directement au modèle serait exactement l'hallucination que
+   * tout ce mécanisme empêche.
+   *
+   * `embedding is not null` n'est pas une précaution : une fiche pas encore vectorisée (créée il y a dix
+   * secondes, en attente du balayage) reste trouvable par le plein texte, elle n'a simplement pas encore sa
+   * seconde porte d'entrée.
+   */
+  async chercherParVecteur(tenantId: string, agentId: string, vecteur: number[], limite: number): Promise<FicheTrouvee[]> {
+    if (vecteur.length === 0) return [];
+    const res = await this.pool.query<{ id: string; titre: string; corps: string; source_url: string | null; similarite: string }>(
+      `select id, titre, corps, source_url, (1 - (embedding <=> $3::vector))::text as similarite
+         from agent_knowledge
+        where tenant_id = $1 and agent_id = $2 and embedding is not null
+        order by embedding <=> $3::vector
+        limit $4::int`,
+      [tenantId, agentId, `[${vecteur.join(',')}]`, Math.max(1, Math.floor(limite))],
+    );
+    return res.rows.map((r) => ({
+      id: r.id,
+      titre: r.titre,
+      corps: r.corps,
+      sourceUrl: r.source_url,
+      // Aucune mesure LEXICALE ici, et zéro est la valeur juste : cette fiche n'a pas été trouvée par les
+      // mots. Lui prêter une couverture inventée ferait passer la règle lexicale pour un verdict qu'elle
+      // n'a pas rendu.
+      termesTrouves: 0,
+      couverture: 0,
+      proximiteTitre: 0,
+      similarite: Number(r.similarite),
+    }));
+  }
+
+  /**
+   * Les fiches qui n'ont pas encore de vecteur, ou dont le vecteur vient d'un AUTRE modèle.
+   *
+   * 🔴 Le second cas est ce qui rend un changement de modèle progressif au lieu d'aveuglant : on ne vide pas
+   * la colonne d'un coup (toutes les bases deviendraient sourdes le temps du rattrapage), on laisse le
+   * balayage remplacer les vecteurs périmés au fil de l'eau, pendant que les anciens continuent de servir.
+   */
+  async fichesAVectoriser(modele: string, limite: number): Promise<Array<{ id: string; titre: string; corps: string }>> {
+    const res = await this.pool.query<{ id: string; titre: string; corps: string }>(
+      `select id, titre, corps from agent_knowledge
+        where embedding is null or embedding_modele is distinct from $1
+        order by updated_at asc
+        limit $2::int`,
+      [modele, Math.max(1, Math.floor(limite))],
+    );
+    return res.rows;
+  }
+
+  /** Écrit les vecteurs calculés. Par identifiant, jamais par position : le lot a pu être réordonné. */
+  async ecrireVecteurs(modele: string, vecteurs: Array<{ id: string; vecteur: number[] }>): Promise<number> {
+    if (vecteurs.length === 0) return 0;
+    const res = await this.pool.query(
+      `update agent_knowledge k
+          set embedding = v.vecteur::vector, embedding_modele = $1
+         from (select unnest($2::uuid[]) as id, unnest($3::text[]) as vecteur) v
+        where k.id = v.id`,
+      [modele, vecteurs.map((v) => v.id), vecteurs.map((v) => `[${v.vecteur.join(',')}]`)],
+    );
+    return res.rowCount ?? 0;
+  }
+
   // ---------- Écriture : l'écran de réglage (tranche 19b) ----------
 
   async lister(tenantId: string, agentId: string): Promise<FicheConnaissance[]> {
@@ -112,9 +181,14 @@ export class PgKnowledgeStore implements KnowledgeStore, KnowledgeAdminStore {
     // `agent_id` fait partie du `where`, pas seulement `tenant_id` : le couple (tenant, agent) est le
     // périmètre partout ailleurs, et l'adresse le promet. `updated_at` marque le passage d'un humain, ce qui
     // désarme l'alerte de fraîcheur : quelqu'un vient de relire cette fiche.
+    // 🔴 LE VECTEUR EST EFFACÉ quand le texte change, et c'est le point de passage obligé de tout le
+    // mécanisme : un vecteur qui décrit l'ANCIEN texte est pire qu'une absence de vecteur, parce qu'il fait
+    // remonter la fiche sur des questions qu'elle ne traite plus. Le balayage le recalculera ; entre-temps la
+    // fiche reste trouvable par le plein texte, donc rien n'est perdu.
     const res = await this.pool.query<LigneFiche>(
       `update agent_knowledge
-          set titre = coalesce($4, titre), corps = coalesce($5, corps), updated_at = now()
+          set titre = coalesce($4, titre), corps = coalesce($5, corps), updated_at = now(),
+              embedding = null, embedding_modele = null
         where tenant_id = $1 and agent_id = $2 and id = $3
        returning ${COLONNES_FICHE}`,
       [tenantId, agentId, ficheId, patch.titre ?? null, patch.corps ?? null],

@@ -54,13 +54,18 @@ recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette li
 **Dernière appliquée : 0107** (les liens tracés des messages RCS, clés sur leur DESTINATION), passée le
 2026-09-02 avec la séquence complète (build de l'image, vérification que la migration est DEDANS, `migrate`,
 vérification en base).
+🔴 **0110 est ÉCRITE et PAS APPLIQUÉE** (la recherche vectorielle de connaissance). **Non bloquante** : la
+colonne est nullable, le code sait chercher sans elle (c'est le comportement d'avant), et une fiche créée reste
+trouvable par les MOTS à la seconde même si son vecteur n'arrive qu'au balayage suivant. ⚠️ Elle pose
+`create extension vector` : c'est la première du dépôt à ajouter une EXTENSION, donc le seul point qui puisse
+échouer pour une raison de droits. À surveiller au passage.
 🔴 **0108 et 0109 sont ÉCRITES et PAS APPLIQUÉES** (le journal des échecs d'avance de scénario, lot 4 ; les
 agrégats d'attente du pool, lot 7). **Aucune des deux n'est bloquante**, et c'est délibéré dans les deux cas :
 l'écriture est best-effort et la lecture rend une liste vide si la table manque, donc le code déployé sans
 elles se comporte exactement comme avant. Une mesure ne doit jamais faire tomber ce qu'elle mesure, et un
 journal d'échec ne doit jamais faire échouer le traitement qu'il observe. À passer avec la séquence complète
 au prochain déploiement.
-**Prochaine libre = 0110.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Prochaine libre = 0111.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
 
 🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
 rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message

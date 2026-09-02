@@ -1,6 +1,6 @@
 import type { EntreeResolveur, ResolveurOutil, SortieResolveur } from '../executor';
 import type { KnowledgeStore } from '../knowledge';
-import { chercherConnaissance } from './connaissance';
+import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 
 /**
  * Le résolveur des outils MAISON : une table de correspondance `handler` vers fonction TypeScript, en dur, et
@@ -39,6 +39,12 @@ export interface DepsResolveurMba {
 
   /** La base de connaissance de l'agent (`mba_chercher_connaissance`). */
   connaissance: KnowledgeStore;
+  /**
+   * Le RAPPEL vectoriel et le VERDICT du reranker (migration 0110). OPTIONNELLE : absente, la recherche
+   * retombe sur le plein texte et la regle lexicale, c'est-a-dire le comportement d'avant. C'est ce qui rend
+   * la migration non bloquante et le Gateway non indispensable a la lecture d'une base.
+   */
+  recherche?: RechercheSemantique;
 }
 
 /** Lit un argument textuel non vide. Les arguments sont déjà validés par le tronc commun, mais contre une
@@ -104,7 +110,7 @@ const HANDLERS: Record<string, Handler> = {
   chercher_connaissance: async ({ args, ctx }, deps) => {
     const requete = texte(args, 'requete');
     if (requete === '') return echec('parametre « requete » manquant');
-    return chercherConnaissance(deps.connaissance, ctx, requete);
+    return chercherConnaissance(deps.connaissance, ctx, requete, deps.recherche);
   },
 
   /**

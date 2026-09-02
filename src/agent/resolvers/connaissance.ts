@@ -1,4 +1,4 @@
-import { ficheEstPertinente, type KnowledgeStore } from '../knowledge';
+import { ficheEstPertinente, type FicheTrouvee, type KnowledgeStore } from '../knowledge';
 import { SORTIE_SANS_SOURCE } from '../sorties';
 
 /**
@@ -47,10 +47,22 @@ export async function chercherConnaissance(
   connaissance: KnowledgeStore,
   ctx: { tenantId: string; agentId: string },
   requeteBrute: string,
+  recherche?: RechercheSemantique,
 ): Promise<ResultatConnaissance> {
   const requete = requeteBrute.slice(0, REQUETE_MAX);
-  const fiches = await connaissance.chercher(ctx.tenantId, ctx.agentId, requete, FICHES_RENDUES);
-  const retenues = fiches.filter(ficheEstPertinente);
+  /**
+   * RAPPEL puis VERDICT. Sans `recherche` câblée, les deux se confondent dans le comportement d'avant : le
+   * plein texte remonte trois fiches et la règle lexicale tranche. C'est ce qui rend la migration 0110 non
+   * bloquante, et c'est aussi le repli quand un appel au Gateway échoue.
+   */
+  const semantique = recherche ? await rappelSemantique(connaissance, ctx, requete, recherche) : null;
+  const large = semantique !== null;
+  const lexicales = await connaissance.chercher(ctx.tenantId, ctx.agentId, requete, large ? recherche!.candidats : FICHES_RENDUES);
+  const candidates = semantique === null ? lexicales : fusionner(lexicales, semantique);
+
+  const retenues = semantique === null
+    ? candidates.filter(ficheEstPertinente)
+    : await verdictReranker(candidates, requete, recherche!);
   if (retenues.length === 0) return { contenu: { aucune_source: true }, sortie: SORTIE_SANS_SOURCE };
   return {
     contenu: {
@@ -61,4 +73,103 @@ export async function chercherConnaissance(
       })),
     },
   };
+}
+
+/**
+ * LA RECHERCHE SÉMANTIQUE, telle que le résolveur en a besoin (chantier vectorisation, 2026-09-02).
+ *
+ * Deux modèles, et il en faut DEUX : cf. `src/agent/llm/recherche-client.ts` pour la raison, mesurée.
+ */
+export interface RechercheSemantique {
+  vectoriser(textes: string[]): Promise<number[][]>;
+  reclasser(question: string, fiches: Array<{ texte: string }>): Promise<number[]>;
+  /** Combien de candidats le rappel remonte AVANT le verdict. Plus large que les 3 rendues au modèle. */
+  candidats: number;
+  /** Le seuil du reranker. Mesuré, pas deviné, et re-mesurable : cf. `AGENT_RERANK_SEUIL`. */
+  seuil: number;
+}
+
+/**
+ * Le RAPPEL vectoriel. Rend `null` dès que quoi que ce soit manque ou échoue, ce qui fait retomber tout le
+ * chemin sur le comportement d'avant.
+ *
+ * 🔴 Un échec ici ne doit JAMAIS priver le client de sa base de connaissance : sans le Gateway, le plein
+ * texte cherche toujours. C'est la même doctrine que partout ce soir, un enrichissement ne casse pas ce qu'il
+ * enrichit. Et c'est le repli SÛR : il rend l'agent moins bon, jamais menteur, puisque la règle lexicale
+ * reprend alors son rôle de juge.
+ */
+async function rappelSemantique(
+  connaissance: KnowledgeStore,
+  ctx: { tenantId: string; agentId: string },
+  requete: string,
+  recherche: RechercheSemantique,
+): Promise<FicheTrouvee[] | null> {
+  if (!connaissance.chercherParVecteur) return null;
+  try {
+    const [vecteur] = await recherche.vectoriser([requete]);
+    if (!vecteur || vecteur.length === 0) return null;
+    return await connaissance.chercherParVecteur(ctx.tenantId, ctx.agentId, vecteur, recherche.candidats);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('connaissance: rappel vectoriel indisponible, repli sur le plein texte:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Fusionne les deux rappels PAR IDENTIFIANT, en gardant la meilleure mesure de chaque famille.
+ *
+ * Une fiche trouvée par les deux chemins ne doit apparaître qu'une fois : la présenter deux fois au reranker
+ * la ferait payer double et pourrait occuper deux des trois places rendues au modèle.
+ */
+function fusionner(lexicales: FicheTrouvee[], semantiques: FicheTrouvee[]): FicheTrouvee[] {
+  const par = new Map<string, FicheTrouvee>();
+  for (const f of [...lexicales, ...semantiques]) {
+    const deja = par.get(f.id);
+    if (!deja) { par.set(f.id, f); continue; }
+    par.set(f.id, {
+      ...deja,
+      termesTrouves: Math.max(deja.termesTrouves, f.termesTrouves),
+      couverture: Math.max(deja.couverture, f.couverture),
+      proximiteTitre: Math.max(deja.proximiteTitre, f.proximiteTitre),
+      ...(f.similarite !== undefined || deja.similarite !== undefined
+        ? { similarite: Math.max(deja.similarite ?? 0, f.similarite ?? 0) }
+        : {}),
+    });
+  }
+  return [...par.values()];
+}
+
+/**
+ * 🔴 LE VERDICT, ET C'EST LUI QUI PORTE LA GARDE ANTI-HALLUCINATION une fois le vectoriel branché.
+ *
+ * Pourquoi ce n'est pas la similarité qui décide : mesuré le 2026-09-02, une question HORS SUJET remonte une
+ * fiche à 0,361 quand une vraie question descend à 0,299. Les deux populations se chevauchent, donc aucun
+ * seuil n'est posable sur un cosinus. Le reranker, lui, place les vraies questions au-dessus de 0,0817 et le
+ * hors-sujet en dessous de 0,0409.
+ *
+ * ⚠️ En cas d'échec du reranker, on RETOMBE SUR LA RÈGLE LEXICALE, jamais sur « on laisse passer ». Une fiche
+ * venue du seul rappel vectoriel a une couverture de zéro : elle est donc écartée par ce repli, ce qui est
+ * exactement le bon sens de la dégradation. On perd le gain, on ne perd pas la garde.
+ */
+async function verdictReranker(
+  candidates: FicheTrouvee[],
+  requete: string,
+  recherche: RechercheSemantique,
+): Promise<FicheTrouvee[]> {
+  if (candidates.length === 0) return [];
+  let scores: number[];
+  try {
+    scores = await recherche.reclasser(requete, candidates.map((f) => ({ texte: `${f.titre}\n${f.corps}` })));
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('connaissance: reranker indisponible, repli sur la regle lexicale:', err instanceof Error ? err.message : err);
+    return candidates.filter(ficheEstPertinente).slice(0, FICHES_RENDUES);
+  }
+  return candidates
+    .map((f, i) => ({ f, score: scores[i] ?? 0 }))
+    .filter((x) => x.score >= recherche.seuil)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, FICHES_RENDUES)
+    .map((x) => x.f);
 }
