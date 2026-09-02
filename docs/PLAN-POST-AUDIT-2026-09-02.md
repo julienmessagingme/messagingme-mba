@@ -6,6 +6,24 @@
 
 ## POINT DE REPRISE (écrit pour survivre à une compaction de contexte)
 
+## ✅ LES SEPT LOTS SONT LIVRÉS (2026-09-02 au soir), ET AUCUN N'EST DÉPLOYÉ
+
+Un commit par lot sur `main`, CI verte. Dans l'ordre : `6a4a83c` (bail), `1140e32` (défilement), `6d7b2c7`
+(plafond 20 000), `39018b0` (panne d'avance visible), `e78d719` (affirmations qui mentent), `1c664a1`
+(concurrence des files), `bd9225e` (pool visible).
+
+🔴 **Ce qui reste à faire, et qui n'est pas un détail** :
+- **déployer** (rien n'est en production) ;
+- **appliquer 0108 et 0109** avec la séquence complète (build de l'image AVANT `migrate`). Les deux sont
+  volontairement NON bloquantes, donc un déploiement sans elles ne casse rien et perd seulement la mesure ;
+- le compte rendu pour l'audit externe est dans `docs/CONTRE-CONTRE-RAPPORT-2026-09-02.md`, avec la liste
+  exhaustive de ce qui N'EST PAS prouvé.
+
+Ce qui suit est le plan d'origine, gardé tel quel : il porte le raisonnement de chaque lot et le piège que
+chacun devait éviter.
+
+---
+
 **Rien n'est commencé.** Les sept lots sont arbitrés, chiffrés et prêts ; aucun code n'a été écrit pour eux.
 
 **Ce qui EST fait et déployé** (`8943736`, le 2026-09-02 au soir) : le **131008**, hors plan, urgence de
