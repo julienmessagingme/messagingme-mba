@@ -20,8 +20,8 @@ trop à un client. Puis lot 6 (concurrence), qui conditionne la trajectoire à 2
 
 **La seule décision qui manque** : le chiffre du plafond de campagne (lot 3). Proposition faite : 5 000.
 
-⚠️ **Une AUTRE session travaille dans le dépôt.** Au moment d'écrire, elle a commité `7073b8b` (badge
-« modifications non publiées »), **non poussé et non déployé**. Ne jamais faire `git add src tests` en bloc :
+⚠️ **Une AUTRE session travaille dans le dépôt.** Au moment d'écrire, elle a commité et poussé `7073b8b`
+(badge « modifications non publiées »), **non déployé**. Ne jamais faire `git add src tests` en bloc :
 ça ramasse son travail. Vérifier `git status` avant chaque commit, et ne stager que ses propres fichiers.
 
 ## Ce que la mesure a tranché avant toute décision
