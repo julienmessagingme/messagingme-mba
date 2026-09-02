@@ -186,6 +186,29 @@ export class PgWorkflowRunStore {
   }
 
   /**
+   * PROLONGE le bail tant que l'avance travaille (lot 1 du plan post-audit, 2026-09-02).
+   *
+   * 🔴 C'est la pièce qui distingue « porteur mort » de « porteur LENT ». Sans elle, une avance plus longue
+   * que le bail (~154 s au pire pour un seul envoi Meta qui rejoue ses tentatives) voyait son tour repris par
+   * une autre, et les deux envoyaient. Aucune valeur de bail ne pouvait fermer ça : le nombre d'envois d'une
+   * avance n'est pas borné. Cf. `bail-avance.ts` pour la cadence et pourquoi c'est un tiers du bail.
+   *
+   * Le JETON est la seule garde, volontairement SANS condition sur `avance_jusqu_a` : si notre bail a expiré
+   * mais que personne ne l'a repris, le jeton est encore le nôtre et on a le droit de le reprolonger. C'est
+   * exactement le cas qu'on veut soigner, un battement arrivé en retard. Si un autre l'a repris, le jeton a
+   * changé, la requête ne touche aucune ligne, et `false` remonte jusqu'au battement qui s'arrête.
+   */
+  async prolongerAvance(id: string, token: string, bailSecondes: number): Promise<boolean> {
+    const res = await this.pool.query(
+      `update workflow_runs
+          set avance_jusqu_a = now() + make_interval(secs => $3::double precision)
+        where id = $1 and avance_token = $2`,
+      [id, token, bailSecondes],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Rend le tour. Le JETON est dans le `where` : un porteur de bail périmé, revenu tard, ne peut pas libérer
    * le verrou de celui qui l'a repris. Sans ça, un traitement lent ferait sauter la garde d'un autre.
    *
@@ -198,7 +221,18 @@ export class PgWorkflowRunStore {
     );
   }
 
-  async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState): Promise<boolean> {
+  /**
+   * 🔴 Le JETON est dans la garde depuis le lot 1 du plan post-audit (2026-09-02). Avant, cette écriture
+   * filtrait sur `id`, `tenant_id`, `status` et `current_node`, jamais sur `avance_token` : un porteur de bail
+   * PÉRIMÉ, revenu tard, pouvait donc encore écrire l'état par-dessus celui qui avait repris le tour. La
+   * réservation protégeait les envois, l'écriture restait ouverte.
+   *
+   * `token` à `null` = aucune réservation n'a eu lieu (câblages de test, e2e, tout store qui ne pose pas
+   * `reserverAvance`). La garde retombe alors sur son comportement d'avant plutôt que de refuser toute
+   * écriture, ce qui figerait ces parcours. Le `is null` est porté par le PARAMÈTRE, pas par la colonne : un
+   * appelant qui tient un jeton est toujours confronté au jeton de la ligne.
+   */
+  async setStateSiEncoreSur(tenantId: string, id: string, nodeId: string | null, state: RunState, token: string | null = null): Promise<boolean> {
     const res = await this.pool.query(
       `update workflow_runs set current_node = $4, status = $5,
               last_message_id = coalesce($6, last_message_id), resume_at = $7,
@@ -207,8 +241,9 @@ export class PgWorkflowRunStore {
         -- null (parcours sans position, clôture). Avec « = », null = null vaut NULL, donc la garde ne
         -- trouvait jamais la ligne et l'écriture était silencieusement PERDUE. Pour toute valeur non nulle,
         -- les deux opérateurs sont identiques : la garde n'est pas affaiblie.
-        where id = $1 and tenant_id = $2 and status = 'waiting' and current_node is not distinct from $3`,
-      [id, tenantId, nodeId, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null],
+        where id = $1 and tenant_id = $2 and status = 'waiting' and current_node is not distinct from $3
+          and ($9::uuid is null or avance_token = $9::uuid)`,
+      [id, tenantId, nodeId, state.currentNode, state.status, state.lastMessageId ?? null, state.resumeAt ?? null, state.channel ?? null, token],
     );
     return (res.rowCount ?? 0) > 0;
   }

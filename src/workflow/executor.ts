@@ -12,14 +12,7 @@ import { aDesVariables, appliquerVariables } from '../rcs/variables';
 import { aDesLiensTracables } from '../links/rcs-liens';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
 
-/**
- * Durée du bail d'une avance, en secondes (migration 0104).
- *
- * Assez long pour couvrir un traitement lent (un envoi Meta, l'ouverture d'une session d'agent), assez court
- * pour qu'un worker tué en plein traitement ne fasse pas attendre le contact plus d'une poignée de secondes.
- * Le bail n'est de toute façon consommé qu'en cas de crash : le chemin normal libère à la fin.
- */
-const BAIL_AVANCE_S = 60;
+import { BAIL_AVANCE_S, renouvelerLeBail } from './bail-avance';
 import { SORTIE_TIMEOUT } from '../agent/sorties';
 import type { AgentTurnJob } from '../agent/turn-job';
 
@@ -61,9 +54,12 @@ export interface WorkflowExecutorDeps {
      * Écriture CONDITIONNELLE : n'écrit que si le run attend TOUJOURS sur `nodeId`. `false` = il a bougé
      * entre-temps, donc quelqu'un d'autre l'a fait avancer, et notre écriture serait un retour en arrière.
      *
+     * `token` clôture l'écriture par le JETON du tour : un porteur de bail périmé ne doit pas pouvoir écrire
+     * par-dessus celui qui a repris le tour. `null` = aucune réservation n'a eu lieu, garde d'avant.
+     *
      * OPTIONNELLE : absente -> `setState` inconditionnel, comportement d'avant (fixtures de test).
      */
-    setStateSiEncoreSur?(tenantId: string, id: string, nodeId: string | null, state: RunState): Promise<boolean>;
+    setStateSiEncoreSur?(tenantId: string, id: string, nodeId: string | null, state: RunState, token?: string | null): Promise<boolean>;
     /**
      * RÉSERVE le tour d'avance AVANT tout envoi (migration 0104). `null` = un autre traitement le tient,
      * l'appelant sort SANS RIEN FAIRE. C'est ce qui ferme le double envoi, que l'écriture conditionnelle ne
@@ -72,6 +68,13 @@ export interface WorkflowExecutorDeps {
      * OPTIONNELLE : absente -> aucune réservation, comportement d'avant (fixtures de test, e2e).
      */
     reserverAvance?(tenantId: string, id: string, nodeId: string | null, bailSecondes: number): Promise<string | null>;
+    /**
+     * PROLONGE le bail tant que l'avance travaille. `false` = le tour a été repris par un autre, on cesse de
+     * battre. C'est ce qui ferme la course LONGUE (le porteur lent, pas le porteur mort) : cf `bail-avance.ts`.
+     *
+     * OPTIONNELLE : absente -> aucun renouvellement, comportement d'avant.
+     */
+    prolongerAvance?(id: string, token: string, bailSecondes: number): Promise<boolean>;
     /** Rend le tour. Le jeton garantit qu'un porteur de bail périmé ne libère pas le verrou d'un autre. */
     libererAvance?(id: string, token: string): Promise<void>;
   };
@@ -1219,6 +1222,27 @@ export class WorkflowExecutor {
       console.warn(`workflow ${run.workflowId}: avance IGNOREE pour ${waId} (run ${run.id}), un autre traitement tient le tour sur le bloc ${run.currentNode ?? 'null'} (message ${messageId})`);
       return;
     }
+
+    /**
+     * 🔴 LE BAIL EST RENOUVELÉ TANT QU'ON TRAVAILLE (lot 1 du plan post-audit, 2026-09-02). La réservation
+     * ci-dessus ferme la course COURTE (deux avances qui démarrent ensemble). Elle ne fermait PAS la course
+     * LONGUE : un seul envoi Meta peut durer ~154 s en rejouant ses tentatives, une avance peut en enchaîner
+     * plusieurs, donc le bail expirait pendant qu'on travaillait, un autre prenait le tour, et les deux
+     * envoyaient. Battre est la seule façon de distinguer un porteur MORT d'un porteur LENT.
+     */
+    const battement = jeton !== null && this.deps.runs.prolongerAvance
+      ? renouvelerLeBail({
+          prolonger: () => this.deps.runs.prolongerAvance!(run.id, jeton, BAIL_AVANCE_S),
+          perdu: () => {
+            // eslint-disable-next-line no-console
+            console.warn(`workflow ${run.workflowId}: bail d'avance PERDU pour ${waId} (run ${run.id}), un autre traitement a repris le tour pendant le traitement du message ${messageId}`);
+          },
+          echec: (err) => {
+            // eslint-disable-next-line no-console
+            console.warn(`workflow ${run.workflowId}: renouvellement du bail en ECHEC pour le run ${run.id} (on continue de battre):`, err);
+          },
+        })
+      : null;
     try {
 
     /**
@@ -1230,18 +1254,17 @@ export class WorkflowExecutor {
      * gagnait, en écrasant `current_node`. Un parcours pouvait ainsi REVENIR sur un bloc déjà franchi, et
      * rejouer sa branche au message suivant. Silencieusement.
      *
-     * ⚠️ CE QUE ÇA NE FERME PAS, et il ne faut pas se raconter le contraire : les envois du perdant sont
-     * DÉJÀ PARTIS quand on arrive ici. Cette garde protège l'ÉTAT, pas les effets. Fermer le double envoi
-     * demande un claim pris AVANT les envois (donc un statut transitoire, donc une migration) et des clés
-     * d'idempotence sur les effets : c'est un lot à part, cf. `PLAN.md` et le §A4 de la synthèse du
-     * 2026-08-31. On journalise donc les avances perdues, parce qu'on ne peut pas corriger ce qu'on ne voit pas.
+     * ⚠️ Cette garde reste la CEINTURE, la réservation étant la bretelle : elle n'est plus le dernier
+     * rempart depuis la migration 0104, mais deux gardes qui se recouvrent valent mieux qu'une seule sur un
+     * chemin qui envoie de l'argent. Elle est clôturée par le JETON depuis le lot 1 du plan post-audit : un
+     * porteur de bail périmé ne peut plus écrire par-dessus celui qui a repris le tour.
      */
     const ecrire = async (state: RunState): Promise<boolean> => {
       if (!this.deps.runs.setStateSiEncoreSur) {
         await this.deps.runs.setState(run.id, state);
         return true;
       }
-      const ecrit = await this.deps.runs.setStateSiEncoreSur(tenantId, run.id, run.currentNode, state);
+      const ecrit = await this.deps.runs.setStateSiEncoreSur(tenantId, run.id, run.currentNode, state, jeton);
       if (!ecrit) {
         // eslint-disable-next-line no-console
         console.warn(`workflow ${run.workflowId}: avance PERDUE pour ${waId} (run ${run.id}), le parcours a bougé depuis le bloc ${run.currentNode ?? 'null'} pendant le traitement du message ${messageId}`);
@@ -1432,6 +1455,9 @@ export class WorkflowExecutor {
       await this.demarrerTourAgent(tenantId, waId, { id: run.id, workflowId: run.workflowId }, graph, rest.nodeId);
     }
     } finally {
+      // Le battement s'arrête AVANT la libération, et dans tous les cas : un renouvellement qui survit à son
+      // avance tiendrait un tour que plus personne ne travaille, donc gèlerait le contact jusqu'au bail.
+      battement?.arreter();
       // Libération BEST-EFFORT : ne pas y arriver coûte au pire l'attente du bail, jamais un message perdu.
       // Dans le `finally` pour que le tour soit rendu même si un envoi jette : sinon le message SUIVANT du
       // contact attendrait la fin du bail pour rien.

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
@@ -29,13 +29,29 @@ class RunsConditionnels {
   private tenuPar: string | null = null;
   readonly reservations: Array<string | null> = [];
   readonly liberations: string[] = [];
+  /**
+   * HORLOGE SIMULÉE et bail, pour jouer la course LONGUE (le porteur lent, pas le porteur mort). Les tests
+   * qui ne touchent pas `maintenant` voient un bail qui n'expire jamais, donc le comportement d'avant.
+   */
+  maintenant = 0;
+  private bailJusqua = 0;
+  /** Les jetons passés à la garde d'écriture d'état, appel par appel. */
+  readonly jetonsEcriture: Array<string | null | undefined> = [];
 
-  async reserverAvance(_t: string, _id: string, nodeId: string | null): Promise<string | null> {
-    if (this.tenuPar !== null) { this.reservations.push(null); return null; }
+  async reserverAvance(_t: string, _id: string, nodeId: string | null, bailSecondes = 60): Promise<string | null> {
+    const tenu = this.tenuPar !== null && this.bailJusqua > this.maintenant;
+    if (tenu) { this.reservations.push(null); return null; }
     if (this.run && this.run.currentNode !== nodeId) { this.reservations.push(null); return null; }
     this.tenuPar = `jeton-${this.reservations.length}`;
+    this.bailJusqua = this.maintenant + bailSecondes * 1000;
     this.reservations.push(this.tenuPar);
     return this.tenuPar;
+  }
+  /** Prolonge, et SEULEMENT si le jeton est encore le nôtre : un porteur déchu ne repousse pas le bail d'un autre. */
+  async prolongerAvance(_id: string, token: string, bailSecondes: number): Promise<boolean> {
+    if (this.tenuPar !== token) return false;
+    this.bailJusqua = this.maintenant + bailSecondes * 1000;
+    return true;
   }
   async libererAvance(_id: string, token: string): Promise<void> {
     // Le JETON dans la garde : un porteur périmé ne libère pas le verrou de celui qui l'a repris.
@@ -51,9 +67,12 @@ class RunsConditionnels {
     this.inconditionnels.push(id);
     if (this.run) this.run = { ...this.run, currentNode: state.currentNode, status: state.status };
   }
-  async setStateSiEncoreSur(_t: string, _id: string, nodeId: string | null, state: RunState): Promise<boolean> {
+  async setStateSiEncoreSur(_t: string, _id: string, nodeId: string | null, state: RunState, token?: string | null): Promise<boolean> {
     this.gardes.push(nodeId);
+    this.jetonsEcriture.push(token);
     if (this.aBouge) return false; // le run n'est plus là où on l'a lu : quelqu'un d'autre l'a avancé
+    // Le JETON clôture l'écriture comme en production : un porteur périmé n'écrit pas par-dessus l'autre.
+    if (token != null && this.tenuPar !== token) return false;
     if (this.run) this.run = { ...this.run, currentNode: state.currentNode, status: state.status };
     return true;
   }
@@ -85,9 +104,10 @@ function exec(runs: RunsConditionnels, over: Partial<WorkflowExecutorDeps> = {})
  * et écrivaient tous les deux : le dernier gagnait, en écrasant `current_node`. Un parcours pouvait ainsi
  * REVENIR sur un bloc déjà franchi et rejouer sa branche au message suivant, sans aucune trace.
  *
- * ⚠️ Ces tests prouvent que l'ÉTAT est protégé. Ils ne prouvent PAS que le double ENVOI est fermé : les
- * messages du perdant sont déjà partis quand la garde le refuse. C'est un lot à part (claim avant l'envoi,
- * donc statut transitoire, donc migration), et le commentaire de `advance` le dit noir sur blanc.
+ * ⚠️ Ces tests prouvent que l'ÉTAT est protégé, et RIEN DE PLUS : les messages du perdant sont déjà partis
+ * quand la garde le refuse. Le double ENVOI est fermé ailleurs, par les deux blocs suivants (la réservation
+ * du tour pour la course courte, son renouvellement pour la course longue). Ce commentaire a affirmé pendant
+ * des semaines que c'était « un lot à part » ; il continuait de le dire une fois le lot fait.
  */
 describe('avance concurrente : l’écriture d’état est conditionnée au bloc de départ', () => {
   it('cas nominal : la garde porte sur le bloc où le run a été LU, et l’écriture passe', async () => {
@@ -194,6 +214,15 @@ describe('avance concurrente : le tour est RÉSERVÉ avant tout envoi', () => {
     expect(await runs.reserverAvance('t1', 'r1', 'a')).not.toBeNull();
   });
 
+  it('🔴 le jeton du tour est PASSÉ à la garde d’écriture', async () => {
+    // Le câblage que la garde SQL attend. Sans lui, la clôture par jeton existerait en base et ne servirait
+    // à rien, l'appelant ne la renseignant jamais.
+    const runs = new RunsConditionnels();
+    const { ex } = exec(runs);
+    await ex.advance('t1', '33600', 'msg1');
+    expect(runs.jetonsEcriture).toEqual(['jeton-0']);
+  });
+
   it('un store SANS réservation garde le comportement d’avant (fixtures, e2e)', async () => {
     // La dépendance est optionnelle : une instance qui ne la câble pas ne doit pas cesser d'avancer.
     const runs = new RunsConditionnels();
@@ -205,5 +234,112 @@ describe('avance concurrente : le tour est RÉSERVÉ avant tout envoi', () => {
     const { ex, calls } = exec(runs);
     await ex.advance('t1', '33600', 'msg1');
     expect(calls).toEqual(['qm:B']);
+  });
+});
+
+
+/**
+ * 🔴 LA COURSE LONGUE : LE PORTEUR LENT (lot 1 du plan post-audit, 2026-09-02).
+ *
+ * La réservation ci-dessus ferme la course COURTE, deux avances qui démarrent ensemble. Elle ne fermait pas
+ * celle-ci : `withRetry` autorise cinq tentatives à 30 s de plafond plus le backoff, soit ~154 s au pire pour
+ * UN SEUL envoi Meta, et une avance peut en enchaîner plusieurs. Le bail de 60 s expirait donc pendant que le
+ * premier porteur travaillait ENCORE, un second prenait le tour, et les deux envoyaient.
+ *
+ * Aucune valeur de bail ne pouvait fermer ça : le nombre d'envois d'une avance n'est pas borné. Il fallait un
+ * signe de vie périodique, qui seul distingue un porteur MORT d'un porteur LENT.
+ */
+describe('avance concurrente : le bail est RENOUVELÉ tant qu’on travaille', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  /**
+   * Un exécuteur dont le PREMIER envoi reste suspendu, et de quoi le débloquer. Seul le premier : celui qui
+   * vole le tour est une avance neuve et rapide, et la suspendre aussi ne ferait que bloquer le test.
+   */
+  function avanceLente(runs: RunsConditionnels) {
+    const calls: string[] = [];
+    let debloquer: () => void = () => {};
+    const envoiSuspendu = new Promise<void>((r) => { debloquer = r; });
+    let premier = true;
+    const { ex } = exec(runs, {
+      sendQuickMessage: async (_t, _w, body) => {
+        calls.push(`qm:${body}`);
+        if (premier) { premier = false; await envoiSuspendu; }
+      },
+    });
+    return { ex, calls, debloquer: () => debloquer() };
+  }
+
+  it('🔴 une avance PLUS LONGUE que le bail ne se fait pas voler son tour', async () => {
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    const { ex, calls, debloquer } = avanceLente(runs);
+
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual(['qm:B']); // l'envoi est parti et l'avance est suspendue dedans
+
+    // 80 secondes s'écoulent : bien au-delà du bail de 60 s. Le battement doit l'avoir repoussé.
+    for (let i = 0; i < 4; i += 1) {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+    }
+
+    // Un second traitement du même contact tente sa chance pendant que le premier travaille toujours.
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await ex.advance('t1', '33600', 'msg2');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // LE POINT DU LOT : rien de plus n'est parti. Sans renouvellement, le contact recevait `qm:B` deux fois.
+    expect(calls).toEqual(['qm:B']);
+    expect(runs.reservations.filter((r) => r !== null)).toHaveLength(1);
+
+    debloquer();
+    await lente;
+  });
+
+  it('🔴 SANS renouvellement, le tour est volé et le contact reçoit DEUX fois le message', async () => {
+    // Le même scénario, la garde en moins : c'est la preuve dans l'autre sens. Si ce test cessait d'échouer
+    // à produire un double envoi, c'est que la première assertion ne prouverait plus rien.
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    (runs as unknown as { prolongerAvance?: unknown }).prolongerAvance = undefined;
+    const { ex, calls, debloquer } = avanceLente(runs);
+
+    const lente = ex.advance('t1', '33600', 'msg1');
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < 4; i += 1) {
+      runs.maintenant += 20_000;
+      await vi.advanceTimersByTimeAsync(20_000);
+    }
+
+    // Le spy tient jusqu'au bout : l'avance lente, en revenant, se fera refuser son écriture d'état par le
+    // jeton et le journalisera. C'est attendu, ça n'a pas à salir la sortie des tests.
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await ex.advance('t1', '33600', 'msg2');
+      expect(calls).toEqual(['qm:B', 'qm:B']); // le double envoi, exactement le défaut que le lot ferme
+      debloquer();
+      await lente;
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('le battement s’ARRÊTE avec l’avance, même quand un envoi jette', async () => {
+    // Un battement qui survit à son avance tiendrait un tour que plus personne ne travaille, donc gèlerait
+    // le contact jusqu'à l'expiration du bail. C'est la raison du `finally`.
+    vi.useFakeTimers();
+    const runs = new RunsConditionnels();
+    let prolongations = 0;
+    const vrai = runs.prolongerAvance.bind(runs);
+    runs.prolongerAvance = async (id, token, s) => { prolongations += 1; return vrai(id, token, s); };
+    const { ex } = exec(runs, { sendQuickMessage: async () => { throw new Error('Meta indisponible'); } });
+    await expect(ex.advance('t1', '33600', 'msg1')).rejects.toThrow('Meta indisponible');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(prolongations).toBe(0);
   });
 });

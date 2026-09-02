@@ -91,6 +91,15 @@ les deux sens de la règle sur les fichiers réels.
 qu'il ne devait jamais voir. Le tour est désormais RÉSERVÉ avant tout envoi, avec les trois pièces d'un vrai
 verrou (bail, jeton de garde, libération explicite) et **sans drapeau de relance** : le perdant ne doit RIEN
 rejouer, son message a été traité par le gagnant qui lisait le même bloc.
+⚠️ **Et « réservé avant tout envoi » ne fermait QUE la course courte**, celle de deux avances qui démarrent
+ensemble. La course LONGUE, le porteur pas mort mais seulement LENT, est restée ouverte jusqu'au lot 1 du plan
+post-audit (2026-09-02) : un envoi Meta peut durer ~154 s en rejouant ses tentatives et une avance peut en
+enchaîner plusieurs, donc le bail expirait pendant qu'on travaillait, un autre prenait le tour, et les deux
+envoyaient. Aucune valeur de bail ne pouvait fermer ça, le nombre d'envois d'une avance n'étant pas borné :
+seul un signe de vie PÉRIODIQUE distingue un porteur mort d'un porteur lent (`src/workflow/bail-avance.ts`,
+cadence à un tiers du bail). Même lot, même famille : l'écriture d'état est désormais clôturée par le JETON,
+un porteur périmé ne pouvant plus écrire par-dessus celui qui a repris le tour. Aucune migration, les deux
+colonnes de la 0104 suffisaient.
 🔴 **0103 est BLOQUANTE, et sa règle vaut d'être connue : les deux raisons de pause ne se reprennent PAS
 pareil.** Un plafond de DÉBIT (130429, ou un HTTP 429 sans code connu) est une limite de cadence : elle retombe
 seule, donc la campagne repart automatiquement après un délai borné. Un plafond de QUALITÉ (131048) est un
