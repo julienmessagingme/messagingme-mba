@@ -70,7 +70,7 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
       const key = s(data.fieldLabel ?? data.fieldKey ?? data.key);
       if (kind === 'add_tag') out = tag === '' ? '' : `+ ${tag}`;
       else if (kind === 'remove_tag') out = tag === '' ? '' : `− ${tag}`;
-      else if (kind === 'set_field') { const val = data.valueKind === 'now' ? 'maintenant' : s(data.value); out = key === '' ? '' : val === '' ? key : `${key} = ${val}`; }
+      else if (kind === 'set_field') { const val = data.valueKind === 'now' ? 'maintenant' : data.valueKind === 'derniere_saisie' ? 'dernier message' : s(data.value); out = key === '' ? '' : val === '' ? key : `${key} = ${val}`; }
       else if (kind === 'clear_field') out = key === '' ? '' : `${key} (vidé)`;
       else if (kind === 'set_optin') out = 'passer en opt-in';
       else if (kind === 'set_optout') out = 'passer en opt-out';

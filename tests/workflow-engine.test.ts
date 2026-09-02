@@ -394,15 +394,63 @@ describe('walk : le ctx reflète les tag/field posés PLUS TÔT dans la même ch
 });
 
 describe('walk : bloc field en mode NOW (horodatage courant)', () => {
-  it('valueKind now -> valeur = ISO UTC du contexte (comparable par une condition datetime)', () => {
+  it('🔴 valueKind now -> ISO 8601 AVEC LE DÉCALAGE du fuseau, et non plus de l’UTC', () => {
+    // Julien, le 2026-09-02 : « il faut que ça soit la valeur au format international qui prenne bien en
+    // compte le GMT ». L'ancienne forme (`toISOString()`) rendait toujours de l'UTC : l'instant était juste,
+    // mais l'heure LUE était fausse de deux heures en été, et un système qui affichait la valeur telle quelle
+    // montrait 16:30 pour 14:30 UTC... c'est-à-dire l'inverse de ce qu'il fallait lire.
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'derniere_visite', valueKind: 'now' }), n('ib', 'inbox')], edges: [e('e', 'f', 'ib')] };
     const r = walk(g, 'f', evalCtx({ now: new Date('2026-08-02T14:30:00Z') }));
-    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'derniere_visite', value: '2026-08-02T14:30:00.000Z' }]);
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'derniere_visite', value: '2026-08-02T16:30:00+02:00' }]);
+  });
+
+  it('🔴 et l’instant reste LE MÊME : les conditions datetime comparent ce qu’elles comparaient', () => {
+    // C'est ce qui rend le changement sans danger. Changer la NOTATION d'une date ne doit rien changer à
+    // l'instant qu'elle désigne, sinon les scénarios déjà en production compareraient autre chose qu'avant.
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'x', valueKind: 'now' })], edges: [] };
+    const instant = new Date('2026-08-02T14:30:00Z');
+    const [action] = walk(g, 'f', evalCtx({ now: instant })).actions.map((e) => e.action);
+    expect(new Date((action as { value: string }).value).getTime()).toBe(instant.getTime());
+  });
+
+  it('en HIVER, le décalage suit le fuseau : ce n’est pas +02:00 codé en dur', () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'x', valueKind: 'now' })], edges: [] };
+    const r = walk(g, 'f', evalCtx({ now: new Date('2026-01-15T14:30:00Z') }));
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'x', value: '2026-01-15T15:30:00+01:00' }]);
   });
   it('valueKind now SANS contexte -> valeur vide (non exécuté hors run)', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'x', valueKind: 'now' })], edges: [] };
     expect(walk(g, 'f').actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'x', value: '' }]);
   });
+  it('🔴 valueKind derniere_saisie -> le dernier message ÉCRIT par le contact', () => {
+    // Julien : « la dernière chose que le client ait dit doit être un champ qu'on puisse mettre à jour ».
+    // Recopier le message plutôt que de le faire reformuler par un modèle : c'est le texte exact qui compte.
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'demande', valueKind: 'derniere_saisie' })], edges: [] };
+    const r = walk(g, 'f', evalCtx({ derniereSaisie: 'je voudrais changer ma commande' }));
+    expect(r.actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'demande', value: 'je voudrais changer ma commande' }]);
+  });
+
+  it('derniere_saisie ABSENTE -> valeur vide, jamais une valeur inventée', () => {
+    // Le contact n'a encore rien écrit, ou la lecture a échoué. Poser une valeur devinée ferait répondre le
+    // système d'un client sur autre chose que ce qui a été demandé.
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'demande', valueKind: 'derniere_saisie' })], edges: [] };
+    expect(walk(g, 'f', evalCtx({ derniereSaisie: null })).actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'demande', value: '' }]);
+    expect(walk(g, 'f').actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'demande', value: '' }]);
+  });
+
+  it('🔴 le bloc « field » et l’action « set_field » posent LA MÊME valeur', () => {
+    // Deux façons de décrire le même geste. Le calcul y était écrit DEUX FOIS, à l'identique : la première
+    // divergence aurait fait qu'un scénario écrit avec l'un et un scénario écrit avec l'autre ne poseraient
+    // plus la même chose, sans que rien ne le signale.
+    const ctx = evalCtx({ now: new Date('2026-08-02T14:30:00Z'), derniereSaisie: 'bonjour' });
+    for (const kind of ['now', 'derniere_saisie', undefined]) {
+      const data = { fieldKey: 'x', valueKind: kind, value: 'fixe' };
+      const parBloc = walk({ nodes: [n('f', 'field', data)], edges: [] }, 'f', ctx).actions.map((a) => a.action);
+      const parAction = walk({ nodes: [n('f', 'action', { ...data, actionKind: 'set_field' })], edges: [] }, 'f', ctx).actions.map((a) => a.action);
+      expect(parAction, String(kind)).toEqual(parBloc);
+    }
+  });
+
   it('field valeur FIXE inchangé (pas de valueKind)', () => {
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'ville', value: 'Lyon' })], edges: [] };
     expect(walk(g, 'f', evalCtx()).actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
@@ -417,9 +465,9 @@ describe('node action (bloc unifié tag/field : ajouter/retirer/màj/vider)', ()
     expect(walk(only('set_field', { fieldKey: 'ville', value: 'Lyon' }), 'a').actions.map((e) => e.action)).toEqual([{ kind: 'field', key: 'ville', value: 'Lyon' }]);
     expect(walk(only('clear_field', { fieldKey: 'ville' }), 'a').actions.map((e) => e.action)).toEqual([{ kind: 'clearField', key: 'ville' }]);
   });
-  it('set_field mode NOW dans un bloc action', () => {
+  it('set_field mode NOW dans un bloc action : même format que le bloc field, décalage du fuseau compris', () => {
     expect(walk(only('set_field', { fieldKey: 'vu_le', valueKind: 'now' }), 'a', evalCtx({ now: new Date('2026-08-02T14:30:00Z') })).actions.map((e) => e.action))
-      .toEqual([{ kind: 'field', key: 'vu_le', value: '2026-08-02T14:30:00.000Z' }]);
+      .toEqual([{ kind: 'field', key: 'vu_le', value: '2026-08-02T16:30:00+02:00' }]);
   });
   it('bloc action incomplet (tag/clé vide, actionKind inconnu) -> no-op', () => {
     expect(walk(only('add_tag', { tag: '' }), 'a').actions).toEqual([]);

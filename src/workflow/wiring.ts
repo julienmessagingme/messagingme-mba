@@ -200,11 +200,18 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
 
   // Contexte d'évaluation du contact (état CRM + fuseau/horaires du tenant). Partagé par les blocs `condition`
   // d'un scénario ET par le filtre `conditionGroup` d'une automation : une seule définition, même sémantique.
-  const buildEvalContext = async (tenant: string, waId: string) => {
+  const buildEvalContext = async (tenant: string, waId: string, besoins?: { derniereSaisie: boolean }) => {
     const state = await contactStore.getContactStateByWaId(tenant, waId);
     if (!state) return null;
     const settings = await settingsStore.get(tenant);
-    return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours };
+    // ⚠️ Lue SEULEMENT si un bloc la réclame (l'exécuteur le dit depuis le graphe) : c'est une requête de
+    // plus, et l'immense majorité des scénarios n'en a que faire. Un échec ici ne doit pas couler le
+    // contexte entier : le bloc posera alors une valeur vide, ce qui est le comportement d'une donnée
+    // absente, et non celui d'une valeur inventée.
+    const derniereSaisie = besoins?.derniereSaisie
+      ? await inboxStore.derniereSaisieDuContact(tenant, waId).catch(() => null)
+      : null;
+    return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours, derniereSaisie };
   };
 
   /**

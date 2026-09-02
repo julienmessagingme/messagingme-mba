@@ -361,7 +361,7 @@ describe('WorkflowExecutor', () => {
 });
 
 describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par evalContext)', () => {
-  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null) {
+  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null, surBesoins?: (b?: { derniereSaisie: boolean }) => void) {
     const runs = new FakeRuns();
     const calls: string[] = [];
     const ex = new WorkflowExecutor({
@@ -375,7 +375,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       sendQuickMessage: async (_t, _w, body) => { calls.push(`qm:${body}`); },
       sendFlow: async (_t, _w, flowId) => { calls.push(`flow:${flowId}`); },
       sendQuestion: async () => {},
-      evalContext: async () => ctx,
+      evalContext: async (_t, _w, besoins) => { surBesoins?.(besoins); return ctx; },
     });
     return { ex, runs, calls };
   }
@@ -417,11 +417,33 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
     await ex.advance('t1', '33600', 'm1');
     expect(calls).toEqual(['tpl:promo', 'tag:gold']);
   });
-  it('start : bloc field NOW -> setField reçoit l\'ISO UTC du ctx', async () => {
+  it('start : bloc field NOW -> setField reçoit l\'instant DANS LE FUSEAU de l\'espace', async () => {
+    // Le format a changé le 2026-09-02 : ISO 8601 avec le décalage, et non plus de l'UTC. Même instant, mais
+    // l'heure lue est enfin la bonne pour qui reçoit la valeur.
     const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'vu_le', valueKind: 'now' })], edges: [] };
     const { ex, calls } = makeEval(g, baseCtx({ now: new Date('2026-08-02T14:30:00Z') }));
     await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
-    expect(calls).toEqual(['field:vu_le=2026-08-02T14:30:00.000Z']);
+    expect(calls).toEqual(['field:vu_le=2026-08-02T16:30:00+02:00']);
+  });
+
+  it('start : bloc field DERNIÈRE SAISIE -> le message écrit par le contact, tel quel', async () => {
+    const g: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'demande', valueKind: 'derniere_saisie' })], edges: [] };
+    const { ex, calls } = makeEval(g, baseCtx({ derniereSaisie: 'je voudrais changer ma commande' }));
+    await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+    expect(calls).toEqual(['field:demande=je voudrais changer ma commande']);
+  });
+
+  it('🔴 la DERNIÈRE SAISIE n\'est demandée que si un bloc s\'en sert', async () => {
+    // Elle coûte une requête de plus, et l'immense majorité des scénarios n'en a que faire. Sans ce tri, tout
+    // scénario portant une CONDITION la paierait, alors qu'il n'y touche pas.
+    const avec: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'demande', valueKind: 'derniere_saisie' })], edges: [] };
+    const sans: WorkflowGraph = { nodes: [n('f', 'field', { fieldKey: 'vu_le', valueKind: 'now' })], edges: [] };
+    for (const [g, attendu] of [[avec, true], [sans, false]] as Array<[WorkflowGraph, boolean]>) {
+      const besoins: Array<{ derniereSaisie: boolean } | undefined> = [];
+      const { ex } = makeEval(g, baseCtx(), (b) => besoins.push(b));
+      await ex.start('t1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      expect(besoins[0]?.derniereSaisie, attendu ? 'réclamée' : 'pas réclamée').toBe(attendu);
+    }
   });
   it('evalContext renvoie null (contact introuvable) -> branche false déterministe', async () => {
     const { ex, calls } = makeEval(condGraph, null);

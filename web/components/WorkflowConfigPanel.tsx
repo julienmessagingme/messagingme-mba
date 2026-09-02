@@ -87,12 +87,20 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
       {avecValeur && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">{t('Valeur', 'Value')}</label>
-          <select value={d.valueKind === 'now' ? 'now' : 'fixed'} onChange={(e) => onPatch({ valueKind: e.target.value === 'now' ? 'now' : 'fixed' })} className={`${cls} bg-white`}>
+          <select
+            data-testid="champ-valeur-nature"
+            value={d.valueKind === 'now' || d.valueKind === 'derniere_saisie' ? String(d.valueKind) : 'fixed'}
+            onChange={(e) => onPatch({ valueKind: e.target.value })}
+            className={`${cls} bg-white`}
+          >
             <option value="fixed">{t('valeur fixe', 'fixed value')}</option>
             <option value="now">{t('maintenant (date + heure)', 'now (date + time)')}</option>
+            <option value="derniere_saisie">{t('dernier message du contact', 'contact’s last message')}</option>
           </select>
           {d.valueKind === 'now' ? (
-            <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc — utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block — useful for a “before / after” condition.')}</p>
+            <p className="mt-1.5 text-[11px] text-ink-400">{t('Pose la date et l’heure du moment où le contact atteint ce bloc, dans votre fuseau, utile pour une condition « avant / après ».', 'Sets the date and time when the contact reaches this block, in your time zone, useful for a “before / after” condition.')}</p>
+          ) : d.valueKind === 'derniere_saisie' ? (
+            <p className="mt-1.5 text-[11px] text-ink-400">{t('Recopie dans ce champ le dernier message écrit par le contact. Rien n’est écrit s’il n’a encore rien dit.', 'Copies the contact’s last written message into this field. Nothing is written if they haven’t said anything yet.')}</p>
           ) : (
             <input value={(d.value as string) ?? ''} onChange={(e) => onPatch({ value: e.target.value })} className={`${cls} mt-1.5`} placeholder={t('valeur à poser', 'value to set')} />
           )}

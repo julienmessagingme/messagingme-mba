@@ -194,7 +194,13 @@ export interface WorkflowExecutorDeps {
    * les conditions prennent la branche 'false' DÉTERMINISTE et un bloc field NOW pose une valeur vide -> préserve
    * les suites de tests à deps minimales. Renvoie null si le contact est introuvable -> même repli 'false'.
    */
-  evalContext?(tenantId: string, waId: string): Promise<EvalContext | null>;
+  /**
+   * Le contexte d'évaluation. `besoins` dit ce que le graphe réclame VRAIMENT, pour ne pas payer une lecture
+   * dont personne ne se sert : la dernière saisie du contact coûte une requête, et l'immense majorité des
+   * scénarios n'en a que faire. Même doctrine que `buildCtx`, qui ne construit ce contexte que si le graphe a
+   * une condition ou un bloc de date.
+   */
+  evalContext?(tenantId: string, waId: string, besoins?: { derniereSaisie: boolean }): Promise<EvalContext | null>;
   /**
    * Le run vient d'atteindre un bloc `inbox` : la conversation passe à un humain (control_owner=app_human).
    * Sans ça, atteindre le bloc inbox n'était qu'un arrêt de run silencieux, et le badge d'inbox affichait encore
@@ -330,12 +336,21 @@ export class WorkflowExecutor {
    */
   private async buildCtx(tenantId: string, waId: string, graph: WorkflowGraph): Promise<EvalContext | undefined> {
     if (!this.deps.evalContext) return undefined;
-    const needsCtx = graph.nodes.some((n) => n.type === 'condition'
-      || (n.type === 'field' && n.data.valueKind === 'now')
-      || (n.type === 'action' && n.data.actionKind === 'set_field' && n.data.valueKind === 'now'));
+    // Les valeurs DYNAMIQUES d'un bloc « poser un champ » : `maintenant` et `derniere_saisie`. Une valeur
+    // fixe n'a besoin d'aucun contexte, donc d'aucune requête.
+    const valeurDynamique = (n: { type: string; data: Record<string, unknown> }): string | null => {
+      const dyn = n.data.valueKind === 'now' || n.data.valueKind === 'derniere_saisie';
+      if (n.type === 'field' && dyn) return String(n.data.valueKind);
+      if (n.type === 'action' && n.data.actionKind === 'set_field' && dyn) return String(n.data.valueKind);
+      return null;
+    };
+    const needsCtx = graph.nodes.some((n) => n.type === 'condition' || valeurDynamique(n) !== null);
     if (!needsCtx) return undefined;
+    // Une requête de plus SEULEMENT si un bloc réclame la dernière saisie. Sans ce tri, tout scénario portant
+    // une condition la paierait, alors que presque aucun ne s'en sert.
+    const derniereSaisie = graph.nodes.some((n) => valeurDynamique(n) === 'derniere_saisie');
     try {
-      return (await this.deps.evalContext(tenantId, waId)) ?? undefined;
+      return (await this.deps.evalContext(tenantId, waId, { derniereSaisie })) ?? undefined;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`workflow: evalContext a échoué pour ${waId}, conditions -> 'false' (fail-closed)`, err);

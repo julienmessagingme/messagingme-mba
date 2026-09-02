@@ -43,6 +43,15 @@ export interface EvalContext {
   now: Date;
   timeZone: string; // IANA, ex. 'Europe/Paris'
   businessHours: BusinessHours;
+  /**
+   * Le dernier message ÉCRIT par le contact, quand le graphe en a besoin, sinon absent.
+   *
+   * 🔴 CHARGÉ PARESSEUSEMENT, et c'est pour ça qu'il est optionnel : le lire coûte une requête de plus, et
+   * l'immense majorité des scénarios n'en a que faire. L'exécuteur ne le demande que si un bloc s'en sert
+   * (`buildCtx`), exactement comme il ne construit ce contexte que si le graphe a une condition ou un bloc
+   * de date. Absent = le bloc pose une valeur vide, jamais une valeur inventée.
+   */
+  derniereSaisie?: string | null;
 }
 
 /**

@@ -1,6 +1,9 @@
 import type { WorkflowGraph, WorkflowNode } from './graph';
 import { evaluateConditionGroup, coerceConditionGroup } from './conditions';
 import type { EvalContext } from './conditions';
+// Le format de « maintenant » vit dans `src/agent/variables.ts` : un connecteur et un bloc de scenario
+// doivent poser la MEME valeur, sinon la meme date lue a deux endroits ne serait pas la meme.
+import { formatMaintenant } from '../agent/variables';
 
 /**
  * Moteur d'exécution d'un workflow, PUR (aucune IO). Un run avance en LIGNE DROITE : on suit la 1re arête
@@ -476,6 +479,32 @@ function emailRecipientOf(raw: unknown): EmailRecipient | null {
  * Les entrées invalides sont ÉCARTÉES une à une plutôt que de faire échouer le tout : une 3e adresse laissée
  * vide ne doit pas empêcher les deux premières de recevoir. Liste vide -> null (bloc non configuré).
  */
+/**
+ * La valeur qu'un bloc « poser un champ » écrit, selon ce que l'utilisateur a choisi.
+ *
+ * 🔴 UN SEUL ENDROIT, appelé par le bloc `field` ET par l'action `set_field`, qui sont deux façons de décrire
+ * le même geste. Le calcul y était écrit DEUX FOIS, à l'identique : la première divergence aurait fait qu'un
+ * scénario écrit avec le bloc et un scénario écrit avec l'action ne poseraient plus la même valeur, sans que
+ * rien ne le signale.
+ *
+ * `maintenant` : ISO 8601 AVEC LE DÉCALAGE du fuseau de l'espace, et non plus `toISOString()`.
+ * Julien, le 2026-09-02 : « il faut que ça soit la valeur au format international qui prenne bien en compte
+ * le GMT ». L'ancienne forme rendait toujours de l'UTC : l'instant était juste, mais l'heure LUE était fausse
+ * de deux heures en été, et un système qui affichait la valeur telle quelle montrait 09:45 pour 11:45. Les
+ * deux formes désignent le même instant, donc les conditions datetime comparent la même chose qu'avant.
+ *
+ * `derniere_saisie` : le dernier message écrit par le contact, pour le recopier dans un champ. Absent du
+ * contexte (personne n'a encore écrit, ou le chargement a échoué) -> valeur VIDE, jamais inventée.
+ *
+ * Sans contexte du tout (analyse de graphe pure, hors exécution), tout ce qui est dynamique vaut vide.
+ */
+function valeurDuChamp(data: Record<string, unknown>, ctx?: EvalContext): string {
+  const kind = String(data.valueKind ?? '');
+  if (kind === 'now') return ctx ? formatMaintenant(ctx.now, ctx.timeZone) : '';
+  if (kind === 'derniere_saisie') return ctx ? (ctx.derniereSaisie ?? '') : '';
+  return String(data.value ?? '');
+}
+
 function emailRecipientsOf(raw: unknown): EmailRecipient[] | null {
   const bruts = Array.isArray(raw) ? raw : [raw];
   const out: EmailRecipient[] = [];
@@ -534,10 +563,7 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
   if (node.type === 'field') {
     const key = String(node.data.fieldKey ?? node.data.key ?? '').trim();
     if (!key) return null;
-    // NOW : le bloc peut poser l'horodatage COURANT (ISO UTC absolu, comparable par une condition datetime) au
-    // lieu d'une valeur fixe. Sans contexte (analyse de graphe pure, ctx absent) la valeur est vide (non exécutée).
-    const value = node.data.valueKind === 'now' ? (ctx ? ctx.now.toISOString() : '') : String(node.data.value ?? '');
-    return { kind: 'field', key, value };
+    return { kind: 'field', key, value: valeurDuChamp(node.data, ctx) };
   }
   if (node.type === 'action') {
     // Bloc unifié : la sous-action est portée par `data.actionKind`. add_tag/set_field produisent les MÊMES
@@ -550,8 +576,7 @@ export function actionOf(node: WorkflowNode, ctx?: EvalContext): WorkflowAction 
     if (kind === 'remove_tag') return tag ? { kind: 'removeTag', tag } : null;
     if (kind === 'set_field') {
       if (!key) return null;
-      const value = node.data.valueKind === 'now' ? (ctx ? ctx.now.toISOString() : '') : String(node.data.value ?? '');
-      return { kind: 'field', key, value };
+      return { kind: 'field', key, value: valeurDuChamp(node.data, ctx) };
     }
     if (kind === 'clear_field') return key ? { kind: 'clearField', key } : null;
     // Consentement : rien à saisir, donc rien qui puisse rendre le bloc incomplet. C'est le SEUL chemin qui
