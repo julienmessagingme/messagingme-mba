@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { schema } from '../src/config';
-import { poolOptions, maintenanceOptions } from '../src/queue/pgboss';
+import { poolOptions, maintenanceOptions, notifyOptions } from '../src/queue/pgboss';
 
 /**
  * Gardes de démarrage (bloc 0 du PLAN.md). Ces règles BLOQUENT le boot : une erreur ici couche la production
@@ -167,6 +167,27 @@ describe('maintenanceOptions (bruit de l’instance pg-boss sur la base)', () =>
       supervise: false,
       flowIntervalSeconds: 60,
     });
+  });
+});
+
+/**
+ * `notifyOptions` est le câblage de l'écouteur LISTEN/NOTIFY, qui ouvre une connexion DÉDIÉE. Même piège que
+ * les deux fonctions ci-dessus : `opts.ecouteNotifications ? ...` avalerait un `false` explicite, ce qui est
+ * ici parfaitement bénin (pg-boss a le même défaut) mais deviendrait faux le jour où le défaut de pg-boss
+ * change. On ne devine pas le défaut d'une dépendance, on le laisse s'appliquer.
+ */
+describe('notifyOptions (écouteur LISTEN/NOTIFY de l’instance)', () => {
+  it('une absence reste une absence : pg-boss applique son propre défaut', () => {
+    expect(notifyOptions({})).toEqual({});
+    expect(notifyOptions({})).not.toHaveProperty('useListenNotify');
+  });
+
+  it('l’écoute demandée est TRANSMISE', () => {
+    expect(notifyOptions({ ecouteNotifications: true })).toEqual({ useListenNotify: true });
+  });
+
+  it('un refus EXPLICITE est transmis tel quel (même piège que max: 0)', () => {
+    expect(notifyOptions({ ecouteNotifications: false })).toEqual({ useListenNotify: false });
   });
 });
 

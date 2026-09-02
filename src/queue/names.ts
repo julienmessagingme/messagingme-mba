@@ -56,6 +56,48 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
 };
 
 /**
+ * Files RÉVEILLÉES par LISTEN/NOTIFY, c'est-à-dire celles dont la latence se RESSENT.
+ *
+ * Ce que ça change. pg-boss 12.25 sait émettre un `pg_notify` DANS LA MÊME TRANSACTION que l'insertion du job
+ * et réveiller le worker à l'instant, au lieu de le laisser dormir jusqu'à son prochain sondage. Le plafond
+ * de débit des entrants mesuré le 2026-09-02 (1,5 message/s, soit `concurrence / cadence de sondage`) vient
+ * précisément de ce sommeil : la boucle du worker SAUTE son délai quand une notification est arrivée pendant
+ * qu'il travaillait, donc une rafale se vide au rythme du traitement, plus à celui de l'horloge.
+ *
+ * ✅ Vérifié le 2026-09-02, pas supposé : la notification passe le pooler Supabase en mode SESSION (port 5432),
+ * session tenue (même pid backend avant/après), reçue en moins de 50 ms. Elle ne passerait PAS en mode
+ * transaction (port 6543), que ce projet n'utilise pas pour pg-boss.
+ *
+ * ⚠️ Ce n'est délibérément PAS « toutes les files ». Les files de FOND restent lentes EXPRÈS : une campagne de
+ * 5 000 messages produit trois accusés de livraison par destinataire, et les espacer est exactement ce qui
+ * empêche une rafale d'accusés d'affamer la réponse à un vrai client (lot 6). Les réveiller à l'instant
+ * re-créerait le problème que cette cadence a fermé. La règle est donc « la latence se ressent-elle ? », la
+ * même que celle de `QUEUE_POLLING_SECONDS`, et pas « peut-on aller plus vite ».
+ *
+ * `tests/queue-names.test.ts` garde l'invariant : toute file de `BASE_QUEUES` est classée ici.
+ */
+export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
+  webhook: true, // un contact attend sa réponse
+  'agent-turn': true, // idem, c'est le même chemin conversationnel
+  'campaign-run': true, // l'opérateur vient de cliquer et regarde l'écran
+  'automation-event': true, // démarrage de scénario sur mot-clé / tag, chemin conversationnel
+  'webhook-status': false, // accusés Meta : personne ne les attend, et les espacer PROTÈGE les entrants
+  'analyze-conversation': false, // traitement de fond
+  'push-analysis': false, // traitement de fond
+  'hubspot-catchup': false, // traitement de fond
+};
+
+/**
+ * Une file est-elle réveillée par notification ? Une DLQ ne l'est jamais (personne ne la travaille), et une
+ * file inconnue non plus : le défaut est « sondage seul », c'est-à-dire le comportement d'avant. Se tromper
+ * ici doit coûter de la latence, jamais un réveil non voulu sur un chemin de fond.
+ */
+export function notifieePour(queue: string): boolean {
+  if (BASE_QUEUES.some((q) => dlqName(q) === queue)) return false;
+  return FILES_NOTIFIEES[queue as (typeof BASE_QUEUES)[number]] ?? false;
+}
+
+/**
  * Cadence de polling d'une file, DLQ comprise. Une DLQ n'est travaillée par personne aujourd'hui (elle sert de
  * dépôt inspecté par /ops), donc si on venait à en consommer une, 60 s suffisent. Une file inconnue retombe sur
  * 5 s : assez lent pour ne pas ré-ouvrir la fuite d'egress, assez vif pour ne pas casser un chemin interactif

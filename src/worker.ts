@@ -100,10 +100,16 @@ async function main(): Promise<void> {
   // doit récupérer les jobs expirés. `flowIntervalSeconds: 60` espace la maintenance « flow » (défaut 5 s), qui ne
   // sert ici aucun chemin sensible : ce projet n'utilise pas de jobs bloquants/parents. Gain mesuré : ~16 000
   // requêtes/jour de moins sur une base Supabase facturée à l'egress.
+  // `ecouteNotifications: true` : le worker est la SEULE instance qui dépile, donc la seule qui a besoin d'être
+  // réveillée. L'API ne fait qu'empiler, un écouteur y consommerait une connexion dédiée pour rien : c'est le
+  // même raisonnement que la supervision, coupée de son côté. Ce qui se joue ici est le plafond de débit des
+  // entrants mesuré le 2026-09-02 : sans réveil, une rafale se vide à la cadence de l'horloge, pas à celle du
+  // traitement.
   const queue = new PgBossQueue(config.DATABASE_URL, config.PGBOSS_SCHEMA, {
     max: config.PGBOSS_MAX,
     connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
     flowIntervalSeconds: 60,
+    ecouteNotifications: true,
   });
 
   // Alerte Telegram throttlée (mémoire process) sur les signaux d'erreur d'un worker VIVANT. Le cas « worker
@@ -128,6 +134,17 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.error('[pg-boss:worker]', msg);
     alert('pgboss', `erreur pg-boss : ${msg}`);
+  });
+
+  // L'écouteur de notifications peut ne pas s'établir (connexion coupée, pooler en mode transaction). pg-boss
+  // le signale par un AVERTISSEMENT et retombe sur le sondage seul, ce qui reste correct mais rend les entrants
+  // deux fois plus lents à démarrer. Un repli muet serait pire que le repli lui-même : on croirait l'écouteur
+  // actif. On le journalise et on ALERTE, au même titre qu'une erreur.
+  queue.onWarning((avertissement) => {
+    const msg = avertissement instanceof Error ? avertissement.message : JSON.stringify(avertissement);
+    // eslint-disable-next-line no-console
+    console.warn('[pg-boss:worker] avertissement', msg);
+    alert('pgboss-avertissement', `avertissement pg-boss : ${msg}`);
   });
   await queue.start();
 

@@ -1,7 +1,7 @@
 import { PgBoss } from 'pg-boss';
-import type { MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
+import type { ConstructorOptions, MaintenanceOptions, SchedulingOptions, WorkOptions } from 'pg-boss';
 import type { Queue } from './queue';
-import { dlqName, pollingSecondsFor } from './names';
+import { dlqName, notifieePour, pollingSecondsFor } from './names';
 import { pgSsl } from '../db/ssl';
 
 export interface PgBossPoolOpts {
@@ -28,6 +28,36 @@ export interface PgBossMaintenanceOpts {
    * requêtes/jour par instance pour une fonctionnalité que ce projet n'utilise pas dans un chemin sensible.
    */
   flowIntervalSeconds?: number;
+}
+
+/**
+ * Option d'ÉCOUTE des notifications de l'instance pg-boss.
+ */
+export interface PgBossNotifyOpts {
+  /**
+   * `true` = cette instance OUVRE un écouteur LISTEN/NOTIFY, sur une connexion dédiée (pg-boss ne la prend pas
+   * dans le pool de requêtes), et ses workers sont alors réveillés à l'instant où un job est créé sur une file
+   * notifiée. À poser sur l'instance qui DÉPILE, exactement comme `supervise` : l'API ne fait qu'empiler, un
+   * écouteur y consommerait une connexion pour rien. Côté producteur, aucune option n'est nécessaire, le
+   * `pg_notify` est émis par pg-boss d'après le drapeau de la FILE.
+   *
+   * Défaut pg-boss : `false`.
+   */
+  ecouteNotifications?: boolean;
+}
+
+/**
+ * Option d'écoute passée à pg-boss. Fonction PURE et exportée pour être testée, même raison et même piège que
+ * `poolOptions` : `ecouteNotifications: false` est une valeur explicite, une option absente doit rester absente.
+ *
+ * ⚠️ Le type de retour vient de pg-boss pour la même raison que `maintenanceOptions` : un nom d'option mal
+ * orthographié compilerait et ne ferait RIEN, et un écouteur qu'on croit actif alors qu'il ne l'est pas est
+ * exactement le mode de panne que ce fichier passe son temps à éviter.
+ */
+export function notifyOptions(opts: PgBossNotifyOpts): Pick<ConstructorOptions, 'useListenNotify'> {
+  return {
+    ...(opts.ecouteNotifications !== undefined ? { useListenNotify: opts.ecouteNotifications } : {}),
+  };
 }
 
 /**
@@ -100,7 +130,11 @@ export class PgBossQueue implements Queue {
   private readonly travaillees: string[] = [];
   private readonly retryLimit: number;
 
-  constructor(connectionString: string, schema = 'pgboss', opts: PgBossPoolOpts & PgBossMaintenanceOpts & { retryLimit?: number } = {}) {
+  constructor(
+    connectionString: string,
+    schema = 'pgboss',
+    opts: PgBossPoolOpts & PgBossMaintenanceOpts & PgBossNotifyOpts & { retryLimit?: number } = {},
+  ) {
     this.retryLimit = opts.retryLimit ?? 5;
     this.boss = new PgBoss({
       connectionString,
@@ -108,6 +142,7 @@ export class PgBossQueue implements Queue {
       ssl: pgSsl(),
       ...poolOptions(opts),
       ...maintenanceOptions(opts),
+      ...notifyOptions(opts),
     });
   }
 
@@ -118,6 +153,17 @@ export class PgBossQueue implements Queue {
    */
   onError(cb: (err: unknown) => void): void {
     this.boss.on('error', cb);
+  }
+
+  /**
+   * Branche un observateur sur les AVERTISSEMENTS de pg-boss. Le seul qui compte aujourd'hui est
+   * `listen_notify_unavailable` : l'écouteur n'a pas pu s'établir, et l'instance retombe SILENCIEUSEMENT sur
+   * le sondage seul. C'est un repli correct (cf. `notifyPollingIntervalSeconds` dans `work`), mais un repli
+   * muet est un réglage qu'on croit actif : sans cet observateur, on croirait les entrants réveillés à
+   * l'instant alors qu'ils attendraient leur tour d'horloge, et personne ne le saurait.
+   */
+  onWarning(cb: (avertissement: unknown) => void): void {
+    this.boss.on('warning', cb);
   }
 
   async start(): Promise<void> {
@@ -153,6 +199,13 @@ export class PgBossQueue implements Queue {
       retryLimit: this.retryLimit,
       retryBackoff: true,
     });
+    // 🔴 `createQueue` est un `ON CONFLICT DO NOTHING` : sur une file qui EXISTE DÉJÀ (donc toutes celles de
+    // la production), lui passer `notify: true` ne ferait strictement RIEN, en silence. C'est le mode de panne
+    // que ce fichier passe son temps à éviter, et il se serait présenté ici sous sa forme la plus discrète : la
+    // ligne aurait été écrite, relue, et n'aurait jamais réveillé personne. Le drapeau se pose donc par
+    // `updateQueue`, que pg-boss applique bien à une file existante (contrairement à `policy` et `partition`,
+    // qu'il refuse de changer après création).
+    if (notifieePour(name)) await this.boss.updateQueue(name, { notify: true });
     this.ensured.add(name);
   }
 
@@ -189,9 +242,21 @@ export class PgBossQueue implements Queue {
     // penser à sa cadence retombe alors sur un défaut sûr au lieu de rouvrir la fuite.
     // Concurrence PAR GROUPE (ex. par tenant) : voir `workConcurrencyOptions`. Absente par défaut, donc les
     // files existantes (webhook, campaign-run, sweepers) gardent strictement le comportement d'aujourd'hui.
+    // `notifyPollingIntervalSeconds` : la cadence de sondage QUAND la notification est active. On la pose
+    // ÉGALE à la cadence de base, là où pg-boss propose 30 s par défaut, et c'est le coeur de la sûreté de ce
+    // changement : si l'écouteur tombe (connexion coupée, pooler repassé en mode transaction, base qui ne sait
+    // pas faire), le sondage redevient le seul chemin et il doit alors valoir EXACTEMENT ce qu'il valait avant.
+    // Le pire cas est donc le comportement d'hier, jamais une latence de 30 s. Relâcher ce filet vaudrait
+    // quinze fois moins d'egress sur les entrants : c'est une SECONDE décision, à prendre sur des mesures de
+    // production une fois l'écouteur éprouvé, pas ici et pas en même temps.
     await this.boss.work<unknown>(
       name,
-      { batchSize: 1, pollingIntervalSeconds: pollingSecondsFor(name), ...workConcurrencyOptions(opts ?? {}) },
+      {
+        batchSize: 1,
+        pollingIntervalSeconds: pollingSecondsFor(name),
+        notifyPollingIntervalSeconds: pollingSecondsFor(name),
+        ...workConcurrencyOptions(opts ?? {}),
+      },
       async (jobs) => {
         for (const job of jobs) {
           await handler(job.data);
