@@ -77,8 +77,14 @@ export async function repondreDansLaFenetre(
   if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
 
   const messageId = await deps.sendReply(tenantId, phoneNumberId, ctx.waId, texte);
-  // Le fil est PRIS : le scénario cesse d'avancer sur ce contact, et une campagne ne l'écrasera pas. Vrai
+  // Le fil est PRIS : le scénario cesse d'avancer tout seul sur ce contact, et MBA cesse de répondre. Vrai
   // aussi quand c'est un agent tiers qui écrit : ce qui compte est qu'un tiers parle, pas lequel.
+  //
+  // ⚠️ Ce que ça n'arrête PAS, et ce commentaire a affirmé le contraire jusqu'au 2026-09-02 : une CAMPAGNE
+  // part quand même. C'est délibéré et écrit dans `executor.ts` (`ignoreHumanControl`) : la campagne est
+  // déclenchée par un opérateur, donc c'est un humain qui a la main, et elle REPREND la conduite du fil pour
+  // pouvoir avancer ensuite. Deux règles écrites en sens contraire valent moins qu'une seule, même imparfaite.
+  // Le câblage réel est gardé par `tests/campagne-controle-humain.test.ts`.
   await deps.takeControl?.(tenantId, ctx.waId).catch(() => {});
   await deps.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur);
   return { messageId };

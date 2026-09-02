@@ -13,6 +13,13 @@ Décision qui manque : le chiffre du plafond du lot 3 (proposition faite, 5 000)
 l'a annoncé un jour de trop : le nouveau plan a vécu quelques heures sans être référencé de nulle part, donc
 introuvable depuis les points d'entrée. Un plan qu'aucun fichier lu au démarrage ne nomme n'existe pas.
 
+**Ajouté le 2026-09-02 (lot 5) : écrire le profil `equite` du banc de charge**, et le faire APRÈS le lot 6.
+`docs/SLO-2026-09-01.md` l'annonçait comme une commande existante alors que `scripts/banc-charge.mts` ne la
+contient pas ; la promesse est retirée du document. L'écrire avant que la concurrence par groupe ne change
+n'aurait mesuré que la configuration d'avant. Il faut : deux espaces sur la même file à groupe, l'un bavard et
+l'autre discret, et la mesure de l'attente du DISCRET, seuil 5 minutes. ⚠️ Il exige un Postgres jetable ET un
+worker en face, sinon il mesure une file morte.
+
 Ce `todo.md` reste le **backlog de fond et l'historique des lots livrés**. Il ne porte PAS le séquencement : un
 ordre écrit à deux endroits diverge, c'est déjà arrivé entre `PLAN.md` et ce fichier.
 
