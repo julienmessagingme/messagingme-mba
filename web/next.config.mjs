@@ -25,6 +25,12 @@ const nextConfig = {
       // publié : ce rewrite est le SEUL chemin qui les relie. Le modifier casse des liens DÉJÀ LIVRÉS dans
       // des messages, qu'on ne peut plus corriger.
       { source: '/r/:code', destination: `${backend}/r/:code` },
+      // 🔴 LA FORME ATTRIBUÉE, ET IL EN FAUT DEUX. Un rewrite `/r/:code` ne capture QU'UN segment : sans
+      // cette seconde ligne, `/r/<code>/<jeton>` n'atteint jamais le backend et Next rend une 404. Découvert
+      // en production le 2026-09-02, sur un template déjà APPROUVÉ par Meta portant `/r/<code>/{{1}}` : le
+      // lien aurait été mort pour tous ses destinataires au premier envoi. `tests/web-rewrites-liens.test.ts`
+      // garde la parité entre les routes montées et les rewrites.
+      { source: '/r/:code/:jeton', destination: `${backend}/r/:code/:jeton` },
       // Visuels des messages RCS. Chemin COURT et sans `/api` pour la même raison que `/r/` : c'est une
       // adresse que l'OPÉRATEUR TÉLÉCOM va chercher, et qui doit finir par `.jpg`/`.png`/`.gif` pour qu'il
       // accepte l'envoi. ⚠️ Servi par le backend, qui n'a aucun port hôte publié : ce rewrite est le SEUL
