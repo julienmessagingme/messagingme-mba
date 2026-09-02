@@ -8,6 +8,7 @@ import { PgEventStore } from '../../src/webhooks/store';
 import { PgTemplateHintStore } from '../../src/crm/template-hints.pg';
 import { PgUserStore } from '../../src/user/store.pg';
 import { PgTrackedLinkStore } from '../../src/links/tracked-links.pg';
+import { fabriquerJeton, estJeton } from '../../src/links/jeton-contact';
 import { newTrackingCode } from '../../src/ids/code';
 import { PgAuthTokenStore } from '../../src/auth/token-store.pg';
 import { PgUserFieldStore } from '../../src/crm/field-store.pg';
@@ -233,8 +234,11 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect((await store.getByCode(code))?.destination).toBe('https://client.fr/promo-v2');
 
     await store.confirm(tenantId, [code]);
+    // `avecJeton: true` : tout lien réservé depuis le 2026-09-02 porte le suffixe variable qui fait voyager
+    // le jeton du destinataire. C'est cette colonne, et elle seule, qui dit à l'envoi de fournir un composant
+    // de bouton ; se tromper fait échouer l'appel avec un 132000, dans les deux sens.
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([
-      { code, templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 1, destination: 'https://client.fr/promo-v2' },
+      { code, templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 1, destination: 'https://client.fr/promo-v2', avecJeton: true },
     ]);
 
     // Comptage des clics sur la période.
@@ -242,6 +246,40 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await store.recordClick(code, tenantId);
     await store.recordClick(code, tenantId);
     expect(await store.countClicks(tenantId, [code], plage)).toEqual({ [code]: 2 });
+
+    /**
+     * 🔴 QUI a cliqué (migration 0106). Trois propriétés, et chacune répond à une façon de se tromper.
+     */
+    const contactId = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`,
+      [tenantId, `+3360000${String(Date.now()).slice(-4)}`],
+    )).rows[0]!.id;
+
+    const jetons = await store.jetonsPourContacts(tenantId, [contactId], fabriquerJeton);
+    const jeton = jetons.get(contactId)!;
+    expect(estJeton(jeton), 'le jeton doit avoir la forme attendue').toBe(true);
+
+    // 1. Il est STABLE : un second envoi au même contact ne doit pas changer son jeton, sinon les liens déjà
+    // livrés cesseraient de lui être attribués.
+    expect((await store.jetonsPourContacts(tenantId, [contactId], fabriquerJeton)).get(contactId)).toBe(jeton);
+
+    // 2. Il se résout dans SON espace, et seulement là : l'espace vient du lien cliqué, pas de l'URL.
+    expect(await store.contactParJeton(tenantId, jeton)).toBe(contactId);
+    const autreEspace = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-jeton-2') returning id`)).rows[0]!.id;
+    try {
+      expect(await store.contactParJeton(autreEspace, jeton), 'un jeton d’un autre espace ne doit rien résoudre').toBeNull();
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autreEspace]).catch(() => {});
+    }
+
+    // 3. Le clic ATTRIBUÉ porte son contact, et le clic anonyme reste possible : les templates approuvés
+    // avant cette migration n'ont pas de jeton dans leur URL et n'en auront jamais.
+    await store.recordClick(code, tenantId, contactId);
+    const clics = await pool.query<{ contact_id: string | null }>(
+      `select contact_id from tracked_link_clicks where code = $1 order by id`,
+      [code],
+    );
+    expect(clics.rows.map((r) => r.contact_id)).toEqual([null, null, contactId]);
 
     // Une plage ANTÉRIEURE ne voit rien : le compteur suit la période de l'écran.
     const hier = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
