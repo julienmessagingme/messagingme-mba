@@ -235,6 +235,40 @@ export const schema = z.object({
    * arithmétique-là, pas seulement de changer la variable.
    */
   WEBHOOK_CONCURRENCY: z.coerce.number().default(3),
+  /**
+   * TOURS D'AGENT EN VOL, et plafond par ESPACE (lot 6 du plan post-audit, 2026-09-02).
+   *
+   * 🔴 Le défaut de pg-boss est `localConcurrency: 1` (vérifié dans sa source). Cette file traitait donc UN
+   * tour à la fois POUR LA FLOTTE ENTIÈRE, avec un plafond de 120 s par appel au modèle : à 25 clients, cela
+   * faisait 30 tours par heure pour tout le monde, toutes conversations mêlées.
+   *
+   * Pourquoi 12 est sûr, et ce n'est pas une mesure mais une arithmétique : un tour passe l'essentiel de son
+   * temps à ATTENDRE le modèle, et il ne tient AUCUNE connexion pendant cette attente (les stores font
+   * `pool.query`, qui prend et rend la connexion par instruction). Douze tours en vol ne réservent donc pas
+   * douze connexions du pool de 8 (`DB_POOL_MAX`). ⚠️ Cette phrase cesserait d'être vraie le jour où un tour
+   * ouvrirait une transaction autour de l'appel au modèle : ce serait alors ce nombre-là qu'il faudrait revoir.
+   *
+   * Quatre par espace : trois clients actifs se partagent équitablement, et un client bavard ne prend pas les
+   * douze places. ⚠️ Les deux vont ENSEMBLE : `groupConcurrency` est un no-op tant que `concurrency` vaut 1.
+   *
+   * Point de départ PRUDENT, pas une mesure. En configuration pour être ajusté après le lot 7 (la mesure de
+   * l'attente du pool) sans redéployer de code.
+   */
+  AGENT_TURN_CONCURRENCY: z.coerce.number().default(12),
+  AGENT_TURN_GROUP_CONCURRENCY: z.coerce.number().default(4),
+  /**
+   * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker.
+   *
+   * 🔴 Sur cette file, le GROUPE compte bien plus que le nombre. Passer de 1 à 3 ne change presque rien au
+   * débit ; ce qui change tout, c'est qu'un client qui importe dix mille contacts déclenche dix mille analyses
+   * et ne puisse plus les faire passer AVANT la première analyse de tous les autres.
+   */
+  ANALYZE_CONVERSATION_CONCURRENCY: z.coerce.number().default(3),
+  /**
+   * Événements d'automation en vol. Même raison et même plafond par espace de 1 : une rafale d'un client
+   * gelait tous les autres, cette file traitant un job à la fois pour la flotte entière.
+   */
+  AUTOMATION_EVENT_CONCURRENCY: z.coerce.number().default(3),
   /** Clé API Resend pour le formulaire de support (phase 7). Vide -> support indisponible (503, pas de crash). */
   RESEND_API_KEY: z.string().default(''),
   /** Expéditeur des emails de support. `onboarding@resend.dev` marche sans domaine vérifié (mode test :

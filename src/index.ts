@@ -48,7 +48,7 @@ import { PgOpsStore } from './ops/store.pg';
 import { PgWorkerHeartbeatStore } from './ops/heartbeat-store.pg';
 import { makeDbReadinessCheck } from './db/readiness';
 import { PgAutomationStore } from './automation/store.pg';
-import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from './automation/event-job';
+import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { RateLimiter } from './auth/rate-limit';
 import { PgWorkflowStore } from './workflow/store.pg';
@@ -343,7 +343,7 @@ async function main(): Promise<void> {
           : { statut: res.status };
       },
       publish: async (tenantId, event) => {
-        await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId, event } satisfies AutomationEventJob);
+        await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob);
       },
     },
     webhooksAdmin: {
@@ -556,7 +556,7 @@ async function main(): Promise<void> {
         secret: config.HUBSPOT_SERVICE_SECRET,
         findWaId: async (tenant: string, waId: string) => ((await contactStore.findIdByWaId(tenant, waId)) ? waId : null),
         publish: async (tenantId: string, event: { kind: 'hubspot_deal_stage'; waId: string; pipelineId: string; stageId: string }) => {
-          await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId, event } satisfies AutomationEventJob);
+          await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob);
         },
       },
     } : {}),
@@ -965,7 +965,7 @@ async function main(): Promise<void> {
         const waId = await contactStore.waIdOfContact(tenant, contactId);
         if (!waId) return;
         for (const tag of tags) {
-          await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
+          await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
         }
       },
     },
@@ -1140,7 +1140,7 @@ async function main(): Promise<void> {
         //    Isolé : ni la fiche ni l'automation ne doivent faire échouer la réception d'un message.
         try {
           const issue = await contactStore.upsertFromInbound(tenant, mo.from, null);
-          await queue.enqueue(AUTOMATION_EVENT_QUEUE, {
+          await enfilerEvenementAutomation(queue, {
             tenantId: tenant,
             event: { kind: 'message', waId: mo.from, body: mo.kind === 'text' ? mo.text : null, isNewContact: issue === 'created', channel: 'rcs' },
           } satisfies AutomationEventJob);

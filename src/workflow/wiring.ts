@@ -28,7 +28,7 @@ import { TraceurLiensRcs } from '../links/traceur-rcs';
 import { fabriquerJeton } from '../links/jeton-contact';
 import { newTrackingCode } from '../ids/code';
 import { decryptSecret } from '../crypto/secretbox';
-import { AUTOMATION_EVENT_QUEUE, type AutomationEventJob } from '../automation/event-job';
+import { enfilerEvenementAutomation, type AutomationEventJob } from '../automation/event-job';
 import { AGENT_TURN_QUEUE, type AgentTurnJob } from '../agent/turn-job';
 import { PgAgentSessionStore } from '../agent/session-store.pg';
 import { creerPoserTagAgent } from '../agent/poser-tag';
@@ -58,7 +58,12 @@ export interface WorkflowRuntimeDeps {
   pool: Pool;
   /** File pg-boss : publie « tag ajouté » pour les automations, et les TOURS d'agent. Aucun `work` ici : ce
    *  module ne fait qu'émettre, la consommation appartient au worker. */
-  queue: { enqueue(name: string, data: unknown): Promise<void> };
+  /**
+   * La file, réduite à ce que le câblage en fait. ⚠️ Les OPTIONS sont déclarées, et ce n'est pas décoratif :
+   * sans elles, un appelant qui passe une clé de groupe la voit disparaître en silence, donc son job échappe
+   * au plafond par espace. C'est la même famille d'erreur que le passe-plat du 131008.
+   */
+  queue: { enqueue(name: string, data: unknown, opts?: { groupId?: string; expireInSeconds?: number }): Promise<void> };
   /** DRY_RUN : aucun appel Meta. ⚠️ À passer explicitement : l'oublier ferait envoyer pour de vrai. */
   dryRun: boolean;
   repo: PgCampaignRepo;
@@ -323,7 +328,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Elles vont par paire : ouvrir une session sans enfiler le tour laisserait une session vivante et muette,
     // enfiler sans session ferait échouer chaque tour sur un verrou qui n'existe pas.
     agentSessions,
-    enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job),
+    // Le groupe est l'ESPACE (lot 6 du plan post-audit) : sans lui, un client bavard occupe toutes les places
+    // de la file et les conversations des autres attendent derrière les siennes.
+    enqueueAgentTurn: (job: AgentTurnJob) => queue.enqueue(AGENT_TURN_QUEUE, job, { groupId: job.tenantId }),
     // Reprise de main par l'app au lancement d'une CAMPAGNE (sans `only` : on reprend même un fil tenu par un
     // humain ou par MBA, puisque c'est l'opérateur lui-même qui déclenche l'envoi).
     reclaimControl: async (tenant, waId) => { await inboxStore.setControlOwner(tenant, waId, 'app_workflow'); },
@@ -365,7 +372,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     emitTagAdded: async (tenant, waId, tag) => {
       const clean = tag.trim().slice(0, 64);
       if (clean === '') return;
-      await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId: tenant, event: { kind: 'tag_added', waId, tag: clean } } satisfies AutomationEventJob);
+      await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag: clean } } satisfies AutomationEventJob);
     },
     setField: async (tenant, waId, key, value) => { await contactStore.mergeFieldsByPhone(tenant, waId, { [key]: value }); },
     // Retrait : même normalisation (trim + slice 64) que l'ajout, pour matcher le tag stocké. Le référentiel Tags
@@ -647,7 +654,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     ajouterAuContact: (tenant, waId, tag) => contactStore.addTagsByPhoneReturningNew(tenant, waId, [tag]),
     declarer: async (tenant, tag) => { await tagStore.create(tenant, tag); },
     emettre: async (tenant, waId, tag) => {
-      await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
+      await enfilerEvenementAutomation(queue, { tenantId: tenant, event: { kind: 'tag_added', waId, tag } } satisfies AutomationEventJob);
     },
   });
 

@@ -23,6 +23,30 @@ export interface AutomationEventJob {
 export const AUTOMATION_EVENT_QUEUE = 'automation-event';
 
 /**
+ * LE SEUL CHEMIN D'ENFILEMENT DE CETTE FILE (lot 6 du plan post-audit, 2026-09-02).
+ *
+ * 🔴 Pourquoi une fonction plutôt que six `queue.enqueue` recopiés. La clé de groupe est ce qui empêche un
+ * client bavard d'occuper toutes les places de la file : un enfilement qui l'oublie produit un job SANS
+ * groupe, donc un job qui échappe au plafond par espace, et rien ne le signale. Six recopies, c'est six
+ * occasions d'oublier, et le dépôt a déjà payé ce prix-là (le 131008 du 2026-09-02 venait d'une dépendance
+ * câblée d'un côté et oubliée de l'autre).
+ *
+ * Le groupe est le TENANT, et il se déduit du job lui-même : il n'y a donc rien à passer, donc rien à oublier.
+ *
+ * ⚠️ Le paramètre est le PLUS PETIT type qui convient, et pas `Queue`. Un appelant (le câblage de scénario)
+ * ne reçoit qu'une file réduite à `enqueue` ; exiger la file complète l'aurait obligé à s'élargir pour rien.
+ * Ce type-là, lui, DÉCLARE les options : la version étroite d'origine ne les nommait pas, si bien qu'un
+ * appelant qui aurait passé un groupe l'aurait vu disparaître sans un mot.
+ */
+export interface FileDEvenements {
+  enqueue(name: string, data: unknown, opts?: { groupId?: string }): Promise<void>;
+}
+
+export async function enfilerEvenementAutomation(queue: FileDEvenements, job: AutomationEventJob): Promise<void> {
+  await queue.enqueue(AUTOMATION_EVENT_QUEUE, job, { groupId: job.tenantId });
+}
+
+/**
  * Coerce un payload de file (JSON opaque, potentiellement d'une version antérieure du code) en job valide.
  * null = payload inexploitable -> le worker l'ignore proprement au lieu de planter la file.
  */

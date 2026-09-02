@@ -44,7 +44,7 @@ import { PgAutomationStore } from './automation/store.pg';
 import { runAutomations } from './automation/runner';
 import { PgWebhookStore } from './webhook-entrant/store.pg';
 import { runDateSweep } from './automation/date-sweep';
-import { AUTOMATION_EVENT_QUEUE, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
+import { AUTOMATION_EVENT_QUEUE, enfilerEvenementAutomation, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
 import type { AutomationTriggerKind } from './automation/match';
 import { buildWorkflowRuntime } from './workflow/wiring';
 import { AGENT_TURN_QUEUE, parseAgentTurnJob } from './agent/turn-job';
@@ -335,7 +335,10 @@ async function main(): Promise<void> {
         alert('webhook-feed', `alimentation d'une campagne au fil de l'eau en échec : ${err instanceof Error ? err.message : err}`);
       }
     }
-  });
+    // Groupe = l'ESPACE (lot 6 du plan post-audit). Une rafale d'automations d'un client gelait tous les
+    // autres : cette file traitait UN job à la fois pour la flotte entière. Les deux options vont ensemble,
+    // `groupConcurrency` étant un no-op tant que `concurrency` vaut 1.
+  }, { concurrency: config.AUTOMATION_EVENT_CONCURRENCY, groupConcurrency: 1 });
 
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(data, {
@@ -667,8 +670,11 @@ async function main(): Promise<void> {
       }
     };
 
+    // Groupe = l'ESPACE (lot 6 du plan post-audit). Sur cette file, l'équité compte bien plus que le débit :
+    // un client qui importe dix mille contacts déclenche dix mille analyses, et sans groupe elles passent
+    // toutes AVANT la première analyse de tous les autres clients.
     const onConversationReady = (conversationId: string, tenantId: string): Promise<void> =>
-      queue.enqueue('analyze-conversation', { conversationId, tenantId });
+      queue.enqueue('analyze-conversation', { conversationId, tenantId }, { groupId: tenantId });
     await queue.work('analyze-conversation', (data) =>
       analyzeConversationJob(data, {
         store: analysisStore,
@@ -676,6 +682,9 @@ async function main(): Promise<void> {
         onAnalyzed, // Pièce 2 : push connecteur (inerte si URL vide) ; consommé aussi par la pièce 3 plus tard
         model: { provider: config.LLM_PROVIDER, model: config.LLM_MODEL },
       }),
+      // ⚠️ Les DEUX options vont ensemble : `groupConcurrency` est un no-op tant que `concurrency` vaut 1,
+      // donc poser le groupe seul aurait donné une équité qu'on croirait active et qui ne le serait pas.
+      { concurrency: config.ANALYZE_CONVERSATION_CONCURRENCY, groupConcurrency: 1 },
     );
     const analysisSweep = (): Promise<void> =>
       runAnalysisSweep({
@@ -1077,7 +1086,7 @@ async function main(): Promise<void> {
         automations: (tenant) => automationStore.listEnabled(tenant, ['avant_date']),
         timeZone: async (tenant) => (await settingsStore.get(tenant)).timezone,
         candidats: (tenant, autoId, cle, basse, haute) => automationStore.contactsDusPourDate(tenant, autoId, cle, basse, haute),
-        publish: async (tenantId, event) => { await queue.enqueue(AUTOMATION_EVENT_QUEUE, { tenantId, event } satisfies AutomationEventJob); },
+        publish: async (tenantId, event) => { await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob); },
         toleranceMinutes: config.AUTOMATION_DATE_TOLERANCE_MINUTES,
         // eslint-disable-next-line no-console
         log: (m) => console.log(m),
@@ -1304,7 +1313,11 @@ async function main(): Promise<void> {
       if (res.fait === 'erreur') {
         alert('agent-turn', `tour d'agent en échec (session ${job.sessionId}, sortie ${res.sortie ?? '?'})`);
       }
-    });
+      // 🔴 LA FILE QUI COMPTE (lot 6 du plan post-audit). Elle traitait UN tour à la fois pour la flotte
+      // entière, avec un plafond de 120 s par appel au modèle : à 25 clients, cela faisait 30 tours par heure
+      // POUR TOUT LE MONDE. Le groupe est l'espace, et le plafond par espace garantit qu'un client bavard
+      // n'occupe pas les douze places à lui seul.
+    }, { concurrency: config.AGENT_TURN_CONCURRENCY, groupConcurrency: config.AGENT_TURN_GROUP_CONCURRENCY });
   } else {
     // eslint-disable-next-line no-console
     console.warn('agent-turn: file NON consommée (AI_GATEWAY_API_KEY absente). Les blocs agent resteront muets.');
