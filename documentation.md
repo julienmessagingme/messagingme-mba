@@ -2058,6 +2058,80 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
+## DEPLOYE le 2026-09-02 : tracer et attribuer les liens des messages RCS (migration 0107)
+
+Julien : « il faut aussi que ça marche si j'envoie un RCS hein ? ». Le pendant RCS de l'attribution des clics
+livrée le même jour pour WhatsApp (0106).
+
+🔴 **LA 0106 S'ÉTAIT TROMPÉE DE CLÉ, et c'est le vrai enseignement du lot.** Elle avait posé
+`tracked_links.rcs_message_id`, une référence vers `rcs_messages`, la BIBLIOTHÈQUE. La reconnaissance faite en
+écrivant le code a montré que cette clé ne couvrait presque rien : une campagne RCS porte son message
+EMBARQUÉ (`campaigns.rcs_message`), un bloc de scénario aussi (dans le graphe), la réponse rapide convertie en
+RCS le fabrique à la volée, et SEUL l'envoi manuel depuis l'inbox lit la bibliothèque par identifiant. La clé
+aurait donc tracé le cas le moins utile et laissé sans mesure les deux qui comptent.
+
+**La règle à en tirer** : une clé étrangère choisie sur le SCHÉMA, sans avoir suivi les appelants réels,
+désigne la table qu'on a sous les yeux, pas celle qui produit la donnée. Ici l'erreur a coûté une migration
+corrective écrite le jour même (colonne encore vide, 0 ligne vérifiée en base) ; une semaine plus tard il
+aurait fallu migrer des données au lieu de retirer une colonne.
+
+**La clé retenue : `(tenant_id, destination)`.** Elle se déduit de la nature du canal, pas d'un goût. La clé
+WhatsApp (template, langue, carte, bouton) sert l'IDEMPOTENCE DE LA RÉSERVATION : un template est soumis puis
+figé, et le resoumettre doit retrouver le MÊME code sinon les messages déjà livrés pointent une ligne
+orpheline. Un message RCS n'est soumis à personne : il ne reste qu'à ne pas créer une ligne par destinataire,
+qu'un lien d'hier résolve encore, et que les clics s'accumulent. La destination fait les trois, et c'est la
+clé la plus simple qui le fasse.
+
+**Ce qui a emporté la décision : le point de passage unique.** Les quatre chemins d'envoi RCS convergent DÉJÀ
+sur `RcsSender.sendTo`, dont le commentaire dit pourquoi les mises en forme vivent là (« y penser dans chaque
+appelant serait exactement le genre d'oubli qui se voit six mois plus tard »). À cet endroit, la seule
+identité disponible est l'URL. Toute autre clé obligeait à réécrire les liens dans quatre appelants.
+
+**Deux conséquences heureuses de réécrire À L'ENVOI :**
+- aucun `{{1}}`, donc **aucun risque de 132000** et **aucune garde « tout ou rien »** comme côté WhatsApp : sans
+  jeton, on envoie simplement `/r/<code>`, que la route sert comme un lien anonyme ;
+- le message STOCKÉ garde l'adresse saisie par l'utilisateur, donc **rien à ré-habiller à l'affichage**,
+  contrairement aux templates (`rehabillerBoutons`). Un item du plan initial est mort de lui-même.
+
+**Le cache est structurel, pas une optimisation.** `TraceurLiensRcs` mémorise `tenant\0adresse -> code` pour la
+durée du process : sans lui, une campagne de 5 000 destinataires ferait 5 000 allocations de la même adresse
+sur le chemin le plus chaud du produit. Il est sûr POUR TOUJOURS parce que l'association est immuable (index
+unique de la 0107, aucun code jamais réattribué). Éviction FIFO bornée à 1000 entrées.
+
+**Le jeton : batch côté masse, unitaire côté scénario.** Une campagne charge les jetons de tous ses
+destinataires en UN énoncé (`jetonsPourContacts`), et seulement si le message porte un lien traçable
+(`CampaignSender.aBesoinDeJeton`, calculé une fois sur le message figé). Un scénario ou l'inbox, qui écrivent à
+une personne à la fois, lisent par numéro (`jetonPourE164`), et seulement si le message porte un lien : on ne
+fabrique pas d'identifiant public pour quelqu'un à qui on n'envoie rien à cliquer.
+
+**Ce qui rend enfin l'attribution VISIBLE : « Engagé » compte le clic.** La 0106 ÉCRIVAIT `contact_id` sur
+chaque clic mais rien ne le LISAIT nulle part. Et l'indicateur « engagé » du mini-CRM ne regardait que les
+messages entrants, or un bouton URL fait SORTIR le contact de la conversation : la personne la plus engagée de
+la campagne s'affichait comme n'ayant pas réagi. Les deux trous se ferment l'un l'autre. Seuls les clics
+ATTRIBUÉS créditent quelqu'un ; un clic anonyme (template d'avant le 2026-09-02) ne crédite personne, ce qui
+vaut mieux que d'attribuer un geste à la mauvaise personne.
+
+**Mesures : un espace de noms de handle à part (`lien:<i>`), et c'était le piège.** Les sorties d'un bloc RCS
+s'appellent déjà `btn:0`, `btn:1`… mais elles ne comptent QUE les boutons RÉPONSE (`normaliserPostbacks`), un
+bouton lien ne revenant jamais dans la conversation. Numéroter les liens dans ce même espace aurait fait porter
+« a cliqué sur le lien » et « a cliqué Oui » par la MÊME clé sur un même bloc, y compris dans les tableaux
+DÉJÀ enregistrés par un opérateur. L'index est celui de la liste plate `data.suggestions`, que le serveur
+numérote et que l'écran relit pour nommer le bouton : les deux ne peuvent pas diverger sur l'ordre.
+
+⚠️ Un lien RCS sans code alloué vaut **zéro** au lieu de disparaître de l'écran. Ce n'est pas une anomalie
+comme côté WhatsApp : le code naît au PREMIER ENVOI, pas à la soumission. Zéro est alors la vérité exacte
+(rien n'est parti, personne n'a cliqué), et c'est ce qui rend la mesure cochable avant que le scénario n'ait
+tourné.
+
+**Une adresse démesurée n'est PAS tracée** (`URL_TRACABLE_MAX = 1000`) : la clé d'unicité porte sur
+`destination`, et un index btree refuse une valeur trop longue, ce qui ferait échouer l'allocation donc
+l'envoi. Un lien non mesuré est un défaut de mesure ; un message qui ne part pas est un défaut de produit.
+
+⚠️ **Erreur de méthode à ne pas refaire** : un `git checkout <fichier>` pour annuler une mutation de test a
+effacé les modifications NON COMMITÉES du même fichier. Sur du travail non commité, on restaure depuis une
+copie, jamais depuis l'index.
+
+---
 ## DEPLOYE le 2026-09-02 : voir et rejouer les jobs MORTS
 
 Le dépôt ALERTAIT déjà quand une file d'échec se remplissait, mais la seule reprise possible était de renvoyer

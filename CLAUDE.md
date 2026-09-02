@@ -51,10 +51,26 @@ documents le portaient, et les trois étaient faux : `PLAN.md` en retard de 43 m
 menait à écrire par-dessus une migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Un compteur
 recopié est un compteur qui dérive. Ailleurs, on met un POINTEUR vers cette ligne.
 
-**Dernière appliquée : 0105** (`connector_requests` + `agent_tools.request_id`, les appels de connecteur rangés
-dans la bibliothèque du workspace au lieu d'être redécrits par agent), passée le 2026-09-02 avec la séquence
-complète (build de l'image, vérification que la migration est DEDANS, `migrate`, vérification en base).
-**Prochaine libre = 0106.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+**Dernière appliquée : 0107** (les liens tracés des messages RCS, clés sur leur DESTINATION), passée le
+2026-09-02 avec la séquence complète (build de l'image, vérification que la migration est DEDANS, `migrate`,
+vérification en base).
+**Prochaine libre = 0108.** En pratique on applique aussi via `npm run migrate` en local (même Supabase prod).
+
+🔴 **0107 est BLOQUANTE, et elle CORRIGE la moitié RCS de la 0106, qui s'était trompée de clé.** La 0106
+rattachait un lien RCS à la BIBLIOTHÈQUE de messages (`rcs_messages`). Or une campagne porte son message
+EMBARQUÉ, un bloc de scénario aussi, et la réponse rapide convertie en RCS le fabrique à la volée : seul
+l'envoi manuel depuis l'inbox passe par la bibliothèque. Cette clé aurait donc tracé le cas le moins utile et
+laissé sans mesure les deux qui comptent. **La leçon vaut au-delà du RCS : une clé étrangère choisie sur le
+schéma, sans avoir suivi les appelants réels, désigne la table qu'on a sous les yeux, pas celle qui produit la
+donnée.** Corrigée pendant que la colonne était encore vide (0 ligne, vérifié en base) ; une semaine plus tard
+il aurait fallu la migrer au lieu de la retirer.
+
+⚠️ **0107 se relit comme une règle de canal.** La clé d'un lien WhatsApp (template, langue, carte, bouton) sert
+l'IDEMPOTENCE DE LA RÉSERVATION, parce qu'un template est soumis puis figé. Un message RCS n'est soumis à
+personne, il est composé à l'envoi : il ne reste qu'à ne pas créer une ligne par destinataire, qu'un lien
+d'hier résolve encore, et que les clics s'accumulent. `(tenant_id, destination)` fait les trois. Deux
+conséquences heureuses : aucun `{{1}}`, donc **aucun risque de 132000 ni de « tout ou rien »** côté RCS ; et le
+message STOCKÉ garde l'adresse saisie, donc **rien à ré-habiller à l'affichage**, contrairement aux templates.
 
 ⚠️ **0105 n'était PAS bloquante**, et c'est ce qui a permis de l'écrire trois commits avant de l'appliquer :
 aucun code ne l'écrivait tant que les routes n'étaient pas livrées, et sa forme pouvait encore bouger en les

@@ -12,63 +12,21 @@
 > de ce qu’il affirmait était déjà PÉRIMÉE par la refonte du 31 (« six points à couvrir », « deux verrous »,
 > « la conversation n’est pas persistée »). Un lot déployé qui traîne ici ne vieillit pas, il MENT.
 
-## EN COURS le 2026-09-02 : le lot UX demandé par Julien (dix items)
+## LIVRÉ le 2026-09-02 : le lot UX demandé par Julien (dix items), attribution des clics comprise
 
-Julien a demandé dix choses d'un coup, plus deux questions. **Déployé** (`74cd217`) : le connecteur API
-refondu (le gros morceau), le bug de défilement de l'inbox, le menu Contenu rangé par canal et « tag »
-devenu « étiquette ».
+Julien a demandé dix choses d'un coup, plus deux questions. **Tout est livré.** Déployé par lots : le
+connecteur API refondu (le gros morceau), le bug de défilement de l'inbox, le menu Contenu rangé par canal et
+« tag » devenu « étiquette » (`74cd217`) ; la dernière saisie et « maintenant » dans les scénarios (`e9355e0`),
+l'effacement d'une conversation tracé (`34f5edd`), « engagé » au mini-CRM (`d697b6f`), les deux journaux avec
+leur recherche (`f0c2024`) ; enfin l'attribution des clics, WhatsApp (`8e787e1`) puis RCS (`1180083`,
+`0d67cd2`).
 
-**Livré et déployé depuis** : la dernière saisie et « maintenant » dans les scénarios (`e9355e0`),
-l'effacement d'une conversation tracé (`34f5edd`), « engagé » au mini-CRM (`d697b6f`), et les deux journaux
-avec leur recherche (`f0c2024`).
+Le détail technique, les pièges et la leçon de la clé mal choisie sont dans
+[documentation.md](documentation.md) § Journal des lots livrés ; le fonctionnel dans [features.md](features.md).
 
-## À REPRENDRE ICI : l'attribution des clics RCS (le dernier item)
-
-> 🔴 **Écrit pour survivre à une compaction de contexte.** L'attribution WhatsApp est LIVRÉE ET DÉPLOYÉE
-> (`8e787e1`, migration 0106 appliquée et vérifiée en base). Ce qui suit est ce qui reste, et surtout les
-> décisions déjà prises, qu'il ne faut ni redécouvrir ni contredire.
-
-**Ce qui est FAIT et en production** (ne pas le refaire) :
-
-- `contacts.jeton_public` : un jeton opaque PAR CONTACT (et non par lien × destinataire, qui aurait fait un
-  demi-million de lignes par an). Fabriqué à l'envoi seulement, effacé par l'anonymisation.
-  Module : `src/links/jeton-contact.ts` (`fabriquerJeton`, `estJeton`).
-- `GET /r/:code/:jeton` résout le jeton et enregistre QUI a cliqué. `GET /r/:code` existe toujours et **ne
-  disparaîtra jamais** : il sert des messages déjà livrés dont Meta a figé l'URL.
-- `tracked_link_clicks.contact_id`, en `on delete SET NULL` : effacer une personne ne doit pas effacer le
-  compteur d'une campagne. Le clic a eu lieu ; ce qui part est le lien vers la personne, pas le fait.
-- Côté WhatsApp : lien soumis en `/r/<code>/{{1}}`, composant `sub_type: 'url'` à chaque envoi, et la colonne
-  `tracked_links.avec_jeton` qui dit à l'envoi s'il doit le fournir. Vérifié en base : les 6 liens
-  pré-existants sont à `false`, donc les templates déjà approuvés partent comme avant.
-
-**Ce que la migration 0106 a DÉJÀ posé pour le RCS, et qui n'attend que le code :**
-
-- `tracked_links.rcs_message_id` (FK vers `rcs_messages`, en cascade) ;
-- `template_name` et `template_language` devenus nullables ;
-- DEUX index d'unicité partiels à la place de l'ancien : `tracked_links_bouton_whatsapp_uidx` et
-  `tracked_links_bouton_rcs_uidx` ;
-- la contrainte `tracked_links_famille_chk` : une ligne appartient à UNE famille, jamais aux deux ni à aucune.
-
-**Ce qui RESTE à écrire :**
-
-1. **Créer les liens à l'ENREGISTREMENT d'un message RCS** (`src/rcs/store.pg.ts` et sa route), pour chaque
-   suggestion `openUrl`, au niveau du message ET des cartes. C'est le pendant de ce que
-   `src/http/templates.ts` fait à la soumission d'un template.
-2. **Un `allocate` pour la famille RCS** : celui d'aujourd'hui vise l'index d'unicité WhatsApp dans son
-   `on conflict`, il ne peut pas servir tel quel.
-3. **Réécrire l'URL À L'ENVOI** en `/r/<code>/<jeton>` (`src/rcs/sender.ts` / `variables.ts`).
-4. **Ré-habiller l'affichage** : remontrer à l'utilisateur le lien qu'il a saisi dans la bibliothèque RCS,
-   comme `rehabillerBoutons` le fait pour les templates.
-5. **Les mesures** (`src/links/mesures.ts`) sont orientées template : à étendre ou à doubler pour le RCS.
-
-🔴 **LA DIFFÉRENCE QUI CHANGE TOUT, et qu'il ne faut pas perdre** : un message RCS est composé À L'ENVOI, pas
-approuvé à l'avance. Donc **aucun `{{1}}`, aucune resoumission, aucun risque de 132000** : on écrit le jeton
-directement dans l'URL au moment d'envoyer. La garde « tout ou rien » du WhatsApp
-(`suffixesPourDestinataire`) n'a pas d'équivalent nécessaire ici : sans jeton, on envoie simplement
-`/r/<code>`, que la route sert comme un lien anonyme.
-
-⚠️ **Décision de Julien à ne pas re-poser** : « on s'en fout des vieux templates, l'essentiel c'est que ça
-marche pour les prochains ». Les templates déjà approuvés ne seront jamais attribués, c'est acté.
+🔴 **Ce que la 0106 avait mal fait, et qu'il ne faut pas re-tenter** : elle rattachait un lien RCS à la
+bibliothèque `rcs_messages`. Or campagne et scénario portent leur message EMBARQUÉ, et seul l'envoi manuel
+depuis l'inbox lit la bibliothèque. La 0107 re-clé sur `(tenant_id, destination)` et retire la colonne.
 
 **Deux questions de Julien, répondues** : la relance automatique des échecs fonctionne toujours (elle traite
 131049 et 131026, elle est gatée par le toggle ET par `HUBSPOT_SERVICE_URL`, et le verrou de run l'a même

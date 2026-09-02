@@ -153,7 +153,12 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 - ✅ **Onglet « Historique » sur la fiche contact** (2026-07-20) : deux vues de tout ce que ce contact a vécu.
   **Campagnes reçues** : quelle campagne, quel template ou scénario, quand, et où en est le message (envoyé,
   délivré, lu, non délivré, écarté, envoi en échec avec son motif). Un message parti dont Meta n'a jamais
-  renvoyé de statut est marqué « envoyé, statut inconnu » et jamais « non délivré ». **Conversations** : chaque
+  renvoyé de statut est marqué « envoyé, statut inconnu » et jamais « non délivré ».
+  **Un indicateur « Engagé »** (2026-09-02) s'ajoute à « Lu », et il ne dit pas la même chose : « lu » veut dire
+  que Meta a affiché le message, « engagé » veut dire qu'un humain a fait quelque chose. Compte comme réaction :
+  une réponse écrite, un appui de bouton, et **un clic sur un lien du message**. Bornes : dans les 24 h, et
+  avant l'envoi suivant à ce contact, pour que deux campagnes du même jour ne se créditent pas l'une l'autre.
+  **Conversations** : chaque
   échange avec son nombre de messages, son dernier aperçu, et son analyse IA quand elle existe (sentiment,
   sujet, résolu ou non, traité par un humain ou par le bot). Une analyse rendue caduque par un message plus
   récent est signalée « à rafraîchir » plutôt que présentée comme à jour. Un clic ouvre le fil dans l'inbox.
@@ -203,11 +208,23 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   moment de la soumission à Meta, le serveur le remplace par une adresse à nous qui compte le clic puis redirige
   vers ta page. **La console te remontre toujours TON lien**, partout où elle affiche un template, donc rien ne
   change pour toi. Les compteurs se lisent dans Analytics > Mes tableaux.
-  ⚠️ Trois limites dites franchement : on compte des **clics, pas des personnes** (le lien est le même pour tous
-  les destinataires) ; seuls les templates **créés depuis la mise en service** sont mesurés (un template déjà
-  approuvé porte l'adresse en dur et ne le sera jamais) ; et **seuls les BOUTONS** sont tracés. Un lien écrit
-  dans le **corps** du message n'est pas traçable, décision de Julien du 2026-08-20 : WhatsApp va chercher
-  lui-même ces liens pour en afficher l'aperçu, un compteur y compterait des robots.
+  ⚠️ Deux limites dites franchement : seuls les templates **créés depuis le 2026-09-02** sont attribués (un
+  template déjà approuvé porte son adresse figée chez Meta et ne pourra jamais en changer, ses clics restent
+  donc anonymes) ; et **seuls les BOUTONS** sont tracés. Un lien écrit dans le **corps** du message n'est pas
+  traçable, décision de Julien du 2026-08-20 : WhatsApp va chercher lui-même ces liens pour en afficher
+  l'aperçu, un compteur y compterait des robots.
+- ✅ **On sait QUI a cliqué, pas seulement combien** (2026-09-02) : chaque destinataire reçoit un identifiant
+  opaque qui voyage dans le lien, et le clic est rattaché à sa fiche. Ça se voit dans le mini-CRM : la ligne de
+  campagne passe à **« Engagé »**. C'était un vrai trou, parce qu'un bouton lien fait SORTIR le contact de la
+  conversation et ne produit donc aucun message entrant : la personne la plus intéressée de la campagne
+  s'affichait comme n'ayant pas réagi.
+  ⚠️ L'identifiant ne porte ni nom ni numéro, il ne dit rien à qui le lit. Et un message **transféré** attribue
+  le clic au destinataire d'origine : c'est la limite de tout suivi de lien, elle n'a pas de solution.
+- ✅ **Les liens des messages RCS sont comptés et attribués eux aussi** (2026-09-02), sur les quatre chemins
+  d'envoi : campagne, bloc de scénario, réponse rapide et envoi manuel depuis l'inbox. Rien à faire pour toi,
+  et **aucune des limites du WhatsApp ne s'applique** : un message RCS est composé au moment de l'envoi, donc
+  il n'y a ni validation à attendre ni ancien message impossible à rattraper. Les compteurs se lisent au même
+  endroit, dans Analytics > Mes tableaux, sur les blocs RCS d'un scénario.
 - ✅ **Langue = menu déroulant** (39 langues WhatsApp, plus de champ libre) **sur le template simple** ; une
   langue hors liste est aussi refusée côté serveur. Une langue existante hors liste (ancien champ libre) reste
   affichée à l'édition. Un **carousel** ne propose ni langue ni catégorie : il est toujours créé en

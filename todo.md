@@ -114,6 +114,22 @@ tranche le 2026-09-01, « on s'encombre pas de l'ancienne version » et « tant 
 dans le vide ». Ce n'est donc pas une dette, c'est un arbitrage. Ce qui reste utile et pas cher : **dire au
 moment de publier combien de parcours vivants vont etre affectes**. Ne plus le faire les yeux fermes.
 
+## Les clics ne se voient PAS sur le rapport d'une campagne (relevé au lot RCS, 2026-09-02)
+
+Constat fait en câblant l'attribution : les clics sur les liens tracés ne s'affichent qu'à **deux** endroits,
+et aucun des deux n'est le rapport de campagne.
+- Analytics > Mes tableaux, par BLOC DE SCÉNARIO (templates depuis le 2026-08-20, blocs RCS depuis le 2026-09-02) ;
+- la fiche du mini-CRM, indirectement, via l'indicateur « Engagé » qui compte désormais un clic.
+
+Une campagne DIRECTE (sans scénario) n'a donc aucun compteur de clics, sur aucun des deux canaux. Ce n'est pas
+un manque de donnée : `tracked_link_clicks` porte le contact et la date depuis la 0106, et
+`campaign_recipients` porte l'envoi et son instant. Le rapprochement se fait exactement comme l'indicateur
+« engagé » le fait déjà (clic après l'envoi, avant l'envoi suivant, dans les 24 h). C'est donc une lecture à
+écrire et un écran à compléter, pas un chantier de fond.
+
+⚠️ À dire honnêtement le jour où on le fera : le compteur sera juste pour les envois ATTRIBUÉS, et muet pour
+les templates approuvés avant le 2026-09-02, dont l'adresse figée chez Meta ne porte pas de jeton.
+
 ## Une route sans appelant : `GET /tenants/:id/contacts/ids`
 
 Depuis le 2026-09-01, la création de campagne envoie l'INTENTION de sélection (`contactTarget`) et non plus
