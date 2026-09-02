@@ -4,6 +4,26 @@
 > **Chaque constat de ce plan a été revérifié dans le code courant le 2026-09-02**, pas repris sur parole.
 > Ce qui n'y figure pas a été écarté volontairement, avec sa raison, en fin de document.
 
+## POINT DE REPRISE (écrit pour survivre à une compaction de contexte)
+
+**Rien n'est commencé.** Les sept lots sont arbitrés, chiffrés et prêts ; aucun code n'a été écrit pour eux.
+
+**Ce qui EST fait et déployé** (`8943736`, le 2026-09-02 au soir) : le **131008**, hors plan, urgence de
+production. Quatre défauts de la même famille, tous nés du lot d'attribution du matin. Détail complet dans
+`documentation.md` § Journal des lots livrés. Vérifié en production : deux envois de `actu_cin_ma_2` acceptés
+par Meta (`wamid` présents), zéro 131008 depuis. ⚠️ **Ce qui n'est PAS encore prouvé** : l'attribution
+elle-même. Aucun clic n'est arrivé depuis les envois réels ; les quatre clics visibles sur `p7bvkkeqjznz`
+datent de 16:09 UTC, AVANT les envois de 17:56, ce sont les relecteurs de Meta.
+
+**Ordre recommandé, inchangé** : lot 1 (le bail) d'abord, c'est le seul qui puisse encore envoyer un message en
+trop à un client. Puis lot 6 (concurrence), qui conditionne la trajectoire à 25 clients.
+
+**La seule décision qui manque** : le chiffre du plafond de campagne (lot 3). Proposition faite : 5 000.
+
+⚠️ **Une AUTRE session travaille dans le dépôt.** Au moment d'écrire, elle a commité `7073b8b` (badge
+« modifications non publiées »), **non poussé et non déployé**. Ne jamais faire `git add src tests` en bloc :
+ça ramasse son travail. Vérifier `git status` avant chaque commit, et ne stager que ses propres fichiers.
+
 ## Ce que la mesure a tranché avant toute décision
 
 Relevé en base de production le 2026-09-02, et c'est ce qui trie tout le reste :
@@ -166,8 +186,35 @@ Deux conséquences, et c'est la seconde qui compte :
 
 **Le correctif n'est PAS un second worker.** Une réplique ferait passer `agent-turn` de 1 à 2, ce qui ne
 résout rien, tout en dupliquant les 19 balayages et en cassant l'ordre par contact. Le correctif est **une
-option par file** : monter la concurrence et poser le **client** comme clé de groupe sur `agent-turn` et
-`analyze-conversation`, ce qui donne le débit ET l'équité sans réplique ni coordination distribuée.
+option par file** : monter la concurrence et poser le **client** comme clé de groupe, ce qui donne le débit
+ET l'équité sans réplique ni coordination distribuée.
+
+### Ce qu'on change, file par file (arrêté le 2026-09-02)
+
+🔴 **On ne monte PAS tout, et sur les files de fond le GROUPE compte plus que le nombre.** Monter
+`analyze-conversation` de 1 à 3 ne change presque rien au débit ; ce qui change tout, c'est qu'un client qui
+importe 10 000 contacts et déclenche 10 000 analyses ne puisse plus bloquer tous les autres pendant des heures.
+
+| File | Aujourd'hui | Décision | Raison |
+|---|---|---|---|
+| `agent-turn` | 1, aucun groupe | **concurrence 12, groupe = client, plafond 4/client** | le facteur 33 |
+| `analyze-conversation` | 1, aucun groupe | **groupe = client**, concurrence légèrement ↑ | équité, pas débit |
+| `automation-event` | 1, aucun groupe | **groupe = client** | une rafale d'un client gèle les autres |
+| `webhook-status` | 1, groupe contact | **rien** | volontairement lente, 0,1 s par job |
+| `push-analysis` | 1 | **rien** | volume faible, sortie vers le connecteur |
+| `hubspot-catchup` | 1 | **rien** | rattrapage, pas du temps réel |
+| `webhook` | 3, groupe contact | **rien** | 0,2 s par job, largement dimensionné |
+| `campaign-run` | 4, groupe client | **rien** | déjà équitable |
+
+**Les chiffres de `agent-turn` (12 en vol, 4 par client) sont un point de départ PRUDENT, pas une mesure.**
+Douze fois mieux qu'aujourd'hui, sans risque : ce sont des attentes réseau que la boucle Node tient sans
+effort, et un tour ne garde aucune connexion pendant l'appel au modèle. Quatre par client veut dire que trois
+clients actifs se partagent équitablement. **Tous ces nombres passent en variables de configuration**, pour
+qu'on les ajuste après mesure sans redéployer de code.
+
+⚠️ **Ne pas refaire l'erreur de raisonnement du 2026-09-02** : ce lot avait été présenté comme BLOQUÉ par la
+mesure. Il ne l'est pas. N'importe quelle valeur au-dessus de 1 est meilleure que 1, dans tous les scénarios.
+On n'a pas besoin de la valeur parfaite pour sortir de la valeur absurde.
 
 ### Ce que ce lot doit tenir, chiffré (question de Julien, 2026-09-02)
 
@@ -328,6 +375,26 @@ autre chose qui cloche, et c'est ça qu'il faut voir.
 table, ~1440 lignes par jour et par process, dessinée avec les graphes SVG qui existent déjà dans Analytics.
 Les compteurs bruts du pool `pg` (`totalCount`, `idleCount`, `waitingCount`) restent exposés dans `/ops` comme
 photo d'instant, mais ce sont les attentes agrégées qui font foi.
+
+### Où ça s'affiche (arrêté le 2026-09-02)
+
+**Une quatrième carte sur l'écran `/ops` qui existe déjà** (`web/app/ops/page.tsx`, protégé par `OPS_TOKEN`),
+juste sous « Files de traitement (pg-boss) ». Même page, même jeton, l'endroit où l'on va déjà quand quelque
+chose sent mauvais. Pas d'écran de plus à retenir.
+
+Elle porte deux choses : l'**état instantané par process** (l'API et le worker ont chacun LEUR pool, donc une
+ligne chacun, avec le maximum atteint depuis le démarrage), et la **courbe du temps d'attente maximum par
+minute** sur les dernières heures, seuil marqué, en rouge dès qu'une attente le dépasse, comme le fait déjà
+l'âge du plus vieux job.
+
+🔴 **La table d'agrégats n'est pas seulement de l'historique, c'est le SEUL CANAL par lequel le worker peut se
+montrer.** `/ops` est servi par l'API : elle voit son propre pool en mémoire, jamais celui du worker. Sans la
+table, la moitié de la mesure serait invisible.
+
+⚠️ **Ce que « temps réel » veut dire ici, honnêtement** : la courbe est par MINUTE, mais **aucun pic n'est
+perdu**, parce qu'on y stocke le MAXIMUM de mesures exactes et non un échantillon. Un pic de 200 ms apparaît
+dans la barre de sa minute, à sa vraie hauteur. Ce qu'on ne saura pas, c'est la seconde exacte du pic, et ça
+n'a pas de valeur pour un phénomène qui se joue sur des minutes.
 
 ⚠️ **La marge viendra du plan payant**, et il faudra la **re-mesurer** comme les 16 l'ont été le 2026-08-25,
 jamais la supposer : ce nombre venait d'une mesure, pas d'une documentation.

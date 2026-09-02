@@ -2149,6 +2149,53 @@ au conteneur aurait réussi, précisément là où le proxy était le coupable.
 effacé les modifications NON COMMITÉES du même fichier. Sur du travail non commité, on restaure depuis une
 copie, jamais depuis l'index.
 
+### 🔴 L'incident 131008 du soir même : QUATRE défauts d'une seule famille (44a720f, 8943736)
+
+Julien lance « Test Ciné 4 » en fin de journée : chaque destinataire échoue en **131008 « Required parameter
+is missing »**, sans rien d'anormal dans le scénario. La cause est dans la base de production et dans la
+définition du template chez Meta : ses deux boutons URL ont été soumis le matin même sous la forme
+`/r/<code>/{{1}}`. **Un `{{1}}` dans une URL de bouton EXIGE son composant `sub_type: url` à chaque envoi.**
+Aucun n'était produit, par quatre chemins indépendants, chacun suffisant à tout casser :
+
+1. **Le passe-plat perdu** (campagnes directes). `boutonsTraces` et `jetonsPourContacts` étaient câblées dans
+   le worker, mais absentes du `Pick` de `RunJobDeps` et de la construction d'`optionsMoteur`. Elles
+   arrivaient dans un **spread**, qui échappe au contrôle des propriétés en trop : `tsc` vert, tests du moteur
+   verts (ils appellent `runCampaign` en direct, pas `campaignRunJob`), et plus aucun template tracé ne
+   partait.
+2. **Le chemin scénario** ne produisait aucun composant de bouton URL par construction :
+   `buildWorkflowTemplateComponents` ne connaissait que `quick_reply` et `flow`. Il aurait continué d'échouer
+   après le correctif 1. Le calcul est désormais fait dans `wiring.ts` en RÉUTILISANT la règle des campagnes,
+   pas en écrivant une seconde qui divergerait.
+3. **Le repli était à l'envers.** Sans jeton, le code ne produisait aucun composant, en annonçant « on perd la
+   mesure, on ne perd pas le message ». C'est l'inverse : le template étant déjà approuvé avec `{{1}}`, l'appel
+   est refusé et RIEN ne part. **Ce qui décide, c'est le TEMPLATE, jamais l'état du jeton d'un contact.** Sans
+   jeton on envoie donc un suffixe anonyme : le lien redirige (302, vérifié en production), le clic est compté,
+   il n'est rattaché à personne.
+4. **Le bouton de CARTE de carousel** (trouvé en vérifiant que les trois autres étaient bien tous les trous).
+   `boutonsTracables` traçait aussi les boutons portés par les cartes, mais `buildTemplateComponents` ne sait
+   produire que `{ type: 'button', index }`, qui adresse un bouton DU TEMPLATE : un bouton de carte se désigne
+   autrement, et rien ne sait le faire. Un carousel à bouton URL soumis après le 2026-09-02 aurait échoué à
+   chaque envoi, **définitivement**, l'URL étant figée chez Meta une fois le template approuvé. Zéro occurrence
+   en base au moment du correctif : le piège était armé, il n'avait pas encore servi. La règle vit désormais à
+   UN seul endroit (`estAttribuable`, `src/http/templates.ts`) et `avec_jeton` n'est plus codé en dur à `true`
+   dans `allocate`, c'est l'appelant qui décide.
+
+**La leçon qui vaut au-delà du 131008 : un `Pick` utilisé comme passe-plat est un FILTRE SILENCIEUX.** Les
+propriétés qui arrivent par un spread échappent au contrôle des propriétés en trop, donc le compilateur accepte
+ce qu'il va jeter. Une dépendance ajoutée d'un côté et oubliée de l'autre ne produit aucune erreur, seulement
+une fonctionnalité qui disparaît. Partout où une liste de dépendances est recopiée, la recopie est le point
+faible, et le commentaire d'avertissement est posé dessus (`src/campaign/run-job.ts`).
+
+**Deuxième leçon, de méthode : un test qui n'entre pas par la même porte que la production ne garde rien.** Les
+tests du moteur appelaient `runCampaign` directement et étaient tous verts pendant que la production échouait à
+100 %. Les tests de garde partent maintenant de `campaignRunJob`, le point d'entrée réel, et la mutation qui
+remet le défaut fait tomber le test sur le symptôme exact (une liste de composants vide).
+
+**Troisième leçon, sur Meta : 131008 et 132000 sont symétriques et tous deux fatals.** Un composant manquant
+pour une URL à `{{1}}` rend 131008 ; un composant fourni pour une URL SANS variable rend 132000. Il n'y a pas
+de « au cas où » possible : le composant se produit si et seulement si le template porte la variable. C'est
+aussi ce qui rend le **RCS immunisé** (aucun `{{1}}`, message composé à l'envoi, cf. la note de la 0107).
+
 ---
 ## DEPLOYE le 2026-09-02 : le connecteur API digne de ce nom (migration 0105)
 
