@@ -2150,6 +2150,49 @@ effacé les modifications NON COMMITÉES du même fichier. Sur du travail non co
 copie, jamais depuis l'index.
 
 ---
+## DEPLOYE le 2026-09-02 : le connecteur API digne de ce nom (migration 0105)
+
+Constat de Julien : « selon les doc API que le user aura pour setuper ce connecteur tool, il ne pourra pas
+faire grand chose avec ce qu'on lui propose là ». Vérifié dans le code, il avait raison sur toute la ligne :
+`fetch(url, { method, headers })` **sans corps**, des paramètres qui ne remplissaient qu'un gabarit de CHEMIN,
+et des variables limitées à `wa_id` et `nom` alors que dix champs personnalisés sont déclarés en production.
+
+**Migration 0105** : `connector_requests` + `agent_tools.request_id`. Un appel est désormais décrit UNE fois
+dans la bibliothèque du workspace, puis ouvert aux agents, au lieu d'être redécrit dans chaque agent. Même
+raison que pour la source elle-même : ce qui appartient au client ne se range pas dans un agent.
+
+**Les deux modes de corps compilent vers le MÊME arbre**, puis passent par UNE seule substitution. C'était la
+demande de Julien (« il faut qu'on puisse avoir les 2, du JSON brut pour les mecs habitués et une liste de
+champs ») et c'est aussi ce qui rend la sécurité tenable : la substitution est **STRUCTURELLE**, jamais
+textuelle. Une valeur ne peut donc pas refermer une chaîne JSON et injecter des clés. Deux moteurs séparés
+auraient divergé au premier ajustement, et le mode « JSON brut » aurait été le maillon faible.
+
+Autres gardes du lot : `EN_TETES_RESERVES` (`authorization`, `content-type`, `content-length`, `host`) qu'un
+utilisateur ne peut pas écraser ; `cheminsDeLaReponse` ne propose QUE les chemins que l'extracteur sait
+résoudre, les tableaux étant proposés entiers, pour qu'aucune case cochée ne rende systématiquement du vide.
+
+🔴 **TROIS DÉFAUTS TROUVÉS EN CONSTRUISANT, DONT DEUX PAR DES TESTS QUI VISAIENT AUTRE CHOSE.**
+
+1. **`.partial()` de zod ne retire PAS les `.default()`.** Un `patch` construit avec `.partial()` renvoyait donc
+   les valeurs par défaut pour toute clé absente : **renommer une requête aurait effacé toutes ses variables,
+   ses paramètres, ses en-têtes et son corps, EN SILENCE**. Corrigé à la racine (les défauts ne vivent plus que
+   sur le schéma de création), gardé par un test qui vérifie que le store ne reçoit QUE les clés changées.
+   La règle : un schéma de mise à jour partielle ne se dérive pas d'un schéma de création qui porte des défauts.
+2. **Une réponse mal formée BLANCHISSAIT tout l'onglet Outils d'un agent** (un `.map` sur `undefined`), y
+   compris la liste des outils maison qui n'a rien à voir. Trouvé par huit tests e2e PRÉ-EXISTANTS qui
+   échouaient : la leçon est qu'un composant qui affiche une liste venue du réseau doit se défendre seul.
+3. **`requis` ne servait à rien** : une variable dont la valeur était inconnue partait en `null` sans
+   distinction. La garde manquait dans le résolveur, pas dans l'écran.
+
+⚠️ **0105 n'était PAS bloquante**, et c'est ce qui a permis de l'écrire trois commits avant de l'appliquer :
+aucun code ne l'écrivait tant que les routes n'étaient pas livrées, et sa forme pouvait encore bouger en les
+construisant. La règle « migrer avant de déployer » vaut pour les migrations que le code ÉCRIT.
+
+⚠️ **Erreur de méthode à ne pas refaire** : `deb71ed` a été poussé après n'avoir lancé QUE le spec e2e des
+connecteurs, alors que le lot touchait un onglet PARTAGÉ. La CI est restée rouge une heure et quart sur huit
+tests que la suite complète aurait montrés tout de suite. Toucher un composant partagé impose la suite entière.
+
+---
 ## DEPLOYE le 2026-09-02 : voir et rejouer les jobs MORTS
 
 Le dépôt ALERTAIT déjà quand une file d'échec se remplissait, mais la seule reprise possible était de renvoyer
