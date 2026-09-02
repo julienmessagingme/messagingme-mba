@@ -19,7 +19,17 @@ export type AuditAction =
   | 'contact.optout'
   // Mise en ligne d'un scénario (lot 7). La table `workflows` ne garde que la DATE de publication ; qui a
   // cliqué est ici, comme pour toute action humaine de l'espace.
-  | 'workflow.published';
+  | 'workflow.published'
+  /**
+   * Effacement du CONTENU d'une conversation (2026-09-02). Irréversible, et il emporte une conséquence que
+   * l'écran doit annoncer : la fenêtre de service de 24 h se calcule sur les messages ENTRANTS, donc effacer
+   * le fil la ferme, et on ne peut plus répondre librement à ce contact.
+   *
+   * ⚠️ Comme toute ligne de ce journal, elle ne porte NI le numéro NI le texte des messages : seulement
+   * l'identifiant interne de la conversation et le nombre de messages effacés. Y écrire le contenu
+   * annulerait l'effacement qu'on vient de faire, dans une table conçue pour ne jamais être modifiée.
+   */
+  | 'conversation.effacee';
 
 export interface AuditEntry {
   id: string;

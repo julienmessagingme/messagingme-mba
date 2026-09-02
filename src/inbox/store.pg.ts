@@ -619,6 +619,46 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * EFFACE LE CONTENU d'une conversation : ses messages, et l'aperçu qui en découle. Rend le nombre de
+   * messages effacés, ou `null` si la conversation n'est pas de cet espace.
+   *
+   * 🔴 IRRÉVERSIBLE, ET IL FERME LA FENÊTRE DE SERVICE. `windowOpen` se calcule sur le dernier message
+   * ENTRANT (`getConversationContext`) : sans messages, il n'y en a plus, donc la fenêtre de 24 h est close et
+   * plus personne ne peut répondre librement à ce contact, ni un opérateur ni un scénario. Ce n'est pas une
+   * raison de ne pas le faire, c'est une raison de le DIRE avant de le faire, et l'écran le dit.
+   *
+   * ⚠️ La CONVERSATION est gardée, seuls ses messages partent. La supprimer emporterait son affectation, son
+   * détenteur, sa date de dernière lecture, et surtout l'analyse qui y est rattachée. Effacer un contenu et
+   * effacer un fil sont deux gestes différents ; celui-ci est le premier.
+   *
+   * `last_message_at` n'est PAS remis à zéro : il ordonne la liste de l'inbox, et le mettre à null ferait
+   * disparaître la conversation du classement, donc de l'écran, ce qui ressemblerait à une suppression que
+   * personne n'a demandée.
+   */
+  async effacerMessages(tenantId: string, conversationId: string): Promise<number | null> {
+    // L'appartenance est vérifiée DANS la suppression, pas avant : entre une vérification et une écriture, le
+    // scope pourrait changer. Un seul énoncé ne laisse pas cette fenêtre.
+    const res = await this.pool.query(
+      `delete from conversation_messages m
+        using conversations c
+        where m.conversation_id = c.id and c.id = $1 and c.tenant_id = $2`,
+      [conversationId, tenantId],
+    );
+    // `rowCount` à 0 ne dit pas si la conversation existe : un fil vide en rend autant qu'un fil d'un autre
+    // espace. On tranche par une lecture scopée, pour rendre 404 plutôt qu'un faux succès.
+    const existe = await this.pool.query(
+      'select 1 from conversations where id = $1 and tenant_id = $2',
+      [conversationId, tenantId],
+    );
+    if (existe.rowCount === 0) return null;
+    await this.pool.query(
+      `update conversations set last_preview = null where id = $1 and tenant_id = $2`,
+      [conversationId, tenantId],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * La DERNIÈRE SAISIE du contact : le dernier message qu'il a ÉCRIT, tous canaux confondus.
    *
    * Julien, le 2026-09-02 : « il faut qu'on ait un champ système genre last text input, que systématiquement

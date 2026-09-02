@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { PreHandler } from '../auth/middleware';
+import type { Guard, PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { scopeTenant, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../rcs/schema';
 import { peutEcrire, peutAffecter } from '../inbox/assignment';
 import { cacheCourt } from '../lib/cache-court';
+import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre } from '../inbox/repondre';
 import type { OrigineMessage } from '../inbox/origine';
 
@@ -35,6 +36,16 @@ export interface OutboundTemplate {
 }
 
 export interface InboxRouteDeps {
+  /**
+   * EFFACE LE CONTENU d'une conversation. Rend le nombre de messages effacés, `null` si elle n'est pas de cet
+   * espace. Optionnelle : absente, la route rend 503 plutôt que d'exister sans rien faire.
+   */
+  effacerMessages?(tenantId: string, conversationId: string): Promise<number | null>;
+  /**
+   * Journal d'audit. Optionnel : absent -> aucune trace (câblages de test). BEST-EFFORT à l'appel : un
+   * journal muet est un désagrément, une action bloquée par une écriture de log est un incident.
+   */
+  audit?: AuditSink;
   listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
   /** Nombre de conversations non lues (pastille du menu). Optionnel : absent -> 0, la pastille ne s'affiche pas. */
   countUnread?(tenantId: string): Promise<number>;
@@ -148,8 +159,17 @@ export interface InboxRouteDeps {
  * Boîte de réception : lister/lire une conversation, répondre (texte dans la fenêtre 24 h,
  * template hors fenêtre). Lectures + réponse ouvertes à tout compte authentifié.
  */
-export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requireAuth?: PreHandler): void {
+export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requireAuth?: PreHandler, requireAdmin?: Guard): void {
   const guard = requireAuth ? { preHandler: requireAuth } : {};
+  /**
+   * La garde des gestes RÉSERVÉS AUX ADMINISTRATEURS de cet écran. Il n'y en a qu'un : effacer le contenu
+   * d'une conversation. Un opérateur répond aux clients, il n'efface pas des traces.
+   *
+   * ⚠️ Repli sur `guard` si aucune garde admin n'est fournie, et non sur « pas de garde » : un montage
+   * incomplet doit rendre la route MOINS accessible, jamais plus.
+   */
+  const gardeAdmin = requireAdmin ? { preHandler: requireAdmin } : guard;
+  const journal = makeJournal(deps.audit);
   // Micro-cache des DEUX compteurs (R7). Instancié ici, donc un par serveur construit : deux instances de
   // test ne se partagent rien, et il meurt avec le process.
   const compteurs = cacheCourt<number>(COMPTEURS_TTL_MS);
@@ -227,6 +247,34 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, requir
     // et sans cette invalidation il retomberait sur la valeur d'avant pendant toute la durée de vie du cache.
     invaliderCompteurs(tenant);
     return reply.code(200).send({ ok: true });
+  });
+
+  /**
+   * EFFACER LE CONTENU d'une conversation. Demandé par Julien le 2026-09-02 : « je dois pouvoir supprimer le
+   * contenu de la conversation ».
+   *
+   * 🔴 RÉSERVÉE AUX ADMINISTRATEURS, contrairement au reste de l'inbox. Un opérateur répond aux clients ; il
+   * n'efface pas des traces. Et c'est irréversible : il n'existe aucune corbeille pour un fil de messages.
+   *
+   * 🔴 ELLE FERME LA FENÊTRE DE SERVICE, et l'écran doit l'avoir dit AVANT le clic. `windowOpen` se calcule
+   * sur le dernier message ENTRANT : sans messages, il n'y en a plus, donc plus personne ne peut répondre
+   * librement à ce contact, ni un opérateur ni un scénario, tant qu'il n'a pas réécrit.
+   *
+   * La trace part au Journal des actions, SANS le numéro ni le texte : y écrire ce qu'on vient d'effacer
+   * annulerait l'effacement, dans une table conçue pour ne jamais être modifiée.
+   */
+  app.delete('/tenants/:tenantId/conversations/:conversationId/messages', gardeAdmin, async (req, reply) => {
+    const tenant = scopeTenant(req);
+    if (tenant === null) return reply.code(403).send({ error: 'tenant interdit' });
+    const { conversationId } = req.params as { conversationId: string };
+    if (!estUuid(conversationId)) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!deps.effacerMessages) return reply.code(503).send({ error: 'effacement indisponible sur cette instance' });
+    const effaces = await deps.effacerMessages(tenant, conversationId);
+    if (effaces === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    await journal(tenant, req, 'conversation.effacee', { kind: 'conversation', id: conversationId }, { messages: effaces });
+    // La pastille des non-lus se calcule sur les messages entrants : elle vient de changer.
+    invaliderCompteurs(tenant);
+    return reply.code(200).send({ effaces });
   });
 
   app.get('/tenants/:tenantId/conversations/:conversationId/messages', guard, async (req, reply) => {

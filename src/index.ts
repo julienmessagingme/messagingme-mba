@@ -371,6 +371,11 @@ async function main(): Promise<void> {
     },
     inbox: {
       listConversations: (tenant, opts) => inboxStore.listConversations(tenant, opts),
+      // Effacer le CONTENU d une conversation. Reserve aux administrateurs par la garde de `server.ts`, et
+      // trace au Journal des actions (sans le numero ni le texte : y ecrire ce qu on vient d effacer
+      // annulerait l effacement).
+      effacerMessages: (tenant, id) => inboxStore.effacerMessages(tenant, id),
+      audit: auditSink,
       countATraiter: (tenant) => inboxStore.countATraiter(tenant),
       getAssignee: (tenant, id) => inboxStore.getAssignee(tenant, id),
       setAssignee: (tenant, id, assignee, par) => inboxStore.setAssignee(tenant, id, assignee, par),

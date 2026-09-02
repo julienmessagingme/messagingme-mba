@@ -6,12 +6,16 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxRouteDeps } from '../src/http/inbox';
 
 const SECRET = 'test-secret';
+const CONV = '11111111-1111-4111-8111-111111111111';
 let token = '';
+let tokenAgent = '';
 beforeAll(async () => {
   token = await signSession({ userId: 'u1', tenantId: 't1', role: 'admin' }, SECRET);
+  tokenAgent = await signSession({ userId: 'u2', tenantId: 't1', role: 'agent' }, SECRET);
 });
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
+const authAgent = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenAgent}` } });
 
 function app(over: Partial<InboxRouteDeps> = {}) {
   const deps: InboxRouteDeps = {
@@ -761,5 +765,75 @@ describe('inbox : ne redemander que la suite du fil', () => {
       expect(vus[0], `cas ${q}`).toBeUndefined();
       await a.close();
     }
+  });
+});
+
+/**
+ * EFFACER LE CONTENU d'une conversation (2026-09-02).
+ *
+ * 🔴 Trois gardes, et elles ne sont nulle part ailleurs : c'est RÉSERVÉ AUX ADMINISTRATEURS (un opérateur
+ * répond aux clients, il n'efface pas des traces), la trace part au Journal des actions SANS le contenu qu'on
+ * vient d'effacer, et une conversation d'un autre espace rend 404 plutôt que d'effacer chez le voisin.
+ */
+describe('effacer le contenu d’une conversation', () => {
+  function harnais(effaces: number | null = 3) {
+    const traces: Array<{ action: string; target: { kind: string; id: string }; detail?: Record<string, unknown> }> = [];
+    const srv = app({
+      effacerMessages: async () => effaces,
+      audit: async (_t, _a, action, target, detail) => { traces.push({ action, target, ...(detail ? { detail } : {}) }); },
+    });
+    return { srv, traces };
+  }
+
+  it('efface, rend le compte, et TRACE au journal', async () => {
+    const { srv, traces } = harnais(3);
+    const res = await srv.inject({ method: 'DELETE', url: `/tenants/t1/conversations/${CONV}/messages`, ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ effaces: number }>().effaces).toBe(3);
+    expect(traces).toEqual([{ action: 'conversation.effacee', target: { kind: 'conversation', id: CONV }, detail: { messages: 3 } }]);
+    await srv.close();
+  });
+
+  it('🔴 la trace ne porte NI le numéro NI le texte des messages effacés', async () => {
+    // Y écrire ce qu'on vient d'effacer annulerait l'effacement, dans une table conçue pour ne jamais être
+    // modifiée. Le journal ne connaît que l'identifiant interne et un compteur.
+    const { srv, traces } = harnais(2);
+    await srv.inject({ method: 'DELETE', url: `/tenants/t1/conversations/${CONV}/messages`, ...auth() });
+    const tout = JSON.stringify(traces);
+    expect(tout).not.toContain('33611');
+    expect(tout).not.toContain('coucou');
+    await srv.close();
+  });
+
+  it('🔴 un OPÉRATEUR ne peut pas effacer : le geste est réservé aux administrateurs', async () => {
+    const { srv, traces } = harnais();
+    const res = await srv.inject({ method: 'DELETE', url: `/tenants/t1/conversations/${CONV}/messages`, ...authAgent() });
+    expect(res.statusCode).toBe(403);
+    expect(traces).toEqual([]);
+    await srv.close();
+  });
+
+  it('une conversation d’un AUTRE espace rend 404, et rien n’est tracé', async () => {
+    const { srv, traces } = harnais(null);
+    const res = await srv.inject({ method: 'DELETE', url: `/tenants/t1/conversations/${CONV}/messages`, ...auth() });
+    expect(res.statusCode).toBe(404);
+    expect(traces).toEqual([]);
+    await srv.close();
+  });
+
+  it('un identifiant qui n’est pas un uuid rend 404 sans toucher au magasin', async () => {
+    let appele = false;
+    const srv = app({ effacerMessages: async () => { appele = true; return 1; } });
+    const res = await srv.inject({ method: 'DELETE', url: '/tenants/t1/conversations/pas-un-uuid/messages', ...auth() });
+    expect(res.statusCode).toBe(404);
+    expect(appele).toBe(false);
+    await srv.close();
+  });
+
+  it('sans la dépendance, la route le DIT (503) au lieu de répondre 200 sans rien faire', async () => {
+    const srv = app();
+    const res = await srv.inject({ method: 'DELETE', url: `/tenants/t1/conversations/${CONV}/messages`, ...auth() });
+    expect(res.statusCode).toBe(503);
+    await srv.close();
   });
 });

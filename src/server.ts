@@ -311,7 +311,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // un template hors fenêtre 24h (seul moyen de re-contacter). La CRÉATION (POST) reste admin-only
   // via le forbidNonAdmin dans le handler. La page /templates de gestion est masquée à l'agent côté UI.
   if (deps.templates) registerTemplates(app, deps.templates, requireAuth);
-  if (deps.inbox) registerInbox(app, deps.inbox, requireAuth);
+  // Deux gardes : l'inbox est ouverte a tout compte authentifie, mais l'effacement du contenu d'une
+  // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
+  if (deps.inbox) registerInbox(app, deps.inbox, requireAuth, requireAdmin);
   if (deps.hubspotEvents) registerHubspotEvents(app, deps.hubspotEvents);
   if (deps.stats) registerStats(app, deps.stats, requireAdmin);
   if (deps.settings) registerSettings(app, deps.settings, requireAdmin);

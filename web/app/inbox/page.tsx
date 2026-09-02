@@ -28,6 +28,7 @@ import {
   type UserFieldDef,
   getConversationMessages,
   releaseConversation,
+  effacerConversation,
   replyConversation,
   listTemplates,
   sendTemplateToConversation,
@@ -508,6 +509,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
   // pourquoi, et ne sait pas s'il doit rendre la main.
   const [controlOwner, setControlOwner] = useState<ControlOwner>('app_workflow');
   const [releasing, setReleasing] = useState(false);
+  const [effacement, setEffacement] = useState(false);
   const [text, setText] = useState('');
   /**
    * La conversation est confiée à quelqu'un d'autre, et je ne suis ni manager ni admin.
@@ -658,6 +660,35 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
     }
   }
 
+  /**
+   * Efface le contenu du fil. Irréversible, et il FERME la fenêtre de 24 h.
+   *
+   * La confirmation dit les deux, parce que ni l'un ni l'autre ne se devine : « irréversible » s'attend d'un
+   * bouton rouge, mais « vous ne pourrez plus répondre librement à cette personne » ne s'attend pas du tout.
+   */
+  async function effacer() {
+    const question = t(
+      'Effacer TOUS les messages de cette conversation ?\n\nC’est irréversible.\n\nEt la fenêtre de 24 h se calcule sur le dernier message reçu : après l’effacement, elle sera fermée, donc vous ne pourrez plus répondre librement à ce contact tant qu’il n’aura pas réécrit.',
+      'Erase ALL messages in this conversation?\n\nThis cannot be undone.\n\nAnd the 24h window is computed from the last received message: after erasing, it will be closed, so you will not be able to reply freely to this contact until they write again.',
+    );
+    if (!window.confirm(question)) return;
+    setEffacement(true);
+    setError(null);
+    try {
+      await effacerConversation(session.tenantId, conversation.id);
+      // Le fil est vidé côté serveur : on remet l'écran à zéro plutôt que d'attendre le prochain tour, et on
+      // relâche le curseur, sinon le delta repartirait d'un message qui n'existe plus.
+      setMessages([]);
+      bornRef.current = null;
+      setWindowOpen(false);
+      onSent();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Effacement impossible', 'Erase failed'));
+    } finally {
+      setEffacement(false);
+    }
+  }
+
   async function release() {
     setReleasing(true);
     setError(null);
@@ -702,6 +733,21 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${windowOpen ? 'bg-mint-50 text-mint-700' : 'bg-amber-50 text-amber-700'}`}>
             {windowOpen ? t('fenêtre 24 h ouverte', '24h window open') : t('fenêtre 24 h fermée', '24h window closed')}
           </span>
+          {/* 🔴 EFFACER LE CONTENU. Réservé aux administrateurs côté serveur ; on ne montre pas le bouton aux
+              autres, mais c'est la garde du serveur qui décide, pas cet affichage.
+              La confirmation DIT la conséquence que personne ne devine : effacer les messages ferme la fenêtre
+              de 24 h, parce qu'elle se calcule sur le dernier message ENTRANT. Après ça, plus personne ne peut
+              répondre librement à ce contact tant qu'il n'a pas réécrit. */}
+          {session.role === 'admin' && (
+            <button
+              data-testid="conversation-effacer"
+              onClick={() => { void effacer(); }}
+              disabled={effacement}
+              className="rounded-lg border border-ink-300 px-2 py-0.5 text-[11px] font-medium text-coral transition hover:bg-red-50 disabled:opacity-50"
+            >
+              {effacement ? t('...', '...') : t('Effacer le contenu', 'Erase content')}
+            </button>
+          )}
         </div>
       </div>
 

@@ -174,6 +174,16 @@ export function getConversationMessages(
   return request(`/tenants/${tenantId}/conversations/${conversationId}/messages${q}`, opts?.signal ? { signal: opts.signal } : {});
 }
 /** L'opérateur rend la main : le scénario (ou l'agent de Meta) reprend la conversation. */
+/**
+ * EFFACE le contenu d'une conversation. Rend le nombre de messages effacés.
+ *
+ * 🔴 IRRÉVERSIBLE, réservé aux administrateurs, ET IL FERME LA FENÊTRE DE SERVICE : celle de 24 h se calcule
+ * sur le dernier message ENTRANT, donc sans messages il n'y en a plus, et plus personne ne peut répondre
+ * librement à ce contact tant qu'il n'a pas réécrit. L'écran doit l'avoir dit avant le clic.
+ */
+export function effacerConversation(tenantId: string, conversationId: string): Promise<{ effaces: number }> {
+  return request(`/tenants/${tenantId}/conversations/${conversationId}/messages`, { method: 'DELETE' });
+}
 export function releaseConversation(tenantId: string, conversationId: string): Promise<{ controlOwner: ControlOwner }> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/release`, { method: 'POST' });
 }
