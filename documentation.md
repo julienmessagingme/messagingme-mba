@@ -2127,6 +2127,24 @@ tourné.
 `destination`, et un index btree refuse une valeur trop longue, ce qui ferait échouer l'allocation donc
 l'envoi. Un lien non mesuré est un défaut de mesure ; un message qui ne part pas est un défaut de produit.
 
+🔴 **UN DÉFAUT PARTI EN PRODUCTION LE MATIN MÊME, ET TROUVÉ APRÈS DÉPLOIEMENT.** L'API monte
+`GET /r/:code/:jeton` et les templates partaient chez Meta avec `/r/<code>/{{1}}`, mais le rewrite de
+`web/next.config.mjs` ne déclarait que `/r/:code`. **Un rewrite Next ne capture QU'UN segment** : la forme
+attribuée n'atteignait jamais le backend, Next rendait une 404. Tout était vert (3454 unitaires, 417 e2e, CI
+complète) parce que l'e2e MOCKE le backend et ne traverse jamais le proxy réel.
+
+Ce que ça aurait coûté : en base, le template `tarifs` était DÉJÀ approuvé par Meta avec cette forme, et un
+template approuvé porte son URL POUR TOUJOURS. Au premier envoi, chaque destinataire aurait reçu un lien mort,
+irréparable autrement qu'en resoumettant un template. Personne ne l'a subi (aucune campagne ne l'utilisait,
+zéro message envoyé, vérifié en base).
+
+**La règle qui en sort** : la route et sa règle de proxy sont deux moitiés dans deux dépôts de configuration
+différents, et rien dans le langage ne les relie. Une route publique neuve n'est pas livrée tant que son
+rewrite ne l'est pas. Le garde-fou est `tests/web-rewrites-liens.test.ts`, qui DÉRIVE la liste des routes de
+`src/http/links.ts` et casse si l'une d'elles n'a pas sa règle ; la mutation qui retire la ligne reproduit
+exactement le défaut. Et la vérification post-déploiement se fait sur le chemin **PUBLIC** : un appel interne
+au conteneur aurait réussi, précisément là où le proxy était le coupable.
+
 ⚠️ **Erreur de méthode à ne pas refaire** : un `git checkout <fichier>` pour annuler une mutation de test a
 effacé les modifications NON COMMITÉES du même fichier. Sur du travail non commité, on restaure depuis une
 copie, jamais depuis l'index.
