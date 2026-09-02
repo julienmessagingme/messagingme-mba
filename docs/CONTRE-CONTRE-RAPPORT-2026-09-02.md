@@ -204,24 +204,58 @@ utile.
 rendu par ce fournisseur ». Les distinguer demande de regarder si le nombre reste nul sur un préfixe long
 **répété**, donc de faire tourner de vraies conversations.
 
+### 🔴 LA MESURE A ÉTÉ FAITE, ET ELLE INFIRME UNE PARTIE DE CE QUI PRÉCÈDE
+
+Trois passages d'un banc (`scripts/mesure-tour-agent.mts`) contre le **vrai** Gateway, modèle de production,
+avec le corpus Hyundai comme base de connaissance. Détail complet : `docs/MESURE-TOUR-AGENT-2026-09-02.md`.
+
+| Mesure | Valeur |
+|---|---|
+| Allers-retours par tour | **2,0** (et non les 6 du plafond) |
+| Durée d'un tour | **3,0 s** en moyenne, 4,2 s au pire |
+| Tokens par tour | ~3 000 en entrée, ~130 en sortie |
+| Coût par tour | ~0,00026 $ |
+| **Tokens servis depuis un cache** | **0**, dans les trois passages |
+
+**Ce qui est confirmé** : un tour n'est pas un appel, et sa durée réelle (3 s) n'a rien à voir avec le plafond
+de 120 s. C'est la durée réelle qui décide de la concurrence.
+
+🔴 **Ce qui est INFIRMÉ : le cache de prompt n'était pas le levier annoncé.** Non seulement `cached_tokens`
+vaut zéro partout, y compris sur des tours successifs à préfixe rigoureusement identique et y compris avec un
+préfixe de 1 800 tokens (au-dessus du seuil habituel de 1 024) ; mais surtout **notre préfixe constant est
+petit**, ~1 100 tokens sur ~3 000 par tour. Un cache parfait n'économiserait qu'un tiers des tokens d'entrée,
+et seulement au premier aller-retour. Ce qui fait le volume est le résultat de la recherche de connaissance,
+qui varie d'une question à l'autre et n'est donc pas cachable. **Le geste « demander le cache explicitement »
+passe en basse priorité**, alors que le raisonnement d'avant en faisait un enjeu majeur.
+
+**Ce que la mesure dit des chiffres choisis.** Loi de Little avec 3 secondes mesurées : 200 conversations à un
+message toutes les 90 s font 6,7 tours en vol, toutes les 60 s en font 10, toutes les 30 s en font 20. **12
+est donc le bon ordre de grandeur à cadence humaine et devient court si les échanges s'accélèrent**, ce qui
+est exactement pourquoi c'est une variable d'environnement.
+
+🔴 **Et le vrai plafond est ailleurs : 600 000 tokens par minute** vers le Gateway dans l'hypothèse à 200
+conversations et 60 s. Les limites d'un gateway s'expriment en tokens par minute : c'est ce chiffre-là qu'il
+faut confronter au plan Vercel, pas le nombre de requêtes simultanées.
+
 **Ce qui reste honnêtement non résolu :**
 
-1. **Le tuyau externe.** Tous les appels partent par une clé unique vers une passerelle de modèles. Ses limites
-   de débit réelles ne sont **pas mesurées**. Monter la concurrence côté worker peut donc déplacer la file
-   d'attente de chez nous vers chez eux, où elle est muette. ⚠️ Elle ne pouvait de toute façon PAS être
-   atteinte tant qu'un seul appel était en vol : la question « faut-il plusieurs comptes ? » ne se posait pas
-   avant d'avoir ouvert notre propre robinet, ce que le lot 6 vient de faire.
-2. **Aucune conversation réelle n'a encore été mesurée.** C'est le geste suivant, et il est le seul qui puisse
-   transformer 12 et 4 en chiffres plutôt qu'en raisonnement.
+1. **Le tuyau externe.** Les limites de débit réelles du Gateway ne sont **toujours pas** connues. On sait
+   maintenant quoi leur comparer (600 000 tokens/minute), ce qui est un progrès, mais pas la réponse.
+2. **Aucune mesure sous CONCURRENCE.** Les tours du banc sont joués les uns après les autres : il donne la
+   durée d'un tour seul, c'est-à-dire l'entrée de la loi de Little, pas sa vérification.
 3. **Cette file n'a jamais tourné en production.** Zéro job dans tout l'historique.
+4. **Le corpus mesuré est petit** (17 fiches). Un client avec 500 fiches verrait des résultats d'outils bien
+   plus gros, donc des tours plus chers.
 
 ## Ce qui n'est PAS prouvé (liste exhaustive à ma connaissance)
 
 - **Le déploiement prouve que ça démarre, pas que ça tient.** Le trafic réel de l'instance est proche de zéro :
   aucun des sept lots n'a été éprouvé par de la charge.
-- **`agent-turn` n'a jamais tourné en production.** Les valeurs 12 et 4 sont un raisonnement, pas une mesure.
-- **On ne sait toujours pas si le cache de prompt opère.** Le champ est désormais lu et tracé, mais il faut de
-  vraies conversations pour que la trace dise quelque chose.
+- **`agent-turn` n'a jamais tourné en production.** La durée d'un tour est maintenant MESURÉE (3 s), mais sur
+  un banc séquentiel, jamais sous concurrence ni sur du trafic réel.
+- **On ne sait pas si le cache de prompt opère, et on ne peut pas le savoir depuis notre côté.**
+  `cached_tokens` vaut zéro dans les trois passages : « pas de cache » et « champ non rendu » sont
+  indiscernables. La conséquence pratique est la même aujourd'hui, et elle est faible (cf. la mesure).
 - 🔴 **J'ai sauté l'ordre du plan et Julien l'a relevé.** Le plan faisait commencer le chantier IA par la
   lecture du champ de cache (une ligne, et elle peut annuler le geste le plus coûteux) ; j'étais allé
   directement choisir les chiffres de concurrence. Le geste est fait depuis, mais la méthode a failli, pas
@@ -235,9 +269,10 @@ rendu par ce fournisseur ». Les distinguer demande de regarder si le nombre res
 
 ## Ce sur quoi je demande la contradiction
 
-1. **Les chiffres 12 et 4 sur la file d'agent.** L'argument est qu'un tour ne tient aucune connexion pendant
-   l'appel au modèle (les stores prennent et rendent la connexion par instruction). Est-ce que quelque chose
-   d'autre est saturé avant : la passerelle de modèles, la mémoire, la boucle d'événements ?
+1. **Les chiffres 12 et 4 sur la file d'agent, maintenant qu'un tour est MESURÉ à 3 secondes.** Little donne
+   10 tours en vol pour 200 conversations à un message toutes les 60 s, donc 12 tient de justesse et 20
+   seraient nécessaires à 30 s. Est-ce que l'hypothèse de cadence est la bonne ? Et surtout : est-ce que
+   quelque chose sature avant nous, à 600 000 tokens/minute vers le Gateway ?
 2. **Le plafond de 1 par client sur les files de fond.** Il garantit l'équité mais plafonne aussi le débit d'un
    client seul à ce qu'il était. Est-ce le bon arbitrage pour un déploiement où un client pèse 90 % du trafic ?
 3. **Le renouvellement du bail à un tiers.** Suffisant contre une boucle d'événements bloquée, un décalage
