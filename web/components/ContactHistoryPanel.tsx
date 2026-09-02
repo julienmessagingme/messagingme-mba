@@ -128,8 +128,26 @@ function SendRow({ send, stamp }: { send: ContactSend; stamp: (iso: string) => s
         </div>
         <span className="shrink-0 text-xs text-ink-400">{send.sentAt ? stamp(send.sentAt) : t('non envoyé', 'not sent')}</span>
       </div>
-      <p className="mt-1 text-xs">
+      <p className="mt-1 flex flex-wrap items-center gap-1 text-xs">
         <DeliveryBadge send={send} stamp={stamp} />
+        {/* 🔴 « Engagé » est À CÔTÉ de « lu », pas à la place, parce que ce sont deux informations
+            différentes : « lu » dit que Meta a affiché le message, « engagé » dit qu'un humain a fait quelque
+            chose. Un message peut être lu par milliers sans qu'une seule personne ne réagisse, et c'est
+            précisément l'écart que ce second badge rend visible.
+            Il n'apparaît que quand c'est VRAI : un badge « pas engagé » sur chaque ligne noierait la seule
+            information qui compte, celle des lignes où quelqu'un a réagi. */}
+        {send.engage && (
+          <span
+            data-testid="envoi-engage"
+            className="rounded-full bg-brand-100 px-2 py-0.5 font-medium text-brand-700"
+            title={t(
+              'Le contact a répondu ou appuyé sur un bouton après cet envoi, dans les 24 h et avant l’envoi suivant.',
+              'The contact replied or pressed a button after this send, within 24h and before the next send.',
+            )}
+          >
+            {t('engagé', 'engaged')}
+          </span>
+        )}
       </p>
       {send.error && <p className="mt-1 text-xs text-red-600">{send.error}</p>}
     </li>

@@ -40,6 +40,18 @@ export interface ContactSend {
    */
   deliveryStatus: string | null;
   deliveryUpdatedAt: string | null;
+  /**
+   * La personne a-t-elle RÉAGI à cet envoi : répondu, ou appuyé sur un bouton du template.
+   *
+   * 🔴 Ce n'est PAS « lu ». « Lu » dit que Meta a affiché le message ; « engagé » dit qu'un humain a fait
+   * quelque chose. Un message peut être lu par milliers sans qu'une seule personne ne réagisse, et c'est
+   * précisément l'écart que cet indicateur rend visible.
+   *
+   * Bornes : après l'envoi, avant le prochain envoi à ce contact, et dans les 24 h. La première borne évite
+   * que deux campagnes du même jour se créditent l'une l'autre ; la seconde évite de compter une réponse de
+   * la semaine suivante comme une réaction à ce message-là.
+   */
+  engage: boolean;
 }
 
 export interface ContactConversationAnalysis {
@@ -128,19 +140,51 @@ export class PgContactHistoryStore {
       campaign_id: string; name: string; category: string;
       template_name: string | null; template_language: string | null; workflow_name: string | null;
       status: string; sent_at: Date | null; error: string | null;
-      delivery_status: string | null; delivery_updated_at: Date | null;
+      delivery_status: string | null; delivery_updated_at: Date | null; engage: boolean;
     }>(
       // `c.tenant_id = $1` en plus du contrôle d'appartenance du contact : double barrière assumée, la même
       // que dans conversation-stats.pg.ts. Une campagne d'un autre tenant ne peut pas remonter ici.
-      `select c.id as campaign_id, c.name, c.category, c.template_name, c.template_language,
-              w.name as workflow_name,
-              r.status, r.sent_at, r.error, r.delivery_status, r.delivery_updated_at
-       from campaign_recipients r
-         join campaigns c on c.id = r.campaign_id
-         left join workflows w on w.id = c.workflow_id
-       where r.contact_id = $2 and c.tenant_id = $1
-       order by r.sent_at desc nulls last, c.created_at desc
-       limit ${limit}`,
+      //
+      // 🔴 `engage` : la personne a-t-elle RÉAGI à cet envoi ? Demandé par Julien le 2026-09-02, « en plus de
+      // l'indicateur Lu, Engagé, ce qui montre que la personne a au moins réagi ou a appuyé quelque part dans
+      // le template envoyé ». « Lu » dit que Meta a affiché le message ; « engagé » dit qu'un humain a fait
+      // quelque chose, ce qui n'est pas la même information et n'a pas la même valeur.
+      //
+      // DEUX BORNES, et chacune corrige une façon de mentir :
+      //  - la borne HAUTE de 24 h, parce qu'une réponse trois jours plus tard n'est pas une réaction à ce
+      //    message-là ; c'est aussi la fenêtre de service, donc la seule pendant laquelle la personne peut
+      //    répondre librement ;
+      //  - le PROCHAIN ENVOI, parce que deux campagnes le même jour se créditeraient l'une l'autre : une
+      //    réponse arrivée après le second message ne dit rien du premier.
+      //
+      // Tout message ENTRANT compte, texte comme appui de bouton : un appui arrive comme un entrant portant
+      // son `button_payload`, et exiger un payload exclurait « oui » écrit à la main, qui est pourtant la
+      // même réaction.
+      `with envois as (
+         select r.contact_id, r.status, r.sent_at, r.error, r.delivery_status, r.delivery_updated_at,
+                c.id as campaign_id, c.name, c.category, c.template_name, c.template_language, c.created_at,
+                w.name as workflow_name,
+                lead(r.sent_at) over (order by r.sent_at) as prochain_envoi
+           from campaign_recipients r
+             join campaigns c on c.id = r.campaign_id
+             left join workflows w on w.id = c.workflow_id
+          where r.contact_id = $2 and c.tenant_id = $1
+       )
+       select e.campaign_id, e.name, e.category, e.template_name, e.template_language, e.workflow_name,
+              e.status, e.sent_at, e.error, e.delivery_status, e.delivery_updated_at,
+              (e.sent_at is not null and exists (
+                 select 1
+                   from conversation_messages m
+                   join conversations cv on cv.id = m.conversation_id
+                  where cv.tenant_id = $1 and cv.contact_id = e.contact_id
+                    and m.direction = 'in'
+                    and m.created_at > e.sent_at
+                    and m.created_at < least(coalesce(e.prochain_envoi, 'infinity'::timestamptz),
+                                             e.sent_at + interval '24 hours')
+              )) as engage
+         from envois e
+        order by e.sent_at desc nulls last, e.created_at desc
+        limit ${limit}`,
       [tenantId, contactId],
     );
     return res.rows.map((r) => ({
@@ -155,6 +199,7 @@ export class PgContactHistoryStore {
       error: r.error,
       deliveryStatus: r.delivery_status,
       deliveryUpdatedAt: r.delivery_updated_at ? r.delivery_updated_at.toISOString() : null,
+      engage: r.engage,
     }));
   }
 

@@ -73,6 +73,14 @@ export interface ContactSend {
   /** Dernier état connu. null = statut jamais remonté par Meta, ce qui ne veut PAS dire « non délivré ». */
   deliveryStatus: string | null;
   deliveryUpdatedAt: string | null;
+  /**
+   * La personne a-t-elle RÉAGI à cet envoi : répondu, ou appuyé sur un bouton du template.
+   *
+   * 🔴 Ce n'est PAS « lu ». « Lu » dit que Meta a affiché le message ; « engagé » dit qu'un humain a fait
+   * quelque chose. Optionnel : une instance antérieure au 2026-09-02 ne le rend pas, et le badge ne
+   * s'affiche alors nulle part, ce qui vaut mieux que de l'afficher faux.
+   */
+  engage?: boolean;
 }
 export interface ContactConversation {
   conversationId: string;

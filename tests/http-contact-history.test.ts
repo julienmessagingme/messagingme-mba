@@ -30,7 +30,7 @@ const FULL: ContactHistory = {
     campaignId: 'camp-1', campaignName: 'Promo été', category: 'marketing',
     templateName: 'promo', templateLanguage: 'fr', workflowName: null,
     status: 'sent', sentAt: '2026-07-01T10:00:00.000Z', error: null,
-    deliveryStatus: 'read', deliveryUpdatedAt: '2026-07-01T10:05:00.000Z',
+    deliveryStatus: 'read', deliveryUpdatedAt: '2026-07-01T10:05:00.000Z', engage: true,
   }],
   conversations: [{
     conversationId: 'conv-1', waId: '33612345678',
