@@ -183,6 +183,34 @@ export interface OpsOverview {
   queuesParGroupe?: QueueGroupLoadRow[];
   /** Peut être absent d'une réponse antérieure au 4.9 -> traité comme null côté page. */
   worker: WorkerHeartbeat | null;
+  /**
+   * L'état du pool de connexions DE L'API, lu en mémoire. Le worker a le SIEN, invisible d'ici : il ne se lit
+   * que dans la courbe agrégée ci-dessous. Optionnel : une API d'avant le lot 7 ne l'envoie pas.
+   */
+  poolInstantane?: PoolInstantane | null;
+  /** La courbe par minute, tous process confondus. Vide tant que la migration 0109 n'est pas passée. */
+  attentesPool?: PoolAttentePoint[];
+}
+
+export interface PoolInstantane {
+  process: string;
+  total: number;
+  libres: number;
+  /** 🔴 Le seul chiffre qui alarme : non nul, le pool est saturé À CET INSTANT et quelqu'un attend. */
+  enAttente: number;
+  max: number;
+  maxMsDepuisDemarrage: number;
+}
+
+/** Une minute d'attente du pool, pour UN process. `attentes` ne compte que les acquisitions faites sur un pool
+ *  SATURÉ : ouvrir une connexion neuve coûte quelques millisecondes et n'a rien d'anormal. */
+export interface PoolAttentePoint {
+  process: string;
+  minute: string;
+  echantillons: number;
+  attentes: number;
+  maxMs: number;
+  moyenneMs: number;
 }
 
 /**

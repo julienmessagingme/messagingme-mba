@@ -176,6 +176,11 @@ export const schema = z.object({
    */
   AVANCE_ECHECS_RETENTION_DAYS: z.coerce.number().default(90),
   /**
+   * Suppression des agregats d'attente du pool (migration 0109). Courte : une ligne par minute et par process,
+   * et on regarde une courbe de quelques heures, jamais de quelques mois.
+   */
+  POOL_ATTENTES_RETENTION_DAYS: z.coerce.number().default(7),
+  /**
    * Plafond d'envois par minute et PAR NUMÉRO, tous chemins confondus (campagne, scénario, automation,
    * réponse d'inbox). Lot 4 du programme, cf. `src/meta/arbitre-debit.ts`.
    *

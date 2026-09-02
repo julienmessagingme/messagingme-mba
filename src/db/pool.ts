@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { config } from '../config';
 import { pgSsl } from './ssl';
+import { MesureAttentePool, instrumenterPool, type PoolInstrumentable } from './attente-pool';
 
 /**
  * URL du pool APPLICATIF : le pooler mode TRANSACTION (APP_DATABASE_URL, port 6543) s'il est défini, sinon repli
@@ -29,3 +30,11 @@ export const pool = new Pool({
   max: config.DB_POOL_MAX,
   connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
 });
+
+/**
+ * LA MESURE DE L'ATTENTE (lot 7 du plan post-audit). Posée ICI, au point unique de création du pool : tous les
+ * stores en héritent et aucun autre fichier ne bouge. Le raisonnement, et pourquoi ce n'est pas une jauge, sont
+ * dans `attente-pool.ts`.
+ */
+export const mesureAttentePool = new MesureAttentePool();
+instrumenterPool(pool as unknown as PoolInstrumentable, mesureAttentePool);

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, observerTenant, type OpsOverview, type TenantOverviewRow, type QueueLoadRow,
-  type QueueGroupLoadRow, type WorkerHeartbeat } from '@/lib/api';
+  type QueueGroupLoadRow, type WorkerHeartbeat, type PoolInstantane, type PoolAttentePoint } from '@/lib/api';
 import { formatDate } from '@/lib/day';
 import { fmtNum } from '@/lib/format';
 import { useLocale, useT } from '@/lib/i18n';
@@ -135,6 +135,7 @@ export default function OpsPage() {
             <WorkerCard worker={data.worker} />
 
             <QueueCard queues={data.queues} />
+            <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
             {dailyFrom && dailyTo && data.daily.length > 0 && (
@@ -243,6 +244,88 @@ function EquiteCard({ groupes }: { groupes: QueueGroupLoadRow[] }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * L'ATTENTE DU POOL DE CONNEXIONS (lot 7 du plan post-audit, 2026-09-02).
+ *
+ * 🔴 Le bon indicateur n'est PAS « à combien du plafond on est », c'est « quelqu'un a-t-il attendu, et combien
+ * de temps ». Quinze connexions sur seize sans une seule attente, tout va bien ; des attentes à huit sur seize,
+ * c'est autre chose qui cloche. D'où deux blocs qui ne se remplacent pas : l'état INSTANTANÉ de l'API (le seul
+ * pool qu'elle voie en mémoire), et la COURBE par minute lue en base, qui est le seul canal par lequel le
+ * WORKER peut se montrer.
+ *
+ * ⚠️ Une jauge lue à l'ouverture de l'écran afficherait zéro presque toujours et raterait le pic. La courbe,
+ * elle, stocke le MAXIMUM de mesures exactes et non un échantillon : aucun pic n'est perdu. Ce qu'on ne saura
+ * pas, c'est la seconde exacte du pic, et ça n'a pas de valeur pour un phénomène qui se joue sur des minutes.
+ */
+const SEUIL_ATTENTE_MS = 50;
+
+function PoolCard({ instantane, points }: { instantane: PoolInstantane | null; points: PoolAttentePoint[] }) {
+  const t = useT();
+  const { locale } = useLocale();
+  if (!instantane && points.length === 0) return null;
+
+  // Une barre par minute et par process : c'est le pic de la minute qui compte, jamais la moyenne.
+  const parProcess = new Map<string, PoolAttentePoint[]>();
+  for (const p of points) {
+    const liste = parProcess.get(p.process) ?? [];
+    liste.push(p);
+    parProcess.set(p.process, liste);
+  }
+  const maxCourbe = Math.max(1, ...points.map((p) => p.maxMs));
+
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-sm" data-testid="ops-pool">
+      <h3 className="text-sm font-semibold tracking-tight text-ink-900">{t('Pool de connexions', 'Connection pool')}</h3>
+      <p className="mb-3 text-xs text-ink-400">
+        {t(
+          'Ce qui compte n’est pas la place restante, c’est de savoir si quelqu’un a ATTENDU une connexion, et combien de temps. Chaque acquisition est mesurée : aucun pic n’est raté.',
+          'What matters is not the remaining room, it is whether anyone WAITED for a connection, and for how long. Every acquisition is measured: no spike is missed.',
+        )}
+      </p>
+
+      {instantane && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg bg-ink-50 px-3 py-2 text-xs tabular-nums">
+          <span className="font-mono text-ink-700">{instantane.process}</span>
+          <span className="text-ink-500">{fmtNum(instantane.total, locale)}/{fmtNum(instantane.max, locale)} {t('connexions', 'connections')}</span>
+          <span className="text-ink-500">{fmtNum(instantane.libres, locale)} {t('libres', 'idle')}</span>
+          {/* Le seul chiffre qui alarme : une requête en attente, c'est le pool saturé À CET INSTANT. */}
+          <span className={instantane.enAttente > 0 ? 'font-medium text-coral' : 'text-ink-500'}>
+            {fmtNum(instantane.enAttente, locale)} {t('en attente', 'waiting')}
+          </span>
+          <span className="text-ink-400">{t('pic depuis le démarrage', 'peak since start')} : {fmtNum(instantane.maxMsDepuisDemarrage, locale)} ms</span>
+        </div>
+      )}
+
+      {points.length === 0 ? (
+        <p className="text-xs text-ink-400">
+          {t('Aucune minute enregistrée pour l’instant.', 'No minute recorded yet.')}
+        </p>
+      ) : (
+        [...parProcess.entries()].map(([processus, liste]) => (
+          <div key={processus} className="mt-3">
+            <div className="mb-1 flex items-baseline justify-between text-xs">
+              <span className="font-mono text-ink-600">{processus}</span>
+              <span className="text-ink-400">
+                {t('attente max par minute', 'max wait per minute')} · {fmtNum(liste.reduce((n, p) => n + p.attentes, 0), locale)} {t('attente(s) sur pool saturé', 'wait(s) on a saturated pool')}
+              </span>
+            </div>
+            <div className="flex h-16 items-end gap-px overflow-x-auto">
+              {liste.map((p) => (
+                <span
+                  key={p.minute}
+                  title={`${p.minute} · ${p.maxMs} ms · ${p.echantillons} acquisitions`}
+                  className={`w-1 shrink-0 rounded-t ${p.maxMs >= SEUIL_ATTENTE_MS ? 'bg-coral' : 'bg-ink-300'}`}
+                  style={{ height: `${Math.max(2, Math.round((p.maxMs / maxCourbe) * 100))}%` }}
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }

@@ -58,6 +58,18 @@ export interface OpsRouteDeps {
   soldeAgent?(tenantId: string): Promise<{ soldeMicroEur: number; mouvements: unknown[] } | null>;
   /** Recharge le solde. Rend le nouveau solde, ou `null` si l'espace est inconnu. Absente -> route non montée. */
   rechargerAgent?(tenantId: string, montantMicroEur: number, note: string): Promise<number | null>;
+  /**
+   * L'ATTENTE DU POOL DE CONNEXIONS (lot 7 du plan post-audit).
+   *
+   * Deux choses, et il faut les deux : l'état INSTANTANÉ du pool de CE process (l'API), et la COURBE agrégée
+   * par minute lue en base, seul canal par lequel le worker peut se montrer (`/ops` est servi par l'API, qui
+   * ne voit jamais le pool de l'autre process).
+   *
+   * Optionnelles, comme le reste de cet écran : absentes -> la carte n'a rien à afficher, tout le reste
+   * continue. Une mesure ne doit jamais faire tomber ce qu'elle mesure, ni l'écran qui la montre.
+   */
+  etatPoolInstantane?(): { process: string; total: number; libres: number; enAttente: number; max: number; maxMsDepuisDemarrage: number };
+  lireAttentesPool?(minutes: number): Promise<unknown[]>;
 }
 
 /**
@@ -81,7 +93,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: 
   const guard = { preHandler: makeRequireOps(opsToken) };
 
   app.get('/ops/overview', guard, async (_req, reply) => {
-    const [tenants, daily, queues, worker, queuesParGroupe] = await Promise.all([
+    const [tenants, daily, queues, worker, queuesParGroupe, attentesPool] = await Promise.all([
       deps.getTenantOverview(),
       deps.getGlobalDaily(14),
       deps.getQueueLoad(),
@@ -89,8 +101,12 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, opsToken: 
       // Best-effort : une lecture d'équité en échec ne doit pas priver l'exploitation de tout le reste de
       // l'écran. Elle sert à VOIR, elle ne garantit rien.
       deps.getQueueLoadParGroupe ? deps.getQueueLoadParGroupe().catch(() => []) : Promise.resolve([]),
+      // Même doctrine, et elle compte doublement ici : la table de la migration 0109 peut ne pas exister
+      // encore, et un écran d'exploitation qui tombe le jour d'un déploiement est exactement ce qu'on ne veut pas.
+      deps.lireAttentesPool ? deps.lireAttentesPool(180).catch(() => []) : Promise.resolve([]),
     ]);
-    return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe });
+    const poolInstantane = deps.etatPoolInstantane ? deps.etatPoolInstantane() : null;
+    return reply.code(200).send({ tenants, daily, queues, worker, queuesParGroupe, poolInstantane, attentesPool });
   });
 
   /**

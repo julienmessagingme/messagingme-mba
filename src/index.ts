@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { buildServer } from './server';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
-import { pool } from './db/pool';
+import { pool, mesureAttentePool } from './db/pool';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
@@ -27,6 +27,7 @@ import { upsertContactsFromApi } from './api/contacts-upsert';
 import { PgApiIdempotencyStore } from './api/idempotency-store.pg';
 import { PgAuditStore } from './audit/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
+import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
@@ -140,6 +141,7 @@ async function main(): Promise<void> {
   const idempotencyStore = new PgApiIdempotencyStore(pool);
   const auditStore = new PgAuditStore(pool);
   const erreursLivraison = new PgErreursLivraisonStore(pool);
+  const poolAttentesStore = new PgPoolAttentesStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
   const webhookStore = new PgWebhookStore(pool);
@@ -1202,6 +1204,23 @@ async function main(): Promise<void> {
       reenfiler: (nomDeFile, data) => queue.enqueue(nomDeFile, data),
       oublierJobsMorts: (ids) => opsStore.oublierJobsMorts(ids),
       getWorkerHeartbeat: () => heartbeatStore.get(),
+      /**
+       * L'attente du pool (lot 7). Deux lectures qui ne se remplacent pas : l'état INSTANTANÉ ne peut être
+       * que celui de CE process (l'API voit son propre pool en mémoire), et la COURBE vient de la base, seul
+       * canal par lequel le worker peut se montrer.
+       *
+       * ⚠️ `waitingCount` non nul est le vrai signal : ce n'est pas « à combien du plafond on est » qui
+       * compte, c'est « quelqu'un attend-il ».
+       */
+      etatPoolInstantane: () => ({
+        process: 'api',
+        total: pool.totalCount,
+        libres: pool.idleCount,
+        enAttente: pool.waitingCount,
+        max: config.DB_POOL_MAX,
+        maxMsDepuisDemarrage: Math.round(mesureAttentePool.maxDepuisDemarrage),
+      }),
+      lireAttentesPool: (minutes) => poolAttentesStore.lireDernieresMinutes(minutes),
       // Le solde prepaye d un workspace pour l agent IA. La RECHARGE est la seule ecriture metier de cette
       // surface, et elle est ici parce qu un client ne doit jamais pouvoir crediter son propre compte.
       //
@@ -1339,7 +1358,24 @@ async function main(): Promise<void> {
     },
   });
 
+  /**
+   * L'attente du pool, versée en base une fois par minute (lot 7 du plan post-audit, migration 0109).
+   *
+   * L'API a SON pool, distinct de celui du worker : deux lignes par minute, jamais agrégées, sinon on perdrait
+   * justement l'information qui dit lequel des deux souffre. Un `registreDeTaches` serait démesuré pour une
+   * seule minuterie ici ; elle est donc posée à la main, `unref` (elle ne doit pas retenir le process) et
+   * arrêtée dans l'arrêt propre.
+   */
+  const minuteriePoolAttentes = setInterval(() => {
+    void viderVersLaBase(poolAttentesStore, mesureAttentePool, 'api', new Date(), (err) => {
+      // eslint-disable-next-line no-console
+      console.error('pool-attentes: écriture impossible (migration 0109 passée ?):', err instanceof Error ? err.message : err);
+    });
+  }, 60_000);
+  minuteriePoolAttentes.unref?.();
+
   installGracefulShutdown(async () => {
+    clearInterval(minuteriePoolAttentes);
     await app.close();
     await queue.stop();
     await pool.end();

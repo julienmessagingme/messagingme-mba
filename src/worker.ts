@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
-import { pool } from './db/pool';
+import { pool, mesureAttentePool } from './db/pool';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { fabriquerJeton } from './links/jeton-contact';
 import { PgAuditStore } from './audit/store.pg';
@@ -82,6 +82,7 @@ import { pullFromInfo, pullFromError } from './account/pull';
 import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { PgOpsStore } from './ops/store.pg';
 import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
+import { PgPoolAttentesStore, viderVersLaBase } from './ops/pool-attentes.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { MetaClientFactory } from './meta/factory';
 import { arbitreDeDebit } from './meta/arbitre-debit';
@@ -170,6 +171,21 @@ async function main(): Promise<void> {
   // minuteries étaient arrêtées une par une dans l'arrêt propre, et trois y avaient déjà échappé.
   const taches = registreDeTaches();
   taches.programmer('heartbeat', config.HEARTBEAT_INTERVAL_MS, () => beat(false));
+
+  /**
+   * L'attente du pool, versée en base une fois par minute (lot 7 du plan post-audit, migration 0109).
+   *
+   * 🔴 C'est le SEUL canal par lequel ce process peut se montrer : `/ops` est servi par l'API, qui voit son
+   * propre pool en mémoire et jamais celui du worker. Best-effort de bout en bout, une mesure ne doit jamais
+   * faire tomber ce qu'elle mesure.
+   */
+  const poolAttentes = new PgPoolAttentesStore(pool);
+  taches.programmer('pool-attentes', 60_000, async () => {
+    await viderVersLaBase(poolAttentes, mesureAttentePool, 'worker', new Date(), (err) => {
+      // eslint-disable-next-line no-console
+      console.error('pool-attentes: écriture impossible (migration 0109 passée ?):', err instanceof Error ? err.message : err);
+    });
+  });
 
   // File webhook (Loop 1). Le PgRecipientStore applique les statuts de livraison ; le
   // PgInboxStore enregistre les messages entrants (réponses / taps de boutons) en conversations ;
@@ -1072,6 +1088,8 @@ async function main(): Promise<void> {
     // d'audit qui, lui, est immuable par construction.
     await etape('avances', `échec(s) d’avance effacé(s) (au-delà de ${config.AVANCE_ECHECS_RETENTION_DAYS} j)`,
       () => erreursLivraison.purgeEchecsAvanceOlderThan(config.AVANCE_ECHECS_RETENTION_DAYS));
+    await etape('pool', `minute(s) d’attente du pool effacée(s) (au-delà de ${config.POOL_ATTENTES_RETENTION_DAYS} j)`,
+      () => poolAttentes.purgeOlderThan(config.POOL_ATTENTES_RETENTION_DAYS));
   };
   void retentionSweep();
   taches.programmer('retention-generale', 6 * 60 * 60 * 1000, retentionSweep);
