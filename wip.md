@@ -18,21 +18,13 @@ Julien a demandé dix choses d'un coup, plus deux questions. **Déployé** (`74c
 refondu (le gros morceau), le bug de défilement de l'inbox, le menu Contenu rangé par canal et « tag »
 devenu « étiquette ».
 
-**Ce qui reste de sa liste, dans l'ordre où je le prends :**
+**Livré et déployé depuis** : la dernière saisie et « maintenant » dans les scénarios (`e9355e0`),
+l'effacement d'une conversation tracé (`34f5edd`), « engagé » au mini-CRM (`d697b6f`), et les deux journaux
+avec leur recherche (`f0c2024`).
 
-1. **La « dernière saisie » comme valeur de scénario.** Elle est atteignable depuis un connecteur ; Julien
-   veut aussi pouvoir la copier dans un champ personnalisé depuis un bloc de scénario. Le lecteur existe
-   déjà (`derniereSaisieDuContact`), il reste à l'ouvrir au bloc « poser un champ ».
-2. **Corriger « maintenant » dans le bloc de scénario.** Le connecteur sort désormais l'heure avec le
-   décalage du fuseau (`formatMaintenant`) ; `src/workflow/engine.ts` écrit encore `toISOString()`, donc de
-   l'UTC. Un seul appel à remplacer, mais les conditions datetime lisent ces valeurs : à vérifier.
-3. **Supprimer le contenu d'une conversation**, tracé au Journal des actions.
-4. **Le journal des erreurs** (retours Meta avec code) au même endroit que le Journal des actions, et la
-   **recherche** dans les deux (mot-clé, utilisateur, numéro). ⚠️ Le journal d'actions ne porte AUCUN numéro,
-   par conception RGPD : la recherche par numéro devra le résoudre vers l'identifiant interne, et ne trouvera
-   rien pour un contact anonymisé. L'écran doit le DIRE au lieu de rendre une liste vide.
-5. **« Engagé » dans l'historique du mini-CRM**, sur les appuis de bouton.
-6. 🔴 **L'attribution des clics**, qui est un chantier à part et pas une case à cocher. Le lien tracé est
+**IL NE RESTE QU'UN ITEM, et c'est le plus lourd :**
+
+1. 🔴 **L'attribution des clics**, qui est un chantier à part et pas une case à cocher. Le lien tracé est
    aujourd'hui le MÊME pour tous les destinataires (`/r/<code>` est figé dans le template approuvé par Meta),
    donc l'information « qui » n'existe nulle part au moment du clic. Il faut un jeton par destinataire dans
    l'URL (`/r/<code>/{{1}}`, rempli à l'envoi), ce que Meta supporte. **Les templates DÉJÀ approuvés ne

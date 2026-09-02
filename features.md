@@ -721,6 +721,15 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Inbox
 
+- ✅ **Effacer le contenu d'une conversation** (2026-09-02), réservé aux administrateurs. Ce sont les messages
+  qui partent, pas la conversation : son affectation, son détenteur et son analyse restent.
+  🔴 **La confirmation vous prévient d'une conséquence que personne ne devine** : la fenêtre de 24 h se calcule
+  sur le dernier message reçu, donc après l'effacement elle est fermée, et vous ne pourrez plus répondre
+  librement à ce contact tant qu'il n'aura pas réécrit. L'action est tracée au Journal des actions, sans le
+  numéro ni le texte effacé.
+- ✅ **Le fil ne défile plus tout seul** (2026-09-02). Il se replaçait en bas toutes les 4 secondes, y compris
+  quand vous étiez remonté pour relire. Deux corrections : le dernier message ne se ré-ajoute plus au fil, et
+  l'écran ne redescend que si vous y étiez déjà.
 - ✅ **Affecter une conversation à quelqu'un** (2026-08-21) : depuis le fil, un **manager** ou un admin choisit
   le membre qui s'en occupe, ou la laisse libre. Tant qu'une conversation n'est affectée à personne, **tout le
   monde peut y répondre**, agents compris. Dès qu'elle est affectée, **seul l'agent désigné** répond ; les
@@ -1126,6 +1135,23 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   en-tête `authorization` saisi sur un appel est refusé, en vous disant où le déclarer.
 - ⛔ **Pas encore : MCP** (les serveurs d'outils standardisés). La console les acceptera, aucun code ne les
   sert aujourd'hui.
+
+## Journaux et traces (menu Paramètres)
+
+- ✅ **Journal des actions** : qui a ajouté, supprimé, effacé ou basculé un consentement, et quand. Les
+  contacts y figurent par identifiant interne, **jamais par numéro** : y écrire un numéro annulerait la
+  suppression d'un contact, dans un registre fait pour ne jamais être modifié.
+- ✅ **Journal des erreurs de livraison** (2026-09-02), juste en dessous : ce que Meta a répondu quand un
+  message n'est pas parti, ou n'est pas arrivé. Le code, sa signification en français pour les plus courants,
+  la campagne, le numéro, et surtout **d'où vient l'échec** : « jamais parti » (Meta a refusé notre appel) ou
+  « parti, non délivré » (le téléphone d'en face). Chercher au mauvais endroit coûte cher.
+  Celui-ci **porte les numéros**, contrairement au précédent : « quel message n'est pas arrivé » sans dire
+  « à qui » ne répond à rien. Il n'a rien d'immuable et disparaît avec le contact quand vous le supprimez.
+- ✅ **Recherche dans les deux** : par mot-clé, par utilisateur, par numéro de client. ⚠️ Dans le journal des
+  actions, chercher par numéro passe par la fiche du contact, donc **un contact effacé ne s'y retrouve plus**,
+  même si ses actions y figurent toujours. L'écran le dit sous le résultat vide plutôt que de laisser croire
+  qu'il ne s'est rien passé.
+- ✅ **Export CSV** des deux journaux.
 
 ## Exploitation `/ops` (interne, hors console client)
 
