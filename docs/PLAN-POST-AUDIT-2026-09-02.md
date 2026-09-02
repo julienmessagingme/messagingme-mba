@@ -11,9 +11,15 @@ Relevé en base de production le 2026-09-02, et c'est ce qui trie tout le reste 
 | Mesure | Valeur |
 |---|---|
 | Jobs traités sur 7 jours, toutes files | **85** (60 webhook, 13 statut, 5 analyses, 5 push, 2 runs) |
-| Durée d'un webhook | moyenne **3,6 s**, pire **12,9 s** |
+| Durée de TRAITEMENT d'un webhook | moyenne **0,2 s**, pire **3,1 s** |
 | Contacts en base, tous espaces | **12** |
 | Plus grosse campagne jamais créée | **2 destinataires** |
+| Tours d'agent IA joués en production | **0**, depuis toujours |
+
+⚠️ **Mesurer `completed_on - started_on`, pas `completed_on - created_on`.** Le second inclut l'attente en
+file et donnait « 3,6 s en moyenne » là où le travail réel prend 0,2 s. Sur des files volontairement lentes
+(`webhook-status` sonde à cadence longue), l'écart atteint un facteur 600 et ferait conclure à un problème de
+débit là où il n'y a qu'une cadence choisie.
 
 Conséquence directe : **aucun problème de capacité n'existe aujourd'hui.** Les lots ci-dessous corrigent des
 défauts de CORRECTION (un message en trop, un écran qui ment), jamais des défauts de débit. Tout ce que
@@ -133,6 +139,39 @@ lecture, humaine ou automatique.
    `ignoreHumanControl: true`. Le comportement est peut-être le bon (une campagne lancée par un opérateur doit
    sans doute partir), mais **il ne peut pas y avoir deux règles écrites**. Trancher, aligner le texte, et
    poser un test au niveau du câblage réel et non de l'exécuteur nu.
+
+---
+
+## Lot 6 : six files traitent UN job à la fois pour toute la flotte
+
+**Constat NON fait par l'audit externe**, trouvé le 2026-09-02 en répondant à la question de Julien « s'il y a
+25 clients, il n'y a qu'un seul worker ? ».
+
+Sur les huit consommateurs du worker, **deux seulement** passent des options de concurrence : `webhook`
+(3 simultanés, groupe = le CONTACT) et `campaign-run` (4 simultanés, groupe = le CLIENT). Les six autres
+tournent sur le défaut de pg-boss, vérifié dans sa source (`node_modules/pg-boss/dist/manager.js:532`,
+`localConcurrency = 1`) : **un seul job à la fois, tous clients confondus.**
+
+Deux conséquences, et c'est la seconde qui compte :
+
+1. **Aucune équité par client sur les entrants.** Le groupe de `webhook` est le contact, ce qui garantit
+   l'ORDRE des messages d'une même personne, pas le partage entre clients. Rien n'empêche un client bavard
+   d'occuper les 3 places. Mineur au temps de traitement mesuré (0,2 s en moyenne, 3,1 s au pire) ; cesse de
+   l'être si un envoi part en retry Meta et tient une place jusqu'à 154 s, ce qui renvoie au lot 1.
+2. 🔴 **`agent-turn` traite UN tour à la fois pour la flotte entière**, et un appel au modèle a un plafond de
+   120 s (`HTTP_TIMEOUT_MODELE_MS`). À 25 clients, les conversations d'agent font la queue les unes derrière
+   les autres, tous espaces mêlés. Au plafond, cela fait **30 tours par heure pour tout le monde**.
+   ⚠️ Cette file **n'a jamais tourné en production** (zéro job dans tout l'historique) : la durée d'un tour
+   réel n'est donc pas mesurée, et ce chiffre est une borne, pas une prévision.
+
+**Le correctif n'est PAS un second worker.** Une réplique ferait passer `agent-turn` de 1 à 2, ce qui ne
+résout rien, tout en dupliquant les 19 balayages et en cassant l'ordre par contact. Le correctif est **une
+option par file** : monter la concurrence et poser le **client** comme clé de groupe sur `agent-turn` et
+`analyze-conversation`, ce qui donne le débit ET l'équité sans réplique ni coordination distribuée.
+
+**Condition de déclenchement :** avant d'ouvrir l'agent IA à plusieurs clients actifs. Aucune urgence tant que
+la file n'a jamais tourné. **Mesurer la durée d'un tour réel AVANT de choisir les chiffres** : les poser
+maintenant serait deviner.
 
 ---
 
