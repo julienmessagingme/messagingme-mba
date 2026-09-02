@@ -86,6 +86,7 @@ import { PgToolCatalog } from './agent/catalog.pg';
 import { lireContexteAgent } from './agent/contexte';
 import { PgCreditStore } from './agent/credits.pg';
 import { PgSourceStore } from './agent/sources.pg';
+import { PgRequeteStore } from './agent/requetes.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { construireCible, enTetesAuthSource } from './agent/http-cible';
@@ -154,6 +155,7 @@ async function main(): Promise<void> {
   const toolCatalog = new PgToolCatalog(pool);
   const credits = new PgCreditStore(pool);
   const agentSources = new PgSourceStore(pool);
+  const agentRequetes = new PgRequeteStore(pool);
   // Vide -> la conversation de construction repond 503, aucun crash au boot.
   const gateway = config.AI_GATEWAY_API_KEY ? new GatewayChatClient(config.AI_GATEWAY_API_KEY) : null;
   const automationStore = new PgAutomationStore(pool);
@@ -830,6 +832,29 @@ async function main(): Promise<void> {
           return { ok: false, erreur: 'systeme injoignable' };
         }
       },
+    },
+    // Les REQUETES de connecteur (migration 0105) : un appel mis au point une fois dans la bibliotheque, que
+    // l outil d un agent DESIGNE au lieu de le redecrire.
+    agentRequetes: {
+      lister: (tenant) => agentRequetes.lister(tenant),
+      parId: (tenant, id) => agentRequetes.parId(tenant, id),
+      creer: (tenant, input) => agentRequetes.creer(tenant, input),
+      patch: (tenant, id, p) => agentRequetes.patch(tenant, id, p),
+      supprimer: (tenant, id) => agentRequetes.supprimer(tenant, id),
+      /**
+       * Ce qu il faut pour EPROUVER une requete : l adresse de base et les en-tetes d authentification.
+       *
+       * ⚠️ `enTetesAuthSource` est le MEME point de passage que l appel reel. Un test qui authentifierait
+       * autrement dirait « ca repond » d une source que les appels ne savent pas authentifier, ce qui est
+       * exactement la divergence que l audit du 2026-08-18 a payee une centaine de fois.
+       */
+      sourcePourTest: async (tenant, sourceId) => {
+        const src = await agentSources.pourAppel(tenant, sourceId);
+        return src ? { baseUrl: src.baseUrl, entetes: enTetesAuthSource(src), status: src.status } : null;
+      },
+      // Les cles des champs DECLARES : une variable `champ` doit en designer une, sinon la faute de frappe ne
+      // se verrait qu a l appel, en pleine conversation.
+      clesDeChamps: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
     },
     flows: {
       flowsFor: (tenant) => metaFactory.flowClientForTenant(tenant), // token PAR TENANT (B1), repli global en sommeil

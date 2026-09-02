@@ -19,6 +19,7 @@ import { registerAgents } from './http/agents';
 import { registerAgentKnowledge } from './http/agent-knowledge';
 import { registerAgentTools } from './http/agent-tools';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
+import { registerAgentRequetes, type AgentRequetesRouteDeps } from './http/agent-requetes';
 import { registerAgentSetup } from './http/agent-setup';
 import { registerAgentTest } from './http/agent-test';
 import { registerMedia } from './http/media';
@@ -139,6 +140,7 @@ export interface ServerDeps {
   agentKnowledge?: AgentKnowledgeRouteDeps;
   agentTools?: AgentToolsRouteDeps;
   agentSources?: AgentSourcesRouteDeps;
+  agentRequetes?: AgentRequetesRouteDeps;
   agentSetup?: AgentSetupRouteDeps;
   agentTest?: AgentTestRouteDeps;
   /** WhatsApp Flows (constructeur de formulaire) — réservé aux admins. */
@@ -319,6 +321,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.agentKnowledge) registerAgentKnowledge(app, deps.agentKnowledge, requireAdmin);
   if (deps.agentTools) registerAgentTools(app, deps.agentTools, requireAdmin);
   if (deps.agentSources) registerAgentSources(app, deps.agentSources, requireAdmin);
+  // Reservees aux ADMINS comme les sources : decrire une requete, c est decider ce qu on envoie au systeme
+  // d un client, et le bouton Test rend la reponse ENTIERE pour que le client y choisisse ses champs.
+  if (deps.agentRequetes) registerAgentRequetes(app, deps.agentRequetes, requireAdmin);
   if (deps.agentSetup) registerAgentSetup(app, deps.agentSetup, requireAdmin);
   if (deps.agentTest) registerAgentTest(app, deps.agentTest, requireAdmin);
   if (deps.media) registerMedia(app, deps.media, requireAdmin);

@@ -288,6 +288,44 @@ export function assemblerAppel(input: {
 }
 
 /**
+ * Les chemins LISIBLES d'une réponse, pour que l'écran les propose à cocher après un test au lieu de demander
+ * au client d'écrire `livraison.date` de tête.
+ *
+ * 🔴 C'est ce qui rend l'écran utilisable par quelqu'un qui ne connaît pas les API : il lance le test, il voit
+ * la réponse, il coche ce qu'il veut. Écrire un chemin à la main suppose de savoir lire du JSON, et une faute
+ * de frappe ne se voit qu'à l'exécution, en pleine conversation.
+ *
+ * ⚠️ N'offre QUE ce que l'extracteur sait résoudre. Il ne descend pas dans les tableaux (pas d'index, décision
+ * assumée du résolveur), donc un tableau est proposé ENTIER, comme une feuille. Proposer `commandes.0.total`
+ * fabriquerait un chemin cochable qui ne rendrait jamais rien : une case qui ment est pire qu'une case
+ * absente, parce qu'on ne la soupçonne pas.
+ *
+ * Bornée en PROFONDEUR et en NOMBRE : une réponse profonde ou large produirait une liste illisible, et
+ * l'écran doit rester utilisable sur la réponse d'une API qu'on découvre.
+ */
+export function cheminsDeLaReponse(valeur: unknown, max = 200, profondeurMax = 5): string[] {
+  const out: string[] = [];
+  const marcher = (n: unknown, prefixe: string, profondeur: number): void => {
+    if (out.length >= max) return;
+    // Un tableau est une FEUILLE : voir le commentaire ci-dessus.
+    if (n !== null && typeof n === 'object' && !Array.isArray(n) && profondeur < profondeurMax) {
+      const entrees = Object.entries(n as Record<string, unknown>);
+      if (entrees.length === 0 && prefixe !== '') out.push(prefixe);
+      for (const [cle, v] of entrees) {
+        // Une clé contenant un point casserait la notation : le chemin `a.b` désignerait deux niveaux alors
+        // qu'il n'y en a qu'un. On l'omet plutôt que d'offrir un chemin ambigu.
+        if (cle.includes('.')) continue;
+        marcher(v, prefixe === '' ? cle : `${prefixe}.${cle}`, profondeur + 1);
+      }
+      return;
+    }
+    if (prefixe !== '') out.push(prefixe);
+  };
+  marcher(valeur, '', 0);
+  return out;
+}
+
+/**
  * Les noms de variables qu'un gabarit RÉCLAME, pour que l'écran puisse dire « tu utilises `{{ville}}` mais tu
  * ne l'as pas déclarée » AVANT l'envoi, et pour que la fenêtre de création d'un agent puisse annoncer au
  * client ce qui partira réellement dans la requête.
