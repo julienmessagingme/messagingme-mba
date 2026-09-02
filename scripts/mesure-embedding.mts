@@ -95,6 +95,60 @@ function cosinus(a: number[], b: number[]): number {
   return na === 0 || nb === 0 ? 0 : ps / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
+/**
+ * 🔴 LE RERANKER, ET POURQUOI IL CHANGE TOUT. Un embedding est un « bi-encodeur » : il encode la question et
+ * la fiche SEPAREMENT, puis compare. Son cosinus dit « ces deux textes se ressemblent », ce qui n'est pas la
+ * meme question que « cette fiche REPOND-elle a cette question ». C'est pour ça que le hors-sujet remonte a
+ * 0,361 quand une vraie question descend a 0,299 : les deux nuages se chevauchent et AUCUN seuil n'est posable.
+ *
+ * Un reranker est un « cross-encodeur » : il lit la question ET la fiche ENSEMBLE et rend un score de
+ * pertinence calibre. C'est l'outil du VERDICT, la ou l'embedding est l'outil du RAPPEL.
+ *
+ * Ce banc-ci mesure la seule chose qui compte : ce score separe-t-il les questions qui ont une reponse de
+ * celles qui n'en ont pas ? Si non, on n'aura fait que deplacer le probleme.
+ */
+async function reranker(modele: string, question: string, documents: string[]): Promise<number[]> {
+  const res = await fetch('https://ai-gateway.vercel.sh/v1/rerank', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cle}` },
+    body: JSON.stringify({ model: modele, query: question, documents, top_n: documents.length }),
+  });
+  const corps = (await res.json()) as { results?: Array<{ index?: number; relevance_score?: number }>; error?: { message?: string } };
+  if (!res.ok) throw new Error(`${res.status} ${corps.error?.message ?? ''}`.trim());
+  const scores = new Array<number>(documents.length).fill(0);
+  for (const r of corps.results ?? []) if (typeof r.index === 'number') scores[r.index] = Number(r.relevance_score ?? 0);
+  return scores;
+}
+
+const RERANKERS = (process.argv[3] ?? '').split(',').filter((m) => m !== '');
+for (const modele of RERANKERS) {
+  try {
+    console.log(`
+=== RERANKER ${modele} ===`);
+    const bonnes: number[] = [];
+    for (const e of EPREUVES) {
+      const scores = await reranker(modele, e.question, FICHES.map((f) => f.texte));
+      const bonne = scores[FICHES.findIndex((f) => f.id === e.attendu)]!;
+      const rang = [...scores].sort((a, b) => b - a).indexOf(bonne) + 1;
+      bonnes.push(bonne);
+      console.log(`  rang=${rang} score_bonne=${bonne.toFixed(4)} « ${e.question.slice(0, 30)} »`);
+    }
+    const horsSujet: number[] = [];
+    for (const q of HORS_SUJET) {
+      const scores = await reranker(modele, q, FICHES.map((f) => f.texte));
+      const premier = Math.max(...scores);
+      horsSujet.push(premier);
+      console.log(`  HORS SUJET premier=${premier.toFixed(4)} « ${q.slice(0, 30)} »`);
+    }
+    const minBonne = Math.min(...bonnes);
+    const maxHs = Math.max(...horsSujet);
+    console.log(`  -> bonnes: min=${minBonne.toFixed(4)} | hors-sujet: max=${maxHs.toFixed(4)}`);
+    console.log(`  -> SEUIL POSABLE : ${minBonne > maxHs ? `OUI, entre ${maxHs.toFixed(4)} et ${minBonne.toFixed(4)}` : 'NON, ça se chevauche encore'}`);
+  } catch (err) {
+    console.log(`  INDISPONIBLE : ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 for (const modele of MODELES) {
   try {
     const fiches = await embarquer(modele, FICHES.map((f) => f.texte));
