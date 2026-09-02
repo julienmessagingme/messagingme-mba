@@ -16,9 +16,18 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import type { Campaign, GuardrailThresholds, RunReport } from './types';
 import type { CampaignSender } from './sender';
 
+/**
+ * ⚠️ CETTE LISTE EST UN PASSE-PLAT, ET C'EST SON DANGER. Le worker construit ses dépendances puis les passe
+ * ici ; tout ce qui n'est pas nommé dans ce `Pick` est ACCEPTÉ par le compilateur (les propriétés arrivent
+ * dans un spread, qui échappe au contrôle des propriétés en trop) puis JETÉ à la construction d'`optionsMoteur`
+ * plus bas. C'est exactement ce qui est arrivé le 2026-09-02 à `boutonsTraces` / `jetonsPourContacts` : câblés
+ * dans le worker, absents d'ici, donc jamais vus par le moteur, et toutes les campagnes portant un template à
+ * lien tracé échouaient en 131008. Ajouter une dépendance au moteur = l'ajouter ICI **et** dans `optionsMoteur`.
+ */
 export interface RunJobDeps extends Pick<
   EngineDeps,
   'startWorkflow' | 'startWorkflowFromNode' | 'getTemplateCarousel' | 'getTemplateHeaderMedia' | 'recordOutbound' | 'thresholds'
+  | 'boutonsTraces' | 'jetonsPourContacts'
 > {
   getCampaign(id: string): Promise<Campaign | null>;
   /** Construit le sender pour la campagne (MetaClient sur le token du tenant en prod, fake en test). Async : la
@@ -179,6 +188,10 @@ export async function campaignRunJob(data: unknown, deps: RunJobDeps): Promise<R
     ...(deps.startWorkflowFromNode ? { startWorkflowFromNode: deps.startWorkflowFromNode } : {}),
     ...(deps.getTemplateCarousel ? { getTemplateCarousel: deps.getTemplateCarousel } : {}),
     ...(deps.getTemplateHeaderMedia ? { getTemplateHeaderMedia: deps.getTemplateHeaderMedia } : {}),
+    // Attribution des clics : sans ces deux-là, aucun composant `sub_type: url` n'est produit et Meta refuse
+    // tout template dont un bouton porte `{{1}}` (131008). Elles étaient câblées dans le worker et perdues ici.
+    ...(deps.boutonsTraces ? { boutonsTraces: deps.boutonsTraces } : {}),
+    ...(deps.jetonsPourContacts ? { jetonsPourContacts: deps.jetonsPourContacts } : {}),
     ...(deps.recordOutbound ? { recordOutbound: deps.recordOutbound } : {}),
     ...(deps.thresholds ? { thresholds: deps.thresholds } : {}),
     ...(deps.arretDemande ? { arretDemande: deps.arretDemande } : {}),

@@ -224,21 +224,29 @@ const DEFAULT_THRESHOLDS: GuardrailThresholds = {
 /**
  * Les suffixes de boutons pour UN destinataire, ou rien du tout.
  *
- * 🔴 TOUT OU RIEN, et c'est la garde qui protège l'envoi. Meta refuse l'appel (132000) si un composant de
- * bouton manque pour une URL variable, ET si un composant est fourni pour une URL qui n'en a pas. Sans jeton
- * (contact inconnu, lecture en échec), on ne produit donc AUCUN composant : le message part avec un lien qui
- * pointe `/r/<code>/` sans jeton, que la route sert comme un lien anonyme. On perd la mesure de ce message-là,
- * on ne perd pas le message.
+ * 🔴 CE QUI DÉCIDE, C'EST LE TEMPLATE, PAS LE JETON. Meta refuse l'appel dans les DEUX sens : un composant
+ * fourni pour une URL sans variable, et une URL à variable dont le composant manque. Or la liste des boutons
+ * tracés décrit le TEMPLATE (colonne écrite à sa soumission) : elle seule dit s'il faut des composants.
+ *
+ * ⚠️ CORRIGÉ LE 2026-09-02, APRÈS UN ÉCHEC EN PRODUCTION. La version d'avant ne produisait aucun composant
+ * quand le jeton manquait, en annonçant « on perd la mesure, on ne perd pas le message ». C'est l'inverse qui
+ * arrive : le template est déjà approuvé chez Meta avec `/r/<code>/{{1}}`, donc sans composant l'appel est
+ * refusé en **131008 Required parameter is missing** et RIEN ne part. Mesuré sur trois campagnes ce jour-là.
+ * Sans jeton, on envoie donc un suffixe ANONYME : le lien fonctionne, le clic est compté, il n'est rattaché à
+ * personne. C'est là, et seulement là, qu'on dégrade la mesure plutôt que l'envoi.
  *
  * Fonction pure et exportée pour être éprouvée seule : c'est une décision à deux issues sur le chemin le plus
  * chaud du produit, et la tester à travers un run de campagne entier ne dirait pas grand-chose.
  */
+export const SUFFIXE_ANONYME = 'anon';
+
 export function suffixesPourDestinataire(
   boutons: readonly number[],
   jeton: string | undefined,
 ): { suffixesBoutons?: Record<number, string> } {
-  if (boutons.length === 0 || !jeton) return {};
-  return { suffixesBoutons: Object.fromEntries(boutons.map((i) => [i, jeton])) };
+  if (boutons.length === 0) return {};
+  const suffixe = jeton && jeton !== '' ? jeton : SUFFIXE_ANONYME;
+  return { suffixesBoutons: Object.fromEntries(boutons.map((i) => [i, suffixe])) };
 }
 
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {

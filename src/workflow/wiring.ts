@@ -37,6 +37,9 @@ import type { EmailAccountResolver } from '../email/resolver';
 import { sendSmtpEmail } from '../email/smtp';
 import { renderText, contactVars } from '../crm/render';
 import { adressesDestinataires, type SendEmailAction } from './engine';
+// La MÊME décision que sur le chemin des campagnes : un template tracé exige ses composants de bouton, quel
+// que soit le chemin d'envoi. On importe la règle plutôt que d'en écrire une seconde qui divergera.
+import { suffixesPourDestinataire } from '../campaign/engine';
 
 /**
  * Câblage de l'exécuteur de scénarios : la vingtaine de dépendances IO qu'il réclame (contacts, tags, envois
@@ -389,6 +392,30 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       }
       const client = await metaFactory.clientForTenant(tenant, pn); // token PAR TENANT (B1), repli global en sommeil
 
+      /**
+       * ATTRIBUTION DES CLICS, sur le chemin des SCÉNARIOS (corrigé le 2026-09-02).
+       *
+       * 🔴 Un scénario envoie exactement les mêmes templates qu'une campagne directe. Quand un bouton a été
+       * soumis à Meta sous la forme `/r/<code>/{{1}}`, ce `{{1}}` doit être rempli à CHAQUE envoi, par quelque
+       * chemin que ce soit : sans son composant, Meta refuse tout le message en 131008. Ce chemin-ci ne le
+       * faisait pas, donc tout scénario démarrant par un template tracé échouait. Mesuré en production.
+       */
+      const suffixes = await (async (): Promise<{ suffixesBoutons?: Record<number, string> }> => {
+        try {
+          const liens = await trackedLinks.listByTemplates(tenant, [name]);
+          const boutons = liens.filter((l) => l.avecJeton && l.cardIndex === null).map((l) => l.buttonIndex);
+          if (boutons.length === 0) return {};
+          const jeton = await trackedLinks.jetonPourE164(tenant, waId, fabriquerJeton).catch(() => null);
+          return suffixesPourDestinataire(boutons, jeton ?? undefined);
+        } catch (err) {
+          // Illisible : on ne sait pas si ce template porte des variables de bouton. On part comme avant, et on
+          // le DIT, parce que c'est le seul cas où un 131008 resterait inexpliqué.
+          // eslint-disable-next-line no-console
+          console.error(`workflow sendTemplate: liens tracés de « ${name} » illisibles:`, err instanceof Error ? err.message : err);
+          return {};
+        }
+      })();
+
       // Campagne workflow : les variables du 1er template sont DÉJÀ résolues par contact (paramMapping de la campagne,
       // via buildRecipients). On les utilise directement, sans relire le corps live du template ni les hints (chemin
       // identique aux campagnes template DIRECTES). `explicitParams` DÉFINI (même `[]` = template sans variable) ->
@@ -408,7 +435,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${visuels.refus}`);
           return `template « ${name} » : ${visuels.refus}`;
         }
-        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}`, ...visuels });
+        const { components, missing } = buildWorkflowTemplateComponents({ hints: [], varCount: explicitParams.length, contact: {}, buttons, explicitParams, flowToken: `${waId}-${Date.now()}`, ...visuels, ...suffixes });
         if (missing.length > 0) {
           // eslint-disable-next-line no-console
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
@@ -457,6 +484,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       const { components, missing } = buildWorkflowTemplateComponents({
         hints, varCount: info.count, contact: contact ?? {}, buttons, flowToken: `${waId}-${Date.now()}`, now: new Date(),
         ...visuels,
+        ...suffixes,
       });
       if (missing.length > 0) {
         // eslint-disable-next-line no-console

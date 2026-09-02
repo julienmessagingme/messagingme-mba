@@ -186,4 +186,21 @@ describe('variables déjà résolues + en-tête média : la combinaison de la ca
     });
     expect(r.missing).toEqual([1]);
   });
+
+  /**
+   * 🔴 UN SCÉNARIO ENVOIE LES MÊMES TEMPLATES QU'UNE CAMPAGNE. Quand un bouton a été soumis à Meta sous la
+   * forme `/r/<code>/{{1}}`, il exige son composant à CHAQUE envoi. Ce chemin ne le produisait pas : tout
+   * scénario démarrant par un template tracé échouait en 131008 (mesuré en production le 2026-09-02).
+   */
+  it('🔴 les suffixes des boutons tracés partent AUSSI depuis un scénario', () => {
+    const r = buildWorkflowTemplateComponents({
+      hints: [], varCount: 0, contact: {}, explicitParams: [],
+      buttons: [{ type: 'URL', text: 'Les nouveautés' }, { type: 'QUICK_REPLY', text: 'Les tarifs' }],
+      suffixesBoutons: { 0: 'jetonducontact' },
+    });
+    expect(r.components).toEqual([
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: 'jetonducontact' }] },
+      { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'btn:1' }] },
+    ]);
+  });
 });

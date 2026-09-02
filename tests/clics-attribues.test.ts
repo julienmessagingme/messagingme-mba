@@ -61,14 +61,22 @@ describe('l’adresse soumise à Meta', () => {
 });
 
 /**
- * 🔴 LE BLOC LE PLUS IMPORTANT DU FICHIER. Meta refuse l'appel avec un 132000 dans les DEUX sens : un
- * composant de bouton fourni pour une URL sans variable, comme une variable sans composant. Se tromper ne
- * dégrade pas une mesure, ça empêche le message de partir.
+ * 🔴 LE BLOC LE PLUS IMPORTANT DU FICHIER. Meta refuse l'appel dans les DEUX sens : un composant de bouton
+ * fourni pour une URL sans variable, comme une variable sans composant. Se tromper ne dégrade pas une mesure,
+ * ça empêche le message de partir.
+ *
+ * ⚠️ CE BLOC A ÉTÉ CORRIGÉ LE 2026-09-02 : il affirmait « sans jeton, aucun composant : on perd la mesure,
+ * pas le message ». La production a dit l'inverse. Le template étant déjà approuvé avec `/r/<code>/{{1}}`,
+ * ne pas fournir le composant fait refuser l'envoi en 131008, et rien ne part. Ce qui décide, c'est le
+ * TEMPLATE (les boutons tracés), jamais l'état du jeton d'un contact.
  */
-describe('le suffixe d’un destinataire : tout ou rien', () => {
-  it('sans JETON, aucun composant : on perd la mesure, pas le message', () => {
-    // Contact inconnu, ou lecture des jetons en échec. Un composant vide ferait échouer l'envoi.
-    expect(suffixesPourDestinataire([0], undefined)).toEqual({});
+describe('le suffixe d’un destinataire : c’est le template qui décide', () => {
+  it('🔴 sans JETON, les composants sont TOUT DE MÊME produits, avec un suffixe anonyme', () => {
+    // Contact inconnu, ou lecture des jetons en échec. Le lien reste valide (`/r/<code>/anon` redirige),
+    // le clic est compté, il n'est simplement rattaché à personne.
+    const r = suffixesPourDestinataire([0], undefined);
+    expect(Object.keys(r.suffixesBoutons ?? {})).toEqual(['0']);
+    expect(r.suffixesBoutons?.[0]).toBeTruthy();
   });
 
   it('sans BOUTON tracé, aucun composant : le template n’a pas de variable à remplir', () => {

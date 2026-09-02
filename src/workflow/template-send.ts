@@ -46,6 +46,15 @@ export function buildWorkflowTemplateComponents(opts: {
    */
   headerMediaId?: string;
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  /**
+   * Suffixes des boutons URL TRACÉS, par index de bouton (attribution des clics, migration 0106).
+   *
+   * 🔴 Un scénario envoie EXACTEMENT les mêmes templates qu'une campagne directe. Quand l'URL d'un bouton a
+   * été soumise à Meta sous la forme `/r/<code>/{{1}}`, elle exige son composant à CHAQUE envoi, quel que
+   * soit le chemin qui envoie. L'oublier ici refuse l'envoi en 131008, ce qu'a fait tout scénario démarrant
+   * par un template tracé jusqu'au 2026-09-02.
+   */
+  suffixesBoutons?: Record<number, string>;
 }): { components: unknown[]; missing: number[] } {
   const resolved = opts.explicitParams !== undefined
     ? { values: opts.explicitParams, missing: opts.explicitParams.flatMap((v, i) => (v === '' ? [i + 1] : [])) }
@@ -55,6 +64,7 @@ export function buildWorkflowTemplateComponents(opts: {
     ...(opts.carousel ? { carousel: opts.carousel } : {}),
     ...(opts.headerMediaId ? { headerMediaId: opts.headerMediaId } : {}),
     ...(opts.headerFormat ? { headerFormat: opts.headerFormat } : {}),
+    ...(opts.suffixesBoutons ? { suffixesBoutons: opts.suffixesBoutons } : {}),
   });
   const flowToken = opts.flowToken && opts.flowToken !== '' ? opts.flowToken : 'mba-flow';
   // Un composant par bouton, à l'INDEX du template (préservé) : quick-reply -> payload contrôlé (`btn:<i>`) ;
