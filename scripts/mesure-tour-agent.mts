@@ -104,6 +104,9 @@ const resultatConnaissance = JSON.stringify({
   fiches: vehicules.map((v) => ({ titre: v.nom, contenu: v.description })),
 });
 
+/** Le nom sous lequel la recherche de connaissance est EXPOSEE au modele, dérivé du catalogue. */
+const NOM_CONNAISSANCE = OUTILS_MAISON.find((o) => o.handler === 'chercher_connaissance')!.nomDefaut;
+
 const QUESTIONS = [
   'Bonjour, je cherche une voiture pour la ville, pas trop chere, plutot hybride. Vous avez quoi ?',
   'Je fais 80 km par jour sur autoroute, quel modele vous me conseillez ?',
@@ -134,7 +137,11 @@ for (let tour = 0; tour < TOURS; tour += 1) {
     // puis un message `tool` par appel. C'est ce qui fait grossir le contexte a l'aller-retour suivant.
     messages.push({ role: 'assistant', content: r.texte ?? '', tool_calls: r.appelsOutils.map((a) => ({ id: a.id, type: 'function', function: { name: a.nom, arguments: a.argumentsJson } })) } as never);
     for (const a of r.appelsOutils) {
-      messages.push({ role: 'tool', tool_call_id: a.id, content: a.nom === 'chercher_connaissance' ? resultatConnaissance : '{"ok":true}' } as never);
+      // ⚠️ On compare le nom EXPOSE au modele (`nomDefaut`), pas le handler. Ma premiere version comparait le
+      // handler : la recherche de connaissance n'etait donc jamais reconnue, le corpus n'entrait jamais dans
+      // le contexte, et le banc mesurait un prompt de 1 100 tokens en croyant en mesurer un long. Un banc qui
+      // se trompe de mesure est pire qu'une absence de banc, parce qu'il produit un chiffre.
+      messages.push({ role: 'tool', tool_call_id: a.id, content: a.nom === NOM_CONNAISSANCE ? resultatConnaissance : '{"ok":true}' } as never);
     }
   }
 }
