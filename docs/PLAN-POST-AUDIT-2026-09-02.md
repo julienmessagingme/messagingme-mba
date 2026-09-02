@@ -18,7 +18,8 @@ datent de 16:09 UTC, AVANT les envois de 17:56, ce sont les relecteurs de Meta.
 **Ordre recommandé, inchangé** : lot 1 (le bail) d'abord, c'est le seul qui puisse encore envoyer un message en
 trop à un client. Puis lot 6 (concurrence), qui conditionne la trajectoire à 25 clients.
 
-**La seule décision qui manque** : le chiffre du plafond de campagne (lot 3). Proposition faite : 5 000.
+**Plus aucune décision en attente.** Le plafond de campagne du lot 3 est tranché : **20 000** (Julien,
+2026-09-02). Les sept lots sont prêts à être codés.
 
 ⚠️ **Une AUTRE session travaille dans le dépôt.** Au moment d'écrire, elle a commité et poussé `7073b8b`
 (badge « modifications non publiées »), **non déployé**. Ne jamais faire `git add src tests` en bloc :
@@ -123,8 +124,10 @@ décidé de ne pas faire.
 nombre demandé et le plafond. Uniforme sur les trois chemins : cible filtrée, identifiants explicites, et
 « tous les contacts ».
 
-⚠️ **Bloqué sur une décision produit** : le chiffre. Contexte pour trancher : la base compte **12 contacts**
-et la plus grosse campagne jamais créée en portait **2**.
+✅ **Le chiffre est tranché par Julien le 2026-09-02 : 20 000.** Plus aucune décision en attente sur ce lot.
+Le plafond est un garde-fou, pas un objectif : la base compte aujourd'hui **12 contacts** et la plus grosse
+campagne jamais créée en portait **2**. Il vit en variable de configuration (`CAMPAIGN_MAX_RECIPIENTS`), donc
+il se relève sans redéploiement de code le jour où un client réel arrive avec plus gros.
 
 ---
 
