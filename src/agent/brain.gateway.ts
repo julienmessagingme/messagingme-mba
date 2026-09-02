@@ -176,6 +176,20 @@ async function boucler(
     });
     usage.tokensIn += reponse.usage.tokensIn;
     usage.tokensOut += reponse.usage.tokensOut;
+    /**
+     * 🔴 LA TRACE QUI RÉPOND À « EST-CE QU'ON CACHE DÉJÀ ? » (2026-09-02). Le champ arrivait dans la réponse
+     * et personne ne le lisait, donc on ne SAVAIT pas. C'est la mesure la moins chère du chantier IA et elle
+     * décide de la suite : la partie constante de chaque appel (prompt système + définitions d'outils) est
+     * renvoyée à CHAQUE aller-retour, jusqu'à six par tour. Si elle est servie depuis un cache, il n'y a rien
+     * à construire ; sinon, c'est le plus gros levier sur le coût ET sur le débit tenable.
+     *
+     * Une ligne PAR ALLER-RETOUR et non par tour, délibérément : ce qu'on cherche à voir, c'est justement si
+     * la part cachée grimpe au deuxième, le préfixe étant alors déjà connu du fournisseur. Un total par tour
+     * moyennerait exactement l'information utile. La file n'ayant jamais tourné en production, le volume de
+     * ces lignes est nul aujourd'hui ; à revoir le jour où elle tourne pour de bon.
+     */
+    // eslint-disable-next-line no-console
+    console.log(`agent-cache: agent=${input.agentId} ar=${allerRetour} in=${reponse.usage.tokensIn} caches=${reponse.usage.tokensCaches} part=${reponse.usage.tokensIn > 0 ? Math.round((reponse.usage.tokensCaches / reponse.usage.tokensIn) * 100) : 0}%`);
     // 🔴 LA CONVERSION SE FAIT ICI, ET UNE SEULE FOIS (ancienne dette D1). Le Gateway facture en DOLLARS,
     // tous nos compteurs et tous nos plafonds sont en micro-euros : on additionnait donc des dollars dans
     // une colonne d'euros, et le plafond réglé par le client était comparé à une autre monnaie que la

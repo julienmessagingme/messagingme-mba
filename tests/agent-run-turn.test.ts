@@ -310,7 +310,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
 
   const reponseTexte = (t: string): ReponseChat => ({
     texte: t, appelsOutils: [], finish: 'stop',
-    usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 }, generationId: null,
+    usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null,
   });
 
   it('🔴 le tour lui passe son CONTEXTE : sans lui, le cerveau réel lève à chaque appel', async () => {
@@ -325,7 +325,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
     // Un contexte figé au câblage ferait exécuter les outils du contact A dans la conversation de B : c'est
     // le défaut de conception que le passage à l'appel a fermé, et il se vérifie ici, bout en bout.
     const { cap, brain } = cerveauReel([
-      { texte: null, appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }], finish: 'tool_calls', usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 }, generationId: null },
+      { texte: null, appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }], finish: 'tool_calls', usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null },
       reponseTexte('C est note.'),
     ]);
     const { deps } = make({ brain });

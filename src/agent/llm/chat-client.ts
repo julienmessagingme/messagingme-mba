@@ -77,6 +77,22 @@ export interface ReponseChat {
     tokensIn: number;
     tokensOut: number;
     /**
+     * 🔴 TOKENS D'ENTRÉE SERVIS DEPUIS UN CACHE, et c'est LA mesure qui décide de tout le dimensionnement IA.
+     *
+     * Pourquoi elle compte plus qu'elle n'en a l'air. Un tour d'agent n'est pas un appel : c'est jusqu'à six
+     * allers-retours (`MAX_ALLERS_RETOURS`), et CHACUN renvoie l'intégralité du prompt système, des
+     * définitions d'outils et des résultats d'outils déjà accumulés. La partie CONSTANTE (prompt système +
+     * outils), rigoureusement identique d'un aller-retour à l'autre et d'un tour à l'autre, est donc payée
+     * six fois par tour. Si le fournisseur la cache automatiquement, elle ne l'est qu'une fois.
+     *
+     * ⚠️ On n'envoie AUCUNE instruction de cache (`cache_control` absent du dépôt). Il serait FAUX d'en
+     * conclure que rien n'est caché : certains fournisseurs cachent les préfixes longs sans qu'on demande.
+     * Ce champ est le seul moyen de le SAVOIR au lieu de le supposer, et il arrivait déjà dans la réponse
+     * sans que personne le lise. `0` veut dire soit « pas de cache », soit « champ non rendu par ce
+     * fournisseur » : les deux se distinguent en regardant si le nombre reste nul sur un prompt long répété.
+     */
+    tokensCaches: number;
+    /**
      * Coût de CET appel, **en dollars**, tel que le Gateway le facture (hors surcharges).
      *
      * ⚠️ En DOLLARS, pas en euros. La colonne de budget s'appelle `budget_micro_eur` : la conversion (ou le
@@ -98,7 +114,13 @@ interface CorpsReponse {
       provider_metadata?: { gateway?: { cost?: string; generationId?: string } };
     };
   }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    cost?: number;
+    /** Format OpenAI-compatible du Gateway. Absent chez un fournisseur qui ne le rend pas : lu en `0`. */
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 }
 
 export class GatewayChatClient {
@@ -170,6 +192,8 @@ export class GatewayChatClient {
             // `provider_metadata`.
             tokensIn: Number(body?.usage?.prompt_tokens ?? 0),
             tokensOut: Number(body?.usage?.completion_tokens ?? 0),
+            // Le champ arrivait déjà et n'était pas lu : on ne SAVAIT donc pas si le cache tournait.
+            tokensCaches: Number(body?.usage?.prompt_tokens_details?.cached_tokens ?? 0),
             // `gateway.cost` est une CHAÎNE décimale de dollars ; `usage.cost` porte la même valeur en
             // nombre. On lit la chaîne en premier (c'est le champ documenté), l'autre sert de repli.
             coutDollars: gateway?.cost !== undefined ? Number(gateway.cost) : Number(body?.usage?.cost ?? 0),

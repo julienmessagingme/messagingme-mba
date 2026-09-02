@@ -54,7 +54,7 @@ function reponse(argumentsJson: string, nom = OUTIL_PROPOSER): ReponseChat {
     texte: null,
     appelsOutils: [{ id: 'c1', nom, argumentsJson }],
     finish: 'tool_calls',
-    usage: { tokensIn: 100, tokensOut: 20, coutDollars: 0.0001 },
+    usage: { tokensIn: 100, tokensOut: 20, tokensCaches: 0, coutDollars: 0.0001 },
     generationId: 'gen_1',
   };
 }
@@ -361,7 +361,7 @@ describe('conversation de construction', () => {
       ['illisible', reponse('{ pas du json')],
       ['hors format', reponse(JSON.stringify({ fiche: { objectif: 'x' } }))], // pas de `message`
       ['handler inventé', reponse(JSON.stringify({ message: 'x', outils: [{ handler: 'rm_rf', description: 'd', nePasUtiliser: '' }] }))],
-      ['sans appel d outil', { texte: 'je réponds en prose', appelsOutils: [], finish: 'stop', usage: { tokensIn: 1, tokensOut: 1, coutDollars: 0 }, generationId: null } as ReponseChat],
+      ['sans appel d outil', { texte: 'je réponds en prose', appelsOutils: [], finish: 'stop', usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null } as ReponseChat],
     ] as const) {
       const res = await app({ reponse: r }).srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
       expect(res.statusCode, cas).toBe(422);
@@ -479,7 +479,7 @@ describe('conversation de construction', () => {
         fiches,
         reponse: {
           texte: ['Tarifs 2026', 'Entrée simple 6 euros, abonnement mensuel 45 euros, carte dix entrées 50 euros.'].join('\n'),
-          appelsOutils: [], finish: 'stop', usage: { tokensIn: 900, tokensOut: 40, coutDollars: 0.002 }, generationId: 'g',
+          appelsOutils: [], finish: 'stop', usage: { tokensIn: 900, tokensOut: 40, tokensCaches: 0, coutDollars: 0.002 }, generationId: 'g',
         },
       });
       const res = await a.srv.inject({
@@ -516,7 +516,7 @@ describe('conversation de construction', () => {
     it('🔴 l’image part au modèle de VISION, pas à celui de l’entretien', async () => {
       const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
       const a = app({
-        reponse: { texte: 'Tarifs : 45 euros par mois pour l abonnement mensuel complet.', appelsOutils: [], finish: 'stop', usage: { tokensIn: 9, tokensOut: 4, coutDollars: 0 }, generationId: 'g' },
+        reponse: { texte: 'Tarifs : 45 euros par mois pour l abonnement mensuel complet.', appelsOutils: [], finish: 'stop', usage: { tokensIn: 9, tokensOut: 4, tokensCaches: 0, coutDollars: 0 }, generationId: 'g' },
       });
       await a.srv.inject({ method: 'POST', url: urlPiece('t1'), ...h(adminTok), payload: { nom: 'Grille', dataUrl: png } });
       expect(a.cap.appels[0]!.modele).toBe('modele-de-vision');

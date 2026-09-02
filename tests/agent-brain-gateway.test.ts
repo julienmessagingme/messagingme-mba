@@ -43,11 +43,11 @@ const TOUR: ContexteTour = {
 
 const texte = (t: string): ReponseChat => ({
   texte: t, appelsOutils: [], finish: 'stop',
-  usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
+  usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
 });
 const appelOutil = (nom: string, args: string, id = 'c1'): ReponseChat => ({
   texte: null, appelsOutils: [{ id, nom, argumentsJson: args }], finish: 'tool_calls',
-  usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
+  usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
 });
 
 function deps(reponses: ReponseChat[], resolveur?: ResolveurOutil, agent: ContexteAgentComplet = AGENT) {
@@ -162,7 +162,7 @@ describe('penserTrace', () => {
         { id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' },
         { id: 'c2', nom: 'mba_poser_tag', argumentsJson: '{"tag":"relance"}' },
       ],
-      usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
+      usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
     };
     const { cap, d } = deps([salve, texte('C’est noté.')]);
     const r = await penserTrace(entree(), TOUR, d);
@@ -180,7 +180,7 @@ describe('penserTrace', () => {
         { id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' },
         { id: 'c2', nom: 'mba_poser_tag', argumentsJson: '{"tag":"relance"}' },
       ],
-      usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
+      usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
     };
     const unSeul = { ...AGENT, plafonds: { maxAppelsOutils: 1, budgetMicroEur: 30_000 } };
     const { d } = deps([salve, texte('ok')], undefined, unSeul);

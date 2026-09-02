@@ -47,11 +47,11 @@ const AGENT: ContexteAgentComplet = {
 
 const texte = (t: string): ReponseChat => ({
   texte: t, appelsOutils: [], finish: 'stop',
-  usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
+  usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
 });
 const appelOutil = (nom: string, args: string): ReponseChat => ({
   texte: null, appelsOutils: [{ id: 'c1', nom, argumentsJson: args }], finish: 'tool_calls',
-  usage: { tokensIn: 10, tokensOut: 5, coutDollars: 0.00001 }, generationId: null,
+  usage: { tokensIn: 10, tokensOut: 5, tokensCaches: 0, coutDollars: 0.00001 }, generationId: null,
 });
 
 function app(opts: {

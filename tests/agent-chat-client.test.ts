@@ -140,7 +140,36 @@ describe('GatewayChatClient (tâche 14)', () => {
     const t = new FauxTransport([ok(null)]);
     const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
     expect(r.texte).toBeNull();
-    expect(r.usage).toEqual({ tokensIn: 0, tokensOut: 0, coutDollars: 0 });
+    expect(r.usage).toEqual({ tokensIn: 0, tokensOut: 0, tokensCaches: 0, coutDollars: 0 });
     expect(r.appelsOutils).toEqual([]);
+  });
+
+  /**
+   * 🔴 LES TOKENS SERVIS DEPUIS UN CACHE (2026-09-02). Le champ arrivait dans la réponse et personne ne le
+   * lisait, donc on ne SAVAIT pas si le cache tournait. C'est la mesure la moins chère du chantier IA et elle
+   * décide de la suite : la partie constante de chaque appel (prompt système + définitions d'outils) est
+   * renvoyée à chaque aller-retour, jusqu'à six par tour. Cachée, elle n'est payée qu'une fois.
+   */
+  it('🔴 lit prompt_tokens_details.cached_tokens', async () => {
+    const t = new FauxTransport([ok({
+      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 4000, completion_tokens: 20, cost: 0.01, prompt_tokens_details: { cached_tokens: 3200 } },
+    })]);
+    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    expect(r.usage.tokensCaches).toBe(3200);
+    expect(r.usage.tokensIn).toBe(4000);
+  });
+
+  it('un fournisseur qui ne rend PAS ce champ donne zéro, sans rien casser', async () => {
+    // ⚠️ Et zéro veut alors dire deux choses différentes : « pas de cache » ou « champ non rendu ». Les
+    // distinguer demande de regarder si le nombre reste nul sur un préfixe long RÉPÉTÉ, ce qu'aucun test
+    // unitaire ne peut faire à notre place.
+    const t = new FauxTransport([ok({
+      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 4000, completion_tokens: 20 },
+    })]);
+    const r = await new GatewayChatClient('cle', t).completer({ modele: 'm', messages: [] });
+    expect(r.usage.tokensCaches).toBe(0);
+    expect(r.usage.tokensIn).toBe(4000);
   });
 });
