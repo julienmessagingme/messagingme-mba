@@ -39,12 +39,13 @@ export interface TemplateRouteDeps {
    * redirection qu'on ne saurait pas servir.
    */
   tracking?: {
-    /** Réserve le code du bouton et enregistre sa destination. Rend le code. */
-    allocate(tenantId: string, cible: CibleLien, destination: string): Promise<string>;
+    /** Réserve le code du bouton et enregistre sa destination. Rend le code. `avecJeton` décide si l'URL
+     *  soumise portera le suffixe variable, et donc si l'envoi devra fournir un composant de bouton. */
+    allocate(tenantId: string, cible: CibleLien, destination: string, avecJeton: boolean): Promise<string>;
     /** Meta a accepté : ces liens sont bien ceux que porte le template. */
     confirm(tenantId: string, codes: readonly string[]): Promise<void>;
-    /** Adresse publique d'un code. */
-    lienDe(code: string): string;
+    /** Adresse publique d'un code, avec ou sans son suffixe variable. */
+    lienDe(code: string, avecJeton: boolean): string;
     /** `adresse de redirection -> destination d'origine`, pour ces templates. Sert au ré-habillage. */
     destinations(tenantId: string, noms: readonly string[]): Promise<Map<string, string>>;
   };
@@ -68,6 +69,24 @@ async function saveHintsSafe(deps: TemplateRouteDeps, tenant: string, name: stri
 }
 
 /**
+ * Ce bouton peut-il porter le suffixe variable qui attribue le clic ?
+ *
+ * 🔴 UNIQUEMENT LES BOUTONS DE PREMIER NIVEAU, et ce n'est pas un choix de produit, c'est une contrainte du
+ * constructeur de composants : `buildTemplateComponents` ne sait produire qu'un composant `{ type: 'button',
+ * index }`, qui adresse un bouton DU TEMPLATE. Un bouton porté par une CARTE de carousel se désigne autrement
+ * (dans le composant de sa carte), et rien ne sait le faire aujourd'hui.
+ *
+ * Soumettre `{{1}}` sur un bouton de carte le condamnerait donc au **131008 Required parameter is missing**
+ * À CHAQUE ENVOI, définitivement, puisque l'URL est figée chez Meta une fois le template approuvé. Le bouton
+ * de carte reste donc tracé, mais sous la forme ANONYME : son clic est compté, il n'est rattaché à personne.
+ * On dégrade la mesure, jamais l'envoi.
+ *
+ * ⚠️ Le jour où le constructeur saura adresser un bouton de carte, c'est ICI qu'on ouvrira la règle, et les
+ * templates déjà approuvés garderont leur forme anonyme pour toujours.
+ */
+export const estAttribuable = (cardIndex: number | null): boolean => cardIndex === null;
+
+/**
  * Réserve un lien tracé par bouton URL et rend le template à soumettre.
  *
  * Si QUOI QUE CE SOIT échoue, on rend le template D'ORIGINE : mieux vaut un template non mesuré qu'un
@@ -87,13 +106,15 @@ async function preparerLiens(
     const liens = new Map<string, string>();
     const codes: string[] = [];
     for (const c of cibles) {
+      const avecJeton = estAttribuable(c.cardIndex);
       const code = await deps.tracking.allocate(
         tenant,
         { templateName: input.name, templateLanguage: input.language, cardIndex: c.cardIndex, buttonIndex: c.buttonIndex },
         c.url,
+        avecJeton,
       );
       codes.push(code);
-      liens.set(cleBouton(c.cardIndex, c.buttonIndex), deps.tracking.lienDe(code));
+      liens.set(cleBouton(c.cardIndex, c.buttonIndex), deps.tracking.lienDe(code, avecJeton));
     }
     return { aSoumettre: appliquerLiens(input, liens), codes };
   } catch (err) {

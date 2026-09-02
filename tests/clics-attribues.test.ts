@@ -3,6 +3,7 @@ import { fabriquerJeton, estJeton, JETON_RE } from '../src/links/jeton-contact';
 import { suffixesPourDestinataire } from '../src/campaign/engine';
 import { buildTemplateComponents } from '../src/meta/template-components';
 import { lienDe, lienTraceAvecJeton } from '../src/links/rewrite';
+import { estAttribuable } from '../src/http/templates';
 
 /**
  * SAVOIR QUI A CLIQUÉ (migration 0106).
@@ -114,5 +115,43 @@ describe('les composants envoyés à Meta', () => {
   it('plusieurs boutons tracés produisent plusieurs composants', () => {
     const c = buildTemplateComponents({ bodyParams: [], suffixesBoutons: { 0: 'aaaaaaaaaaaaaaaa', 2: 'aaaaaaaaaaaaaaaa' } }) as Array<{ type: string }>;
     expect(c.filter((x) => x.type === 'button')).toHaveLength(2);
+  });
+});
+
+/**
+ * 🔴 LE BOUTON D'UNE CARTE DE CAROUSEL N'EST PAS ATTRIBUABLE, et c'est une contrainte, pas un choix.
+ *
+ * Quatrième défaut de la même famille que le 131008 du 2026-09-02, trouvé en corrigeant les trois autres.
+ * `boutonsTracables` trace AUSSI les boutons portés par les cartes d'un carousel (`rewrite.ts`), mais
+ * `buildTemplateComponents` ne sait produire qu'un composant `{ type: 'button', index }`, qui adresse un
+ * bouton DU TEMPLATE. Un bouton de carte se désigne autrement, et rien ne sait le faire.
+ *
+ * Soumettre `{{1}}` sur un bouton de carte l'aurait donc condamné au **131008 à CHAQUE ENVOI, définitivement**,
+ * l'URL étant figée chez Meta une fois le template approuvé. Zéro occurrence en base au moment du correctif :
+ * le piège était armé, il n'avait pas encore servi.
+ */
+describe('quel bouton peut porter le suffixe variable', () => {
+  it('🔴 un bouton DU TEMPLATE est attribuable, un bouton de CARTE ne l’est pas', () => {
+    expect(estAttribuable(null)).toBe(true);
+    expect(estAttribuable(0)).toBe(false);
+    expect(estAttribuable(3)).toBe(false);
+  });
+
+  it('🔴 le constructeur de composants ne sait PAS adresser un bouton de carte', () => {
+    // C'est CE fait qui justifie la règle : les composants produits portent un `index` de bouton et rien qui
+    // désigne une carte. Si ce test casse un jour, c'est que le constructeur a appris à le faire, et alors
+    // seulement la règle ci-dessus pourra s'ouvrir.
+    const c = buildTemplateComponents({ bodyParams: [], suffixesBoutons: { 1: 'abcdefghjkmnpqrs' } }) as Array<Record<string, unknown>>;
+    const bouton = c.find((x) => x.type === 'button');
+    expect(bouton).toBeDefined();
+    expect(Object.keys(bouton!)).toEqual(['type', 'sub_type', 'index', 'parameters']);
+    expect(Object.keys(bouton!)).not.toContain('card_index');
+  });
+
+  it('un bouton de carte reste TRACÉ, sous sa forme anonyme : on dégrade la mesure, jamais l’envoi', () => {
+    // Le clic est toujours compté, il n'est simplement rattaché à personne. C'est exactement le comportement
+    // d'avant l'attribution, et il n'exige aucun composant à l'envoi.
+    expect(lienDe('https://mba.test', 'ab12cd34ef56')).toBe('https://mba.test/r/ab12cd34ef56');
+    expect(lienDe('https://mba.test', 'ab12cd34ef56')).not.toContain('{{');
   });
 });

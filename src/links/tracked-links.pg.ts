@@ -48,23 +48,27 @@ export class PgTrackedLinkStore {
    * garde le code et met à jour la destination : les messages déjà livrés continuent de fonctionner et
    * suivent la nouvelle cible. Attribuer un nouveau code les aurait laissés pointer une ligne orpheline.
    */
-  async allocate(tenantId: string, code: string, cible: CibleLien, destination: string): Promise<string> {
+  async allocate(tenantId: string, code: string, cible: CibleLien, destination: string, avecJeton: boolean): Promise<string> {
     const res = await this.pool.query<{ code: string }>(
       // `confirmed_at = null` remis à chaque réservation : une nouvelle soumission n'est confirmée que si
       // Meta l'accepte à son tour. Sans cette remise à zéro, un template resoumis puis refusé garderait la
       // confirmation de sa version précédente.
-      // `avec_jeton = true` : depuis le 2026-09-02, tout lien RESERVE ici porte le suffixe variable qui fera
-      // voyager le jeton du destinataire. C est cette colonne, et elle seule, qui dit a l ENVOI s il doit
-      // fournir un composant de bouton : la deduire de la date de creation serait une regle qui se casse au
-      // premier retard de deploiement, et se tromper dans un sens comme dans l autre fait echouer l envoi
-      // avec un 132000.
+      // `avec_jeton` dit a l ENVOI s il doit fournir un composant de bouton, et c est cette colonne SEULE qui
+      // le dit : la deduire de la date de creation serait une regle qui se casse au premier retard de
+      // deploiement. Se tromper fait echouer l envoi dans les deux sens (131008 quand le composant manque,
+      // 132000 quand il est fourni pour une URL sans variable).
+      //
+      // 🔴 ELLE EST DESORMAIS DECIDEE PAR L APPELANT, et ce n est plus toujours `true`. Un bouton de CARTE de
+      // carousel n est pas adressable par le constructeur de composants (il ne sait produire qu un composant
+      // de premier niveau) : lui soumettre un `{{1}}` le condamnerait au 131008 pour toujours. Cf. la regle
+      // dans `src/http/templates.ts`.
       `insert into tracked_links (code, tenant_id, template_name, template_language, card_index, button_index, destination, avec_jeton)
-       values ($1, $2, $3, $4, $5, $6, $7, true)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (tenant_id, template_name, template_language, coalesce(card_index, -1), button_index)
          where template_name is not null
-         do update set destination = excluded.destination, confirmed_at = null, avec_jeton = true
+         do update set destination = excluded.destination, confirmed_at = null, avec_jeton = excluded.avec_jeton
        returning code`,
-      [code, tenantId, cible.templateName, cible.templateLanguage, cible.cardIndex, cible.buttonIndex, destination],
+      [code, tenantId, cible.templateName, cible.templateLanguage, cible.cardIndex, cible.buttonIndex, destination, avecJeton],
     );
     return res.rows[0]!.code;
   }

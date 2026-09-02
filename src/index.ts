@@ -366,12 +366,12 @@ async function main(): Promise<void> {
       // Traçage des liens : l'adresse publique est celle de la console (APP_URL), servie par le rewrite
       // `/r/:code` du front vers cette API.
       tracking: {
-        allocate: (tenant, cible, destination) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination),
+        allocate: (tenant, cible, destination, avecJeton) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination, avecJeton),
         confirm: (tenant, codes) => trackedLinkStore.confirm(tenant, codes),
         // 🔴 Le lien SOUMIS porte desormais son suffixe variable : c est lui qui fera voyager le jeton du
         // destinataire, donc qui permettra de savoir QUI a clique. Les templates deja approuves gardent
         // l ancienne forme, leur URL etant figee chez Meta.
-        lienDe: (code) => lienTraceAvecJeton(config.APP_URL, code),
+        lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(config.APP_URL, code) : lienDe(config.APP_URL, code)),
         // `adresse de redirection -> destination d'origine` : c'est ce qui permet de remontrer à
         // l'utilisateur le lien qu'il a saisi, partout où la console liste des templates.
         // ⚠️ Les DEUX formes sont dans la map, et il le faut : les templates approuves AVANT le 2026-09-02

@@ -219,7 +219,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const jour = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Paris' });
     const plage = { from: jour, to: jour };
 
-    const code = await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo');
+    const code = await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo', true);
 
     // La redirection marche AVANT toute confirmation : si Meta a accepté mais que notre confirmation a
     // échoué, le lien circule déjà dans des messages livrés et doit fonctionner.
@@ -229,7 +229,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     // Ré-allouer le MÊME bouton garde le code (les messages déjà livrés continuent de fonctionner) et suit
     // la nouvelle destination.
-    const code2 = await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo-v2');
+    const code2 = await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo-v2', true);
     expect(code2).toBe(code);
     expect((await store.getByCode(code))?.destination).toBe('https://client.fr/promo-v2');
 
@@ -296,7 +296,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     // Une réservation ultérieure REMET la confirmation à zéro : un template resoumis puis refusé ne doit pas
     // garder la confirmation de sa version précédente.
-    await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo-v3');
+    await store.allocate(tenantId, newTrackingCode(), cible, 'https://client.fr/promo-v3', true);
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
   });
 
@@ -1036,7 +1036,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const liens = new PgTrackedLinkStore(pool);
     const nom = `clics.itest.${Date.now()}`;
 
-    const code = await liens.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/x');
+    const code = await liens.allocate(tenantId, newTrackingCode(), { templateName: nom, templateLanguage: 'fr', cardIndex: null, buttonIndex: 0 }, 'https://client.fr/x', true);
     await liens.confirm(tenantId, [code]);
 
     const contact = (await pool.query<{ id: string }>(
