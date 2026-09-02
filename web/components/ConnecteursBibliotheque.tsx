@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
+import { RequetesConnecteur } from '@/components/RequetesConnecteur';
 import {
   creerSource, eprouverSource, listSources, patchSource, supprimerSource,
   type AuthSource, type SourceAgent,
@@ -91,6 +92,16 @@ export function ConnecteursBibliotheque({ tenantId }: { tenantId: string }) {
       ))}
 
       <NouvelleSource busy={busy} onCreer={(input) => agir(async () => { await creerSource(tenantId, input); })} />
+
+      {/* Les APPELS, sous les systèmes, et dans cet ordre : un appel a besoin de savoir où aller. Ils vivent
+          dans la même page parce qu'on ne met pas au point l'un sans regarder l'autre, et parce qu'un écran
+          qui séparerait « le système » et « l'appel vers ce système » obligerait à faire des allers-retours
+          pour une seule mise au point. */}
+      {sources !== null && (
+        <div className="mt-2 border-t border-ink-200 pt-4">
+          <RequetesConnecteur tenantId={tenantId} sources={sources} />
+        </div>
+      )}
     </div>
   );
 }

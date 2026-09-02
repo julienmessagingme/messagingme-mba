@@ -41,8 +41,11 @@ export function AgentConnecteurs({ tenantId, agentId, outils, onChange }: {
   const charger = useCallback(async () => {
     try {
       const [s, r] = await Promise.all([listSources(tenantId), listRequetes(tenantId)]);
-      setSources(s);
-      setRequetes(r.requetes);
+      // ⚠️ Défensif des DEUX côtés : une réponse mal formée doit dégrader, jamais blanchir l'écran. Un
+      // `.map` sur `undefined` fait planter le rendu de TOUT l'onglet, y compris la liste des outils
+      // maison, qui n'a rien à voir. Même précaution que la liste des conversations de l'inbox.
+      setSources(Array.isArray(s) ? s : []);
+      setRequetes(Array.isArray(r?.requetes) ? r.requetes : []);
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Chargement impossible', 'Unable to load'));
     }
