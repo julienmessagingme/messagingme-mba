@@ -388,3 +388,62 @@ describe('bloc Question dans Analytics', () => {
     expect(bloc.choix.map((c) => c.handle)).toEqual(['row:0', 'row:1']);
   });
 });
+
+/**
+ * CLICS SUR UN LIEN D'UN BLOC RCS (migration 0107).
+ *
+ * 🔴 CE QUE CE BLOC PROTÈGE : la COLLISION DE HANDLES. Les sorties d'un bloc RCS s'appellent `btn:0`,
+ * `btn:1`… mais elles ne comptent QUE les boutons réponse, un bouton lien ne revenant jamais dans la
+ * conversation. Numéroter les liens dans le même espace ferait porter deux mesures différentes par la même
+ * clé sur un même bloc, y compris dans les tableaux DÉJÀ enregistrés par un opérateur.
+ */
+describe('clics sur un LIEN d’un bloc RCS', () => {
+  /** Un bloc RCS : un bouton réponse d'abord, un bouton lien ensuite. C'est le cas qui piège. */
+  const blocRcs: Graph = {
+    nodes: [{
+      id: 'a',
+      type: 'rcs_message',
+      data: {
+        text: 'Notre offre',
+        suggestions: [
+          { kind: 'reply', text: 'Oui', postbackData: 'btn:0' },
+          { kind: 'openUrl', text: 'Voir le site', url: 'https://client.fr/promo', postbackData: 'p' },
+        ],
+      },
+    }],
+    edges: [],
+  };
+
+  it('le lien porte son LIBELLE, lu dans la liste plate du bloc', () => {
+    const bloc = blocsDuScenario(blocRcs, 'fr', {}, { a: ['lien:1'] })[0]!;
+    expect(bloc.liens).toEqual([{ handle: 'lien:1', label: '« Voir le site »' }]);
+  });
+
+  it('🔴 la mesure du lien et celle du bouton réponse ne portent PAS la même clé', () => {
+    // Le coeur du sujet : `btn:0` est le bouton réponse, `lien:1` est le lien. Si les deux étaient numérotés
+    // dans le même espace, ils se seraient tous deux appelés `btn:0` sur ce bloc.
+    const bloc = blocsDuScenario(blocRcs, 'fr', { a: ['btn:0'] }, { a: ['lien:1'] })[0]!;
+    const cles = mesuresDisponibles(bloc, 'fr').filter((m) => m.handle !== null).map((m) => m.cle);
+    expect(cles).toContain('a|reply_button|btn:0');
+    expect(cles).toContain('a|url_click|lien:1');
+    expect(new Set(cles).size).toBe(cles.length);
+  });
+
+  it('la mesure s’intitule « a cliqué sur le lien », comme pour un template', () => {
+    const bloc = blocsDuScenario(blocRcs, 'fr', {}, { a: ['lien:1'] })[0]!;
+    expect(mesuresDisponibles(bloc, 'fr').find((m) => m.kind === 'url_click'))
+      .toEqual({ cle: 'a|url_click|lien:1', label: 'A cliqué sur le lien « Voir le site »', kind: 'url_click', handle: 'lien:1' });
+  });
+
+  it('sans libellé retrouvable, le lien garde son NUMERO plutôt que son nom technique', () => {
+    // Un bouton renommé depuis, ou un tableau enregistré dont le bloc a changé : on perd le texte, pas la ligne.
+    expect(libelleHandle('lien:1', [], 'fr')).toBe('Lien 2');
+    expect(libelleHandle('lien:1', [], 'en')).toBe('Link 2');
+  });
+
+  it('un bloc RCS sans lien tracé ne propose aucune mesure de clic', () => {
+    const bloc = blocsDuScenario(blocRcs, 'fr')[0]!;
+    expect(bloc.liens).toEqual([]);
+    expect(mesuresDisponibles(bloc, 'fr').some((m) => m.kind === 'url_click')).toBe(false);
+  });
+});

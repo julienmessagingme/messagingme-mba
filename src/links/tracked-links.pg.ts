@@ -272,6 +272,24 @@ export class PgTrackedLinkStore {
   }
 
   /**
+   * Les codes des liens RCS de CES adresses (`adresse -> code`), pour les mesures.
+   *
+   * Une adresse absente de la réponse n'a jamais été envoyée : son code naît au premier envoi, pas à
+   * l'écriture du scénario. L'appelant l'affiche alors à zéro, ce qui est la vérité exacte.
+   */
+  async codesRcsParDestination(tenantId: string, destinations: readonly string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (destinations.length === 0) return out;
+    const res = await this.pool.query<{ code: string; destination: string }>(
+      `select code, destination from tracked_links
+        where tenant_id = $1 and template_name is null and destination = any($2::text[])`,
+      [tenantId, [...new Set(destinations)]],
+    );
+    for (const r of res.rows) out.set(r.destination, r.code);
+    return out;
+  }
+
+  /**
    * Clics par code sur la plage (bornes Europe/Paris, `to` inclus), pour les codes demandés.
    *
    * Rend UNIQUEMENT les codes qui ont au moins un clic : c'est l'appelant qui sait quels codes existent et

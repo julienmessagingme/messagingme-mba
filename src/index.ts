@@ -31,7 +31,7 @@ import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
 import { lienDe, lienTraceAvecJeton } from './links/rewrite';
-import { noeudsTemplate, compteursDeClics } from './links/mesures';
+import { noeudsTemplate, compteursDeClics, liensRcsDesNoeuds, compteursDeClicsRcs } from './links/mesures';
 import { aDesLiensTracables } from './links/rcs-liens';
 import { fabriquerJeton } from './links/jeton-contact';
 import { newTrackingCode } from './ids/code';
@@ -596,11 +596,26 @@ async function main(): Promise<void> {
         try {
           const wf = await workflowStore.getById(workflowId, tenant);
           const noeuds = noeudsTemplate(wf?.graph);
-          if (noeuds.length === 0) return evenements;
-          const liens = await trackedLinkStore.listByTemplates(tenant, noeuds.map((n) => n.templateName));
-          if (liens.length === 0) return evenements;
-          const clics = await trackedLinkStore.countClicks(tenant, liens.map((l) => l.code), range);
-          return [...evenements, ...compteursDeClics(noeuds, liens, clics)];
+          // Les blocs RCS ont leurs propres liens, sur une AUTRE clé (l'adresse, migration 0107) et un autre
+          // espace de noms de handle (`lien:i`). Les deux familles se lisent séparément puis se concatènent :
+          // les mélanger dans une seule requête reviendrait à joindre deux tables sur rien.
+          const liensRcs = liensRcsDesNoeuds(wf?.graph);
+          if (noeuds.length === 0 && liensRcs.length === 0) return evenements;
+
+          const codesRcs = liensRcs.length > 0
+            ? await trackedLinkStore.codesRcsParDestination(tenant, liensRcs.map((l) => l.destination))
+            : new Map<string, string>();
+          const liens = noeuds.length > 0
+            ? await trackedLinkStore.listByTemplates(tenant, noeuds.map((n) => n.templateName))
+            : [];
+          const tousLesCodes = [...liens.map((l) => l.code), ...codesRcs.values()];
+          if (tousLesCodes.length === 0 && liensRcs.length === 0) return evenements;
+          const clics = await trackedLinkStore.countClicks(tenant, tousLesCodes, range);
+          return [
+            ...evenements,
+            ...compteursDeClics(noeuds, liens, clics),
+            ...compteursDeClicsRcs(liensRcs, codesRcs, clics),
+          ];
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('mesures de clics ignorées:', err instanceof Error ? err.message : err);

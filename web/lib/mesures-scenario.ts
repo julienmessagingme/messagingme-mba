@@ -145,7 +145,32 @@ export function libelleHandle(handle: string, boutons: string[], locale: Locale)
     if (texte) return guillemets(texte, locale);
     return locale === 'en' ? `Button ${i + 1}` : `Bouton ${i + 1}`;
   }
+  // Bouton LIEN d'un bloc RCS. Espace de noms distinct de `btn:` parce que les sorties d'un bloc RCS ne
+  // comptent QUE les boutons réponse : sans cette séparation, « a cliqué sur le lien » et « a cliqué Oui »
+  // porteraient la même clé sur un même bloc. Le repli numéroté sert aussi à `libelleDeCle`, qui reconstruit
+  // un libellé sans avoir les boutons sous la main.
+  const lien = /^lien:(\d+)$/.exec(handle);
+  if (lien) {
+    const i = Number(lien[1]);
+    const texte = boutons[i]?.trim();
+    if (texte) return guillemets(texte, locale);
+    return locale === 'en' ? `Link ${i + 1}` : `Lien ${i + 1}`;
+  }
   return handle;
+}
+
+/**
+ * Libellés des boutons d'un bloc RCS, dans l'ordre de sa liste PLATE `data.suggestions`.
+ *
+ * C'est la MÊME liste que le serveur numérote pour fabriquer les handles `lien:<i>` : les deux ne peuvent pas
+ * diverger sur l'ordre. Lecture défensive, le graphe étant un jsonb dont on ne suppose jamais la forme.
+ */
+function libellesBoutonsRcs(n: GraphNode): string[] {
+  const boutons = Array.isArray(n.data?.suggestions) ? n.data.suggestions : [];
+  return boutons.map((b) => {
+    const o = (b ?? {}) as { text?: unknown };
+    return typeof o.text === 'string' ? o.text : '';
+  });
 }
 
 /** Un bouton déclaré sur un bloc, avec son TYPE : un bouton URL ne se mesure pas comme un bouton de choix. */
@@ -234,7 +259,13 @@ export function blocsDuScenario(
       titrePropre: propre,
       mesurable: estMesurable(n.type),
       choix: tous.map((h) => ({ handle: h, label: libelleHandle(h, libelles, locale) })),
-      liens: (handlesLiens[id] ?? []).map((h) => ({ handle: h, label: libelleHandle(h, libelles, locale) })),
+      // Deux familles de liens sous la même case : un bouton URL de TEMPLATE porte un `btn:i` numéroté par
+      // Meta et nommé par `templateButtons` ; un bouton lien d'un bloc RCS porte un `lien:i` numéroté sur la
+      // liste plate `suggestions` du bloc. Les deux listes de libellés sont donc différentes.
+      liens: (handlesLiens[id] ?? []).map((h) => ({
+        handle: h,
+        label: libelleHandle(h, h.startsWith('lien:') ? libellesBoutonsRcs(n) : libelles, locale),
+      })),
     };
   });
 }

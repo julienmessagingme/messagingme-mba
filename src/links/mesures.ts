@@ -1,4 +1,5 @@
 import type { LienTrace } from './tracked-links.pg';
+import { estTracable } from './rcs-liens';
 
 /**
  * Les clics sur les liens tracés, rendus sous la forme d'un compteur de bloc pour « Analytics > Mes tableaux ».
@@ -63,6 +64,74 @@ export function noeudsTemplate(graph: unknown): NoeudTemplate[] {
  * case n'apparaîtrait qu'une fois quelqu'un ayant cliqué, et l'opérateur ne pourrait pas préparer son tableau
  * avant de lancer sa campagne.
  */
+/** Un bouton lien d'un bloc RCS : où il mène, et sous quel nom l'écran le mesure. */
+export interface LienRcsDeBloc {
+  nodeId: string;
+  /** `lien:<i>`, i étant la position du bouton dans `data.suggestions` du bloc. */
+  handle: string;
+  destination: string;
+}
+
+/**
+ * Les boutons LIEN des blocs RCS d'un scénario.
+ *
+ * 🔴 UN ESPACE DE NOMS À PART (`lien:i`), ET C'EST NÉCESSAIRE. Les sorties d'un bloc RCS s'appellent déjà
+ * `btn:0`, `btn:1`… mais elles ne comptent QUE les boutons réponse (`normaliserPostbacks`), un bouton lien ne
+ * revenant jamais dans la conversation. Numéroter les liens dans le même espace ferait entrer en collision
+ * « a cliqué sur le lien » et « a cliqué Oui » sur un même bloc, donc deux mesures différentes sous une même
+ * clé, y compris dans les tableaux DÉJÀ enregistrés.
+ *
+ * L'index est celui de `data.suggestions`, la liste PLATE du bloc, et l'écran lit exactement la même liste
+ * pour nommer le bouton : les deux ne peuvent pas diverger sur l'ordre.
+ *
+ * Lecture DÉFENSIVE d'un jsonb : aucune hypothèse de forme. Un bouton dont l'adresse ne serait pas traçable
+ * est ignoré, pour la même raison qu'à l'envoi : rien ne l'aura tracé, sa mesure resterait à zéro pour
+ * toujours et ferait croire à une absence de clics là où il n'y a pas de mesure.
+ */
+export function liensRcsDesNoeuds(graph: unknown): LienRcsDeBloc[] {
+  const nodes = (graph as { nodes?: unknown } | null)?.nodes;
+  if (!Array.isArray(nodes)) return [];
+  const out: LienRcsDeBloc[] = [];
+  for (const raw of nodes) {
+    const n = raw as { id?: unknown; type?: unknown; data?: { suggestions?: unknown } };
+    if (n?.type !== 'rcs_message' || typeof n.id !== 'string') continue;
+    const boutons = Array.isArray(n.data?.suggestions) ? n.data.suggestions : [];
+    boutons.forEach((b, i) => {
+      const o = (b ?? {}) as { kind?: unknown; url?: unknown };
+      if (o.kind !== 'openUrl' || typeof o.url !== 'string') return;
+      const url = o.url.trim();
+      if (!estTracable(url)) return;
+      out.push({ nodeId: n.id as string, handle: `lien:${i}`, destination: url });
+    });
+  }
+  return out;
+}
+
+/**
+ * Un compteur par (bloc RCS, bouton lien), MÊME À ZÉRO et même sans code alloué.
+ *
+ * ⚠️ Sans code alloué n'est PAS une anomalie ici, contrairement au chemin WhatsApp : le code d'un lien RCS
+ * naît au PREMIER ENVOI, pas à la soumission d'un template. Un scénario écrit mais jamais déclenché n'a donc
+ * aucun code, et zéro est alors la vérité exacte : personne n'a cliqué, puisque rien n'est parti. Refuser la
+ * ligne rendrait la mesure incochable tant que le scénario n'a pas tourné.
+ */
+export function compteursDeClicsRcs(
+  liens: readonly LienRcsDeBloc[],
+  codeParDestination: ReadonlyMap<string, string>,
+  clicsParCode: Readonly<Record<string, number>>,
+): CompteurClic[] {
+  return liens.map((l) => {
+    const code = codeParDestination.get(l.destination);
+    return {
+      nodeId: l.nodeId,
+      kind: 'url_click' as const,
+      handle: l.handle,
+      count: code ? clicsParCode[code] ?? 0 : 0,
+      contacts: null,
+    };
+  });
+}
+
 export function compteursDeClics(
   noeuds: readonly NoeudTemplate[],
   liens: readonly LienTrace[],

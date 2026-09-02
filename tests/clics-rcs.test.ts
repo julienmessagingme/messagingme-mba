@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   destinationsTracables, aDesLiensTracables, appliquerLiensRcs, estTracable, URL_TRACABLE_MAX,
 } from '../src/links/rcs-liens';
+import { liensRcsDesNoeuds, compteursDeClicsRcs } from '../src/links/mesures';
 import { TraceurLiensRcs } from '../src/links/traceur-rcs';
 import { lienDe, lienPourContact, lienTraceAvecJeton } from '../src/links/rewrite';
 import { RcsSender } from '../src/rcs/sender';
@@ -378,5 +379,77 @@ describe('une campagne RCS attribue les clics de ses liens', () => {
     }));
     expect(((provider.sent[0]!.msg as Extract<RcsOutbound, { kind: 'text' }>).suggestions?.[0] as { url: string }).url)
       .toBe(`${BASE}/r/code14`);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Les MESURES : « a cliqué sur le lien » sur un bloc RCS d'un scénario, comme sur un bloc template.
+// ---------------------------------------------------------------------------------------------------------
+
+const grapheRcs = (suggestions: unknown[], type = 'rcs_message') => ({
+  nodes: [{ id: 'a', type, data: { text: 'Notre offre', suggestions } }],
+  edges: [],
+});
+
+describe('les liens mesurables des blocs RCS d’un scénario', () => {
+  it('🔴 numérote sur la liste PLATE du bloc, pas sur les seuls boutons réponse', () => {
+    // C'est la garde anti-collision. Les sorties d'un bloc RCS s'appellent `btn:0`, `btn:1`… en ne comptant
+    // QUE les boutons réponse (`normaliserPostbacks`). Si le lien était numéroté dans cet espace, il
+    // s'appellerait `btn:0` ici, comme le bouton « Oui » : deux mesures différentes sous une même clé.
+    expect(liensRcsDesNoeuds(grapheRcs([
+      { kind: 'reply', text: 'Oui', postbackData: 'btn:0' },
+      { kind: 'openUrl', text: 'Voir', url: 'https://client.fr/promo', postbackData: 'p' },
+    ]))).toEqual([{ nodeId: 'a', handle: 'lien:1', destination: 'https://client.fr/promo' }]);
+  });
+
+  it('ignore les boutons qui ne sont pas des liens', () => {
+    expect(liensRcsDesNoeuds(grapheRcs([
+      { kind: 'reply', text: 'Oui', postbackData: 'btn:0' },
+      { kind: 'dial', text: 'Appeler', phoneNumber: '+33100000000', postbackData: 'p' },
+    ]))).toEqual([]);
+  });
+
+  it('ignore une adresse qu’on n’aurait pas tracée à l’envoi', () => {
+    // La MÊME règle qu'à l'envoi (`estTracable`), sinon la case existerait pour un lien que rien ne trace, et
+    // resterait à zéro pour toujours en laissant croire à une absence de clics.
+    expect(liensRcsDesNoeuds(grapheRcs([{ kind: 'openUrl', text: 'V', url: 'client.fr/sans-schema', postbackData: 'p' }]))).toEqual([]);
+    expect(liensRcsDesNoeuds(grapheRcs([{ kind: 'openUrl', text: 'V', url: 'https://a.fr/{{id}}', postbackData: 'p' }]))).toEqual([]);
+  });
+
+  it('ne regarde QUE les blocs RCS', () => {
+    expect(liensRcsDesNoeuds(grapheRcs([{ kind: 'openUrl', text: 'V', url: 'https://a.fr/x', postbackData: 'p' }], 'template'))).toEqual([]);
+  });
+
+  it('lit un graphe malformé sans lever : c’est un jsonb, on n’en suppose rien', () => {
+    expect(liensRcsDesNoeuds(null)).toEqual([]);
+    expect(liensRcsDesNoeuds({})).toEqual([]);
+    expect(liensRcsDesNoeuds({ nodes: 'pas un tableau' })).toEqual([]);
+    expect(liensRcsDesNoeuds({ nodes: [null, { id: 'a', type: 'rcs_message' }, { type: 'rcs_message', data: { suggestions: 3 } }] })).toEqual([]);
+  });
+});
+
+describe('les compteurs de clics d’un bloc RCS', () => {
+  const liens = [{ nodeId: 'a', handle: 'lien:1', destination: 'https://client.fr/promo' }];
+
+  it('porte le compteur de la période', () => {
+    expect(compteursDeClicsRcs(liens, new Map([['https://client.fr/promo', 'abcdefghjkmn']]), { abcdefghjkmn: 12 }))
+      .toEqual([{ nodeId: 'a', kind: 'url_click', handle: 'lien:1', count: 12, contacts: null }]);
+  });
+
+  it('🔴 vaut ZÉRO tant que le scénario n’a jamais tourné, au lieu de disparaître', () => {
+    // Le code d'un lien RCS naît au PREMIER ENVOI, pas à l'écriture du scénario. Sans ligne, la case ne
+    // serait cochable qu'une fois quelqu'un ayant cliqué, et l'opérateur ne pourrait pas préparer son tableau.
+    expect(compteursDeClicsRcs(liens, new Map(), {}))
+      .toEqual([{ nodeId: 'a', kind: 'url_click', handle: 'lien:1', count: 0, contacts: null }]);
+  });
+
+  it('un code connu mais aucun clic sur la période vaut zéro, pas l’absence', () => {
+    expect(compteursDeClicsRcs(liens, new Map([['https://client.fr/promo', 'abcdefghjkmn']]), {})[0]!.count).toBe(0);
+  });
+
+  it('🔴 n’identifie personne : `contacts` reste nul', () => {
+    // Le fil de l'inbox répond au « qui » (l'indicateur « engagé » de la fiche contact) ; ce compteur-ci
+    // répond au « combien ». Prétendre le contraire ferait un décompte de contacts qui n'existe pas.
+    expect(compteursDeClicsRcs(liens, new Map(), {})[0]!.contacts).toBeNull();
   });
 });
