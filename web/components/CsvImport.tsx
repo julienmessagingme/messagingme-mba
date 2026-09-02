@@ -282,11 +282,11 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-sm font-medium text-ink-700">
-            {requireTag ? t('Tags (obligatoire)', 'Tags (required)') : t('Tags (optionnel)', 'Tags (optional)')}
+            {requireTag ? t('Étiquettes (obligatoire)', 'Tags (required)') : t('Étiquettes (optionnel)', 'Tags (optional)')}
           </label>
           <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder={t('salon-2026, prospect', 'expo-2026, prospect')} className={inputCls} />
           {requireTag && tagsMissing && (
-            <p className="mt-1 text-xs text-amber-600">{t('Ajoute au moins un tag pour retrouver ces contacts dans ta campagne.', 'Add at least one tag to find these contacts in your campaign.')}</p>
+            <p className="mt-1 text-xs text-amber-600">{t('Ajoute au moins une étiquette pour retrouver ces contacts dans ta campagne.', 'Add at least one tag to find these contacts in your campaign.')}</p>
           )}
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm text-ink-700">

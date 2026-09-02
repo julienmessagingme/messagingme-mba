@@ -103,7 +103,7 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
       {/* Tags possède (ET/OU) */}
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2 text-xs text-ink-500">
-          {t('Possède les tags', 'Has tags')}
+          {t('Possède les étiquettes', 'Has tags')}
           <div className="inline-flex overflow-hidden rounded-md border border-ink-200">
             {(['and', 'or'] as const).map((m) => (
               <button key={m} type="button" onClick={() => set({ tagMode: m })} className={`px-2 py-0.5 text-xs ${(filters.tagMode ?? 'and') === m ? 'bg-brand-500 text-white' : 'bg-white text-ink-600'}`}>
@@ -118,20 +118,20 @@ export function ContactFilterPanel({ filters, onChange, userFields, tagSuggestio
               {x}<button type="button" onClick={() => rmTag(x)} className="text-brand-400 hover:text-coral">×</button>
             </span>
           ))}
-          <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputClsAuto} w-28`} />
+          <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('+ étiquette', '+ tag')} className={`${inputClsAuto} w-28`} />
         </div>
       </div>
 
       {/* Tags ne possède pas */}
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-ink-500">{t('Ne possède pas les tags', "Doesn't have tags")}</span>
+        <span className="text-xs text-ink-500">{t('Ne possède pas les étiquettes', "Doesn't have tags")}</span>
         <div className="flex flex-wrap items-center gap-1.5">
           {tagsExclude.map((x) => (
             <span key={x} className="inline-flex items-center gap-1 rounded-md bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-600">
               {x}<button type="button" onClick={() => rmTagEx(x)} className="text-ink-400 hover:text-coral">×</button>
             </span>
           ))}
-          <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ tag', '+ tag')} className={`${inputClsAuto} w-28`} />
+          <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('+ étiquette', '+ tag')} className={`${inputClsAuto} w-28`} />
         </div>
       </div>
       <datalist id="contact-filter-tags">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>

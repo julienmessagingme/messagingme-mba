@@ -96,7 +96,7 @@ export function ConditionBuilder({ group, onChange, fields, tags }: {
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <select value={kindOf(c)} onChange={(e) => changeKind(i, e.target.value as Kind)} className={sel}>
                 <option value="field">{t('Champ', 'Field')}</option>
-                <option value="tag">{t('Tag', 'Tag')}</option>
+                <option value="tag">{t('Étiquette', 'Tag')}</option>
                 <option value="weekday">{t('Jour de la semaine', 'Day of week')}</option>
                 <option value="business_hours">{t('Heures d’ouverture', 'Business hours')}</option>
                 <option value="time_of_day">{t('Heure de la journée', 'Time of day')}</option>
@@ -134,8 +134,8 @@ function ClauseOperands({ c, i, patch, allFields, changeField, tags, sel, inp }:
     return (
       <>
         <select value={c.op} onChange={(e) => patch(i, { ...c, op: e.target.value as 'has' | 'not_has' })} className={sel}>
-          <option value="has">{t('possède le tag', 'has the tag')}</option>
-          <option value="not_has">{t('n’a pas le tag', 'does not have the tag')}</option>
+          <option value="has">{t('possède l’étiquette', 'has the tag')}</option>
+          <option value="not_has">{t('n’a pas l’étiquette', 'does not have the tag')}</option>
         </select>
         {/* Pas de `flex-1` : le conteneur est une COLONNE, il étirerait le champ en HAUTEUR. */}
         <input list="wf-tags" value={c.tag} onChange={(e) => patch(i, { ...c, tag: e.target.value })} className={inp} placeholder="vip…" />

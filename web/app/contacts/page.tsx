@@ -277,8 +277,8 @@ function ContactsInner({ session }: { session: Session }) {
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 text-sm shadow-lg">
-                  <button onClick={() => { setAction('add_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un tag', 'Add a tag')}</button>
-                  <button onClick={() => { setAction('remove_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Retirer un tag', 'Remove a tag')}</button>
+                  <button onClick={() => { setAction('add_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter une étiquette', 'Add a tag')}</button>
+                  <button onClick={() => { setAction('remove_tag'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Retirer une étiquette', 'Remove a tag')}</button>
                   <button onClick={() => { setAction('set_field'); setMenuOpen(false); }} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Ajouter un champ', 'Set a field')}</button>
                   <div className="my-1 border-t border-ink-100" />
                   <button onClick={() => { setAction('optin'); setMenuOpen(false); }} data-testid="contacts-action-optin" className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Passer en opt-in', 'Mark as opted in')}</button>
@@ -433,7 +433,7 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="ajout-email" className={inputCls} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tags (optionnel)', 'Tags (optional)')}</label>
+            <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étiquettes (optionnel)', 'Tags (optional)')}</label>
             {tags.length > 0 && (
               <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid="ajout-tags-retenus">
                 {tags.map((tg) => (
@@ -449,7 +449,7 @@ function AjoutContactModal({ tenantId, tagSuggestions, onDone, onClose }: {
               <input
                 list="ajout-tag-suggestions" value={tagBuffer} onChange={(e) => setTagBuffer(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterTag(); } }}
-                placeholder={t('Un tag, puis Entrée', 'A tag, then Enter')} data-testid="ajout-tag" className={inputCls}
+                placeholder={t('Une étiquette, puis Entrée', 'A tag, then Enter')} data-testid="ajout-tag" className={inputCls}
               />
               <button type="button" onClick={ajouterTag} disabled={tagBuffer.trim() === ''} data-testid="ajout-tag-valider"
                 className="shrink-0 rounded-lg border border-ink-300 px-3 py-2 text-sm font-medium text-ink-700 transition hover:bg-ink-50 disabled:opacity-50">
@@ -524,8 +524,8 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
   const [error, setError] = useState<string | null>(null);
 
   const titles: Record<ActionCrm, string> = {
-    add_tag: t('Ajouter un tag', 'Add a tag'),
-    remove_tag: t('Retirer un tag', 'Remove a tag'),
+    add_tag: t('Ajouter une étiquette', 'Add a tag'),
+    remove_tag: t('Retirer une étiquette', 'Remove a tag'),
     set_field: t('Ajouter un champ', 'Set a field'),
     optin: t('Passer en opt-in', 'Mark as opted in'),
     optout: t('Passer en opt-out', 'Mark as opted out'),
@@ -574,7 +574,7 @@ function BulkActionModal({ action, tenantId, target, count, userFields, tagSugge
         <div className="mt-4 space-y-3">
           {(action === 'add_tag' || action === 'remove_tag') && (
             <>
-              <input list="bulk-tag-suggestions" autoFocus value={tag} onChange={(e) => setTag(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Nom du tag', 'Tag name')} className={inputCls} />
+              <input list="bulk-tag-suggestions" autoFocus value={tag} onChange={(e) => setTag(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && canSubmit) void submit(); }} placeholder={t('Nom de l’étiquette', 'Tag name')} className={inputCls} />
               <datalist id="bulk-tag-suggestions">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
             </>
           )}

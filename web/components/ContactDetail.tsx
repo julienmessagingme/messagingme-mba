@@ -354,7 +354,7 @@ export function ContactDetail({
                 <button onClick={() => void apply({ removeTags: [tag] })} disabled={busy} className="text-brand-400 hover:text-coral" aria-label={`${t('Retirer', 'Remove')} ${tag}`}>×</button>
               </span>
             ))}
-            {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">{t('Aucun tag.', 'No tags.')}</span>}
+            {(contact.tags ?? []).length === 0 && <span className="text-sm text-ink-400">{t('Aucune étiquette.', 'No tags.')}</span>}
           </div>
           <div className="mt-2 flex items-center gap-2">
             <input
@@ -362,7 +362,7 @@ export function ContactDetail({
               value={newTag}
               onChange={(e) => setNewTag(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void addTag(); }}
-              placeholder={t('Ajouter un tag…', 'Add a tag…')}
+              placeholder={t('Ajouter une étiquette…', 'Add a tag…')}
               className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             />
             <datalist id="tag-suggestions">{tagSuggestions.map((tag) => <option key={tag} value={tag} />)}</datalist>

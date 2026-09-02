@@ -55,7 +55,7 @@ function TagPicker({ label, value, tags, onChange, onCommit }: {
         placeholder={t('vip, prospect…', 'vip, prospect…')}
       />
       <datalist id="wf-tags">{tags.map((tg) => <option key={tg.tag} value={tg.tag} />)}</datalist>
-      {onCommit && <p className="mt-1 text-[11px] text-ink-400">{t('Le tag est ajouté à Contenus > Tags dès que tu quittes le champ.', 'The tag is added to Content > Tags as soon as you leave the field.')}</p>}
+      {onCommit && <p className="mt-1 text-[11px] text-ink-400">{t('L’étiquette est ajoutée à Contenu > Bibliothèque > Étiquettes dès que tu quittes le champ.', 'The tag is added to Content > Library > Tags as soon as you leave the field.')}</p>}
     </div>
   );
 }
@@ -141,8 +141,7 @@ export function ConfigPanel({
           {wfType === 'template'
             ? t('Choisis le template de ce bloc : tant qu’il est vide, ce scénario ne pourra pas être lancé en campagne.',
                 'Pick this block’s template: while it is empty, this scenario cannot be launched as a campaign.')
-            : t('Ce scénario ne pourra pas être lancé en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template. Un tag, une action ou une condition avant lui ne posent aucun problème. Il reste utilisable quand le contact vient d’écrire.',
-                'This scenario cannot be launched as a campaign: a campaign targets a cold audience, so the FIRST message sent must be a template. A tag, an action or a condition before it is fine. It stays usable when the contact has just written.')}
+            : t('Ce scénario ne pourra pas être lancé en campagne : une campagne part sur une audience froide, donc le PREMIER message envoyé doit être un template. Une étiquette, une action ou une condition avant lui ne posent aucun problème. Il reste utilisable quand le contact vient d’écrire.', 'This scenario cannot be launched as a campaign: a campaign targets a cold audience, so the FIRST message sent must be a template. A tag, an action or a condition before it is fine. It stays usable when the contact has just written.')}
         </p>
       )}
 
@@ -491,7 +490,7 @@ export function ConfigPanel({
           correction devrait être faite deux fois. */}
       {wfType === 'tag' && (
         <TagPicker
-          label={t('Tag à ajouter', 'Tag to add')}
+          label={t('Étiquette à ajouter', 'Tag to add')}
           value={(d.tag as string) ?? ''}
           tags={tags}
           onChange={(v) => onPatch({ tag: v })}
@@ -510,8 +509,8 @@ export function ConfigPanel({
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-600">{t('Action', 'Action')}</label>
               <select value={kind} onChange={(e) => onPatch({ actionKind: e.target.value })} data-testid="action-kind" className={`${cls} bg-white`}>
-                <option value="add_tag">{t('Ajouter un tag', 'Add a tag')}</option>
-                <option value="remove_tag">{t('Retirer un tag', 'Remove a tag')}</option>
+                <option value="add_tag">{t('Ajouter une étiquette', 'Add a tag')}</option>
+                <option value="remove_tag">{t('Retirer une étiquette', 'Remove a tag')}</option>
                 <option value="set_field">{t('Mettre à jour un champ', 'Update a field')}</option>
                 <option value="clear_field">{t('Vider un champ', 'Clear a field')}</option>
                 <option value="set_optin">{t('Passer en opt-in', 'Mark as opted in')}</option>
@@ -532,7 +531,7 @@ export function ConfigPanel({
               </p>
             ) : isTag ? (
               <TagPicker
-                label={kind === 'add_tag' ? t('Tag à ajouter', 'Tag to add') : t('Tag à retirer', 'Tag to remove')}
+                label={kind === 'add_tag' ? t('Étiquette à ajouter', 'Tag to add') : t('Étiquette à retirer', 'Tag to remove')}
                 value={(d.tag as string) ?? ''}
                 tags={tags}
                 onChange={(v) => onPatch({ tag: v })}

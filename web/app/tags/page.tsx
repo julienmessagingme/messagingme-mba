@@ -63,7 +63,7 @@ function TagsInner({ session }: { session: Session }) {
   }
 
   async function remove(tag: string) {
-    if (!window.confirm(t(`Supprimer le tag « ${tag} » de tous les contacts ?`, `Delete the tag "${tag}" from all contacts?`))) return;
+    if (!window.confirm(t(`Supprimer l’étiquette « ${tag} » de tous les contacts ?`, `Delete the tag "${tag}" from all contacts?`))) return;
     setError(null);
     try {
       await deleteTag(session.tenantId, tag);
@@ -76,8 +76,8 @@ function TagsInner({ session }: { session: Session }) {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Tags', 'Tags')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t('Crée un tag réutilisable, ou renomme/supprime (répercuté sur tous les contacts qui le portent).', 'Create a reusable tag, or rename/delete it (applied to every contact that carries it).')}</p>
+        <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Étiquettes', 'Tags')}</h2>
+        <p className="mt-1 text-sm text-ink-500">{t('Crée une étiquette réutilisable, ou renomme/supprime (répercuté sur tous les contacts qui la portent).', 'Create a reusable tag, or rename/delete it (applied to every contact that carries it).')}</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -86,23 +86,23 @@ function TagsInner({ session }: { session: Session }) {
           value={newTag}
           onChange={(e) => setNewTag(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void create(); }}
-          placeholder={t('Nouveau tag…', 'New tag…')}
+          placeholder={t('Nouvelle étiquette…', 'New tag…')}
           className="flex-1 rounded-lg border border-ink-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
         />
-        <button onClick={create} disabled={newTag.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">{t('Créer un tag', 'Create a tag')}</button>
+        <button onClick={create} disabled={newTag.trim() === ''} className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">{t('Créer une étiquette', 'Create a tag')}</button>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
-        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Tags', 'Tags')} ({tags.length})</div>
+        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Étiquettes', 'Tags')} ({tags.length})</div>
         {loading ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Chargement…', 'Loading…')}</p>
         ) : tags.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t("Aucun tag. Crée-en un ci-dessus, ou ils apparaissent automatiquement via l'import CSV ou la fiche d'un contact.", "No tags yet. Create one above, or they appear automatically through CSV import or a contact's profile.")}</p>
+          <p className="px-5 py-6 text-sm text-ink-500">{t("Aucune étiquette. Crée-en une ci-dessus, ou elles apparaissent automatiquement via l'import CSV ou la fiche d'un contact.", "No tags yet. Create one above, or they appear automatically through CSV import or a contact's profile.")}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-                <th className="px-5 py-2 font-medium">{t('Tag', 'Tag')}</th>
+                <th className="px-5 py-2 font-medium">{t('Étiquette', 'Tag')}</th>
                 <th className="px-5 py-2 font-medium">{t('Contacts', 'Contacts')}</th>
                 <th className="px-5 py-2 text-right font-medium">{t('Actions', 'Actions')}</th>
               </tr>

@@ -34,7 +34,7 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     const n = Array.isArray(data.rows) ? (data.rows as Array<{ title?: string }>).filter((r) => (r?.title ?? '').trim() !== '').length : 0;
     return n === 0 ? q : `${q} (${n} ${t('choix', 'choices')})`;
   }
-  if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir un tag…', 'choose a tag…');
+  if (wfType === 'tag') return (data.tag as string) ? `+ ${data.tag as string}` : t('choisir une étiquette…', 'choose a tag…');
   if (wfType === 'field') {
     const label = data.fieldLabel as string;
     if (!label) return t('choisir un champ…', 'choose a field…');
@@ -44,8 +44,8 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     const kind = data.actionKind as string;
     const tag = (data.tag as string) ?? '';
     const label = (data.fieldLabel as string) ?? '';
-    if (kind === 'add_tag') return tag ? `+ ${tag}` : t('ajouter un tag…', 'add a tag…');
-    if (kind === 'remove_tag') return tag ? `− ${tag}` : t('retirer un tag…', 'remove a tag…');
+    if (kind === 'add_tag') return tag ? `+ ${tag}` : t('ajouter une étiquette…', 'add a tag…');
+    if (kind === 'remove_tag') return tag ? `− ${tag}` : t('retirer une étiquette…', 'remove a tag…');
     if (kind === 'set_field') return !label ? t('mettre à jour un champ…', 'update a field…') : data.valueKind === 'now' ? `${label} = ${t('maintenant', 'now')}` : `${label} = ${(data.value as string) || '…'}`;
     if (kind === 'clear_field') return label ? `${label} ${t('(vidé)', '(cleared)')}` : t('vider un champ…', 'clear a field…');
     return t('choisir une action…', 'choose an action…');

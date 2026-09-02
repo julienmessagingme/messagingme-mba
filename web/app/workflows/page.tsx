@@ -212,7 +212,7 @@ function WorkflowsInner({ session }: { session: Session }) {
     <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-6 lg:h-full lg:overflow-y-auto">
       <div>
         <h2 className="text-base font-semibold tracking-tight text-ink-900">{t('Scénarios', 'Scenarios')}</h2>
-        <p className="mt-1 text-sm text-ink-500">{t("Construis des automatisations en blocs : ajout de tag, envoi d'un template, formulaire, arrivée en inbox. Un scénario s'attache à une campagne et s'exécute pour chaque contact.", 'Build automations in blocks: add a tag, send a template, form, arrival in the inbox. A scenario attaches to a campaign and runs for each contact.')}</p>
+        <p className="mt-1 text-sm text-ink-500">{t("Construis des automatisations en blocs : ajout d’étiquette, envoi d'un template, formulaire, arrivée en inbox. Un scénario s'attache à une campagne et s'exécute pour chaque contact.", 'Build automations in blocks: add a tag, send a template, form, arrival in the inbox. A scenario attaches to a campaign and runs for each contact.')}</p>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 

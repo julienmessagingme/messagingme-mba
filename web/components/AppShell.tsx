@@ -88,14 +88,36 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
       ] },
       { key: 'agents', href: '/agents', label: t('Other AI agent', 'Other AI agent') },
     ] },
+    // Contenu, rangé PAR CANAL. Les sept entrées étaient à plat et l'oeil devait relire les libellés pour
+    // retrouver le sien : « Templates WhatsApp », « Formulaires WhatsApp », « Messages RCS », « Modèles
+    // d'email »... le canal était répété dans chaque libellé faute d'être porté par la structure. Il l'est
+    // désormais, et les libellés n'ont plus à le redire.
+    //
+    // ⚠️ RCS et Email n'ont qu'un enfant chacun, et c'est VOULU : la symétrie des quatre canaux est ce qui
+    // rend le menu lisible. Un groupe à un seul enfant coûte un clic ; quatre groupes dont deux à plat
+    // coûteraient une relecture à chaque visite.
     { key: 'contenu', label: t('Contenu', 'Content'), d: icons.content, children: [
-      { key: 'templates', href: '/templates', label: t('Templates WhatsApp', 'WhatsApp templates') },
-      { key: 'flows', href: '/flows', label: t('Formulaires WhatsApp', 'WhatsApp forms') },
-      { key: 'email-templates', href: '/email-templates', label: t('Modèles d’email', 'Email templates') },
-      { key: 'rcs-messages', href: '/rcs-messages', label: t('Messages RCS', 'RCS messages') },
-      { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
-      { key: 'tags', href: '/tags', label: t('Tags', 'Tags') },
-      { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
+      { key: 'contenu-whatsapp', label: t('WhatsApp', 'WhatsApp'), children: [
+        { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
+        { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
+      ] },
+      { key: 'contenu-rcs', label: t('RCS', 'RCS'), children: [
+        { key: 'rcs-messages', href: '/rcs-messages', label: t('Messages', 'Messages') },
+      ] },
+      { key: 'contenu-email', label: t('Email', 'Email'), children: [
+        { key: 'email-templates', href: '/email-templates', label: t('Modèles', 'Templates') },
+      ] },
+      // « Bibliothèque » : ce qui se RÉUTILISE, sans appartenir à un canal.
+      // ⚠️ Le groupe reste bancal, et le nom n'y peut rien : « Blocs » est du contenu, « Étiquettes » et
+      // « Champs » sont de la donnée de CONTACT. Ils sont ici par héritage, leur place logique serait le
+      // mini-CRM. Signalé à Julien le 2026-09-02, en attente d'arbitrage.
+      { key: 'contenu-bibliotheque', label: t('Bibliothèque', 'Library'), children: [
+        { key: 'nodes', href: '/nodes', label: t('Blocs', 'Blocks') },
+        // « Étiquette » en français, « Tag » en anglais : le mot anglais est passé dans l'usage technique
+        // mais reste du jargon pour un utilisateur métier francophone.
+        { key: 'tags', href: '/tags', label: t('Étiquettes', 'Tags') },
+        { key: 'fields', href: '/fields', label: t('Champs', 'Fields') },
+      ] },
     ] },
     // Tools : ce qui BRANCHE la console sur l'extérieur. Les webhooks entrants, et les systèmes que les
     // agents IA interrogent. Les connecteurs sont ICI et pas dans un agent : un système appartient au CLIENT,

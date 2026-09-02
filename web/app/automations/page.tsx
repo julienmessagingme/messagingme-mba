@@ -183,7 +183,7 @@ function AutomationsInner({ session }: { session: Session }) {
         ? t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')
         : t(`le contact arrive de la publicité ${pub}`, `the contact comes from ad ${pub}`);
     }
-    if (a.triggerKind === 'tag_added') return `${t('tag « ', 'tag "')}${String(a.triggerConfig.tag ?? '')}${t(' » ajouté', '" added')}`;
+    if (a.triggerKind === 'tag_added') return `${t('étiquette « ', 'tag "')}${String(a.triggerConfig.tag ?? '')}${t(' » ajoutée', '" added')}`;
     if (a.triggerKind === 'conversation_analyzed') {
       const s = String(a.triggerConfig.sentiment ?? '');
       const parts = [
@@ -252,7 +252,7 @@ function AutomationsInner({ session }: { session: Session }) {
             <select value={triggerKind} onChange={(e) => setTriggerKind(e.target.value as AutomationTriggerKind)} data-testid="automation-trigger" className={inputCls}>
               <option value="keyword">{t('le client envoie un mot-clé', 'the customer sends a keyword')}</option>
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
-              <option value="tag_added">{t('un tag est posé sur un contact', 'a tag is added to a contact')}</option>
+              <option value="tag_added">{t('une étiquette est posée sur un contact', 'a tag is added to a contact')}</option>
               <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
               {/* Grisée dès qu'on SAIT qu'aucun portail n'est relié : la config serait acceptée par l'écran et
                   ne partirait jamais. On ne le sait qu'après une première sélection (lire les étapes coûte un
@@ -370,7 +370,7 @@ function AutomationsInner({ session }: { session: Session }) {
           )}
           {triggerKind === 'tag_added' && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Tag déclencheur', 'Triggering tag')}</label>
+              <label className="mb-1 block text-sm font-medium text-ink-700">{t('Étiquette déclencheuse', 'Triggering tag')}</label>
               <input value={tag} onChange={(e) => setTag(e.target.value)} data-testid="automation-tag" className={inputCls} placeholder={t('rappeler', 'callback')} />
               <p className="mt-1 text-xs text-ink-400">
                 {t(
