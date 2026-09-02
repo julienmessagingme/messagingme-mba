@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { resumeEnvoi, type RequeteConnecteur } from '../agent/requetes';
 import type { Guard } from '../auth/middleware';
 import type { OutilComplet, PatchOutil } from '../agent/catalog';
 import { NomOutilDejaPris } from '../agent/catalog';
@@ -40,11 +41,17 @@ export interface AgentToolsRouteDeps {
    * moitié des corps, et c'est ainsi qu'on finit par accepter un `handler` inventé.
    */
   ajouterConnecteur?(tenantId: string, agentId: string, outil: {
-    sourceId: string; name: string; title: string; description: string; nePasUtiliser: string;
-    params: unknown; binding: { methode: string; chemin: string }; outputPaths: string[]; risk: OutilComplet['risk'];
+    sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: OutilComplet['risk'];
   }): Promise<OutilComplet | null>;
-  /** La source appartient-elle à ce tenant ? `false` -> 404, jamais une clé étrangère qui lève en 500. */
-  sourceExiste?(tenantId: string, sourceId: string): Promise<boolean>;
+  /**
+   * La REQUÊTE que l'outil va désigner (migration 0105), ou `null` si elle n'est pas de ce tenant.
+   *
+   * 🔴 C'est elle qui porte la méthode, le chemin, le corps et les variables : l'outil ne les redécrit plus.
+   * On la LIT ici plutôt que de faire confiance au corps de la requête HTTP, parce que le risque plancher et
+   * le résumé de ce qui sera envoyé en dérivent, et qu'ils doivent décrire l'appel RÉEL.
+   */
+  requetePourOutil?(tenantId: string, requeteId: string): Promise<RequeteConnecteur | null>;
   patch(tenantId: string, agentId: string, outilId: string, patch: PatchOutil): Promise<OutilComplet | null>;
   activer(tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
   autonomie(tenantId: string, agentId: string, outilId: string, autonome: boolean, parUtilisateur: string): Promise<OutilComplet | null>;
@@ -87,18 +94,20 @@ const paramConnecteurSchema = z.object({
   value: z.union([z.string().max(200), z.number(), z.boolean()]).optional(),
 });
 
+/**
+ * Brancher une REQUÊTE de la bibliothèque sur cet agent (migration 0105).
+ *
+ * 🔴 L'APPEL N'EST PLUS DÉCRIT ICI. Avant, la méthode, le chemin, les paramètres et les champs à lire étaient
+ * dans ce corps, donc redécrits pour chaque agent qui se servait du même appel, et le corriger quelque part
+ * ne le corrigeait pas ailleurs. On ne saisit plus que les MOTS : le nom exposé au modèle, à quoi ça sert, et
+ * quand ne pas l'appeler. Le reste vient de la requête, qui a déjà été éprouvée avec son bouton Test.
+ */
 const ajoutConnecteurSchema = z.object({
-  sourceId: z.string().uuid(),
+  requeteId: z.string().uuid(),
   name: NOM,
   title: TEXTE(120).min(1),
   description: TEXTE(2000).min(1),
   nePasUtiliser: TEXTE(2000).min(1),
-  methode: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-  chemin: z.string().trim().min(1).max(500),
-  params: z.array(paramConnecteurSchema).max(20),
-  /** 🔴 NON VIDE (décision D-L2-2). La réponse appartient au client et part chez le fournisseur de modèle :
-   *  c'est ici, et seulement ici, que quelqu'un décide ce que l'agent a le droit d'en lire. */
-  outputPaths: z.array(z.string().trim().min(1).max(120)).min(1).max(20),
   risk: z.enum(['read', 'write', 'irreversible']).optional(),
 });
 
@@ -185,46 +194,51 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
   app.post(`${base}/connecteur`, opts, async (req, reply) => {
     const ctx = contexte(req);
     if ('code' in ctx) return reply.code(ctx.code).send({ error: ctx.error });
-    if (!deps.ajouterConnecteur || !deps.sourceExiste) {
+    if (!deps.ajouterConnecteur || !deps.requetePourOutil) {
       return reply.code(503).send({ error: 'les connecteurs ne sont pas disponibles sur cette instance' });
     }
     const parse = ajoutConnecteurSchema.safeParse(req.body ?? {});
     if (!parse.success) {
-      return reply.code(400).send({ error: 'source, nom, mots, méthode, chemin et champs à lire requis' });
+      return reply.code(400).send({ error: 'requête, nom et mots requis' });
     }
     const d = parse.data;
-    if (!(await deps.sourceExiste(ctx.tenant, d.sourceId))) return reply.code(404).send({ error: 'source introuvable' });
+    // La requête est LUE, pas crue sur parole : le risque plancher et le résumé de ce qui sera envoyé en
+    // dérivent, et ils doivent décrire l'appel RÉEL, pas ce que le corps de la requête HTTP prétend.
+    const requete = await deps.requetePourOutil(ctx.tenant, d.requeteId);
+    if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
 
-    const plancher = risqueSelonMethode(d.methode as MethodeConnecteur);
+    const plancher = risqueSelonMethode(requete.methode as MethodeConnecteur);
     const risk = d.risk ?? plancher;
     if (!risqueAuMoins(plancher, risk)) {
-      return reply.code(400).send({ error: `un appel ${d.methode} vaut au moins « ${plancher} » : le risque ne peut pas être abaissé` });
+      return reply.code(400).send({ error: `un appel ${requete.methode} vaut au moins « ${plancher} » : le risque ne peut pas être abaissé` });
     }
-    // Un paramètre `contact` sans chemin déclaré prendrait son propre nom comme clé (`executor.ts`), ce qui
-    // marche par accident quand le nom coïncide et échoue en silence sinon. On l'exige.
-    for (const p of d.params) {
-      if (p.source === 'contact' && !p.contactPath) {
-        return reply.code(400).send({ error: `le paramètre « ${p.name} » doit dire de quel champ du contact il vient` });
-      }
-      if (p.source === 'fixe' && p.value === undefined) {
-        return reply.code(400).send({ error: `le paramètre « ${p.name} » est fixe : sa valeur est requise` });
-      }
-    }
+    // Ce que le MODÈLE voit, DÉRIVÉ des variables de la requête dont l'origine est `modele`. Les autres
+    // (champ du contact, valeur système, constante) sont résolues par le serveur : les exposer au modèle
+    // l'inviterait à les fournir lui-même, donc à désigner la ressource d'un autre.
+    const params = requete.variables
+      .filter((v) => v.origine.type === 'modele')
+      .map((v) => ({
+        name: v.nom, type: v.type, source: 'modele' as const,
+        ...(v.description ? { description: v.description } : {}),
+        ...(v.requis ? { required: true } : {}),
+        ...(v.enum && v.enum.length > 0 ? { enum: v.enum } : {}),
+      }));
     try {
       const outil = await deps.ajouterConnecteur(ctx.tenant, ctx.agentId, {
-        sourceId: d.sourceId,
+        sourceId: requete.sourceId,
+        requestId: requete.id,
         name: d.name,
         title: d.title,
         description: d.description,
         nePasUtiliser: d.nePasUtiliser,
-        params: d.params,
-        binding: { methode: d.methode, chemin: d.chemin },
-        outputPaths: d.outputPaths,
+        params,
         risk,
       });
       if (!outil) return reply.code(404).send({ error: 'agent introuvable' });
       const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];
-      return reply.code(201).send({ outil: vue(outil, sorties) });
+      // 🔴 CE QUI PARTIRA, rendu avec l'outil pour que l'écran le fasse confirmer. C'est le seul moment où le
+      // client peut s'apercevoir qu'un connecteur enverra le dernier message de ses contacts à un tiers.
+      return reply.code(201).send({ outil: vue(outil, sorties), envoi: resumeEnvoi(requete) });
     } catch (err) {
       if (err instanceof NomOutilDejaPris) return reply.code(409).send({ error: err.message });
       throw err;

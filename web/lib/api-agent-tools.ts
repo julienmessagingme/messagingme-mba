@@ -47,6 +47,9 @@ export interface OutilAgent {
   origin: OrigineOutil;
   /** La source externe, pour un connecteur. `null` pour un outil maison. */
   sourceId: string | null;
+  /** La REQUÊTE que cet outil déclenche (migration 0105), ou null pour un outil maison. C'est elle qui porte
+   *  la méthode, le chemin, le corps et les variables : l'outil ne les redécrit plus. */
+  requestId?: string | null;
   name: string;
   title: string;
   description: string;
@@ -74,22 +77,20 @@ export async function listOutils(tenantId: string, agentId: string): Promise<Vue
 }
 
 /**
- * Déclare un outil de CONNECTEUR sur une source (lot L2).
+ * Branche une REQUÊTE de la bibliothèque sur cet agent (migration 0105).
  *
- * Route SÉPARÉE de l'ajout maison, exprès : l'ajout maison prend son `handler` dans le catalogue et refuse
- * tout le reste, c'est sa garde. Le risque est DÉRIVÉ de la méthode côté serveur et ne peut être que monté.
+ * 🔴 L'APPEL N'EST PLUS DÉCRIT ICI. On ne saisit que les MOTS : le nom exposé au modèle, à quoi ça sert, et
+ * quand ne pas l'appeler. La méthode, le chemin, le corps et les variables viennent de la requête, déjà
+ * éprouvée avec son bouton Test. Le risque est DÉRIVÉ de sa méthode côté serveur et ne peut être que monté.
+ *
+ * Rend AUSSI `envoi` : ce qui partira, en français, pour le faire confirmer au client. C'est le seul moment
+ * où il peut s'apercevoir qu'un connecteur enverra le dernier message de ses contacts à un système tiers.
  */
 export async function ajouterConnecteur(tenantId: string, agentId: string, outil: {
-  sourceId: string; name: string; title: string; description: string; nePasUtiliser: string;
-  methode: string; chemin: string;
-  params: Array<{ name: string; type: string; source: string; description?: string; required?: boolean; contactPath?: string; value?: string | number | boolean }>;
-  outputPaths: string[];
+  requeteId: string; name: string; title: string; description: string; nePasUtiliser: string;
   risk?: RisqueOutil;
-}): Promise<OutilAgent> {
-  const r = await request<{ outil: OutilAgent }>(`${base(tenantId, agentId)}/connecteur`, {
-    method: 'POST', body: JSON.stringify(outil),
-  });
-  return r.outil;
+}): Promise<{ outil: OutilAgent; envoi: Array<{ nom: string; libelle: string }> }> {
+  return request(`${base(tenantId, agentId)}/connecteur`, { method: 'POST', body: JSON.stringify(outil) });
 }
 
 /** Ajoute un outil du catalogue. Le titre, les mots, les paramètres et le RISQUE viennent du serveur. */

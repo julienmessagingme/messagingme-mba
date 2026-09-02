@@ -7,6 +7,7 @@ import type { AgentToolsRouteDeps } from '../src/http/agent-tools';
 import type { OutilComplet, PatchOutil } from '../src/agent/catalog';
 import { NomOutilDejaPris } from '../src/agent/catalog';
 import type { SortieAgent } from '../src/agent/agent-store';
+import type { RequeteConnecteur } from '../src/agent/requetes';
 
 /**
  * Routes des outils d'un agent IA.
@@ -25,6 +26,7 @@ const OUT = '22222222-2222-4222-8222-222222222222';
 const AUTRE = '33333333-3333-4333-8333-333333333333';
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SRC = '44444444-4444-4444-8444-444444444444';
+const RQ = '55555555-5555-4555-8555-555555555555';
 let adminTok = '';
 let agentTok = '';
 beforeAll(async () => {
@@ -44,7 +46,24 @@ const OUTIL: OutilComplet = {
 
 const SORTIES: SortieAgent[] = [{ code: 'besoin_cerne', label: 'Besoin cerné' }];
 
-function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [OUTIL]) {
+/**
+ * La REQUETE que l'outil designe (migration 0105). Ses variables couvrent les TROIS familles d origine, parce
+ * que c est justement ce que la route doit trier : seule celle du modele est exposee au modele, et les trois
+ * apparaissent dans le resume a confirmer.
+ */
+const REQUETE: RequeteConnecteur = {
+  id: RQ, tenantId: 't1', sourceId: SRC, label: 'Lire une commande',
+  methode: 'GET', chemin: '/commandes/{ref}',
+  parametres: [], entetes: [], corps: { mode: 'aucun' },
+  variables: [
+    { nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true },
+    { nom: 'ville', type: 'string', origine: { type: 'champ', cle: 'ville' } },
+    { nom: 'dit', type: 'string', origine: { type: 'systeme', cle: 'derniere_saisie' } },
+  ],
+  outputPaths: ['statut'], valeursTest: {}, outils: 0, updatedAt: '2026-09-02T00:00:00.000Z',
+};
+
+function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [OUTIL], requeteOver: Partial<RequeteConnecteur> = {}) {
   const cap = {
     ajouts: [] as Array<{ tenant: string; agentId: string; outil: Record<string, unknown> }>,
     patches: [] as Array<{ tenant: string; agentId: string; id: string; patch: PatchOutil }>,
@@ -81,7 +100,7 @@ function app(sorties: SortieAgent[] | null = SORTIES, liste: OutilComplet[] = [O
       if (outil.name === 'deja_pris') throw new NomOutilDejaPris();
       return agentId === AG ? { ...OUTIL, ...outil, origin: 'http', sourceId: outil.sourceId } : null;
     },
-    sourceExiste: async (tenant, sourceId) => tenant === 't1' && sourceId === SRC,
+    requetePourOutil: async (tenant, id) => (tenant === 't1' && id === RQ ? { ...REQUETE, ...requeteOver } : null),
     sortiesDeLAgent: async (_t, agentId) => (agentId === AG ? sorties : null),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentTools: deps }) };
@@ -273,82 +292,73 @@ describe('outils d’un agent : correction, retrait, isolation', () => {
 });
 
 /**
- * Déclarer un outil de CONNECTEUR sur une source (lot L2).
+ * Brancher une REQUÊTE de la bibliothèque sur un agent (migration 0105).
  *
- * 🔴 Trois gardes, et elles ne sont nulle part ailleurs : la source appartient au tenant, le risque dérive de
- * la méthode et ne peut être que MONTÉ, et le filtre de sortie est obligatoire. La dernière est celle qu'on
- * oublierait : la réponse du connecteur appartient au client et part chez le fournisseur de modèle.
+ * 🔴 L'APPEL N'EST PLUS DÉCRIT ICI, et c'est tout le changement : la méthode, le chemin, le corps, les
+ * variables et les champs à lire vivent sur la requête, mise au point une fois dans Tools. Ce qui se garde
+ * encore ici, et nulle part ailleurs : la requête appartient au tenant, le risque dérive de SA méthode et ne
+ * peut être que MONTÉ, ce que le modèle voit est DÉRIVÉ de ses variables, et l'écran reçoit de quoi faire
+ * confirmer ce qui partira.
  */
-describe('outils d’un agent : les connecteurs (L2)', () => {
+describe('outils d’un agent : brancher une requête de connecteur', () => {
   const corps = (over: Record<string, unknown> = {}) => ({
-    sourceId: SRC, name: 'lire_commande', title: 'Lire une commande',
+    requeteId: RQ, name: 'lire_commande', title: 'Lire une commande',
     description: 'Donne le statut d’une commande.', nePasUtiliser: 'Jamais pour annuler.',
-    methode: 'GET', chemin: '/commandes/{ref}',
-    params: [{ name: 'ref', type: 'string', source: 'modele', required: true }],
-    outputPaths: ['statut'],
     ...over,
   });
 
-  it('déclare l’outil, INACTIF, avec son gabarit dans le binding', async () => {
+  it('déclare l’outil INACTIF, en DÉSIGNANT la requête plutôt qu’en la recopiant', async () => {
     const { cap, srv } = app();
     const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
     expect(res.statusCode).toBe(201);
-    expect(cap.connecteurs[0]!.outil).toMatchObject({
-      sourceId: SRC, binding: { methode: 'GET', chemin: '/commandes/{ref}' }, outputPaths: ['statut'], risk: 'read',
-    });
+    expect(cap.connecteurs[0]!.outil).toMatchObject({ sourceId: SRC, requestId: RQ, risk: 'read' });
     // L'activation reste un geste humain séparé : la migration 0086 refuse un actif sans activateur.
     expect(res.json().outil.actif).toBe(false);
   });
 
-  it('🔴 une source d’un AUTRE tenant rend 404, et rien n’est écrit', async () => {
+  it('🔴 ce que le MODÈLE voit est DÉRIVÉ des variables de la requête, et seulement celles du modèle', async () => {
+    // Exposer une variable résolue par le serveur (champ du contact, valeur système) inviterait le modèle à
+    // la fournir lui-même, donc à désigner la ressource de quelqu’un d’autre. C’est la garde anti-IDOR.
     const { cap, srv } = app();
-    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ sourceId: AUTRE }) });
+    await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
+    expect(cap.connecteurs[0]!.outil.params).toEqual([
+      { name: 'ref', type: 'string', source: 'modele', required: true },
+    ]);
+  });
+
+  it('🔴 la réponse porte CE QUI PARTIRA, pour que l’écran le fasse confirmer', async () => {
+    // Julien : « il faut bien faire confirmer au client, on envoie telle et telle valeur ». C’est le seul
+    // moment où il peut s’apercevoir qu’un connecteur enverra le dernier message de ses contacts à un tiers.
+    const { srv } = app();
+    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
+    expect(res.json().envoi).toEqual([
+      { nom: 'ref', libelle: 'décidée par l’agent' },
+      { nom: 'ville', libelle: 'champ « ville » du contact' },
+      { nom: 'dit', libelle: 'dernier message du contact' },
+    ]);
+  });
+
+  it('🔴 une requête d’un AUTRE tenant rend 404, et rien n’est écrit', async () => {
+    const { cap, srv } = app();
+    const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ requeteId: AUTRE }) });
     expect(res.statusCode).toBe(404);
     expect(cap.connecteurs).toEqual([]);
   });
 
-  it('🔴 le RISQUE ne peut pas être abaissé sous celui de la méthode', async () => {
-    // Un client qui déclare « read » un DELETE désarmerait la garde d'autonomie sur une action irréversible.
-    const { cap, srv } = app();
-    for (const [methode, risk] of [['DELETE', 'read'], ['DELETE', 'write'], ['POST', 'read']]) {
-      const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ methode, risk }) });
-      expect(res.statusCode, `${methode}/${risk}`).toBe(400);
+  it('🔴 le RISQUE ne peut pas être abaissé sous celui de la MÉTHODE DE LA REQUÊTE', async () => {
+    // Un client qui déclare « read » un DELETE désarmerait la garde d’autonomie sur une action irréversible.
+    // ⚠️ La méthode vient de la requête LUE, jamais du corps : sinon il suffirait de mentir dessus.
+    const { cap, srv } = app(SORTIES, [OUTIL], { methode: 'DELETE' });
+    for (const risk of ['read', 'write']) {
+      const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ risk }) });
+      expect(res.statusCode, risk).toBe(400);
     }
     expect(cap.connecteurs).toEqual([]);
     // Le MONTER est permis : un GET peut interroger un système sensible.
-    const ok = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ methode: 'GET', risk: 'write' }) });
+    const { cap: cap2, srv: srv2 } = app();
+    const ok = await srv2.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ risk: 'write' }) });
     expect(ok.statusCode).toBe(201);
-    expect(cap.connecteurs[0]!.outil.risk).toBe('write');
-  });
-
-  it('🔴 sans champs à lire, c’est REFUSÉ : la réponse du client part chez le fournisseur de modèle', async () => {
-    const { cap, srv } = app();
-    for (const outputPaths of [[], undefined]) {
-      const res = await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps({ outputPaths }) });
-      expect(res.statusCode, String(outputPaths)).toBe(400);
-    }
-    expect(cap.connecteurs).toEqual([]);
-  });
-
-  it('🔴 un `contactPath` HORS LISTE est refusé, et un paramètre « contact » doit le déclarer', async () => {
-    // La liste fermée empêche de dériver un paramètre d'une clé arbitraire de la projection du contact.
-    const { cap, srv } = app();
-    const hors = await srv.inject({
-      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
-      payload: corps({ params: [{ name: 'x', type: 'string', source: 'contact', contactPath: 'email' }] }),
-    });
-    expect(hors.statusCode).toBe(400);
-    const sans = await srv.inject({
-      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
-      payload: corps({ params: [{ name: 'x', type: 'string', source: 'contact' }] }),
-    });
-    expect(sans.statusCode).toBe(400);
-    expect(cap.connecteurs).toEqual([]);
-    const bon = await srv.inject({
-      method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok),
-      payload: corps({ params: [{ name: 'client', type: 'string', source: 'contact', contactPath: 'wa_id' }] }),
-    });
-    expect(bon.statusCode).toBe(201);
+    expect(cap2.connecteurs[0]!.outil.risk).toBe('write');
   });
 
   it('réservé aux administrateurs, et le tenant de l’URL ne dépasse pas celui du jeton', async () => {

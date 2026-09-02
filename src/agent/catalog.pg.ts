@@ -132,21 +132,27 @@ export class PgToolCatalog implements ToolCatalog, ToolAdminStore {
    * tenant ne produit aucune ligne plutôt qu'une violation de clé étrangère, donc un 404 plutôt qu'un 500.
    */
   async ajouterConnecteur(tenantId: string, agentId: string, outil: {
-    sourceId: string; name: string; title: string; description: string; nePasUtiliser: string;
-    params: unknown; binding: { methode: string; chemin: string }; outputPaths: string[]; risk: RisqueOutil;
+    sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
+    params: unknown; risk: RisqueOutil;
   }): Promise<OutilComplet | null> {
     const res = await this.pool.query<LigneAdmin>(
+      // ⚠️ L'appel n'est PLUS décrit ici (migration 0105) : `binding` reste vide et `output_paths` aussi,
+      // parce que la REQUÊTE les porte. Les remplir en double créerait deux vérités, dont une que le
+      // résolveur ne lit pas, donc une que personne ne verrait diverger.
+      //
+      // Les trois `exists` sont la garde d'isolation : l'agent, la source ET la requête doivent être de ce
+      // tenant. Sans eux, les clés étrangères lèveraient en 500, dont Cloudflare remplace le corps.
       `insert into agent_tools
-         (tenant_id, agent_id, origin, source_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, risk)
-       select $1, $2, 'http', $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::text[], $11
+         (tenant_id, agent_id, origin, source_id, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, risk)
+       select $1, $2, 'http', $3, $4, $5, $6, $7, $8, $9::jsonb, '{}'::jsonb, '{}'::text[], $10
         where exists (select 1 from agents where id = $2 and tenant_id = $1)
           and exists (select 1 from agent_tool_sources where id = $3 and tenant_id = $1)
+          and exists (select 1 from connector_requests where id = $4 and tenant_id = $1)
        returning ${COLONNES_ADMIN}`,
       [
-        tenantId, agentId, outil.sourceId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
+        tenantId, agentId, outil.sourceId, outil.requestId,
+        outil.name, outil.title, outil.description, outil.nePasUtiliser,
         JSON.stringify(outil.params ?? []),
-        JSON.stringify(outil.binding),
-        outil.outputPaths,
         outil.risk,
       ],
     ).catch(surNomDejaPris);

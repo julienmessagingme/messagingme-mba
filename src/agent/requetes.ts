@@ -15,7 +15,7 @@
 
 import type { MethodeConnecteur } from './http-cible';
 import type { GabaritCorps, EnTete, ParametreUrl } from './requete-http';
-import type { OrigineVariable } from './variables';
+import { libelleOrigine, type OrigineVariable } from './variables';
 
 /** Le type ANNONCÉ d'une variable. Il décide de ce qui part dans le corps : un « nombre » part en nombre. */
 export type TypeVariable = 'string' | 'number' | 'integer' | 'boolean';
@@ -66,6 +66,24 @@ export interface RequeteConnecteur {
 
 export type CreationRequete = Omit<RequeteConnecteur, 'id' | 'tenantId' | 'outils' | 'updatedAt'>;
 export type PatchRequete = Partial<CreationRequete>;
+
+/**
+ * CE QUI PARTIRA dans la requête, en français, pour le faire confirmer au client.
+ *
+ * 🔴 Julien, le 2026-09-02 : « quand le client choisit dans la liste l'appel API, il faut bien lui faire
+ * confirmer à ce moment "ok on envoie telle et telle valeur dans la requête" ». C'est le seul moment où il
+ * peut s'apercevoir qu'un connecteur enverra le dernier message de ses contacts à un système tiers.
+ *
+ * ⚠️ DÉRIVÉ des variables réellement déclarées, jamais d'une liste tenue à part. Une seconde liste finirait
+ * par ne plus dire ce qui part, et une confirmation qui ment est pire que pas de confirmation : elle donne
+ * l'assurance sans la garantie.
+ *
+ * Les variables du MODÈLE en font partie, et c'est voulu : « décidée par l'agent » est justement ce que le
+ * client doit voir, parce que c'est la seule valeur qu'il ne contrôle pas.
+ */
+export function resumeEnvoi(requete: Pick<RequeteConnecteur, 'variables'>): Array<{ nom: string; libelle: string }> {
+  return requete.variables.map((v) => ({ nom: v.nom, libelle: libelleOrigine(v.origine) }));
+}
 
 /** Le libellé est déjà pris pour ce tenant. Erreur TYPÉE : la route rend 409, jamais 500. */
 export class LabelRequeteDejaPris extends Error {

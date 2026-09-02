@@ -784,7 +784,9 @@ async function main(): Promise<void> {
       // Lot L2 : un outil de connecteur, sur une source du tenant. La source est verifiee ICI (404) plutot
       // que par la cle etrangere, qui leverait en 500.
       ajouterConnecteur: (tenant, agentId, outil) => toolCatalog.ajouterConnecteur(tenant, agentId, outil),
-      sourceExiste: async (tenant, sourceId) => (await agentSources.parId(tenant, sourceId)) !== null,
+      // La REQUETE est LUE, pas crue sur parole : le risque plancher et le resume de ce qui sera envoye en
+      // derivent, et ils doivent decrire l appel REEL.
+      requetePourOutil: (tenant, requeteId) => agentRequetes.parId(tenant, requeteId),
       patch: (tenant, agentId, id, p) => toolCatalog.patch(tenant, agentId, id, p),
       activer: (tenant, agentId, id, actif, par) => toolCatalog.activer(tenant, agentId, id, actif, par),
       autonomie: (tenant, agentId, id, autonome, par) => toolCatalog.autonomie(tenant, agentId, id, autonome, par),

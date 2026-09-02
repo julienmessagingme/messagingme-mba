@@ -23,6 +23,24 @@ const SOURCE = {
   status: 'active', lastOkAt: null, lastError: null, outilsActifs: 0, agents: 0,
 };
 
+const RQ = '33333333-3333-4333-8333-333333333333';
+/**
+ * Une REQUETE de la bibliotheque (migration 0105). Ses variables couvrent DEUX origines, parce que c est
+ * exactement ce que l ecran doit rendre lisible avant de valider : ce que l agent decide, et ce que la
+ * plateforme envoie sans qu il ait son mot a dire.
+ */
+const REQUETE = {
+  id: RQ, tenantId: 't-e2e', sourceId: SRC, label: 'Chercher une commande',
+  methode: 'GET', chemin: '/commandes/{ref}',
+  parametres: [], entetes: [], corps: { mode: 'aucun' },
+  variables: [
+    { nom: 'ref', type: 'string', origine: { type: 'modele' }, requis: true },
+    { nom: 'dit', type: 'string', origine: { type: 'systeme', cle: 'derniere_saisie' } },
+  ],
+  outputPaths: ['statut', 'livraison.date'], valeursTest: {}, outils: 0,
+  updatedAt: '2026-09-02T00:00:00.000Z',
+};
+
 const AGENT = {
   id: AG, label: 'Support', status: 'draft', mentionIa: 'Vous échangez avec un assistant automatique.',
   modele: 'zai/glm-4.7-flash', ficheVersion: 1,
@@ -31,7 +49,7 @@ const AGENT = {
   inactiviteMinutes: 30, contactInconnu: 'lecture_seule',
 };
 
-async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown }> }, over: { sources?: unknown[]; outils?: unknown[]; epreuve?: unknown } = {}) {
+async function mock(page: import('@playwright/test').Page, capture: { posts: Array<{ url: string; body: unknown }> }, over: { sources?: unknown[]; outils?: unknown[]; epreuve?: unknown; requetes?: unknown[] } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -47,10 +65,15 @@ async function mock(page: import('@playwright/test').Page, capture: { posts: Arr
         return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ source: SOURCE }) });
       }
       if (url.includes('/tools/connecteur')) {
-        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ outil: { id: 'o9', origin: 'http', sourceId: SRC, name: 'lire_commande', title: 'Lire', description: 'd', nePasUtiliser: 'n', params: [], binding: { methode: 'GET', chemin: '/commandes/{ref}' }, risk: 'read', actif: false, activeLe: null, autonome: false, autonomeLe: null, expose: null } }) });
+        // La reponse porte AUSSI `envoi` : ce qui partira, en francais, pour que l ecran le fasse confirmer.
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({
+          outil: { id: 'o9', origin: 'http', sourceId: SRC, requestId: RQ, name: 'lire_commande', title: 'Lire', description: 'd', nePasUtiliser: 'n', params: [], binding: {}, risk: 'read', actif: false, activeLe: null, autonome: false, autonomeLe: null, expose: null },
+          envoi: [{ nom: 'ref', libelle: 'decidee par l agent' }, { nom: 'dit', libelle: 'dernier message du contact' }],
+        }) });
       }
       return json({ ok: true });
     }
+    if (url.includes('/agent-requetes')) return json({ requetes: over.requetes ?? [REQUETE], champs: ['ville'], catalogue: { contact: ['wa_id', 'nom'], systeme: ['derniere_saisie', 'maintenant'], entetesReserves: ['authorization'] } });
     if (url.includes('/agent-sources')) return json({ sources: over.sources ?? [SOURCE] });
     if (/\/agents\/[^/]+\/tools$/.test(url)) return json({ outils: over.outils ?? [], catalogue: [] });
     if (/\/agents\/[^/]+$/.test(url)) return json({ agent: AGENT });
@@ -71,7 +94,7 @@ async function bibliotheque(page: import('@playwright/test').Page) {
 /** L'onglet Outils d'un agent. Il ne déclare AUCUN système : il puise dans la bibliothèque. */
 async function ongletOutils(page: import('@playwright/test').Page) {
   await page.goto(`/agents?id=${AG}&tab=outils`);
-  await expect(page.getByTestId(`agent-source-${SRC}`).or(page.getByTestId('connecteurs-aucune-source'))).toBeVisible();
+  await expect(page.getByTestId(`agent-requete-${RQ}`).or(page.getByTestId('connecteurs-aucune-requete'))).toBeVisible();
 }
 
 test.describe('Agent : brancher le système du client', () => {
@@ -102,65 +125,52 @@ test.describe('Agent : brancher le système du client', () => {
     await expect(page.getByTestId(`source-epreuve-${SRC}`)).toContainText(/authentification/i);
   });
 
-  test('🔴 déclarer un outil : gabarit, champs lus, et il naît INACTIF', async ({ page }) => {
+  test('🔴 brancher un appel : on ne saisit QUE les mots, et il naît INACTIF', async ({ page }) => {
+    // L appel n est plus decrit ici : la methode, le chemin, le corps et les variables viennent de la
+    // bibliotheque. Redecrire l appel par agent obligeait a le corriger partout, ou nulle part.
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await ongletOutils(page);
 
-    await page.getByTestId(`source-nouvel-outil-${SRC}`).click();
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
     await page.getByTestId('outil-nom').fill('lire_commande');
     await page.getByTestId('outil-titre').fill('Lire une commande');
-    await page.getByTestId('outil-chemin').fill('/commandes/{ref}');
-    await page.getByTestId('outil-description').fill('Quand le client demande où en est sa commande.');
-    await page.getByTestId('outil-champs').fill('statut\nlivraison.date');
-    await page.getByTestId('param-ajouter').click();
-    await page.getByTestId('param-nom-0').fill('ref');
+    await page.getByTestId('outil-description').fill('Quand le client demande ou en est sa commande.');
+    await page.getByTestId('outil-nepasutiliser').fill('Jamais pour annuler.');
+    await page.getByTestId('envoi-confirme').check();
     await page.getByTestId('outil-creer').click();
 
     await expect.poll(() => capture.posts.some((p) => p.url.includes('/tools/connecteur'))).toBe(true);
     const envoi = capture.posts.find((p) => p.url.includes('/tools/connecteur'))!;
-    expect(envoi.body).toMatchObject({
-      sourceId: SRC, name: 'lire_commande', methode: 'GET', chemin: '/commandes/{ref}',
-      outputPaths: ['statut', 'livraison.date'],
-      params: [{ name: 'ref', source: 'modele' }],
-    });
+    expect(envoi.body).toMatchObject({ requeteId: RQ, name: 'lire_commande', title: 'Lire une commande' });
+    // Ni methode, ni chemin, ni champs a lire : ils ne sont plus du ressort de l agent.
+    expect(envoi.body).not.toHaveProperty('methode');
+    expect(envoi.body).not.toHaveProperty('outputPaths');
   });
 
-  test('🔴 un paramètre « le contact » se déclare, et l’écran dit qu’il ne vient pas de l’agent', async ({ page }) => {
-    // C'est la garde anti-IDOR du lot : elle doit être LISIBLE par le client, pas seulement vraie dans le code.
+  test('🔴 l’ecran DIT ce qui partira, et la confirmation est BLOQUANTE', async ({ page }) => {
+    // Julien : « il faut bien faire confirmer au client, on envoie telle et telle valeur ». C est le seul
+    // moment ou il peut s apercevoir qu un appel enverra le dernier message de ses contacts a un tiers.
+    // Sans le caractere bloquant, le resume ne serait qu une decoration qu on survole.
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
     await mock(page, capture);
     await ongletOutils(page);
-    await page.getByTestId(`source-nouvel-outil-${SRC}`).click();
-    await expect(page.getByText(/ne peut pas être fabriqué par l’agent|cannot be forged by the agent/)).toBeVisible();
+    await page.getByTestId(`requete-nouvel-outil-${RQ}`).click();
 
-    await page.getByTestId('outil-nom').fill('mes_commandes');
-    await page.getByTestId('outil-titre').fill('Mes commandes');
-    await page.getByTestId('outil-chemin').fill('/clients/{tel}/commandes');
-    await page.getByTestId('outil-description').fill('Les commandes du client qui écrit.');
-    await page.getByTestId('outil-champs').fill('commandes');
-    await page.getByTestId('param-ajouter').click();
-    await page.getByTestId('param-nom-0').fill('tel');
-    await page.getByTestId('param-source-0').selectOption('contact');
-    await page.getByTestId('outil-creer').click();
+    const resume = page.getByTestId('envoi-resume');
+    await expect(resume).toContainText('ref');
+    await expect(resume).toContainText(/décidée par l’agent|decided by the agent/);
+    await expect(resume).toContainText(/dernier message du contact|contact’s last message/);
+    // Et ce qu il lira en retour, qui est l autre moitie de la question.
+    await expect(resume).toContainText('statut');
 
-    await expect.poll(() => capture.posts.some((p) => p.url.includes('/tools/connecteur'))).toBe(true);
-    const envoi = capture.posts.find((p) => p.url.includes('/tools/connecteur'))!;
-    expect(envoi.body).toMatchObject({ params: [{ name: 'tel', source: 'contact', contactPath: 'wa_id' }] });
-  });
-
-  test('sans champ à lire, le bouton reste inactif : le filtre de sortie est obligatoire', async ({ page }) => {
-    // La réponse du système du client part chez le fournisseur du modèle : quelqu'un doit décider ce qui
-    // traverse, et c'est ici.
-    const capture = { posts: [] as Array<{ url: string; body: unknown }> };
-    await mock(page, capture);
-    await ongletOutils(page);
-    await page.getByTestId(`source-nouvel-outil-${SRC}`).click();
-    await page.getByTestId('outil-nom').fill('x_test');
-    await page.getByTestId('outil-titre').fill('X');
+    await page.getByTestId('outil-nom').fill('lire_commande');
+    await page.getByTestId('outil-titre').fill('Lire');
     await page.getByTestId('outil-description').fill('d');
+    await page.getByTestId('outil-nepasutiliser').fill('n');
+    // Tout est rempli, mais la case n est pas cochee : le bouton reste inactif.
     await expect(page.getByTestId('outil-creer')).toBeDisabled();
-    await page.getByTestId('outil-champs').fill('statut');
+    await page.getByTestId('envoi-confirme').check();
     await expect(page.getByTestId('outil-creer')).toBeEnabled();
   });
 
@@ -174,14 +184,14 @@ test.describe('Agent : brancher le système du client', () => {
     await expect(page.getByTestId(`source-usage-${SRC}`)).toContainText('3');
   });
 
-  test('🔴 un agent ne déclare AUCUN système : il renvoie vers la bibliothèque', async ({ page }) => {
-    // Déclarer une adresse et un secret est un geste de workspace. Le proposer dans un agent ferait croire
-    // que le système lui appartient.
+  test('🔴 un agent ne met au point AUCUN appel : il renvoie vers la bibliothèque', async ({ page }) => {
+    // Mettre au point un appel demande de l EPROUVER, ce qui est un geste de workspace. Le proposer dans un
+    // agent ferait croire que l appel lui appartient, et il serait redecrit pour chaque agent.
     const capture = { posts: [] as Array<{ url: string; body: unknown }> };
-    await mock(page, capture, { sources: [] });
+    await mock(page, capture, { sources: [], requetes: [] });
     await page.goto(`/agents?id=${AG}&tab=outils`);
-    await expect(page.getByTestId('connecteurs-aucune-source')).toBeVisible();
-    // Et le formulaire de déclaration d'un système n'est PAS sur cette page.
+    await expect(page.getByTestId('connecteurs-aucune-requete')).toBeVisible();
+    // Et le formulaire de declaration d un systeme n est PAS sur cette page.
     await expect(page.getByTestId('source-creer')).toHaveCount(0);
   });
 });
