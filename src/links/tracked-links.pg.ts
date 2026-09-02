@@ -20,6 +20,15 @@ export interface CibleLien {
 export interface LienTrace extends CibleLien {
   code: string;
   destination: string;
+  /**
+   * L'URL soumise à Meta porte-t-elle le suffixe variable qui fait voyager le jeton du destinataire ?
+   *
+   * 🔴 C'est cette colonne, et elle seule, qui dit à l'ENVOI s'il doit fournir un composant de bouton. Se
+   * tromper fait échouer l'appel dans les DEUX sens (132000) : un composant pour une URL sans variable, comme
+   * une variable sans composant. `false` pour tous les liens d'avant le 2026-09-02, dont l'adresse est figée
+   * chez Meta et ne pourra jamais en porter.
+   */
+  avecJeton: boolean;
 }
 
 /** Ce qu'il faut pour rediriger : où aller, et pour quel espace compter. */
@@ -44,10 +53,16 @@ export class PgTrackedLinkStore {
       // `confirmed_at = null` remis à chaque réservation : une nouvelle soumission n'est confirmée que si
       // Meta l'accepte à son tour. Sans cette remise à zéro, un template resoumis puis refusé garderait la
       // confirmation de sa version précédente.
-      `insert into tracked_links (code, tenant_id, template_name, template_language, card_index, button_index, destination)
-       values ($1, $2, $3, $4, $5, $6, $7)
+      // `avec_jeton = true` : depuis le 2026-09-02, tout lien RESERVE ici porte le suffixe variable qui fera
+      // voyager le jeton du destinataire. C est cette colonne, et elle seule, qui dit a l ENVOI s il doit
+      // fournir un composant de bouton : la deduire de la date de creation serait une regle qui se casse au
+      // premier retard de deploiement, et se tromper dans un sens comme dans l autre fait echouer l envoi
+      // avec un 132000.
+      `insert into tracked_links (code, tenant_id, template_name, template_language, card_index, button_index, destination, avec_jeton)
+       values ($1, $2, $3, $4, $5, $6, $7, true)
        on conflict (tenant_id, template_name, template_language, coalesce(card_index, -1), button_index)
-         do update set destination = excluded.destination, confirmed_at = null
+         where template_name is not null
+         do update set destination = excluded.destination, confirmed_at = null, avec_jeton = true
        returning code`,
       [code, tenantId, cible.templateName, cible.templateLanguage, cible.cardIndex, cible.buttonIndex, destination],
     );
@@ -83,12 +98,77 @@ export class PgTrackedLinkStore {
     return r ? { tenantId: r.tenant_id, destination: r.destination } : null;
   }
 
-  /** Enregistre un clic. Appelée en BEST-EFFORT : un échec ne doit jamais empêcher la redirection. */
-  async recordClick(code: string, tenantId: string): Promise<void> {
+  /**
+   * Enregistre un clic. Appelée en BEST-EFFORT : un échec ne doit jamais empêcher la redirection.
+   *
+   * `contactId` = QUI a cliqué (migration 0106), `null` quand l'URL ne portait pas de jeton. C'est le cas de
+   * tous les templates approuvés avant le 2026-09-02 : leur adresse est figée chez Meta et ne pourra jamais
+   * en porter. Compter ces clics-là sans savoir qui vaut mieux que ne pas les compter.
+   */
+  async recordClick(code: string, tenantId: string, contactId?: string | null): Promise<void> {
     await this.pool.query(
-      `insert into tracked_link_clicks (code, tenant_id) values (lower($1), $2)`,
-      [code, tenantId],
+      `insert into tracked_link_clicks (code, tenant_id, contact_id) values (lower($1), $2, $3)`,
+      [code, tenantId, contactId ?? null],
     );
+  }
+
+  /**
+   * Résout un jeton public en identifiant de contact, DANS un espace donné.
+   *
+   * 🔴 `tenant_id = $1` alors que le jeton est unique globalement, et ce n'est pas redondant : l'espace vient
+   * du LIEN cliqué, pas de l'URL. Sans ce filtre, un jeton d'un autre client se verrait attribuer ce clic-ci,
+   * ce qui mêlerait deux clientèles dans une même mesure.
+   *
+   * ⚠️ Un contact ANONYMISÉ garde sa ligne mais son jeton est effacé par la purge : il ne se résout donc
+   * plus, et ses clics futurs redeviennent anonymes. C'est le comportement voulu du droit à l'effacement.
+   */
+  async contactParJeton(tenantId: string, jeton: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from contacts where tenant_id = $1 and jeton_public = $2`,
+      [tenantId, jeton],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
+  /**
+   * Le jeton public de CES contacts, fabriqué pour ceux qui n'en ont pas encore.
+   *
+   * 🔴 POSÉ À L'ENVOI, PAS À LA CRÉATION DU CONTACT. On ne fabrique pas d'identifiants pour des gens à qui on
+   * n'envoie jamais de lien tracé, et une campagne qui n'en contient pas n'écrit donc rien du tout.
+   *
+   * `on conflict do nothing` sur l'index unique global : deux envois simultanés au même contact peuvent tirer
+   * deux jetons, un seul entre, et la lecture qui suit rend celui qui a gagné. Sans ça, l'un des deux lèverait
+   * en pleine campagne.
+   *
+   * Rend une map identifiant -> jeton. Les contacts absents de la map (aucun, en pratique) partiront sans
+   * jeton, donc avec un lien anonyme : dégrader vaut mieux que faire échouer un envoi.
+   */
+  async jetonsPourContacts(tenantId: string, contactIds: readonly string[], fabriquer: () => string): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (contactIds.length === 0) return out;
+
+    const manquants = await this.pool.query<{ id: string }>(
+      `select id from contacts where tenant_id = $1 and id = any($2::uuid[]) and jeton_public is null`,
+      [tenantId, [...contactIds]],
+    );
+    if (manquants.rowCount && manquants.rowCount > 0) {
+      // Un seul énoncé pour tous : autant d'allers-retours que de contacts ferait de l'attribution un coût
+      // proportionnel à la taille de la campagne, sur le chemin d'envoi.
+      const paires = manquants.rows.map((r) => [r.id, fabriquer()] as const);
+      await this.pool.query(
+        `update contacts as c set jeton_public = v.jeton
+           from (select * from unnest($2::uuid[], $3::text[]) as t(id, jeton)) as v
+          where c.id = v.id and c.tenant_id = $1 and c.jeton_public is null`,
+        [tenantId, paires.map((p) => p[0]), paires.map((p) => p[1])],
+      ).catch(() => { /* collision d'unicité : la relecture ci-dessous rendra le jeton du gagnant */ });
+    }
+
+    const res = await this.pool.query<{ id: string; jeton_public: string | null }>(
+      `select id, jeton_public from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+      [tenantId, [...contactIds]],
+    );
+    for (const r of res.rows) if (r.jeton_public) out.set(r.id, r.jeton_public);
+    return out;
   }
 
   /**
@@ -100,17 +180,18 @@ export class PgTrackedLinkStore {
   async listByTemplates(tenantId: string, noms: readonly string[]): Promise<LienTrace[]> {
     if (noms.length === 0) return [];
     const res = await this.pool.query<{
-      code: string; template_name: string; template_language: string; card_index: number | null; button_index: number; destination: string;
+      code: string; template_name: string; template_language: string; card_index: number | null; button_index: number; destination: string; avec_jeton: boolean;
     }>(
       // CONFIRMÉS seulement : une ligne réservée dont Meta a refusé le template ne décrit aucun lien réel,
       // et l'exposer ferait apparaître une mesure qui resterait à zéro pour toujours.
-      `select code, template_name, template_language, card_index, button_index, destination
+      `select code, template_name, template_language, card_index, button_index, destination, avec_jeton
          from tracked_links
         where tenant_id = $1 and template_name = any($2::text[]) and confirmed_at is not null`,
       [tenantId, [...new Set(noms)]],
     );
     return res.rows.map((r) => ({
       code: r.code,
+      avecJeton: r.avec_jeton,
       templateName: r.template_name,
       templateLanguage: r.template_language,
       cardIndex: r.card_index,

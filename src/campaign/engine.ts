@@ -111,6 +111,17 @@ export interface EngineDeps {
    * hors fenêtre) : le destinataire est alors marqué en ÉCHEC, jamais compté comme envoyé. `void` toléré pour
    * les câblages qui ne savent pas le dire (traité comme un démarrage réussi, comportement historique).
    */
+  /**
+   * Les index de boutons de ce template qui portent un SUFFIXE VARIABLE (migration 0106), donc pour lesquels
+   * l'envoi doit fournir un composant `sub_type: 'url'`. Vide = aucun, donc comportement d'avant.
+   *
+   * ⚠️ Se tromper ici fait ECHOUER l'envoi dans les deux sens : un composant pour un template sans variable
+   * comme une variable sans composant rendent un 132000. C'est pourquoi la réponse vient d'une colonne
+   * ecrite a la soumission, jamais d'une deduction.
+   */
+  boutonsTraces?: (tenantId: string, templateName: string, templateLanguage: string) => Promise<number[]>;
+  /** Le jeton public de ces contacts, fabriqué pour ceux qui n'en ont pas. Un seul énoncé pour toute la campagne. */
+  jetonsPourContacts?: (tenantId: string, contactIds: readonly string[]) => Promise<Map<string, string>>;
   startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
   /**
    * Campagne NODE (/v1/sends, D-1) : démarre le workflow à un bloc PRÉCIS. Pas de `firstTemplateParams` (la
@@ -210,6 +221,26 @@ const DEFAULT_THRESHOLDS: GuardrailThresholds = {
  * n'arrêtait rien et une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout. Les destinataires
  * non traités restent `pending`, donc « Reprendre » repart exactement là où on s'est arrêté.
  */
+/**
+ * Les suffixes de boutons pour UN destinataire, ou rien du tout.
+ *
+ * 🔴 TOUT OU RIEN, et c'est la garde qui protège l'envoi. Meta refuse l'appel (132000) si un composant de
+ * bouton manque pour une URL variable, ET si un composant est fourni pour une URL qui n'en a pas. Sans jeton
+ * (contact inconnu, lecture en échec), on ne produit donc AUCUN composant : le message part avec un lien qui
+ * pointe `/r/<code>/` sans jeton, que la route sert comme un lien anonyme. On perd la mesure de ce message-là,
+ * on ne perd pas le message.
+ *
+ * Fonction pure et exportée pour être éprouvée seule : c'est une décision à deux issues sur le chemin le plus
+ * chaud du produit, et la tester à travers un run de campagne entier ne dirait pas grand-chose.
+ */
+export function suffixesPourDestinataire(
+  boutons: readonly number[],
+  jeton: string | undefined,
+): { suffixesBoutons?: Record<number, string> } {
+  if (boutons.length === 0 || !jeton) return {};
+  return { suffixesBoutons: Object.fromEntries(boutons.map((i) => [i, jeton])) };
+}
+
 export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise<RunReport> {
   const now = deps.now ?? (() => Date.now());
   const t = deps.thresholds ?? DEFAULT_THRESHOLDS;
@@ -285,6 +316,34 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
     }
     await deps.campaigns.setStatus(campaign.id, await statutDeSortie());
     return report;
+  }
+
+  /**
+   * L'ATTRIBUTION DES CLICS (migration 0106) : quels boutons portent un suffixe variable, et quel jeton
+   * chaque destinataire doit y mettre.
+   *
+   * 🔴 DEUX LECTURES, LES DEUX EN AMONT DE LA BOUCLE. Les boutons tracés sont les mêmes pour toute la
+   * campagne ; les jetons se chargent en UN énoncé pour tous les destinataires. Les lire par destinataire
+   * ferait deux requêtes par message, sur le chemin le plus chaud du produit.
+   *
+   * ⚠️ Et les deux sont BEST-EFFORT. Une attribution qui échoue doit coûter la connaissance de « qui a
+   * cliqué », jamais l'envoi lui-même : un client préfère mille fois un message parti sans mesure qu'une
+   * campagne bloquée par une statistique.
+   */
+  let boutonsAJeton: number[] = [];
+  let jetons = new Map<string, string>();
+  if (!campaign.workflowId && !deps.channelSender && deps.boutonsTraces && deps.jetonsPourContacts) {
+    try {
+      boutonsAJeton = await deps.boutonsTraces(campaign.tenantId, campaign.templateName, campaign.templateLanguage);
+      if (boutonsAJeton.length > 0) {
+        const ids = [...new Set(pending.map((r) => r.contactId).filter((v): v is string => typeof v === 'string' && v !== ''))];
+        jetons = await deps.jetonsPourContacts(campaign.tenantId, ids);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('attribution des clics ignorée pour cette campagne:', err instanceof Error ? err.message : err);
+      boutonsAJeton = [];
+    }
   }
 
   // Horloge du contrôle d'arrêt. Partie à MAINTENANT, donc la première relecture n'a lieu qu'un pas plus tard :
@@ -425,6 +484,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
             ...(carousel ? { carousel } : {}),
             // `mediaId` non nul garanti par le refus pré-boucle : `headerMediaSendBlocker` a déjà arrêté le run.
             ...(headerMedia?.mediaId ? { headerMediaId: headerMedia.mediaId, headerFormat: headerMedia.headerFormat } : {}),
+            // 🔴 Le suffixe de CE destinataire sur chaque bouton tracé. Sans jeton (contact inconnu, lecture
+            // en échec), AUCUN composant n'est produit : envoyer un composant vide ferait échouer l'appel
+            // avec un 132000, alors que ne rien envoyer ne coûte que la mesure de ce message-là.
+            ...suffixesPourDestinataire(boutonsAJeton, r.contactId ? jetons.get(r.contactId) : undefined),
           }),
         };
         // Numéro E.164 -> `to`, BSUID -> `recipient` (source unique messagingTarget). sendTemplate route

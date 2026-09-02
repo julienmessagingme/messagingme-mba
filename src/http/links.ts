@@ -1,6 +1,7 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { isSendableButtonUrl } from '../meta/button-url';
 import { estClicAutomatique } from '../links/clic-automatique';
+import { estJeton } from '../links/jeton-contact';
 import type { DestinationLien } from '../links/tracked-links.pg';
 
 /**
@@ -22,8 +23,22 @@ import type { DestinationLien } from '../links/tracked-links.pg';
 export interface LinksRouteDeps {
   /** Destination d'un code, ou null si le code n'existe pas. */
   getByCode(code: string): Promise<DestinationLien | null>;
-  /** Enregistre le clic. Best-effort : son échec ne doit JAMAIS empêcher la redirection. */
-  recordClick(code: string, tenantId: string): Promise<void>;
+  /**
+   * Enregistre le clic. Best-effort : son échec ne doit JAMAIS empêcher la redirection.
+   *
+   * `contactId` = QUI a cliqué, quand l'URL portait un jeton. `null` quand elle n'en portait pas : c'est le
+   * cas de tous les templates approuvés avant le 2026-09-02, dont l'adresse est figée chez Meta et ne pourra
+   * jamais en porter. Compter ces clics-là sans savoir qui vaut mieux que ne pas les compter.
+   */
+  recordClick(code: string, tenantId: string, contactId?: string | null): Promise<void>;
+  /**
+   * Résout un jeton public en identifiant de contact, dans l'espace du lien. `null` = jeton inconnu.
+   *
+   * ⚠️ `tenantId` vient du LIEN, pas de l'URL : un jeton qui désignerait un contact d'un autre espace ne doit
+   * pas se voir attribuer ce clic-ci. Optionnelle : absente, les clics restent anonymes, ce qui est
+   * exactement le comportement d'avant.
+   */
+  contactParJeton?(tenantId: string, jeton: string): Promise<string | null>;
 }
 
 /** Un code est 12 caractères base32 minuscules. Tout le reste est refusé sans toucher la base. */
@@ -43,8 +58,22 @@ function pageErreur(titre: string, message: string): string {
 }
 
 export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void {
-  app.get('/r/:code', async (req, reply) => {
-    const { code } = req.params as { code: string };
+  /**
+   * 🔴 DEUX FORMES, ET LA PREMIÈRE NE DISPARAÎTRA JAMAIS.
+   *
+   * `/r/:code` circule dans des messages DÉJÀ LIVRÉS, portés par des templates approuvés dont Meta a figé
+   * l'URL. La retirer casserait tous ces liens, sans recours (cf. la porte à sens unique du CLAUDE.md). Elle
+   * reste donc, et ses clics restent anonymes : c'est physique, pas un choix.
+   *
+   * `/r/:code/:jeton` est la forme ATTRIBUÉE, celle des templates soumis après le 2026-09-02 et de tous les
+   * messages RCS, qui n'ont eux rien à resoumettre puisqu'ils sont composés à l'envoi.
+   *
+   * Un seul traitement pour les deux : le jeton n'ajoute qu'une résolution, tout le reste (garde de forme,
+   * revalidation de la destination, filtre des clics automatiques, 302) est identique. Deux gestionnaires
+   * séparés finiraient par ne plus rediriger pareil.
+   */
+  const traiter = async (req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    const { code, jeton } = req.params as { code: string; jeton?: string };
     const normalise = typeof code === 'string' ? code.trim().toLowerCase() : '';
 
     // Forme du code vérifiée AVANT la base : un lien public reçoit aussi des robots et des scans, et il n'y a
@@ -75,8 +104,16 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       referer: req.headers.referer,
       parametres: req.query as Record<string, unknown> | null,
     })) {
+      // QUI a cliqué. Résolu seulement si l'URL portait un jeton BIEN FORMÉ : un jeton mal formé ne vaut pas
+      // un aller-retour en base, cette route recevant aussi des robots et des scans.
+      let contactId: string | null = null;
+      if (estJeton(jeton) && deps.contactParJeton) {
+        // ⚠️ L'espace vient du LIEN, jamais de l'URL : un jeton d'un autre client ne doit pas s'attribuer ce
+        // clic-ci. Et l'échec de la résolution ne bloque rien : on compte le clic sans savoir qui.
+        contactId = await deps.contactParJeton(lien.tenantId, jeton).catch(() => null);
+      }
       try {
-        await deps.recordClick(normalise, lien.tenantId);
+        await deps.recordClick(normalise, lien.tenantId, contactId);
       } catch (err) {
         req.log.error({ err, code: normalise }, 'clic non enregistré');
       }
@@ -85,5 +122,8 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
     // 302 et non 301 : un 301 est mis en cache par le navigateur, qui n'appellerait plus jamais notre route.
     // On perdrait tous les clics suivants de la même personne, et on ne pourrait plus changer la destination.
     return reply.code(302).header('location', lien.destination).header('cache-control', 'no-store').send();
-  });
+  };
+
+  app.get('/r/:code', traiter);
+  app.get('/r/:code/:jeton', traiter);
 }

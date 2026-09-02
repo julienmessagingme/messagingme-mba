@@ -30,7 +30,7 @@ import { PgErreursLivraisonStore } from './ops/erreurs-livraison.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgWorkflowReportStore } from './workflow/reports.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
-import { lienDe } from './links/rewrite';
+import { lienDe, lienTraceAvecJeton } from './links/rewrite';
 import { noeudsTemplate, compteursDeClics } from './links/mesures';
 import { newTrackingCode } from './ids/code';
 import type { AuditSink } from './audit/journal';
@@ -306,7 +306,10 @@ async function main(): Promise<void> {
     // Redirection publique des liens tracés. Le tenant vient du code retrouvé en base, jamais de l'URL.
     links: {
       getByCode: (code) => trackedLinkStore.getByCode(code),
-      recordClick: (code, tenant) => trackedLinkStore.recordClick(code, tenant),
+      recordClick: (code, tenant, contactId) => trackedLinkStore.recordClick(code, tenant, contactId),
+      // QUI a clique (migration 0106). L espace vient du LIEN, jamais de l URL : un jeton d un autre client
+      // ne doit pas s attribuer ce clic-ci.
+      contactParJeton: (tenant, jeton) => trackedLinkStore.contactParJeton(tenant, jeton),
     },
     // Réception PUBLIQUE des webhooks entrants. L'appelant est un outil tiers : le tenant vient du code, et
     // l'écriture du contact passe par le MÊME chemin partagé que l'API publique et l'import CSV.
@@ -363,11 +366,21 @@ async function main(): Promise<void> {
       tracking: {
         allocate: (tenant, cible, destination) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination),
         confirm: (tenant, codes) => trackedLinkStore.confirm(tenant, codes),
-        lienDe: (code) => lienDe(config.APP_URL, code),
+        // 🔴 Le lien SOUMIS porte desormais son suffixe variable : c est lui qui fera voyager le jeton du
+        // destinataire, donc qui permettra de savoir QUI a clique. Les templates deja approuves gardent
+        // l ancienne forme, leur URL etant figee chez Meta.
+        lienDe: (code) => lienTraceAvecJeton(config.APP_URL, code),
         // `adresse de redirection -> destination d'origine` : c'est ce qui permet de remontrer à
         // l'utilisateur le lien qu'il a saisi, partout où la console liste des templates.
+        // ⚠️ Les DEUX formes sont dans la map, et il le faut : les templates approuves AVANT le 2026-09-02
+        // portent l adresse nue, ceux d apres portent le suffixe variable. N en mettre qu une ferait
+        // reapparaitre notre URL de redirection a la place du lien saisi, sur toute une famille de
+        // templates, dans les quatre ecrans qui les listent.
         destinations: async (tenant, noms) => new Map(
-          (await trackedLinkStore.listByTemplates(tenant, noms)).map((l) => [lienDe(config.APP_URL, l.code), l.destination]),
+          (await trackedLinkStore.listByTemplates(tenant, noms)).flatMap((l) => [
+            [lienDe(config.APP_URL, l.code), l.destination] as [string, string],
+            [lienTraceAvecJeton(config.APP_URL, l.code), l.destination] as [string, string],
+          ]),
         ),
       },
     },

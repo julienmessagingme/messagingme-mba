@@ -42,6 +42,18 @@ export interface OutboundTemplateParts {
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   /** Cartes du composant CAROUSEL du template. Absent = template sans carousel (sortie inchangée). */
   carousel?: { cards: OutboundCarouselCard[] };
+  /**
+   * Le SUFFIXE VARIABLE des boutons URL tracés, par index de bouton (migration 0106).
+   *
+   * 🔴 CE QUE ÇA RÉSOUT. Un lien tracé est le même pour tous les destinataires : au clic, l'information
+   * « qui » n'existe nulle part. Un template soumis avec une URL en `.../r/<code>/{{1}}` la fait voyager, à
+   * condition qu'un composant de bouton remplisse ce `{{1}}` À CHAQUE ENVOI. C'est ce que porte cette map.
+   *
+   * ⚠️ Absente ou vide = aucun composant de bouton URL n'est produit, donc exactement le comportement d'avant.
+   * C'est ce qui rend les templates DÉJÀ APPROUVÉS (dont l'URL n'a pas de suffixe) parfaitement intacts : leur
+   * envoyer un composant pour une variable qui n'existe pas ferait échouer l'appel avec un 132000.
+   */
+  suffixesBoutons?: Record<number, string>;
 }
 
 const HAS_VAR = /\{\{\s*\d+\s*\}\}/;
@@ -137,6 +149,12 @@ export function buildTemplateComponents(tpl: OutboundTemplateParts): unknown[] {
       type: 'carousel',
       cards: tpl.carousel.cards.map((c, i) => ({ card_index: i, components: cardComponents(c, i) })),
     });
+  }
+  // Les SUFFIXES des boutons URL tracés. `sub_type: 'url'` avec UN paramètre texte : Meta l'ajoute à la fin
+  // de l'URL du bouton, ce qui est la seule forme de variable qu'il accepte dans une adresse. L'index est
+  // celui du bouton dans TOUS les boutons du template, la numérotation de Meta, la même que `tracked_links`.
+  for (const [index, suffixe] of Object.entries(tpl.suffixesBoutons ?? {})) {
+    components.push({ type: 'button', sub_type: 'url', index: String(index), parameters: [{ type: 'text', text: suffixe }] });
   }
   return components;
 }

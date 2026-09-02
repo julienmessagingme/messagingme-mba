@@ -873,6 +873,10 @@ export class PgContactStore implements ContactStore {
         `update contacts
             set phone_e164 = 'anon:' || gen_random_uuid(), bsuid = null, profile_name = null,
                 fields = '{}'::jsonb, deleted_at = coalesce(deleted_at, now()), anonymized_at = now(),
+                -- Le JETON PUBLIC part avec le reste (migration 0106) : il designe cette personne dans des
+                -- URL qui circulent encore. Le garder laisserait un identifiant vivant apres l effacement,
+                -- et ses clics futurs continueraient de lui etre attribues.
+                jeton_public = null,
                 updated_at = now()
           where tenant_id = $1 and id = any($2::uuid[]) and anonymized_at is null`,
         [tenantId, ids],

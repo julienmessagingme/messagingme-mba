@@ -3,6 +3,7 @@ import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool } from './db/pool';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
+import { fabriquerJeton } from './links/jeton-contact';
 import { PgAuditStore } from './audit/store.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { handleWebhookJob } from './webhooks/handler';
@@ -535,6 +536,19 @@ async function main(): Promise<void> {
         // En-tête média : Meta l'exige à CHAQUE envoi, l'image du template ne servant qu'à sa validation. Même
         // cache, même préparation UNE fois par run. `mediaId: null` = préparation échouée -> le moteur refuse
         // la campagne entière avec une raison lisible, au lieu de collectionner les 132012 un par un.
+        /**
+         * ATTRIBUTION DES CLICS (migration 0106) : quels boutons de ce template portent un suffixe variable.
+         *
+         * ⚠️ Seuls les liens CONFIRMES et marques `avec_jeton` comptent. Un lien reserve mais refuse par Meta
+         * ne decrit aucun bouton reel, et un lien d avant le 2026-09-02 n a pas de variable dans son URL :
+         * lui envoyer un composant ferait echouer l appel avec un 132000.
+         */
+        boutonsTraces: async (tenant: string, name: string, _language: string) => {
+          const liens = await trackedLinkStore.listByTemplates(tenant, [name]);
+          return liens.filter((l) => l.avecJeton && l.cardIndex === null).map((l) => l.buttonIndex);
+        },
+        jetonsPourContacts: (tenant: string, ids: readonly string[]) =>
+          trackedLinkStore.jetonsPourContacts(tenant, ids, fabriquerJeton),
         getTemplateHeaderMedia: async (tenant: string, name: string, language: string) => {
           const info = await templateVarInfo(tenant, name, language);
           if (!info?.headerFormat) return null;

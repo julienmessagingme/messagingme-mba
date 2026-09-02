@@ -9,6 +9,7 @@ const lien = (over: Partial<LienTrace> = {}): LienTrace => ({
   cardIndex: null,
   buttonIndex: 1,
   destination: 'https://client.fr/promo',
+  avecJeton: true,
   ...over,
 });
 

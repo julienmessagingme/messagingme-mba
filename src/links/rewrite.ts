@@ -25,6 +25,19 @@ export const cleBouton = (cardIndex: number | null, buttonIndex: number): string
 export const lienDe = (base: string, code: string): string => `${base.replace(/\/+$/, '')}/r/${code}`;
 
 /**
+ * L'adresse d'un code AVEC son suffixe variable, celle qu'on soumet à Meta depuis le 2026-09-02.
+ *
+ * 🔴 C'EST CE SUFFIXE QUI PERMET DE SAVOIR QUI A CLIQUÉ. Sans lui, le lien est identique pour les 5 000
+ * destinataires et l'information « qui » n'existe nulle part au moment du clic. Meta n'accepte une variable
+ * dans une URL de bouton qu'À LA FIN, ce qui tombe bien : `/r/<code>/{{1}}` se lit comme un chemin, et la
+ * route `/r/:code/:jeton` le résout.
+ *
+ * ⚠️ Les templates DÉJÀ APPROUVÉS gardent l'ancienne forme, pour toujours : leur URL est figée chez Meta.
+ * Leurs clics resteront anonymes, et `/r/:code` ne disparaîtra donc jamais.
+ */
+export const lienTraceAvecJeton = (base: string, code: string): string => `${lienDe(base, code)}/{{1}}`;
+
+/**
  * Les boutons URL qu'on sait tracer, dans l'ordre du template puis des cartes.
  *
  * Deux exclusions, chacune pour une raison précise :
