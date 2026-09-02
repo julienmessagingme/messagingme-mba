@@ -169,9 +169,60 @@ résout rien, tout en dupliquant les 19 balayages et en cassant l'ordre par cont
 option par file** : monter la concurrence et poser le **client** comme clé de groupe sur `agent-turn` et
 `analyze-conversation`, ce qui donne le débit ET l'équité sans réplique ni coordination distribuée.
 
-**Condition de déclenchement :** avant d'ouvrir l'agent IA à plusieurs clients actifs. Aucune urgence tant que
-la file n'a jamais tourné. **Mesurer la durée d'un tour réel AVANT de choisir les chiffres** : les poser
-maintenant serait deviner.
+### Ce que ce lot doit tenir, chiffré (question de Julien, 2026-09-02)
+
+« À 25 clients il y aura 100 ou 200 conversations IA en même temps. » L'inquiétude est FONDÉE, et le chiffre
+qui sert à dimensionner n'est pas le nombre de conversations ouvertes : c'est **le débit d'arrivée multiplié
+par la durée d'un tour** (loi de Little). 200 personnes écrivant chacune toutes les 30 s font 6,7 messages/s ;
+à 5 s par tour, cela fait **~33 appels en vol**, pas 200.
+
+| | Aujourd'hui | Cible du scénario 25 clients |
+|---|---|---|
+| Appels au modèle en parallèle | **1** | ~33 |
+| Tours par minute | **12** | ~400 |
+
+Soit un facteur **33**. Tenir de l'IA conversationnelle multi-clients est impossible en l'état.
+
+### Pourquoi la boucle Node n'est PAS le sujet
+
+Question posée : faut-il plusieurs boucles d'exécution ? Techniquement possible (`worker_threads`, `cluster`,
+répliques), mais inutile ici : **tout le travail d'un tour est de l'ATTENTE réseau** (base, Gateway, Meta), et
+une socket qui dort ne consomme quasiment aucun CPU. Une seule boucle en tient des milliers.
+
+Vérifié le 2026-09-02, et c'est ce qui rend l'argument solide : **aucun calcul lourd dans notre process.** La
+recherche de connaissance tourne DANS Postgres (`to_tsvector` + `pg_trgm`, `src/agent/knowledge.pg.ts`), il n'y
+a pas d'embedding local. La boucle ne deviendrait un goulot que si on rapatriait ce calcul chez nous.
+
+### Pourquoi le pool de connexions ne bloque pas ce lot
+
+⚠️ On pourrait croire que 40 tours en parallèle demandent 40 connexions. **Non** : un tour d'agent ne garde
+AUCUNE connexion pendant l'appel au modèle (aucun `pool.connect()` ni transaction n'enjambe l'appel, vérifié).
+Chaque requête prend et rend sa connexion. La partie longue, l'attente, est donc gratuite en connexions.
+
+Le plafond du pool reste réel mais il est ailleurs : `DB_POOL_MAX = 8` par process, deux process, soit **16
+clients simultanés vers le pooler**, chiffre **mesuré le 2026-08-25** (au-delà, la latence double sans qu'aucune
+erreur ne remonte). Le relever déplacerait notre file d'attente vers celle de Supavisor, où elle est MUETTE.
+Ce plafond est lié au plan Supabase, donc il bougera au passage au plan payant.
+
+### Les quatre plafonds, dans l'ordre où ils tomberont
+
+1. **Notre propre concurrence** (1 aujourd'hui). Gratuit à corriger, c'est ce lot.
+2. **La limite de débit du Gateway Vercel.** Inconnue, et elle ne PEUT pas être atteinte aujourd'hui : avec un
+   seul appel en vol, on ne sature aucune limite. La question « faut-il plusieurs comptes Vercel ? » ne se pose
+   donc pas avant d'avoir ouvert notre propre robinet. Le code sait déjà encaisser un 429 avec son
+   `Retry-After` (`src/agent/llm/chat-client.ts:152`). ⚠️ Éclater les comptes casserait le solde prépayé par
+   workspace : dernier recours, contre des refus MESURÉS.
+3. **Le pool de connexions** (16 mesuré, lié au plan Supabase).
+4. **L'argent.** 200 conversations simultanées sont une dépense réelle ; vérifier que le solde prépayé par
+   workspace tient à ce rythme.
+
+⚠️ **L'analyse de conversation ne passe PAS par le Gateway** : elle tape `api.anthropic.com` en direct avec sa
+propre clé (`src/analysis/llm-client.ts:33`). Les deux chemins sont indépendants.
+
+**Condition de déclenchement :** avant d'ouvrir l'agent IA à plusieurs clients actifs. **Mesurer la durée et le
+profil de requêtes d'un tour RÉEL avant de choisir les chiffres** : cette file n'a jamais tourné en production,
+poser 40 plutôt que 20 sans cette mesure serait deviner. C'est aussi là que le profil d'équité manquant du banc
+de charge (lot 5) sert enfin à quelque chose.
 
 ---
 
