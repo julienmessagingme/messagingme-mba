@@ -382,6 +382,45 @@ export const schema = z.object({
    */
   AGENT_MODEL: z.string().default(''),
   /**
+   * Le modele qui VECTORISE les fiches de connaissance et les questions (migration 0110).
+   *
+   * 🔴 Choisi PAR LA MESURE, en français : sur six questions posees avec les mots d un client contre six
+   * fiches ecrites avec les mots d une entreprise, sans aucun mot commun, il place la bonne fiche en premier
+   * 6 fois sur 6, la ou deux concurrents la placent deuxieme a 0,009 pres. Un premier rang a 0,009 pres est un
+   * hasard, pas un choix.
+   *
+   * ⚠️ SA DIMENSION (1536) EST CELLE DE LA COLONNE. En changer oblige a recalculer les vecteurs de tous les
+   * clients : c est un balayage, pas un drame, mais ce n est pas un reglage qu on bouge a la legere. Vide ->
+   * aucune vectorisation, la recherche retombe sur le plein texte seul, comportement d avant.
+   */
+  AGENT_EMBED_MODEL: z.string().default('cohere/embed-v4.0'),
+  /**
+   * Le modele qui JUGE la pertinence des fiches candidates.
+   *
+   * 🔴 IL N EST PAS OPTIONNEL AU SENS DU PRODUIT : c est LUI qui porte la garde anti-hallucination une fois le
+   * vectoriel branche. Mesure : aucun seuil n est posable sur un cosinus d embedding (une question hors sujet
+   * remonte a 0,361 quand une vraie question descend a 0,299), alors que ce reranker place les vraies
+   * questions au-dessus de 0,0817 et le hors-sujet en dessous de 0,0409.
+   *
+   * ⚠️ Ce n est PAS le modele le plus recent, et c est delibere : `cohere/rerank-v4-fast` laisse le hors-sujet
+   * monter AU-DESSUS des vraies questions sur le meme corpus. Prendre la derniere version par reflexe aurait
+   * reproduit le defaut qu on corrige.
+   */
+  AGENT_RERANK_MODEL: z.string().default('cohere/rerank-v3.5'),
+  /**
+   * Le seuil de pertinence du reranker. En dessous, la fiche n est PAS montree au modele.
+   *
+   * ⚠️ MESURE, pas devine, mais sur UN corpus de six fiches et dix questions : les vraies questions vont de
+   * 0,0817 a 0,3662 et le hors-sujet plafonne a 0,0409. 0,06 est le milieu de cet intervalle. C est un point
+   * de depart mesure, pas une loi, et il est en configuration pour etre re-mesure sur de vraies bases.
+   */
+  AGENT_RERANK_SEUIL: z.coerce.number().default(0.06),
+  /**
+   * Combien de fiches le RAPPEL remonte avant le verdict. Plus large que les 3 rendues au modele, et c est
+   * tout l interet : on donne au reranker de quoi choisir. Trop large le ferait payer pour rien.
+   */
+  AGENT_RAPPEL_CANDIDATS: z.coerce.number().default(12),
+  /**
    * Taux euros par dollar, pour convertir ce que le Gateway facture (en DOLLARS) vers nos compteurs, qui
    * sont tous en micro-euros. C est un parametre COMMERCIAL, pas un cours en temps reel : le client charge
    * et consomme des euros, et la marge absorbe tres largement la variation. Un taux a 0 retomberait sur 1
