@@ -28,6 +28,15 @@ export interface Conversation {
   profileName: string | null;
   lastPreview: string | null;
   lastMessageAt: string;
+  /**
+   * 🔴 LE POINT DE REPRISE DE LA PAGINATION, OPAQUE. À renvoyer TEL QUEL dans `before.at`.
+   *
+   * `lastMessageAt` est tronqué à la milliseconde par le `Date` du serveur alors que la base compte en
+   * microsecondes : s'en servir comme curseur faisait SAUTER les conversations dont la dernière activité
+   * tombe dans la même milliseconde que le point d'arrêt. Absent : on retombe sur `lastMessageAt`, c'est-à-dire
+   * le comportement d'avant, jamais pire.
+   */
+  curseur?: string;
   controlOwner: ControlOwner;
   /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. Optionnel : une
    *  instance antérieure à la migration 0055 ne le rend pas, et l'inbox se comporte alors comme avant. */
@@ -54,6 +63,15 @@ export interface InboxMessage {
   body: string | null;
   buttonPayload: string | null;
   createdAt: string;
+  /**
+   * 🔴 LE POINT DE REPRISE DU DELTA, OPAQUE. À renvoyer TEL QUEL dans `apres.at`, jamais à reconstruire.
+   *
+   * `createdAt` a traversé un `Date` JavaScript côté serveur et n'a donc que la milliseconde, alors que la
+   * base stocke la microseconde. S'en servir comme curseur faisait repasser le dernier message à chaque tour
+   * de rafraîchissement : il se ré-ajoutait au fil toutes les 4 secondes et l'écran défilait tout seul.
+   * Absent : ne pas poser de curseur du tout (le serveur rend alors le fil entier, repli sûr).
+   */
+  curseur?: string;
   /** Auteur d'un message sortant (pastille inbox) ; null/absent = pas d'auteur (legacy / réponse auto). */
   senderName?: string | null;
   /** Canal de CETTE bulle : le fil est unique par contact, c'est le message qui porte le tuyau emprunté.
@@ -138,9 +156,12 @@ export interface ConversationThread {
  * Le fil d'une conversation. `apres` ne demande QUE les messages postérieurs au couple donné : le fil ouvert
  * se rafraîchit toutes les 4 secondes, et il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
  *
- * ⚠️ Le point de reprise est le COUPLE `(createdAt, id)`, jamais l'identifiant seul : deux messages peuvent
+ * ⚠️ Le point de reprise est le COUPLE `(curseur, id)`, jamais l'identifiant seul : deux messages peuvent
  * porter le même horodatage, et l'un des deux se perdrait à chaque poll. Un couple incomplet ou mal formé est
  * ignoré par le serveur, qui rend alors le fil ENTIER : le repli est de voir trop de messages, jamais trop peu.
+ *
+ * 🔴 `apres.at` prend `message.curseur`, PAS `message.createdAt`. Voir `InboxMessage.curseur` : le second est
+ * tronqué à la milliseconde et faisait revenir le dernier message à chaque tour.
  *
  * `signal` : l'écran annule sa requête en cours quand on change de conversation ou qu'on quitte l'inbox.
  */

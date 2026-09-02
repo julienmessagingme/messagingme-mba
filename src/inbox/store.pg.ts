@@ -18,6 +18,20 @@ export interface ConversationSummary {
   profileName: string | null;
   lastPreview: string | null;
   lastMessageAt: string;
+  /**
+   * 🔴 LE POINT DE REPRISE DE LA PAGINATION, OPAQUE, et surtout PAS `lastMessageAt`.
+   *
+   * Même défaut que `ConversationMessage.curseur`, mais le sens de la comparaison en fait le plus dangereux
+   * des deux. La page suivante demande `(last_message_at, id) < (curseur, id)`. Avec un curseur tronqué à la
+   * milliseconde (`.043` pour un `.043689` réel), toute conversation dont la dernière activité tombe ENTRE
+   * les deux, à `.043200` par exemple, est PLUS PETITE que le vrai point d'arrêt mais PLUS GRANDE que le
+   * curseur envoyé : elle n'apparaît sur AUCUNE page. On ne dupliquait pas, on escamotait, en silence.
+   *
+   * Le cas demande deux conversations actives dans la même milliseconde, ce qu'une rafale de campagne produit.
+   *
+   * Optionnel : les mocks de test qui omettent le champ restent valides.
+   */
+  curseur?: string;
   controlOwner: ControlOwner;
   /** Un message ENTRANT est arrivé depuis la dernière ouverture du fil par un opérateur. */
   unread: boolean;
@@ -61,6 +75,22 @@ export interface ConversationMessage {
   body: string | null;
   buttonPayload: string | null;
   createdAt: string;
+  /**
+   * 🔴 LE POINT DE REPRISE DU DELTA, OPAQUE, et surtout PAS `createdAt`.
+   *
+   * `createdAt` traverse un `Date` JavaScript, qui n'a que la milliseconde, alors que Postgres stocke la
+   * MICROSECONDE. Le fil renvoyait donc un curseur tronqué (`.043` pour un `.043689` réel), la comparaison
+   * `.043689 > .043000` était vraie, et le dernier message revenait à CHAQUE tour de rafraîchissement : il
+   * était ré-ajouté au fil toutes les 4 secondes, ce qui redéclenchait le défilement automatique. Mesuré le
+   * 2026-09-02 sur la production : 126 messages sur 127 portent une précision sous la milliseconde, donc le
+   * défaut se produisait quasiment toujours.
+   *
+   * La règle qui évite d'y revenir : **un curseur est fabriqué par le serveur et renvoyé tel quel**. Dès qu'un
+   * client le RECONSTRUIT depuis une valeur affichée, il le reconstruit dans la précision de SON langage.
+   *
+   * Optionnel : les mocks de test qui omettent le champ restent valides.
+   */
+  curseur?: string;
   /** Auteur d'un message sortant (name sinon partie locale de l'email). null = pas d'auteur (legacy/auto).
    *  Optionnel : les mocks de test qui omettent le champ restent valides. */
   senderName?: string | null;
@@ -303,10 +333,14 @@ export class PgInboxStore implements InboxStore {
     params.push(limit);
 
     const res = await this.pool.query<{
-      id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date;
+      id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date; curseur: string;
       control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
     }>(
+      // curseur : le même instant que last_message_at, mais en TEXTE à la microseconde. Voir
+      // `ConversationSummary.curseur` : ici le défaut de précision faisait SAUTER des conversations, pas les
+      // dupliquer, ce qui est le sens le plus dangereux des deux.
       `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
+              to_char(c.last_message_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               ${UNREAD_SQL} as unread, c.assigned_to, u.name as assigned_name
        from conversations c
        left join contacts ct on ct.id = c.contact_id
@@ -322,6 +356,7 @@ export class PgInboxStore implements InboxStore {
       profileName: r.profile_name,
       lastPreview: r.last_preview,
       lastMessageAt: r.last_message_at.toISOString(),
+      curseur: r.curseur,
       controlOwner: r.control_owner,
       unread: r.unread,
       assignedTo: r.assigned_to,
@@ -516,11 +551,16 @@ export class PgInboxStore implements InboxStore {
    */
   async getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]> {
     const res = await this.pool.query<{
-      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; sender_name: string | null; channel: string | null;
+      id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null;
     }>(
       // sender_name : name du user, sinon la partie locale de son email ; null si pas d'auteur (legacy/auto).
       // channel : le fil est UNIQUE par contact, c'est chaque bulle qui dit par quel tuyau elle est passée.
+      // curseur : le MÊME instant que created_at, mais rendu en TEXTE à la microseconde, parce que la colonne
+      // `created_at` ci-dessus traverse un Date JavaScript qui n'en garde que la milliseconde. Voir le
+      // commentaire de `ConversationMessage.curseur` : c'est ce qui faisait revenir le dernier message à
+      // chaque tour et redéclencher le défilement du fil.
       `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
+              to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
        from conversation_messages m
        left join users u on u.id = m.sender_user_id
@@ -536,6 +576,7 @@ export class PgInboxStore implements InboxStore {
       body: r.body,
       buttonPayload: r.button_payload,
       createdAt: r.created_at.toISOString(),
+      curseur: r.curseur,
       senderName: r.sender_name,
       // Message d'avant la migration 0056 : `channel` est null en base -> WhatsApp.
       channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',

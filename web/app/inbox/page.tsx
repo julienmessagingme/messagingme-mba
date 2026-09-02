@@ -181,7 +181,12 @@ function InboxInner({ session }: { session: Session }) {
     try {
       const r = await listConversations(session.tenantId, {
         limit: TAILLE_PAGE,
-        before: { at: dernier.lastMessageAt, id: dernier.id },
+        // 🔴 Le curseur du SERVEUR, pas `lastMessageAt` : ce dernier est tronqué à la milliseconde et faisait
+        // sauter les conversations dont la dernière activité tombe dans la même milliseconde que le point
+        // d'arrêt. Elles n'apparaissaient sur aucune page, sans que rien ne le signale, et le dédoublonnage
+        // ci-dessous n'y pouvait rien : il protège des doublons, pas des absences. Repli sur `lastMessageAt`
+        // si le champ manque : c'est exactement le comportement d'avant, jamais pire.
+        before: { at: dernier.curseur ?? dernier.lastMessageAt, id: dernier.id },
         ...filtreEnParams(filtre),
       });
       const suite = Array.isArray(r?.conversations) ? r.conversations : [];
@@ -527,6 +532,8 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
     void getSettings(session.tenantId).then((s) => setRcsEnabled(s.rcsEnabled === true)).catch(() => {});
   }, [session.tenantId]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** Le conteneur défilant du fil. Sert à savoir si l'opérateur est REMONTÉ dans l'historique. */
+  const filRef = useRef<HTMLDivElement>(null);
 
   // Dernier message DÉJÀ vu dans ce fil : sert à ne marquer « lu » qu'au vrai changement, et pas à chacun
   // des rafraîchissements de 4 s. Remis à zéro par le remontage du composant à chaque conversation.
@@ -558,11 +565,27 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
       // se remonte à chaque sélection (`key={selected.id}`), donc l'écart ne survit pas à un clic.
       if (res.messages.length > 0) {
         const arrivee = res.messages[res.messages.length - 1]!;
-        bornRef.current = { at: arrivee.createdAt, id: arrivee.id };
+        // 🔴 LE CURSEUR VIENT DU SERVEUR ET REPART TEL QUEL. Il valait `createdAt`, qui a traversé un `Date`
+        // JavaScript et n'a donc que la milliseconde là où Postgres stocke la microseconde : le dernier
+        // message repassait le filtre à chaque tour et se ré-ajoutait au fil toutes les 4 secondes, ce qui
+        // faisait défiler l'écran tout seul. Curseur absent (serveur plus ancien) : on n'en pose PAS, donc le
+        // tour suivant redemande le fil entier. C'est le repli sûr de cette route, trop de messages plutôt
+        // que trop peu, et le dédoublonnage ci-dessous le rend invisible.
+        bornRef.current = arrivee.curseur ? { at: arrivee.curseur, id: arrivee.id } : null;
         // Toujours en AJOUT : au premier chargement `prev` est vide, donc l'ajout rend le fil entier. Le
         // composant est remonté à chaque conversation (`key={selected.id}`), donc `prev` ne mélange jamais
         // deux fils.
-        setMessages((prev) => [...prev, ...res.messages]);
+        //
+        // ⚠️ Et en AJOUT DÉDOUBLONNÉ : un message n'apparaît qu'une fois dans un fil, quoi qu'il arrive en
+        // face. Cette garde-ci ne dépend d'aucune hypothèse sur le curseur, donc elle tient aussi le jour où
+        // le serveur renvoie deux fois la même bulle pour une autre raison. Et quand tout est déjà connu,
+        // `prev` est rendu TEL QUEL : la référence ne change pas, donc l'effet de défilement ne se
+        // redéclenche pas. C'est ce qui rend le fil calme.
+        setMessages((prev) => {
+          const connus = new Set(prev.map((m) => m.id));
+          const nouveaux = res.messages.filter((m) => !connus.has(m.id));
+          return nouveaux.length === 0 ? prev : [...prev, ...nouveaux];
+        });
         // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
         // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
         if (arrivee.id !== dernierVuRef.current) {
@@ -600,8 +623,23 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
     return () => { arreter(); document.removeEventListener('visibilitychange', tick); };
   }, [load]);
 
+  /**
+   * Descendre sur un NOUVEAU message, mais jamais arracher l'opérateur qui lit plus haut.
+   *
+   * Deux gardes, et il fallait les deux. La première est ailleurs : `messages` ne change de référence que
+   * lorsqu'une bulle inconnue arrive, donc cet effet ne se déclenche plus à chaque tour de rafraîchissement.
+   * La seconde est ici : même sur un vrai nouveau message, on ne descend que si l'opérateur était DÉJÀ en
+   * bas. S'il est remonté pour relire, le fil reste où il l'a laissé.
+   *
+   * Le premier rendu n'a pas encore de conteneur mesurable (`filRef` vient d'être posé) : on descend, ce qui
+   * est le comportement voulu à l'ouverture d'une conversation.
+   */
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const fil = filRef.current;
+    // 80 px de tolérance : personne ne pose son fil au pixel près, et un fil « presque en bas » est un fil
+    // qu'on suit. Plus haut que ça, l'opérateur lit, on ne le dérange pas.
+    const enBas = !fil || fil.scrollHeight - fil.scrollTop - fil.clientHeight < 80;
+    if (enBas) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   async function send() {
@@ -667,7 +705,7 @@ function Thread({ session, conversation, onSent }: { session: Session; conversat
         </div>
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+      <div ref={filRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
         {messages.map((m, i) => {
           // Séparateur de jour (fuseau Paris) quand le jour change vs le message précédent.
           const showSep = i === 0 || dayKey(m.createdAt) !== dayKey(messages[i - 1]!.createdAt);
@@ -916,7 +954,7 @@ function ScenarioSendPanel({
             <p className="text-xs text-amber-700" data-testid="scenario-none">
               {total === 0
                 ? t('Aucun scénario. Crée-en un dans le menu « Scénario » à gauche.', 'No scenario yet. Create one from the "Scenario" menu on the left.')
-                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il ouvre par l'envoi d'un template, ou par un message RCS, qui lui n'a pas de fenêtre (un tag, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to open by sending a template, or an RCS message, which has no window (a tag, an action or a condition before it is fine).')}
+                : t("Aucun de tes scénarios ne peut partir hors de la fenêtre de 24 h : il faudrait qu'il ouvre par l'envoi d'un template, ou par un message RCS, qui lui n'a pas de fenêtre (une étiquette, une action ou une condition avant lui ne posent aucun problème).", 'None of your scenarios can run outside the 24h window: it would need to open by sending a template, or an RCS message, which has no window (a tag, an action or a condition before it is fine).')}
             </p>
           ) : (
             <select value={selId} onChange={(e) => { setSelId(e.target.value); setError(null); }} className={inputCls} data-testid="scenario-select">
